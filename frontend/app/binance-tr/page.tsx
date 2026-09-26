@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
-import { localDateInput } from "../lib/format";
+import { localDateInput, QUOTE_ASSET, QUOTE_SYMBOL, QUOTE_ASSET_NAME, toSymbol } from "../lib/format";
 import { useLiveMessages } from "../lib/liveSocket";
 import { commissionPct, netOpenPnlTry } from "../lib/pnl";
 import { useAuth } from "../lib/auth";
+import { useExchange } from "../lib/exchange";
+import { isCashAsset, cashSymbolLabel } from "../lib/exchangeAsset";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import { useModalA11y } from "../lib/useModalA11y";
 import Link from "next/link";
@@ -109,16 +111,29 @@ const fmtTime = (ts: number | null | undefined) => {
   });
 };
 
+/** Nakit varlık mı? TR→TRY, Global→USDT. Borsaya göre değişir. */
+const isCash = (asset: string) => isCashAsset(asset, QUOTE_ASSET);
+
+/**
+ * Para birimi işareti. TR→`₺`, Global→`USDT`. React düğümü olduğu için hem
+ * JSX metninde (`{Q}{fmtPrice(x)}`) hem şablon dizisinde (`` `${Q}...` ``)
+ * doğrudan yazılabilir. Düz metin `₺` yazmak Global kullanıcısına yanlış
+ * birim gösterirdi — en pahalı hata türü, çünkü sayı doğru görünür.
+ */
+const Q = <>{QUOTE_SYMBOL}</>;
+
 export default function BinanceTrPage() {
   const { username } = useAuth();
+  const exchange = useExchange();
+  const exLabel = exchange.loading ? "Binance" : exchange.label;
   if (!username) {
     return (
       <main className="page-shell">
         <div className="card mt-10 flex flex-col items-center gap-4 border-cyan-500/30 bg-cyan-500/5 px-6 py-12 text-center">
           <p className="eyebrow">OTURUM GEREKLİ</p>
-          <h1 className="font-mono text-xl font-bold text-white">Binance TR Terminali için giriş yapın</h1>
+          <h1 className="font-mono text-xl font-bold text-white">{exLabel} Terminali için giriş yapın</h1>
           <p className="max-w-md text-sm text-bunker-muted">
-            Her kullanıcı kendi Binance TR API anahtarlarıyla kendi hesabında işlem yapar. Giriş yaptıktan sonra anahtarlarınızı Ayarlar'dan bağlayabilirsiniz.
+            Her kullanıcı kendi {exLabel} API anahtarlarıyla kendi hesabında işlem yapar. Giriş yaptıktan sonra anahtarlarınızı Ayarlar'dan bağlayabilirsiniz.
           </p>
           <Link href="/" className="ui-button ui-button-primary">ANA SAYFAYA DÖN</Link>
         </div>
@@ -130,6 +145,13 @@ export default function BinanceTrPage() {
 
 function BinanceTrPageInner() {
   const { role } = useAuth();
+  const exchange = useExchange();
+  // Emir yolları Aşama 1'de yalnız TR'de tanımlı; Global modülünde `place_*`
+  // ve `cancel_order` YOKTUR, backend 501 döner. Bu yüzden Global'da butonlar
+  // hiç render edilmez — kullanıcı çalışmayan bir butona basmasın, sonra
+  // hata okusun. Aşama 2'de Global emirleri açıldığında bu bayrak düşecek.
+  const ordersAvailable = exchange.exchange !== "binance_global";
+  const exLabel = exchange.loading ? "Binance" : exchange.label;
   // Sistem Ayarları & API
   const [configured, setConfigured] = useState(false);
   const [sellEnabled, setSellEnabled] = useState(false);
@@ -224,7 +246,7 @@ function BinanceTrPageInner() {
     `Piyasa satışı onayı${sellFor ? ` — ${sellFor.asset}` : ""}`,
   );
   const buyA11y = useModalA11y(buyOpen, () => setBuyOpen(false), "Piyasa alımı onayı");
-  const settingsA11y = useModalA11y(settingsOpen, () => setSettingsOpen(false), "Binance TR API ayarları");
+  const settingsA11y = useModalA11y(settingsOpen, () => setSettingsOpen(false), `${exLabel} API ayarları`);
 
   const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
     setToast({ id: Date.now(), text, type });
@@ -442,7 +464,7 @@ function BinanceTrPageInner() {
   const mergedHoldings = useMemo(() => {
     return holdings.map((h) => {
       const t = liveTicks[h.asset];
-      const price = h.asset === "TRY" ? 1.0 : Number(t?.price || 0);
+      const price = isCash(h.asset) ? 1.0 : Number(t?.price || 0);
       if (!price) return { ...h, volume_try: t?.quote_volume_try ?? null };
       const net = netOpenPnlTry(h.avg_cost_try, price, h.total);
       const pnl_try = net !== null ? net : h.pnl_try;
@@ -471,7 +493,7 @@ function BinanceTrPageInner() {
         if (!h.asset.includes(q)) return false;
       }
       if (positionFilter === "unprotected") {
-        if (h.asset === "TRY" || h.has_active_order || (h.active_sl_price != null && h.active_sl_price > 0)) {
+        if (isCash(h.asset) || h.has_active_order || (h.active_sl_price != null && h.active_sl_price > 0)) {
           return false;
         }
       } else if (positionFilter === "profit") {
@@ -493,7 +515,7 @@ function BinanceTrPageInner() {
   }, [mergedHoldings]);
 
   const tryFreeBalance = useMemo(() => {
-    const r = balances.find((b) => b.asset === "TRY");
+    const r = balances.find((b) => isCash(b.asset));
     return parseFloat(r?.free || "0");
   }, [balances]);
 
@@ -503,11 +525,11 @@ function BinanceTrPageInner() {
   }, [balances]);
 
   const protectedCount = useMemo(() => {
-    return mergedHoldings.filter((h) => h.asset !== "TRY" && (h.has_active_order || (h.active_sl_price != null && h.active_sl_price > 0))).length;
+    return mergedHoldings.filter((h) => !isCash(h.asset) && (h.has_active_order || (h.active_sl_price != null && h.active_sl_price > 0))).length;
   }, [mergedHoldings]);
 
   const totalCoinPositions = useMemo(() => {
-    return mergedHoldings.filter((h) => h.asset !== "TRY" && (h.value_try == null || h.value_try >= 10)).length;
+    return mergedHoldings.filter((h) => !isCash(h.asset) && (h.value_try == null || h.value_try >= 10)).length;
   }, [mergedHoldings]);
 
   // Trade Defteri sıralı özet satırları (kullanıcı tercihi 2026-09-19).
@@ -547,7 +569,7 @@ function BinanceTrPageInner() {
   const buyMatches = useMemo(() => {
     const q = buyInput.trim().toUpperCase();
     if (q.length < 2) return [];
-    return pairs.filter((p) => (p + "TRY").includes(q)).slice(0, 8);
+    return pairs.filter((p) => toSymbol(p).includes(q)).slice(0, 8);
   }, [buyInput, pairs]);
 
   const buyPrice = buyAsset
@@ -621,7 +643,7 @@ function BinanceTrPageInner() {
       setApiSecret("");
       setConfigured(true);
       setSettingsOpen(false);
-      showToast("Binance TR API anahtarları kaydedildi.", "success");
+      showToast(`${exLabel} API anahtarları kaydedildi.`, "success");
       check();
       loadAcct();
       loadOrd();
@@ -693,6 +715,10 @@ function BinanceTrPageInner() {
 
   // ---- Aksiyonlar: Piyasa Alım (Buy) ----
   const openBuy = async () => {
+    // Global örneğinde emir gönderimi Aşama 1'de kapalı; buton zaten
+    // render edilmiyor. Buradaki kapı, modalı URL/klavye yoluyla açmaya
+    // çalışan bir yol kalmadığını garanti eder (backend ayrıca 501 döner).
+    if (!ordersAvailable) return;
     setBuyOpen(true);
     setBuyMsg(null);
     setBuyDone(null);
@@ -703,8 +729,8 @@ function BinanceTrPageInner() {
       const r = await apiRequest(`${API_BASE}/api/market-symbols`);
       const d = await r.json().catch(() => ({}));
       const list = (Array.isArray(d.symbols) ? d.symbols : [])
-        .map((s: string) => String(s).toUpperCase().replace(/TRY$/, ""))
-        .filter((s: string) => s && s !== "TRY");
+        .map((s: string) => String(s).toUpperCase().replace(new RegExp(`${QUOTE_ASSET}$`), ""))
+        .filter((s: string) => s && !isCash(s));
       setPairs(Array.from(new Set(list)));
     } catch { /* */ }
   };
@@ -725,17 +751,17 @@ function BinanceTrPageInner() {
 
   const confirmBuy = async () => {
     if (buyBusy) return;
-    const asset = buyAsset || buyInput.trim().toUpperCase().replace(/TRY$/, "");
+    const asset = buyAsset || buyInput.trim().toUpperCase().replace(new RegExp(`${QUOTE_ASSET}$`), "");
     if (!asset) {
       setBuyMsg({ ok: false, text: "Önce işlem çiftini seçin." });
       return;
     }
     if (!Number.isFinite(buyAmountNum) || buyAmountNum < 10) {
-      setBuyMsg({ ok: false, text: "Tutar geçerli değil (minimum ₺10)." });
+      setBuyMsg({ ok: false, text: `Tutar geçerli değil (minimum ${QUOTE_ASSET_NAME} 10).` });
       return;
     }
     if (buyAmountNum > buyTryFree + 1e-9) {
-      setBuyMsg({ ok: false, text: `TRY bakiyesi yetersiz (boşta ₺${fmtPrice(buyTryFree)}).` });
+      setBuyMsg({ ok: false, text: `${QUOTE_ASSET_NAME} bakiyesi yetersiz (boşta ${QUOTE_SYMBOL}${fmtPrice(buyTryFree)}).` });
       return;
     }
     setBuyBusy(true);
@@ -764,6 +790,7 @@ function BinanceTrPageInner() {
 
   // ---- Aksiyonlar: Piyasa Satış (Sell) ----
   const openSell = (h: Holding) => {
+    if (!ordersAvailable) return;
     setSellFor(h);
     setSellQty(String(h.free));
     setSellMsg(null);
@@ -812,6 +839,7 @@ function BinanceTrPageInner() {
 
   // ---- Aksiyonlar: SL / TP Modalı ----
   const openSltpModal = (h: Holding) => {
+    if (!ordersAvailable) return;
     setSltpTarget(h);
     setSltpMode("OCO");
     setSltpMsg(null);
@@ -870,7 +898,7 @@ function BinanceTrPageInner() {
     if (curPrice <= entryPrice) {
       setSltpMsg({
         ok: false,
-        text: `Fiyat henüz kâra geçmedi. Güncel: ₺${fmtPrice(curPrice)}, Alış Maliyeti: ₺${fmtPrice(entryPrice)}`,
+        text: `Fiyat henüz kâra geçmedi. Güncel: ${QUOTE_SYMBOL}${fmtPrice(curPrice)}, Alış Maliyeti: ${QUOTE_SYMBOL}${fmtPrice(entryPrice)}`,
       });
       return;
     }
@@ -883,7 +911,7 @@ function BinanceTrPageInner() {
     if (bePrice >= curPrice) {
       setSltpMsg({
         ok: false,
-        text: `Fiyat kârda ancak kâr kilidi seviyesinin (₺${fmtPrice(bePrice)}) altında. Güncel fiyatın biraz daha yükselmesi gerekiyor.`,
+        text: `Fiyat kârda ancak kâr kilidi seviyesinin (${QUOTE_SYMBOL}${fmtPrice(bePrice)}) altında. Güncel fiyatın biraz daha yükselmesi gerekiyor.`,
       });
       return;
     }
@@ -896,7 +924,7 @@ function BinanceTrPageInner() {
     setSltpSlLimitPrice(slLimitStr);
     setSltpMsg({
       ok: true,
-      text: `🔒 Break-Even kâr kilidi ayarlandı: ₺${fmtPrice(bePrice)} (Maliyet: ₺${fmtPrice(entryPrice)} + Komisyon: %${(commRate * 100).toFixed(2)} + Net Kâr: %0.05)`,
+      text: `🔒 Break-Even kâr kilidi ayarlandı: ${QUOTE_SYMBOL}${fmtPrice(bePrice)} (Maliyet: ${QUOTE_SYMBOL}${fmtPrice(entryPrice)} + Komisyon: %${(commRate * 100).toFixed(2)} + Net Kâr: %0.05)`,
     });
   };
 
@@ -1031,14 +1059,14 @@ function BinanceTrPageInner() {
       <div className="page-heading flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <p className="eyebrow text-neon-green">BINANCE TR</p>
+            <p className="eyebrow text-neon-green">{exLabel.toUpperCase()}</p>
             <span className="rounded bg-neon-green/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green border border-neon-green/30">
               TERMINAL
             </span>
           </div>
           <h1 className="font-mono text-2xl font-bold text-white">Canlı Trade & Portföy Takip Ekranı</h1>
           <p className="mt-1 text-sm text-bunker-muted">
-            Binance TR canlı bakiyesi, anlık K/Z, tek tıkla Stop-Loss & Take-Profit (OCO) emir yönetimi ve gün içi işlem defteri.
+            {exLabel} canlı bakiyesi, anlık K/Z, tek tıkla Stop-Loss & Take-Profit (OCO) emir yönetimi ve gün içi işlem defteri.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1081,7 +1109,7 @@ function BinanceTrPageInner() {
         <section className="card mt-6 grid gap-6 py-10 px-6 text-center md:grid-cols-[1fr_auto] md:text-left md:items-center">
           <div className="flex flex-col items-center gap-4 md:items-start">
             <p className="text-5xl">🔑</p>
-            <h2 className="font-mono text-xl font-bold text-white">Binance TR Hesabını Bağla</h2>
+            <h2 className="font-mono text-xl font-bold text-white">{exLabel} Hesabını Bağla</h2>
             <p className="max-w-lg text-sm text-bunker-muted">
               Canlı bakiyenizi görmek, pozisyonlarınıza Stop-Loss & Take-Profit emirleri girmek ve hızlı alım/satım yapmak için
               <span className="text-white font-bold"> kendi API anahtarlarınızı</span> bağlayın. Anahtarlarınız şifrelenerek
@@ -1113,7 +1141,7 @@ function BinanceTrPageInner() {
               <li>⛔ <span className="text-neon-red font-bold">Withdrawals</span> — KAPALI tutun (gerekmez, güvenli olur)</li>
             </ul>
             <p className="border-t border-bunker-800 pt-2 text-[11px] text-bunker-muted">
-              Binance TR → Hesabım → API Yönetimi'nden yeni anahtar oluşturun.
+              {exLabel} → Hesabım → API Yönetimi'nden yeni anahtar oluşturun.
             </p>
           </div>
         </section>
@@ -1131,7 +1159,7 @@ function BinanceTrPageInner() {
             <div className="card relative overflow-hidden">
               <div className="absolute top-0 left-0 h-1 w-full bg-neon-green/40" />
               <p className="eyebrow">TOPLAM PORTFÖY DEĞERİ</p>
-              <p className="mt-1 font-mono text-xl font-bold text-white">₺{fmtPrice(totalValueTry)}</p>
+              <p className="mt-1 font-mono text-xl font-bold text-white">{Q}{fmtPrice(totalValueTry)}</p>
               <p className="mt-0.5 text-[11px] text-bunker-muted">
                 ~${fmtPrice(usdtFreeBalance > 0 ? totalValueTry / (liveTicks["USDT"]?.price || 38) : 0)} USD
               </p>
@@ -1142,7 +1170,7 @@ function BinanceTrPageInner() {
               <div className={`absolute top-0 left-0 h-1 w-full ${totalUnrealizedPnlTry >= 0 ? "bg-neon-green" : "bg-neon-red"}`} />
               <p className="eyebrow">AÇIK K/Z (UNREALIZED)</p>
               <p className={`mt-1 font-mono text-xl font-bold ${totalUnrealizedPnlTry >= 0 ? "text-neon-green" : "text-neon-red"}`}>
-                {totalUnrealizedPnlTry >= 0 ? "+" : "−"}₺{fmtPrice(Math.abs(totalUnrealizedPnlTry))}
+                {totalUnrealizedPnlTry >= 0 ? "+" : "−"}{Q}{fmtPrice(Math.abs(totalUnrealizedPnlTry))}
               </p>
               <p className="mt-0.5 text-[11px] text-bunker-muted">anlık fiyatlarla, gidiş-dönüş komisyonu düşülmüş (net) pozisyon kârı</p>
             </div>
@@ -1152,7 +1180,7 @@ function BinanceTrPageInner() {
               <div className={`absolute top-0 left-0 h-1 w-full ${(daily?.realized_pnl_try ?? 0) >= 0 ? "bg-neon-green/60" : "bg-neon-red/60"}`} />
               <p className="eyebrow">GÜNLÜK NET K/Z</p>
               <p className={`mt-1 font-mono text-xl font-bold ${(daily?.realized_pnl_try ?? 0) >= 0 ? "text-neon-green" : "text-neon-red"}`}>
-                {(daily?.realized_pnl_try ?? 0) >= 0 ? "+" : "−"}₺{fmtPrice(Math.abs(daily?.realized_pnl_try ?? 0))}
+                {(daily?.realized_pnl_try ?? 0) >= 0 ? "+" : "−"}{Q}{fmtPrice(Math.abs(daily?.realized_pnl_try ?? 0))}
               </p>
               <p className="mt-0.5 text-[11px] text-bunker-muted">
                 {daily ? `${daily.wins} kazanç · ${daily.losses} kayıp` : "günlük işlem yok"}
@@ -1163,7 +1191,7 @@ function BinanceTrPageInner() {
             <div className="card relative overflow-hidden">
               <div className="absolute top-0 left-0 h-1 w-full bg-cyan-400/40" />
               <p className="eyebrow">NAKİT LİKİDİTE</p>
-              <p className="mt-1 font-mono text-lg font-bold text-cyan-300">₺{fmtPrice(tryFreeBalance)}</p>
+              <p className="mt-1 font-mono text-lg font-bold text-cyan-300">{Q}{fmtPrice(tryFreeBalance)}</p>
               <p className="mt-0.5 text-[11px] text-bunker-muted">
                 {fmtPrice(usdtFreeBalance)} USDT boşta
               </p>
@@ -1321,16 +1349,16 @@ function BinanceTrPageInner() {
                     const pnlToneCls = h.pnl_try == null ? "text-bunker-muted" : h.pnl_try >= 0 ? "text-neon-green" : "text-neon-red";
                     const hasSl = h.active_sl_price != null && h.active_sl_price > 0;
                     const hasTp = h.active_tp_price != null && h.active_tp_price > 0;
-                    const protectedPos = h.asset === "TRY" || hasSl || hasTp || h.has_active_order;
-                    if (h.asset === "TRY") {
+                    const protectedPos = isCash(h.asset) || hasSl || hasTp || h.has_active_order;
+                    if (isCash(h.asset)) {
                       return (
                         <div key={h.asset} className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3.5">
                           <div className="flex items-center justify-between">
                             <div>
-                              <span className="font-mono text-base font-black text-white">TRY</span>
+                              <span className="font-mono text-base font-black text-white">{QUOTE_ASSET}</span>
                               <span className="ml-2 rounded bg-cyan-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-cyan-300 border border-cyan-500/30">NAKİT</span>
                             </div>
-                            <span className="font-mono text-base font-black text-cyan-300">₺{fmtPrice(h.total)}</span>
+                            <span className="font-mono text-base font-black text-cyan-300">{Q}{fmtPrice(h.total)}</span>
                           </div>
                         </div>
                       );
@@ -1347,7 +1375,7 @@ function BinanceTrPageInner() {
                           </div>
                           <div className="text-right">
                             <p className={`font-mono text-sm font-black ${pnlToneCls}`}>
-                              {h.pnl_try != null ? `${h.pnl_try >= 0 ? "+" : "−"}₺${fmtPrice(Math.abs(h.pnl_try))}` : "—"}
+                              {h.pnl_try != null ? `${h.pnl_try >= 0 ? "+" : "−"}${QUOTE_SYMBOL}${fmtPrice(Math.abs(h.pnl_try))}` : "—"}
                             </p>
                             {h.pnl_pct != null && (
                               <p className={`font-mono text-[10px] font-bold ${pnlToneCls}`}>
@@ -1360,11 +1388,11 @@ function BinanceTrPageInner() {
                         <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg border border-bunker-800/70 bg-bunker-950/60 p-2 font-mono text-[10px]">
                           <div>
                             <p className="text-bunker-muted">FİYAT</p>
-                            <p className="font-bold text-white">{h.price_try != null ? `₺${fmtPrice(h.price_try, h.price_try < 1 ? 6 : 2)}` : "—"}</p>
+                            <p className="font-bold text-white">{h.price_try != null ? `${QUOTE_SYMBOL}${fmtPrice(h.price_try, h.price_try < 1 ? 6 : 2)}` : "—"}</p>
                           </div>
                           <div>
                             <p className="text-bunker-muted">DEĞER</p>
-                            <p className="font-bold text-white">{h.value_try != null ? `₺${fmtPrice(h.value_try)}` : "—"}</p>
+                            <p className="font-bold text-white">{h.value_try != null ? `${QUOTE_SYMBOL}${fmtPrice(h.value_try)}` : "—"}</p>
                           </div>
                           <div>
                             <p className="text-bunker-muted">MİKTAR</p>
@@ -1375,8 +1403,8 @@ function BinanceTrPageInner() {
                         <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                           {protectedPos ? (
                             <>
-                              {hasTp && <span className="rounded bg-neon-green/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green border border-neon-green/30">🎯 TP ₺{fmtPrice(h.active_tp_price, (h.active_tp_price ?? 0) < 1 ? 6 : 2)}</span>}
-                              {hasSl && <span className="rounded bg-neon-red/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-red border border-neon-red/30">🛑 SL ₺{fmtPrice(h.active_sl_price, (h.active_sl_price ?? 0) < 1 ? 6 : 2)}</span>}
+                              {hasTp && <span className="rounded bg-neon-green/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green border border-neon-green/30">🎯 TP {Q}{fmtPrice(h.active_tp_price, (h.active_tp_price ?? 0) < 1 ? 6 : 2)}</span>}
+                              {hasSl && <span className="rounded bg-neon-red/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-red border border-neon-red/30">🛑 SL {Q}{fmtPrice(h.active_sl_price, (h.active_sl_price ?? 0) < 1 ? 6 : 2)}</span>}
                               {!hasSl && !hasTp && h.has_active_order && <span className="rounded bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-cyan-300 border border-cyan-500/30">📋 Emir var</span>}
                             </>
                           ) : (
@@ -1388,7 +1416,7 @@ function BinanceTrPageInner() {
                           <button
                             type="button"
                             onClick={() => setChartFor(h)}
-                            title={`${h.asset}/TRY canlı grafik`}
+                            title={`${h.asset}/${QUOTE_ASSET} canlı grafik`}
                             className="flex h-10 flex-1 items-center justify-center rounded-lg border border-cyan-500/40 bg-cyan-500/10 font-mono text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/25 transition-colors touch-target"
                           >
                             📈 Grafik
@@ -1435,7 +1463,7 @@ function BinanceTrPageInner() {
                           <th>Alış Maliyeti</th>
                           <th>Güncel Fiyat</th>
                           <th>Anlık K/Z (net)</th>
-                          <th>TRY Değeri</th>
+                          <th>{QUOTE_ASSET} Değeri</th>
                           <th>SL / TP Durumu</th>
                           <th className="text-right">Aksiyonlar</th>
                         </tr>
@@ -1450,11 +1478,11 @@ function BinanceTrPageInner() {
                           return (
                             <tr key={h.asset} className="hover:bg-bunker-900/60 transition-colors">
                               <td className="text-center">
-                                {h.asset !== "TRY" ? (
+                                {!isCash(h.asset) ? (
                                   <button
                                     type="button"
                                     onClick={() => setChartFor(h)}
-                                    title={`${h.asset}/TRY Canlı Pozisyon Grafiği (M5, Bollinger Bands, SL/TP Sürükle-Bırak)`}
+                                    title={`${h.asset}/${QUOTE_ASSET} Canlı Pozisyon Grafiği (M5, Bollinger Bands, SL/TP Sürükle-Bırak)`}
                                     className="inline-flex items-center justify-center rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-cyan-300 hover:bg-cyan-500/25 hover:border-cyan-400 hover:scale-105 shadow-sm transition-all"
                                   >
                                     <span className="text-xs font-mono font-bold">📈</span>
@@ -1467,16 +1495,16 @@ function BinanceTrPageInner() {
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => h.asset !== "TRY" && setChartFor(h)}
+                                    onClick={() => !isCash(h.asset) && setChartFor(h)}
                                     className={`font-mono text-sm font-bold text-white transition-colors text-left flex items-center gap-1 ${
-                                      h.asset !== "TRY" ? "hover:text-cyan-300 cursor-pointer" : ""
+                                      !isCash(h.asset) ? "hover:text-cyan-300 cursor-pointer" : ""
                                     }`}
-                                    title={h.asset !== "TRY" ? `${h.asset}/TRY Grafiğini Aç` : undefined}
+                                    title={!isCash(h.asset) ? `${h.asset}/${QUOTE_ASSET} Grafiğini Aç` : undefined}
                                   >
                                     <span>{h.asset}</span>
-                                    {h.asset !== "TRY" && <span className="text-[10px] text-cyan-400/70">↗</span>}
+                                    {!isCash(h.asset) && <span className="text-[10px] text-cyan-400/70">↗</span>}
                                   </button>
-                                  {dir && h.asset !== "TRY" && (
+                                  {dir && !isCash(h.asset) && (
                                     <span className={`font-mono text-[10px] font-bold ${dir === "up" ? "text-neon-green" : "text-neon-red"}`}>
                                       {dir === "up" ? "▲" : "▼"}
                                     </span>
@@ -1492,15 +1520,15 @@ function BinanceTrPageInner() {
                                 )}
                               </td>
                               <td className="font-mono text-xs text-bunker-muted">
-                                {h.avg_cost_try != null ? `₺${fmtPrice(h.avg_cost_try, h.avg_cost_try < 1 ? 6 : 2)}` : "—"}
+                                {h.avg_cost_try != null ? `${QUOTE_SYMBOL}${fmtPrice(h.avg_cost_try, h.avg_cost_try < 1 ? 6 : 2)}` : "—"}
                               </td>
                               <td className={`font-mono text-xs tabular-nums font-medium whitespace-nowrap ${dir ? (dir === "up" ? "text-neon-green" : "text-neon-red") : "text-white"}`}>
-                                {h.price_try != null ? `₺${fmtPrice(h.price_try, h.price_try < 1 ? 6 : 2)}` : "—"}
+                                {h.price_try != null ? `${QUOTE_SYMBOL}${fmtPrice(h.price_try, h.price_try < 1 ? 6 : 2)}` : "—"}
                               </td>
                               <td className={`font-mono text-xs font-bold tabular-nums whitespace-nowrap ${pnlToneCls}`}>
                                 {h.pnl_try != null ? (
                                   <>
-                                    <span>{h.pnl_try >= 0 ? "+" : "−"}₺{fmtPrice(Math.abs(h.pnl_try))}</span>
+                                    <span>{h.pnl_try >= 0 ? "+" : "−"}{Q}{fmtPrice(Math.abs(h.pnl_try))}</span>
                                     {h.pnl_pct != null && (
                                       <span className={`ml-1 text-[11px] font-normal ${pnlToneCls}`}>
                                         ({h.pnl_pct >= 0 ? "+" : "−"}%{fmtPrice(Math.abs(h.pnl_pct), 2)})
@@ -1510,21 +1538,21 @@ function BinanceTrPageInner() {
                                 ) : "—"}
                               </td>
                               <td className="font-mono text-xs font-bold text-white tabular-nums whitespace-nowrap">
-                                {h.value_try != null ? `₺${fmtPrice(h.value_try)}` : "—"}
+                                {h.value_try != null ? `${QUOTE_SYMBOL}${fmtPrice(h.value_try)}` : "—"}
                               </td>
                               <td>
-                                {h.asset === "TRY" ? (
+                                {isCash(h.asset) ? (
                                   <span className="text-[11px] text-bunker-muted">Nakit</span>
                                 ) : hasSl || hasTp ? (
                                   <div className="flex flex-col gap-0.5">
                                     {hasTp && (
                                       <span className="inline-flex items-center gap-1 rounded bg-neon-green/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-neon-green border border-neon-green/30">
-                                        🎯 TP: ₺{fmtPrice(h.active_tp_price, (h.active_tp_price ?? 0) < 1 ? 6 : 2)}
+                                        🎯 TP: {Q}{fmtPrice(h.active_tp_price, (h.active_tp_price ?? 0) < 1 ? 6 : 2)}
                                       </span>
                                     )}
                                     {hasSl && (
                                       <span className="inline-flex items-center gap-1 rounded bg-neon-red/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-neon-red border border-neon-red/30">
-                                        🛑 SL: ₺{fmtPrice(h.active_sl_price, (h.active_sl_price ?? 0) < 1 ? 6 : 2)}
+                                        🛑 SL: {Q}{fmtPrice(h.active_sl_price, (h.active_sl_price ?? 0) < 1 ? 6 : 2)}
                                       </span>
                                     )}
                                   </div>
@@ -1536,7 +1564,7 @@ function BinanceTrPageInner() {
                               </td>
                               <td className="text-right">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {h.asset !== "TRY" && (
+                                  {ordersAvailable && !isCash(h.asset) && (
                                     <button
                                       type="button"
                                       onClick={() => openSltpModal(h)}
@@ -1547,16 +1575,18 @@ function BinanceTrPageInner() {
                                       🛡️ SL / TP
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    onClick={() => openSell(h)}
-                                    disabled={!sellEnabled || h.free <= 0 || h.asset === "TRY" || h.price_try == null}
-                                    title={!sellEnabled ? "Gerçek satış kapalı" : h.free <= 0 ? "Boşta bakiye yok" : "Piyasa fiyatından hızlı sat"}
-                                    className="rounded border border-neon-red/50 bg-neon-red/10 px-2 py-1 font-mono text-[11px] font-bold text-neon-red hover:bg-neon-red/20 disabled:opacity-30 transition-colors"
-                                  >
-                                    ⚡ SAT
-                                  </button>
-                                  {h.asset !== "TRY" && (h.avg_cost_try ?? 0) > 0 && h.has_active_order && (
+                                  {ordersAvailable && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openSell(h)}
+                                      disabled={!sellEnabled || h.free <= 0 || isCash(h.asset) || h.price_try == null}
+                                      title={!sellEnabled ? "Gerçek satış kapalı" : h.free <= 0 ? "Boşta bakiye yok" : "Piyasa fiyatından hızlı sat"}
+                                      className="rounded border border-neon-red/50 bg-neon-red/10 px-2 py-1 font-mono text-[11px] font-bold text-neon-red hover:bg-neon-red/20 disabled:opacity-30 transition-colors"
+                                    >
+                                      ⚡ SAT
+                                    </button>
+                                  )}
+                                  {ordersAvailable && !isCash(h.asset) && (h.avg_cost_try ?? 0) > 0 && h.has_active_order && (
                                     <button
                                       type="button"
                                       onClick={() => { openSltpModal(h); }}
@@ -1645,12 +1675,12 @@ function BinanceTrPageInner() {
                               </td>
                               <td className="font-mono text-xs">{fmtPrice(ord.origQty, 6)}</td>
                               <td className="font-mono text-xs font-medium text-white">
-                                {parseFloat(ord.price) > 0 ? `₺${fmtPrice(ord.price, parseFloat(ord.price) < 1 ? 6 : 2)}` : "Piyasa"}
+                                {parseFloat(ord.price) > 0 ? `${QUOTE_SYMBOL}${fmtPrice(ord.price, parseFloat(ord.price) < 1 ? 6 : 2)}` : "Piyasa"}
                               </td>
                               <td className="font-mono text-xs">
                                 {hasStop ? (
                                   <span className="font-bold text-neon-red">
-                                    ₺{fmtPrice(ord.stopPrice, parseFloat(ord.stopPrice) < 1 ? 6 : 2)}
+                                    {Q}{fmtPrice(ord.stopPrice, parseFloat(ord.stopPrice) < 1 ? 6 : 2)}
                                   </span>
                                 ) : (
                                   <span className="text-bunker-muted">—</span>
@@ -1764,12 +1794,12 @@ function BinanceTrPageInner() {
                               <tr key={s.symbol} className="hover:bg-bunker-900/60">
                                 <td><span className="font-mono font-bold text-white">{s.symbol}</span></td>
                                 <td className="font-mono text-xs text-right">{fmtPrice(s.buy_qty, s.buy_qty < 1 ? 6 : 3)}</td>
-                                <td className="font-mono text-xs text-right">{buyAvg ? `₺${fmtPrice(buyAvg, buyAvg < 1 ? 6 : 2)}` : "—"}</td>
+                                <td className="font-mono text-xs text-right">{buyAvg ? `${QUOTE_SYMBOL}${fmtPrice(buyAvg, buyAvg < 1 ? 6 : 2)}` : "—"}</td>
                                 <td className="font-mono text-xs text-right">{fmtPrice(s.sell_qty, s.sell_qty < 1 ? 6 : 3)}</td>
-                                <td className="font-mono text-xs text-right">{sellAvg ? `₺${fmtPrice(sellAvg, sellAvg < 1 ? 6 : 2)}` : "—"}</td>
-                                <td className="font-mono text-xs text-right text-bunker-muted">₺{fmtPrice(s.commission_try)}</td>
+                                <td className="font-mono text-xs text-right">{sellAvg ? `${QUOTE_SYMBOL}${fmtPrice(sellAvg, sellAvg < 1 ? 6 : 2)}` : "—"}</td>
+                                <td className="font-mono text-xs text-right text-bunker-muted">{Q}{fmtPrice(s.commission_try)}</td>
                                 <td className={`font-mono text-xs font-bold text-right ${pnlCls}`}>
-                                  {s.realized_pnl_try !== 0 ? `${s.realized_pnl_try >= 0 ? "+" : "−"}₺${fmtPrice(Math.abs(s.realized_pnl_try))}` : "—"}
+                                  {s.realized_pnl_try !== 0 ? `${s.realized_pnl_try >= 0 ? "+" : "−"}${QUOTE_SYMBOL}${fmtPrice(Math.abs(s.realized_pnl_try))}` : "—"}
                                 </td>
                                 <td className="font-mono text-xs text-right text-bunker-muted">{s.fills}</td>
                                 <td className="text-right">
@@ -1790,15 +1820,15 @@ function BinanceTrPageInner() {
                                       {t.isBuyer ? "AL" : "SAT"} × {fmtPrice(t.qty, Number(t.qty) < 1 ? 6 : 3)}
                                     </td>
                                     <td className="font-mono text-[11px] text-right text-bunker-muted">
-                                      {t.isBuyer ? "—" : t.basis_price ? `maliyet ₺${fmtPrice(t.basis_price, 2)}` : "önceki gün"}
+                                      {t.isBuyer ? "—" : t.basis_price ? `maliyet ${QUOTE_SYMBOL}${fmtPrice(t.basis_price, 2)}` : "önceki gün"}
                                     </td>
                                     <td className="font-mono text-[11px] text-right text-bunker-muted">{t.isBuyer ? "alış" : "satış"}</td>
-                                    <td className="font-mono text-[11px] text-right text-white">₺{fmtPrice(t.price, Number(t.price) < 1 ? 6 : 2)}</td>
-                                    <td className="font-mono text-[11px] text-right text-bunker-muted">₺{fmtPrice(t.commission, 4)}</td>
+                                    <td className="font-mono text-[11px] text-right text-white">{Q}{fmtPrice(t.price, Number(t.price) < 1 ? 6 : 2)}</td>
+                                    <td className="font-mono text-[11px] text-right text-bunker-muted">{Q}{fmtPrice(t.commission, 4)}</td>
                                     <td className={`font-mono text-[11px] font-bold text-right ${t.realized_pnl_try != null ? (t.realized_pnl_try >= 0 ? "text-neon-green" : "text-neon-red") : "text-bunker-muted"}`}>
-                                      {t.realized_pnl_try != null ? `${t.realized_pnl_try >= 0 ? "+" : "−"}₺${fmtPrice(Math.abs(t.realized_pnl_try))}` : "—"}
+                                      {t.realized_pnl_try != null ? `${t.realized_pnl_try >= 0 ? "+" : "−"}${QUOTE_SYMBOL}${fmtPrice(Math.abs(t.realized_pnl_try))}` : "—"}
                                     </td>
-                                    <td className="font-mono text-[11px] text-right text-bunker-muted">₺{fmtPrice(t.quoteQty, 2)}</td>
+                                    <td className="font-mono text-[11px] text-right text-bunker-muted">{Q}{fmtPrice(t.quoteQty, 2)}</td>
                                     <td />
                                   </tr>
                                 ))}
@@ -1842,13 +1872,13 @@ function BinanceTrPageInner() {
                   <div>
                     <p className="eyebrow">GÜNCEL FİYAT</p>
                     <p className="font-mono text-sm font-bold text-white">
-                      ₺{fmtPrice(currentTargetPrice, currentTargetPrice < 1 ? 6 : 2)}
+                      {Q}{fmtPrice(currentTargetPrice, currentTargetPrice < 1 ? 6 : 2)}
                     </p>
                   </div>
                   <div>
                     <p className="eyebrow">ALIŞ MALİYETİ</p>
                     <p className="font-mono text-sm font-bold text-bunker-muted">
-                      {sltpTarget.avg_cost_try ? `₺${fmtPrice(sltpTarget.avg_cost_try, sltpTarget.avg_cost_try < 1 ? 6 : 2)}` : "—"}
+                      {sltpTarget.avg_cost_try ? `${QUOTE_SYMBOL}${fmtPrice(sltpTarget.avg_cost_try, sltpTarget.avg_cost_try < 1 ? 6 : 2)}` : "—"}
                     </p>
                   </div>
                   <div>
@@ -1905,7 +1935,7 @@ function BinanceTrPageInner() {
                   <div className="flex items-center justify-between">
                     <span className="eyebrow">SATILACAK MİKTAR ({sltpTarget.asset})</span>
                     <span className="font-mono text-[11px] text-bunker-muted">
-                      Değer: ~₺{fmtPrice(sltpQtyNum * currentTargetPrice)}
+                      Değer: ~{Q}{fmtPrice(sltpQtyNum * currentTargetPrice)}
                     </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
@@ -1938,7 +1968,7 @@ function BinanceTrPageInner() {
                       <span className="eyebrow text-neon-green">🎯 TAKE PROFIT (KÂR AL HEDEF FİYATI)</span>
                       {calculatedTpProfit && (
                         <span className="font-mono text-[11px] font-bold text-neon-green">
-                          +{fmtPrice(calculatedTpProfit.pct, 1)}% (+₺{fmtPrice(calculatedTpProfit.totalDiff)})
+                          +{fmtPrice(calculatedTpProfit.pct, 1)}% (+{Q}{fmtPrice(calculatedTpProfit.totalDiff)})
                         </span>
                       )}
                     </div>
@@ -1976,7 +2006,7 @@ function BinanceTrPageInner() {
                       <span className="eyebrow text-neon-red">🛑 STOP LOSS (ZARAR KES TETİK FİYATI)</span>
                       {calculatedSlLoss && (
                         <span className="font-mono text-[11px] font-bold text-neon-red">
-                          {fmtPrice(calculatedSlLoss.pct, 1)}% (−₺{fmtPrice(Math.abs(calculatedSlLoss.totalDiff))})
+                          {fmtPrice(calculatedSlLoss.pct, 1)}% (−{Q}{fmtPrice(Math.abs(calculatedSlLoss.totalDiff))})
                         </span>
                       )}
                     </div>
@@ -2021,7 +2051,7 @@ function BinanceTrPageInner() {
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-[10px] text-bunker-muted">Stop-Limit Satış Fiyatı (Kayma Koruması):</span>
                         <span className="font-mono text-[10px] text-bunker-muted">
-                          ₺{sltpSlLimitPrice || "—"}
+                          {Q}{sltpSlLimitPrice || "—"}
                         </span>
                       </div>
                       <input
@@ -2113,7 +2143,7 @@ function BinanceTrPageInner() {
                     <div className="rounded-lg border border-neon-green/40 bg-neon-green/10 px-4 py-3">
                       <p className="eyebrow text-neon-green">SATIŞ TAMAMLANDI</p>
                       <p className="mt-1 font-mono text-sm text-white">
-                        {sellDone.asset}: ₺{sellDone.price} birim fiyattan satıldı · {sellDone.qty} {sellDone.asset} (Toplam ₺{sellDone.total})
+                        {sellDone.asset}: {Q}{sellDone.price} birim fiyattan satıldı · {sellDone.qty} {sellDone.asset} (Toplam {Q}{sellDone.total})
                       </p>
                       <p className="mt-0.5 font-mono text-[11px] text-bunker-muted">Emir no: {sellDone.order}</p>
                     </div>
@@ -2134,9 +2164,9 @@ function BinanceTrPageInner() {
                 ) : (
                   <div className="space-y-3">
                     <div className="space-y-1 font-mono text-xs text-bunker-muted">
-                      <p>Anlık piyasa fiyatı: <span className="text-white">{sellFor.price_try != null ? `₺${fmtPrice(sellFor.price_try, sellFor.price_try < 1 ? 6 : 2)}` : "—"}</span></p>
+                      <p>Anlık piyasa fiyatı: <span className="text-white">{sellFor.price_try != null ? `${QUOTE_SYMBOL}${fmtPrice(sellFor.price_try, sellFor.price_try < 1 ? 6 : 2)}` : "—"}</span></p>
                       <p>Boşta bakiye: <span className="text-white">{fmtPrice(sellFor.free, 6)} {sellFor.asset}</span></p>
-                      <p>Tahmini tutar: <span className="text-white font-bold">₺{fmtPrice(sellQtyNum * (sellFor.price_try ?? 0))}</span></p>
+                      <p>Tahmini tutar: <span className="text-white font-bold">{Q}{fmtPrice(sellQtyNum * (sellFor.price_try ?? 0))}</span></p>
                     </div>
 
                     <label>
@@ -2215,6 +2245,20 @@ function BinanceTrPageInner() {
             </div>
           )}
 
+          {/* Emir gönderimi Global'da Aşama 1'de kapalı. Butonların yokluğu
+              soru üretmesin diye sebebi açıkça yazılır — "eksik özellik" ile
+              "kasıtlı olarak kapalı" birbirinden ayrılmalı. */}
+          {!ordersAvailable && (
+            <section className="card">
+              <p className="eyebrow">EMİR GÖNDERİMİ</p>
+              <p className="mt-2 text-sm text-bunker-muted">
+                Bu borsa örneğinde emir gönderimi henüz açılmadı. Bakiye, açık emirler
+                ve işlem geçmişi yukarıda çalışıyor; alım, satış, SL/TP ve iptal
+                Aşama 2&apos;de etkinleştirilecek.
+              </p>
+            </section>
+          )}
+
           {/* MODAL: ALIM YAP (BUY) */}
           {buyOpen && (
             <div className="fixed inset-0 z-[210] grid place-items-center bg-black/80 p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-label={buyA11y.label}>
@@ -2229,7 +2273,7 @@ function BinanceTrPageInner() {
                     <div className="rounded-lg border border-neon-green/40 bg-neon-green/10 px-4 py-3">
                       <p className="eyebrow text-neon-green">ALIM TAMAMLANDI</p>
                       <p className="mt-1 font-mono text-sm text-white">
-                        {buyDone.asset}: ₺{buyDone.price} fiyattan alındı · {buyDone.qty} {buyDone.asset}
+                        {buyDone.asset}: {Q}{buyDone.price} fiyattan alındı · {buyDone.qty} {buyDone.asset}
                       </p>
                       <p className="mt-0.5 font-mono text-[11px] text-bunker-muted">Emir no: {buyDone.order}</p>
                     </div>
@@ -2260,9 +2304,9 @@ function BinanceTrPageInner() {
                               onClick={() => selectBuyAsset(asset)}
                               className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-bunker-800"
                             >
-                              <span className="font-mono text-xs font-bold text-white">{asset}TRY</span>
+                              <span className="font-mono text-xs font-bold text-white">{cashSymbolLabel(asset, QUOTE_ASSET)}</span>
                               <span className="font-mono text-[10px] text-bunker-muted">
-                                {liveTicks[asset]?.price ? `₺${fmtPrice(Number(liveTicks[asset]?.price))}` : ""}
+                                {liveTicks[asset]?.price ? `${QUOTE_SYMBOL}${fmtPrice(Number(liveTicks[asset]?.price))}` : ""}
                               </span>
                             </button>
                           ))}
@@ -2274,18 +2318,18 @@ function BinanceTrPageInner() {
                       <div className="rounded-lg border border-bunker-700 bg-bunker-900/60 p-2.5">
                         <p className="eyebrow">ANLIK FİYAT</p>
                         <p className="font-mono text-sm font-bold text-white">
-                          {buyPrice ? `₺${fmtPrice(buyPrice, buyPrice < 1 ? 6 : 2)}` : "—"}
+                          {buyPrice ? `${QUOTE_SYMBOL}${fmtPrice(buyPrice, buyPrice < 1 ? 6 : 2)}` : "—"}
                         </p>
                       </div>
                       <div className="rounded-lg border border-bunker-700 bg-bunker-900/60 p-2.5">
-                        <p className="eyebrow">TRY BAKİYESİ</p>
-                        <p className="font-mono text-sm font-bold text-cyan-300">₺{fmtPrice(buyTryFree)}</p>
+                        <p className="eyebrow">{QUOTE_ASSET} BAKİYESİ</p>
+                        <p className="font-mono text-sm font-bold text-cyan-300">{Q}{fmtPrice(buyTryFree)}</p>
                       </div>
                     </div>
 
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="eyebrow">ALIM TUTARI (TRY)</span>
+                        <span className="eyebrow">ALIM TUTARI ({QUOTE_ASSET})</span>
                         <span className="font-mono text-[10px] text-bunker-muted">
                           ~{buyPrice ? fmtPrice(buyAmountNum / buyPrice, 6) : "—"} {buyAsset || "birim"}
                         </span>
@@ -2308,7 +2352,7 @@ function BinanceTrPageInner() {
                             disabled={buyTryFree < 10}
                             className="rounded-lg border border-bunker-700 bg-bunker-900/60 px-2 py-1.5 font-mono text-[11px] font-bold text-bunker-muted hover:border-cyan-400/40 hover:text-cyan-300 disabled:opacity-30 transition-colors"
                           >
-                            ₺{amt}
+                            {Q}{amt}
                           </button>
                         ))}
                       </div>
@@ -2371,7 +2415,7 @@ function BinanceTrPageInner() {
                         disabled={buyBusy || !(buyAsset || buyInput.trim())}
                         className="ui-button ui-button-primary disabled:opacity-40"
                       >
-                        {buyBusy ? "Gönderiliyor..." : `AL — ₺${fmtPrice(buyAmountNum)}`}
+                        {buyBusy ? "Gönderiliyor..." : `AL — ${QUOTE_SYMBOL}${fmtPrice(buyAmountNum)}`}
                       </button>
                     </div>
                   </div>
@@ -2385,8 +2429,8 @@ function BinanceTrPageInner() {
             <div className="fixed inset-0 z-[200] grid place-items-center bg-black/80 p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-label={settingsA11y.label}>
               <section ref={settingsA11y.ref} tabIndex={-1} onKeyDown={settingsA11y.onKeyDown} className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl border border-bunker-700 bg-bunker-950 p-5 shadow-2xl outline-none">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-mono text-lg font-bold text-white">Binance TR API Ayarları</h2>
-                  <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Binance TR API ayarları penceresini kapat" className="text-bunker-muted hover:text-white">✕</button>
+                  <h2 className="font-mono text-lg font-bold text-white">{exLabel} API Ayarları</h2>
+                  <button type="button" onClick={() => setSettingsOpen(false)} aria-label={`${exLabel} API ayarları penceresini kapat`} className="text-bunker-muted hover:text-white">✕</button>
                 </div>
 
                 <div className="space-y-3">
@@ -2402,7 +2446,7 @@ function BinanceTrPageInner() {
                       <span className="eyebrow block text-yellow-300">GERÇEK İŞLEM & EMİR ANAHTARI</span>
                       <span className="mt-0.5 block text-[11px] leading-snug text-bunker-muted">
                         Etkinleştirildiğinde piyasa satışı ve Stop-Loss / Take-Profit (OCO) emirleri doğrudan
-                        <span className="text-white font-bold"> sizin</span> Binance TR hesabınıza iletilir. Bu anahtar yalnız kendi hesabınızı etkiler.
+                        <span className="text-white font-bold"> sizin</span> {exLabel} hesabınıza iletilir. Bu anahtar yalnız kendi hesabınızı etkiler.
                       </span>
                     </span>
                   </label>
@@ -2412,7 +2456,7 @@ function BinanceTrPageInner() {
                     <input
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="Binance TR API Key"
+                      placeholder={`${exLabel} API Key`}
                       className="input mt-1 w-full font-mono text-xs"
                     />
                   </label>
@@ -2423,7 +2467,7 @@ function BinanceTrPageInner() {
                       type="password"
                       value={apiSecret}
                       onChange={(e) => setApiSecret(e.target.value)}
-                      placeholder="Binance TR API Secret"
+                      placeholder={`${exLabel} API Secret`}
                       className="input mt-1 w-full font-mono text-xs"
                     />
                   </label>
