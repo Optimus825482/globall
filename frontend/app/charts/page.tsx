@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { API_BASE, apiRequest } from "../lib/api";
@@ -8,6 +9,7 @@ import { useUiMode } from "../lib/ui-mode";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import SymbolLink from "../components/SymbolLink";
 import { formatSignedTL, formatTL, QUOTE_SYMBOL, toMs, toSymbol, withQuotePrice } from "../lib/format";
+import { scoreToneClass } from "../lib/scoreTone";
 import { netOpenPnlPct, netOpenPnlTry, applyCommissionPct } from "../lib/pnl";
 import {
     createChart, createSeriesMarkers, CandlestickSeries, LineSeries, HistogramSeries,
@@ -74,6 +76,31 @@ function CandleCountdown({ intervalMs }: { intervalMs: number }) {
 
 
 
+/**
+ * PERFORMANS (2026-09-26): ufuk geri sayımı kendi 1 sn interval'ine sahip İZOLE
+ * bileşene alındı. Eskiden saniyelik `setMonitorRemainingSec` ana sayfa
+ * state'iydi → tüm 2000+ satırlık sayfa (grafik, tablolar, paneller) HER SANİYE
+ * yeniden render ediliyordu. Artık yalnız bu bileşen tık başına render olur.
+ */
+const CountdownSec = memo(function CountdownSec({ expiresAtSec }: { expiresAtSec: number | null }) {
+    const [remaining, setRemaining] = useState<number | null>(() =>
+        expiresAtSec ? Math.max(0, Math.floor(expiresAtSec - Date.now() / 1000)) : null);
+    useEffect(() => {
+        if (!expiresAtSec) { setRemaining(null); return; }
+        const tick = () => setRemaining(Math.max(0, Math.floor(expiresAtSec - Date.now() / 1000)));
+        tick();
+        const t = setInterval(tick, 1000);
+        return () => clearInterval(t);
+    }, [expiresAtSec]);
+    return (
+        <span className={`font-mono text-lg font-bold tabular-nums ${remaining == null ? "text-bunker-muted" : remaining <= 60 ? "text-yellow-300 animate-pulse" : "text-neon-green"}`}>
+            {remaining != null
+                ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+                : "—"}
+        </span>
+    );
+});
+
 export default function ChartsPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -114,7 +141,7 @@ export default function ChartsPage() {
     // Radar bildirimi paneli: sembol için ufku dolmamış son monitoring bildirimi
     // (fiyat/hedef/skor/ufuk + geri sayım) ve grafik çizgisi göstergesi.
     const [monitorNotif, setMonitorNotif] = useState<any | null>(null);
-    const [monitorRemainingSec, setMonitorRemainingSec] = useState<number | null>(null);
+    // (monitorRemainingSec state'i KALDIRILDI — geri sayım izole CountdownSec bileşeninde)
     const [showMonitoringLines, setShowMonitoringLines] = useState(true);
     const [monitorDisplayReady, setMonitorDisplayReady] = useState(false); // DB display yüklendi mi (ilk yazımda sıfırları ezmesin)
     const [livePortfolio, setLivePortfolio] = useState<LivePortfolio | null>(null);
@@ -423,11 +450,13 @@ export default function ChartsPage() {
         }
     }, [symbol, interval]);
 
-    // BİRİNCİL: HTTP ile sık tazelama (WS erişilebilirliğinden bağımsız, güvenilir).
-    // Sekme gizliyken durur. WS açık olsa da HTTP yedek olarak çalışır — WS anlık
-    // `update()` yapar, HTTP ise 10 sn'de bir tam seriyi tazeler (WS gecikmeli/
-    // düşük yoğunluklu olursa grafik hep taze kalır).
-    useVisibleInterval(reloadKlines, 10_000);
+    // BİRİNCİL: HTTP ile tazelama (WS erişilebilirliğinden bağımsız, güvenilir).
+    // Sekme gizliyken durur. PERFORMANS (2026-09-26): WS açıkken backend mum
+    // başına canlı günceller; 10 sn'de bir 200 mumluk tam seri çekip `setData`
+    // ile sıfırdan basmak gereksiz ağ + gösterge yeniden hesabıydı → HTTP
+    // fallback aralığı WS sağlıklıyken 60 sn'e seyreltilir. WS kapalıysa 10 sn
+    // kalır (grafik donmaz).
+    useVisibleInterval(reloadKlines, liveStatus === "open" ? 60_000 : 10_000);
     useEffect(() => { void reloadKlines(); }, [reloadKlines]);
 
     // İSTEĞE BAĞLI İYİLEŞTİRME: Binance WS — yalnız erişilebilir ağlarda çalışır.
@@ -493,20 +522,11 @@ export default function ChartsPage() {
     }, [symbol]);
     useEffect(() => {
         setMonitorNotif(null);
-        setMonitorRemainingSec(null);
         loadMonitorNotif();
     }, [loadMonitorNotif]);
     // 15 sn'lik yoklama: sekme gizliyken durur (2026-09-16).
     useVisibleInterval(loadMonitorNotif, 15_000);
-
-    // Ufuk geri sayımı: expires_at'e kalan saniye, saniyelik tık.
-    useEffect(() => {
-        if (!monitorNotif?.active || !monitorNotif?.expires_at) { setMonitorRemainingSec(null); return; }
-        const tick = () => setMonitorRemainingSec(Math.max(0, Math.floor(monitorNotif.expires_at - Date.now() / 1000)));
-        tick();
-        const t = setInterval(tick, 1000);
-        return () => clearInterval(t);
-    }, [monitorNotif]);
+    // (geri sayım tick'i CountdownSec bileşenine taşındı — sayfa geneli re-render etmesin)
     // Binance WS canlı akış durumu (2026-09-16): grafik canlı verisini yalnızca
     // WS'e bağlıyordu; WS tutarsa grafik donar ve kullanıcı bunu göremezdi.
     // Bu durum hem fallback'ın tetiklenmesini hem de aşağıdaki rozeti besler.
@@ -1556,13 +1576,16 @@ export default function ChartsPage() {
                     <button type="button" onClick={() => { setPortfolioStale(false); loadPortfolioSummary(); }} className="rounded border border-bunker-700 px-2 py-0.5 font-mono text-[11px] text-bunker-muted hover:text-white">YENİDEN DENE</button>
                 </div>
             )}
-            <section aria-label="Portföy özeti" className="grid grid-cols-2 gap-2 rounded-xl border border-bunker-800 bg-bunker-950/80 p-3 sm:grid-cols-6">
-                <div className="min-w-0"><p className="eyebrow">TOPLAM PORTFÖY</p><p className="mt-1 truncate font-mono text-sm font-bold text-white">{livePortfolio?.total_value == null ? "—" : money(livePortfolio.total_value)}</p></div>
-                <div className="min-w-0"><p className="eyebrow">SERBEST TL</p><p className="mt-1 truncate font-mono text-sm font-bold text-white">{livePortfolio?.try == null ? "—" : money(livePortfolio.try)}</p></div>
-                <div className="min-w-0"><p className="eyebrow">AÇIK PnL</p><p className={`mt-1 truncate font-mono text-sm font-bold ${pnlClass(openPnl)}`}>{openPnl == null ? "—" : signedMoney(openPnl)}</p></div>
-                <div className="min-w-0"><p className="eyebrow">POZİSYON</p><p className="mt-1 font-mono text-sm font-bold text-white">{allPositions.length}</p></div>
-                <div className="min-w-0"><p className="eyebrow">KAPANAN İŞLEM</p><p className="mt-1 font-mono text-sm font-bold text-white">{portfolioMetrics?.closed_trades ?? "—"}</p></div>
-                <div className="min-w-0 col-span-2 sm:col-span-1"><p className="eyebrow">NET PnL</p><p className={`mt-1 truncate font-mono text-sm font-bold ${pnlClass(netPnl)}`}>{netPnl == null ? "—" : signedMoney(netPnl)}</p></div>
+            {/* PERFORMANS/UX (2026-09-27): 6 hücreli portföy şeridi grafiği ilk
+                ekrandan çıkarıyordu ve /portfolio ile tekrarlıydı → tek satırlık
+                kompakt rozet. Ayrıntı /portfolio sayfasında. */}
+            <section aria-label="Portföy özeti" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-bunker-800 bg-bunker-950/80 px-3 py-1.5 font-mono text-xs">
+                <span className="text-bunker-muted">Portföy: <b className="text-white">{livePortfolio?.total_value == null ? "—" : money(livePortfolio.total_value)}</b></span>
+                <span className="text-bunker-muted">Serbest: <b className="text-white">{livePortfolio?.try == null ? "—" : money(livePortfolio.try)}</b></span>
+                <span className="text-bunker-muted">Açık PnL: <b className={pnlClass(openPnl)}>{openPnl == null ? "—" : signedMoney(openPnl)}</b></span>
+                <span className="text-bunker-muted">Pozisyon: <b className="text-white">{allPositions.length}</b></span>
+                <span className="text-bunker-muted">Net PnL: <b className={pnlClass(netPnl)}>{netPnl == null ? "—" : signedMoney(netPnl)}</b></span>
+                <Link href="/portfolio" className="ml-auto text-[11px] text-bunker-muted hover:text-neon-green">detay ↗</Link>
             </section>
 
             <section aria-label="Zaman dilimi trend durumu" className="flex flex-wrap items-stretch gap-2 rounded-xl border border-bunker-800 bg-bunker-950/80 p-3">
@@ -1573,7 +1596,21 @@ export default function ChartsPage() {
                     const tone = direction === "bullish" ? "border-neon-green/40 bg-neon-green/10 text-neon-green" : direction === "bearish" ? "border-red-400/40 bg-red-400/10 text-red-400" : direction === "mixed" ? "border-yellow-400/35 bg-yellow-400/10 text-yellow-300" : "border-bunker-700 bg-bunker-900/60 text-bunker-muted";
                     const arrow = direction === "bullish" ? "↑" : direction === "bearish" ? "↓" : "—";
                     const label = direction === "bullish" ? "BULLISH" : direction === "bearish" ? "BEARISH" : direction === "mixed" ? "KARIŞIK" : "VERİ YOK";
-                    return <div key={v} title={`${l}: ${label}`} className={`min-w-[58px] rounded-lg border px-2 py-1.5 text-center font-mono ${tone}`}><p className="text-[10px] font-bold">{l}</p><p className="mt-0.5 text-lg font-bold leading-5" aria-label={label}>{arrow}</p></div>;
+                    // UX (2026-09-27): TF şeridi artık tıklanabilir — MTF MACD
+                    // taraması için doğal giriş noktası (tık = o TF'e geç).
+                    const active = interval === v;
+                    return (
+                        <button
+                            key={v}
+                            type="button"
+                            onClick={() => changeInterval(v)}
+                            title={`${l}: ${label}${active ? " (geçerli TF)" : " — bu TF'e geç"}`}
+                            className={`min-w-[58px] rounded-lg border px-2 py-1.5 text-center font-mono transition-all ${tone} ${active ? "ring-1 ring-neon-green/60" : "hover:border-neon-green/40 cursor-pointer"}`}
+                        >
+                            <p className="text-[10px] font-bold">{l}</p>
+                            <p className="mt-0.5 text-lg font-bold leading-5" aria-label={label}>{arrow}</p>
+                        </button>
+                    );
                 })}
             </section>
 
@@ -1809,7 +1846,7 @@ export default function ChartsPage() {
                                 Veri yoksa "—" + nötr (eski `|| 0` yeşil/sarı sapması yok). */}
                             <p
                                 title="Panel skoru (0-100, backend normalize)"
-                                className={`mt-1 font-mono text-sm font-bold ${monitorNotif.score == null || !Number.isFinite(Number(monitorNotif.score)) ? "text-bunker-muted" : Number(monitorNotif.score) >= 70 ? "text-neon-green" : Number(monitorNotif.score) >= 50 ? "text-yellow-300" : "text-red-400"}`}
+                                className={`mt-1 font-mono text-sm font-bold ${scoreToneClass(Number(monitorNotif.score))}`}
                             >
                                 {monitorNotif.score == null || !Number.isFinite(Number(monitorNotif.score)) ? "—" : Number(monitorNotif.score).toFixed(1)}
                             </p>
@@ -1828,11 +1865,7 @@ export default function ChartsPage() {
                         <span className="font-mono text-[11px] text-bunker-muted">
                             canlı: <b className={monitorLivePrice > 0 ? (monitorTargetHit ? "text-neon-green" : "text-white") : "text-bunker-muted"}>{monitorLivePrice > 0 ? formatPrice(monitorLivePrice) : "—"}</b>
                         </span>
-                        <span className={`font-mono text-lg font-bold tabular-nums ${monitorRemainingSec == null ? "text-bunker-muted" : monitorRemainingSec <= 60 ? "text-yellow-300 animate-pulse" : "text-neon-green"}`}>
-                            {monitorRemainingSec != null
-                                ? `${Math.floor(monitorRemainingSec / 60)}:${String(monitorRemainingSec % 60).padStart(2, "0")}`
-                                : "—"}
-                        </span>
+                        <CountdownSec expiresAtSec={monitorNotif?.active && monitorNotif.expires_at ? monitorNotif.expires_at : null} />
                     </div>
                 </section>
             )}

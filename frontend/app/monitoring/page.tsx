@@ -9,6 +9,7 @@ import { useLiveMessages } from "../lib/liveSocket";
 import { useModalA11y } from "../lib/useModalA11y";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import { ML_PROB_TITLE, formatMlProbability } from "../lib/mlProbability";
+import { scoreToneClass, scoreToneText } from "../lib/scoreTone";
 import AppLoader from "../components/AppLoader";
 
 type NotificationSettings = {
@@ -436,11 +437,10 @@ const panelScore = (c: { panel_score?: number | null; velocity_score?: number | 
   return Math.round(100 * Math.min(1, raw / SCORE_NORM_CAP) * 10) / 10;
 };
 
-const SCORE_TONE_GREEN = 71.5;
-const SCORE_TONE_YELLOW = 68.2;
-const scoreColor = (score: number | null) =>
-  score == null ? "text-bunker-muted" : score >= SCORE_TONE_GREEN ? "text-neon-green" : score >= SCORE_TONE_YELLOW ? "text-yellow-300" : "text-neon-red";
-const scoreText = (score: number | null) => (score == null ? "—" : score.toFixed(1));
+// UX (2026-09-27): skor renk eşikleri lib/scoreTone'a taşındı — Grafik radar
+// paneli de AYNI eşikleri kullanıyor (eskiden 70/50 kopyasıydı → tutarsız renk).
+const scoreColor = scoreToneClass;
+const scoreText = scoreToneText;
 
 const blockReasonLabel = (reason?: string | null) => {
   if (!reason) return null;
@@ -584,12 +584,35 @@ export default function MonitoringPage() {
   const [selected, setSelected] = useState<{ c: Candidate; kind: "radar" | "watch" } | null>(null);
 
   // Sekme yönetimi: Kullanıcının odaklanmak istediği görünümler
-  const [activeTab, setActiveTab] = useState<"candidates" | "watchlist" | "notifications" | "overview">("candidates");
+  // UX (2026-09-27): sekme/filtre/sıralama localStorage'da kalıcı — grafikten
+  // dönüşte seçimler sıfırlanmıyor (charts sayfasındaki loadPersisted deseni).
+  const savedUi = useMemo(() => {
+    try {
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem("monitoring_ui_v1") : null;
+      return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }, []);
+  const savedTab = savedUi.activeTab;
+  const [activeTab, setActiveTab] = useState<"candidates" | "watchlist" | "notifications" | "overview">(
+    savedTab === "watchlist" || savedTab === "notifications" || savedTab === "overview" ? savedTab : "candidates");
 
   // Filtreleme / sıralama
-  const [filterSymbol, setFilterSymbol] = useState("");
-  const [filterMode, setFilterMode] = useState<"all" | "trend_devam" | "v_donusu" | "notr">("all");
-  const [sortBy, setSortBy] = useState<"score" | "target" | "rr" | "atr">("score");
+  const savedMode = savedUi.filterMode;
+  const savedSort = savedUi.sortBy;
+  const [filterSymbol, setFilterSymbol] = useState(typeof savedUi.filterSymbol === "string" ? savedUi.filterSymbol : "");
+  const [filterMode, setFilterMode] = useState<"all" | "trend_devam" | "v_donusu" | "notr">(
+    savedMode === "trend_devam" || savedMode === "v_donusu" || savedMode === "notr" ? savedMode : "all");
+  const [sortBy, setSortBy] = useState<"score" | "target" | "rr" | "atr">(
+    savedSort === "target" || savedSort === "rr" || savedSort === "atr" ? savedSort : "score");
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("monitoring_ui_v1", JSON.stringify({ activeTab, filterSymbol, filterMode, sortBy }));
+    } catch {
+      // storage kapıysa kalıcılık opsiyoneldir — davranış bozulmaz.
+    }
+  }, [activeTab, filterSymbol, filterMode, sortBy]);
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [historyRows, setHistoryRows] = useState<NotificationRow[] | null>(null);
@@ -699,10 +722,22 @@ export default function MonitoringPage() {
     }
   }, []);
 
+  // PERFORMANS (2026-09-26): her `monitoring_alert` çerçevesi anında 2 HTTP
+  // isteği tetikliyordu (loadState + loadHistory); çok bildirimli turlarda
+  // istek fırtınası oluşuyordu. 2.5 sn'lik kuyruklu (trailing) debounce:
+  // turun SON çerçevesinden sonra tek reload.
+  const alertReloadTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (alertReloadTimerRef.current != null) window.clearTimeout(alertReloadTimerRef.current);
+  }, []);
   const onLiveMessage = useCallback((message: any) => {
     if (message.type === "monitoring_alert") {
-      void loadState();
-      void loadHistory();
+      if (alertReloadTimerRef.current != null) return;
+      alertReloadTimerRef.current = window.setTimeout(() => {
+        alertReloadTimerRef.current = null;
+        void loadState();
+        void loadHistory();
+      }, 2500);
     }
   }, [loadState, loadHistory]);
   useLiveMessages(onLiveMessage);
@@ -1047,10 +1082,10 @@ export default function MonitoringPage() {
             <p className="eyebrow text-sky-300">SON BİLDİRİMLER</p>
             <span className="text-xs">🔔</span>
           </div>
-          <p className="mt-2 font-mono text-3xl font-black text-white">
+          <p className="mt-2 font-mono text-3xl font-black text-white" title="Panelde son 15 bildirim gösterilir">
             {historyRows != null ? historyRows.length : "—"}
           </p>
-          <p className="mt-1 text-[11px] text-bunker-muted">Kullanıcıya giden anlık uyarılar</p>
+          <p className="mt-1 text-[11px] text-bunker-muted">Kullanıcıya giden anlık uyarılar (son 15)</p>
         </button>
 
         <div className="card p-4 rounded-xl border border-bunker-800 bg-bunker-900/40">
@@ -1070,7 +1105,7 @@ export default function MonitoringPage() {
 
       {/* 4. SEKME NAVİGASYON ÇUBUĞU */}
       <div className="flex items-center justify-between border-b border-bunker-800 pb-2">
-        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar tab-scroll-fade">
           <button
             type="button"
             onClick={() => setActiveTab("candidates")}
@@ -1269,9 +1304,17 @@ export default function MonitoringPage() {
                     <div className="flex items-center justify-between lg:justify-start gap-3 min-w-0">
                       <div className="flex items-center gap-2.5">
                         <span className="w-6 text-center font-mono text-xs font-bold text-bunker-muted">#{i + 1}</span>
-                        <span className="font-mono text-lg sm:text-base font-black text-white group-hover:text-neon-green transition-colors">
+                        {/* UX (2026-09-27): sembol adı DOĞRUDAN grafiğe gider
+                            (CANLI NABIZ ile aynı tek-tık akışı); satır tıklaması
+                            hâlâ detay modalını açar. */}
+                        <Link
+                          href={`/charts?symbol=${encodeURIComponent(c.symbol)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Grafiği aç"
+                          className="font-mono text-lg sm:text-base font-black text-white hover:text-sky-300 hover:underline underline-offset-4 transition-colors"
+                        >
                           {c.symbol}
-                        </span>
+                        </Link>
 
                         <span className={`shrink-0 rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${modeClass}`}>
                           {modeLabel}
@@ -1355,7 +1398,7 @@ export default function MonitoringPage() {
                         <Link
                           href={`/charts?symbol=${encodeURIComponent(c.symbol)}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="ui-button ui-button-secondary py-1 px-3 text-xs flex items-center gap-1 hover:border-neon-green/60"
+                          className="ui-button ui-button-secondary min-h-[36px] py-1 px-3 text-xs flex items-center gap-1 hover:border-neon-green/60"
                           title="Grafiği aç"
                         >
                           <span>Grafik</span>
@@ -1436,7 +1479,7 @@ export default function MonitoringPage() {
                   <Link
                     href={`/charts?symbol=${encodeURIComponent(p.symbol)}`}
                     title="Grafiği aç"
-                    className="ui-button ui-button-secondary shrink-0 py-1 px-2.5 text-[11px]"
+                    className="ui-button ui-button-secondary shrink-0 min-h-[36px] py-1 px-3 text-[11px]"
                   >
                     GRAFİKTE AÇ
                   </Link>
@@ -1517,7 +1560,7 @@ export default function MonitoringPage() {
                     <Link
                       href={`/charts?symbol=${encodeURIComponent(w.symbol)}`}
                       title="Grafiği aç"
-                      className="ui-button ui-button-secondary shrink-0 py-1 px-2.5 text-[11px]"
+                      className="ui-button ui-button-secondary shrink-0 min-h-[36px] py-1 px-3 text-[11px]"
                     >
                       GRAFİKTE AÇ
                     </Link>
@@ -1527,6 +1570,14 @@ export default function MonitoringPage() {
             })}
           </div>
         </section>
+      )}
+
+      {/* UX (2026-09-27): erken katmanlar boşken sessiz boşluk yerine tek satırlık
+          durum — "özellik çalışmıyor" ile "şu an sinyal yok" ayırt edilebilir. */}
+      {(activeTab === "candidates" || activeTab === "overview") && pulseList.length === 0 && warmList.length === 0 && (
+        <p className="rounded-xl border border-bunker-800 bg-bunker-900/30 px-4 py-2.5 text-center font-mono text-xs text-bunker-muted">
+          Erken sinyal yok — CANLI NABIZ ve ISINANLAR şu an boş. Katmanlar ilk fiyat+hacim hareketinde dolar.
+        </p>
       )}
 
       {/* BÖLÜM 2: 👁 İZLEME LİSTESİ (WATCHLIST) */}
@@ -1579,6 +1630,15 @@ export default function MonitoringPage() {
                       <span className={`text-xs font-black ${scoreColor(score)} bg-bunker-950 px-2 py-1 rounded border border-bunker-800`}>
                         Skor: {scoreText(score)}
                       </span>
+                      {/* UX (2026-09-27): tek tık grafik (satır = detay modal). */}
+                      <Link
+                        href={`/charts?symbol=${encodeURIComponent(w.symbol)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Grafiği aç"
+                        className="rounded-md border border-bunker-700 min-h-[36px] px-2.5 py-1 text-[11px] text-bunker-muted transition-colors hover:border-sky-400/60 hover:text-sky-300"
+                      >
+                        Grafik
+                      </Link>
                       <span className="text-bunker-muted text-sm">›</span>
                     </div>
                   </button>
@@ -1627,14 +1687,20 @@ export default function MonitoringPage() {
                 const targetPct = numOrNull(row.target_pct);
                 const ts = toMs(row.detected_at);
                 const isPush = row.sent_via_push === true;
+                // UX (2026-09-27): okunmadı ayrımı — son 3 dakikanın bildirimi
+                // vurgulanır; "hangi yeni?" sorusu silinir.
+                const isNew = ts != null && Date.now() - ts < 180_000;
 
                 return (
                   <div
                     key={`${row.symbol ?? "?"}-${row.detected_at ?? index}-${index}`}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-bunker-800 bg-bunker-900/40 p-3 sm:px-4 sm:py-2.5 font-mono text-xs transition-colors hover:border-sky-400/40"
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border p-3 sm:px-4 sm:py-2.5 font-mono text-xs transition-colors hover:border-sky-400/40 ${isNew ? "border-sky-400/70 bg-sky-400/5 shadow-[0_0_10px_rgba(56,189,248,0.15)]" : "border-bunker-800 bg-bunker-900/40"}`}
                     title={ts ? fmtDateTime(ts) : undefined}
                   >
                     <div className="flex items-center gap-3">
+                      {isNew && (
+                        <span className="shrink-0 rounded bg-sky-400/20 border border-sky-400/50 px-1.5 py-0.5 text-[9px] font-black text-sky-300 animate-pulse">YENİ</span>
+                      )}
                       <span className="font-black text-sm text-white">{row.symbol ?? "—"}</span>
                       {targetPct != null && targetPct > 0 && (
                         <span className="rounded-md bg-neon-green/10 border border-neon-green/30 text-neon-green px-2 py-0.5 font-bold">
@@ -1673,7 +1739,7 @@ export default function MonitoringPage() {
                       {row.symbol && (
                         <Link
                           href={`/charts?symbol=${encodeURIComponent(row.symbol)}`}
-                          className="text-bunker-muted hover:text-white px-1.5 py-0.5 rounded border border-bunker-700 hover:border-neon-green/40 text-[11px]"
+                          className="text-bunker-muted hover:text-white min-h-[36px] px-2.5 py-1 rounded border border-bunker-700 hover:border-neon-green/40 text-[11px]"
                         >
                           Grafik
                         </Link>

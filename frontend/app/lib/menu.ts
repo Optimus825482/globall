@@ -54,7 +54,6 @@ export const MENU_GROUPS: MenuGroup[] = [
       { href: "/", label: "Canlı Terminal", icon: "🖥️", desc: "Canlı pano ve son aktivite" },
       { href: "/portfolio", label: "Sanal Portföy", icon: "💼", desc: "Canlı sanal portföy ve otonom işlemler" },
       { href: "/monitoring", label: "Radar", icon: "📡", desc: "Otonom izleme ve hız avcısı" },
-      { href: "/history", label: "İşlem Geçmişi", icon: "🧾", desc: "Kapanan pozisyonlar ve PnL istatistiği" },
       { href: "/risk", label: "Risk Yönetimi", icon: "🛡️", desc: "Açık pozisyon, sermaye koruma" },
       { href: "/alerts", label: "Alarmlar", icon: "🔔", desc: "Fiyat alarmı kur ve yönet" },
     ],
@@ -65,7 +64,6 @@ export const MENU_GROUPS: MenuGroup[] = [
     items: [
       { href: "/charts", label: "Grafik", icon: "📈", desc: "Mum grafikleri" },
       { href: "/symbol-analysis", label: "Sembol Analizi", icon: "🔬", desc: "Sembol bazlı yön tahmini" },
-      { href: "/reports/forecasts", label: "Fiyat Tahminleri", icon: "🎯", desc: "LLM tahmin başarı raporu" },
       { href: "/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu TradingView ekranı", adminOnly: true },
       { href: "/chat", label: "Chat", icon: "💬", desc: "Uzman trader LLM asistanı" },
       { href: "/memory", label: "LLM Hafızası", icon: "🧠", desc: "Embedding ve semantik arama" },

@@ -735,6 +735,9 @@ async def update_monitoring_settings(payload: dict, request: Request):
                        getattr(config, "RADAR_CONFLUENCE_WINDOW_SEC", 1800))),
     }
     await database.set_llm_setting("monitoring_notification_settings", json.dumps(settings))
+    # PERFORMANS (2026-09-26): /state settings önbelleğini tazele — aksi halde
+    # yeni eşik TTL boyunca (5 sn) panelde eski görünür.
+    _state_invalidate_settings_cache()
     await log_user_action(None, None, "monitoring", "MONITORING_SETTINGS_UPDATE",
                           details={"settings": {k: v for k, v in settings.items() if k != "enabled"},
                                    "scope": "global_admin"},
@@ -2195,6 +2198,18 @@ async def _run_rising_scan() -> dict:
         # işaretlenir → YÜKSELİŞ bildirimi daha anlamlı olur.
         kind = str(candidate.get("kind") or "")
         if kind == rising_signals.KIND_EARLY:
+            # HİSTEREZİS (2026-09-26 performans turu): erken koşul SÜRDÜKÇE her
+            # turda `rising_alerts` satırı yazılıyordu (tablo şişmesi + tur başına
+            # gereksiz insert). STRENGTH dalıyla AYNI edge kontrolü: öncü küme
+            # değişmediyse yeni bilgi yoktur → DB kaydı YAPILMAZ. Erken-izleme
+            # tazeliği yine korunur (in-memory, ucuz) — YÜKSELİŞ sinyalinin
+            # "erken uyarılı" etiketi etkilenmez.
+            prev_key_early = rising_signals.last_key(symbol)
+            cur_key_early = rising_signals.signal_key(candidate)
+            if prev_key_early is not None and not rising_signals.rising_edge_trigger(prev_key_early, cur_key_early):
+                rising_signals.register_early_watch(candidate)
+                summary["early_dedup"] = summary.get("early_dedup", 0) + 1
+                continue
             price = _ticker_price(symbol) if notify_enabled else None
             if notify_enabled and (not price or price <= 0):
                 summary["skipped_price"] += 1
@@ -2474,14 +2489,20 @@ async def _run_scan() -> dict:
     5dk+15dk çift profili saklanır. RISK_OFF rejimde etkin eşik yükseltilir.
     """
     watch_symbols = sorted({w.get("symbol") for w in (_monitoring_state["last_watchlist"] or []) if w.get("symbol")})
-    # F-16: 5dk ve 15dk taramaları AYNI havuzu bağımsız olarak tarar; seri
-    # beklemek gecikmeyi ikiye katlıyordu. Eşzamanlı çalıştırılır (asyncio tek
-    # thread olduğu için paylaşılan durumda yarış yok).
+    # F-16 GÜNCELLEME (2026-09-26 performans turu): profiller artık tur-başı
+    # PAYLAŞIMLI kline önbelleğiyle SIRALI koşar. Eski karar ("seri beklemek
+    # gecikmeyi ikiye katlıyordu") önbelleksiz çağrı içindi; şimdi 5m profili
+    # 1m profilinin indirdiği AYNI serileri yeniden indirmiyor → REST çağrısı
+    # YARİYA İNİYOR (420→210/tur, 8 rps sınırda duvar süresi ~52sn→~26sn).
+    # İkinci profil yalnızca önbellekten okur (ağ beklemez).
+    _kline_cache: dict = {}
     try:
-        scan5, scan15 = await asyncio.gather(
-            detect_velocity_candidates({"limit": 10}, horizon_minutes=5, extra_symbols=watch_symbols),
-            detect_velocity_candidates({"limit": 10}, horizon_minutes=15, extra_symbols=watch_symbols),
-        )
+        scan5 = await detect_velocity_candidates({"limit": 10}, horizon_minutes=5,
+                                                 extra_symbols=watch_symbols,
+                                                 kline_cache=_kline_cache)
+        scan15 = await detect_velocity_candidates({"limit": 10}, horizon_minutes=15,
+                                                  extra_symbols=watch_symbols,
+                                                  kline_cache=_kline_cache)
     except Exception:
         # Detect patlarsa mevcut hata davranışı korunur (istisna aynen yukarı
         # çıkar); yalnızca warm listesi boşaltılır — bayat "ısınıyor" rozeti
@@ -2756,11 +2777,15 @@ async def monitoring_scan_trigger(request: Request):
     if not rate_limit("monitoring_scan", rate_per_sec=1 / 20.0, burst=2):
         raise HTTPException(status_code=429, detail="Çok sık tarama — lütfen bekleyin")
     try:
-        # F-15: REST tarama yolu `_locked_state()` de almalı — kilit SIRASI
-        # döngüyle aynı (scan → state) ⇒ deadlock yok.
+        # PERFORMANS (2026-09-26, eski F-15 kararı tersine çevrildi): tarama artık
+        # `_state_lock`'ı TUTMADAN koşar. Tarama ~52 sn'ye kadar süren ağ+DB işi
+        # içerir; kilit altında tutulunca GET /state onlarca saniye bloke oluyordu.
+        # Tek yazar tarama (`_scan_lock` sıralar), okuyucular anahtar-başına atomik
+        # okur → kısa süreli "hafif bayat" panel kabul edilebilir. Kilit sırası
+        # (_scan_lock → _state_lock) `_persist_runtime_state` içindeki kısa
+        # girişlerle korunur; deadlock riski yok.
         async with _scan_lock:
-            async with _locked_state():
-                result = await _run_scan()
+            result = await _run_scan()
         # B5: push/WS/otonom paper teslimi state kilidi DIŞINDA — yavaş push
         # ağ I/O'su artık okuma uçlarını bloklamaz.
         try:
@@ -2900,23 +2925,57 @@ async def _maybe_run_fast_scan() -> bool:
     print(f"[Monitoring] hızlı tarama tetiklendi | sembol={trigger_sym} "
           f"ret20s={trigger_ret20:.2f} burst={trigger_burst:.2f}", flush=True)
     try:
+        # PERFORMANS (2026-09-26): `_run_scan` artık state kilidi TUTMADAN koşar
+        # (POST /scan ile aynı gerekçe — GET /state tarama süresince bloklanmasın).
         async with _scan_lock:
-            async with _locked_state():
-                await _run_scan()
+            await _run_scan()
     finally:
         _fast_scan["running"] = False
     return True
 
 
+# PERFORMANS (2026-09-26): GET /state her açık sekmede 15-30 sn'de bir poll
+# edilir; her istekte yeniden hesaplanan DB'li/yoğun alanlar kısa TTL ile
+# önbelleklenir (ayar güncellemesi önbelleği tazeler).
+_STATE_CACHE_TTL_SEC = 5.0
+_state_settings_cache: dict = {"at": 0.0, "value": None}
+_state_push_cache: dict = {"at": 0.0, "value": None}
+_state_pulse_cache: dict = {"at": 0.0, "value": []}
+_state_rising_cache: dict = {"at": 0.0, "value": None}
+
+
+def _state_invalidate_settings_cache() -> None:
+    _state_settings_cache["at"] = 0.0
+
+
+def _cached_pulse() -> list[dict]:
+    if time.time() - _state_pulse_cache["at"] >= _STATE_CACHE_TTL_SEC:
+        _state_pulse_cache["value"] = _discovery_pulse()
+        _state_pulse_cache["at"] = time.time()
+    return _state_pulse_cache["value"]
+
+
+def _cached_rising_summary():
+    if time.time() - _state_rising_cache["at"] >= _STATE_CACHE_TTL_SEC:
+        _state_rising_cache["value"] = _rising_summary_safe()
+        _state_rising_cache["at"] = time.time()
+    return _state_rising_cache["value"]
+
+
 @router.get("/api/monitoring/state")
 async def monitoring_state():
     """Get current monitoring state (last scan results + notification history)."""
-    settings = await get_user_notification_settings()
-    # R3/denetim (2026-09-16): push sağlığı bir DB sorgusudur (COUNT) → state
-    # kilidinin DIŞINDA hesaplanır. Dosyanın kendi kuralı: I/O kilit dışında
-    # (`_deliver_scan_notifications` gerekçesi), böylece GET /state kilidi
-    # gereksiz tutmaz.
-    push_health = await _push_health_safe()
+    # PERFORMANS: settings (DB okuma) ve push sağlığı (COUNT sorgusu) her poll'da
+    # değil TTL başına bir hesaplanır.
+    now_ts = time.time()
+    if _state_settings_cache["value"] is None or now_ts - _state_settings_cache["at"] >= _STATE_CACHE_TTL_SEC:
+        _state_settings_cache["value"] = await get_user_notification_settings()
+        _state_settings_cache["at"] = now_ts
+    settings = _state_settings_cache["value"]
+    if now_ts - _state_push_cache["at"] >= _STATE_CACHE_TTL_SEC:
+        _state_push_cache["value"] = await _push_health_safe()
+        _state_push_cache["at"] = now_ts
+    push_health = _state_push_cache["value"]
     # M1/P2 (R2-18): okuma state kilidi altında; tutarlı snapshot.
     async with _locked_state():
         last_scan = _monitoring_state.get("last_scan_at")
@@ -2938,7 +2997,7 @@ async def monitoring_state():
             # Keşif nabzı (2026-09-26, "daha erken"): HAM early_discovery
             # adayları — kapanmış mum/scan turu beklemeden. PULSE BİLDİRİM
             # DEĞİLDİR; aday sonraki scan turunda warm/teyit yoluna girer.
-            "pulse": _discovery_pulse(),
+            "pulse": _cached_pulse(),
             "settings": settings,
             "scope": "global_admin",
             "risk_off": _monitoring_state["risk_off"],
@@ -2946,7 +3005,7 @@ async def monitoring_state():
             # R3 (2026-09-14): yükseliş/erken adayları SUNUCUDAN gelir. Eskiden
             # istemci `/api/macd-monitor` yanıtını yeniden yorumluyordu (bildirim
             # ve kanıt yoktu). Snapshot'tan türetilir → ağ isteği YOK, hızlı.
-            "rising": _rising_summary_safe(),
+            "rising": _cached_rising_summary(),
             "rising_notified": int(_monitoring_state.get("rising_notified", 0)),
             # PUSH SAĞLIĞI (2026-09-16): 0 abone = tarayıcı push'u HİÇ çalışmıyor.
             # Backend `VAPID_PRIVATE_KEY` yapılandırılmış olsa bile abonelik yoksa
@@ -3333,7 +3392,8 @@ async def report_notifications(
     }
 
     # Seçilen gün / dönem genel başarı dökümü (day=all ise tüm zamanlar)
-    all_rows = await database.get_monitoring_velocity_matches(limit=None, day=effective_day)
+    # slim=True: agregasyon message/title kullanmaz → kolon transferini atla.
+    all_rows = await database.get_monitoring_velocity_matches(limit=None, day=effective_day, slim=True)
     all_rows = [r for r in all_rows if _stored_panel_score(r) >= threshold]
     if req_conf > 1:
         all_rows = [r for r in all_rows if len(_parse_sources(r.get("sources"))) >= req_conf]
@@ -3634,12 +3694,15 @@ async def monitoring_background_loop():
     # Self-Learning Bias: İlk taramadan önce bir kez başlat
     _surge_bias_last_refresh: float = 0.0
     _SURGE_BIAS_REFRESH_INTERVAL: float = 600.0   # 10 dakika
+    _surge_bias_running = False
     while True:
         result = None
         try:
             async with _scan_lock:
-                async with _locked_state():
-                    result = await _run_scan()
+                # PERFORMANS (2026-09-26): `_run_scan` state kilidi TUTMADAN koşar
+                # (POST /scan ile aynı gerekçe — ~52 sn'lik tur GET /state'i
+                # bloklamasın). `_persist_runtime_state` kendi kısa girişini alır.
+                result = await _run_scan()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -3676,21 +3739,34 @@ async def monitoring_background_loop():
             logger.warning("Yükseliş taraması hatası: %s", exc)
 
         # Self-Learning Bias Yenileme (her 10 dakikada bir — scan döngüsü kilitlerinden bağımsız)
+        # PERFORMANS (2026-09-26): 2×500 satırlık DB okuması döngü İÇİNDE bekleniyordu
+        # → o turun uyku payı bu işin süresi kadar kısalıyordu. Fire-and-forget
+        # göreve alındı; çakışmayı önlemek için koşum bayrağı var.
         _now_mono = __import__("time").monotonic()
-        if _now_mono - _surge_bias_last_refresh >= _SURGE_BIAS_REFRESH_INTERVAL:
-            try:
-                from app.surge_learning import refresh_biases, is_cache_stale
-                from app import database as _db
-                _closed_trades = await _db.list_auto_paper_trades(status="closed", limit=500)
-                _radar_rows = await _db.get_monitoring_velocity_matches(limit=500)
-                refresh_biases(_closed_trades, _radar_rows)
-                _surge_bias_last_refresh = _now_mono
-                logger.info("surge_learning: Bias önbelleği yenilendi (%d trade, %d radar satırı).",
-                            len(_closed_trades), len(_radar_rows))
-            except asyncio.CancelledError:
-                raise
-            except Exception as _bias_exc:
-                logger.warning("surge_learning bias yenileme hatası: %s", _bias_exc)
+        if _now_mono - _surge_bias_last_refresh >= _SURGE_BIAS_REFRESH_INTERVAL and not _surge_bias_running:
+            _surge_bias_last_refresh = _now_mono
+            _surge_bias_running = True
+
+            async def _refresh_surge_biases() -> None:
+                try:
+                    from app.surge_learning import refresh_biases
+                    from app import database as _db
+                    _closed_trades = await _db.list_auto_paper_trades(status="closed", limit=500)
+                    _radar_rows = await _db.get_monitoring_velocity_matches(limit=500)
+                    refresh_biases(_closed_trades, _radar_rows)
+                    logger.info("surge_learning: Bias önbelleği yenilendi (%d trade, %d radar satırı).",
+                                len(_closed_trades), len(_radar_rows))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as _bias_exc:
+                    logger.warning("surge_learning bias yenileme hatası: %s", _bias_exc)
+                finally:
+                    nonlocal _surge_bias_running
+                    _surge_bias_running = False
+
+            _bias_task = asyncio.create_task(_refresh_surge_biases())
+            _background_tasks.add(_bias_task)
+            _bias_task.add_done_callback(_background_tasks.discard)
 
         await asyncio.sleep(SCAN_INTERVAL_SEC)
         # Olay güdümlü hızlı tarama (2026-09-26, "daha erken"): keşif güçlü

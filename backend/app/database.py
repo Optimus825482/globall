@@ -80,17 +80,25 @@ def _json_safe_dumps(value, **kwargs):
     kwargs.setdefault("default", str)
     return json.dumps(_json_safe(value), **kwargs)
 
+# PERFORMANS (2026-09-26): bu kalıplar HER statement'ta yeniden derleniyordu
+# (scan döngüsü saniyede birden çok statement üretir) — bir kez derle, tekrar kullan.
+_RE_PG_ENABLED_QUALIFIED = re.compile(r"\b([mp])\.enabled\s*=\s*1\b", re.I)
+_RE_PG_ENABLED_PLAIN = re.compile(r"\benabled\s*=\s*1\b", re.I)
+_RE_PG_INSERT_IGNORE = re.compile(r"INSERT OR IGNORE INTO", re.I)
+_RE_PG_INSERT_REPLACE_POSITIONS = re.compile(r"INSERT OR REPLACE INTO positions", re.I)
+_RE_PG_INSERT_REPLACE_SKILLS = re.compile(r"INSERT OR REPLACE INTO llm_skills", re.I)
+
 class _PostgresCompat:
     def __init__(self, conn): self.conn = conn
     def execute(self, sql, params=()):
         sql = sql.replace("?", "%s")
-        sql = re.sub(r"\b([mp])\.enabled\s*=\s*1\b", r"\1.enabled=TRUE", sql, flags=re.I)
-        sql = re.sub(r"\benabled\s*=\s*1\b", "enabled=TRUE", sql, flags=re.I)
-        was_ignore = bool(re.search(r"INSERT OR IGNORE INTO", sql, flags=re.I))
-        sql = re.sub(r"INSERT OR IGNORE INTO", "INSERT INTO", sql, flags=re.I)
+        sql = _RE_PG_ENABLED_QUALIFIED.sub(r"\1.enabled=TRUE", sql)
+        sql = _RE_PG_ENABLED_PLAIN.sub("enabled=TRUE", sql)
+        was_ignore = bool(_RE_PG_INSERT_IGNORE.search(sql))
+        sql = _RE_PG_INSERT_IGNORE.sub("INSERT INTO", sql)
         if was_ignore and "ON CONFLICT" not in sql.upper(): sql += " ON CONFLICT DO NOTHING"
-        sql = re.sub(r"INSERT OR REPLACE INTO positions", "INSERT INTO positions", sql, flags=re.I)
-        sql = re.sub(r"INSERT OR REPLACE INTO llm_skills", "INSERT INTO llm_skills", sql, flags=re.I)
+        sql = _RE_PG_INSERT_REPLACE_POSITIONS.sub("INSERT INTO positions", sql)
+        sql = _RE_PG_INSERT_REPLACE_SKILLS.sub("INSERT INTO llm_skills", sql)
         if "INSERT INTO llm_skills" in sql.upper() and "ON CONFLICT" not in sql.upper(): sql += " ON CONFLICT(name) DO UPDATE SET instructions=EXCLUDED.instructions,enabled=EXCLUDED.enabled,created_at=EXCLUDED.created_at"
         if "INSERT INTO positions" in sql.upper() and "ON CONFLICT" not in sql.upper():
             sql += " ON CONFLICT(symbol) DO UPDATE SET side=EXCLUDED.side,entry_price=EXCLUDED.entry_price,stop_price=EXCLUDED.stop_price,take_profit=EXCLUDED.take_profit,peak_price=EXCLUDED.peak_price,breakeven_hit=EXCLUDED.breakeven_hit,quantity=EXCLUDED.quantity,entry_time=EXCLUDED.entry_time,strategy=EXCLUDED.strategy,entry_context=EXCLUDED.entry_context,trade_id=EXCLUDED.trade_id"
@@ -294,6 +302,10 @@ async def init_db():
         # idempotent; her açılışta çalışır (şema sha'sına bağlı değildir).
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_trade_id ON signals(trade_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_logs_decision ON decision_logs(decision, timestamp DESC)")
+        # PERFORMANS (2026-09-26): kapalı-işlem gün filtreleri (list_auto_paper_trades
+        # day=..., get_auto_paper_stats) exit_time ile filtreliyor; mevcut
+        # (status, entry_time) index'i bunu karşılamıyordu ve tablo budanmıyor.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_auto_paper_status_exit ON auto_paper_trades(status, exit_time)")
         # TAH-01: tahmin satırının ölçüm çapası (fiyatın gözlendiği an). Şema
         # dosyası tek başına yeterli değil — koşan dağıtımlarda da idempotent eklenir.
         conn.execute("ALTER TABLE llm_forecasts ADD COLUMN IF NOT EXISTS decided_at DOUBLE PRECISION")
@@ -1146,6 +1158,7 @@ def _ensure_rising_evidence_schema(conn) -> None:
           mae_pct DOUBLE PRECISION,
           peak_at DOUBLE PRECISION
         )""")
+    _RISING_EVIDENCE_SCHEMA_READY = True
 
 
 async def record_rising_alert(item: dict) -> int | None:
@@ -3089,23 +3102,29 @@ async def get_ml_training_candles(cutoff_ms: int, max_bars_per_symbol: int = 300
     """
     def op(conn):
         data: dict[str, dict[str, list]] = {}
+        # PERFORMANS (2026-09-26): eski sorgu penceredeki TÜM satırları çekip
+        # sembol başına fazlasını Python'da atıyordu (10 günlük pencerede tüm
+        # semboller × 288 bar transferi). Kırpım ROW_NUMBER ile SQL'e taşındı —
+        # çıktı birebir aynı: sembol başına son N bar, open_time ASC.
         rows = conn.execute(
-            """SELECT symbol, open_time, high, low, close, volume
-               FROM historical_candles WHERE timeframe='5m' AND open_time >= ?
-               ORDER BY symbol, open_time DESC""", (int(cutoff_ms),)).fetchall()
+            """SELECT symbol, open_time, high, low, close, volume FROM (
+                   SELECT symbol, open_time, high, low, close, volume,
+                          ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY open_time DESC) AS rn
+                   FROM historical_candles WHERE timeframe='5m' AND open_time >= ?
+               ) t
+               WHERE rn <= ?
+               ORDER BY symbol, open_time ASC""", (int(cutoff_ms), int(max_bars_per_symbol))).fetchall()
         for row in rows:
             # Postgres (asyncpg) satırları dict döner; tuple-unpack anahtar
             # stringlerini değişkene atadığı için dict erişimi kullanılır.
             symbol = str(row["symbol"]).upper()
             bucket = data.setdefault(symbol, {"open_time": [], "high": [], "low": [], "close": [], "volume": []})
-            if len(bucket["open_time"]) >= max_bars_per_symbol:
-                continue
             bucket["open_time"].append(int(row["open_time"]))
             bucket["high"].append(float(row["high"]))
             bucket["low"].append(float(row["low"]))
             bucket["close"].append(float(row["close"]))
             bucket["volume"].append(float(row["volume"]))
-        return {sym: {k: list(reversed(v)) for k, v in bucket.items()} for sym, bucket in data.items()}
+        return data
     return await _run_db(op)
 
 
@@ -4027,7 +4046,8 @@ async def mark_monitoring_push_sent(notification_id):
 
 
 
-async def get_monitoring_velocity_matches(limit: int | None = 1000, day: str | None = None):
+async def get_monitoring_velocity_matches(limit: int | None = 1000, day: str | None = None,
+                                          slim: bool = False):
     """Bildirimleri ayni andaki velocity adayiyla karsilastir (salt okunur).
 
 monitoring_notifications VE velocity_candidates ayni tarama turunda
@@ -4042,13 +4062,17 @@ monitoring_notifications VE velocity_candidates ayni tarama turunda
 
     limit: ust sinir (varsayilan 1000). M4 (R4-04): ``limit=None`` = cap YOK,
     tumu getirilir (overall hesaplari icin). day: 'YYYY-MM-DD' gun filtresi.
+    slim: PERFORMANS (2026-09-26) — ``message``/``title`` kolonlarını SELECT'ten
+    çıkarır (agregasyon tüketicileri bunları kullanmaz; satır başına ~hundreds of
+    bytes transfer ve dict kurulumu tasarrufu). Semantik DEĞİŞMEZ.
     """
     from datetime import datetime, timezone, timedelta
     def op(conn):
         base_sql = (
             "SELECT id, symbol, mode, score, target_pct, price, expected_price,"
-            " horizon_minutes, detected_at, sent_via_push, message, title,"
-            " candidate_id, norm_cap, norm_version, sources"
+            " horizon_minutes, detected_at, sent_via_push,"
+            + ("" if slim else " message, title,")
+            + " candidate_id, norm_cap, norm_version, sources"
             " FROM monitoring_notifications"
         )
         params: list = []
@@ -4178,25 +4202,27 @@ monitoring_notifications VE velocity_candidates ayni tarama turunda
 
 async def get_pending_monitoring_notification(symbol: str) -> dict | None:
     """Sembol icin sonuclanmamis (BEKLIYOR) bildirimlerini getir.
-    
-    En yeni bildirim ve toplam BEKLIYOR sayisi doner.
-    Eski bildirimler icin ID'ler de doner (silinmek uzere).
+
+    En yeni bildirim doner. PERFORMANS (2026-09-26): sorgu eski davranışta
+    sembolün TÜM 30 günlük geçmişini fetch edip ilk satırı kullanıyordu — sıcak
+    sembolde on binlerce satır transferi demekti. `old_ids`/`total_pending`
+    alanları hiçbir tüketicide kullanılmıyor (grep: yalnız burada üretiliyor);
+    sözleşme bozulmasın diye boş/1 ile doldurulur, sorgu `LIMIT 1`'e iner.
     """
     def op(conn):
-        rows = conn.execute(
+        row = conn.execute(
             "SELECT id, symbol, score, target_pct, price, expected_price, "
             "horizon_minutes, detected_at, mode "
             "FROM monitoring_notifications "
             "WHERE symbol=%s "
-            "ORDER BY detected_at DESC",
+            "ORDER BY detected_at DESC LIMIT 1",
             (str(symbol).upper(),)
-        ).fetchall()
-        if not rows:
+        ).fetchone()
+        if not row:
             return None
-        latest = dict(rows[0])
-        old_ids = [row[0] for row in rows[1:]]  # En yeni haric tum ID'ler
-        latest["old_ids"] = old_ids
-        latest["total_pending"] = len(rows)
+        latest = dict(row)
+        latest["old_ids"] = []
+        latest["total_pending"] = 1
         return latest
     return await _run_db(op)
 
@@ -4646,6 +4672,21 @@ async def prune_retention(days: int = 30, microstructure_days: int = 7,
             conn.rollback()
             deleted["decision_logs"] = 0
             logger.warning("retention budama atlandı (tablo=decision_logs): %s",
+                           exc, exc_info=True)
+        # AUDIT-RETENTION (2026-09-26 performans turu): audit_logs budama
+        # listesinde DEĞİLDİ ve sınırsız büyüyordu (her admin/otonom eylem bir
+        # satır + details JSONB). Karar günlüğü penceresiyle aynı 90 gün —
+        # denetim izi uzun, ama sınırlı. `created_at` DOUBLE PRECISION (epoch sn)
+        # → doğrudan karşılaştırma; (created_at DESC) index'i mevcut.
+        try:
+            cursor = conn.execute("DELETE FROM audit_logs WHERE created_at < ?",
+                                  (decision_logs_cutoff,))
+            conn.commit()
+            deleted["audit_logs"] = cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+        except Exception as exc:
+            conn.rollback()
+            deleted["audit_logs"] = 0
+            logger.warning("retention budama atlandı (tablo=audit_logs): %s",
                            exc, exc_info=True)
         # MEM-01: `_persist_chat_memory` HER sohbet isteğinde bir
         # `memory_documents` satırı (ve ON DELETE CASCADE ile

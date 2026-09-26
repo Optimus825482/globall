@@ -39,9 +39,15 @@ describe("menu — kapsam", () => {
     // Bu liste, menüye eklenmeden önce HİÇBİR navigasyon yüzeyinden
     // erişilemeyen sayfalardı. Yeni bir sayfa eklenirse ya buraya ya da
     // menüye girmek zorunda — sessizce erişilemez kalmak yasak.
+    //
+    // 2026-09-27: `/history` ve `/reports/forecasts` LİSTEDEN ÇIKARILDI.
+    // `db8591d` (Tur A temizlik) bu iki sayfayı SİLDİ; tahmin raporu
+    // `reports/page.tsx` içine sekme olarak taşındı. Menüde kalsalar
+    // 404'e bağlantı verirdi — uygulama çalışırken yanlış yere götürür,
+    // sessiz bozulmanın en ucuz görünen ama en sinir bozan türü.
     const ORPHANS = [
-      "/alerts", "/history", "/risk", "/symbol-analysis",
-      "/memory", "/trade-repair", "/reports/forecasts",
+      "/alerts", "/risk", "/symbol-analysis",
+      "/memory", "/trade-repair",
     ];
     for (const route of ORPHANS) {
       expect(hrefs).toContain(route);
@@ -52,6 +58,15 @@ describe("menu — kapsam", () => {
     // `/gainer-radar` yalnız `redirect("/")` yapan ölü bir alias'tır —
     // menüde yeri yoktur, tıklamak boş yere bir yönlendirme yapar.
     expect(hrefs).not.toContain("/gainer-radar");
+  });
+
+  it("2026-09-27: SİLİNMİŞ sayfalar menüde KALMAZ (db8591d temizliği)", () => {
+    // `db8591d` bu dosyaları sildi. Menüde kalırlarsa bağlantı 404'e gider.
+    // Test, menü ile dosya sistemini birbirine bağlayan tek yerde — yeni bir
+    // sayfa silinirse ya da menüye eklenirse burada görünür.
+    for (const dead of ["/history", "/reports/forecasts", "/gainer-radar"]) {
+      expect(hrefs).not.toContain(dead);
+    }
   });
 });
 
