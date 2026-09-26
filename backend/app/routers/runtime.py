@@ -51,7 +51,7 @@ async def correlation_refresh_loop():
 
 async def correlation_exposure_status():
     """Current cluster exposure snapshot for gating and the UI."""
-    try_balance = await database.get_wallet_balance("TRY")
+    try_balance = await database.get_wallet_balance()
     equity = try_balance + sum(
         float(p.get("entry_price") or 0) * float(p.get("quantity") or 0)
         for p in analyzer.positions.values())
@@ -133,7 +133,7 @@ async def _cached_try_balance() -> float:
     now = time.time()
     if _try_balance_cache["value"] is not None and now - _try_balance_cache["at"] < _WALLET_TTL_SEC:
         return _try_balance_cache["value"]
-    value = await database.get_wallet_balance("TRY")
+    value = await database.get_wallet_balance()
     _try_balance_cache.update(value=value, at=now)
     return value
 
@@ -408,7 +408,7 @@ async def refresh_top_gainer_symbols():
     # belirlenmiştir: hesap → evren yaz (tek kapı) → yan etkiler (kapanışlar,
     # hidrasyon, persist, registry). Yan etki hatası EVRENİ GERİ ALMAZ.
     all_tickers = await ticker_24h()
-    known_try = set(await trading_symbols("TRY"))
+    known_try = set(await trading_symbols())
     # DB okuması da kilit dışında: `load_positions` tek bir SELECT'tir ve
     # iki eşzamanlı yenilemenin aynı sonucu görmesi sorun değildir —
     # kilidi tutacak tek şey sonraki saf hesap.
@@ -504,7 +504,7 @@ async def top_gainers_refresh_loop():
         try:
             result = await refresh_top_gainer_symbols()
             if result.get("ok"):
-                print(f"[Top Gainers] {len(result.get('selected', []))} TRY sembolü aktive edildi")
+                print(f"[Top Gainers] {len(result.get('selected', []))} {config.QUOTE_ASSET} sembolü aktive edildi")
         except Exception as exc:
             print(f"[Top Gainers] {config.TOP_GAINERS_REFRESH_SEC // 60} dakikalık yenileme hatası: {exc}")
         await asyncio.sleep(config.TOP_GAINERS_REFRESH_SEC)
@@ -889,12 +889,13 @@ async def _close_positions_on_passivation(passive_symbols):
     invalidate_wallet_caches()
 
 async def refresh_symbol_activity():
-    """Refresh the full Binance TR TRY universe and mark inactive symbols."""
-    known_try = set(await trading_symbols("TRY"))
+    """Refresh the full active-universe for this deployment's quote and mark
+    inactive symbols. (TR→TRY, Global→USDT; both read from the same adapter.)"""
+    known_try = set(await trading_symbols())
     open_symbols = set(analyzer.positions) | set((await database.load_positions()).keys())
     universe = list(dict.fromkeys(sorted(known_try | open_symbols)))
     if not universe:
-        raise RuntimeError("Binance TR TRY sembol evreni boş döndü")
+        raise RuntimeError(f"{config.EXCHANGE_LABEL} {config.QUOTE_ASSET} sembol evreni boş döndü")
     # Activity is an observation over the public TRY universe. It must not
     # replace the user's configured paper-trading scan universe; otherwise a
     # background refresh silently activates every Binance TR symbol in
@@ -1060,11 +1061,11 @@ async def refresh_symbol_activity():
 
 async def bootstrap_symbol_activity():
     """Warm all symbols enough for the first activity decision before trading starts."""
-    known_try = set(await trading_symbols("TRY"))
+    known_try = set(await trading_symbols())
     open_symbols = set(analyzer.positions) | set((await database.load_positions()).keys())
     universe = list(dict.fromkeys(sorted(known_try | open_symbols)))
     if not universe:
-        raise RuntimeError("Binance TR TRY sembol evreni boş döndü")
+        raise RuntimeError(f"{config.EXCHANGE_LABEL} {config.QUOTE_ASSET} sembol evreni boş döndü")
     # DENETİM 3.4 #41 (2026-09-26): bu fonksiyon artık `market.symbols`'u
     # doğrudan EZMEZ. Eskiden `hot_symbols` listesi `config.SYMBOLS`'u geride
     # bırakıp akış evrenini sessizce değiştiriyordu; `startup_services`'in
@@ -1143,7 +1144,7 @@ async def llm_idle_trigger_loop():
                 continue
             enabled = (await database.get_llm_setting("llm_auto_paper_enabled", "0")) == "1"
             paper_enabled = (await database.get_llm_setting("llm_paper_trade_enabled", "0")) == "1"
-            balance = float(await database.get_wallet_balance("TRY") or 0)
+            balance = float(await database.get_wallet_balance() or 0)
             idle = time.time() - _llm_last_idle_attempt_at
             if enabled and paper_enabled and balance > 100.0 and idle >= 10 * 60:
                 async with _llm_replenish_lock:

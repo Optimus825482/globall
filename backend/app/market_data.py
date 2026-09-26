@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import random
 import re
 import time
@@ -1194,10 +1195,11 @@ class MarketData:
         tape.append({"t": int(trade.get("T", trade.get("E", 0)) or 0),
                      "p": price, "q": qty, "m": bool(trade.get("m", False))})
 
-    # A single trade is "whale-sized" when its TRY notional reaches this.
-    # Binance TR spot notional for BTCTRY ~ 25k+ TRY; for low-price pairs the
-    # same threshold still catches genuinely large market orders.
-    WHALE_NOTIONAL_TRY = 25_000.0
+    # A single trade is "whale-sized" when its notional reaches this, in the
+    # deployment's QUOTE (TR→TRY, Global→USDT). Env-driven: the TR value
+    # (~25k TRY) would be ~40x too tight on Global, silently killing all
+    # whale/trade-flow detection there.
+    WHALE_NOTIONAL_TRY = float(os.getenv("WHALE_NOTIONAL", "25000"))
 
     def _flow_buckets(self, bucket: dict) -> deque:
         """Sembolün 1 sn'lik kayan-pencere kovaları (tembel kurulur)."""

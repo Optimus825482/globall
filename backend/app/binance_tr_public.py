@@ -11,12 +11,18 @@ from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-REST_BASE = "https://api.binance.me"
-# WS birincil ve yedek hostlar. Birincil (stream-cloud.binance.tr) canlı
-# Binance TR market-data yayınıdır; bağlantı kurulamazsa stream.binance.me
-# (dokümantasyondaki genel spot market-data yayını) denenir.
-WS_BASE = "wss://stream-cloud.binance.tr"
-WS_BASES = ("wss://stream-cloud.binance.tr", "wss://stream.binance.me")
+from app.config import config
+
+# Borsa kimliği TEK kaynaktan (config._EXCHANGE_REGISTRY) gelir. `EXCHANGE`
+# env'i Binance TR / Binance Global seçer. Sabit adlar (REST_BASE, WS_BASE,
+# WS_BASES) market_data.py ve microflow.py tarafından import edildiği için
+# KORUNUR — sadece değerleri artık env'e bağlı.
+REST_BASE = config.REST_BASE
+# WS birincil ve yedek hostlar. TR'de birincil (stream-cloud.binance.tr) canlı
+# market-data yayınıdır; bağlantı kurulamazsa stream.binance.me denenir.
+# Global'da :9443 en geniş yayındır, :443 yedek.
+WS_BASES = config.WS_BASES
+WS_BASE = WS_BASES[0]
 
 
 REST_TIMEOUT_SEC = 15
@@ -305,8 +311,14 @@ def exchange_info_cache_snapshot() -> dict:
     }
 
 
-async def trading_symbols(quote_asset: str = "TRY"):
-    """Binance TR'de işlem gören, seçilebilir sembolleri public exchangeInfo'dan getirir."""
+async def trading_symbols(quote_asset: str = ""):
+    """Binance TR'de işlem gören, seçilebilir sembolleri public exchangeInfo'dan getirir.
+
+    `quote_asset` boş bırakılırsa oyaladığımız borsanın quote'ü kullanılır
+    (TR→TRY, Global→USDT). Çağıranlar açıkça geçmelidir; varsayılan yalnız
+    unutulmuş çağrıları sessizce boş küme yerine doğru küme ile çalıştırır.
+    """
+    quote_asset = quote_asset or config.QUOTE_ASSET
     payload = await asyncio.to_thread(_exchange_info_payload)
     return sorted({
         str(item["symbol"]).upper()
@@ -330,13 +342,14 @@ def _default_filters():
     }
 
 
-async def trading_symbols_with_filters(quote_asset: str = "TRY"):
+async def trading_symbols_with_filters(quote_asset: str = ""):
     """TRADING sembollerini güncel PRICE/LOT/NOTIONAL/MARKET_LOT_SIZE limitleriyle döndürür.
 
     #32: bu fonksiyon eskiden exchangeInfo'yu İKİNCİ kez kendi çağırıyordu
     (biri `trading_symbols`, biri bu). Artık ikisi de aynı modül önbelleğini
     besler → radar + sembol listesi başına iki yerine TEK ağ isteği.
     """
+    quote_asset = quote_asset or config.QUOTE_ASSET
     payload = await asyncio.to_thread(_exchange_info_payload)
     result = {}
     for item in payload.get("symbols", []):
@@ -469,17 +482,35 @@ async def book_tickers(symbols: list | None = None):
 # 2026-09-26 (denetim #8): taban para birimi başına tanımlı — eski sabit
 # 5_000_000 değeri USDT çiftine genişletilseydi 5M USDT (~17 kat sıkı) olarak
 # yorumlanıp havuzu sessizce boşaltırdı. Oran: 5M TRY ≈ 120K USDT (kurs ~42).
-_MIN_QUOTE_VOLUME = {"TRY": 5_000_000.0, "USDT": 120_000.0}
+#
+# ÖNEMLİ (2026-09-26, Global örneği): TRY:5M / USDT:120K değerleri **TR
+# çalıştırmasında ölçülmüş** değerlerdir ve aralarındaki oran bir kur
+# çarpanıdır. Global'da TRY çifti hiç olmadığı için USDT tabanı oradan
+# TÜRETİLEMEZ — Global'ın kendi ölçülmüş tabanı olmalıdır. Değer yanlışsa
+# radar havuzu ya boş ya alakasız kalabalık olur (sessiz). `EXCHANGE`=
+# binance_global iken `MIN_QUOTE_VOLUME_USDT` env'i ile ölçülmüş değer
+# verilmelidir; verilmezse aşağıdaki varsayılan kullanılır.
+_MIN_QUOTE_VOLUME = {
+    "TRY": float(os.getenv("MIN_QUOTE_VOLUME_TRY", "5000000")),
+    "USDT": float(os.getenv("MIN_QUOTE_VOLUME_USDT", "120000")),
+}
+# Bilinmeyen bir quote için: TRY tabanı Global'da ~40 kat sıkı olurdu (havuz
+# boş), USDT tabanı TR'de ~40 kat gevşek olurdu (havuz alakasız). O yüzden
+# varsayılan = oyaladığımız borsanın kendi tabanı.
+_DEFAULT_QUOTE_ASSET = config.QUOTE_ASSET
 
 
 def _min_quote_volume(quote_asset: str) -> float:
     """Verilen quote para birimi için minimum 24h quoteVolume tabanı."""
-    return _MIN_QUOTE_VOLUME.get(str(quote_asset).upper(), _MIN_QUOTE_VOLUME["TRY"])
+    key = str(quote_asset).upper()
+    if key in _MIN_QUOTE_VOLUME:
+        return _MIN_QUOTE_VOLUME[key]
+    return _MIN_QUOTE_VOLUME.get(_DEFAULT_QUOTE_ASSET, _MIN_QUOTE_VOLUME["TRY"])
 
-async def top_gainers(symbol_count: int = 20, *, quote_asset: str = "TRY",
+async def top_gainers(symbol_count: int = 20, *, quote_asset: str = "",
                       min_quote_volume: float | None = None,
                       _ticker_rows: list | None = None):
-    """Top-gaining TRY pairs, 24h change descending, volume-filtered.
+    """Top-gaining pairs, 24h change descending, volume-filtered.
 
     Mirrors the website's top-gaining tab; the returned rows keep
     priceChangePercent and quoteVolume so callers can justify the pool.
@@ -492,6 +523,7 @@ async def top_gainers(symbol_count: int = 20, *, quote_asset: str = "TRY",
     önbellek devreye girer, böylece `active_movers_pool`'un hemen ardından
     gelen çağrısı ağa gitmez (#30).
     """
+    quote_asset = quote_asset or config.QUOTE_ASSET
     rows = list(_ticker_rows) if _ticker_rows else await ticker_24h()
     info = await trading_symbols(quote_asset)
     trading = set(info)
@@ -516,16 +548,17 @@ async def top_gainers(symbol_count: int = 20, *, quote_asset: str = "TRY",
     return candidates[:max(1, min(int(symbol_count), 50))]
 
 
-async def active_movers_pool(symbol_count: int = 15, *, quote_asset: str = "TRY",
+async def active_movers_pool(symbol_count: int = 15, *, quote_asset: str = "",
                              min_quote_volume: float | None = None,
                              _ticker_rows: list | None = None):
-    """Aktif, akışı olan ve gün içi yükseliş/volatilite gösteren TRY çiftleri.
+    """Aktif, akışı olan ve gün içi yükseliş/volatilite gösteren çiftler.
 
     H-01 / T-01: Yalnızca 24h net değişime bakıldığında sabah düşüp son 1-2 saatte
     patlayan veya günün zirvesine doğru güçlü atak yapan semboller kaçırılıyordu.
     Bu fonksiyon; işlem sayısı (trade count), gün içi zirveye yakınlık (range position),
     volatilite aralığı ve hacim akışını birleştirerek durağan olmayan aktif sembolleri seçer.
     """
+    quote_asset = quote_asset or config.QUOTE_ASSET
     rows = list(_ticker_rows) if _ticker_rows else await ticker_24h()
     info = await trading_symbols(quote_asset)
     trading = set(info)

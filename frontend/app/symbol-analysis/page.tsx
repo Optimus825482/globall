@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, apiRequest } from "../lib/api";
+import { toSymbol, withQuotePrice } from "../lib/format";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import SymbolLink from "../components/SymbolLink";
 import { Badge, Button, Card as UiCard, SectionHeader, StatCard, Tabs } from "../components/ui";
@@ -39,14 +40,14 @@ function ForecastCard({ item, currentPrice }: { item: any; currentPrice?: number
     <p className="text-xs leading-5 text-slate-200">{item.scenario}</p>
     {item.counter_scenario && <p className="text-xs leading-5 text-bunker-muted border-l-2 border-bunker-700 pl-2">Karşı: {item.counter_scenario}</p>}
     <p className="text-xs text-bunker-muted">
-      Bozulma: {invalidation == null ? "belirtilmedi" : `₺${value(invalidation)}`}
+      Bozulma: {invalidation == null ? "belirtilmedi" : withQuotePrice(invalidation)}
       {distancePct != null && <span className="text-bunker-500"> ({distancePct > 0 ? "+" : ""}{distancePct.toFixed(2)}% uzaklık)</span>}
     </p>
   </div>;
 }
 
 export default function SymbolAnalysisPage() {
-  const [symbol, setSymbol] = useState("BTCTRY");
+  const [symbol, setSymbol] = useState(toSymbol("BTC"));
   const [symbols, setSymbols] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState("5m");
   const [data, setData] = useState<any>(null);
@@ -60,7 +61,7 @@ export default function SymbolAnalysisPage() {
     apiRequest(`${API_BASE}/api/config`).then(r => r.json()).then(d => {
       const list = d.symbols || [];
       setSymbols(list);
-      setSymbol(new URLSearchParams(location.search).get("symbol") || list[0] || "BTCTRY");
+      setSymbol(new URLSearchParams(location.search).get("symbol") || list[0] || toSymbol("BTC"));
     }).catch(() => setError("Konfigürasyon alınamadı"));
   }, []);
   const loadSymbolData = useCallback(() => {
@@ -184,7 +185,7 @@ export default function SymbolAnalysisPage() {
 
     {!data?.data_ready ? <Card title="VERİ DURUMU"><p className="text-bunker-muted">{error || data?.error || "Veri hazırlanıyor..."}</p></Card> : <>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="FİYAT" value={`₺${value(data.price)}`} />
+        <StatCard label="FİYAT" value={withQuotePrice(data.price)} />
         <StatCard label="TREND" value={String(trend.alignment || "—").toUpperCase()} tone={trend.alignment === "bullish" ? "positive" : trend.alignment === "bearish" ? "negative" : "default"} />
         <StatCard label="ÖZET" value={String(data.summary || "—").toUpperCase()} />
         <StatCard label="ADR KALAN" value={percent(volatility.remaining_capacity_pct)} tone={(volatility.remaining_capacity_pct || 0) < 0 ? "warning" : "default"} />

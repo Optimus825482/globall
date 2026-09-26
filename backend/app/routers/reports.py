@@ -273,7 +273,7 @@ async def get_report_overview(day: str | None = None):
     master_surge_stats = await database.get_auto_paper_stats(confluence_4way_only=True, day=day)
     symbols = await database.get_auto_paper_symbol_breakdown(day=day)
     try:
-        balance = await database.get_wallet_balance("TRY")
+        balance = await database.get_wallet_balance()
     except Exception:
         balance = None
     now = time.time()

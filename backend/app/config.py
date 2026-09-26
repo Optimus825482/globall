@@ -17,7 +17,123 @@ load_dotenv(override=False)
 # farklı okuma rejimi vardır. Sonuç: çalışırken `os.environ` değiştirmek
 # (test/reload senaryoları) bu sabitlere YANSIMAZ; süreci yeniden başlatmak
 # gerekir. Davranışı kanıtlanmış bir dağıtım provası olmadan değiştirmemek için
-# refactor yerine burada belgelenmiştir.
+# refactor yerine burada belgelenmiştır.
+
+
+# ---------------------------------------------------------------------------
+# Borsa kayıt defteri (2026-09-26)
+# ---------------------------------------------------------------------------
+# Aynı kod tabanı İKİ borsada çalışır: Binance TR (TRY) ve Binance Global
+# (USDT). Kayıt defteri tek doğru kaynaktır — REST tabanı, WS hostları ve
+# quote varlığı buradan okunur, adapter'da ikinci bir gerçek tutulmaz.
+#
+# Öncelik sırası BİLİNCİLDİR: env override > kayıt defteri > TR varsayılanı.
+# Bilinen bir anahtar (`binance_tr` / `binance_global`) bulunamazsa TR'ye düşer
+# VE warning basılır — Global yanlışlıkla TR sanılıp sessizce boş TRY evreni
+# üzerinde çalışmasın diye. Taze bir env ile uğraşmadan geçici olarak kapatmak
+# isteyenler `EXCHANGE` yerine REST/WS/QUOTE_* override'larını kullanabilir
+# (aşağıdaki çözümleme sırası).
+#
+# Yeni borsa eklemek = buraya 4 satır + sembol listesi.
+_EXCHANGE_REGISTRY: dict = {
+    "binance_tr": {
+        "rest_base": "https://api.binance.me",
+        # PRIVATE (imzalı) taban public'den FARKLIDIR ve bu bir hata değil:
+        # Binance TR market data'yı `api.binance.me`'den, imzalı uçları
+        # `www.binance.tr` üzerinden `/open/v1/...` altından sunar. Üretimde
+        # çalışan bu ayrım korunur — `binance_tr_private.py:28` bugün de
+        # `www.binance.tr`'ye gidiyor.
+        "private_rest_base": "https://www.binance.tr",
+        "ws_bases": ("wss://stream-cloud.binance.tr", "wss://stream.binance.me"),
+        "quote_asset": "TRY",
+        "label": "Binance TR",
+    },
+    "binance_global": {
+        # Ölçüldü (2026-09-26, kullanıcı makinadan): ping 200, zarf yok,
+        # weight değerleri belgelenenle birebir aynı. :9443 en geniş yayın.
+        "rest_base": "https://api.binance.com",
+        # Global'da public ve private aynı host'ta: imzalı uçlar da
+        # `/api/v3/...` altında, public ile aynı TLS sunucusunda.
+        "private_rest_base": "https://api.binance.com",
+        "ws_bases": ("wss://stream.binance.com:9443", "wss://stream.binance.com:443"),
+        "quote_asset": "USDT",
+        "label": "Binance Global",
+    },
+}
+
+_DEFAULT_EXCHANGE = "binance_tr"
+
+# Aşama 1'in uzantısı: quote yalnız "USDT" değil, "USD" da olabilir. Bu
+# yüzden kod noktalarında `config.QUOTE_ASSET` tek başına yetmez — bazıları
+# kur ararken "bu sembolün quote'u bizimki mi" diye bakmak zorunda. Bu
+# yardımcılar o bakışı merkezî yapar; ana varlık alanlarının `_TRY`
+# sonekli ADLARI korunur (179 kullanım; yeniden adlandırmak riski büyük, faydası
+# yalnız estetik). Davranış değişimi: `_TRY` adlı alanlar artık quote cinsinden
+# değer taşır ve Global'de env ile ölçeklenir — adları tarihsel bir uyumluluk
+# etiketi olarak kalan birer ALIAS'tır.
+def base_asset_of(symbol: str) -> str:
+    """`BTCTRY`/`BTCUSDT` → `BTC`. Sonda bilinen quote eki varsa keser."""
+    value = str(symbol or "").upper()
+    for quote in _KNOWN_QUOTE_ASSETS():
+        if value.endswith(quote) and len(value) > len(quote):
+            return value[: -len(quote)]
+    return value
+
+
+def quote_asset_of(symbol: str) -> str:
+    """`BTCTRY`/`BTCUSDT` → `TRY`/`USDT`. Bilinen ek yoksa boş dize."""
+    value = str(symbol or "").upper()
+    for quote in _KNOWN_QUOTE_ASSETS():
+        if value.endswith(quote) and len(value) > len(quote):
+            return quote
+    return ""
+
+
+def _resolve_exchange() -> tuple:
+    """(anahtar, kayıt, uyarı) döndür — env override'ları kayıt defterinin üstünde."""
+    name = os.getenv("EXCHANGE", "").strip().lower()
+    if not name:
+        return _DEFAULT_EXCHANGE, dict(_EXCHANGE_REGISTRY[_DEFAULT_EXCHANGE]), None
+    record = _EXCHANGE_REGISTRY.get(name)
+    if record is None:
+        known = ", ".join(sorted(_EXCHANGE_REGISTRY))
+        return (_DEFAULT_EXCHANGE, dict(_EXCHANGE_REGISTRY[_DEFAULT_EXCHANGE]),
+                f"Bilinmeyen EXCHANGE={name!r} (bilinen: {known}) — {name} "
+                f"yerine Binance TR varsayılanına düşüldü. Global örneği "
+                f"olarak çalıştırmak istiyorsan EXCHANGE=binance_global ya da "
+                f"EXCHANGE_REST_BASE / EXCHANGE_WS_BASES override'larını kullan.")
+
+    resolved = dict(record)
+    rest_base = os.getenv("EXCHANGE_REST_BASE", "").strip()
+    if rest_base:
+        resolved["rest_base"] = rest_base.rstrip("/")
+    private_rest_base = os.getenv("EXCHANGE_PRIVATE_REST_BASE", "").strip()
+    if private_rest_base:
+        resolved["private_rest_base"] = private_rest_base.rstrip("/")
+    ws_bases = tuple(
+        host.strip().rstrip("/") for host in
+        os.getenv("EXCHANGE_WS_BASES", "").split(",") if host.strip()
+    )
+    if ws_bases:
+        resolved["ws_bases"] = ws_bases
+    quote = os.getenv("QUOTE_ASSET", "").strip().upper()
+    if quote:
+        resolved["quote_asset"] = quote
+    return name, resolved, None
+
+
+_EXCHANGE_KEY, _EXCHANGE, _EXCHANGE_WARNING = _resolve_exchange()
+
+
+def _KNOWN_QUOTE_ASSETS() -> tuple:
+    """`base_asset_of`/`quote_asset_of` için bilinen eki listesi.
+
+    Uzun eki ÖNCE denenir: `USDTTRY` içinde `TRY` bulunduğu için sıra önemlidir
+    ( aksi hâlde `USD` + `TTRY` gibi bir kesme olurdu).
+    """
+    assets = {"TRY", "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USD", "BTC", "ETH", "BNB", "EUR"}
+    assets.add(_EXCHANGE["quote_asset"])
+    return tuple(sorted(assets, key=len, reverse=True))
 
 
 class Config:
@@ -27,14 +143,58 @@ class Config:
     # demand and do not need to block process startup.
     PRIORITY_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
 
-    SYMBOLS = [
-    "BTCTRY", "ETHTRY", "SOLTRY",   # Ana Hacimliler (Balinalar)
-    "XRPTRY", "ADATRY", "AVAXTRY",  # Orta Hacimliler (Trend Takipçileri)
-    "LINKTRY", "NEARTRY", "APTTRY", # Güçlü Projeler (Kırılım avcıları)
-    "ARBTRY", "OPTRY", "SUITRY",    # Yeni Nesil L2'ler (Hızlı Hareket)
-    "DOGETRY", "LTCTRY","BNBTRY",         # Memecoinler (Hacim Patlaması Kralları)
-    "INJTRY", "WLDTRY", "DOTTRY"               # Yüksek Volatilite (Agresif Skalp)
-]
+    # ---- Borsa kimliği (2026-09-26) ---------------------------------------
+    # Aynı imaj iki borsada çalışır. `EXCHANGE` env'i seçer; tanınmayan
+    # değerde TR'ye düşer ve uyarı basılır (bkz. `_resolve_exchange`).
+    EXCHANGE = _EXCHANGE_KEY
+    EXCHANGE_LABEL = _EXCHANGE["label"]
+    REST_BASE = _EXCHANGE["rest_base"]
+    # İmzalı (private) uçların tabanı. TR'de public'ten farklıdır — bkz.
+    # `_EXCHANGE_REGISTRY` içindeki not. Global'da ikisi aynıdır.
+    PRIVATE_REST_BASE = _EXCHANGE["private_rest_base"]
+    WS_BASES = _EXCHANGE["ws_bases"]
+    QUOTE_ASSET = _EXCHANGE["quote_asset"]
+    # Paper cüzdanın NAKİT satırı bu quote cinsinden tutulur. `virtual_wallet`
+    # tablosunda `asset='TRY'` diye SABİT kodlanmış ~25 çağrı vardı; Global
+    # örneğinde bunlar USDT bakiyeyi "TRY" etiketli bir satırda tutmaya
+    # devam ederdi — mekanik olarak çalışır ama LLM'e/himmet/rapora yanlış
+    # birim raporlar (sessiz bozulmanın en pahalı türü). Her örnek kendi DB'sini
+    # kullandığı için anahtarı quote'e çevirmek çakışma yaratmaz.
+    #
+    # DİKKAT: bu yalnız NAKİT satırı içindir. Taban varlık satırları
+    # (`asset='BTC'`) `base_asset_of()` ile türetilir. API sözleşmesi alan
+    # adları (`wallet_try`, `initial_balance_try`) frontend tarafından okunduğu
+    # için BİLİNÇLİ OLARAK DEĞİŞTİRİLMEDİ — etiket eski, değer doğru.
+    CASH_ASSET = QUOTE_ASSET
+
+    # Ana varlık listesi. Env (`SYMBOLS=BTCUSDT,ETHUSDT`) verildiğinde o
+    # kullanılır; verilmezse kayıt defterindeki quote'ün varsayılan havuzu
+    # kurulur. Sıralama ve büyüklük korunur — tarama genişliği ve radar
+    # aday sayısı bu listeye bağlı.
+    _DEFAULT_SYMBOLS: dict = {
+        "TRY": [
+            "BTCTRY", "ETHTRY", "SOLTRY",   # Ana Hacimliler (Balinalar)
+            "XRPTRY", "ADATRY", "AVAXTRY",  # Orta Hacimliler (Trend Takipçileri)
+            "LINKTRY", "NEARTRY", "APTTRY", # Güçlü Projeler (Kırılım avcıları)
+            "ARBTRY", "OPTRY", "SUITRY",    # Yeni Nesil L2'ler (Hızlı Hareket)
+            "DOGETRY", "LTCTRY", "BNBTRY",  # Memecoinler (Hacim Patlaması Kralları)
+            "INJTRY", "WLDTRY", "DOTTRY",   # Yüksek Volatilite (Agresif Skalp)
+        ],
+        # Global'de aynı 18 majör, TRY → USDT. Taban varlıklar birebir aynı
+        # seçildi ki iki örnek arasındaki davranış farkı yalnız borsada
+        # olsun (sembol kurgusu, tarama genişliği, eşikler).
+        "USDT": [
+            "BTCUSDT", "ETHUSDT", "SOLUSDT",
+            "XRPUSDT", "ADAUSDT", "AVAXUSDT",
+            "LINKUSDT", "NEARUSDT", "APTUSDT",
+            "ARBUSDT", "OPUSDT", "SUIUSDT",
+            "DOGEUSDT", "LTCUSDT", "BNBUSDT",
+            "INJUSDT", "WLDUSDT", "DOTUSDT",
+        ],
+    }
+    _env_symbols = [s.strip().upper() for s in os.getenv("SYMBOLS", "").split(",") if s.strip()]
+    SYMBOLS = _env_symbols or list(
+        _DEFAULT_SYMBOLS.get(QUOTE_ASSET, _DEFAULT_SYMBOLS["TRY"]))
     MIN_NOTIONAL = 10.0
     INITIAL_BALANCE_TRY = 10000.0
     # Spot paper işlemlerde varsayılan işlem tutarı (TRY cinsinden; adı tarihsel
@@ -503,8 +663,12 @@ class Config:
     # Not: SYMBOL_PYRAMIDING_LAYERS (sembol bazlı katman sınırı) kaldırıldı
     # (Madde 21) — hiçbir kod yolu okumuyordu; pyramiding kararı
     # PYRAMIDING_LAYERS ile verilir.
-    MIN_24H_QUOTE_VOLUME_TRY = 1_000_000.0
-    HIGH_LIQUIDITY_BYPASS_VOLUME_TRY = 3_000_000.0
+    # `_TRY` son ekleri tarihsel bir etikettir (bkz. `base_asset_of` notu):
+    # alanlar artık QUOTE_ASSET cinsinden değer taşır ve env ile ölçeklenir.
+    # TRY'de 1M TRY ≈ USDT'de 23K USDT'ye karşılık gelir; doğru ölçek env'den
+    # gelir, hard-coded kur çarpanı YOKTUR (kur yüzünden yanlış büyüklük).
+    MIN_24H_QUOTE_VOLUME_TRY = float(os.getenv("MIN_24H_QUOTE_VOLUME", "1000000"))
+    HIGH_LIQUIDITY_BYPASS_VOLUME_TRY = float(os.getenv("HIGH_LIQUIDITY_BYPASS_VOLUME", "3000000"))
     MIN_VOLUME_RATIO = 0.3
     MIN_ORDERBOOK_DEPTH_MULTIPLIER = 5.0
     LIQUIDITY_FILTER_ENABLED = True
@@ -512,7 +676,7 @@ class Config:
     # tek başına mean-reversion için işlem yapılabilir menzil anlamına gelmez.
     SYMBOL_ACTIVITY_FILTER_ENABLED = os.getenv("SYMBOL_ACTIVITY_FILTER_ENABLED", "true").lower() == "true"
     SYMBOL_ACTIVITY_REFRESH_SEC = max(60, int(os.getenv("SYMBOL_ACTIVITY_REFRESH_SEC", "3600")))
-    SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME_TRY = float(os.getenv("SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME_TRY", "1000000"))
+    SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME_TRY = float(os.getenv("SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME", "1000000"))
     SYMBOL_ACTIVITY_VOLUME_ONLY = os.getenv("SYMBOL_ACTIVITY_VOLUME_ONLY", "false").lower() == "true"
     SYMBOL_ACTIVITY_MIN_RANGE_15M_PCT = float(os.getenv(
         "SYMBOL_ACTIVITY_MIN_RANGE_15M_PCT",
@@ -678,6 +842,10 @@ class Config:
     # keşif akışının tarama havuzuna enjekte edilecek sembol limitleri/eşikleri.
     DISCOVERY_MIN_RETURN_1M_PCT = float(os.getenv("DISCOVERY_MIN_RETURN_1M_PCT", "0.4"))
     DISCOVERY_MIN_VOLUME_BURST = float(os.getenv("DISCOVERY_MIN_VOLUME_BURST", "2.0"))
+    # `!miniTicker@arr` akışı borsadaki TÜM sembolleri yayınlar; bu eki
+    # tutanlar saklanır. Varsayılan = oyaladığımız borsanın quote'ü, yani TR
+    # örneğinde TRY, Global örneğinde USDT.
+    DISCOVERY_QUOTE_SUFFIX = os.getenv("DISCOVERY_QUOTE_SUFFIX", QUOTE_ASSET).upper()
     DISCOVERY_POOL_INJECT_LIMIT = max(1, int(os.getenv("DISCOVERY_POOL_INJECT_LIMIT", "8")))
     # Keşif nabzı (pulse) + olay güdümlü hızlı tarama (2026-09-26, "daha erken").
     # Pulse: GET /state ham keşif adaylarını (kapanmış mum/scan turu beklemeden)
@@ -712,6 +880,12 @@ class Config:
                 + cls.MIN_EXPECTED_NET_PNL_TRY / value)
 
 config = Config()
+
+if _EXCHANGE_WARNING:
+    # Sessizce TR'de çalışmak, Global hedeflenmiş bir örnekte en pahalı hatadır:
+    # uygulama sağlıklı görünür ama yanlış borsadan veri çeker. Bu yüzden
+    # başlangıçta gürültülü bir uyarı basılır.
+    print(f"[config] UYARI: {_EXCHANGE_WARNING}", flush=True)
 
 # Güvenlik: placeholder session secret ile başlatmayı reddet. Placeholder
 # değer herkese açıktır; onunla imzalanan oturum çerezleri sahte üretilebilir.

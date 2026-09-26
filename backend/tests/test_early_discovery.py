@@ -25,6 +25,10 @@ import unittest
 from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+# 2026-09-26 (Global örneği): semboller testlerde bu deployment'ın quote'süne
+# çevrilir; bkz. `_row`. sys.path ayarı aşağıdaki `from app import ...`
+# satırlarından SONRA çalıştığı için import burada, ortamın içinde.
+from app.config import config
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -34,8 +38,20 @@ from app.market_data import MarketData           # noqa: E402
 
 
 def _row(symbol, price, q, event_ms=0):
-    """Binance miniTicker satırı: fiyat ve quoteVolume STRING olarak gelir."""
-    return {"e": "24hrMiniTicker", "E": event_ms, "s": symbol,
+    """Binance miniTicker satırı: fiyat ve quoteVolume STRING olarak gelir.
+
+    `*TRY` ile biten semboller bu deployment'ın quote'süne çevrilir: testler
+    `BTCTRY` yazar, Global koşusunda `BTCUSDT` üretilir. `DISCOVERY_QUOTE_SUFFIX`
+    (config'ten okunur) bunu zaten filtreliyor — testler aksi hâlde Global'da
+    sessizce boş döner ve hiçbir şeyi doğrulamaz.
+
+    Başka bir ekle biten sembol (ör. `BTCUSDT`, `BTCEUR`) DOKUNULMAZ: bu testler
+    özellikle "quote override'ı hangi eki saklıyor" sözleşmesini doğruluyor.
+    """
+    value = str(symbol)
+    if value.endswith("TRY"):
+        value = f"{value[:-3]}{config.QUOTE_ASSET}"
+    return {"e": "24hrMiniTicker", "E": event_ms, "s": value,
             "c": str(price), "q": str(q)}
 
 
@@ -52,6 +68,26 @@ class _Clock:
         self.value += float(seconds)
 
 
+def _OTHER_QUOTE() -> str:
+    """Bu deployment'ın quote'sünün TERSİ olan ek.
+
+    "Yanlış quote elenir" sözleşmesini her iki modda da doğrulamak için:
+    TR'de USDT, Global'da TRY elenmelidir.
+    """
+    return "USDT" if config.QUOTE_ASSET == "TRY" else "TRY"
+
+
+def _sym(base_try: str) -> str:
+    """`BTCTRY` → bu deployment'daki karşılığı (`BTCUSDT` Global'da).
+
+    Testler sembolleri TRY ile yazıyor; çıktı tarafı bu deployment'ın
+    quote'sünü taşıyor. Bu köprü olmadan testler Global koşusunda sessizce
+    hiçbir şey doğrulamadan boş döner.
+    """
+    value = str(base_try)
+    return f"{value[:-3]}{config.QUOTE_ASSET}" if value.endswith("TRY") else value
+
+
 class EarlyDiscoveryBase(unittest.TestCase):
     def setUp(self):
         ed.reset()
@@ -61,6 +97,9 @@ class EarlyDiscoveryBase(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.addCleanup(ed.reset)
 
+    def sym(self, base_try: str) -> str:
+        return _sym(base_try)
+
 
 class IngestAndReturnTests(EarlyDiscoveryBase):
     def test_return_1m_uses_price_60s_ago(self):
@@ -69,7 +108,7 @@ class IngestAndReturnTests(EarlyDiscoveryBase):
         self.clock.advance(61)
         ed.ingest_mini_ticker([_row("BTCTRY", 101.0, 1600.0)])
         candidates = ed.top_candidates()
-        row = next(item for item in candidates if item["symbol"] == "BTCTRY")
+        row = next(item for item in candidates if item["symbol"] == self.sym("BTCTRY"))
         # (101 / 100 - 1) * 100 = %1.0
         self.assertAlmostEqual(row["return_1m_pct"], 1.0, places=6)
         self.assertEqual(row["price"], 101.0)
@@ -86,12 +125,12 @@ class IngestAndReturnTests(EarlyDiscoveryBase):
             if minute < 5:
                 self.clock.advance(60)
         candidates = ed.top_candidates()
-        pump = next(item for item in candidates if item["symbol"] == "PUMPTRY")
+        pump = next(item for item in candidates if item["symbol"] == self.sym("PUMPTRY"))
         # getiri: (105/100-1)*100 = %5.0; hacim: (900-400)/medyan(0,100,100,100,100)=5.0
         self.assertAlmostEqual(pump["return_1m_pct"], 5.0, places=6)
         self.assertAlmostEqual(pump["volume_burst"], 5.0, places=6)
         # STEADYTRY getiri eşiğini geçer (%0.5 >= %0.4) ama burst 1.0 < 2.0 → elenir.
-        self.assertFalse(any(item["symbol"] == "STEADYTRY" for item in candidates),
+        self.assertFalse(any(item["symbol"] == self.sym("STEADYTRY") for item in candidates),
                          "sessiz sembol hacim patlaması olmadan aday olmamalı")
 
     def test_negative_q_delta_counts_as_zero(self):
@@ -101,7 +140,7 @@ class IngestAndReturnTests(EarlyDiscoveryBase):
         ed.ingest_mini_ticker([_row("BTCTRY", 100.0, 900.0)])   # q DÜŞTÜ (pencere sıfırlandı)
         # Hacim 0 → burst 0 → aday çıkmamalı; en azından istisna/hayali değer yok.
         self.assertEqual(ed.top_candidates(), [])
-        state = ed._state["BTCTRY"]
+        state = ed._state[self.sym("BTCTRY")]
         self.assertEqual(state["minutes"][-1][1], 0.0)
 
     def test_candidates_sorted_by_abs_return_desc_and_limited(self):
@@ -113,10 +152,10 @@ class IngestAndReturnTests(EarlyDiscoveryBase):
                                _row("BTCTRY", 103.0, 9000.0),
                                _row("SOLTRY", 102.0, 9000.0)])
         ranked = [item["symbol"] for item in ed.top_candidates()]
-        self.assertEqual(ranked, ["BTCTRY", "SOLTRY", "ETHTRY"])
-        self.assertEqual([item["symbol"] for item in ed.top_candidates(limit=1)], ["BTCTRY"])
+        self.assertEqual(ranked, [self.sym("BTCTRY"), self.sym("SOLTRY"), self.sym("ETHTRY")])
+        self.assertEqual([item["symbol"] for item in ed.top_candidates(limit=1)], [self.sym("BTCTRY")])
         self.assertEqual([item["symbol"] for item in ed.top_candidates(limit=2)],
-                         ["BTCTRY", "SOLTRY"])
+                         [self.sym("BTCTRY"), self.sym("SOLTRY")])
 
     def test_return_threshold_filters_falling_symbols(self):
         """DÜŞEN sembol (negatif getiri) |getiri| büyük olsa bile aday değildir."""
@@ -131,11 +170,11 @@ class FilterAndLifecycleTests(EarlyDiscoveryBase):
         ed.ingest_mini_ticker([_row("BTCTRY", 100.0, 10.0)])
         self.clock.advance(61)
         ed.ingest_mini_ticker([_row("BTCTRY", 110.0, 9000.0)])   # aday olur
-        self.assertTrue(any(item["symbol"] == "BTCTRY" for item in ed.top_candidates()))
+        self.assertTrue(any(item["symbol"] == self.sym("BTCTRY") for item in ed.top_candidates()))
         # 16 sn örnek gelmedi → sample_age 16 > 15 → adaylık düşer ama durum kalır.
         self.clock.advance(16)
         self.assertEqual(ed.top_candidates(), [])
-        self.assertIn("BTCTRY", ed._state)
+        self.assertIn(self.sym("BTCTRY"), ed._state)
         # 2 dk'dır örnek yok → pencere tamamen budanır ve durum düşer (sızıntı yok).
         self.clock.advance(200)
         self.assertEqual(ed.top_candidates(), [])
@@ -148,14 +187,18 @@ class FilterAndLifecycleTests(EarlyDiscoveryBase):
             {"s": "XRPTRY", "c": "abc", "q": "5"},       # sayıya çevrilemeyen fiyat
             None,                                        # dict değil
             "garbage",                                   # dict değil
-            {"s": "BTCUSDT", "c": "1", "q": "10"},       # TRY eki yok → saklanmaz
-            {"s": "ADATRY", "c": "2.5", "q": "50"},      # sağlam
+            {"s": "BTCUSDT", "c": "1", "q": "10"},       # quote eki yok → saklanmaz
+            {"s": _sym("ADATRY"), "c": "2.5", "q": "50"},  # sağlam
         ])
-        self.assertIn("BTCTRY", ed._state)
-        self.assertIn("ADATRY", ed._state)
-        self.assertNotIn("BTCUSDT", ed._state)
-        self.assertNotIn("XRPTRY", ed._state)
-        self.assertNotIn("ETHTRY", ed._state)
+        self.assertIn(self.sym("BTCTRY"), ed._state)
+        self.assertIn(self.sym("ADATRY"), ed._state)
+        # "Yanlış quote elenir" sözleşmesi: `_OTHER_QUOTE` bu deployment'ın
+        # quote'sünün TERSİ olan ek (TR'de USDT, Global'da TRY). Sabit
+        # "BTCUSDT" yazılsaydı Global koşusunda bu satır elenirdi ve test
+        # yanlış biçimde "saklanmadı" derdi.
+        self.assertNotIn(f"BTC{_OTHER_QUOTE()}", ed._state)
+        self.assertNotIn(f"XRP{_OTHER_QUOTE()}", ed._state)
+        self.assertNotIn(self.sym("ETHTRY"), ed._state)
         self.assertEqual(ed.top_candidates(), [])        # eşiği geçen yok, hata da yok
 
     def test_ingest_never_raises_on_non_list_input(self):
@@ -182,7 +225,7 @@ class ThresholdSourceTests(EarlyDiscoveryBase):
         ed.ingest_mini_ticker([_row("BTCTRY", 100.2, 5000.0)])   # getiri %0.2, burst çok yüksek
         self.assertEqual(ed.top_candidates(), [])                # %0.2 < varsayılan %0.4
         with patch.object(ed.config, "DISCOVERY_MIN_RETURN_1M_PCT", 0.1, create=True):
-            self.assertEqual([item["symbol"] for item in ed.top_candidates()], ["BTCTRY"])
+            self.assertEqual([item["symbol"] for item in ed.top_candidates()], [self.sym("BTCTRY")])
         self.assertEqual(ed.top_candidates(), [])                # patch kapanınca varsayılana döner
 
     def test_burst_threshold_read_from_config(self):
@@ -222,12 +265,13 @@ class MarketDataArrRoutingTests(unittest.TestCase):
             "stream": "!miniTicker@arr",
             "data": [_row("BTCTRY", 100.0, 1000.0),
                      _row("ETHTRY", 50.0, 20.0),
-                     _row("BTCUSDT", 1.0, 1.0)],   # modülde filtrelenir
+                     {"e": "24hrMiniTicker", "s": f"BTC{_OTHER_QUOTE()}",
+                      "c": "1", "q": "1"}],   # modülde filtrelenir
         })
-        self.assertIn("BTCTRY", ed._state)
-        self.assertIn("ETHTRY", ed._state)
-        self.assertNotIn("BTCUSDT", ed._state)
-        samples = ed._state["BTCTRY"]["samples"]
+        self.assertIn(_sym("BTCTRY"), ed._state)
+        self.assertIn(_sym("ETHTRY"), ed._state)
+        self.assertNotIn(f"BTC{_OTHER_QUOTE()}", ed._state)
+        samples = ed._state[_sym("BTCTRY")]["samples"]
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0][1], 100.0)
         self.assertIsNotNone(market.ws_last_event_at, "arr çerçevesi WS canlılık damgası vurmalı")

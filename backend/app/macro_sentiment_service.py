@@ -9,6 +9,8 @@ import asyncio
 import json
 import logging
 import time
+
+from app.config import config
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -68,9 +70,15 @@ async def get_btc_compass() -> dict:
     is_panic = False
     btc_fetch_error = False
 
+    # BTC referans sembolü oyaladığımız borsanın quote'süne göre (TR→BTCTRY,
+    # Global→BTCUSDT). Sabit "BTCTRY" Global'da yok → k5 boş gelir ve
+    # `btc_fetch_error` ile fail-closed'a düşülür, yani panik koruması sessizce
+    # TÜM zamanlar kapalı kalırdı.
+    btc_symbol = f"BTC{config.QUOTE_ASSET}"
+
     try:
-        # BTCTRY 5m klines
-        k5 = await fetch_klines("BTCTRY", "5m", 6)
+        # BTC referans 5m klines
+        k5 = await fetch_klines(btc_symbol, "5m", 6)
         if k5 and len(k5) >= 4:
             c_now = float(k5[-1][4])
             c_prev1 = float(k5[-2][4])
@@ -97,7 +105,7 @@ async def get_btc_compass() -> dict:
         btc_fetch_error = True
 
     result = {
-        "btc_symbol": "BTCTRY",
+        "btc_symbol": btc_symbol,
         "btc_5m_change_pct": btc_5m_ret,
         "btc_15m_change_pct": btc_15m_ret,
         "btc_trend_state": btc_trend_state,

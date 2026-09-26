@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import RequireAdmin from "../components/RequireAdmin";
 import { API_BASE, apiRequest } from "../lib/api";
+import { toSymbol } from "../lib/format";
 import type { MultiChartConfig, ChartIndicators } from "./MultiChartCard";
 
 // Dynamic import with ssr: false for Lightweight Charts
@@ -38,18 +39,20 @@ const DEFAULT_INDICATORS: ChartIndicators = {
     supertrend: false,
 };
 
+// Tabanlar sabit; quote build-time env'den (bkz. `lib/format.ts`). Sabit
+// "BTCTRY" Global örneğinde bulunmadığı için ekranda boş grafik kalırdı.
 const DEFAULT_SLOTS: MultiChartConfig[] = [
-    { id: 1, symbol: "BTCTRY", interval: "1m",  indicators: { ...DEFAULT_INDICATORS } },
-    { id: 2, symbol: "BTCTRY", interval: "3m",  indicators: { ...DEFAULT_INDICATORS } },
-    { id: 3, symbol: "BTCTRY", interval: "5m",  indicators: { ...DEFAULT_INDICATORS } },
-    { id: 4, symbol: "BTCTRY", interval: "15m", indicators: { ...DEFAULT_INDICATORS } },
+    { id: 1, symbol: toSymbol("BTC"), interval: "1m",  indicators: { ...DEFAULT_INDICATORS } },
+    { id: 2, symbol: toSymbol("BTC"), interval: "3m",  indicators: { ...DEFAULT_INDICATORS } },
+    { id: 3, symbol: toSymbol("BTC"), interval: "5m",  indicators: { ...DEFAULT_INDICATORS } },
+    { id: 4, symbol: toSymbol("BTC"), interval: "15m", indicators: { ...DEFAULT_INDICATORS } },
 ];
 
 const FALLBACK_SYMBOLS = [
-    "BTCTRY", "ETHTRY", "SOLTRY", "AVAXTRY", "PEPETRY", "DOGETRY",
-    "XRPTRY", "SUITRY", "NEARTRY", "LINKTRY", "TRXTRY", "DOTTRY",
-    "ADATRY", "SHIBTRY", "BNBTRY",
-];
+    "BTC", "ETH", "SOL", "AVAX", "PEPE", "DOGE",
+    "XRP", "SUI", "NEAR", "LINK", "TRX", "DOT",
+    "ADA", "SHIB", "BNB",
+].map(toSymbol);
 
 const LS_KEY_SLOTS   = "scalper_tech_charts_slots_v2";
 const LS_KEY_LAYOUT  = "scalper_tech_charts_layout_v2";
@@ -83,8 +86,8 @@ export default function TechnicalChartsPage() {
     const [layout, setLayout]           = useState<LayoutType>("grid4");
     const [maximizedId, setMaximizedId] = useState<number | null>(null);
     const [availableSymbols, setAvailableSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
-    const [globalSymbol, setGlobalSymbol]         = useState<string>("BTCTRY");
-    const [globalSymbolInput, setGlobalSymbolInput] = useState<string>("BTCTRY");
+    const [globalSymbol, setGlobalSymbol]         = useState<string>(toSymbol("BTC"));
+    const [globalSymbolInput, setGlobalSymbolInput] = useState<string>(toSymbol("BTC"));
     const [globalSearchOpen, setGlobalSearchOpen]   = useState(false);
     const [refreshKey, setRefreshKey]   = useState(0);
     const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -212,7 +215,7 @@ export default function TechnicalChartsPage() {
 
     // ── MTF Şablonu: 1m,3m,5m,15m ─────────────────────────────────────────────
     const applyMtfTemplate = () => {
-        const targetSymbol = globalSymbol || slots[0]?.symbol || "BTCTRY";
+        const targetSymbol = globalSymbol || slots[0]?.symbol || toSymbol("BTC");
         const mtfIntervals = ["1m", "3m", "5m", "15m"];
         setSlots((prev) => {
             const next = prev.map((s, idx) => ({

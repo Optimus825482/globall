@@ -44,6 +44,14 @@ services:
   backend:
     build:
       context: ./backend
+    # 2026-09-26 (Global örneği): `backend_global` da aynı build context'ini
+    # kullanıyor. `image:` verilmediğinde Compose her servis için AYRI imaj adı
+    # türetir (`<project>-backend`, `<project>-backend_global`) → ikinci kurulum
+    # aynı Dockerfile'ı yeniden build eder ve aynı katmanları ikinci kez
+    # diske yazar. Backend'de build-time arg YOKTUR (borsa/quote/DB env'den
+    # gelir, çalışma anında okunur) → tek imaj her iki örneğe de yeter.
+    # `frontend_global` BUNU YAPAMAZ: `NEXT_PUBLIC_QUOTE_ASSET` build-time'dır.
+    image: scalperagent-backend:latest
     restart: unless-stopped
     stop_grace_period: 10s
     # #74: en yüksek tüketici — 309 sembollük evrende scanner + LLM + WS
@@ -295,9 +303,290 @@ services:
         done
     logging: *default-logging
 
+  # ═════════════════════════════════════════════════════════════════════════
+  # BİNANCE GLOBAL ÖRNEĞİ (USDT) — 2026-09-26
+  # ═════════════════════════════════════════════════════════════════════════
+  # AYNI KOD, İKİ DAĞITIM. `backend`'in kopyası değil — aynı `build.context`
+  # (imaj ikinci kez derlenmez, cache'ten gelir), farklı env.
+  #
+  # Neden ayrı postgres: kullanıcı kararı — Global örneğinin KENDİ DB'si
+  # (`scalper_global`). Sembol evreni, cüzdan satırları ve quote tamamen
+  # farklı; tek DB'de iki örnek birbirinin pozisyonlarını görürdü.
+  # `scalper_postgres_data` volume'ü PAYLAŞILAMAZ: postgres init script'i
+  # yalnızca BOŞ dizinde çalışır, dolu dizinde `POSTGRES_DB` yok sayılır ve
+  # iki konteyner aynı cluster'a yazmaya çalışırdı.
+  postgres_global:
+    image: pgvector/pgvector:pg17-bookworm
+    restart: unless-stopped
+    stop_grace_period: 10s
+    # #74 ile aynı gerekçe: limitli konteyner. İkinci postgres'in belleği
+    # TR örneğinden düşük tutuldu (Global DB'si yeni, çok daha küçük) ama
+    # sınırsız bırakılırsa iki stack birlikte host'u OOM'a düşürebilir.
+    mem_limit: 768m
+    cpus: 1.0
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "1.0"
+    environment:
+      # ⚠️ `POSTGRES_DB` Global örneğinde `scalper_global` OLMAK ZORUNDA.
+      # Backend'de `DATABASE_URL` bu ismi gösterir; `database.py` tabloları
+      # `search_path` ile bu DB'de arar. İsim başka olursa backend kendi
+      # tablolarını bulamaz ve `init_db` sessizce yeni tablolar yaratır.
+      #
+      # ⚠️ Global örneğinin kullanıcı/şifresi AYRI olmalıdır. Varsayılan
+      # olarak TR ile aynı değerlere düşer (`${POSTGRES_*}`), bu yalnız host
+      # içi bir ağdır ve iki DB birbirini göremez — yine de ayırmak, bir
+      # örneğin yanlışlıkla diğerine bağlanmasını imkânsızlaştırır.
+      POSTGRES_DB: ${POSTGRES_DB_GLOBAL:-scalper_global}
+      POSTGRES_USER: ${POSTGRES_USER_GLOBAL:-scalper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_GLOBAL:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_GLOBAL (veya POSTGRES_PASSWORD) must be set}}
+      TZ: ${TZ:-Europe/Istanbul}
+    volumes:
+      - scalper_postgres_global_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER_GLOBAL:-scalper} -d ${POSTGRES_DB_GLOBAL:-scalper_global}"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: *default-logging
+
+  backend_global:
+    build:
+      context: ./backend
+    # `backend` ile AYNI imaj (yukarıdaki gerekçe): ikinci build/disk kopyası
+    # yok. Borsa kimliği env'den geldiği için aynı imaj iki borsada da doğru
+    # davranır.
+    image: scalperagent-backend:latest
+    restart: unless-stopped
+    stop_grace_period: 10s
+    # Aynı #74 gerekçesi. 2G/2CPU — TR örneğiyle aynı: sembol evreni ve
+    # LLM/WS yükü borsadan bağımsız.
+    #
+    # ⚠️ KAYNAK UYARISI: TR örneğinin limitleri toplam 5.5G. Bu servis
+    #   + postgres_global (768M) + frontend_global (1G) + gateway_global
+    #   (1G) ile toplam ~10.7G'ye çıkar. Host'unuz bunu taşımıyorsa Global
+    #   örneğini `docker compose up -d postgres_global backend_global`
+    #   komutuyla gateway'sız başlatın ya da `deploy.resources.limits`
+    #   değerlerini düşürün. Tek konteynerin OOM'u kendi stack'ini düşürür
+    #   (#74) ama iki stack birlikte çalışırken host kaynakları paylaşılır.
+    mem_limit: 2g
+    cpus: 2.0
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    depends_on:
+      postgres_global:
+        condition: service_healthy
+    environment:
+      # TR örneğiyle AYNI politika notları geçerli (SCALPER_ENV=production
+      # mevcut parolayla açılmayı reddeder — `backend` bloğundaki uzun
+      # açıklama).
+      SCALPER_ENV: ${SCALPER_ENV:-development}
+      SCALPER_DB_PATH: /data/scalper_db_v4.sqlite
+      # ⚠️ ASLA düz metin parola YAZILMAZ — bu URL env'den bileşik kurulur,
+      #   parola `${POSTGRES_PASSWORD_GLOBAL}` ile gelir. `.env` gitignore'da
+      #   (`.gitignore:1-2`).
+      DATABASE_URL: postgresql://${POSTGRES_USER_GLOBAL:-scalper}:${POSTGRES_PASSWORD_GLOBAL:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_GLOBAL must be set}}@postgres_global:5432/${POSTGRES_DB_GLOBAL:-scalper_global}
+      DB_BACKEND: postgres
+      LIVE_TRADING: "false"
+      USE_TESTNET: "false"
+      TZ: ${TZ:-Europe/Istanbul}
+      # 2026-09-26 (Global örneği): borsa kimliği ve para birimi env'den.
+      # `config.py:_resolve_exchange` bunları okur; bilinen değilse warning
+      # basıp TR'ye düşer (sessizce yanlış borsada çalışmayı engeller).
+      EXCHANGE: binance_global
+      QUOTE_ASSET: USDT
+      # Likidite tabanı borsanın ölçeğinde. Varsayılan 120.000 USDT
+      # Global'de ÖLÇÜLDÜ (20K/50K/120K/300K tabanlarının hepsinde havuz
+      # 10 kazanan / 8 hareketli çıktı → taban şişkin değil). Aşılırsa
+      # tarama genişliği düşer.
+      MIN_QUOTE_VOLUME_USDT: ${MIN_QUOTE_VOLUME_USDT:-120000}
+      # Balina tespiti eşiği — TR'de 25.000 TRY sabitti ve env'sizdi; USDT'de
+      # ~40 kat sıkı kalırdı (yaklaşık 1.000 USDT). Bu yüzden env'lenebilir
+      # yapıldı.
+      WHALE_NOTIONAL: ${WHALE_NOTIONAL:-25000}
+      # 2026-09-26: Global örneğinin kalıcı adresi
+      # https://global.erkanerdem.online. Traefik (Coolify) TLS'i sonlandırıp
+      # `gateway_global`'e yönlendirir; tarayıcı origin'i bu domain olur.
+      # Boş bırakılırsa `main.py` localhost varsayılanına düşer ve production'da
+      # "Access-Control-Allow-Origin" eksikliğiyle tüm fetch'ler reddedilir —
+      # bu yüzden varsayılan boş DEĞİL, gerçek domain'dir.
+      CORS_ORIGINS: ${CORS_ORIGINS_GLOBAL:-https://global.erkanerdem.online}
+      SCALPER_ADMIN_PASSWORD: ${SCALPER_ADMIN_PASSWORD_GLOBAL:?SCALPER_ADMIN_PASSWORD_GLOBAL must be set}
+      # ⚠️ AYRI SESSION SECRET ZORUNLU. Aynı secret iki örnek arasında
+      #   çerez geçerliliği aktarır: TR'de giriş yapmış bir kullanıcının
+      #   oturumu Global'da da geçerli sayılır ve iki ayrı kullanıcı tablosu/
+      #   cüzdanı varken bu bir yetki karışıklığıdır. İki dağıtımın secret'ı
+      #   FARKLI olmalıdır.
+      SCALPER_SESSION_SECRET: ${SCALPER_SESSION_SECRET_GLOBAL:?SCALPER_SESSION_SECRET_GLOBAL must be set (TR'den FARKLI olmalı)}
+      SCALPER_COOKIE_SECURE: ${SCALPER_COOKIE_SECURE:-1}
+      LLM_ENCRYPTION_KEY: ${LLM_ENCRYPTION_KEY_GLOBAL:-${LLM_ENCRYPTION_KEY:?LLM_ENCRYPTION_KEY_GLOBAL (veya LLM_ENCRYPTION_KEY) must be set}}
+      LLM_ALLOW_PRIVATE_PROVIDER: ${LLM_ALLOW_PRIVATE_PROVIDER:-0}
+      TOP_GAINERS_AUTO_ACTIVATE: ${TOP_GAINERS_AUTO_ACTIVATE:-true}
+      TOP_GAINERS_LIMIT: ${TOP_GAINERS_LIMIT:-10}
+      TOP_GAINERS_REFRESH_SEC: ${TOP_GAINERS_REFRESH_SEC:-600}
+      # ⚠️ TR ile AYRI VAPID çifti — frontend build ARG'ı ile eşleşmeli
+      # (`NEXT_PUBLIC_VAPID_PUBLIC_KEY_GLOBAL`). Push aboneliği origin'e
+      # bağlıdır; aynı çift iki domain'de kullanılırsa bildirimler yanlış
+      # örneğe gider. Boş bırakılırsa push sessizce devre dışı kalır
+      # (arayüz "anahtar yapılandırılmamış" der), uygulama çalışmaya devam eder.
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY_GLOBAL:-${VAPID_PRIVATE_KEY:-}}
+      VAPID_SUBJECT: ${VAPID_SUBJECT_GLOBAL:-mailto:alerts@global.erkanerdem.online}
+    volumes:
+      - scalper_global_data:/data
+    expose:
+      - "8005"
+    healthcheck:
+      # `backend` ile aynı uç, port numarası hariç.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/health', timeout=10)"]
+      start_period: 60s
+      interval: 15s
+      timeout: 12s
+      retries: 10
+    logging: *default-logging
+
+  # 2026-09-26 (Global): AYRI frontend build'i ZORUNLU.
+  # `NEXT_PUBLIC_*` Next.js tarafından build anında sabitlenir; çalışma
+  # anında env değişimi etkisizdir. Tek imaj hem TRY hem USDT gösteremez —
+  # bu yüzden TR ve Global iki ayrı imajdır (Dockerfile ARG'ı).
+  frontend_global:
+    build:
+      context: ./frontend
+      args:
+        # ⚠️ AYRI VAPID ANAHTARI ZORUNLU. Web Push aboneliği bir "application
+        # server key"e bağlıdır ve tarayıcı bunu ORIGIN ile eşleştirir. Aynı
+        # public key iki build'de kullanılırsa global.erkanerdem.online
+        # kullanıcısı TR'nin key'iyle abone olur ve backend bildirimi yanlış
+        # örneğe yollar. Sessiz ve kullanıcıya görünmez — ayırmak gerekir.
+        #
+        # Üretin (backend'in `py_vapid` bağımlılığıyla, backend konteynerinde):
+        #   python - <<'PY'
+        #   from py_vapid import Vapid
+        #   from cryptography.hazmat.primitives import serialization as s
+        #   import base64
+        #   k = Vapid(); k.generate_keys()
+        #   pem = k.private_pem().decode()
+        #   pub = base64.urlsafe_b64encode(k.public_key.public_bytes(
+        #       encoding=s.Encoding.X962,
+        #       format=s.PublicFormat.UncompressedPoint)).decode().rstrip("=")
+        #   print("VAPID_PRIVATE_KEY_GLOBAL=\n" + pem)
+        #   print("NEXT_PUBLIC_VAPID_PUBLIC_KEY_GLOBAL=" + pub)
+        #   PY
+        #
+        # ⚠️ `VAPID_PRIVATE_KEY_GLOBAL` backend'e PEM olarak verilir;
+        #    public key ondan TÜRETİLMEZ — frontend build ARG'ına elle
+        #    yazılır. İkisi eşleşmezse tarayıcı push aboneliği sessizce
+        #    reddedilir (beyaz ekran değil, bildirim hiç gelmez).
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY_GLOBAL:-}
+        NEXT_PUBLIC_QUOTE_ASSET: USDT
+    restart: unless-stopped
+    stop_grace_period: 5s
+    mem_limit: 1g
+    cpus: 1.0
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    depends_on:
+      backend_global:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY_GLOBAL:-}
+    expose:
+      - "3005"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3005/ || exit 1"]
+      start_period: 20s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  # Global örneğinin gateway'i. AYRI bir Coolify domain'ine bağlanacak şekilde
+  # ayrı konteynerdir — aynı konteyner iki `server` bloğu taşısaydı
+  # upstream'ler karışır ve route üretimi belirsizleşirdi.
+  gateway_global:
+    build:
+      context: ./nginx-global
+    image: scalperagent-gateway-global:latest
+    restart: unless-stopped
+    stop_grace_period: 5s
+    mem_limit: 1g
+    cpus: 1.0
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    depends_on:
+      - frontend_global
+      - backend_global
+    expose:
+      - "80"
+    networks:
+      - default
+      - coolify
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:80/gateway-health || exit 1"]
+      start_period: 10s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  # Global DB'sinin yedeği — `db-backup` `-h postgres -d scalper`'a SABİTLİ
+  # olduğu için ikinci bir servis gerekir (yoksa Global örneğinin verisi
+  # hiç yedeklenmez ve sessizce kaybolur).
+  db-backup-global:
+    image: pgvector/pgvector:pg17-bookworm
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    depends_on:
+      backend_global:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD_GLOBAL:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_GLOBAL must be set}}
+    volumes:
+      # Ayrı dizin: aynı `local_backups` altına yazılsaydı `ls -1t` temizliği
+      # iki örneğin dump'ını birbirinden silerdi (her biri "ilk 2'yi tut"
+      # kuralını AYRI uygular).
+      - ./local_backups_global:/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sleep 300
+        while true; do
+          ts=$$(date +%Y%m%d_%H%M%S)
+          ls -1t /backups/scalper_global_*.dump 2>/dev/null | tail -n +3 | xargs -r rm -f
+          echo "[backup-global] $$ts basliyor"
+          if pg_dump -h postgres_global -U ${POSTGRES_USER_GLOBAL:-scalper} -d ${POSTGRES_DB_GLOBAL:-scalper_global} -Fc -f "/backups/scalper_global_$$ts.dump"; then
+            echo "[backup-global] $$ts tamam"
+          else
+            echo "[backup-global] $$ts BASARISIZ" >&2
+          fi
+          ls -1t /backups/scalper_global_*.dump 2>/dev/null | tail -n +3 | xargs -r rm -f
+          sleep 86400
+        done
+    logging: *default-logging
+
 volumes:
   scalper_data:
   scalper_postgres_data:
+  scalper_global_data:
+  scalper_postgres_global_data:
 
 # Coolify proxy (Traefik) ağı — compose dışında tanımlı external ağ.
 networks:

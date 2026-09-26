@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, apiRequest } from "../lib/api";
-import { formatSignedTL, formatTL, toMs } from "../lib/format";
+import { formatSignedTL, formatTL, toMs, withQuote } from "../lib/format";
 import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
 import SymbolLink from "./SymbolLink";
 
@@ -111,7 +111,7 @@ export default function LiveTerminal() {
               <div key={s.id ?? `${s.timestamp}-${s.symbol}-${s.action}-${i}`} className={`trade-log-row py-1 ${s.action === "BUY_BLOCKED" ? "text-sky-400" : String(s.action || "").includes("BUY") ? "text-neon-green" : "text-neon-red"}`}>
                 <span className="text-bunker-muted">[{s.timestamp ? new Date(toMs(s.timestamp)).toLocaleTimeString("tr-TR") : "--"}]</span>{" "}
                 <span className="font-bold">{s.action}</span>{" "}
-                <SymbolLink symbol={s.symbol} className="font-bold text-current hover:text-white" /> {(s.price ?? 0) > 0 && `@ ₺${s.price!.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}{" "}
+                <SymbolLink symbol={s.symbol} className="font-bold text-current hover:text-white" /> {(s.price ?? 0) > 0 && `@ ${withQuote(s.price!)}`}{" "}
                 <span className="text-bunker-600 text-xs">// {s.reason}</span>
               </div>
             ))}
@@ -142,15 +142,15 @@ export default function LiveTerminal() {
                   </span>
                 </div>
                 <div className="position-values flex justify-between text-xs text-bunker-muted font-mono">
-                  <span>Giriş: ₺{p.entry.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  <span>Anlık: ₺{p.current.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span>Giriş: {withQuote(p.entry)}</span>
+                  <span>Anlık: {withQuote(p.current)}</span>
                 </div>
                 <div className="mt-2 text-xs text-right text-bunker-muted font-mono">
                   PnL: <span className={pnlColor(p.pnl_try)}>{tryText(p.pnl_try)}</span> · {pctText(p.pnl_pct)}
                 </div>
                 <div className="mt-1 text-xs text-bunker-muted font-mono">Sinyal: {p.strategy || "—"}</div>
                 <div className="mt-1 text-xs text-right text-bunker-muted font-mono">
-                  Değer: ₺{p.value.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  Değer: {withQuote(p.value)}
                 </div>
               </div>
             ))}

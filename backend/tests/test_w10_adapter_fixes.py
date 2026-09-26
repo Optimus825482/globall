@@ -285,8 +285,12 @@ class Ticker24hCacheTests(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(self.pub, "_get_json", side_effect=fake):
             first = await self.pub.ticker_24h()
             second = await self.pub.ticker_24h()
-            movers = await self.pub.top_gainers(5)
-            pool = await self.pub.active_movers_pool(5)
+            # 2026-09-26 (Global örneği): quote artık AÇIKÇA geçirilir. Bu
+            # testin sahte exchangeInfo'su `quoteAsset: "TRY"` döndürüyor;
+            # Global koşusunda varsayılan USDT olacağı için boş küme dönerdi.
+            # Doğru çağrı biçimi ikisinde de aynıdır.
+            movers = await self.pub.top_gainers(5, quote_asset="TRY")
+            pool = await self.pub.active_movers_pool(5, quote_asset="TRY")
         # 1 × ticker_24hr (weight 80) + 1 × exchangeInfo (önbellekli) = 2 istek.
         self.assertEqual(2, calls["n"], f"ticker_24h önbelleği atlandı: {calls['n']} istek")
         self.assertEqual(first, second)

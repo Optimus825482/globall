@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiRequest } from "../lib/api";
-import { toMs } from "../lib/format";
+import { toMs, toSymbol } from "../lib/format";
 import SymbolLink from "../components/SymbolLink";
 
 type Forecast = {
@@ -165,7 +165,7 @@ export default function ChartForecastsTab() {
             type="text"
             value={symbolFilter}
             onChange={(e) => handleFilter("symbol", e.target.value.toUpperCase())}
-            placeholder="Örn: BTCTRY"
+            placeholder={`Örn: ${toSymbol("BTC")}`}
             className="bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-1.5 font-mono text-sm text-white placeholder-bunker-700 focus:border-neon-green/50 outline-none"
           />
         </div>

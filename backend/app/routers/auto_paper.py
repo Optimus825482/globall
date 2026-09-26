@@ -413,7 +413,7 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
 
         # R3-06 (a/b): girişten önce LİKİDİTE + KORELASYON KÜME kapısı. order_value
         # burada hesaplanıp `_open_new_trade`'e iletilir (tek wallet okuması).
-        balance = await database.get_wallet_balance("TRY")
+        balance = await database.get_wallet_balance()
         balance_pct = float(settings.get("balance_pct", config.AUTO_PAPER_BALANCE_PCT_DEFAULT)) / 100.0
         order_value = balance * balance_pct
         gate = await _liquidity_cluster_gate(symbol, order_value, balance)
@@ -442,7 +442,7 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
 
         # Bakiye kontrolü — R3-06: çağıran (try_open) önceden hesapladıysa onu kullan.
         if balance is None:
-            balance = await database.get_wallet_balance("TRY")
+            balance = await database.get_wallet_balance()
         if order_value is None:
             order_value = balance * balance_pct
         # RİSK SİZİNG (2026-09-16 denetimi): ESKİDEN `order_value < min_order` iken

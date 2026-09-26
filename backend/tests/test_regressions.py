@@ -32,20 +32,26 @@ class RegressionContracts(unittest.TestCase):
 
     def test_price_watch_intent_resolves_explicit_and_conversation_symbol(self):
         from app.main import _price_watch_symbol
+        from app.config import config
+
+        # 2026-09-26 (Global örneği): kullanıcının yazdığı sembol deployment'ın
+        # quote'süyle eşleşir. Sabit "DODOTRY" Global'da hiçbir regex'e
+        # uymaz ve fonksiyon None döner — yani test Global'da yanlış olurdu.
+        sym = f"DODO{config.QUOTE_ASSET}"
 
         self.assertEqual(
-            _price_watch_symbol([{"role": "user", "content": "DODOTRY fiyatı izle"}]),
-            "DODOTRY",
+            _price_watch_symbol([{"role": "user", "content": f"{sym} fiyatı izle"}]),
+            sym,
         )
         self.assertEqual(
             _price_watch_symbol([
-                {"role": "user", "content": "DODOTRY ne durumda?"},
+                {"role": "user", "content": f"{sym} ne durumda?"},
                 {"role": "user", "content": "fiyatı canlı izle"},
             ]),
-            "DODOTRY",
+            sym,
         )
         self.assertIsNone(
-            _price_watch_symbol([{"role": "user", "content": "DODOTRY analiz et"}])
+            _price_watch_symbol([{"role": "user", "content": f"{sym} analiz et"}])
         )
 
     def test_strategy_chat_has_live_analysis_and_price_sse_contract(self):
@@ -310,7 +316,15 @@ class RegressionContracts(unittest.TestCase):
         self.assertIn('TOP_GAINERS_LIMIT = max(1, min(50', config_source)
         self.assertIn('TOP_GAINERS_REFRESH_SEC = max(60', config_source)
         self.assertIn('source": "binance_tr_public_24h_ticker"', source)
-        self.assertIn('known_try = set(await trading_symbols("TRY"))', source)
+        # 2026-09-26 (Global örneği): sembol evreni artık `trading_symbols()`
+        # argsız çağrılır — quote, deployment'ın config.QUOTE_ASSET'i olur
+        # (TR→TRY, Global→USDT). Sabit `"TRY"` literal'i Global'da HİÇBİR
+        # sembol döndürür ve aktivite/mutabakat sessizce boş kalırdı. Test
+        # hâlâ "sembol evreni bu borsanın quote'süyle sorgulanıyor"
+        # sözleşmesini korur, yalnız ifadesi yeni imzaya uyar.
+        self.assertIn('known_try = set(await trading_symbols())', source)
+        self.assertNotIn('trading_symbols("TRY")', source,
+                         "sembol evreni sabit TRY'ye bağlanmamalı")
 
 
     def test_compose_has_bounded_shutdown_and_postgres_startup_grace(self):

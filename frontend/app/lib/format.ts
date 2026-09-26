@@ -120,26 +120,95 @@ export function formatPrice(value: number | null | undefined): string {
 }
 
 /**
- * Türk Lirası: `₺` önek, TAM 2 ondalık, tr-TR gruplama.
- * Küçük tutarlarda 8 ondalık basmak yok (H-15); sembol her zaman önek.
+ * Gösterim birimi. `NEXT_PUBLIC_QUOTE_ASSET` build-time env'den okunur:
+ *   - verilmezse → `TRY` (Binance TR örneği, bugünkü davranış)
+ *   - `USDT`    → Global örneği
+ *
+ * AYNI İMAJ İKİ QUOTE'YU TAŞIYAMAZ: Next.js `NEXT_PUBLIC_*` değerlerini
+ * build sırasında sabitler, çalışma anında okumaz. Global örneği için
+ * AYRI bir frontend build gerekir (bkz. docker-compose `frontend_global`).
+ * Backend ise `/api/market-symbols` yanıtında `quote_asset` döndürür; bu
+ * değer ikisinin aynı olduğunu doğrulamak için kullanılabilir.
  */
-export function formatTL(value: number | null | undefined): string {
-  const n = Number(value);
-  if (value == null || !Number.isFinite(n)) return "—";
-  return `₺${n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const QUOTE_ASSET = (process.env.NEXT_PUBLIC_QUOTE_ASSET || "TRY").toUpperCase();
+
+/** `TRY` → `₺`, `USDT` → `USDT`, `USD` → `$`. Yalnız GÖSTERİM. */
+export const QUOTE_SYMBOL: string = (() => {
+  if (QUOTE_ASSET === "TRY") return "₺";
+  if (QUOTE_ASSET === "USDT") return "USDT";
+  if (QUOTE_ASSET === "USD" || QUOTE_ASSET === "USDC") return "$";
+  return QUOTE_ASSET;
+})();
+
+export const QUOTE_ASSET_NAME: string = QUOTE_ASSET;
+
+/**
+ * Taban varlık + bu deployment'ın quote'sü → sembol (`"BTC"` + `USDT` =
+ * `"BTCUSDT"`). Sayfaların sembol varsayılanlarını sabit `BTCTRY` yerine
+ * buradan türetmeleri gerekir: `BTCUSDT` sabiti Global örneğinde bulunmayan
+ * bir semboldür ve sayfa sessizce boş grafikle açılır.
+ */
+export function toSymbol(base: string): string {
+  const value = String(base || "").toUpperCase();
+  return value.endsWith(QUOTE_ASSET) ? value : `${value}${QUOTE_ASSET}`;
 }
 
 /**
- * İşaretli TL (K/Z): kâr `+₺…`, zarar `-₺…`, tam sıfır `₺0,00`, veri yok "—".
- * Sembol önek, işaret sembolün önünde → `-₺12,00` (H-15 biçim birliği).
+ * Para birimi: önek, TAM 2 ondalık, tr-TR gruplama.
+ * Küçük tutarlarda 8 ondalık basmak yok (H-15); sembol her zaman önek.
+ *
+ * Adı tarihsel olarak `formatTL`; çağıran kod değişmeden Global'da USDT
+ * göstermesi için gösterim birimini env'e bağladık. Yeni kod `formatMoney`
+ * adını tercih edebilir — `formatTL` geriye dönük uyum için korunuyor.
  */
-export function formatSignedTL(value: number | null | undefined): string {
+export function formatMoney(value: number | null | undefined): string {
   const n = Number(value);
   if (value == null || !Number.isFinite(n)) return "—";
-  const magnitude = formatTL(Math.abs(n));
+  return `${QUOTE_SYMBOL}${n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** @deprecated `formatMoney` kullanın; bu ad tarihsel olarak TRY'ye özgüydü. */
+export const formatTL = formatMoney;
+
+/**
+ * İşaretli tutar (K/Z): kâr `+…`, zarar `-…`, tam sıfır `0,00`, veri yok "—".
+ * Sembol önek, işaret sembolün önünde → `-₺12,00` (H-15 biçim birliği).
+ */
+export function formatSignedMoney(value: number | null | undefined): string {
+  const n = Number(value);
+  if (value == null || !Number.isFinite(n)) return "—";
+  const magnitude = formatMoney(Math.abs(n));
   if (n < 0) return `-${magnitude}`;
   if (n > 0) return `+${magnitude}`;
   return magnitude;
+}
+
+/** @deprecated `formatSignedMoney` kullanın. */
+export const formatSignedTL = formatSignedMoney;
+
+/**
+ * Ham (biçimsiz) sayının önüne gösterim birimi koyar. `formatMoney`'den farkı
+ * ondalık hassasiyetin çağıran tarafından seçilmesidir (miktar/noter alanları
+ * 6 hane ister, tutarlar 2).
+ *
+ * DİKKAT: girdi önceden `toLocaleString("tr-TR", …)` ile biçimlendirilmiş bir
+ * STRING ise `Number()` onu `NaN` yapar → "—" döner. Bu yüzden sayıyı ham
+ * geçirin; biçimlendirilmiş fiyat metni istiyorsanız `withQuotePrice`.
+ */
+export function withQuote(value: number | string, digits = 2): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${QUOTE_SYMBOL}${n.toLocaleString("tr-TR", { maximumFractionDigits: digits })}`;
+}
+
+/**
+ * `₺{formatPrice(x)}` kalıbının karşılığı: gösterim birimi + fiyat hassasiyeti
+ * kovası. Bileşenlerdeki elle yazılmış para öneklerinin TEK karşılığı —
+ * `formatPrice` ile AYNI ondalık kovasını kullanır (korelasyon bozulmaz).
+ */
+export function withQuotePrice(value: number | null | undefined): string {
+  const formatted = formatPrice(value);
+  return formatted === "—" ? formatted : `${QUOTE_SYMBOL}${formatted}`;
 }
 
 /**

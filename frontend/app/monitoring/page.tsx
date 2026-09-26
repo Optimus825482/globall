@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE, apiRequest } from "../lib/api";
-import { fmtDateTime, formatPrice, toMs } from "../lib/format";
+import { fmtDateTime, formatPrice, toMs, withQuotePrice } from "../lib/format";
 import { useAuth } from "../lib/auth";
 import { useLiveMessages } from "../lib/liveSocket";
 import { useModalA11y } from "../lib/useModalA11y";
@@ -499,15 +499,15 @@ const CandidateDetail = ({ c, kind, onClose }: { c: Candidate; kind: "radar" | "
           </div>
           <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3 text-center">
             <p className="eyebrow text-bunker-muted">GİRİŞ / ANLIK</p>
-            <p className="mt-1 font-mono text-base font-bold text-white">₺{formatPrice(price)}</p>
+            <p className="mt-1 font-mono text-base font-bold text-white">{withQuotePrice(price)}</p>
           </div>
           <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3 text-center">
             <p className="eyebrow text-neon-green">HEDEF FİYAT (TP)</p>
-            <p className="mt-1 font-mono text-base font-bold text-neon-green">{expected != null ? `₺${formatPrice(expected)}` : "—"}</p>
+            <p className="mt-1 font-mono text-base font-bold text-neon-green">{expected != null ? withQuotePrice(expected) : "—"}</p>
           </div>
           <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3 text-center">
             <p className="eyebrow text-neon-red">STOP LOSS (SL)</p>
-            <p className="mt-1 font-mono text-base font-bold text-neon-red">{sl != null ? `₺${formatPrice(sl)}` : "—"}</p>
+            <p className="mt-1 font-mono text-base font-bold text-neon-red">{sl != null ? withQuotePrice(sl) : "—"}</p>
           </div>
           <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3 text-center">
             <p className="eyebrow text-yellow-300">ÖDÜL / RİSK (R:R)</p>
@@ -1315,7 +1315,7 @@ export default function MonitoringPage() {
                       {c.price > 0 && (
                         <div className="text-left lg:text-right min-w-[70px]">
                           <p className="text-[10px] text-bunker-muted">FİYAT</p>
-                          <p className="text-xs font-bold text-white">₺{formatPrice(c.price)}</p>
+                          <p className="text-xs font-bold text-white">{withQuotePrice(c.price)}</p>
                         </div>
                       )}
 
@@ -1331,9 +1331,9 @@ export default function MonitoringPage() {
                       <div className="hidden md:block text-right min-w-[130px]">
                         <p className="text-[10px] text-bunker-muted">TP / SL</p>
                         <p className="text-xs text-white">
-                          <span className="text-neon-green font-bold">{tp != null ? `₺${formatPrice(tp)}` : "—"}</span>
+                          <span className="text-neon-green font-bold">{tp != null ? withQuotePrice(tp) : "—"}</span>
                           <span className="text-bunker-muted mx-1">/</span>
-                          <span className="text-neon-red font-bold">{sl != null ? `₺${formatPrice(sl)}` : "—"}</span>
+                          <span className="text-neon-red font-bold">{sl != null ? withQuotePrice(sl) : "—"}</span>
                         </p>
                       </div>
 
@@ -1432,7 +1432,7 @@ export default function MonitoringPage() {
                   <span className="text-bunker-muted">
                     {p.volume_burst != null ? `${p.volume_burst.toFixed(1)}× hacim` : "— hacim"}
                   </span>
-                  <span className="ml-auto text-white">{p.price != null && p.price > 0 ? `₺${formatPrice(p.price)}` : "—"}</span>
+                  <span className="ml-auto text-white">{p.price != null && p.price > 0 ? withQuotePrice(p.price) : "—"}</span>
                   <Link
                     href={`/charts?symbol=${encodeURIComponent(p.symbol)}`}
                     title="Grafiği aç"
@@ -1504,7 +1504,7 @@ export default function MonitoringPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:justify-end text-bunker-muted">
-                    {w.price != null && w.price > 0 && <span className="text-white">₺{formatPrice(w.price)}</span>}
+                    {w.price != null && w.price > 0 && <span className="text-white">{withQuotePrice(w.price)}</span>}
                     <span className={change == null ? "text-bunker-muted" : change >= 0 ? "text-neon-green" : "text-neon-red"}>
                       24s: {change == null ? "—" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}
                     </span>
@@ -1575,7 +1575,7 @@ export default function MonitoringPage() {
                     </div>
 
                     <div className="flex items-center gap-3 font-mono">
-                      {w.price > 0 && <span className="text-xs text-white">₺{formatPrice(w.price)}</span>}
+                      {w.price > 0 && <span className="text-xs text-white">{withQuotePrice(w.price)}</span>}
                       <span className={`text-xs font-black ${scoreColor(score)} bg-bunker-950 px-2 py-1 rounded border border-bunker-800`}>
                         Skor: {scoreText(score)}
                       </span>

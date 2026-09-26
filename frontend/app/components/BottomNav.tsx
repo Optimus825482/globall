@@ -2,13 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BOTTOM_NAV_ITEMS } from "../lib/menu";
 
-const NAV_ITEMS = [
-  { href: "/portfolio", label: "Portföy", icon: "💼" },
-  { href: "/monitoring", label: "Radar", icon: "📡" },
-  { href: "/charts", label: "Grafik", icon: "📈" },
-  { href: "/binance-tr", label: "Binance TR", icon: "🏛️" },
-];
+const NAV_ITEMS = BOTTOM_NAV_ITEMS;
 
 export default function BottomNav() {
   const pathname = usePathname();

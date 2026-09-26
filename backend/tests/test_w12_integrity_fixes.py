@@ -329,7 +329,10 @@ class RadarUniverseMutationTests(unittest.TestCase):
         async def fake_tickers():
             return tickers
 
-        async def fake_symbols(_quote):
+        async def fake_symbols(_quote=None):
+            # 2026-09-26: `trading_symbols` artık `quote_asset`'ı opsiyonel
+            # alıyor (boş bırakılırsa deployment'ın quote'sü kullanılır) ve
+            # çağıranlar argsız çağırıyor. Test de aynı sözleşmeyi izler.
             return {"BTCUSDT", "NEWUSDT"}
 
         with mock.patch.object(main, "ticker_24h", fake_tickers), \

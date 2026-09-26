@@ -39,7 +39,14 @@ class MacroSentimentServiceTests(unittest.TestCase):
         ]
 
         res = asyncio.run(macro_sentiment_service.get_btc_compass())
-        self.assertEqual(res["btc_symbol"], "BTCTRY")
+        # 2026-09-26 (Global örneği): referans sembol deployment'ın quote'süne
+        # bağlıdır — TR'de BTCTRY, Global'da BTCUSDT. Sabit "BTCTRY" beklentisi
+        # Global'da yanlış olurdu (oradaki doğru cevap tam olarak BTCUSDT'dir).
+        from app.config import config
+        self.assertEqual(res["btc_symbol"], f"BTC{config.QUOTE_ASSET}")
+        # Klines mock'landığı için sembol içeriğine bakılmadan çağrıldığını da doğrula.
+        mock_klines.assert_called()
+        self.assertEqual(mock_klines.call_args[0][0], f"BTC{config.QUOTE_ASSET}")
         self.assertFalse(res["is_panic_dump"])
         self.assertGreater(res["btc_15m_change_pct"], 0.0)
 

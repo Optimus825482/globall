@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 import time
 from collections import defaultdict, deque
@@ -109,7 +110,11 @@ class MicroFlow:
 
     MAX_BARS = 240           # ~4 min of 1s bars, ~20 min of 5s bars
     TRADE_WINDOW_SEC = 60.0
-    WHALE_NOTIONAL_TRY = 25_000.0
+    # Balina eşiği QUOTE cinsindendir (TR→TRY, Global→USDT). Sabit 25.000
+    # Global'da ~40 kat sıkı olurdu: hiçbir işlem "balina" sayılmaz ve akış
+    # tespiti sessizce ÖLÜR. Adı `_TRY` kaldı (tarihsel etiket), değer env'den
+    # gelir ve doğru ölçekte ayarlanmalıdır.
+    WHALE_NOTIONAL_TRY = float(os.getenv("WHALE_NOTIONAL", "25000"))
 
     def __init__(self):
         self._lock = asyncio.Lock()

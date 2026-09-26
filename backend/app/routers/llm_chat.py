@@ -24,7 +24,9 @@ from app.routers.llm_position_tools import (LLM_POSITION_CONTEXT_TOOL, LLM_UPDAT
                             LLM_LIST_SYMBOL_GUARDS_TOOL)
 from app.routers.maintenance import backfill_symbol_history
 from app.binance_tr_public import klines as fetch_klines, historical_klines, trading_symbols, top_gainers, orderbook, ticker_price
-from app import binance_tr_private
+# Private okuma yüzeyi borsaya göre seçilir (Binance TR / Global).
+# LLM araçları salt okunurdur; emir göndermez.
+from app import binance_private as binance_tr_private
 from app.technical_analysis import calculate_snapshot, _atr, _bollinger, _cci, _ema, _mfi, _sma
 from app.market_intelligence import (estimate_local_regime, execution_quality, symbol_safety,
                                      microstructure_snapshot, symbol_outcome_profile,
@@ -366,6 +368,27 @@ LLM_15M_UPSIDE_TOOL = {"type":"function","function":{"name":"detect_15m_upside_c
 LLM_5M_UPSIDE_TOOL = {"type":"function","function":{"name":"detect_5m_upside_candidates","description":"Aktif ve açık pozisyonu olmayan sembolleri taze 1m/3m/5m snapshot verileriyle yaklaşık 5 dakikalık olası yukarı momentum için sıralar. Trend, ADX/DI, momentum, hacim, spread, order-flow, derinlik, rejim ve veri boşluklarını döndürür; tahmin/garanti değildir, salt-okunur ve paper-only'dir.","parameters":{"type":"object","properties":{"limit":{"type":"integer"}},"required":[]}}}
 
 
+def _currency_symbol() -> str:
+    """Gösterim birimi: TRY→₺, USDT→USDT (kendi kodu), diğerleri→$ işareti.
+
+    Yalnız GÖSTERİM içindir; hiçbir hesapta kullanılmaz.
+    """
+    quote = str(config.QUOTE_ASSET).upper()
+    return {"TRY": "₺", "USDT": "USDT", "USD": "$", "USDC": "$"}.get(quote, quote)
+
+
+def _symbol_pattern(prefix_chars: str = r"[A-Z0-9]") -> str:
+    """Bu deployment'ın borsasına ait birleşik sembol regex'i.
+
+    TR örneğinde `\\bBTCTRY\\b`, Global örneğinde `\\bBTCUSDT\\b` üretir. LLM
+    sohbetinde kullanıcının yazdığı sembolü bulmak için tek kaynak noktasıdır;
+    ayrı ayrı `TRY` literal'i yazan her regex, Global'da sessizce hiçbir
+    şey tanımaz.
+    """
+    quote = re.escape(str(config.QUOTE_ASSET).upper())
+    return rf"\b{prefix_chars}{{2,15}}{quote}\b"
+
+
 def _chat_memory_document(messages, *, layer="session", symbol=None, strategy=None, session_id="default"):
     recent = [m for m in (messages or [])[-4:] if isinstance(m, dict)]
     content = json.dumps(recent, ensure_ascii=False, default=str)
@@ -403,20 +426,23 @@ def _price_watch_symbol(messages: list[dict]) -> str | None:
     ))
     if not watch_intent:
         return None
-    current_symbols = re.findall(r"\b[A-Z0-9]{2,15}TRY\b", last_text.upper())
+    # Sembol deseni bu deployment'ın quote'süne bağlıdır: TR'de `BTCTRY`,
+    # Global'da `BTCUSDT`. Sabit `TRY` deseni `BTCUSDT`'ye HİÇ uymaz ve
+    # sohbet sessizce hiçbir sembol tanımaz.
+    current_symbols = re.findall(_symbol_pattern(), last_text.upper())
     if current_symbols:
         return current_symbols[-1]
-    # "DODO fiyatı izle" gibi komutları yalnızca yapılandırılmış TRY evreniyle
+    # "DODO fiyatı izle" gibi komutları yalnızca yapılandırılmış evrenle
     # doğrula; sıradan kelimeleri sembol diye tahmin etme.
     prefix = re.search(r"\b([A-Z0-9]{2,12})\s+FIYATI(?:NI)?\s+(?:CANLI\s+)?IZLE\b", normalized.upper())
     if prefix:
-        candidate = f"{prefix.group(1)}TRY"
+        candidate = f"{prefix.group(1)}{config.QUOTE_ASSET}"
         if candidate in config.SYMBOLS:
             return candidate
     for message in reversed(messages[:-1]):
         if not isinstance(message, dict):
             continue
-        prior = re.findall(r"\b[A-Z0-9]{2,15}TRY\b", str(message.get("content", "")).upper())
+        prior = re.findall(_symbol_pattern(), str(message.get("content", "")).upper())
         if prior:
             return prior[-1]
     return None
@@ -1163,8 +1189,11 @@ async def _upside_scout_impl():
                 text or "", re.IGNORECASE):
             _put(sym, pct)
         if not targets:
+            # LLM çıktısındaki fiyat tablosu fiyatın yanına para BİRİMİ yazar
+            # ("950.000 TRY" / "950.000 ₺"). Global örneğinde bu birim USDT'dir.
+            _unit = rf"(?:{re.escape(config.QUOTE_ASSET)}|{re.escape(_currency_symbol())})"
             for sym, pct in re.findall(
-                    r"(?:^|\n)\s*([A-Z0-9]{2,})\s*\n\s*[\d.,]+\s*(?:TRY|₺)\s*\n\s*%?\s*([0-9]+(?:[.,][0-9]+)?)",
+                    rf"(?:^|\n)\s*([A-Z0-9]{{2,}})\s*\n\s*[\d.,]+\s*{_unit}\s*\n\s*%?\s*([0-9]+(?:[.,][0-9]+)?)",
                     text or ""):
                 _put(sym, pct)
         return targets
@@ -1429,7 +1458,7 @@ async def llm_query_database(args: dict, default_symbol: str | None = None):
     elif resource in {"decisions", "decision_logs"}:
         rows = await database.get_decision_logs(limit, symbol, strategy)
     elif resource == "wallet":
-        return {"resource": resource, "balances": {"TRY": await database.get_wallet_balance("TRY")},
+        return {"resource": resource, "balances": {"TRY": await database.get_wallet_balance()},
                 "live_open_position_count": len(analyzer.positions)}
     else:
         return {"error": "resource yalnızca positions, trades, signals, decisions veya wallet olabilir"}
@@ -1688,7 +1717,7 @@ async def _chat_auto_trade_open(cue: dict) -> dict:
         return {"symbol": symbol, "status": "ENTRY_BLOCKED", "reason": "giris_kalite_kapisi:" + ",".join(gate_reasons[:3])}
     # 7) Likidite ön kontrolü
     order_value = min(config.CHAT_PREDICTION_ORDER_VALUE_TRY,
-                      max(config.MIN_PARTIAL_ORDER_TRY, await database.get_wallet_balance("TRY")))
+                      max(config.MIN_PARTIAL_ORDER_TRY, await database.get_wallet_balance()))
     eligible, eligibility = await analyzer.entry_liquidity_preflight(symbol, "CHAT_PREDICTION", order_value)
     if not eligible:
         return {"symbol": symbol, "status": "ENTRY_INELIGIBLE", "reason": eligibility.get("reason", "likidite_yetersiz")}
@@ -1957,7 +1986,7 @@ async def _detect_upside_candidates(horizon_minutes: int, args: dict | None = No
     # içinden TRY çiftleri, 24s değişime göre ilk 20 ve minimum quoteVolume.
     # Açık pozisyonlu semboller daha sonra scan_market_snapshots içinde elenir.
     try:
-        gainer_rows = await top_gainers(20)
+        gainer_rows = await top_gainers(20, quote_asset=config.QUOTE_ASSET)
     except Exception as exc:
         logger.warning("Top-gaining listesi alınamadı, aktif sembollere düşülüyor: %s", exc)
         gainer_rows = []
@@ -2289,7 +2318,7 @@ async def validate_trade_plan(args: dict):
     except (TypeError, ValueError): target = 0
     try: entry_price = float(args.get("entry_price", 0) or 0)
     except (TypeError, ValueError): entry_price = 0
-    balance = await database.get_wallet_balance("TRY")
+    balance = await database.get_wallet_balance()
     economics = None
     if entry_price > 0 and amount > 0:
         quantity = amount / entry_price
@@ -2358,7 +2387,7 @@ async def reconcile_portfolio_state():
             differences.append({"symbol": symbol, "kind": "missing_in_db" if symbol in live else "missing_in_memory"})
     return {"consistent": not differences, "differences": differences,
             "db_open_positions": sorted(db_positions), "live_open_positions": sorted(live),
-            "wallet_try": await database.get_wallet_balance("TRY"), "repair_required": bool(differences)}
+            "wallet_try": await database.get_wallet_balance(), "repair_required": bool(differences)}
 
 async def safe_read_only_sql(args: dict):
     """Return structured SQL validation/runtime errors to the model instead of aborting the turn."""
@@ -2463,9 +2492,13 @@ async def _get_real_account_tool(args: dict, auth_user: dict | None = None) -> d
             return {"ok": True, "scope": "balance", "balances": non_zero, "read_only": True}
         # Varsayılan: holdings (bakiye + TRY değeri + FIFO maliyeti + PnL)
         account = await asyncio.to_thread(binance_tr_private.get_spot_account_raw, api_key, api_secret)
-        meta = {k: v for k, v in account.items() if k != "accountAssets"}
+        # Bakiye dizisinin anahtarı borsaya göre DEĞİŞİR: TR `accountAssets`,
+        # Global `balances`. Tek anahtara bakmak Global'da portföyü sessizce
+        # boş gösterirdi (LLM "hesapta varlık yok" derdi).
+        _bal_key = "balances" if config.EXCHANGE == "binance_global" else "accountAssets"
+        meta = {k: v for k, v in account.items() if k != _bal_key}
         held = []
-        for b in account.get("accountAssets") or []:
+        for b in account.get(_bal_key) or []:
             free = float(b.get("free", 0) or 0); locked = float(b.get("locked", 0) or 0)
             total = free + locked
             if total <= 0: continue
@@ -2474,10 +2507,14 @@ async def _get_real_account_tool(args: dict, auth_user: dict | None = None) -> d
             return {"ok": True, "scope": "holdings", "holdings": [], "total_value_try": 0,
                     "account_meta": meta, "note": "hesapta non-zero varlık yok", "read_only": True}
         from app.main import _avg_buy_cost  # dairesel içe aktarmayı önlemek için fonksiyon-düzeyi
+        # Gösterilen birim bu deployment'ın quote'südür (TR→TRY, Global→USDT).
+        # Global'da `USDTTRY` çifti yoktur, bu yüzden çapraz yol koşulsuz
+        # değildir; aksi hâlde tüm portföy sessizce `None` değerlenirdi.
+        _quote = config.QUOTE_ASSET
         candidates = []
         for h in held:
-            if h["asset"] != "TRY": candidates.extend([f"{h['asset']}TRY", f"{h['asset']}USDT"])
-        if any(h["asset"] == "USDT" for h in held): candidates.append("USDTTRY")
+            if h["asset"] != _quote: candidates.extend([f"{h['asset']}{_quote}", f"{h['asset']}USDT"])
+        if _quote == "TRY" and any(h["asset"] == "USDT" for h in held): candidates.append("USDTTRY")
         price_by_symbol: dict[str, float] = {}
         for i in range(0, len(candidates), 50):
             try:
@@ -2488,13 +2525,14 @@ async def _get_real_account_tool(args: dict, auth_user: dict | None = None) -> d
             except Exception:
                 continue
         usdt_try = price_by_symbol.get("USDTTRY", 0.0)
+        _needs_fx = _quote == "TRY" and usdt_try > 0
         now_ts = time.time()
         out = []
         for h in held:
             asset = h["asset"]
-            if asset == "TRY": price_try, symbol_concat = 1.0, None
-            elif price_by_symbol.get(f"{asset}TRY"): price_try, symbol_concat = price_by_symbol[f"{asset}TRY"], f"{asset}TRY"
-            elif price_by_symbol.get(f"{asset}USDT") and usdt_try: price_try, symbol_concat = price_by_symbol[f"{asset}USDT"] * usdt_try, f"{asset}USDT"
+            if asset == _quote: price_try, symbol_concat = 1.0, None
+            elif price_by_symbol.get(f"{asset}{_quote}"): price_try, symbol_concat = price_by_symbol[f"{asset}{_quote}"], f"{asset}{_quote}"
+            elif _needs_fx and price_by_symbol.get(f"{asset}USDT"): price_try, symbol_concat = price_by_symbol[f"{asset}USDT"] * usdt_try, f"{asset}USDT"
             else: price_try, symbol_concat = None, None
             row = {"asset": asset, "total": h["total"], "free": h["free"], "locked": h["locked"], "price_try": price_try,
                    "value_try": round(h["total"] * price_try, 2) if price_try is not None else None}
@@ -3293,7 +3331,7 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
     research_only_intent = bool(re.search(r"(geriye\s*dönük|geriye\s*donuk|backtest|back-test|tarihsel|geçmiş.*test|gecmis.*test|kaç\s+işlem.*olurdu|kaç\s+islem.*olurdu|simüle|simule|varsayımsal|varsayimsal)", last_text.lower()))
     if research_only_intent:
         trade_intent = False
-    requested_symbols = [token.upper() for token in re.findall(r"\b[A-Za-z]{2,12}TRY\b", last_text.upper())]
+    requested_symbols = [token.upper() for token in re.findall(_symbol_pattern(r"[A-Za-z]"), last_text.upper())]
     for s in (body.get("symbols") or []):
         sym_clean = str(s).replace("_", "").upper()
         if sym_clean and sym_clean not in requested_symbols:
@@ -3491,9 +3529,10 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
             return await llm_open_paper_trade({"symbol": args.get("symbol"), "plan": args.get("plan") or {}})
         if name == "activate_coin":
             symbol = str(args.get("symbol") or "").replace("_", "").upper()
-            known_try = set(await trading_symbols("TRY"))
+            known_try = set(await trading_symbols())
             if symbol not in known_try:
-                return {"ok": False, "symbol": symbol, "error": "Bu sembol Binance TR public TRY piyasasında aktif değil"}
+                return {"ok": False, "symbol": symbol,
+                        "error": f"Bu sembol {config.EXCHANGE_LABEL} public {config.QUOTE_ASSET} piyasasında aktif değil"}
             if symbol not in config.SYMBOLS: config.SYMBOLS.append(symbol)
             if symbol.lower() not in market.symbols:
                 market.symbols.append(symbol.lower()); market.reconnect_requested = True

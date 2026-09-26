@@ -10,22 +10,46 @@ Okuma uçları salt-okunurdur; emir gönderimi yalnızca place_market_sell ile
 yapılır (admin panelindeki kullanıcı onaylı satış akışı için). Asla otomatik
 emir göndermeyin; alış/çekim/acil emir yoktur.
 """
-import hashlib
-import hmac
 import json
 import logging
-import math
-import random
 import threading
 import time
-import uuid
-from urllib.parse import urlencode
-from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from app.config import config
+from app import binance_private_core as _core
 
 logger = logging.getLogger(__name__)
 
-REST_BASE = "https://www.binance.tr"
+# İmzalı uçların tabanı kayıt defterinden gelir. Binance TR'de bu
+# `https://www.binance.tr` — public'teki `api.binance.me` ile AYNI DEĞİL ve bu
+# bir hata değil, borsanın kendi ayrımı (bkz. config._EXCHANGE_REGISTRY).
+# Değer DEĞİŞMEDİ: üretimde çalışan taban aynen korunur.
+REST_BASE = config.PRIVATE_REST_BASE
+
+# Bu modülün borsa profili. TR: zarf `{"code":0,"data":...}` kullanır, liste
+# anahtarı "list", bakiye anahtarı "accountAssets", notional filtresi "NOTIONAL",
+# private semboller ALT ÇİZGİLİ (`BTC_USDT`).
+_TR_PROFILE = _core.PrivateExchangeProfile(
+    key="binance_tr",
+    label="Binance TR",
+    rest_base=REST_BASE,
+    account="/account/spot",
+    open_orders="/orders",
+    my_trades="/orders/trades",
+    exchange_info="/common/symbols",
+    server_time="/time",
+    path_prefix="/open/v1",
+    wraps_in_envelope=True,
+    list_key="list",
+    balance_key="accountAssets",
+    notional_filter="NOTIONAL",
+    symbol_separator="_",
+    open_orders_needs_symbol=True,
+)
+
+# Eski hata sınıfı adı — çağıranlar ve testler bu adı kullanır.
+BinanceTrApiError = _core.BinanceApiError
 REST_TIMEOUT_SEC = 15
 # #35: 5 sn'lik recvWindow, saniyede birkaç kez ölçülen ofsetin yarısı kadar
 # bir emniyet payı bırakıyordu. Kilitlenen yol imzalı isteklerin TAMAMI
@@ -72,37 +96,17 @@ _server_time_cache: dict = {"at": 0.0, "offset": 0.0}
 _server_time_lock = threading.Lock()
 
 
-class BinanceTrApiError(RuntimeError):
-    """Binance TR API hata zarfı veya HTTP hatası."""
-    def __init__(self, code: int | str, msg: str, http_code: int | None = None, raw: dict | None = None):
-        super().__init__(f"Binance TR API hatası {code}: {msg}")
-        self.code = code
-        self.msg = msg
-        self.http_code = http_code
-        self.raw = raw
-
-    @property
-    def is_transient(self) -> bool:
-        """1008 (Server Busy / Request Throttled) ve benzeri geçici sunucu/yoğunluk hataları."""
-        c = str(self.code or "").strip()
-        m = str(self.msg or "").lower()
-        if c in ("1008", "-1008", "1002", "-1002", "1003", "-1003", "1007", "-1007", "1016", "-1016"):
-            return True
-        if "server busy" in m or "unknown error" in m or "too many requests" in m or "service unavailable" in m:
-            return True
-        return False
+# NOT: `BinanceTrApiError` yalnız ÇEKİRDEKTE tanımlıdır (satır 52'deki alias).
+# Bu modülde ikinci bir tanım YAPILMAZ. Çekirdek `signed_request` her hata için
+# `_core.BinanceApiError` fırlatır; yerel bir kopya tanımlamak, `except
+# BinanceTrApiError` ifadelerinin o hatayı yakalamamasına ve "geçici hata →
+# tekrar dene" yolunun sessizce ölmesine yol açar. Aynı tip, iki sınıf tanımı
+# yüzünden ayrışmıştı; tek tanım bu çelişkiyi bitirir.
 
 
 def _unwrap(payload: dict) -> dict | list:
     """Binance TR zarfını aç: code != 0 ise hata, yoksa data'yı döndür."""
-    if not isinstance(payload, dict):
-        return payload
-    code = payload.get("code", payload.get("status"))
-    if code not in (None, 0, "0"):
-        msg = payload.get("msg") or payload.get("message") or "bilinmiyor"
-        raise BinanceTrApiError(code=code, msg=msg, raw=payload)
-    data = payload.get("data")
-    return data if data is not None else payload
+    return _core.unwrap(payload, _TR_PROFILE)
 
 
 def _http_get_json(url: str, headers: dict | None = None) -> dict | list:
@@ -126,14 +130,7 @@ def _private_retry_delay(attempt: int, headers=None) -> float:
     mantık buraya da birebir uygulanır: sunucunun Retry-After değeri kırpılmadan
     (yalnız `REST_RETRY_AFTER_MAX_SEC` tavanına) kullanılır.
     """
-    retry_after = headers.get("Retry-After") if headers else None
-    if retry_after is not None:
-        try:
-            return min(REST_RETRY_AFTER_MAX_SEC, max(0.0, float(retry_after)))
-        except (TypeError, ValueError):
-            pass
-    exponential = min(REST_BACKOFF_MAX_SEC, REST_BACKOFF_BASE_SEC * (2 ** (attempt - 1)))
-    return exponential + random.uniform(0.0, exponential * 0.25)
+    return _core.retry_delay(attempt, headers)
 
 
 def _private_ban_delay(attempt: int, headers=None) -> float:
@@ -144,18 +141,7 @@ def _private_ban_delay(attempt: int, headers=None) -> float:
     sunucunun Retry-After/Ban ipucu varsa o esas alınır, yoksa üstel geri
     çekilme en az 10 dakikadan başlar.
     """
-    retry_after = headers.get("Retry-After") if headers else None
-    if retry_after is not None:
-        try:
-            # Ban ipucu 429 tavanından (5 dk) DAHA UZUN süre bildirebilir;
-            # o yüzden ban tavanı (1 saat) kullanılır.
-            return min(REST_BAN_BACKOFF_MAX_SEC, max(0.0, float(retry_after)))
-        except (TypeError, ValueError):
-            pass
-    # #32: sunucu ipucu vermediyse üstel geri çekilme EN AZ 10 dakikadan
-    # başlar (600/1200/2400 sn) ve 1 saatte tavanlanır. 4 denemelik bir
-    # döngü bu ölçekte banı tırmandıramaz.
-    return min(REST_BAN_BACKOFF_MAX_SEC, REST_BAN_BACKOFF_BASE_SEC * (2 ** (attempt - 1)))
+    return _core.ban_delay(attempt, headers)
 
 
 def _server_time_offset_ms() -> float:
@@ -168,26 +154,10 @@ def _server_time_offset_ms() -> float:
     Artık **son bilinen ofset korunur**; TTL 60 sn'dir (pencere 10 sn olduğu
     için bu yeterli) ve kısa aralıklarla yeniden ölçülür.
     """
-    now = time.time()
-    with _server_time_lock:
-        cached = dict(_server_time_cache)
-    if cached.get("at") and now - float(cached["at"]) < _SERVER_TIME_TTL_SEC:
-        return float(cached.get("offset") or 0.0)
-    measured: float | None = None
-    try:
-        payload = _http_get_json(f"{REST_BASE}/open/v1/time")
-        data = _unwrap(payload)
-        server_ms = int((data or {}).get("serverTime") or 0) if isinstance(data, dict) else 0
-        if server_ms:
-            measured = float(server_ms) - now * 1000
-    except Exception as exc:
-        logger.info("Binance TR sunucu saati alınamadı (%s); son bilinen ofset korunuyor", exc)
-    with _server_time_lock:
-        if measured is not None:
-            _server_time_cache.update({"at": now, "offset": measured})
-        # Ölçüm yoksa önceki (at, offset) ÇİZİLMEDEN bırakılır; eski ofset
-        # bir sonraki başarılı ölçüme kadar geçerli kalır.
-        return float(_server_time_cache.get("offset") or 0.0)
+    return _core.server_time_offset_ms(
+        _TR_PROFILE, _http_get_json, _server_time_cache, _server_time_lock,
+        _SERVER_TIME_TTL_SEC,
+    )
 
 
 def _signed_request(method: str, path: str, params: dict | None,
@@ -213,101 +183,14 @@ def _signed_request(method: str, path: str, params: dict | None,
     ayrıca benzersiz bir `clientOrderId` (UUID) gönderir; borsa tarafında aynı
     anahtarı taşıyan ikinci gönderim reddedilir (bkz. `new_client_order_id`).
     """
-    base_params = dict(params or {})
-    base_params["recvWindow"] = RECV_WINDOW_MS
-    offset_ms = _server_time_offset_ms()
-    headers = {"X-MBX-APIKEY": api_key}
-    last_error: Exception | None = None
-    is_post = method.upper() == "POST"
-    # #33: imzalı uçlara ortak eşzamanlılık sınırı. Sembol taraması gibi
-    # yüzlerce çağrılık patlamalar bakiye/emir uçlarını tek anda doyuruyordu.
-    with _PRIVATE_SEMAPHORE:
-        for attempt in range(1, REST_MAX_ATTEMPTS + 1):
-            attempt_params = dict(base_params)
-            attempt_params["timestamp"] = int(time.time() * 1000 + offset_ms)
-            query = urlencode(sorted(attempt_params.items()))
-            signature = hmac.new(api_secret.encode("utf-8"), query.encode("utf-8"),
-                                 hashlib.sha256).hexdigest()
-            url = f"{REST_BASE}{path}?{query}&signature={signature}"
-            try:
-                payload = (_http_post_json(url, headers) if is_post
-                           else _http_get_json(url, headers))
-                return _unwrap(payload)
-            except BinanceTrApiError as exc:
-                last_error = exc
-                if exc.is_transient:
-                    # 1008 / -1008 (Server Busy / Request Throttled) / 1003 (Rate limit)
-                    if not idempotent:
-                        raise exc
-                    if attempt == REST_MAX_ATTEMPTS:
-                        break
-                    delay = max(1.0, _private_retry_delay(attempt))
-                    logger.warning(
-                        "Binance TR geçici sunucu/yoğunluk yanıtı (kod %s, %s) | path=%s | %.2f sn beklenip yeniden denenecek (%d/%d)",
-                        exc.code, exc.msg, path, delay, attempt, REST_MAX_ATTEMPTS
-                    )
-                    time.sleep(delay)
-                    continue
-                if str(exc.code) in ("1021", "-1021"):
-                    # Timestamp outside recvWindow — saat ofsetini sıfırlayıp tazele
-                    with _server_time_lock:
-                        _server_time_cache["at"] = 0.0
-                    offset_ms = _server_time_offset_ms()
-                    if attempt < REST_MAX_ATTEMPTS:
-                        time.sleep(0.5)
-                        continue
-                raise exc
-            except HTTPError as exc:
-                # Binance TR 4xx hataları JSON body'sinde {code, msg} taşır.
-                try:
-                    body = exc.read().decode("utf-8", errors="replace")
-                    parsed = json.loads(body)
-                    api_code = parsed.get("code") or parsed.get("status") or exc.code
-                    api_msg = parsed.get("msg") or parsed.get("message") or body[:200]
-                    binance_err = BinanceTrApiError(api_code, api_msg, http_code=exc.code, raw=parsed)
-                    logger.error("Binance TR HTTP %s | path=%s | code=%s msg=%s | params=%s",
-                                 exc.code, path, api_code, api_msg, base_params)
-                except Exception:
-                    binance_err = BinanceTrApiError(exc.code, exc.reason, http_code=exc.code)
-                    logger.error("Binance TR HTTP %s | path=%s | reason=%s | params=%s",
-                                 exc.code, path, exc.reason, base_params)
-                last_error = binance_err
-                if exc.code == 418:
-                    # #32: Ban sinyali.
-                    if attempt == REST_MAX_ATTEMPTS:
-                        break
-                    time.sleep(_private_ban_delay(attempt, exc.headers))
-                    continue
-                if exc.code == 429 or (500 <= exc.code < 600) or binance_err.is_transient:
-                    if not idempotent and exc.code != 429 and not binance_err.is_transient:
-                        raise binance_err
-                    if attempt == REST_MAX_ATTEMPTS:
-                        break
-                    delay = max(1.0, _private_retry_delay(attempt, exc.headers)) if binance_err.is_transient else _private_retry_delay(attempt, exc.headers)
-                    logger.warning(
-                        "Binance TR HTTP %s geçici hata (kod %s) | %.2f sn sonra yeniden denenecek (%d/%d)",
-                        exc.code, binance_err.code, delay, attempt, REST_MAX_ATTEMPTS
-                    )
-                    time.sleep(delay)
-                    continue
-                # 4xx hataları (400, 401, 403, vb.) — anlamlı hatayla raise
-                raise binance_err
-            except (URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as exc:
-                # #30: bu kolon "istek borsaya ULAŞTI mı?" sorusunun cevabı
-                # OLMAYAN durumlardır. Okuma için yeniden denemek zararsızdır;
-                # POST (emir) için ASLA — çağıranın durum sorgulaması gerekir.
-                last_error = exc
-                if not idempotent:
-                    raise RuntimeError(
-                        f"Binance TR {method.upper()} {path} cevap vermedi; emir gönderilmiş "
-                        f"olabilir, TEKRAR GÖNDERİLMEDİ: {exc}"
-                    ) from exc
-                if attempt == REST_MAX_ATTEMPTS:
-                    break
-                time.sleep(_private_retry_delay(attempt))
-    raise RuntimeError(
-        f"Binance TR imzalı istek {REST_MAX_ATTEMPTS} denemede başarısız: {last_error}"
-    ) from last_error
+    return _core.signed_request(
+        method, path, params, api_key, api_secret, _TR_PROFILE,
+        http_get=_http_get_json, http_post=_http_post_json,
+        offset_ms_fn=_server_time_offset_ms,
+        server_time_cache=_server_time_cache, server_time_lock=_server_time_lock,
+        server_time_ttl=_SERVER_TIME_TTL_SEC,
+        idempotent=idempotent,
+    )
 
 
 def new_client_order_id(prefix: str = "sc") -> str:
@@ -319,7 +202,7 @@ def new_client_order_id(prefix: str = "sc") -> str:
     iki kez satılmaz. Çağıran, aynı iş mantığı için aynı `id`'yi saklayıp
     yeniden denediğinde borsa iki ayrı emir oluşturmaz.
     """
-    return f"{prefix}{uuid.uuid4().hex}"[:36]
+    return _core.new_client_order_id(prefix)
 
 
 def _to_underscore_symbol(symbol: str) -> str:
@@ -362,7 +245,7 @@ def _load_symbol_list_locked(api_key: str, api_secret: str) -> None:
             raise
         # Endpoint imza istiyorsa yedek olarak signed dene.
         data = _signed_request("GET", "/open/v1/common/symbols", None, api_key, api_secret)
-    rows = data.get("list", []) if isinstance(data, dict) else []
+    rows = _core.as_rows(data, _TR_PROFILE, "TR sembol listesi")
     symbols = [r.get("symbol", "") for r in rows if r.get("symbol")]
     with _symbols_lock:
         underscore_by_concat = {s.replace("_", ""): s for s in symbols}
@@ -523,22 +406,12 @@ def _fmt_quantity(q: float, step_size: float | None = None) -> str:
     yuvarlama tamamen çağırana bırakılmıştı; `place_market_sell`'i doğrudan
     çağıran yeni bir yol geçersiz miktar gönderebiliyordu.
     """
-    if step_size and step_size > 0:
-        q = math.floor(float(q) / float(step_size)) * float(step_size)
-    return f"{q:.8f}".rstrip("0").rstrip(".")
+    return _core.fmt_quantity(q, step_size)
 
 
 def _fmt_price(p: float, tick_size: float | None = None) -> str:
     """Fiyatı sembolün tick_size adımına göre yuvarlar ve string formatlar."""
-    p_val = float(p)
-    if tick_size and tick_size > 0:
-        p_val = round(p_val / tick_size) * tick_size
-        tick_str = f"{tick_size:.10f}".rstrip("0")
-        decimals = len(tick_str.split(".")[1]) if "." in tick_str else 0
-        return f"{p_val:.{decimals}f}"
-    if p_val >= 1:
-        return f"{p_val:.2f}"
-    return f"{p_val:.6f}".rstrip("0").rstrip(".")
+    return _core.fmt_price(p, tick_size)
 
 
 def place_oco_sell(api_key: str, api_secret: str, symbol_underscore: str, quantity: float,
@@ -743,8 +616,10 @@ def get_account_balance(api_key: str, api_secret: str, force_refresh: bool = Fal
             if cached and now < cached["expires"]:
                 return cached["data"]
 
-    data = _signed_request("GET", "/open/v1/account/spot", None, api_key, api_secret)
-    assets = data.get("accountAssets", []) if isinstance(data, dict) else []
+    data = _signed_request("GET", _TR_PROFILE.path_prefix + _TR_PROFILE.account,
+                           None, api_key, api_secret)
+    assets = (data.get(_TR_PROFILE.balance_key, [])
+              if isinstance(data, dict) else [])
     result = [
         {"asset": a.get("asset", ""), "free": a.get("free", "0"), "locked": a.get("locked", "0")}
         for a in assets
@@ -784,31 +659,21 @@ def get_open_orders(api_key: str, api_secret: str, symbol: str = "",
         if not symbol and now < _open_orders_cache["expires"]:
             return _open_orders_cache["orders"]
 
-    def _normalize(rows: list) -> list[dict]:
-        out = []
-        for o in rows:
-            out.append({
-                "orderId": int(o.get("orderId") or 0),
-                "symbol": o.get("symbol", ""),
-                "side": o.get("side", ""),
-                "type": o.get("type", ""),
-                "price": o.get("price", "0"),
-                "stopPrice": o.get("stopPrice") or "0",
-                "origQty": o.get("origQty", "0"),
-                "executedQty": o.get("executedQty", "0"),
-                "status": o.get("status", ""),
-                "time": int(o.get("createTime") or o.get("time") or 0),
-                "orderListId": int(o.get("orderListId") or -1),
-                "clientOrderId": str(o.get("clientOrderId") or ""),
-            })
-        return out
+    def _normalize(raw) -> list[dict]:
+        """Ham cevabı UI alanlarına indirger.
+
+        `as_rows` zarf/liste biçimini çözer ve BEKLENMEYEN şemayı loglar;
+        eski `rows.get("list", [])` deseni sessizce boş liste döndürüyordu.
+        """
+        return [_core.normalize_order(o) for o in
+                _core.as_rows(raw, _TR_PROFILE, "TR açık emir")]
 
     if symbol:
         rows = _signed_request(
-            "GET", "/open/v1/orders",
+            "GET", _TR_PROFILE.path_prefix + _TR_PROFILE.open_orders,
             {"symbol": _to_underscore_symbol(symbol), "type": 1, "limit": 100},
             api_key, api_secret)
-        return _normalize(rows.get("list", []) if isinstance(rows, dict) else [])
+        return _normalize(rows)
 
     with _open_orders_load_lock:
         now = time.monotonic()
@@ -848,9 +713,9 @@ def get_open_orders(api_key: str, api_secret: str, symbol: str = "",
 
         # 2) Sembolsüz istek borsa tarafından kabul edilirse tek istekte tamamla
         try:
-            rows = _signed_request("GET", "/open/v1/orders", {"type": 1, "limit": 100},
-                                   api_key, api_secret)
-            orders = _normalize(rows.get("list", []) if isinstance(rows, dict) else [])
+            rows = _signed_request("GET", _TR_PROFILE.path_prefix + _TR_PROFILE.open_orders,
+                                   {"type": 1, "limit": 100}, api_key, api_secret)
+            orders = _normalize(rows)
             with _open_orders_lock:
                 _open_orders_cache.update({"orders": orders, "partial": False,
                                            "expires": time.monotonic() + _OPEN_ORDERS_CACHE_TTL_SEC})
@@ -897,14 +762,13 @@ def get_open_orders(api_key: str, api_secret: str, symbol: str = "",
         for index, sym in enumerate(scanned):
             try:
                 rows = _signed_request(
-                    "GET", "/open/v1/orders",
+                    "GET", _TR_PROFILE.path_prefix + _TR_PROFILE.open_orders,
                     {"symbol": sym, "type": 1, "limit": 50},
                     api_key, api_secret)
             except Exception as exc:
                 failures.append((sym, exc))
                 continue
-            if isinstance(rows, dict) and rows.get("list"):
-                orders.extend(_normalize(rows["list"]))
+            orders.extend(_normalize(rows))
             if index < len(scanned) - 1:
                 time.sleep(_OPEN_ORDERS_SWEEP_GAP_SEC)
 
@@ -952,24 +816,10 @@ def get_trade_history(api_key: str, api_secret: str, symbol: str,
     if offset > 0:
         params["fromId"] = int(offset)
         params["direct"] = "prev"
-    rows = _signed_request("GET", "/open/v1/orders/trades", params, api_key, api_secret)
-    items = rows.get("list", []) if isinstance(rows, dict) else []
-    out = []
-    for t in items:
-        out.append({
-            "id": int(t.get("tradeId") or 0),
-            "orderId": str(t.get("orderId") or ""),
-            "symbol": t.get("symbol", "").replace("_", ""),
-            "price": t.get("price", "0"),
-            "qty": t.get("qty", "0"),
-            "quoteQty": t.get("quoteQty", "0"),
-            "commission": t.get("commission", "0"),
-            "commissionAsset": t.get("commissionAsset", ""),
-            "isBuyer": bool(t.get("isBuyer")),
-            "isMaker": bool(t.get("isMaker")),
-            "time": int(t.get("time") or 0),
-        })
-    return out
+    rows = _signed_request("GET", _TR_PROFILE.path_prefix + _TR_PROFILE.my_trades,
+                           params, api_key, api_secret)
+    items = _core.as_rows(rows, _TR_PROFILE, "TR işlem geçmişi")
+    return [_core.normalize_trade(t, "tradeId") for t in items]
 
 
 def get_common_symbols(api_key: str = "", api_secret: str = "") -> dict:

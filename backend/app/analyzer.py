@@ -3,7 +3,7 @@ import asyncio
 import json
 import numpy as np
 import uuid
-from app.config import config
+from app.config import config, base_asset_of
 from app.technical_analysis import calculate_snapshot, _adx, _stochastic, _macd, _mfi, _ema, _rsi, _crsi, _cmo, _atr
 from app.binance_tr_public import orderbook
 from app import database
@@ -817,11 +817,11 @@ class ScalpAnalyzer:
         fill_price = price * (1.0 - exit_slip)
         sell_value = pos["quantity"] * fill_price
         commission = sell_value * config.COMMISSION_PCT
-        try_balance = await database.get_wallet_balance("TRY")
+        try_balance = await database.get_wallet_balance()
         trade = await self._record_trade(symbol, pos, fill_price, reason, commission)
         sig = {"symbol": symbol, "action": "CLOSE_LONG", "reason": reason, "price": fill_price,
                "strategy": pos.get("strategy", "CHAT_PREDICTION"), "trade_id": pos.get("trade_id"), "timestamp": time.time()}
-        await database.commit_close_position(symbol, symbol.replace("TRY", ""), try_balance + sell_value - commission, trade, sig)
+        await database.commit_close_position(symbol, base_asset_of(symbol), try_balance + sell_value - commission, trade, sig)
         try:
             await agent_learning.record_paper_trade_outcome(trade)
         except Exception as learning_error:
@@ -1018,7 +1018,7 @@ class ScalpAnalyzer:
         uygular; aksi halde ön kontrol (likidite kapısı) gerçekleşecek
         büyüklükten FARKLI bir büyüklüğe göre karar verir.
         """
-        try_balance = await database.get_wallet_balance("TRY")
+        try_balance = await database.get_wallet_balance()
         requested = float(requested_order_value or 0)
         # D-03: talep stratejiden bağımsız onurlandırılır (eskiden yalnızca
         # LLM_PAPER'daydı; CHAT_PREDICTION isteği yok sayılıyordu —
@@ -1204,7 +1204,7 @@ class ScalpAnalyzer:
                                "reason": block_reason, "strategy": strat_name, "timestamp": time.time()}
                     await database.save_signal(blocked)
                     return blocked
-        try_balance = await database.get_wallet_balance("TRY")
+        try_balance = await database.get_wallet_balance()
         # BİRİM: TRY notional (adet/lot DEĞİL). Komisyon iki bacakta da
         # notional üzerinden kesilir; available_value giriş komisyonunu da
         # içerebilsin diye bakiye (1 + COMMISSION_PCT)'e bölünür.
@@ -1577,7 +1577,7 @@ class ScalpAnalyzer:
                # BİRİM: TRY notional (quantity DEĞİL).
                "order_value_try": order_value, "quantity": quantity}
         try:
-            await database.commit_open_position(symbol, symbol.replace("TRY", ""), next_cash, quantity, pos, sig)
+            await database.commit_open_position(symbol, base_asset_of(symbol), next_cash, quantity, pos, sig)
         except Exception as exc:
             error_text = str(exc).lower()
             # Her DB hatasında bellek pozisyonunu GERİ AL: aksi halde zumbi

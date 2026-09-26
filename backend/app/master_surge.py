@@ -573,9 +573,14 @@ def evaluate_master_surge(
             }
 
     # BTC Makro Panik Kapısı (BTC Compass Gate)
+    # Muafiyet listesi bu deployment'ın BORSASINA göre kurulur: TR örneğinde
+    # yalnız `BTCTRY`, Global'da yalnız `BTCUSDT` BTC'nin kendisidir. İki
+    # sembolü birden listelemek, diğer borsadaki (bu örnekte hiç işlem
+    # edilmeyen) çifti yanlışlıkla muaf tutardı — sessiz bir gevşeklik.
+    btc_ref = f"BTC{config.QUOTE_ASSET}"
     btc_panic_blocked = False
     if macro_sentiment and isinstance(macro_sentiment, dict):
-        if macro_sentiment.get("is_btc_panic") and sym not in ("BTCTRY", "BTCUSDT"):
+        if macro_sentiment.get("is_btc_panic") and sym != btc_ref:
             btc_panic_blocked = True
 
     # ATR bilgisi
@@ -609,7 +614,7 @@ def evaluate_master_surge(
             gate_reason = "COMPOSITE_BELOW_MIN"
 
     # Koruma filtreleri: BTC panik şelalesi veya aşırı şişkin long tasfiye riski
-    if btc_panic_blocked and sym not in ("BTCTRY", "BTCUSDT"):
+    if btc_panic_blocked and sym != btc_ref:
         passed = False
         block_reason = "BTC_PANIC_DOWNTREND"
     elif applied_derivatives and applied_derivatives.get("funding_state") == "EXTREME_LONG":

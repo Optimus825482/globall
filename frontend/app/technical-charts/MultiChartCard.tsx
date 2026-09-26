@@ -13,7 +13,7 @@ import {
     LineStyle,
 } from "lightweight-charts";
 import { API_BASE, apiRequest } from "../lib/api";
-import { formatPrice, pricePrecision } from "../lib/format";
+import { formatPrice, pricePrecision, QUOTE_ASSET, toSymbol, withQuotePrice } from "../lib/format";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 
 export interface ChartIndicators {
@@ -764,16 +764,21 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                         className="w-full text-left px-2 py-1 mb-2 rounded text-[11px] font-mono bg-neon-green/15 text-neon-green hover:bg-neon-green/25 font-bold border border-neon-green/30 transition-colors"
                                     >
                                         ⚡ {(() => {
+                                            // Kullanıcı taban adı yazar ("BTC"): bu
+                                            // deployment'ın quote'sü listede varsa
+                                            // tamamını dene. Sabit "TRY" eklemek
+                                            // Global'da hiçbir zaman tutmazdı.
                                             const up = searchFilter.trim().toUpperCase();
-                                            return !up.endsWith("TRY") && availableSymbols.includes(up + "TRY") ? up + "TRY" : up;
+                                            const full = toSymbol(up);
+                                            return availableSymbols.includes(full) ? full : up;
                                         })()} Aç
                                     </button>
                                 )}
                                 <div className="flex flex-wrap gap-1 mb-2">
-                                    {["BTCTRY","ETHTRY","SOLTRY","AVAXTRY","PEPETRY","XRPTRY"].map(s => (
+                                    {["BTC","ETH","SOL","AVAX","PEPE","XRP"].map(toSymbol).map(s => (
                                         <button key={s} type="button" onClick={() => handleSelectSymbol(s)}
                                             className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${config.symbol === s ? "bg-neon-green/20 border-neon-green/50 text-neon-green font-bold" : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white"}`}>
-                                            {s.replace("TRY","")}
+                                            {s.slice(0, -QUOTE_ASSET.length)}
                                         </button>
                                     ))}
                                 </div>
@@ -791,7 +796,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                     </div>
                     {priceData && (
                         <div className="flex items-center gap-1.5 font-mono">
-                            <span className="text-white font-bold text-xs">₺{formatPrice(priceData.last)}</span>
+                            <span className="text-white font-bold text-xs">{withQuotePrice(priceData.last)}</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${priceData.changePct >= 0 ? "bg-neon-green/15 text-neon-green border border-neon-green/30" : "bg-neon-red/15 text-neon-red border border-neon-red/30"}`}>
                                 {priceData.changePct >= 0 ? "+" : ""}{priceData.changePct.toFixed(2)}%
                             </span>

@@ -396,8 +396,13 @@ async def detect_velocity_candidates(args: dict | None = None, *, horizon_minute
     except Exception as exc:
         logger.warning("velocity scan: ticker_24h hatası: %s", exc)
 
+    # quote_asset AÇIKÇA geçilir: varsayılan deployment'ın quote'sü olsa da
+    # burada sessiz bir kayıp riski var — yanlış quote ile çağrılırsa havuz BOŞ
+    # döner ve `except` yalnız logladığı için tarama sessizce daralır.
     try:
-        gainer_rows = await top_gainers(config.VELOCITY_POOL_SIZE, _ticker_rows=all_ticker_rows)
+        gainer_rows = await top_gainers(config.VELOCITY_POOL_SIZE,
+                                        quote_asset=config.QUOTE_ASSET,
+                                        _ticker_rows=all_ticker_rows)
     except Exception as exc:
         logger.warning("velocity scan: top_gainers hatası: %s", exc)
         gainer_rows = []
@@ -407,6 +412,7 @@ async def detect_velocity_candidates(args: dict | None = None, *, horizon_minute
         try:
             active_rows = await active_movers_pool(
                 getattr(config, "DYNAMIC_ACTIVE_POOL_LIMIT", 15),
+                quote_asset=config.QUOTE_ASSET,
                 _ticker_rows=all_ticker_rows
             )
         except Exception as exc:
@@ -2451,7 +2457,7 @@ async def _open_velocity_position_reserved(candidate: dict, symbol: str) -> dict
     except Exception as exc:
         logger.warning("velocity mikro yapı filtresi: %s", exc, exc_info=True)
     # Serbest TL'nin %50'si
-    balance = await database.get_wallet_balance("TRY")
+    balance = await database.get_wallet_balance()
     order_value = round(balance * config.VELOCITY_AUTO_BALANCE_PCT / 100.0, 2)
     order_value = min(order_value, balance)
     if order_value < config.MIN_PARTIAL_ORDER_TRY:
@@ -2539,12 +2545,17 @@ async def autonomous_velocity_loop():
     # kapanışa bağlı kalıp yeni mum gelmeden taramayalım (0 ile başlarsak
     # açılışta anında, mum ortasından bir tarama yapılırdı).
     _last_m5_close_ms = 0
+    # M5 saat referansı = oyaladığımız borsanın ana sembolü (TR→BTCTRY,
+    # Global→BTCUSDT). Sabit "BTCTRY" Global'da bulunmadığı için `_last_m5_close_ms`
+    # 0'da kalıyor ve otonom döngü zamanlaması bozuluyordu; `except: pass` ise
+    # bunu LOGLAMADIĞI için sorun görünmüyordu.
+    _m5_ref = f"BTC{config.QUOTE_ASSET}"
     try:
-        m5_tick = await fetch_klines("BTCTRY", "5m", 2)
+        m5_tick = await fetch_klines(_m5_ref, "5m", 2)
         if m5_tick:
             _last_m5_close_ms = int(m5_tick[-1][0])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("velocity auto: M5 referans mumu alınamadı (%s): %s", _m5_ref, exc)
     while True:
         try:
             # G-16: tur başına canlılık işareti.
@@ -2559,7 +2570,7 @@ async def autonomous_velocity_loop():
                     # TAM BİR token tüketir; dönüş daima True'dur (dolayısıyla
                     # "ignored" değil, sözleşmesi gereği kontrol gerektirmez).
                     await _velocity_rate_acquire()
-                    m5_rows = await fetch_klines("BTCTRY", "5m", 2)
+                    m5_rows = await fetch_klines(_m5_ref, "5m", 2)
                     if m5_rows:
                         latest_close_ms = int(m5_rows[-1][0])
                     else:

@@ -13,7 +13,9 @@ import {
   fmtMinute as fmtDt,
   fmtClockTime as fmtClock,
   localDateInput,
+  QUOTE_ASSET_NAME,
   toMs,
+  withQuote,
 } from "../lib/format";
 
 // NOT (denetim #48): `num` / `pct` / `fmtDt` artık `lib/format.ts`'ten geliyor.
@@ -368,7 +370,7 @@ function OverviewTab({ day }: { day?: string }) {
               </p>
             </div>
             {avgOrderTry != null && (
-              <span className="font-mono text-xs text-bunker-muted">Ort. Emir: ₺{avgOrderTry.toFixed(0)}</span>
+              <span className="font-mono text-xs text-bunker-muted">Ort. Emir: {withQuote(avgOrderTry, 0)}</span>
             )}
           </div>
 
@@ -1085,7 +1087,7 @@ function UserRadarTab({ day: controlledDay, setDay: setControlledDay }: { day?: 
                           <SourceBadges sources={n.sources} compact />
                         </td>
                         <td className="font-mono text-xs text-white">
-                          {n.price != null ? `₺${Number(n.price).toLocaleString("tr-TR", { maximumFractionDigits: 6 })}` : "—"}
+                          {n.price != null ? withQuote(n.price, 6) : "—"}
                         </td>
                         <td className="font-mono text-xs text-white font-bold">
                           {n.score != null ? Number(n.score).toFixed(1) : "—"}
@@ -1220,7 +1222,7 @@ function UserPositionsTab({ day }: { day?: string }) {
                   <th>Strateji</th>
                   <th className="text-right">Giriş Fiyatı</th>
                   <th className="text-right">Anlık Fiyat</th>
-                  <th className="text-right">Net K/Z (₺)</th>
+                  <th className="text-right">Net K/Z ({QUOTE_ASSET_NAME})</th>
                   <th className="text-right">Net K/Z (%)</th>
                 </tr>
               </thead>
@@ -1229,8 +1231,8 @@ function UserPositionsTab({ day }: { day?: string }) {
                   <tr key={p.symbol}>
                     <td><SymbolLink symbol={p.symbol} className="font-mono font-bold text-white hover:text-neon-green" /></td>
                     <td className="font-mono text-xs text-bunker-muted">{strategyLabel(p.strategy)}</td>
-                    <td className="text-right tabular-nums font-mono text-xs text-white">₺{num(p.entry)}</td>
-                    <td className="text-right tabular-nums font-mono text-xs text-white">₺{num(p.current)}</td>
+                    <td className="text-right tabular-nums font-mono text-xs text-white">{withQuote(Number(p.entry))}</td>
+                    <td className="text-right tabular-nums font-mono text-xs text-white">{withQuote(Number(p.current))}</td>
                     <td className={`text-right tabular-nums font-mono text-xs font-bold ${pnlTone(p.pnl_try)}`}>{money(p.pnl_try)}</td>
                     <td className={`text-right tabular-nums font-mono text-xs font-bold ${pnlTone(p.pnl_pct)}`}>
                       {p.pnl_pct != null ? `${p.pnl_pct >= 0 ? "+" : ""}${Number(p.pnl_pct).toFixed(2)}%` : "—"}
@@ -1541,7 +1543,7 @@ function AutonomousTab() {
                 <td className="font-mono text-xs text-bunker-muted">{fmtDt(r.timestamp)}</td>
                 <td><SymbolLink symbol={r.symbol} className="font-mono font-bold text-white hover:text-neon-green" /></td>
                 <td className="font-mono text-xs text-white font-bold">{r.action}</td>
-                <td className="font-mono text-xs text-bunker-muted">₺{num(r.price)}</td>
+                <td className="font-mono text-xs text-bunker-muted">{withQuote(Number(r.price))}</td>
                 <td className="font-mono text-xs text-bunker-muted truncate max-w-xs" title={r.reason}>{r.reason || "—"}</td>
               </tr>
             ))}

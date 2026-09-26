@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { toSymbol } from "../lib/format";
 import SymbolLink from "../components/SymbolLink";
 
 export default function MemoryTab() {
@@ -86,7 +87,7 @@ export default function MemoryTab() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && query.trim() && !searching) search(); }}
-            placeholder="Örn. BTCTRY benzer timeout işlemleri veya trend analizi…"
+            placeholder={`Örn. ${toSymbol("BTC")} benzer timeout işlemleri veya trend analizi…`}
             className="input flex-1 min-w-[240px]"
           />
           <button

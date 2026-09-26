@@ -120,10 +120,22 @@ class G12ErrorPathTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_market_symbols_success_path_unchanged(self):
         from app import main
+        from app.config import config
 
         with patch("app.main.trading_symbols", new=AsyncMock(return_value=["BTCTRY"])):
             result = await main.get_market_symbols()
-        self.assertEqual({"symbols": ["BTCTRY"], "quote_asset": "TRY"}, result)
+        # 2026-09-26 (Global örneği): `quote_asset` artık deployment'ın
+        # config'i okur (TR→TRY, Global→USDT). Sabit "TRY" beklentisi Global
+        # koşusunda yanlış olurdu — oradaki doğru cevap tam olarak "USDT".
+        #
+        # `exchange` / `exchange_label` frontend'in borsa kimliğini GÖSTERMEK
+        # için eklendi: menü başlıkları ve para birimi rozetleri env'e körü
+        # körüne değil, backend'in bildirdiği değere bağlanır. Bu sayede iki
+        # örnek birbirine karışmaz ve yanlış yapılandırma (TR build'i Global
+        # backend'ine bağlanmış) kullanıcıya görünür.
+        self.assertEqual({"symbols": ["BTCTRY"], "quote_asset": config.QUOTE_ASSET,
+                          "exchange": config.EXCHANGE,
+                          "exchange_label": config.EXCHANGE_LABEL}, result)
 
 
 # ---------------------------------------------------------------------------

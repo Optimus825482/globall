@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
-import { toMs } from "../lib/format";
+import { toMs, withQuote, withQuotePrice } from "../lib/format";
 import { inspectTtsSettings, TTS_PERSIST_WARNING } from "../lib/ttsSettings";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import MarkdownMessage from "../components/MarkdownMessage";
@@ -224,7 +224,7 @@ function UpsideScoutCard({ scout }: { scout: ScoutResult }) {
                 </span>
               </div>
               <div className="mt-1 flex items-center justify-between text-bunker-muted">
-                <span>Anlık: ₺{fmtScoutPrice(candidate.current_price)}</span>
+                <span>Anlık: {withQuotePrice(candidate.current_price)}</span>
                 <span>Hedef: +%{Number(candidate.target_pct || 0).toFixed(2)}</span>
               </div>
               <div className="mt-1 flex items-center justify-between text-[10px] text-bunker-muted">
@@ -995,7 +995,7 @@ function ChatPageInner() {
                   <p className="eyebrow">CANLI FİYAT TAKİBİ · {livePriceWatch.symbol}</p>
                   <strong>
                     {Number.isFinite(livePriceWatch.price)
-                      ? `₺${livePriceWatch.price?.toLocaleString("tr-TR", { maximumFractionDigits: 8 })}`
+                      ? withQuote(Number(livePriceWatch.price), 8)
                       : "Bağlanıyor…"}
                   </strong>
                   <span className={livePriceWatch.changePct == null || !Number.isFinite(livePriceWatch.changePct) ? "text-bunker-muted" : livePriceWatch.changePct >= 0 ? "text-neon-green" : "text-neon-red"}>

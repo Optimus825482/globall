@@ -7,7 +7,7 @@ import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
 import { useUiMode } from "../lib/ui-mode";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import SymbolLink from "../components/SymbolLink";
-import { formatSignedTL, formatTL, toMs } from "../lib/format";
+import { formatSignedTL, formatTL, QUOTE_SYMBOL, toMs, toSymbol, withQuotePrice } from "../lib/format";
 import { netOpenPnlPct, netOpenPnlTry, applyCommissionPct } from "../lib/pnl";
 import {
     createChart, createSeriesMarkers, CandlestickSeries, LineSeries, HistogramSeries,
@@ -44,7 +44,7 @@ const pnlPctText = (v?: number | null) =>
 const pnlTryText = (v?: number | null) => {
     if (v == null || !Number.isFinite(v)) return "—";
     const abs = Math.abs(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return v < 0 ? `-₺${abs}` : `+₺${abs}`;
+    return v < 0 ? `-${QUOTE_SYMBOL}${abs}` : `+${QUOTE_SYMBOL}${abs}`;
 };
 
 
@@ -77,7 +77,7 @@ function CandleCountdown({ intervalMs }: { intervalMs: number }) {
 export default function ChartsPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const [symbol, setSymbol] = useState<string>("BTCTRY");
+    const [symbol, setSymbol] = useState<string>(toSymbol("BTC"));
     const [symbols, setSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
     const [analysisOpen, setAnalysisOpen] = useState(false);
     const [assistantOpen, setAssistantOpen] = useState(false);
@@ -130,7 +130,7 @@ export default function ChartsPage() {
     // localStorage yükleme: hydration uyumluluğu için client tarafında yap
     useEffect(() => {
         const querySymbol = searchParams.get("symbol")?.replace(/_/g, "").toUpperCase() || "";
-        const savedSymbol = querySymbol || loadPersisted(LS_SYMBOL, "BTCTRY");
+        const savedSymbol = querySymbol || loadPersisted(LS_SYMBOL, toSymbol("BTC"));
         const savedInterval = querySymbol ? "5m" : loadPersisted(LS_INTERVAL, "5m");
         setSymbol(savedSymbol);
         setTf(savedInterval);
@@ -1466,7 +1466,7 @@ export default function ChartsPage() {
     })();
     // H-02: metrikler yüklenmeden `0` göstermek sahte "başabaş yeşil" üretirdi.
     const netPnl = portfolioMetrics?.net_pnl == null ? null : Number(portfolioMetrics.net_pnl);
-    // H-04/H-15: TL biçimi tek kaynaktan (`lib/format.ts`) — ₺ önek, 2 ondalık.
+    // H-04/H-15: para biçimi tek kaynaktan (`lib/format.ts`) — önek, 2 ondalık.
     const money = formatTL;
     const pnlClass = (value: number | null) => pnlToneClass(value);
     const signedMoney = formatSignedTL;
@@ -1911,18 +1911,18 @@ export default function ChartsPage() {
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
                             <span className="flex items-center gap-1 text-[#10b981] font-semibold" title="Otonom Giriş Noktası">
                                 <span className="w-2.5 h-0.5 bg-[#10b981] rounded-full inline-block" />
-                                Giriş: ₺{formatPrice(currentAutoTrade.entry_price)}
+                                Giriş: {withQuotePrice(currentAutoTrade.entry_price)}
                             </span>
                             {currentAutoTrade.stop_loss != null && (
                                 <span className="flex items-center gap-1 text-[#ef4444] font-semibold" title="Stop Loss Noktası">
                                     <span className="w-2.5 h-0.5 bg-[#ef4444] rounded-full inline-block" />
-                                    Stop: ₺{formatPrice(currentAutoTrade.stop_loss)}
+                                    Stop: {withQuotePrice(currentAutoTrade.stop_loss)}
                                 </span>
                             )}
                             {currentAutoTrade.take_profit != null && (
                                 <span className="flex items-center gap-1 text-[#3b82f6] font-semibold" title="Kâr Alma (TP) Noktası">
                                     <span className="w-2.5 h-0.5 bg-[#3b82f6] rounded-full inline-block" />
-                                    TP: ₺{formatPrice(currentAutoTrade.take_profit)}
+                                    TP: {withQuotePrice(currentAutoTrade.take_profit)}
                                 </span>
                             )}
                             {Number(currentAutoTrade.notification_price || monitorNotif?.price || 0) > 0 && (

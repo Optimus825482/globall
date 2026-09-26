@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { streamChat } from "../lib/streamChat";
 import { API_BASE } from "../lib/api";
+import { withQuotePrice } from "../lib/format";
 
 interface Message {
   role: "user" | "assistant";
@@ -159,7 +160,7 @@ export default function ChartAssistantDrawer({
               </span>
               {currentPrice != null && (
                 <span className="text-xs font-mono text-neon-green font-semibold">
-                  ₺{currentPrice.toLocaleString("tr-TR")}
+                  {withQuotePrice(currentPrice)}
                 </span>
               )}
             </div>

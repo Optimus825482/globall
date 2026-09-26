@@ -1,12 +1,14 @@
 import { API_BASE } from "../lib/api";
 // H-04: fiyat biçimi/hassasiyeti artık TEK kaynaktan (`lib/format.ts`) gelir.
 // Buradaki kopya, `1.5`'i `1,5000` basarken diğer sayfalar `1,5` basıyordu.
-import { formatPrice, pricePrecision } from "../lib/format";
+import { formatPrice, pricePrecision, toSymbol } from "../lib/format";
 import type { IndicatorInstance, IndicatorStyle, RegistryEntry } from "./types";
 
 export { formatPrice, pricePrecision };
 
-export const FALLBACK_SYMBOLS = ["BTCTRY", "ETHTRY", "SOLTRY"];
+// Sabit `BTCTRY` Global örneğinde YOKTUR: sembol listesinden düşen sayfa
+// sessizce boş grafikle açılır. Tabanlar sabit, quote build-time env'den.
+export const FALLBACK_SYMBOLS = ["BTC", "ETH", "SOL"].map(toSymbol);
 export const INTERVALS = [
     { v: "1m", l: "1M" }, { v: "5m", l: "5M" }, { v: "15m", l: "15M" },
     { v: "30m", l: "M30" }, { v: "1h", l: "1H" }, { v: "4h", l: "4H" }, { v: "1d", l: "D1" }

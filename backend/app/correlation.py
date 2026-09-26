@@ -19,6 +19,8 @@ import math
 import time
 from collections import defaultdict
 
+from app.config import config
+
 
 class CorrelationMonitor:
     BENCHMARKS = ("BTC", "ETH")
@@ -48,7 +50,10 @@ class CorrelationMonitor:
         tf = "1h"
         benchmarks = {}
         for bench in self.BENCHMARKS:
-            base = f"{bench}TRY"
+            # Quote, deployment'ın borsasından gelir: `BTC` + `TRY` (TR) ya da
+            # `BTC` + `USDT` (Global). Sabit 'TRY' Global'da bulunamayan bir
+            # sembol arar ve korelasyon sessizce `ok: False` döner.
+            base = f"{bench}{config.QUOTE_ASSET}"
             bars = (market.get_ut_kline(base, tf) or {}) if market else {}
             closes = [float(c) for c in (bars.get("closes") or [])]
             if len(closes) < 30:

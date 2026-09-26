@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchAllPages } from "../lib/api";
-import { formatFixed, formatSignedTL, formatTL, toMs } from "../lib/format";
+import { formatSignedMoney, toMs, withQuotePrice } from "../lib/format";
 import { formatPrice } from "../charts/chartShared";
 
 type Trade = {
@@ -63,11 +63,7 @@ export default function HistoryPage() {
     const wins = pnlValues.filter((v) => v > 0).length;
     // Oran yalnız ölçülebilir işlemler üzerinden hesaplanır (payda = pnlValues).
     const winRate: number | null = pnlValues.length ? (wins / pnlValues.length) * 100 : null;
-    const formatCurrency = (v: number) => {
-        const abs = Math.abs(v);
-        const formatted = abs.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return v < 0 ? `-₺${formatted}` : `₺${formatted}`;
-    };
+    const formatCurrency = (v: number) => formatSignedMoney(v);
     // H-24: elle `* 1000` yerine `toMs` (backend saniye/ms karışık gönderir;
     // sezgisel dönüşüm tek kaynakta).
     const fmtTime = (ts?: number) => {
@@ -145,8 +141,8 @@ export default function HistoryPage() {
                                             {t.side === "LONG" ? "LONG" : "SHORT"}
                                         </span>
                                     </td>
-                                    <td className="p-3 text-right tabular-nums text-bunker-muted">₺{formatPrice(t.entry_price)}</td>
-                                    <td className="p-3 text-right tabular-nums text-bunker-muted">₺{formatPrice(t.exit_price)}</td>
+                                    <td className="p-3 text-right tabular-nums text-bunker-muted">{withQuotePrice(t.entry_price)}</td>
+                                    <td className="p-3 text-right tabular-nums text-bunker-muted">{withQuotePrice(t.exit_price)}</td>
                                     <td className="p-3 text-right tabular-nums text-bunker-muted">{Number.isFinite(Number(t.quantity)) ? Number(t.quantity).toFixed(6) : "—"}</td>
                                     <td className="p-3 text-right tabular-nums text-neon-yellow">{t.commission == null ? "—" : formatCurrency(t.commission)}</td>
                                     <td className={`p-3 text-right tabular-nums font-bold ${t.pnl == null ? "text-bunker-muted" : t.pnl >= 0 ? "text-neon-green" : "text-neon-red"}`}>

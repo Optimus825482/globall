@@ -8,9 +8,16 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+# 2026-09-26 (Binance Global): `NEXT_PUBLIC_*` Next.js tarafından BUILD
+# anında sabitlenir, çalışma anında okunmaz. Bu yüzden TR (TRY/₺) ve Global
+# (USDT) örnekleri AYRI imaj/derleme gerektirir — `docker-compose.yaml`'daki
+# `frontend` ve `frontend_global` bu ARG'ı farklı değerlerle geçer.
+# Varsayılan TRY: mevcut TR deploy'u davranış değişmeden kalır.
+ARG NEXT_PUBLIC_QUOTE_ASSET="TRY"
 ENV NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_WS_URL=
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+ENV NEXT_PUBLIC_QUOTE_ASSET=${NEXT_PUBLIC_QUOTE_ASSET}
 RUN npm run build
 
 FROM node:20-alpine AS runner

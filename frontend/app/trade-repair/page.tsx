@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
-import { toMs } from "../lib/format";
+import { formatSignedMoney, toMs } from "../lib/format";
 import SymbolLink from "../components/SymbolLink";
+import RequireAdmin from "../components/RequireAdmin";
 import { useLiveMessages } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 
@@ -112,6 +113,11 @@ export default function TradeRepairPage() {
   const p = data?.preview;
 
   return (
+    // 2026-09-26 (denetim): bu sayfa `POST /api/trade-repair/apply` ve
+    // `/legacy-cleanup` çağırıyor — kalıcı olarak silinen kayıtlar. Sayfa
+    // korumasız olduğu için HERKES URL'yi bilerek veri yazan işlemi
+    // tetikleyebiliyordu. `database`/`audit-logs` ile aynı seviyeye çekildi.
+    <RequireAdmin>
     <main className="page-shell space-y-5">
       <header className="page-heading flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -162,7 +168,7 @@ export default function TradeRepairPage() {
                 <span>·</span>
                 <SymbolLink symbol={x.symbol} className="font-bold text-white hover:text-neon-green" />
                 <span>·</span>
-                <span className="text-bunker-300">PnL {x.pnl == null ? "—" : `₺${Number(x.pnl).toFixed(2)}`}</span>
+                <span className="text-bunker-300">PnL {formatSignedMoney(x.pnl)}</span>
               </div>
             ))}
           </div>
@@ -229,5 +235,6 @@ export default function TradeRepairPage() {
         </div>
       </div>
     </main>
+    </RequireAdmin>
   );
 }

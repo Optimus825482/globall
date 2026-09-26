@@ -5,6 +5,11 @@ backend/__pycache__/
 backend/scalper_db_v4.sqlite*
 scalper_db_v4.sqlite*
 local_backups/
+# 2026-09-26 (Binance Global örneği): ikinci DB'nin dump'ları ayrı dizinde
+# tutulur — `db-backup` ve `db-backup-global` ayrı ayrı "en yeni 2 dump'u
+# tut" kuralı uygular, aynı dizinde birbirlerinin dump'ını silmelerine izin
+# vermemek için dizinler ayrılmıştır.
+local_backups_global/
 docs/*.dump
 scalperagent-backup-*.sqlite*
 frontend/node_modules/

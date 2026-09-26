@@ -25,15 +25,38 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+# 2026-09-26 (Global örneği): semboller testlerde bu deployment'ın quote'süne
+# çevrilir; bkz. `_row`/`_sym`. sys.path ayarı aşağıdaki `from app import ...`
+# satırından SONRA çalıştığı için import burada, ortamın içinde.
+from app.config import config
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import early_discovery as ed            # noqa: E402
 
 
+def _sym(base_try: str) -> str:
+    """`BTCTRY` → bu deployment'daki karşılığı (`BTCUSDT` Global'da).
+
+    Testler sembolleri TRY ile yazıyor; çıktı tarafı bu deployment'ın
+    quote'sünü taşıyor. Bu köprü olmadan testler Global koşusunda sessizce
+    hiçbir şey doğrulamadan boş döner.
+    """
+    value = str(base_try)
+    return f"{value[:-3]}{config.QUOTE_ASSET}" if value.endswith("TRY") else value
+
+
 def _row(symbol, price, q, event_ms=0):
-    """Binance miniTicker satırı: fiyat ve quoteVolume STRING olarak gelir."""
-    return {"e": "24hrMiniTicker", "E": event_ms, "s": symbol,
+    """Binance miniTicker satırı: fiyat ve quoteVolume STRING olarak gelir.
+
+    `*TRY` ile biten semboller deployment'ın quote'süne çevrilir; başka bir
+    ekle bitenler dokunulmaz (yanlış-quote sözleşmesini doğrulayan testler
+    böyle bir sembol kurar).
+    """
+    value = str(symbol)
+    if value.endswith("TRY"):
+        value = f"{value[:-3]}{config.QUOTE_ASSET}"
+    return {"e": "24hrMiniTicker", "E": event_ms, "s": value,
             "c": str(price), "q": str(q)}
 
 
@@ -113,7 +136,7 @@ class Return20sTests(unittest.TestCase):
         row = self._top()[0]
         self.assertEqual(set(row), {"symbol", "return_1m_pct", "return_20s_pct",
                                     "volume_burst", "price", "sample_age_sec"})
-        self.assertEqual(row["symbol"], "BTCTRY")
+        self.assertEqual(row["symbol"], _sym("BTCTRY"))
         self.assertAlmostEqual(row["return_1m_pct"], 1.0, places=6)
         self.assertEqual(row["price"], 101.0)
 
@@ -127,7 +150,7 @@ class DiscoveryPulseTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def _discovery_row():
-        return {"symbol": "BTCTRY", "return_1m_pct": 1.5, "return_20s_pct": 0.6,
+        return {"symbol": _sym("BTCTRY"), "return_1m_pct": 1.5, "return_20s_pct": 0.6,
                 "volume_burst": 3.2, "price": 101.0, "sample_age_sec": 0.4}
 
     def test_pulse_maps_fields_and_detected_at(self):
@@ -145,7 +168,7 @@ class DiscoveryPulseTests(unittest.IsolatedAsyncioTestCase):
                                      "return_20s_pct", "volume_burst",
                                      "sample_age_sec", "detected_at", "macd_mtf"})
         self.assertIsNone(item["macd_mtf"])
-        self.assertEqual(item["symbol"], "BTCTRY")
+        self.assertEqual(item["symbol"], _sym("BTCTRY"))
         self.assertEqual(item["price"], 101.0)
         self.assertEqual(item["return_1m_pct"], 1.5)
         self.assertEqual(item["return_20s_pct"], 0.6)
@@ -169,7 +192,7 @@ class DiscoveryPulseTests(unittest.IsolatedAsyncioTestCase):
         rows = [None, "garbage", self._discovery_row()]
         with patch("app.early_discovery.top_candidates", return_value=rows):
             pulse = monitoring._discovery_pulse()
-        self.assertEqual([item["symbol"] for item in pulse], ["BTCTRY"])
+        self.assertEqual([item["symbol"] for item in pulse], [_sym("BTCTRY")])
 
     async def test_state_payload_publishes_pulse(self):
         from app.routers import monitoring
@@ -181,7 +204,7 @@ class DiscoveryPulseTests(unittest.IsolatedAsyncioTestCase):
                           new=AsyncMock(return_value={"enabled": False})):
             payload = await monitoring.monitoring_state()
         self.assertIn("pulse", payload)
-        self.assertEqual(payload["pulse"][0]["symbol"], "BTCTRY")
+        self.assertEqual(payload["pulse"][0]["symbol"], _sym("BTCTRY"))
         self.assertIn("return_20s_pct", payload["pulse"][0])
         # Warm şeridi yayını AYNEN sürer (pulse yanına EKLENDİ, warm etkilenmez).
         self.assertIn("warm", payload)
@@ -206,7 +229,9 @@ class FastScanGateTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def _row(sym="BTCTRY", ret20=1.0, burst=5.0):
-        return {"symbol": sym, "return_1m_pct": 3.0, "return_20s_pct": ret20,
+        # 2026-09-26 (Global örneği): semboller bu deployment'ın quote'süne
+        # çevrilir; `_sym` köprüsü olmadan testler Global koşusunda boş döner.
+        return {"symbol": _sym(sym), "return_1m_pct": 3.0, "return_20s_pct": ret20,
                 "volume_burst": burst, "price": 101.0, "sample_age_sec": 0.1}
 
     async def test_disabled_never_reads_discovery(self):
@@ -240,7 +265,7 @@ class FastScanGateTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_symbol_cooldown_blocks_trigger(self):
         """Aynı sembol cooldown (90 sn) içindeyse tetiklenmez."""
-        self.mon._fast_scan["symbol_last"]["BTCTRY"] = time.monotonic()
+        self.mon._fast_scan["symbol_last"][_sym("BTCTRY")] = time.monotonic()
         with patch.object(self.mon.config, "DISCOVERY_FAST_SCAN_ENABLED", True), \
              patch("app.early_discovery.top_candidates",
                    return_value=[self._row()]), \
@@ -280,7 +305,7 @@ class FastScanGateTests(unittest.IsolatedAsyncioTestCase):
         fast = self.mon._fast_scan
         self.assertFalse(fast["running"], "finally bloğu running'i temizlemeli")
         self.assertGreater(fast["last_started"], 0.0)
-        self.assertGreater(fast["symbol_last"].get("BTCTRY", 0.0), 0.0)
+        self.assertGreater(fast["symbol_last"].get(_sym("BTCTRY"), 0.0), 0.0)
 
     async def test_trigger_ignores_symbols_below_gate_but_fires_for_qualified(self):
         """Eşiği geçmeyen satırlar atlanır; sıradaki uygun sembol tetikler."""
@@ -291,8 +316,8 @@ class FastScanGateTests(unittest.IsolatedAsyncioTestCase):
              patch.object(self.mon, "_run_scan", new=AsyncMock()) as scan:
             self.assertTrue(await self.mon._maybe_run_fast_scan())
         scan.assert_awaited_once()
-        self.assertIn("SOLTRY", self.mon._fast_scan["symbol_last"])
-        self.assertNotIn("BTCTRY", self.mon._fast_scan["symbol_last"])
+        self.assertIn(_sym("SOLTRY"), self.mon._fast_scan["symbol_last"])
+        self.assertNotIn(_sym("BTCTRY"), self.mon._fast_scan["symbol_last"])
 
 
 if __name__ == "__main__":

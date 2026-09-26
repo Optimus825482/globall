@@ -96,7 +96,7 @@ async def _persist_replay_parity_observation(entry: dict):
             "scan": entry,
             "effective_config": _replay_parity_config_snapshot(),
             "portfolio": {
-                "try_cash": await database.get_wallet_balance("TRY"),
+                "try_cash": await database.get_wallet_balance(),
                 "open_symbols": sorted(analyzer.positions),
                 "open_position_count": len(analyzer.positions),
             },

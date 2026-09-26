@@ -20,7 +20,60 @@ import {
   formatNumber2,
   formatRatioPct,
   localDateInput,
+  withQuote,
+  withQuotePrice,
+  toSymbol,
+  QUOTE_ASSET,
+  QUOTE_SYMBOL,
 } from "./format";
+
+// Bu dosya NEXT_PUBLIC_QUOTE_ASSET tanımsız (TR varsayılanı) çalışır.
+// Aşağıdaki kilitler TR örneğinin değişmeden kaldığını garanti eder; USDT
+// örneğinin doğru gösterimi `format.usdt.test.ts` içinde aynı sözleşmeyle
+// ayrıca doğrulanır (build-time env'i test içinde değiştirmek mümkün değil).
+describe("format — gösterim birimi katmanı (TR örneği)", () => {
+  it("env verilmezse TRY ve ₺", () => {
+    expect(QUOTE_ASSET).toBe("TRY");
+    expect(QUOTE_SYMBOL).toBe("₺");
+  });
+
+  it("toSymbol taban adına deployment quote'sünü ekler", () => {
+    expect(toSymbol("BTC")).toBe("BTCTRY");
+    expect(toSymbol("btc")).toBe("BTCTRY");
+    // Zaten ekliyse İKİ KEZ EKLEMEZ — sayfa sembolü zaten tam yazdığında
+    // "BTCTRYTRY" gibi bulunamayan bir sembol üretmemeli.
+    expect(toSymbol("BTCTRY")).toBe("BTCTRY");
+  });
+
+  it("withQuote öneki ve seçilen ondalığı uygular", () => {
+    // Yalnız MAKSİMUM kova: "1,23" / "1,23456" (trailing zero yok —
+    // `formatMoney`'den farkı, çağıranın alanı belirlemesidir).
+    expect(withQuote(1.23456, 2)).toBe("₺1,23");
+    expect(withQuote(1.23456, 6)).toBe("₺1,23456");
+  });
+
+  it("withQuote geçersiz girdide '—' DÖNER, 0 değil", () => {
+    // "1.234,56" gibi önceden biçimlenmiş bir metin Number() ile NaN olur.
+    // Sessizce "₺NaN" basmak yerine "—" dönmeli.
+    expect(withQuote("₺1.234,56")).toBe("—");
+    expect(withQuote("abc")).toBe("—");
+    expect(withQuote(0)).not.toBe("—");
+  });
+
+  it("withQuotePrice formatPrice ile AYNI hassasiyet kovasını kullanır", () => {
+    // Fiyat biçiminin tek kaynağı `pricePrecision`; önek eklerken
+    // ondalık kovası KAYBOLMAMALI (ayrı bir `toFixed` çağrısı kazanırdı).
+    expect(withQuotePrice(1.5)).toBe(`₺${formatPrice(1.5)}`);
+    expect(withQuotePrice(4250)).toBe(`₺${formatPrice(4250)}`);
+    expect(withQuotePrice(0.000123)).toBe(`₺${formatPrice(0.000123)}`);
+  });
+
+  it("withQuotePrice 'veri yok' durumunda önek basmaz", () => {
+    expect(withQuotePrice(null)).toBe("—");
+    expect(withQuotePrice(0)).toBe("—");   // 0 bir fiyat değil
+    expect(withQuotePrice(-1)).toBe("—");
+  });
+});
 
 describe("format — toMs (saniye/ms karışık girdi)", () => {
   it("saniyeyi milisaniyeye çevirir (10 milyar eşiği)", () => {

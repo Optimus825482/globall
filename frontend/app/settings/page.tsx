@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
 import { useLiveMessages } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
-import { formatSignedTL, toMs } from "../lib/format";
+import { formatSignedTL, QUOTE_ASSET_NAME, QUOTE_SYMBOL, toMs } from "../lib/format";
 import LlmManagement from "./LlmManagement";
 import SymbolLink from "../components/SymbolLink";
 
@@ -361,14 +361,14 @@ function SettingsPageInner() {
       const preview = await previewResponse.json();
       if (!previewResponse.ok) throw new Error(preview.detail || "Mutabakat önizlemesi alınamadı");
       const targets = preview.would_remove || [];
-      const detail = targets.length ? `\nSilinecek açık pozisyonlar ve ilişkili açılış kayıtları:\n- ${targets.map((item:any) => `${item.symbol} · ₺${Number(item.cost).toFixed(2)}`).join("\n- ")}` : "\nSilinecek pozisyon yok; yalnızca bakiye yeniden hesaplanacak.";
+      const detail = targets.length ? `\nSilinecek açık pozisyonlar ve ilişkili açılış kayıtları:\n- ${targets.map((item:any) => `${item.symbol} · ${QUOTE_SYMBOL}${Number(item.cost).toFixed(2)}`).join("\n- ")}` : "\nSilinecek pozisyon yok; yalnızca bakiye yeniden hesaplanacak.";
       if (!window.confirm(`Portföy mutabakatı önizlemesi hazır.${detail}\n\nDevam edilsin mi?`)) return;
       const response = await apiRequest(`${API_BASE}/api/portfolio/reconcile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "Portföy mutabakatı başarısız");
       setReconcileDone(true);
       const removed = (body.removed_overallocated_positions || []).map((item:any) => item.symbol).join(", ");
-      window.alert(`Portföy mutabakatı tamamlandı. TRY: ₺${Number(body.after_try).toFixed(2)}${removed ? `\nTemizlenen sermaye aşımı pozisyonları: ${removed}` : ""}`);
+      window.alert(`Portföy mutabakatı tamamlandı. ${QUOTE_ASSET_NAME}: ${QUOTE_SYMBOL}${Number(body.after_try).toFixed(2)}${removed ? `\nTemizlenen sermaye aşımı pozisyonları: ${removed}` : ""}`);
       setTimeout(() => setReconcileDone(false), 2500);
     } catch (err) { setError(err instanceof Error ? err.message : "Portföy mutabakatı başarısız"); }
     finally { setReconciling(false); }

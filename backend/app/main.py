@@ -48,9 +48,42 @@ from app import ml_forecast
 from app import chat_prediction_learning
 from app import chat_prediction_replay
 from app import llm_analysis
-from app.binance_tr_private import (get_account_balance, get_trade_history, get_symbol_filters,
-                                    place_market_sell, place_market_buy, place_oco_sell,
-                                    place_stop_loss_sell, place_limit_sell, cancel_order, get_open_orders)
+# Private yüzey: OKUMA fonksiyonları borsaya göre seçilir (`binance_private`
+# factory'si `config.EXCHANGE`'e bakar). EMİR fonksiyonları ise Aşama 1'de
+# yalnız Binance TR'de vardır; Global örneğinde aşağıdaki `_unavailable_in_
+# global` sarmalayıcıları atılır, böylece yanlış borsaya emir düşmesi mümkün
+# olmaz (sessizce TR'ye gitmektense açık hata tercih edilir).
+from app import binance_private as _bp
+from app.binance_tr_private import (place_market_sell, place_market_buy, place_oco_sell,
+                                    place_stop_loss_sell, place_limit_sell, cancel_order)
+get_account_balance = _bp.get_account_balance
+get_trade_history = _bp.get_trade_history
+get_symbol_filters = _bp.get_symbol_filters
+get_open_orders = _bp.get_open_orders
+
+
+def _orders_unavailable_in_global():
+    """Global örneğinde emir gönderimi Aşama 2'ye kadar kapalıdır.
+
+    TR modülünden import edilen `place_*` fonksiyonları `api.binance.me`/
+    `www.binance.tr`'ye gider. Global örneğinde bunları olduğu gibi çağırmak
+    KULLANICININ YANLIŞ BORSAYA EMİR GÖNDERMESİ demektir. Bu yüzden tüm
+    giriş noktaları burada durdurulur.
+    """
+    from fastapi import HTTPException
+    raise HTTPException(status_code=501, detail=(
+        "Bu borsada gerçek emir gönderimi henüz etkin değil "
+        "(Binance Global Aşama 2 kapsamında). Global örneği şu an salt okunurdur."
+    ))
+
+
+if config.EXCHANGE != "binance_tr":
+    place_market_sell = _orders_unavailable_in_global
+    place_market_buy = _orders_unavailable_in_global
+    place_oco_sell = _orders_unavailable_in_global
+    place_stop_loss_sell = _orders_unavailable_in_global
+    place_limit_sell = _orders_unavailable_in_global
+    cancel_order = _orders_unavailable_in_global
 from app.embedding_worker import worker as embedding_worker, trade_document, signal_document
 from app.memory_service import build_document
 from app import memory_service
@@ -1580,14 +1613,18 @@ async def get_market_symbols():
     # G-12: hata yolu HTTP 200 + boş liste + str(exc) döndürüyordu. İstemci
     # "hiç sembol yok" sanıyor, iç hata metni (sağlayıcı/DB) sızıyordu.
     # Artık 502 + sabit error_code döner; detay yalnız sunucu logunda kalır.
+    # Quote, deployment'ın borsasından gelir (TR→TRY, Global→USDT).
     try:
-        return {"symbols": await trading_symbols("TRY"), "quote_asset": "TRY"}
+        return {"symbols": await trading_symbols(), "quote_asset": config.QUOTE_ASSET,
+                "exchange": config.EXCHANGE, "exchange_label": config.EXCHANGE_LABEL}
     except Exception as exc:
         logger.error("/api/market-symbols: sembol listesi alınamadı: %s:%s", type(exc).__name__, exc,
                      exc_info=True)
         return JSONResponse(status_code=502,
                             content={"ok": False, "error_code": "market_symbols_unavailable",
-                                     "symbols": [], "quote_asset": "TRY"})
+                                     "symbols": [], "quote_asset": config.QUOTE_ASSET,
+                                     "exchange": config.EXCHANGE,
+                                     "exchange_label": config.EXCHANGE_LABEL})
 
 @app.get("/api/market-klines/{symbol}")
 async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200):
@@ -1664,7 +1701,7 @@ async def _gainers_radar_uncached(execute: bool = False):
         print(f"[Radar] ticker_24h haritası alınamadı (kline fallback devrede): {exc}")
     try:
         all_tickers = await ticker_24h()
-        known_try = set(await trading_symbols("TRY"))
+        known_try = set(await trading_symbols())
         gainer_candidates = []
         for item in all_tickers:
             symbol = str(item.get("symbol", "")).upper()
@@ -1929,7 +1966,7 @@ async def _apply_config_update(payload: dict, request: Request = None):
                 setattr(config, attr, number)
     if "symbols" in payload:
         symbols = sorted({str(s).replace("_", "").upper() for s in payload["symbols"] if str(s).strip()})
-        allowed = set(await trading_symbols("TRY"))
+        allowed = set(await trading_symbols())
         invalid = sorted(set(symbols) - allowed)
         # The settings page submits its whole draft.  A symbol may turn BREAK
         # between page load and save; do not let that stale item block valid
@@ -1939,7 +1976,7 @@ async def _apply_config_update(payload: dict, request: Request = None):
             symbols = [symbol for symbol in symbols if symbol in allowed]
         if not symbols:
             if invalid:
-                raise ValueError(f"Binance TR'de işlemde olan TRY sembolü kalmadı: {', '.join(invalid)}")
+                raise ValueError(f"{config.EXCHANGE_LABEL}'de işlemde olan {config.QUOTE_ASSET} sembolü kalmadı: {', '.join(invalid)}")
             raise ValueError("En az bir aktif sembol seçilmelidir")
         payload["symbols"] = symbols
         # DENETİM 3.4 #41: `config.SYMBOLS = symbols` + `market.symbols = ...`
@@ -2267,7 +2304,7 @@ async def symbol_analysis(symbol: str, timeframe: str = ""):
     }
     if not ticker or not history_ready:
         try:
-            available = set(await trading_symbols("TRY"))
+            available = set(await trading_symbols())
             if sym not in available:
                 return {"symbol": sym, "analysis_build": "rest-fallback-v4", "data_ready": False, "error": "Sembol Binance TR'de işlem görmüyor"}
             rows = await fetch_klines(sym, tf, limit=300)
@@ -2882,9 +2919,9 @@ async def binance_positions(request: Request):
     # Fiyat tablosu: her varlık için önce TRY, sonra USDT çiftini sor (≤50/istek).
     candidates: list[str] = []
     for h in held:
-        if h["asset"] != "TRY":
-            candidates.extend([f"{h['asset']}TRY", f"{h['asset']}USDT"])
-    if any(h["asset"] == "USDT" for h in held):
+        if h["asset"] != config.QUOTE_ASSET:
+            candidates.extend([f"{h['asset']}{config.QUOTE_ASSET}", f"{h['asset']}USDT"])
+    if config.QUOTE_ASSET == "TRY" and any(h["asset"] == "USDT" for h in held):
         candidates.append("USDTTRY")
     price_by_symbol: dict[str, float] = {}
     for i in range(0, len(candidates), 50):
@@ -2900,15 +2937,22 @@ async def binance_positions(request: Request):
 
     usdt_try = price_by_symbol.get("USDTTRY", 0.0)
     now_ts = time.time()
+    # Gösterilen birim bu deployment'ın quote'südür (TR→TRY, Global→USDT).
+    # `_quote` = 1.0 olduğunda varlık zaten o cinsindendir ve çevrim gerekmez;
+    # aksi hâlde (TR örneği) USDT→TRY çapraz kuru gerekir. Global'da
+    # `USDTTRY` çifti YOKTUR: çapraz yol kapalı olduğu için doğrudan USDT
+    # çifti okunur, aksi hâlde tüm portföy sessizce `None` değerlenirdi.
+    _quote = config.QUOTE_ASSET
+    _needs_fx = _quote == "TRY" and usdt_try > 0
     for h in held:
         asset = h["asset"]
-        if asset == "TRY":
+        if asset == _quote:
             price_try = 1.0
             symbol_concat = None
-        elif price_by_symbol.get(f"{asset}TRY"):
-            price_try = price_by_symbol[f"{asset}TRY"]
-            symbol_concat = f"{asset}TRY"
-        elif price_by_symbol.get(f"{asset}USDT") and usdt_try:
+        elif price_by_symbol.get(f"{asset}{_quote}"):
+            price_try = price_by_symbol[f"{asset}{_quote}"]
+            symbol_concat = f"{asset}{_quote}"
+        elif _needs_fx and price_by_symbol.get(f"{asset}USDT"):
             price_try = price_by_symbol[f"{asset}USDT"] * usdt_try
             symbol_concat = f"{asset}USDT"
         else:
@@ -2919,14 +2963,23 @@ async def binance_positions(request: Request):
         # Ağırlıklı ortalama alım maliyeti (işlem geçmişindeki alışların VWAP'ı,
         # 60 sn cache'li). TRY çifti yoksa USDT maliyeti USDTTRY ile TRY'ye çevrilir.
         avg_cost_try = None
-        if asset != "TRY" and symbol_concat:
+        if asset != config.QUOTE_ASSET and symbol_concat:
             cost = await asyncio.to_thread(_avg_buy_cost, user_id, api_key, api_secret, asset, symbol_concat, now_ts)
             if cost and cost.get("avg_price"):
                 quote = cost.get("quote")
-                if quote == "TRY":
+                # Bu deployment'ın quote'sü (TR→TRY, Global→USDT) doğrudan
+                # kullanılır; çapraz kur YALNIZ quote farklıysa devreye girer.
+                # Önceden yalnız `quote == "TRY"` dalı vardı: Global'da quote
+                # "USDT" olduğu için hiçbir dal tutmuyor, `avg_cost_try` None
+                # kalıyor ve tüm PnL "—" görünüyordu. Daha kötüsü, SL/TP'nin
+                # kâr-kilidi mantığı bu maliyete dayandığı için SL/TP YANLIŞ
+                # fiyatlarla kurulabiliyordu.
+                if quote == config.QUOTE_ASSET:
                     avg_cost_try = cost["avg_price"]
                 elif quote == "USDT" and usdt_try:
                     avg_cost_try = cost["avg_price"] * usdt_try
+                elif quote == "TRY" and usdt_try:
+                    avg_cost_try = cost["avg_price"] / usdt_try
         h["avg_cost_try"] = round(avg_cost_try, 8) if avg_cost_try else None
         if avg_cost_try and price_try:
             pnl_try = (price_try - avg_cost_try) * h["total"]
@@ -3438,7 +3491,10 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
 
     tasks: list[asyncio.Task] = []
     for asset in assets:
-        if asset == "TRY":
+        # Nakit varlığın kendisi bir çiftin tabanı olamaz. Sabit "TRY" yazmak
+        # Global'da yanlış çalışırdı: nakit USDT iken `USDT_TRY` ve
+        # `USDT_USDT` denenir, ikisi de bulunamaz, görev hiç oluşmaz.
+        if asset == config.QUOTE_ASSET:
             continue
         for quote in ("TRY", "USDT"):
             cand_u = f"{asset}_{quote}"
@@ -3459,24 +3515,42 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
 
     usdt_try = 0.0
     bnb_try = 0.0
-    try:
-        rates = await binance_tr_public.ticker_price(["USDTTRY", "BNBTRY"])
-        for row in rates if isinstance(rates, list) else []:
-            s = str(row.get("symbol") or "").upper().replace("_", "")
-            if s == "USDTTRY":
-                usdt_try = float(row.get("price") or 0)
-            elif s == "BNBTRY":
-                bnb_try = float(row.get("price") or 0)
-    except Exception:
-        pass
-    if bnb_try == 0.0 and usdt_try > 0:
+    # USDT kârı ve BNB komisyonu TRY'ye çevrilir. `USDTTRY` taban kurdur ve
+    # HER ZAMAN okunmalıdır — PnL bu kura bağlıdır (`rate_to_try`). Global'da
+    # `USDTTRY` çifti YOKTUR; orada quote zaten USDT olduğu için çevrim
+    # gerekmez ve `rate_to_try` 1.0 kalır. Önceden sabit
+    # `["USDTTRY","BNBTRY"]` tek seferde soruluyordu; Global'da ikisi de yok,
+    # istek boş dönüyor ve `except: pass` hatayı yutuyordu.
+    if config.QUOTE_ASSET == "TRY":
         try:
-            bnb_u = await binance_tr_public.ticker_price(["BNBUSDT"])
-            for row in bnb_u if isinstance(bnb_u, list) else []:
-                if str(row.get("symbol") or "").upper().replace("_", "") == "BNBUSDT":
-                    bnb_try = float(row.get("price") or 0) * usdt_try
+            rates = await binance_tr_public.ticker_price(["USDTTRY"])
+            for row in rates if isinstance(rates, list) else []:
+                s = str(row.get("symbol") or "").upper().replace("_", "")
+                if s == "USDTTRY":
+                    usdt_try = float(row.get("price") or 0)
         except Exception:
             pass
+        # BNB doğrudan TRY cinsinden alınır: `BNBTRY` zaten TRY fiyatıdır.
+        # Bunu USDT'den geçip `USDTTRY` ile çarpmak 35 kat şişirirdi
+        # (komisyon 20 TRY yerine 700 TRY görünürdü).
+        try:
+            rates = await binance_tr_public.ticker_price(["BNBTRY"])
+            for row in rates if isinstance(rates, list) else []:
+                s = str(row.get("symbol") or "").upper().replace("_", "")
+                if s == "BNBTRY":
+                    bnb_try = float(row.get("price") or 0)
+        except Exception:
+            pass
+        # Yedek: borsa `BNBTRY` döndürmediyse `BNBUSDT` × `USDTTRY`.
+        if bnb_try <= 0:
+            try:
+                rates = await binance_tr_public.ticker_price(["BNBUSDT"])
+                for row in rates if isinstance(rates, list) else []:
+                    s = str(row.get("symbol") or "").upper().replace("_", "")
+                    if s == "BNBUSDT":
+                        bnb_try = float(row.get("price") or 0) * usdt_try
+            except Exception:
+                pass
 
     by_symbol: dict[str, list[dict]] = {}
     for f in rows:
@@ -3564,8 +3638,15 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
             is_today = (start_ms <= t_time < end_ms)
 
             comm_asset = str(f.get("commissionAsset") or "").upper()
-            if comm_asset == "TRY":
+            # Bu borsanın quote'sü doğrudan birimdir (TR→TRY, Global→USDT) —
+            # çevrim GEREKMEZ. Önceden `comm_asset == "USDT" and usdt_try > 0`
+            # koşulu vardı; Global'da `usdt_try` tanımsız/0 olduğu için dal
+            # TUTMADI ve `else` çalışarak komisyon `comm * 0` = SIFIR olarak
+            # raporlanıyordu. K/Z raporları bu yüzden yanlış çıkardı.
+            if comm_asset == config.QUOTE_ASSET:
                 comm_try = comm
+            elif comm_asset == "TRY" and usdt_try > 0:
+                comm_try = comm * usdt_try
             elif comm_asset == "USDT" and usdt_try > 0:
                 comm_try = comm * usdt_try
             elif comm_asset == "BNB" and bnb_try > 0:
@@ -3772,11 +3853,11 @@ async def llm_open_paper_trade(payload: dict, request: Request = None):
     # kullanıcı belirli bir sembol gönderdiğinde uygulanmalıdır.
     if symbol and symbol not in config.SYMBOLS:
         try:
-            available_symbols = set(await trading_symbols("TRY"))
+            available_symbols = set(await trading_symbols())
         except Exception:
             available_symbols = set()
         if symbol not in available_symbols:
-            raise HTTPException(status_code=400, detail="Geçerli TRY sembolü gerekli")
+            raise HTTPException(status_code=400, detail=f"Geçerli {config.QUOTE_ASSET} sembolü gerekli")
     blocked = []
     historical_trades = await database.get_trades(limit=500)
     for candidate in candidates:
@@ -3843,7 +3924,7 @@ async def llm_open_paper_trade(payload: dict, request: Request = None):
         def _pct(value, fallback):
             try: return max(0.001, min(float(value), 0.25))
             except (TypeError, ValueError): return fallback
-        order_value = max(config.MIN_PARTIAL_ORDER_TRY, min(float(llm_plan.get("order_value_try", config.DEFAULT_ORDER_USDT)), max(config.MIN_PARTIAL_ORDER_TRY, await database.get_wallet_balance("TRY"))))
+        order_value = max(config.MIN_PARTIAL_ORDER_TRY, min(float(llm_plan.get("order_value_try", config.DEFAULT_ORDER_USDT)), max(config.MIN_PARTIAL_ORDER_TRY, await database.get_wallet_balance())))
         stop_loss_pct = _pct(llm_plan.get("stop_loss_pct"), config.HARD_STOP_LOSS_PCT)
         take_profit_pct = _pct(llm_plan.get("take_profit_pct"), config.SPOT_PROFIT_TARGET_PCT)
         hold_seconds = max(60, min(int(llm_plan.get("max_hold_seconds", config.MAX_POSITION_HOLD_SEC)), 7 * 24 * 3600))

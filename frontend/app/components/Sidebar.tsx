@@ -11,19 +11,9 @@ import SymbolLink from "./SymbolLink";
 import { useAuth } from "../lib/auth";
 import { canViewMacdMonitor } from "../lib/macdAccess";
 import { ML_PROB_CLASS, ML_PROB_TITLE, formatMlProbability } from "../lib/mlProbability";
+import { visibleGroups } from "../lib/menu";
+import { useExchange } from "../lib/exchange";
 
-const MENU_ITEMS = [
-    { href: "/profile", label: "Profil", icon: "👤", desc: "Hesap ve şifre" },
-    { href: "/portfolio", label: "Sanal Portföy", icon: "💼", desc: "Canlı sanal portföy ve otonom işlemler" },
-    { href: "/monitoring", label: "Radar", icon: "📡", desc: "Otonom izleme ve hız avcısı" },
-    { href: "/charts", label: "Grafik", icon: "📈", desc: "Mum grafikleri" },
-    { href: "/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu TradingView ekranı", adminOnly: true },
-    { href: "/binance-tr", label: "Binance TR", icon: "🏛️", desc: "Kendi Binance TR hesabında canlı işlem" },
-    { href: "/chat", label: "Chat", icon: "💬", desc: "Uzman trader LLM asistanı" },
-    { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Bot konfigürasyonu", adminOnly: true },
-    { href: "/admin", label: "Yönetim", icon: "🛠️", desc: "Veritabanı, kayıtlar, MACD monitör", requiresStaff: true },
-    { href: "/reports", label: "Raporlar", icon: "📋", desc: "Sinyal ve işlem raporları" },
-];
 const formatNotificationDate = (value: unknown) => {
     const numeric = Number(value);
     const date = Number.isFinite(numeric) ? new Date(toMs(numeric)) : new Date(String(value || ""));
@@ -35,7 +25,14 @@ export default function Sidebar() {
     const { username, role, logout } = useAuth();
     const isAdmin = role === "admin";
     const canViewMacd = canViewMacdMonitor(role, username);
+    const exchange = useExchange();
+    // Menü borsaya göre değişir: `/binance-tr` private API'ye bağlıdır ve
+    // Global örneğinde (api.binance.com) hiç çalışmaz.
+    const isGlobal = exchange.exchange === "binance_global";
+    const groups = visibleGroups({ isAdmin, canViewMacd, isGlobal });
     const [open, setOpen] = useState(false);
+    // Grup açık/kapalı durumu. undefined = varsayılan (Pano açık, diğerleri kapalı).
+    const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
     const [busyLogout, setBusyLogout] = useState(false);
     const [installEvent, setInstallEvent] = useState<any>(null);
     const [installed, setInstalled] = useState(false);
@@ -134,7 +131,18 @@ export default function Sidebar() {
                         ✕
                     </button>
                 </div>
-                <p className="eyebrow mt-2">V4 · Paper Trading</p>
+                {/* Borsa rozeti: menü ve gösterim birimi borsaya göre değiştiği
+                    için kullanıcı hangi örnekte olduğunu her an görebilmeli.
+                    `error` = backend'e ulaşılamadı; bu durumda rozet SARI olur
+                    ve "doğrulanamadı" der — sessizce yanlış borsa gösterilmez. */}
+                <p className="eyebrow mt-2 flex items-center gap-1.5">
+                    <span className="truncate">
+                        {exchange.loading ? "Borsa belirleniyor…" : exchange.label}
+                    </span>
+                    {exchange.error
+                        ? <span className="text-yellow-400" title="Backend'e ulaşılamadı — borsa doğrulanamadı">⚠</span>
+                        : <span className="text-neon-green/70">{exchange.quoteAsset}</span>}
+                </p>
                 <button
                     type="button"
                     onClick={() => { setNotificationsOpen(true); setUnread(0); }}
@@ -146,29 +154,61 @@ export default function Sidebar() {
                 </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-                {MENU_ITEMS.filter((m) =>
-                    m.adminOnly ? isAdmin : m.requiresStaff ? (isAdmin || canViewMacd) : true
-                ).map((m) => {
-                    const active = pathname === m.href || (m.href === "/admin" && ["/admin", "/database", "/audit-logs", "/macd-monitor", "/users", "/chat"].includes(pathname));
+            <nav className="flex-1 overflow-y-auto p-3 space-y-3" aria-label="Ana gezinme">
+                {groups.map((group) => {
+                    if (!group.items.length) return null;
+                    // İlk grup (Pano) her zaman açık: giriş noktası aranmaz.
+                    const open = openGroups[group.id] ?? group.id === "pano";
                     return (
-                        <div key={m.href}>
-                        <Link
-                            href={m.href}
-                            onClick={() => setOpen(false)}
-                            className={`block px-3 py-2.5 rounded-lg border transition-colors touch-target ${active
-                                ? "bg-neon-green/10 border-neon-green/30"
-                                : "border-transparent hover:bg-bunker-800/60 hover:border-bunker-700"
-                                }`}
-                        >
-                            <span className="flex items-center gap-2.5">
-                                <span className="text-sm">{m.icon}</span>
-                                <span className={`font-mono text-sm ${active ? "text-neon-green font-bold" : "text-white"}`}>
-                                    {m.label}
+                        <div key={group.id} className="space-y-1">
+                            <button
+                                type="button"
+                                onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
+                                className="flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-bunker-800/50"
+                                aria-expanded={open}
+                            >
+                                <span className={`text-[10px] text-bunker-muted transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+                                <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-bunker-muted">
+                                    {group.label}
                                 </span>
-                            </span>
-                            <span className="block text-[11px] text-bunker-muted mt-0.5 ml-7">{m.desc}</span>
-                        </Link>
+                                <span className="ml-auto font-mono text-[10px] text-bunker-muted/60">
+                                    {group.items.length}
+                                </span>
+                            </button>
+                            {open && group.items.map((m) => {
+                                const active = pathname === m.href
+                                    || (m.alsoActive || []).includes(pathname);
+                                // Terminal etiketi çalışan borsaya göre değişir:
+                                // TR örneğinde "Binance TR", Global'da
+                                // "Binance Global". Borsa henüz okunmadıysa
+                                // jenerik "Binance" kalır — yanlış borsa adı
+                                // göstermektense bunu söylemek yeğdir.
+                                const label = m.exchangeLabel
+                                    ? (exchange.loading ? m.label : exchange.label)
+                                    : m.label;
+                                return (
+                                    <Link
+                                        key={m.href}
+                                        href={m.href}
+                                        onClick={() => setOpen(false)}
+                                        title={m.desc || label}
+                                        className={`block px-3 py-2.5 rounded-lg border transition-colors touch-target ${active
+                                            ? "bg-neon-green/10 border-neon-green/30"
+                                            : "border-transparent hover:bg-bunker-800/60 hover:border-bunker-700"
+                                            }`}
+                                    >
+                                        <span className="flex items-center gap-2.5">
+                                            <span className="text-sm">{m.icon}</span>
+                                            <span className={`font-mono text-sm ${active ? "text-neon-green font-bold" : "text-white"}`}>
+                                                {label}
+                                            </span>
+                                        </span>
+                                        {/* Açıklama yalnız geniş ekranda: 6 öğeli grupta
+                                            her satıra iki satır harçlanıyordu. */}
+                                        {m.desc && <span className="hidden lg:block text-[11px] text-bunker-muted mt-0.5 ml-7">{m.desc}</span>}
+                                    </Link>
+                                );
+                            })}
                         </div>
                     );
                 })}

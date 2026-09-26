@@ -94,9 +94,20 @@ class QuoteAssetFloorTests(unittest.TestCase):
                         "USDT tabanı TRY tabanıyla aynıysa USDT havuzu boşalır")
         self.assertGreater(usdt, 0)
 
-    def test_unknown_asset_falls_back_to_try(self):
+    def test_unknown_asset_falls_back_to_deployment_quote(self):
+        """Bilinmeyen quote, OYALADIĞIMIZ borsanın kendi tabanına düşer.
+
+        2026-09-26 (Global örneği): eski davranış her bilinmeyen quote için
+        TRY tabanını (5M) kullanıyordu. Global örneğinde bu ~40 kat SIKI olurdu
+        (5M USDT) ve radar havuzu sessizce boş kalırdı. Doğru taban deployment'ın
+        quote'sünün tabanıdır.
+        """
         from app import binance_tr_public as btp
-        self.assertEqual(btp._min_quote_volume("BTC"), 5_000_000.0)
+        self.assertEqual(btp._min_quote_volume("BTC"),
+                         btp._min_quote_volume(btp._DEFAULT_QUOTE_ASSET))
+        self.assertEqual(btp._min_quote_volume("BTC"),
+                         btp._min_quote_volume("TRY") if btp._DEFAULT_QUOTE_ASSET == "TRY"
+                         else btp._min_quote_volume("USDT"))
 
     def test_active_movers_floor_is_half(self):
         from app import binance_tr_public as btp

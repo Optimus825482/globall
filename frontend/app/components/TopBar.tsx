@@ -1,5 +1,6 @@
 "use client";
 import { usePathname } from "next/navigation";
+import { useExchange } from "../lib/exchange";
 
 const labels: Record<string, string> = {
   "/": "Canlı Terminal",
@@ -30,10 +31,16 @@ const labels: Record<string, string> = {
 
 export default function TopBar() {
   const pathname = usePathname();
-  const currentTitle =
+  const exchange = useExchange();
+  const raw =
     labels[pathname] ||
     Object.entries(labels).find(([path]) => path !== "/" && pathname.startsWith(path))?.[1] ||
     "Scalper Agent";
+  // Özel terminal başlığı borsaya göre değişir. Sabit "Binance TR Canlı
+  // İşlem" yazısı Global kullanıcısına yanlış borsayı gösterirdi.
+  const currentTitle = raw.startsWith("Binance TR Canlı İşlem")
+    ? `${exchange.loading ? "Binance" : exchange.label} Canlı İşlem`
+    : raw;
 
   return (
     <div className="topbar">
@@ -42,7 +49,13 @@ export default function TopBar() {
         <p className="topbar-title">{currentTitle}</p>
       </div>
       <div className="topbar-status">
-        <span className="status-dot" /> CANLI PUBLIC DATA
+        {/* Borsa adı backend'den gelir; iki örnekte farklıdır. Sabit metin
+            kalmış olsaydı Global kullanıcısı "Binance TR Canlı İşlem"
+            başlığını kendi sayfasında görürdü. */}
+        <span className="status-dot" />
+        {exchange.error && !exchange.loading
+          ? "CANLI PUBLIC DATA · BORSA DOĞRULANAMADI"
+          : `CANLI PUBLIC DATA · ${exchange.loading ? "…" : exchange.label.toUpperCase()}`}
       </div>
     </div>
   );
