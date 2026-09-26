@@ -1,9 +1,23 @@
 import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
 from app import main
+from app.config import config
+
+# Bu dosyadaki TÜM testler TRY kurlarıyla (`USDTTRY`, `BNBTRY`) hesap yapar ve
+# sonuçları TRY cinsinden bekler — yani yalnızca `EXCHANGE=binance_tr`
+# örneğinde anlamlıdır. Global örneğinde quote USDT'dir, bu çiftler yoktur ve
+# doğru sonuç 20 USDT'dir. Global modda çalıştırıldığında yeşil görünmesi
+# YANLIŞ olurdu (kuru uydurulmuş TRY verisi Global'da hiç kullanılmaz).
+# Kural: `config` import anında okunduğu için skip koşulunu modül yüklendikten
+# SONRA, sınıf gövdesinde kurmak yerine dosya sonunda uygulanır.
+_TR_ONLY = unittest.skipUnless(
+    config.EXCHANGE == "binance_tr",
+    "TRY kurlarıyla hesaplar; yalnızca binance_tr örneğinde geçerlidir",
+)
 
 
 class BinanceTradesDayTests(unittest.IsolatedAsyncioTestCase):
+    @_TR_ONLY
     async def test_trades_day_fifo_matches_historical_buys(self):
         # Setup: Buy yesterday, Sell today
         day = "2026-09-21"
@@ -74,6 +88,7 @@ class BinanceTradesDayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertAlmostEqual(saga_summary["sell_qty"], 10.0)
                 self.assertAlmostEqual(saga_summary["sell_revenue_try"], 500.0)
 
+    @_TR_ONLY
     async def test_trades_day_usdt_pair_and_bnb_fee(self):
         day = "2026-09-21"
         from datetime import datetime, timezone, timedelta

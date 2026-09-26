@@ -3514,13 +3514,19 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
     daily_net = daily_gross = 0.0
 
     usdt_try = 0.0
-    bnb_try = 0.0
-    # USDT kârı ve BNB komisyonu TRY'ye çevrilir. `USDTTRY` taban kurdur ve
-    # HER ZAMAN okunmalıdır — PnL bu kura bağlıdır (`rate_to_try`). Global'da
-    # `USDTTRY` çifti YOKTUR; orada quote zaten USDT olduğu için çevrim
-    # gerekmez ve `rate_to_try` 1.0 kalır. Önceden sabit
-    # `["USDTTRY","BNBTRY"]` tek seferde soruluyordu; Global'da ikisi de yok,
-    # istek boş dönüyor ve `except: pass` hatayı yutuyordu.
+    bnb_quote = 0.0
+    # Kur tabanı ve komisyon birimi borsaya göre değişir.
+    #
+    # TR: quote TRY'dir. USDT→TRY çapraz kuru (`USDTTRY`) PnL'in tabanıdır ve
+    #     HER ZAMAN okunmalıdır (`rate_to_try`). BNB de TRY cinsinden alınır
+    #     (`BNBTRY` zaten TRY fiyatıdır) — USDT'den geçip `USDTTRY` ile çarpmak
+    #     onu 35 kat şişirirdi.
+    #
+    # Global: quote USDT'nin kendisidir. `USDTTRY` çifti YOKTUR, çapraz kur
+    #     uygulanmaz (`rate_to_try` 1.0 kalır) ve BNB doğrudan `BNBUSDT`
+    #     fiyatıdır. Önceden burası hiç yoktu: Global'da `bnb_try` 0 kalıyor,
+    #     BNB komisyonu `comm * 0` = SIFIR sayılıyor ve K/Z raporu sessizce
+    #     yanlış çıkıyordu.
     if config.QUOTE_ASSET == "TRY":
         try:
             rates = await binance_tr_public.ticker_price(["USDTTRY"])
@@ -3531,26 +3537,35 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
         except Exception:
             pass
         # BNB doğrudan TRY cinsinden alınır: `BNBTRY` zaten TRY fiyatıdır.
-        # Bunu USDT'den geçip `USDTTRY` ile çarpmak 35 kat şişirirdi
-        # (komisyon 20 TRY yerine 700 TRY görünürdü).
         try:
             rates = await binance_tr_public.ticker_price(["BNBTRY"])
             for row in rates if isinstance(rates, list) else []:
                 s = str(row.get("symbol") or "").upper().replace("_", "")
                 if s == "BNBTRY":
-                    bnb_try = float(row.get("price") or 0)
+                    bnb_quote = float(row.get("price") or 0)
         except Exception:
             pass
         # Yedek: borsa `BNBTRY` döndürmediyse `BNBUSDT` × `USDTTRY`.
-        if bnb_try <= 0:
+        if bnb_quote <= 0:
             try:
                 rates = await binance_tr_public.ticker_price(["BNBUSDT"])
                 for row in rates if isinstance(rates, list) else []:
                     s = str(row.get("symbol") or "").upper().replace("_", "")
                     if s == "BNBUSDT":
-                        bnb_try = float(row.get("price") or 0) * usdt_try
+                        bnb_quote = float(row.get("price") or 0) * usdt_try
             except Exception:
                 pass
+    else:
+        # Quote USDT (veya TRY dışı herhangi bir birim): BNB zaten doğru
+        # birimdedir, çapraz kur uygulanmaz.
+        try:
+            rates = await binance_tr_public.ticker_price([f"BNB{config.QUOTE_ASSET}"])
+            for row in rates if isinstance(rates, list) else []:
+                s = str(row.get("symbol") or "").upper().replace("_", "")
+                if s == f"BNB{config.QUOTE_ASSET}":
+                    bnb_quote = float(row.get("price") or 0)
+        except Exception:
+            pass
 
     by_symbol: dict[str, list[dict]] = {}
     for f in rows:
@@ -3649,8 +3664,8 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
                 comm_try = comm * usdt_try
             elif comm_asset == "USDT" and usdt_try > 0:
                 comm_try = comm * usdt_try
-            elif comm_asset == "BNB" and bnb_try > 0:
-                comm_try = comm * bnb_try
+            elif comm_asset == "BNB" and bnb_quote > 0:
+                comm_try = comm * bnb_quote
             elif comm_asset == base_asset and base_asset:
                 comm_try = comm * price * rate_to_try
             else:
