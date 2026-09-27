@@ -6,24 +6,32 @@ export default {
     extend: {
       colors: {
         bunker: {
-          950: "#0f1131",
-          900: "#1a1d4e",
-          800: "#2b2f5e",
-          700: "#444875",
-          600: "#6a6f9e",
-          muted: "#aeb2c7"
+          950: "#070b14",
+          900: "#0c1322",
+          800: "#142036",
+          700: "#1f3050",
+          600: "#314a77",
+          muted: "#93a7c6"
         },
         neon: {
-          green: "#0fff4f",
-          greenHover: "#4bff69",
-          red: "#ff3131",
-          yellow: "#ecd906"
+          green: "#00f0ff",
+          greenHover: "#38bdf8",
+          red: "#ff3366",
+          yellow: "#f0b90b",
+          cyan: "#00f0ff",
+          blue: "#38bdf8"
+        },
+        global: {
+          cyan: "#00f0ff",
+          sky: "#38bdf8",
+          gold: "#f0b90b",
+          dark: "#070b14"
         },
         surface: {
-          primary: "#1a1d4e",
-          secondary: "#2b2f5e",
-          danger: "#4b0404",
-          success: "#00370f"
+          primary: "#0c1322",
+          secondary: "#142036",
+          danger: "#350914",
+          success: "#022938"
         }
       },
       fontFamily: {

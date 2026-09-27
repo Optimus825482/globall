@@ -116,11 +116,19 @@ export default function Sidebar() {
         <aside className={`app-sidebar w-64 max-w-[85vw] md:w-56 shrink-0 border-r border-bunker-800 bg-bunker-900/95 flex flex-col h-screen sticky top-0 ${open ? "is-open" : ""}`}>
             <div className="p-4 sm:p-5 border-b border-bunker-800">
                 <div className="flex items-center justify-between">
-                    <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-neon-green animate-pulse" />
-                        <span className="font-mono text-sm font-bold tracking-tight">
-                            SCALPER GLOBAL<span className="text-neon-green">AGENT</span>
-                        </span>
+                    <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2.5">
+                        <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/25 to-blue-600/30 border border-cyan-400/40 shadow-[0_0_12px_rgba(0,240,255,0.3)]">
+                            <span className="text-base select-none">🌐</span>
+                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#00f0ff]" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="font-mono text-sm font-bold tracking-tight text-white flex items-center gap-1">
+                                SCALPER <span className="text-neon-green">GLOBAL</span>
+                            </span>
+                            <span className="font-mono text-[9px] font-bold text-cyan-400/80 tracking-widest uppercase">
+                                USDT ($) TERMINAL
+                            </span>
+                        </div>
                     </Link>
                     <button
                         type="button"
@@ -131,18 +139,22 @@ export default function Sidebar() {
                         ✕
                     </button>
                 </div>
-                {/* Borsa rozeti: menü ve gösterim birimi borsaya göre değiştiği
-                    için kullanıcı hangi örnekte olduğunu her an görebilmeli.
-                    `error` = backend'e ulaşılamadı; bu durumda rozet SARI olur
-                    ve "doğrulanamadı" der — sessizce yanlış borsa gösterilmez. */}
-                <p className="eyebrow mt-2 flex items-center gap-1.5">
-                    <span className="truncate">
-                        {exchange.loading ? "Borsa belirleniyor…" : exchange.label}
-                    </span>
-                    {exchange.error
-                        ? <span className="text-yellow-400" title="Backend'e ulaşılamadı — borsa doğrulanamadı">⚠</span>
-                        : <span className="text-neon-green/70">{exchange.quoteAsset}</span>}
-                </p>
+                {/* Global Borsa Rozet Kartı: TR ile yan yana açıldığında anında ayırt edilir */}
+                <div className="mt-3 rounded-lg border border-cyan-500/30 bg-gradient-to-r from-cyan-950/60 via-slate-900/60 to-blue-950/50 p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)]">
+                    <div className="flex items-center justify-between font-mono">
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+                            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
+                            {exchange.loading ? "Borsa belirleniyor…" : exchange.label.toUpperCase()}
+                        </span>
+                        <span className="rounded bg-cyan-400/20 px-2 py-0.5 text-[10px] font-bold text-cyan-200 border border-cyan-400/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
+                            {exchange.quoteAsset} ($)
+                        </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] text-cyan-400/70 font-mono border-t border-cyan-500/20 pt-1.5">
+                        <span>PİYASA: GLOBAL SPOT</span>
+                        <span className="text-amber-400 font-bold">PAPER TRADING</span>
+                    </div>
+                </div>
                 <button
                     type="button"
                     onClick={() => { setNotificationsOpen(true); setUnread(0); }}

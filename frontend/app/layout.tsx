@@ -13,8 +13,11 @@ const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "700"], variabl
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "SCALPER GLOBAL AGENT",
-  description: "Binance Global public-data paper scalping terminal",
+  title: {
+    default: "🌐 GLOBAL ($) · SCALPER AGENT",
+    template: "%s · 🌐 GLOBAL ($)"
+  },
+  description: "Binance Global public-data paper scalping terminal (USDT · $)",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.svg",
@@ -32,7 +35,7 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#05080d"
+  themeColor: "#070b14"
 };
 
 export default function RootLayout({
