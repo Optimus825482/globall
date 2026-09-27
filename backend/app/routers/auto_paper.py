@@ -454,10 +454,21 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
         # ve nedeni görünür kıl — operatör `balance_pct`/`min_order_try` ayarlarını
         # kendisi hizalar. (R3-06 deseni: sessiz düşme yok.)
         if order_value < min_order:
+            # 2026-09-27: metin `TRY` sabitiydi. Global örneğinde USDT sembolü
+            # üzerine "bakiye 0.00 TRY < min emir 50.00 TRY" yazıyordu —
+            # hesap doğruydu, YALNIZCA GÖSTERİM yanlıştı. Yeni paper DB'de
+            # bakiye 0 iken bu mesaj her taramada döndüğü için log, gerçekte
+            # olan "hesap boş" yerine "sistem bozuk" izlenimi veriyordu.
+            # `config.QUOTE_ASSET` deployment'ın quote'südür (TR→TRY,
+            # Global→USDT); sembol ekinden türetmeye GEREK yok çünkü
+            # `_open_new_trade` zaten yalnız taradığı sembolün pozisyonunu
+            # açıyor, bakiye cinsi tanım gereği quote cinsidir.
+            quote = config.QUOTE_ASSET
             logger.warning(
-                "auto_paper %s: risk bütçesi yetersiz (bakiye %.2f TRY × %%%.1f = %.2f TRY "
-                "< min emir %.2f TRY) — açılmadı; balance_pct/min_order_try ayarlayın",
-                symbol, balance, balance_pct * 100, order_value, min_order)
+                "auto_paper %s: risk bütçesi yetersiz (bakiye %.2f %s × %%%.1f = %.2f %s "
+                "< min emir %.2f %s) — açılmadı; balance_pct/min_order_try ayarlayın",
+                symbol, balance, quote, balance_pct * 100, order_value, quote,
+                min_order, quote)
             return _blocked(symbol, "order_below_min",
                             price=current_price,
                             order_value=round(order_value, 2),
@@ -1200,7 +1211,14 @@ async def update_settings_endpoint(payload: dict, request: Request):
         "balance_pct": max(1.0, min(100.0, float(merged.get("balance_pct", config.AUTO_PAPER_BALANCE_PCT_DEFAULT)))),
         "stop_loss_pct": max(0.1, min(20.0, float(merged.get("stop_loss_pct", config.AUTO_PAPER_SL_PCT_DEFAULT)))),
         "default_target_pct": max(0.5, min(20.0, float(merged.get("default_target_pct", config.AUTO_PAPER_DEFAULT_TARGET_PCT)))),
-        "min_order_try": max(10.0, float(merged.get("min_order_try", config.AUTO_PAPER_MIN_ORDER_TRY))),
+        # 2026-09-27: taban `10.0` TRY cinsinden sabitlenmişti; Global'da
+        # `config` varsayılanını (2.0) 10'a geri fırlatıyordu, yani az önce
+        # düzeltilen ölçekleme burada sessizce iptal oluyordu. Taban artık
+        # borsanın ölçeğinden gelir: TRY'de 10 (değişmeyen davranış), Global'da
+        # 0,5. Üst sınır koymadık — operatör bilerek küçük eşik seçebilir.
+        "min_order_try": max(10.0 if config.QUOTE_ASSET == "TRY" else 0.5,
+                              float(merged.get("min_order_try",
+                                               config.AUTO_PAPER_MIN_ORDER_TRY))),
         "breakeven_enabled": bool(merged.get("breakeven_enabled", getattr(config, "AUTO_PAPER_BREAKEVEN_ENABLED", False))),
         "breakeven_trigger_pct": max(0.5, min(10.0, float(merged.get("breakeven_trigger_pct", config.AUTO_PAPER_BREAKEVEN_TRIGGER_PCT)))),
         "trailing_enabled": bool(merged.get("trailing_enabled", config.AUTO_PAPER_TRAILING_ENABLED)),

@@ -72,3 +72,6 @@ $null
 # Ekran görüntüsü kırpıntıları — YALNIZCA repo kökü (frontend/public/*.png
 # gibi gerçek varlıklar etkilenmez; kök ekran görüntüleri araştırma artığı)
 /*.png
+# Yerel test koşturucu (2026-09-27) — repo değil, geliştiricinin makinesine
+# özel; commit'lenmeyecek.
+/TESTLERI-CALISTIR.bat

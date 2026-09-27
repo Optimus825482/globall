@@ -746,7 +746,14 @@ class Config:
     # Binance TR spot komisyonu (Bronz/Standart taker %0.15) - işlem başına
     COMMISSION_PCT = float(os.getenv("COMMISSION_PCT", "0.0015"))
     ESTIMATED_SLIPPAGE_PCT = 0.00025
-    MIN_EXPECTED_NET_PNL_TRY = 0.5
+    # 2026-09-27: sabit `0.5` TRY'de 50 TRY'lik bir emrin %1'ine denk geliyordu.
+    # Global'da emir tabanı 2 USDT'ye indiğinde AYNI 0,5 birim = %25'e
+    # çıkıyordu; `min_net_exit_pct(2.0)` = %25,35 döndürüyor ve
+    # `dynamic_target_pct`'in tabanı (en fazla ~%3-4) bunu ASLA aşamıyor —
+    # yani Global'da kâr tabanı kâr üretmeyen bir değere dönüşmüştü.
+    # Mutlak tutar, borsanın ölçeğiyle birlikte ölçeklenir; oran değil.
+    MIN_EXPECTED_NET_PNL_TRY = float(os.getenv(
+        "MIN_EXPECTED_NET_PNL", "0.5" if QUOTE_ASSET == "TRY" else "0.02"))
     # LLM paper-entry gate: an entry is blocked when the live top-of-book spread
     # exceeds this percent (thin-orderbook protection for low-price TRY pairs).
     LLM_MAX_ENTRY_SPREAD_PCT = float(os.getenv("LLM_MAX_ENTRY_SPREAD_PCT", "1.0"))
@@ -778,7 +785,17 @@ class Config:
     AUTO_PAPER_BALANCE_PCT_DEFAULT = float(os.getenv("AUTO_PAPER_BALANCE_PCT", "35"))
     AUTO_PAPER_SL_PCT_DEFAULT = float(os.getenv("AUTO_PAPER_SL_PCT", "1.5"))  # Eski varsayılan 3.0 → 1.5 (2026-09-17, Erkan kararı: replay geometrisi + canlı 50 işlem verisi).
     AUTO_PAPER_DEFAULT_TARGET_PCT = float(os.getenv("AUTO_PAPER_DEFAULT_TARGET_PCT", "1.5"))  # Eski varsayılan 2.0 → 1.5 (2026-09-17, Erkan kararı: radar/velocity bildirimlerinin hedefi MFE tavanına otursun; replay geometrisi + canlı 50 işlem verisi).
-    AUTO_PAPER_MIN_ORDER_TRY = float(os.getenv("AUTO_PAPER_MIN_ORDER_TRY", "50.0"))
+    # 2026-09-27: sabit `50.0` TRY'de doğru, Global'da ~35 KAT şişkindi
+    # (50 TRY ≈ 1,5 USDT). Şişkin eşik pratikte hiçbir pozisyon açmıyor,
+    # ama sistem "çalışıyor" görünüyor: log yazıyor, DB sorguluyor, hata
+    # fırlatmıyor. Bu, sessiz bozulmanın en pahalı türü.
+    #
+    # Env AÇIK verilirse dokunulmaz (operatör hâlâ son sözü söyler; DB'deki
+    # `auto_paper_settings.min_order_try` zaten önceliklidir). Verilmezse
+    # borsanın ölçeğine göre türetilir. `AUTO_PAPER_MIN_ORDER_TRY` adı
+    # `_TRY` sonekli alanlarla aynı şekilde tarihsel bir etikettir.
+    AUTO_PAPER_MIN_ORDER_TRY = float(os.getenv(
+        "AUTO_PAPER_MIN_ORDER_TRY", "50.0" if QUOTE_ASSET == "TRY" else "2.0"))
     # Başabaş (Breakeven) koruması: erken minik kârla çıkıp ralliyi kaçırmamak için
     # varsayılan KAPALI (2026-09-22 Erkan kararı). Ayarlardan isteğe bağlı açılabilir.
     AUTO_PAPER_BREAKEVEN_ENABLED = os.getenv("AUTO_PAPER_BREAKEVEN_ENABLED", "true").lower() == "true"

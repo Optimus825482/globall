@@ -6,8 +6,10 @@ Kapsam:
   W3b alarm push'u sessiz saatlere SAYGILI (radar ile aynı sözleşme)
   W2  push zarfı dayanıklılığı (`_send_push` iki zarf şeklini de taşır)
 """
+import asyncio
 import pathlib
 import sys
+import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,8 +17,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app import alerting                              # noqa: E402
-from app.routers import auto_paper, monitoring        # noqa: E402
+# E402 (import sırası): `sys.path` kaydı import'lardan SONRA gelmek zorunda.
+# Bunu bastırmak yerine `ruff` yapılandırmasına devrediyoruz.
+from app import alerting, config as config_module
+from app.routers import auto_paper, monitoring
 
 
 class AutoPaperSizingTests(unittest.IsolatedAsyncioTestCase):
@@ -49,6 +53,133 @@ class AutoPaperSizingTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsNotNone(result)
         self.assertNotEqual("order_below_min", (result or {}).get("reason"))
+
+
+class AutoPaperQuoteAssetTests(unittest.TestCase):
+    """2026-09-27: Global örneğinde log ve VARSAYILAN eşik TR cinsinden kalmıştı.
+
+    Canlı log (Global, USDT sembolleri üzerinde)::
+        auto_paper RAREUSDT: risk bütçesi yetersiz (bakiye 0.00 TRY
+        × %35.0 = 0.00 TRY < min emir 50.00 TRY)
+
+    İki ayrı kusur vardı ve ikisi de sessizdi:
+      1. Metin sabit `TRY` idi — hesap doğru, gösterim yanlıştı.
+      2. `AUTO_PAPER_MIN_ORDER_TRY` varsayılanı 50 idi ve env'e bağlıydı.
+         Global'da 50 USDT, TRY'deki 50 TRY'nin ~35 katıdır: kullanıcı
+         env'i ayarlamazsa pratikte HİÇBİR pozisyon açılamaz, ama sistem
+         "çalışıyor" görünür (log yazıyor, DB sorguluyor, hata fırlatmıyor).
+    """
+
+    # `class Config` gövdesi IMPORT ANINDA çalışır — `config.py:14-20`
+    # bunu bilinçli belgeliyor: `Config()` çağırmak yeni bir örnek verir ama
+    # sınıf nitelikleri çoktan hesaplanmıştır. Bu yüzden "Global env kur,
+    # sonra Config() oku" deseninin HİÇBİRİ işe yaramaz (2026-09-27'de
+    # dört tur denendi: `importlib.reload` singleton'ı değiştirdiği için
+    # `main`'i TR'de bıraktı; `Config()` ise zaten hesaplanmış nitelikleri
+    # tekrar hesaplamıyor).
+    #
+    # Yerine geçen iki araç:
+    #   1. ALT SINIF — nitelikleri GEÇERSİZ kılar (hesaplanmış bir örneği
+    #      yeniden kurmaz). `min_net_exit_pct` classmethod olduğu için `cls`
+    #      üzerinden okur, yani geçersiz kılınan değer GERÇEKTEN görünür.
+    #   2. KAYNAK SÖZLEŞMESİ — çalışma anında değiştirilemeyen seçimin
+    #      (env anahtarı + cins ölçeği) kaynakta nasıl yazıldığını sabitler.
+    #      Buraların ikisi de "Global'da TR ölçeğine kilitlenmesin" kuralının
+    #      taşıyıcıları; biçimlendirme değişirse bir kez burası güncellenir.
+    def _source(self, module) -> str:
+        """Beyaz alanı tek boşluğa indirger.
+
+        Kaynak sözleşmesi iğnelerinin satır kaydırmasıyla kırılmasın diye:
+        biçimlendirici satır bölünce test kırılmasın, ANLAM değişince kırılsın.
+        """
+        raw = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+        return " ".join(raw.split())
+
+    def _config_source(self) -> str:
+        return self._source(config_module)
+
+    def test_log_metni_deploymentin_quote_sudur(self):
+        """Sabit `TRY` yerine `config.QUOTE_ASSET` yazılmalı.
+
+        Kusur yalnız Global'da görünür (TR'de `TRY` zaten doğru cins), bu
+        yüzden test hangi borsada koşarsa koşsun `auto_paper.config`'i geçici
+        olarak Global'e sabitler.
+        """
+        fake_global = types.SimpleNamespace(
+            QUOTE_ASSET="USDT", AUTO_PAPER_MIN_ORDER_TRY=2.0)
+        with patch.object(auto_paper, "config", fake_global):
+            with self.assertLogs("scalper.auto_paper", level="WARNING") as captured:
+                asyncio.run(auto_paper._open_new_trade(
+                    "RAREUSDT", {"target_pct": 2.0}, 10.0,
+                    {"balance_pct": 35, "min_order_try": 50},
+                    order_value=0.0, balance=0.0,
+                ))
+        text = "\n".join(captured.output)
+        # Para birimi USDT olarak yazılmalı…
+        self.assertIn("USDT", text)
+        # …ve TRY SIZINTISI olmamalı. "USDT" alt dizisi "TRY" içermediği
+        # için bu, yanlış cinsin de yakalandığı anlamına gelir.
+        self.assertNotIn("TRY", text)
+
+    def test_mutlak_tutarlar_quote_uzerinden_secilir(self):
+        """Her iki mutlak tutar da cins üzerinden seçilmeli.
+
+        Borsaya göre DEĞİŞMEYEN sabit bir sayıya dönüşürlerse Global'da
+        sessiz bozulma olur (50 USDT eşiği = hiç emir açılmaması; 0,5 birim
+        = %25 kâr tabanı). Kilit kaynaktaki üçlü koşulu arar, çünkü test
+        çalışma anında env'i değiştiremez.
+        """
+        source = self._config_source()
+        for tr_default, quote_default in (('"50.0"', '"2.0"'), ('"0.5"', '"0.02"')):
+            with self.subTest(default=tr_default):
+                self.assertIn(
+                    f'{tr_default} if QUOTE_ASSET == "TRY" else {quote_default}', source)
+
+    def test_mutlak_tutarlar_env_ile_tertibe_girilebilir(self):
+        """Seçim env'siz yapılır ama env AÇIKSA operatörün sözü geçerli
+        olmalı — DB ayarı öncelikli olsa da env yanlışlıkla kilitlenmemeli.
+
+        Kırgınlığın kaynağı: ilk yazımda yalnız ikinci iğne `os.getenv(` ile
+        eşleşiyordu, ilki kod içinde satır kaydırmayla bölünmüştü
+        (`os.getenv(\\n        "AUTO_PAPER_MIN_ORDER_TRY"`). Biçimlendirici
+        o satırı böldüğü anda test sessizce yanlışa düşüyordu — çünkü kaynak
+        zaten normalize ediliyor, artık iğne kaydırmaya bağlı değil.
+        """
+        source = self._config_source()
+        for env_key in ('"AUTO_PAPER_MIN_ORDER_TRY"', '"MIN_EXPECTED_NET_PNL"'):
+            with self.subTest(env_key=env_key):
+                self.assertIn(f'os.getenv( {env_key},', source)
+
+    def test_otonom_emir_tabani_quote_olceginde(self):
+        """`update_settings_endpoint` içindeki taban `max(10.0, …)` TRY'ydi
+        ve Global'da varsayılanı geri 10'a fırlatıyordu — yani ölçekleme
+        burada sessizce iptal oluyordu."""
+        source = self._source(auto_paper)
+        self.assertIn('max(10.0 if config.QUOTE_ASSET == "TRY" else 0.5,', source)
+
+    def test_min_net_exit_tabani_her_iki_borsada_makul(self):
+        """`min_net_exit_pct` mutlak net kârı EMRE bölerek orana çevirir.
+
+        50 TRY'de 0,5 birim = %1. Aynı 0,5 birim, Global'ın 2 USDT'lik
+        en küçük emrinde %25'e denk gelir ve `dynamic_target_pct`'in tabanı
+        (~%3) onu asla aşamaz — yani kâr kapısı kâr üretmeyen bir değere
+        dönüşür.
+
+        `Config` alt sınıfı: `min_net_exit_pct` bir classmethod, `cls`
+        üzerinden okuduğu için GEÇERSİZ kılınan `MIN_EXPECTED_NET_PNL_TRY`
+        gerçekten hesaba girer. (Yeni `Config()` çağırmak işe yaramazdı —
+        gövde import anında çalışmış oluyordu.)
+        """
+        for label, quote, min_net, smallest in (
+                ("TR", "TRY", 0.5, 50.0),
+                ("Global", "USDT", 0.02, 2.0)):
+            with self.subTest(label=label):
+                cfg = type("Cfg", (config_module.Config,),
+                           {"QUOTE_ASSET": quote,
+                            "MIN_EXPECTED_NET_PNL_TRY": min_net})
+                floor = cfg.min_net_exit_pct(smallest) * 100
+                self.assertLess(floor, 10.0,
+                                msg=f"{label}: min emirde net kâr tabanı %{floor:.2f}")
 
 
 class AlertCooldownFloorTests(unittest.TestCase):

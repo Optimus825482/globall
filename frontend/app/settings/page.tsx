@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
 import { useLiveMessages } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
-import { formatSignedTL, QUOTE_ASSET_NAME, QUOTE_SYMBOL, toMs } from "../lib/format";
+import { formatSignedTL, QUOTE_ASSET, QUOTE_ASSET_NAME, QUOTE_SYMBOL, toMs } from "../lib/format";
 import LlmManagement from "./LlmManagement";
 import SymbolLink from "../components/SymbolLink";
 
@@ -1837,8 +1837,13 @@ function AutoPaperSettingsPanel() {
           <input type="number" min="0.5" max="20" step="0.1" disabled={pending} value={draft.default_target_pct ?? 2} onChange={(e) => set("default_target_pct", Number(e.target.value))} className="input" />
         </div>
         <div>
-          <label className="text-xs font-mono text-bunker-muted block mb-1">Minimum Emir (TRY)</label>
-          <input type="number" min="10" disabled={pending} value={draft.min_order_try ?? 50} onChange={(e) => set("min_order_try", Number(e.target.value))} className="input" />
+          {/* 2026-09-27: etiket `TRY`, `min` ve varsayılan TR sabitlerine
+              bağlıydı. Global örneğinde hem yanlış birimi gösteriyordu hem
+              de backend'in yeni 0,5 tabanı ile çelişiyordu (kullanıcı 1
+              yazsa bile backend 10'a çekiyordu). Üçü de `QUOTE_ASSET`'ten
+              türer — borsa ölçeği tek yerden gelir. */}
+          <label className="text-xs font-mono text-bunker-muted block mb-1">Minimum Emir ({QUOTE_ASSET_NAME})</label>
+          <input type="number" min={QUOTE_ASSET === "TRY" ? 10 : 0.5} step="0.1" disabled={pending} value={draft.min_order_try ?? (QUOTE_ASSET === "TRY" ? 50 : 2)} onChange={(e) => set("min_order_try", Number(e.target.value))} className="input" />
         </div>
         <div>
           <label className="text-xs font-mono text-bunker-muted block mb-1">Max Açık Pozisyon (1-30)</label>
