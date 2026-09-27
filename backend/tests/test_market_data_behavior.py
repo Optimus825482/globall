@@ -6,6 +6,8 @@ import time
 import unittest
 from unittest import mock
 
+from app.config import config
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -119,6 +121,47 @@ class MarketDataCacheTests(unittest.IsolatedAsyncioTestCase):
         ok, details = market.liquidity_status("BTCTRY", 1000)
         self.assertFalse(ok)
         self.assertEqual(details["missing_or_stale"], ["orderbook"])
+
+    def test_liquidity_high_volume_shallow_depth_passes(self):
+        """R3-06 düzeltmesi (2026-09-27): yüksek-likidite çift derinlik kapısından
+        muaftır. `depth_try` top-of-book TEK kademedir; GLMRUSDT gibi 1.47M USDT
+        24s hacimli çiftte best bid+ask ~36 USDT görünür, `order_value × 5` barına
+        (500 USDT) yetişmez — derinliği gerçekte olsa bile yanlış engellenirdi.
+        `high_liquidity` bypass'ı volume_ratio ile birlikte derinliğe de uygulanır.
+        """
+        from app.market_data import MarketData
+
+        market = MarketData(["GLMRUSDT"])
+        now = time.time()
+        market.klines["5m"]["GLMRUSDT"] = {
+            "timestamps": list(range(21)),
+            "closes": [0.0078] * 21,
+            "volumes": [50.0] * 21,
+            "last_closed_at_ms": int(now * 1000),
+            "updated_at": now,
+        }
+        # Sığ top-of-book: ~36 USDT derinlik (best bid 1655 + ask 2938 × 0.0079)
+        # Yüksek-likidite eşiği (HIGH_LIQUIDITY_BYPASS_VOLUME_TRY) moddan bağımsız
+        # okunur — TR örneği 3M, Global 75k USDT; test iki modda da aynı davranışı kilitler.
+        market.ticker_24h["GLMRUSDT"] = 2.0 * float(config.HIGH_LIQUIDITY_BYPASS_VOLUME_TRY)
+        market.orderflow["GLMRUSDT"].update({
+            "bid_price": 0.007851, "bid_qty": 1655.8,
+            "ask_price": 0.007881, "ask_qty": 2938.0,
+            "spread_pct": 0.38, "updated_at": now,
+        })
+        # ignore_ws_freshness=True dalı (AUTO_PAPER) test edilir: WS damgası yok,
+        # yalnız gerçek eşikler (quote_volume + volume_ratio + depth) değerlendirilir.
+        ok, details = market.liquidity_status("GLMRUSDT", 100, ignore_ws_freshness=True)
+        self.assertTrue(ok, f"yüksek hacimli çift sığ depth'te ENGELDENMEMELİ: {details}")
+
+        # Karşı-kanıt: aynı sığ depth ama düşük 24s hacim → hâlâ engellenmeli;
+        # düşük hacimli çift depth kapısından muaf DEĞİL (bypass yalnız high_liquidity).
+        market.ticker_24h["GLMRUSDT_LOW"] = 0.5 * float(config.MIN_24H_QUOTE_VOLUME_TRY)
+        market.orderflow["GLMRUSDT_LOW"] = dict(market.orderflow["GLMRUSDT"])
+        ok_low, details_low = market.liquidity_status("GLMRUSDT_LOW", 100, ignore_ws_freshness=True)
+        self.assertFalse(ok_low, "düşük hacim + sığ depth engellenmeli")
+        low_checks = details_low["checks"]
+        self.assertFalse(low_checks["orderbook_depth"], "düşük hacimli çift depth'ten muaf DEĞİL")
 
     def test_liquidity_warmup_bypass_is_explicit_and_time_bounded(self):
         from app.market_data import MarketData

@@ -1380,7 +1380,16 @@ class MarketData:
                 "fresh_inputs": True,  # REST ile taze aday; WS damgası beklenmiyor
                 "quote_volume": quote_volume >= config.MIN_24H_QUOTE_VOLUME_TRY,
                 "volume_ratio": high_liquidity or ratio >= config.MIN_VOLUME_RATIO,
-                "orderbook_depth": depth_try >= order_value_try * config.MIN_ORDERBOOK_DEPTH_MULTIPLIER,
+                # R3-06 düzeltmesi (2026-09-27): yüksek-likidite çift derinlik
+                # bariyerinden muaftır. `depth_try` top-of-book TEK kademedir
+                # (best bid+ask qty × fiyat) — likit çiftte onlarca kademe
+                # derinliği olsa bile sıfıra yakın ölçülebilir (ör. GLMRUSDT
+                # 1.47M USDT 24s hacim, top-1 depth ~36 USDT) ve `order_value
+                # × 5` bariyerine asla yetişemez → yüksek hacimli çift yanlış
+                # engellenirdi. `high_liquidity` bypass'ı volume_ratio'ya zaten
+                # uygulanıyor; derinliğe de taşındı (tutarlılık).
+                "orderbook_depth": high_liquidity
+                                   or depth_try >= order_value_try * config.MIN_ORDERBOOK_DEPTH_MULTIPLIER,
             }
         else:
             checks = {
@@ -1389,8 +1398,13 @@ class MarketData:
                                 or quote_volume >= config.MIN_24H_QUOTE_VOLUME_TRY,
                 "volume_ratio": (warmup_bypass and "kline" in missing_or_stale)
                                 or high_liquidity or ratio >= config.MIN_VOLUME_RATIO,
-                "orderbook_depth": (warmup_bypass and ("ticker" in missing_or_stale
-                                                         or "orderbook" in missing_or_stale))
+                # R3-06 (2026-09-27): yüksek-likidite çift derinlikten muaf
+                # (üstteki yorum aynen — top-of-book tek kademe likit çiftte
+                # yanlış negatif üretir; high_liquidity zaten quote bazında
+                # derinliği garantiler).
+                "orderbook_depth": high_liquidity
+                                   or (warmup_bypass and ("ticker" in missing_or_stale
+                                                           or "orderbook" in missing_or_stale))
                                    or depth_try >= order_value_try * config.MIN_ORDERBOOK_DEPTH_MULTIPLIER,
             }
         if ignore_ws_freshness:
