@@ -135,6 +135,19 @@ class AutoPaperQuoteAssetTests(unittest.TestCase):
                 self.assertIn(
                     f'{tr_default} if QUOTE_ASSET == "TRY" else {quote_default}', source)
 
+    def test_baslangic_bakiyesi_quote_olceginde(self):
+        """Sanal cüzdan başlangıç bakiyesi cins üzerinden seçilmeli.
+
+        Eskiden `INITIAL_BALANCE_TRY = 10000.0` SABİTTİ — Global'da 10.000
+        USDT anlamına geliyordu (TRY'nin ~35 katı). Reset sonrası "sıfırdan"
+        başlamak yerine 10x şişkin sermaye + fazla kaldıraç demekti.
+        Ölçek seçimi kaynaktaki üçlü koşulda kilitli; env açıkçası varsa onun
+        sözü geçer (operatör override'ı).
+        """
+        source = self._config_source()
+        self.assertIn('"10000.0" if QUOTE_ASSET == "TRY" else "1000.0"', source)
+        self.assertIn('os.getenv( "INITIAL_BALANCE",', source)
+
     def test_mutlak_tutarlar_env_ile_tertibe_girilebilir(self):
         """Seçim env'siz yapılır ama env AÇIKSA operatörün sözü geçerli
         olmalı — DB ayarı öncelikli olsa da env yanlışlıkla kilitlenmemeli.

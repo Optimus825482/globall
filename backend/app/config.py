@@ -196,7 +196,13 @@ class Config:
     SYMBOLS = _env_symbols or list(
         _DEFAULT_SYMBOLS.get(QUOTE_ASSET, _DEFAULT_SYMBOLS["TRY"]))
     MIN_NOTIONAL = 10.0
-    INITIAL_BALANCE_TRY = 10000.0
+    # Sanal cüzdanın başlangıç bakiyesi — quote cinsine göre ölçeklenir
+    # (TRY/Global TRY sabitleriyle aynı desen). TR'de 10.000 TRY, Global'da
+    # 1.000 USDT'lik varsayılan. Adı tarihsel `_TRY`; API sözleşmesi (frontend
+    # `initial_balance_try`) değişmediği için KORUNUYOR — yalnız DEĞER cinsine
+    # göre değişir. Env (`INITIAL_BALANCE`) açıkça verilirse o kazanır.
+    INITIAL_BALANCE_TRY = float(os.getenv(
+        "INITIAL_BALANCE", "10000.0" if QUOTE_ASSET == "TRY" else "1000.0"))
     # Spot paper işlemlerde varsayılan işlem tutarı (TRY cinsinden; adı tarihsel
     # olarak USDT kalmıştır, Binance TR tarafında bakiye TRY'dir).
     # Varsayılan paper işlem büyüklüğü (TRY). Arayüzden ayrıca değiştirilebilir.

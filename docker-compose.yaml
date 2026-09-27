@@ -173,6 +173,10 @@ services:
       # olurdu. DB'deki `auto_paper_settings.min_order_try` bunu geçersiz
       # kılabilir; env yalnız VARSAYILANı ve UI tabanını belirler.
       AUTO_PAPER_MIN_ORDER_TRY: ${AUTO_PAPER_MIN_ORDER_TRY_GLOBAL:-2.0}
+      # Sanal cüzdan başlangıç bakiyesi. config.py varsayılanı zaten
+      # quote-ölçekli (TRY→10000, Global→1000); bu env yalnız operatör
+      # isterse üzerine yazar.
+      INITIAL_BALANCE: ${INITIAL_BALANCE_GLOBAL:-1000.0}
     volumes:
       - scalper_global_data:/data
     expose:

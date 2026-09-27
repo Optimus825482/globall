@@ -10,7 +10,7 @@ import { API_BASE, apiRequest } from "../lib/api";
 import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
 import SymbolLink from "../components/SymbolLink";
 import { Button } from "../components/ui";
-import { formatSignedTL, formatTL, toMs } from "../lib/format";
+import { QUOTE_ASSET, formatSignedTL, formatTL, toMs } from "../lib/format";
 import { closedPnlTry, netOpenPnlPct, netOpenPnlTry } from "../lib/pnl";
 import { formatPrice } from "../charts/chartShared";
 
@@ -467,8 +467,8 @@ export default function PortfolioPage() {
 
       {/* ---- ÜST: Sermaye özeti ---- */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard label="TOPLAM DEĞER" value={money(totalValue)} hint={`mevcut TL ${money(freeTry)} + açık pozisyonlar`} />
-        <MetricCard label="SERBEST TL" value={money(freeTry)} toneClass={freeTry == null ? "" : "ui-tone-positive"} />
+        <MetricCard label="TOPLAM DEĞER" value={money(totalValue)} hint={`mevcut ${QUOTE_ASSET} ${money(freeTry)} + açık pozisyonlar`} />
+        <MetricCard label={`SERBEST ${QUOTE_ASSET}`} value={money(freeTry)} toneClass={freeTry == null ? "" : "ui-tone-positive"} />
         <MetricCard label="AÇIK POZİSYON" value={String(totalOpen)} toneClass={totalOpen > 0 ? "ui-tone-warning" : ""} hint={`otonom ${apTrades.length} · ana ${displayMain.length}`} />
         <MetricCard label="AÇIK KAR/ZARAR" value={signedMoney(totalOpenPnl)} toneClass={tone(totalOpenPnl)} />
       </div>

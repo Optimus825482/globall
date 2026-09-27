@@ -42,6 +42,11 @@ import { useAuth } from "../lib/auth";
 export default function SettingsPage() {
   return <RequireAdmin><SettingsPageInner /></RequireAdmin>;
 }
+// Sanal cüzdanın başlangıç bakiyesi metni — deployment'ın quote'una göre
+// (TR 10.000 TRY, Global 1.000 USDT). Modül düzeyinde: birden çok panel
+// (settings + auto-paper reset) aynı metni görsün diye.
+const resetWalletText = QUOTE_ASSET === "TRY" ? "10.000 TL" : `1.000 ${QUOTE_ASSET}`;
+
 function SettingsPageInner() {
   const [activeTab, setActiveTab] = useState<"symbols" | "radar" | "app" | "notifications" | "strategies" | "llm" | "chat" | "auto-paper" | "macd">("symbols");
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -338,7 +343,7 @@ function SettingsPageInner() {
   });
 
   const resetTradingData = async () => {
-    if (!window.confirm("Tüm eski işlemler, sinyaller, karar logları ve snapshotlar silinecek. Cüzdan 10.000 TL ile başlayacak. Devam edilsin mi?")) return;
+    if (!window.confirm(`Tüm eski işlemler, sinyaller, karar logları ve snapshotlar silinecek. Cüzdan ${resetWalletText} ile başlayacak. Devam edilsin mi?`)) return;
     setResetting(true);
     setError(null);
     setResetDone(false);
@@ -779,7 +784,7 @@ function SettingsPageInner() {
               <div>
                 <p className="eyebrow text-neon-red">PAPER TRADING KAYITLARI</p>
                 <p className="font-mono text-sm text-white mt-2">Tüm eski paper-trading ve strateji geçmişini temizle</p>
-                <p className="text-xs text-bunker-muted mt-1">İşlemler, sinyaller, karar logları ve snapshotlar silinir. Ayarlar ve piyasa cache&apos;i korunur; yeni bakiye 10.000 TL olur.</p>
+                <p className="text-xs text-bunker-muted mt-1">İşlemler, sinyaller, karar logları ve snapshotlar silinir. Ayarlar ve piyasa cache&apos;i korunur; yeni bakiye {resetWalletText} olur.</p>
               </div>
               <button
                 onClick={resetTradingData}
@@ -1731,7 +1736,7 @@ function AutoPaperSettingsPanel() {
   };
 
   const resetData = async () => {
-    if (!window.confirm("Portföy 10.000 TL'ye sıfırlanacak. Eski işlem kayıtları korunur ancak raporlara/hesaplamalara katılmaz. Devam etmek istiyor musunuz?")) return;
+    if (!window.confirm(`Portföy ${resetWalletText} başlangıç bakiyesiyle sıfırlanacak. Eski işlem kayıtları korunur ancak raporlara/hesaplamalara katılmaz. Devam etmek istiyor musunuz?`)) return;
     setResetting(true);
     try {
       const res = await apiRequest(`${API_BASE}/api/auto-paper/reset`, {
