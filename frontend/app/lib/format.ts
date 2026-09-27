@@ -132,10 +132,10 @@ export function formatPrice(value: number | null | undefined): string {
  */
 export const QUOTE_ASSET = (process.env.NEXT_PUBLIC_QUOTE_ASSET || "TRY").toUpperCase();
 
-/** `TRY` → `₺`, `USDT` → `USDT`, `USD` → `$`. Yalnız GÖSTERİM. */
+/** `TRY` → `₺`, `USDT` → `$`, `USD`/`USDC` → `$`. Yalnız GÖSTERİM. */
 export const QUOTE_SYMBOL: string = (() => {
   if (QUOTE_ASSET === "TRY") return "₺";
-  if (QUOTE_ASSET === "USDT") return "USDT";
+  if (QUOTE_ASSET === "USDT") return "$";
   if (QUOTE_ASSET === "USD" || QUOTE_ASSET === "USDC") return "$";
   return QUOTE_ASSET;
 })();

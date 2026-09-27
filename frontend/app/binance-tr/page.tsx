@@ -115,10 +115,11 @@ const fmtTime = (ts: number | null | undefined) => {
 const isCash = (asset: string) => isCashAsset(asset, QUOTE_ASSET);
 
 /**
- * Para birimi işareti. TR→`₺`, Global→`USDT`. React düğümü olduğu için hem
- * JSX metninde (`{Q}{fmtPrice(x)}`) hem şablon dizisinde (`` `${Q}...` ``)
- * doğrudan yazılabilir. Düz metin `₺` yazmak Global kullanıcısına yanlış
- * birim gösterirdi — en pahalı hata türü, çünkü sayı doğru görünür.
+ * Para birimi işareti. TR→`₺`, Global→`$` (USDT simgesel olarak dolar
+ * işareti). React düğümü olduğu için hem JSX metninde (`{Q}{fmtPrice(x)}`)
+ * hem şablon dizisinde (`` `${Q}...` ``) doğrudan yazılabilir. Düz metin `₺`
+ * yazmak Global kullanıcısına yanlış birim gösterirdi — en pahalı hata türü,
+ * çünkü sayı doğru görünür.
  */
 const Q = <>{QUOTE_SYMBOL}</>;
 
@@ -1193,7 +1194,7 @@ function BinanceTrPageInner() {
               <p className="eyebrow">NAKİT LİKİDİTE</p>
               <p className="mt-1 font-mono text-lg font-bold text-cyan-300">{Q}{fmtPrice(tryFreeBalance)}</p>
               <p className="mt-0.5 text-[11px] text-bunker-muted">
-                {fmtPrice(usdtFreeBalance)} USDT boşta
+                {Q}{fmtPrice(usdtFreeBalance)} boşta
               </p>
             </div>
 

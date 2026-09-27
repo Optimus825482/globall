@@ -1970,13 +1970,13 @@ export default function ChartsPage() {
                             {Number(currentAutoTrade.notification_price || monitorNotif?.price || 0) > 0 && (
                                 <span className="flex items-center gap-1 text-[#eab308] font-semibold" title="Bildirimin Gönderildiği Nokta (Sinyal Fiyatı)">
                                     <span className="w-2.5 h-0.5 bg-[#eab308] rounded-full inline-block" />
-                                    Bildirim: ₺{formatPrice(Number(currentAutoTrade.notification_price || monitorNotif?.price))}
+                                    Bildirim: {QUOTE_SYMBOL}{formatPrice(Number(currentAutoTrade.notification_price || monitorNotif?.price))}
                                 </span>
                             )}
                             {Number(currentAutoTrade.notification_expected_price || monitorNotif?.expected_price || 0) > 0 && (
                                 <span className="flex items-center gap-1 text-[#a855f7] font-semibold" title="Bildirimde Belirtilen Hedef Fiyat">
                                     <span className="w-2.5 h-0.5 bg-[#a855f7] rounded-full inline-block" />
-                                    Hedef: ₺{formatPrice(Number(currentAutoTrade.notification_expected_price || monitorNotif?.expected_price))}
+                                    Hedef: {QUOTE_SYMBOL}{formatPrice(Number(currentAutoTrade.notification_expected_price || monitorNotif?.expected_price))}
                                     {Number(currentAutoTrade.notification_target_pct || monitorNotif?.target_pct || 0) > 0 && (
                                         <span className="text-[10px] text-purple-300">
                                             (+%{Number(currentAutoTrade.notification_target_pct || monitorNotif?.target_pct).toFixed(1)})

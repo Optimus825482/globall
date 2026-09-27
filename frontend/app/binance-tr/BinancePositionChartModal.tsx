@@ -728,7 +728,7 @@ export default function BinancePositionChartModal({
         lineWidth: 2,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
-        title: `GİRİŞ: ₺${fmtPrice(entryPrice)} (${holding.total.toLocaleString("tr-TR")} ${holding.asset})`,
+        title: `GİRİŞ: ${QUOTE_SYMBOL}${fmtPrice(entryPrice)} (${holding.total.toLocaleString("tr-TR")} ${holding.asset})`,
       });
     }
 
@@ -744,7 +744,7 @@ export default function BinancePositionChartModal({
         lineWidth: 2,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
-        title: `🎯 TP: ₺${fmtPrice(effectiveTp)} (+${diffPct.toFixed(2)}% | +₺${fmtPrice(profitTry)})`,
+        title: `🎯 TP: ${QUOTE_SYMBOL}${fmtPrice(effectiveTp)} (+${diffPct.toFixed(2)}% | +${QUOTE_SYMBOL}${fmtPrice(profitTry)})`,
       });
     }
 
@@ -760,7 +760,7 @@ export default function BinancePositionChartModal({
         lineWidth: 2,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
-        title: `🛑 SL: ₺${fmtPrice(effectiveSl)} (${diffPct.toFixed(2)}% | ₺${fmtPrice(lossTry)})`,
+        title: `🛑 SL: ${QUOTE_SYMBOL}${fmtPrice(effectiveSl)} (${diffPct.toFixed(2)}% | ${QUOTE_SYMBOL}${fmtPrice(lossTry)})`,
       });
     }
 
@@ -1093,7 +1093,7 @@ export default function BinancePositionChartModal({
         // Başarı — state'i kesinleştir, pending'i temizle
         if (target === "TP") { commitTpPrice(finalDragPrice); setPendingTp(null); }
         else { commitSlPrice(finalDragPrice); setPendingSl(null); }
-        showToast(`${target} güncellendi → ₺${fmtPrice(finalDragPrice)}`, "success");
+        showToast(`${target} güncellendi → ${QUOTE_SYMBOL}${fmtPrice(finalDragPrice)}`, "success");
         onOrderUpdated();
       } catch (err: any) {
         // Hata — çizgiyi eski fiyata döndür
@@ -1229,14 +1229,14 @@ export default function BinancePositionChartModal({
     const bePrice = entryPrice * (1 + commRate + profitBuffer);
 
     if (bePrice >= curP) {
-      showToast(`Fiyat kârda ancak kâr kilidi seviyesinin (₺${fmtPrice(bePrice)}) altında.`, "info");
+      showToast(`Fiyat kârda ancak kâr kilidi seviyesinin (${QUOTE_SYMBOL}${fmtPrice(bePrice)}) altında.`, "info");
       return;
     }
 
     const precision = curP < 1 ? 6 : 2;
     const finalPrice = Number(bePrice.toFixed(precision));
     setPendingSl(finalPrice);
-    showToast(`🔒 Break-Even stop belirlendi: ₺${fmtPrice(finalPrice)}. Kaydetmek için 'Onayla ve Kaydet'e tıklayın.`, "success");
+    showToast(`🔒 Break-Even stop belirlendi: ${QUOTE_SYMBOL}${fmtPrice(finalPrice)}. Kaydetmek için 'Onayla ve Kaydet'e tıklayın.`, "success");
   };
 
   // İndikatör Yönetimi
@@ -1388,7 +1388,7 @@ export default function BinancePositionChartModal({
                     : "text-white"
                 }`}
               >
-                ₺{fmtPrice(currentPrice)}
+                {QUOTE_SYMBOL}{fmtPrice(currentPrice)}
               </span>
               {curPnlPct != null && (
                 <span
@@ -1397,7 +1397,7 @@ export default function BinancePositionChartModal({
                   }`}
                 >
                   {curPnlPct >= 0 ? "+" : ""}
-                  {curPnlPct.toFixed(2)}% ({curPnlTry != null && (curPnlTry >= 0 ? "+" : "")}₺
+                  {curPnlPct.toFixed(2)}% ({curPnlTry != null && (curPnlTry >= 0 ? "+" : "")}{QUOTE_SYMBOL}
                   {fmtPrice(curPnlTry)})
                 </span>
               )}
@@ -1411,7 +1411,7 @@ export default function BinancePositionChartModal({
               </span>
               {entryPrice && (
                 <span className="ml-2 border-l border-bunker-700 pl-2">
-                  Maliyet: <span className="text-cyan-300 font-bold">₺{fmtPrice(entryPrice)}</span>
+                  Maliyet: <span className="text-cyan-300 font-bold">{QUOTE_SYMBOL}{fmtPrice(entryPrice)}</span>
                 </span>
               )}
             </div>
@@ -1563,14 +1563,14 @@ export default function BinancePositionChartModal({
             <div className="flex items-center justify-between sm:justify-end gap-2.5 text-bunker-muted text-[10px]">
               {orderbook.bestBid && orderbook.bestAsk && (
                 <span className="truncate">
-                  Alış: <strong className="text-emerald-300">₺{fmtPrice(orderbook.bestBid)}</strong> | Satış: <strong className="text-red-300">₺{fmtPrice(orderbook.bestAsk)}</strong>
+                  Alış: <strong className="text-emerald-300">{QUOTE_SYMBOL}{fmtPrice(orderbook.bestBid)}</strong> | Satış: <strong className="text-red-300">{QUOTE_SYMBOL}{fmtPrice(orderbook.bestAsk)}</strong>
                 </span>
               )}
               <span className="shrink-0">
-                Spread: <strong className="text-cyan-300">₺{fmtPrice(orderbook.spread)}</strong> (%{orderbook.spreadPct.toFixed(2)})
+                Spread: <strong className="text-cyan-300">{QUOTE_SYMBOL}{fmtPrice(orderbook.spread)}</strong> (%{orderbook.spreadPct.toFixed(2)})
               </span>
               <span className="hidden md:inline shrink-0">
-                20-Derinlik: <strong className="text-white">₺{fmtPrice(orderbook.bidTotal + orderbook.askTotal, 0)}</strong>
+                20-Derinlik: <strong className="text-white">{QUOTE_SYMBOL}{fmtPrice(orderbook.bidTotal + orderbook.askTotal, 0)}</strong>
               </span>
             </div>
           </div>
@@ -1617,12 +1617,12 @@ export default function BinancePositionChartModal({
               <span className="font-bold text-[11px] sm:text-xs">Seviye Güncellendi:</span>
               {pendingTp != null && (
                 <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300 font-bold border border-emerald-500/40 text-[11px]">
-                  🎯 TP: ₺{fmtPrice(pendingTp)}
+                  🎯 TP: {QUOTE_SYMBOL}{fmtPrice(pendingTp)}
                 </span>
               )}
               {pendingSl != null && (
                 <span className="rounded bg-red-500/20 px-2 py-0.5 text-red-300 font-bold border border-red-500/40 text-[11px]">
-                  🛑 SL: ₺{fmtPrice(pendingSl)}
+                  🛑 SL: {QUOTE_SYMBOL}{fmtPrice(pendingSl)}
                 </span>
               )}
             </div>
@@ -1727,7 +1727,7 @@ export default function BinancePositionChartModal({
                   <span>↕ TP</span>
                   {effectiveTpVal && (
                     <span className="text-emerald-200 font-semibold">
-                      ₺{fmtPrice(effectiveTpVal)}
+                      {QUOTE_SYMBOL}{fmtPrice(effectiveTpVal)}
                       {entryPrice ? ` (+${(((effectiveTpVal - entryPrice) / entryPrice) * 100).toFixed(1)}%)` : ""}
                     </span>
                   )}
@@ -1751,7 +1751,7 @@ export default function BinancePositionChartModal({
                   <span>↕ SL</span>
                   {effectiveSlVal && (
                     <span className="text-red-200 font-semibold">
-                      ₺{fmtPrice(effectiveSlVal)}
+                      {QUOTE_SYMBOL}{fmtPrice(effectiveSlVal)}
                       {entryPrice ? ` (${(((effectiveSlVal - entryPrice) / entryPrice) * 100).toFixed(1)}%)` : ""}
                     </span>
                   )}
@@ -1764,7 +1764,7 @@ export default function BinancePositionChartModal({
           {draggingTarget && dragYPrice && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 rounded-lg border border-cyan-500 bg-bunker-950/90 px-4 py-2 font-mono text-xs text-white shadow-2xl backdrop-blur-md">
               <span className="text-cyan-400 font-bold">{draggingTarget} Ayarlanıyor: </span>
-              <span className="text-base font-black tabular-nums">₺{fmtPrice(dragYPrice)}</span>
+              <span className="text-base font-black tabular-nums">{QUOTE_SYMBOL}{fmtPrice(dragYPrice)}</span>
               {entryPrice && (
                 <span
                   className={`ml-2 font-bold ${
@@ -1790,7 +1790,7 @@ export default function BinancePositionChartModal({
             >
               <div className="px-2.5 py-1 border-b border-bunker-800 text-[10px] text-bunker-muted font-bold flex justify-between">
                 <span>SEÇİLEN FİYAT:</span>
-                <span className="text-cyan-300 font-black">₺{fmtPrice(contextMenu.price)}</span>
+                <span className="text-cyan-300 font-black">{QUOTE_SYMBOL}{fmtPrice(contextMenu.price)}</span>
               </div>
 
               <button
@@ -1967,7 +1967,7 @@ export default function BinancePositionChartModal({
             <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
               <div className="rounded-lg border border-bunker-800 bg-bunker-900/60 p-2">
                 <p className="text-bunker-muted">FİYAT</p>
-                <p className="font-bold text-white">₺{fmtPrice(priceNow)}</p>
+                <p className="font-bold text-white">{QUOTE_SYMBOL}{fmtPrice(priceNow)}</p>
               </div>
               <div className="rounded-lg border border-bunker-800 bg-bunker-900/60 p-2">
                 <p className="text-bunker-muted">BOŞTA</p>
@@ -1992,14 +1992,14 @@ export default function BinancePositionChartModal({
                       : "text-bunker-muted hover:text-white"
                   }`}
                 >
-                  {unit === "asset" ? `${holding.asset} ADEDİ` : "₺ TRY TUTARI"}
+                  {unit === "asset" ? `${holding.asset} ADEDİ` : `${QUOTE_ASSET_NAME} TUTARI`}
                 </button>
               ))}
             </div>
 
             <label className="mt-3 block">
               <span className="eyebrow">
-                {closeUnit === "asset" ? `SATILACAK MİKTAR (${holding.asset})` : "SATILACAK TUTAR (₺)"}
+                {closeUnit === "asset" ? `SATILACAK MİKTAR (${holding.asset})` : `SATILACAK TUTAR (${QUOTE_ASSET_NAME})`}
               </span>
               <input
                 value={closeQtyInput}
@@ -2012,7 +2012,7 @@ export default function BinancePositionChartModal({
                 {closeQtyNum > 0 ? (
                   <>
                     ≈ {fmtPrice(closeQtyNum, 6)} {holding.asset}
-                    {closeUnit === "try" ? "" : ` ≈ ₺${fmtPrice(closeQtyNum * priceNow)}`}
+                    {closeUnit === "try" ? "" : ` ≈ ${QUOTE_SYMBOL}${fmtPrice(closeQtyNum * priceNow)}`}
                   </>
                 ) : "Miktar girin"}
               </p>
@@ -2076,7 +2076,7 @@ export default function BinancePositionChartModal({
                 className="rounded-lg border border-neon-red/60 bg-neon-red/20 px-4 py-2 font-mono text-xs font-bold text-neon-red hover:bg-neon-red/30 disabled:opacity-40 transition-colors"
                 title={!sellEnabled ? "Gerçek emir gönderimi kapalı (Ayarlar)" : "Girilen miktar kadar piyasa satışı gönder"}
               >
-                {closeBusy ? "GÖNDERİLİYOR…" : `SAT — ${closeUnit === "asset" ? `${fmtPrice(closeQtyNum, 6)} ${holding.asset}` : `₺${fmtPrice(closeQtyNum * priceNow)}`}`}
+                {closeBusy ? "GÖNDERİLİYOR…" : `SAT — ${closeUnit === "asset" ? `${fmtPrice(closeQtyNum, 6)} ${holding.asset}` : `${QUOTE_SYMBOL}${fmtPrice(closeQtyNum * priceNow)}`}`}
               </button>
             </div>
           </div>
