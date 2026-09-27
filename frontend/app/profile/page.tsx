@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { API_BASE, apiRequest } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useExchange } from "../lib/exchange";
 import { useUiMode } from "../lib/ui-mode";
 import { fmtDate as fmtDateOnly } from "../lib/format";
 
@@ -14,6 +15,7 @@ type Notice = { kind: "ok" | "err"; text: string } | null;
 // ve `settings/page.tsx` aynı bileşeni kendi sekmesinde gömer.
 export function ProfileContent() {
   const { username, role } = useAuth();
+  const exchange = useExchange();
   const [uiMode, toggleUiMode] = useUiMode();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -165,7 +167,7 @@ export function ProfileContent() {
           <Link href="/portfolio" className="ui-button ui-button-secondary justify-center text-center touch-target">💼 Sanal Portföy</Link>
           <Link href="/monitoring" className="ui-button ui-button-secondary justify-center text-center touch-target">📡 Radar</Link>
           <Link href="/charts" className="ui-button ui-button-secondary justify-center text-center touch-target">📈 Grafik</Link>
-          <Link href="/binance-tr" className="ui-button ui-button-secondary justify-center text-center touch-target">🏛️ Binance TR</Link>
+          <Link href="/binance-tr" className="ui-button ui-button-secondary justify-center text-center touch-target">🏛️ {exchange.loading ? "Binance" : exchange.label}</Link>
           <Link href="/reports" className="ui-button ui-button-secondary justify-center text-center touch-target">📋 Raporlar</Link>
         </div>
       </section>

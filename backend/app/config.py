@@ -206,7 +206,8 @@ class Config:
     # Spot paper işlemlerde varsayılan işlem tutarı (TRY cinsinden; adı tarihsel
     # olarak USDT kalmıştır, Binance TR tarafında bakiye TRY'dir).
     # Varsayılan paper işlem büyüklüğü (TRY). Arayüzden ayrıca değiştirilebilir.
-    DEFAULT_ORDER_USDT = float(os.getenv("DEFAULT_ORDER_USDT", "1000.0"))
+    DEFAULT_ORDER_USDT = float(os.getenv(
+        "DEFAULT_ORDER_USDT", "1000.0" if QUOTE_ASSET == "TRY" else "50.0"))
     # Aynı ayarın doğru adı; yeni kod bunu kullanmalı (eski ad geriye dönük uyum
     # için korunuyor, .env'deki DEFAULT_ORDER_USDT değişkeni hâlâ okunur).
     DEFAULT_ORDER_TRY = DEFAULT_ORDER_USDT
@@ -218,7 +219,8 @@ class Config:
         "MIN_PARTIAL_ORDER", "100.0" if QUOTE_ASSET == "TRY" else "2.0"))
     # Normal yüzde tutarı minimumun altına düştüğünde boş bakiyeyi eritmek
     # için kullanılacak kademeli paper işlem tutarı.
-    FALLBACK_ORDER_TRY = float(os.getenv("FALLBACK_ORDER_TRY", "250.0"))
+    FALLBACK_ORDER_TRY = float(os.getenv(
+        "FALLBACK_ORDER_TRY", "250.0" if QUOTE_ASSET == "TRY" else "15.0"))
     # D-11 (2026-09-12): varsayılan artık 5 — eskiden 0 (= sınırsız) idi ve
     # zincirleme bildirimlerde cüzdanın tamamı tek turda pozisyona girebiliyordu.
     # 0 HÂLÂ sınırsız demektir (açıkça `0` verilirse), ancak güvenli varsayılan

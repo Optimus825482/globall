@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useLiveMessages } from "../lib/liveSocket";
-import { fmtDateTime, formatPrice } from "../lib/format";
+import { fmtDateTime, formatPrice, withQuotePrice } from "../lib/format";
 import SymbolLink from "./SymbolLink";
 
 /** Kısa, keskin "radar" sesi: iki vuruşlu yüksek ton + düşük vurgu. */
@@ -81,7 +81,7 @@ const KIND_META: Record<AlertKind, { eyebrow: string; icon: string; accent: stri
 // için korunur ama artık kullanılmaz.
 const fmtPrice = (value: number | undefined, _symbol?: string) => {
   if (value == null || !Number.isFinite(value)) return "—";
-  return `${formatPrice(value)} TRY`;
+  return withQuotePrice(value);
 };
 
 export default function RadarAlertModal() {

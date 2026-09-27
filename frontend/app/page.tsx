@@ -13,7 +13,8 @@ import { useAuth } from "./lib/auth";
 import { useLiveMessages as useLiveSocketMessages, useLiveStatus } from "./lib/liveSocket";
 import { useUiMode } from "./lib/ui-mode";
 import { useVisibleInterval } from "./lib/useVisibleInterval";
-import { formatPrice, formatSignedTL, formatTL, toMs } from "./lib/format";
+import { useExchange } from "./lib/exchange";
+import { formatPrice, formatSignedTL, formatTL, toMs, QUOTE_SYMBOL } from "./lib/format";
 import { netOpenPnlPct, netOpenPnlTry } from "./lib/pnl";
 
 /* ============== TİPLER ============== */
@@ -52,6 +53,7 @@ function MetricCard({ label, value, hint, tone = "" }: { label: string; value: s
 /* ============== SAYFA ============== */
 export default function Home() {
   const { username } = useAuth();
+  const exchange = useExchange();
   const liveStatus = useLiveStatus();
   const [mode, toggleMode] = useUiMode();
   const isAdvanced = mode === "advanced";
@@ -208,7 +210,7 @@ export default function Home() {
           <div className="flex items-center gap-2.5">
             <span className="text-xl">🏛️</span>
             <div>
-              <p className="font-mono text-xs font-bold text-white group-hover:text-neon-green transition-colors">Binance TR</p>
+              <p className="font-mono text-xs font-bold text-white group-hover:text-neon-green transition-colors">{exchange.loading ? "Binance" : exchange.label}</p>
               <p className="text-[10px] text-bunker-muted">Canlı hesap işlemi</p>
             </div>
           </div>
@@ -263,7 +265,7 @@ export default function Home() {
           <div className="mt-2 flex flex-wrap gap-3">
             <APStatCard label="Bugün sinyal" value={String(s?.signals_today.total ?? 0)} />
             <APStatCard label="Otonom işlem" value={String(s?.auto_paper_today.trades ?? 0)} sub={s ? signedMoney(apPnl) : ""} />
-            <APStatCard label="Serbest TL" value={money(s?.portfolio.balance)} />
+            <APStatCard label={`Serbest ${QUOTE_SYMBOL}`} value={money(s?.portfolio.balance)} />
             <APStatCard label="Toplam Değer" value={money(s?.portfolio.total_value)} />
           </div>
         </section>

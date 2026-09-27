@@ -488,7 +488,8 @@ function BinanceTrPageInner() {
   // Filtrelenmiş Pozisyonlar
   const visibleHoldings = useMemo(() => {
     return mergedHoldings.filter((h) => {
-      if (hideSmall && h.value_try != null && h.value_try < 50) return false;
+      const smallThreshold = QUOTE_ASSET === "TRY" ? 50 : 2;
+      if (hideSmall && h.value_try != null && h.value_try < smallThreshold) return false;
       if (searchFilter.trim()) {
         const q = searchFilter.trim().toUpperCase();
         if (!h.asset.includes(q)) return false;
@@ -1329,7 +1330,7 @@ function BinanceTrPageInner() {
                       onChange={(e) => setHideSmall(e.target.checked)}
                       className="h-3.5 w-3.5 accent-[color:var(--neon-green,#22c55e)]"
                     />
-                    50 TL altını gizle
+                    {QUOTE_ASSET === "TRY" ? "50 TL altını gizle" : `${QUOTE_SYMBOL}2 altını gizle`}
                   </label>
                   {ordLoading && (
                     <span className="font-mono text-[10px] text-bunker-muted animate-pulse">

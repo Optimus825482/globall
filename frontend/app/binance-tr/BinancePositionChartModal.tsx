@@ -12,6 +12,7 @@ import {
   LineStyle,
 } from "lightweight-charts";
 import { API_BASE, apiRequest } from "../lib/api";
+import { QUOTE_SYMBOL, QUOTE_ASSET_NAME } from "../lib/format";
 import { useLiveMessages } from "../lib/liveSocket";
 import { commissionPct } from "../lib/pnl";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
@@ -1369,7 +1370,7 @@ export default function BinancePositionChartModal({
             <div className="flex items-center gap-2">
               <span className="text-base sm:text-lg font-black tracking-wider text-white">
                 {holding.asset}
-                <span className="text-xs text-bunker-muted font-normal ml-1">/ TRY</span>
+                <span className="text-xs text-bunker-muted font-normal ml-1">/ {QUOTE_ASSET_NAME}</span>
               </span>
               <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[9px] sm:text-[10px] font-bold text-emerald-400 border border-emerald-500/30">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />

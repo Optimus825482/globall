@@ -62,7 +62,7 @@ get_symbol_filters = _bp.get_symbol_filters
 get_open_orders = _bp.get_open_orders
 
 
-def _orders_unavailable_in_global():
+def _orders_unavailable_in_global(*args, **kwargs):
     """Global örneğinde emir gönderimi Aşama 2'ye kadar kapalıdır.
 
     TR modülünden import edilen `place_*` fonksiyonları `api.binance.me`/
