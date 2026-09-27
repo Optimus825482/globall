@@ -195,7 +195,7 @@ function UpsideScoutCard({ scout }: { scout: ScoutResult }) {
   const candidates = scout.candidates || [];
   if (!candidates.length && !scout.symbols.length) return null;
   return (
-    <div className="card mb-3 border-emerald-500/30 bg-emerald-950/20 p-3 text-xs font-mono">
+    <div className="card mb-3 border-cyan-500/30 bg-cyan-950/20 p-3 text-xs font-mono">
       <div className="flex items-center justify-between gap-2 border-b border-bunker-700/60 pb-2">
         <span className="font-bold text-neon-green flex items-center gap-1.5">
           <span>🎯</span>
@@ -234,7 +234,7 @@ function UpsideScoutCard({ scout }: { scout: ScoutResult }) {
                 <span>Hız: {Number(candidate.velocity_score || 0).toFixed(1)}</span>
               </div>
               {candidate.ml_hit_probability != null && (
-                <div className="mt-1 text-[10px] text-emerald-400/90">
+                <div className="mt-1 text-[10px] text-cyan-300/90">
                   ML olasılık: %{(Number(candidate.ml_hit_probability) * 100).toFixed(1)}
                   {candidate.ml_target_pct != null ? ` (hedef +%${Number(candidate.ml_target_pct).toFixed(2)})` : ""}
                 </div>
@@ -800,7 +800,7 @@ function ChatPageInner() {
           {/* Üst Başlık & Kontrol Çubuğu */}
           <div className="chat-top-bar flex flex-wrap items-center justify-between gap-2 pb-3 mb-2 border-b border-bunker-800">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-base">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-base">
                 💬
               </div>
               <div>
@@ -808,7 +808,7 @@ function ChatPageInner() {
                   <h1 className="font-mono text-sm font-bold text-white tracking-wide">
                     CHAT MERKEZİ
                   </h1>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${role === "admin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/40" : "bg-emerald-500/20 text-neon-green border border-emerald-500/40"}`}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${role === "admin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/40" : "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40"}`}>
                     {role === "admin" ? "🛡️ YÖNETİCİ" : "📈 UZMAN TRADER"}
                   </span>
                   <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono text-bunker-muted">
@@ -838,7 +838,7 @@ function ChatPageInner() {
                 <span>⚡</span>
                 <span>AKIŞ</span>
                 {activities.length > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-emerald-500/30 text-neon-green text-[9px] flex items-center justify-center font-bold">
+                  <span className="w-4 h-4 rounded-full bg-cyan-500/30 text-cyan-300 text-[9px] flex items-center justify-center font-bold">
                     {Math.min(activities.length, 99)}
                   </span>
                 )}
@@ -862,14 +862,14 @@ function ChatPageInner() {
           {/* Mesaj Akışı */}
           <div className="chat-messages flex-1 overflow-y-auto space-y-3 p-1">
             {messages.length <= 1 && (
-              <div className="chat-welcome-card card border-bunker-700/60 bg-gradient-to-br from-bunker-900/90 via-bunker-950/80 to-emerald-950/20 p-4 sm:p-5 shadow-xl mb-3">
+              <div className="chat-welcome-card card border-bunker-700/60 bg-gradient-to-br from-bunker-900/90 via-bunker-950/80 to-cyan-950/25 p-4 sm:p-5 shadow-xl mb-3">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-xl">
                     📈
                   </div>
                   <div>
                     <h2 className="text-white font-mono font-bold text-sm sm:text-base flex items-center gap-2">
-                      SCALPER AI <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-neon-green border border-emerald-500/40">{role === "admin" ? "YÖNETİCİ MODU" : "UZMAN TRADER MODU"}</span>
+                      SCALPER AI <span className="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">{role === "admin" ? "YÖNETİCİ MODU" : "UZMAN TRADER MODU"}</span>
                     </h2>
                     <p className="text-xs text-bunker-muted">
                       {username ? `Hoş geldin ${username}! ` : ""}Canlı {exchange.loading ? "Binance" : exchange.label} piyasa yönü, teknik seviyeler ve risk yönetimi için hazır.
@@ -905,7 +905,7 @@ function ChatPageInner() {
                   className={`chat-message group flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
                 >
                   {!isUser && (
-                    <div className="chat-avatar shrink-0 w-8 h-8 rounded-xl bg-bunker-800 border border-emerald-500/40 text-neon-green flex items-center justify-center font-mono text-xs font-bold shadow-md">
+                    <div className="chat-avatar shrink-0 w-8 h-8 rounded-xl bg-bunker-800 border border-cyan-400/40 text-cyan-300 flex items-center justify-center font-mono text-xs font-bold shadow-md">
                       AI
                     </div>
                   )}
@@ -921,7 +921,7 @@ function ChatPageInner() {
                     <div
                       className={`chat-bubble rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
                         isUser
-                          ? "bg-gradient-to-br from-emerald-950/40 to-bunker-900 border border-emerald-500/30 text-emerald-100 rounded-tr-sm"
+                          ? "bg-gradient-to-br from-cyan-950/40 to-bunker-900 border border-cyan-400/30 text-cyan-100 rounded-tr-sm"
                           : "bg-bunker-900/95 border border-bunker-700/70 text-slate-200 rounded-tl-sm"
                       }`}
                     >
@@ -948,7 +948,7 @@ function ChatPageInner() {
                           <button
                             type="button"
                             onClick={() => speakingIndex === index ? stopSpeaking() : void speak(message.content, index)}
-                            className={`chat-action-btn ${speakingIndex === index ? "text-neon-green border-emerald-500/50 bg-emerald-500/10" : ""}`}
+                            className={`chat-action-btn ${speakingIndex === index ? "text-neon-green border-cyan-500/50 bg-cyan-500/10" : ""}`}
                             title={speakingIndex === index ? "Seslendirmeyi Durdur" : "Seslendir"}
                           >
                             <span>{speakingIndex === index ? "⏹" : "🔊"}</span>
@@ -972,7 +972,7 @@ function ChatPageInner() {
                   </div>
 
                   {isUser && (
-                    <div className="chat-avatar shrink-0 w-8 h-8 rounded-xl bg-emerald-500 text-black flex items-center justify-center font-mono text-xs font-bold shadow-md">
+                    <div className="chat-avatar shrink-0 w-8 h-8 rounded-xl bg-cyan-400 text-slate-950 flex items-center justify-center font-mono text-xs font-bold shadow-md">
                       {username ? username.slice(0, 2).toUpperCase() : "SİZ"}
                     </div>
                   )}
@@ -986,7 +986,7 @@ function ChatPageInner() {
                   variant="card"
                   label="SCALPER AI YANITI HAZIRLANIYOR…"
                   sublabel="Piyasa verileri, teknik seviyeler ve emir defteri derinliği analiz ediliyor"
-                  className="!p-6 !bg-bunker-900/80 border-emerald-500/30"
+                  className="!p-6 !bg-bunker-900/80 border-cyan-500/30"
                 />
               </div>
             )}
@@ -1023,7 +1023,7 @@ function ChatPageInner() {
             <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
-                className="chat-scan-button-wide flex-1 min-h-[2.4rem] font-mono text-xs border-emerald-500/30 hover:border-emerald-500/60 bg-emerald-950/20"
+                className="chat-scan-button-wide flex-1 min-h-[2.4rem] font-mono text-xs border-cyan-500/30 hover:border-cyan-500/60 bg-cyan-950/20"
                 onClick={runUpsideScout}
                 disabled={upsideScoutBusy || busy}
               >
@@ -1048,7 +1048,7 @@ function ChatPageInner() {
                   type="button"
                   onClick={() => sendMessage(item.prompt)}
                   disabled={busy}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-bunker-900/80 border border-bunker-700/70 hover:border-emerald-500/50 hover:bg-emerald-950/30 text-slate-300 hover:text-neon-green text-xs font-mono transition-all disabled:opacity-40"
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-bunker-900/80 border border-bunker-700/70 hover:border-cyan-500/50 hover:bg-cyan-950/30 text-slate-300 hover:text-neon-green text-xs font-mono transition-all disabled:opacity-40"
                 >
                   <span>{item.icon}</span>
                   <span>{item.label}</span>
@@ -1101,7 +1101,7 @@ function ChatPageInner() {
                         handleVoiceSend(fullText);
                       }}
                       disabled={!((speechTranscript || "") + (speechInterim || "")).trim()}
-                      className="text-xs text-black bg-neon-green hover:bg-emerald-400 px-3 py-1 rounded font-mono font-bold transition-all disabled:opacity-40 flex items-center gap-1"
+                      className="text-xs text-black bg-neon-green hover:bg-sky-400 px-3 py-1 rounded font-mono font-bold transition-all disabled:opacity-40 flex items-center gap-1"
                     >
                       <span>➤</span>
                       <span>Gönder</span>
@@ -1117,7 +1117,7 @@ function ChatPageInner() {
 
             {/* Metin & Ses Giriş Formu */}
             <form onSubmit={send} className="chat-input-form relative">
-              <div className="flex items-end gap-2 p-2 bg-bunker-900/95 border border-bunker-700/80 rounded-xl focus-within:border-emerald-500/70 focus-within:ring-1 focus-within:ring-emerald-500/30 transition-all shadow-xl backdrop-blur-md">
+              <div className="flex items-end gap-2 p-2 bg-bunker-900/95 border border-bunker-700/80 rounded-xl focus-within:border-cyan-400/70 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all shadow-xl backdrop-blur-md">
                 {/* Mikrofon Tuşu */}
                 <button
                   type="button"
