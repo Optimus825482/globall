@@ -278,6 +278,21 @@ class CommissionCrossLayerTests(unittest.TestCase):
         src = (_ROOT / "frontend" / "app" / "lib" / "liveSocket.ts").read_text(encoding="utf-8")
         self.assertIn("applyCommissionPct", src)
 
+    def test_backend_open_pnl_deducts_both_legs(self):
+        """H-01 sözleşmesi (2026-09-27): backend açık pozisyon PnL'i gidiş-dönüş
+        komisyonu düşer. Yalnız giriş bacağını düşmek, gösterilen PnL ile kapanış
+        sonrası gerçekleşen net arasında sapma yaratıyordu; frontend
+        `lib/pnl.ts::netOpenPnlTry` çift bacaklı — backend aynı formülde
+        kilitlenir: `(entry + current) * qty * COMMISSION_PCT`.
+        """
+        src = (_BACKEND / "app" / "routers" / "runtime.py").read_text(encoding="utf-8")
+        self.assertEqual(src.count("COMMISSION_PCT"), 3,
+                         "runtime.py'de COMMISSION_PCT üç yerde: ana + otonom açık "
+                         "PnL çift-bacak hesabı ve payload'a expose. Tek bacaklı "
+                         "geri dönüş bu testi kırar.")
+        self.assertIn('(pos["entry_price"] + current_price) * pos["quantity"] * config.COMMISSION_PCT', src)
+        self.assertIn('((entry + current) * qty * config.COMMISSION_PCT)', src)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -189,8 +189,13 @@ async def ws_broadcast_loop():
                     current_value = pos["quantity"] * current_price
                     total_value += current_value
                     gross_pnl_try = (current_price - pos["entry_price"]) * pos["quantity"]
-                    entry_commission = pos["entry_price"] * pos["quantity"] * config.COMMISSION_PCT
-                    pnl_try = gross_pnl_try - entry_commission
+                    # H-01 sözleşmesi (çift bacak): açık pozisyon PnL'i gidiş-dönüş
+                    # komisyonu düşer (giriş + güncel fiyat üzerinden tahmini çıkış).
+                    # Frontend `lib/pnl.ts::netOpenPnlTry` aynı formülü kullanır;
+                    # yalnız giriş bacağını düşmek, kapanınca gerçekleşen netten
+                    # (çıkış komisyonu da düşülür) sapıyordu.
+                    round_trip_commission = (pos["entry_price"] + current_price) * pos["quantity"] * config.COMMISSION_PCT
+                    pnl_try = gross_pnl_try - round_trip_commission
                     pnl_pct = (pnl_try / (pos["entry_price"] * pos["quantity"]) * 100) if pos["entry_price"] and pos["quantity"] else 0.0
                     open_positions.append({
                         "symbol": sym, "entry": pos["entry_price"], "current": current_price,
@@ -222,7 +227,9 @@ async def ws_broadcast_loop():
                     ticker = market.get_ticker(sym)
                     current = float(ticker.get("last_price") or entry) if ticker else entry
                     gross = (current - entry) * qty
-                    pnl = gross - (entry * qty * config.COMMISSION_PCT)
+                    # H-01 sözleşmesi (çift bacak) — ana pozisyon bloğuyla aynı:
+                    # giriş komisyonu gerçek, çıkış güncel fiyat üzerinden tahmin.
+                    pnl = gross - ((entry + current) * qty * config.COMMISSION_PCT)
                     pnl_pct = (pnl / (entry * qty) * 100) if entry and qty else 0
                     ap_unrealized += pnl
                     auto_positions.append({
