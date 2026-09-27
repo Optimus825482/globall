@@ -48,6 +48,56 @@ _SHA_MARKER_KEY = "schema_sha256"
 _MIGRATION_GLOB = "*.sql"
 
 
+# Compose'un `${VAR:?mesaj}` korumasına GÜVENİLMEZ. Coolify bu Bash
+# sözdizimini kendi parser'ıyla değerlendirip **hata metnini değerin kendisi
+# olarak** yazıyor; sonuç, parola yerine geçen bir URL oldu:
+#
+#   postgresql://scalper:POSTGRES_PASSWORD must be set@postgres_global:5432/…
+#
+# asyncpg URI'deki boşluklara toleranslı olduğu için şemayı sorgulayabildi ve
+# "şema güncel" dedi; uvicorn'un psycopg3 havuzu ise KATI olduğu için
+# "unexpected spaces found" ile bağlantıyı reddetti ve konteyner açılmadan
+# öldü. Yani eksik parola, hatalı geçen tek kontrol buydu — o yüzden kontrol
+# buraya, yani bağlantı KURULMADAN önce konur.
+#
+# Aynı desen LLM_ENCRYPTION_KEY / SCALPER_SESSION_SECRET için de geçerli;
+# hepsi aynı bileşik-sözdizimi ailesinden. `_PLACEHOLDER_MARKERS` geniş
+# tutuldu: mesaj metni Compose sürümüne göre değişebilir.
+_PLACEHOLDER_MARKERS = (
+    "must be set",
+    "is not set",
+    "not defined",
+    "unset",
+    "required",
+)
+
+
+def _reject_placeholder_secrets(url: str) -> None:
+    """`DATABASE_URL` içinde placeholder metni varsa, bağlanmadan ÖL.
+
+    Bu bir ``raise SystemExit`` — ``entrypoint.sh`` ``set -eu`` ile çalıştığı
+    için konteyner migration öncesi durur. Bu bilinçli: kullanıcı 30 saniye
+    ``PoolTimeout`` bekleyip havuz loglarıyla uğraşmak yerine, tek bir net
+    satırla eksik değişkeni görür.
+    """
+    # Only the `user:password@host` segment is inspected: a marker word in the
+    # host or database name would otherwise raise a false positive. An `@`
+    # inside the password is safe here — checking a slightly LONGER slice is
+    # preferable to skipping the check, because a false positive costs a
+    # retryable outage while a false negative repeats the 2026-09-27 outage.
+    userinfo = url.split("://", 1)[-1].split("@", 1)[0]
+    password = userinfo.split(":", 1)[-1]
+    lowered = password.lower()
+    for marker in _PLACEHOLDER_MARKERS:
+        if marker in lowered:
+            raise SystemExit(
+                "HATA: DATABASE_URL içindeki parola bir placeholder metni — "
+                f"gerçek parola DEĞİL ('{marker}' bulundu). Coolify'de "
+                "POSTGRES_PASSWORD_GLOBAL tanımlı mı kontrol et. "
+                "(Bu değer olmadan postgres parolası, bu metnin kendisi olur.)"
+            )
+
+
 def _iter_migration_files(migrations_dir: Path):
     """Migration SQL dosyalarını ada göre sıralı üretir.
 
@@ -77,6 +127,7 @@ async def main():
     url = os.getenv("DATABASE_URL")
     if not url:
         raise SystemExit("DATABASE_URL gerekli")
+    _reject_placeholder_secrets(url)
     # 2026-09-26 (#72): dosya listesi artık hard-code değil; `build_schema_sql`
     # migrations/ dizinini sırayla tarar. `database.init_db()` ile birebir aynı
     # küme/sıra/ayraç kullanıldığı için iki koşucunun sha'sı eşleşir ve

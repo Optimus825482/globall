@@ -111,13 +111,29 @@ Kaynaklı araştırma ve uygulama eşlemesi: [`docs/SCALPER_RESEARCH_EVIDENCE.md
 Varsayılan çalışma modunda sistem yalnızca paper trading yapar; sanal cüzdanda işlem yapar ve API anahtarı gerektirmez. Gerçek satış yalnız kullanıcı tarafından bilinçli olarak açılan üç katmanlı bir kapının arkasındadır — bkz. [Gerçek satış kapısı](#-gerçek-satış-kapısı-2026-09-26-düzeltmesi).
 ## Production deployment (Coolify / Docker Compose)
 
-The repository is deployable as three containers: `frontend`, `backend`, and an Nginx gateway. The gateway serves the frontend and proxies `/api`, `/health`, and `/ws` to the backend. Persistent runtime data is stored in PostgreSQL; the named `scalper_data` volume is reserved for paper/runtime artifacts.
+> **(2026-09-27) Bu repo artık YALNIZCA Binance Global örneğini tanımlar.** TR
+> örneği (`scalper.erkanerdem.online`) ayrı bir repo ve ayrı bir Coolify kaynağı
+> olarak kendi konteynerinde çalışır. `docker-compose.yaml` içindeki TR
+> servisleri (`postgres`, `backend`, `frontend`, `gateway`, `db-backup`) kaldırıldı;
+> geriye `postgres_global`, `backend_global`, `frontend_global`, `gateway_global`
+> ve `db-backup-global` kaldı. `nginx/` dizini de TR'ye ait olduğu için artık
+> kullanılmaz — silinmesi ayrı bir iş.
+
+The repository is deployable as four containers: `frontend_global`, `backend_global`, `postgres_global`, and an Nginx gateway (`gateway_global`). The gateway serves the frontend and proxies `/api`, `/health`, and `/ws` to the backend. Persistent runtime data is stored in PostgreSQL; the named `scalper_global_data` volume is reserved for paper/runtime artifacts.
 
 ### Otomatik top-gainer sembol aktivasyonu
 
-Backend, `TOP_GAINERS_AUTO_ACTIVATE=true` (varsayılan) iken Binance TR public `/api/v3/ticker/24hr` ve TRY `exchangeInfo` verilerini 10 dakikada bir (`TOP_GAINERS_REFRESH_SEC=600`) kontrol eder. 24 saatlik değişime göre ilk `TOP_GAINERS_LIMIT=10` TRY sembolü analiz evrenine alınır. Açık pozisyon sembolleri yeni listenin dışında kalsa bile sistem tarafından korunur ve yönetilmeye devam eder. Bu akış yalnızca paper/public-data aktivasyonudur; gerçek emir göndermez.
+Backend, `TOP_GAINERS_AUTO_ACTIVATE=true` (varsayılan) iken Binance Global public `/api/v3/ticker/24hr` ve USDT `exchangeInfo` verilerini 10 dakikada bir (`TOP_GAINERS_REFRESH_SEC=600`) kontrol eder. 24 saatlik değişime göre ilk `TOP_GAINERS_LIMIT=10` USDT sembolü analiz evrenine alınır. Açık pozisyon sembolleri yeni listenin dışında kalsa bile sistem tarafından korunur ve yönetilmeye devam eder. Bu akış yalnızca paper/public-data aktivasyonudur; gerçek emir göndermez.
 
-Use `docker-compose.yaml` as the Compose file and point `scalper.erkanerdem.online` to the gateway service on port `80`. Coolify should terminate HTTPS at the domain proxy.
+Use `docker-compose.yaml` as the Compose file and point `global.erkanerdem.online` to the **`gateway_global`** service on port `80`. Coolify should terminate HTTPS at the domain proxy. `backend_global`/`frontend_global`/`postgres_global` için domain GİRİLMEZ — dış erişim tek bir origin üzerinden `gateway_global` üzerinden olur.
+
+> **Zorunlu ortam değişkenleri (Coolify).** Eksik bir `*_GLOBAL` değişkeni
+> `${VAR:?mesaj}` korumasına rağmen **sessizce geçebilir**: Coolify Bash
+> sözdizimini kendi parser'ıyla değerlendirip hata metnini değer olarak yazar,
+> yani parola yerine `"POSTGRES_PASSWORD must be set"` postgres'e gider. Bu
+> 2026-09-27'de gerçekten oldu. `run_postgres_migration.py` artık bağlantı
+> KURULMADAN önce bunu reddedip tek net satıyla duruyor — deploy log'unun
+> başında görürsen sebebi bellidir.
 
 > ### ⚠️ Gerçek satış kapısı (2026-09-26 düzeltmesi)
 >

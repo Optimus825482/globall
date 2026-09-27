@@ -18,6 +18,46 @@ def _backend_sources():
     return "\n".join(p.read_text(encoding="utf-8") for p in files)
 
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _compose_service_env(service: str) -> dict:
+    """Bir servisin `environment` bloğunu YORUM satırlarından arındırılmış
+    halde döndürür.
+
+    Neden YAML parse etmiyoruz: `PyYAML` test suite'ine yeni bir bağımlılık
+    getirirdi ve bu kontrol `docker compose config` olmadan koşamazdı. Compose
+    dosyası düz ve girintili olduğu için, yorumları (`#`) atıp bloğu
+    kapsayıcı girintisine kadar okumak yeterlidir — hem bağımlılıksız hem de
+    dosyanın YORUMUNDA geçen `${VAR:-}` metinlerini yanlışlıkla eşleştirme
+    riski yoktur (2026-09-27'de tam olarak bu hata testi kırmıştı).
+    """
+    lines = (ROOT.parent / "docker-compose.yaml").read_text(encoding="utf-8").splitlines()
+    start = f"  {service}:"
+    try:
+        i = next(n for n, line in enumerate(lines) if line.rstrip() == start)
+    except StopIteration:
+        raise AssertionError(f"compose'ta servis yok: {service}")
+    env: dict = {}
+    in_env = False
+    for line in lines[i + 1:]:
+        if line and not line.startswith("    "):
+            break                                  # servisin altındaki blok bitti
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if stripped == "environment:":
+            in_env = True
+            continue
+        if in_env and indent <= 4 and stripped.endswith(":"):
+            in_env = False                         # expose:/healthcheck: geldi
+        if in_env and indent >= 6 and ":" in stripped:
+            key, _, value = stripped.partition(":")
+            env[key.strip()] = value.strip()
+    return env
+
+
 class RegressionContracts(unittest.TestCase):
     def test_open_position_payloads_are_sorted_newest_first(self):
         source = _backend_sources()
@@ -287,17 +327,28 @@ class RegressionContracts(unittest.TestCase):
 
     def test_compose_passes_runtime_strategy_and_llm_configuration(self):
         source = (ROOT.parent / "docker-compose.yaml").read_text(encoding="utf-8")
-        self.assertIn("LLM_ENCRYPTION_KEY: ${LLM_ENCRYPTION_KEY:?", source)
+        # 2026-09-27 (TR örneği bu repodan kaldırıldı): LLM_ENCRYPTION_KEY
+        # artık yalnız Global yolundan gelir ve ZORUNLU. `:-${LLM_ENCRYPTION_KEY:?...}`
+        # yedeği bilinçli olarak KALDIRILDI — Coolify Bash'ı kendi parser'ıyla
+        # değerlendirip hata metnini değer olarak yazıyor, yani yedek yol
+        # sessizce sahte bir anahtar üretiyordu (2026-09-27 deploy kazası).
+        # Aynı desen POSTGRES_PASSWORD, PGPASSWORD ve VAPID_PRIVATE_KEY'de vardı;
+        # `test_compose_secrets_have_no_tr_placeholder_fallback` hepsini kapsar.
+        self.assertIn("LLM_ENCRYPTION_KEY: ${LLM_ENCRYPTION_KEY_GLOBAL:?", source)
         self.assertIn("TOP_GAINERS_AUTO_ACTIVATE: ${TOP_GAINERS_AUTO_ACTIVATE:-true}", source)
         self.assertIn("TOP_GAINERS_LIMIT: ${TOP_GAINERS_LIMIT:-10}", source)
         self.assertIn("TOP_GAINERS_REFRESH_SEC: ${TOP_GAINERS_REFRESH_SEC:-600}", source)
-        self.assertIn("NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}", source)
+        self.assertIn("NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY_GLOBAL:-}", source)
 
         dockerfile = (ROOT.parent / "frontend" / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY", dockerfile)
         self.assertIn("ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}", dockerfile)
         self.assertNotIn("DB_BACKEND: ${DB_BACKEND:-postgres}", source)
-        self.assertIn("@postgres:5432/${POSTGRES_DB:-scalper}", source)
+        # Global örneğinin postgres'i `postgres_global`; TR'ninkini gösteren
+        # `@postgres:5432/` artık YANLIŞ hedef olurdu (servis yok → konteyner
+        # "dependency failed" ile düşer). DB adı da `scalper_global`.
+        self.assertIn("@postgres_global:5432/${POSTGRES_DB_GLOBAL:-scalper_global}", source)
+        self.assertNotIn("@postgres:5432/${POSTGRES_DB:-scalper}", source)
         self.assertNotIn("DATABASE_URL:-postgresql://", source)
 
     def test_dynamic_top_gainer_monitor_and_symbol_activity_are_scheduled(self):
@@ -329,10 +380,84 @@ class RegressionContracts(unittest.TestCase):
 
     def test_compose_has_bounded_shutdown_and_postgres_startup_grace(self):
         source = (ROOT.parent / "docker-compose.yaml").read_text(encoding="utf-8")
+        # 4 servis kaldı (postgres_global, backend_global, frontend_global,
+        # gateway_global) → her birinde `stop_grace_period` olmalı.
         self.assertGreaterEqual(source.count("stop_grace_period:"), 4)
-        postgres = source[source.index("  postgres:"):source.index("  backend:")]
+        postgres = source[source.index("  postgres_global:"):source.index("  backend_global:")]
         self.assertIn("start_period: 30s", postgres)
         self.assertIn("retries: 12", postgres)
+
+    def test_compose_overrides_dockerfile_hardcoded_ports(self):
+        # 2026-09-27 ikinci gizli hata: her iki Dockerfile portu DÜZ yazıyor
+        # (backend 8004, frontend 3004) ama Global stack 8005/3005 konuşuyor.
+        # Override kalkarsa uvicorn 8004'te açılır, healthcheck 8005'e gider ve
+        # konteyner açılmadan ölür — parola düzeltilseydi deploy YİNE düşerdi.
+        # Bağımlılık: nginx-global/default.conf ve healthcheck'ler 8005/3005.
+        source = (ROOT.parent / "docker-compose.yaml").read_text(encoding="utf-8")
+        self.assertIn('"--port", "8005"', source)
+        self.assertIn('PORT: "3005"', source)
+        nginx = (ROOT.parent / "nginx-global" / "default.conf").read_text(encoding="utf-8")
+        self.assertIn("backend_global:8005", nginx)
+        self.assertIn("frontend_global:3005", nginx)
+
+    def test_tr_services_are_absent_from_compose(self):
+        # 2026-09-27: TR örneği ayrı repo/konteynere taşındı. Bu repo Global
+        # ağırlıklı olduğu için TR'nin postgres'i bir host'ta iki stack'i
+        # ~10.7 GB'a çıkarıyordu. Servis adları yanlışlıkla geri gelirse
+        # deploy sessizce iki kez aynı DB'ye bağlanmaya çalışır.
+        source = (ROOT.parent / "docker-compose.yaml").read_text(encoding="utf-8")
+        for retired in (
+            "\n  postgres:\n",
+            "\n  backend:\n",
+            "\n  frontend:\n",
+            "\n  gateway:\n",
+            "\n  db-backup:\n",
+        ):
+            self.assertNotIn(retired, source, f"{retired.strip()} TR'ye ait, kaldırılmalı")
+        self.assertNotIn("scalper_postgres_data:", source)
+        self.assertNotIn("scalper_data:", source)
+
+    def test_compose_vapid_key_pair_has_no_placeholder_fallback(self):
+        # 2026-09-27: `VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY_GLOBAL:-${VAPID_PRIVATE_KEY:-}}`
+        # idi. Coolify bu iç içe varsayılanı çözmedi ve ham `${VAPID_PRIVATE_KEY:-}`
+        # metnini değer olarak yazdı → private "geçersiz" sayılır, public/private
+        # eşleşmez ve abonelikler SESSİZCE ölür. Boş bırakmak push'u kapatır
+        # (görünür), yanlış anahtar ise bozar (görünmez) — yedeği kaldırıldı.
+        #
+        # NOT: kontrol YORUM satırlarına değil, `environment:` bloğunun gövdesine
+        # bakar. Dosyanın kendi açıklama metni `${VAPID_PRIVATE_KEY:-}` kelimesini
+        # içerir; tüm dosyada aramak testi kendi yorumu yüzünden kırılırdı.
+        env = _compose_service_env("backend_global")
+        self.assertEqual("${VAPID_PRIVATE_KEY_GLOBAL:-}", env["VAPID_PRIVATE_KEY"])
+
+    def test_compose_secrets_have_no_tr_placeholder_fallback(self):
+        # 2026-09-27 deploy kazasının kökü: Coolify Bash sözdizimini kendi
+        # parser'ıyla değerlendirip `${VAR:?mesaj}` hata METNİNİ değer olarak
+        # yazdı. postgres'e giden parola bu yüzden "POSTGRES_PASSWORD must
+        # be set" idi. Her sır için aynı desen YOK; eksik değişken AÇIK hata
+        # vermeli. `:-` (varsayılanlı) yasak, `:?` (zorunlu) veya düz değer olmalı.
+        for service in ("postgres_global", "backend_global", "db-backup-global"):
+            for name, value in _compose_service_env(service).items():
+                if "PASSWORD" in name or "ENCRYPTION" in name or "SECRET" in name:
+                    with self.subTest(service=service, name=name):
+                        self.assertNotIn(":-", str(value),
+                                         f"{name} TR yedeği taşıyor; Coolify onu çözemez")
+        # LLM anahtarı olmadan LLM ayarları şifrelenmez ama HATA da fırlatmaz —
+        # sessiz veri bozulması. Bu yüzden zorunlu (`:?`) olmalı.
+        llm_key = _compose_service_env("backend_global")["LLM_ENCRYPTION_KEY"]
+        self.assertIn(":?", llm_key)
+        self.assertNotIn(":-", llm_key)
+
+    def test_vapid_generation_hint_matches_accepted_format(self):
+        # `app/vapid.py:58-77` base64url 32 bayt bekler; PEM üreten bir ipucu
+        # kullanıcıyı anahtarı üretip reddettirirdi (sessiz push ölümü).
+        source = (ROOT.parent / "docker-compose.yaml").read_text(encoding="utf-8")
+        start = source.index("python - <<'PY'")
+        end = source.index("\n        #   PY", start)   # yorum bloğunun gerçek sonu
+        hint = source[start:end]
+        self.assertIn("private_numbers().private_value.to_bytes(32", hint)
+        self.assertIn('rstrip("=")', hint)
+        self.assertNotIn("private_pem", hint)
 
     def test_symbol_activity_is_enforced_at_the_writer_boundary(self):
         source = (ROOT / "app" / "analyzer.py").read_text(encoding="utf-8")
