@@ -704,6 +704,15 @@ export default function ChartsPage() {
             let ok = true;
             try {
                 candleRef.current.update(bar as any);
+                // (2026-09-27, Erkan isteği) HACİM de intrabar canlı kalsın:
+                // oluşan mumun hacmi aynı açılış zamanıyla histograma update edilir.
+                if (volumeRef.current) {
+                    volumeRef.current.update({
+                        time: bar.time as UTCTimestamp,
+                        value: bar.volume,
+                        color: bar.close >= bar.open ? "rgba(16,185,129,0.45)" : "rgba(239,68,68,0.45)",
+                    } as any);
+                }
             } catch (err) {
                 // Seri/state kilidi bozulduysa sayfayı patlatmak yerine bu mumu atla;
                 // 10 sn'lik HTTP turu seriyi zaten `setData` ile yeniden kurar.

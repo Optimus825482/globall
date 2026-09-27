@@ -84,11 +84,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   if (!status?.authenticated) return <main className="grid min-h-screen place-items-center bg-bunker-950 p-5">
     <section className="w-full max-w-md rounded-xl border border-bunker-700 bg-bunker-900 p-6 shadow-2xl">
-      <p className="eyebrow">SCALPERAGENT · PAPER ONLY</p>
+      <p className="eyebrow">SCALPER GLOBAL AGENT · PAPER ONLY</p>
       <h1 className="mt-2 font-mono text-2xl font-bold text-white">Oturum açın</h1>
       {!status && !error && (
         <div className="mt-4">
-          <AppLoader variant="default" label="OTURUM DOĞRULANIYOR…" sublabel="Scalper Agent v4 güvenlik bağlantısı kontrol ediliyor" minHeight="min-h-[160px]" />
+          <AppLoader variant="default" label="OTURUM DOĞRULANIYOR…" sublabel="SCALPER GLOBAL AGENT güvenlik bağlantısı kontrol ediliyor" minHeight="min-h-[160px]" />
         </div>
       )}
       {status && !status.configured && <div className="mt-5 rounded-lg border border-neon-red/40 bg-neon-red/10 p-4 text-sm text-neon-red"><strong>Kimlik doğrulama yapılandırılmamış.</strong><p className="mt-2 text-bunker-muted">Backend için SCALPER_ADMIN_PASSWORD ve SCALPER_SESSION_SECRET değerlerini tanımlayın.</p></div>}

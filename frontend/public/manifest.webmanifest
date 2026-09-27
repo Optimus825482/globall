@@ -1,7 +1,7 @@
 {
-  "name": "Scalper Agent V4",
-  "short_name": "Scalper Agent",
-  "description": "Binance TR public-data paper scalping terminal",
+  "name": "SCALPER GLOBAL AGENT",
+  "short_name": "SCALPER GLOBAL",
+  "description": "Binance Global public-data paper scalping terminal",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

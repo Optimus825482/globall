@@ -54,8 +54,6 @@ export const MENU_GROUPS: MenuGroup[] = [
       { href: "/", label: "Canlı Terminal", icon: "🖥️", desc: "Canlı pano ve son aktivite" },
       { href: "/portfolio", label: "Sanal Portföy", icon: "💼", desc: "Canlı sanal portföy ve otonom işlemler" },
       { href: "/monitoring", label: "Radar", icon: "📡", desc: "Otonom izleme ve hız avcısı" },
-      { href: "/risk", label: "Risk Yönetimi", icon: "🛡️", desc: "Açık pozisyon, sermaye koruma" },
-      { href: "/alerts", label: "Alarmlar", icon: "🔔", desc: "Fiyat alarmı kur ve yönet" },
     ],
   },
   {
@@ -63,10 +61,8 @@ export const MENU_GROUPS: MenuGroup[] = [
     label: "Analiz",
     items: [
       { href: "/charts", label: "Grafik", icon: "📈", desc: "Mum grafikleri" },
-      { href: "/symbol-analysis", label: "Sembol Analizi", icon: "🔬", desc: "Sembol bazlı yön tahmini" },
       { href: "/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu TradingView ekranı", adminOnly: true },
       { href: "/chat", label: "Chat", icon: "💬", desc: "Uzman trader LLM asistanı" },
-      { href: "/memory", label: "LLM Hafızası", icon: "🧠", desc: "Embedding ve semantik arama" },
     ],
   },
   {
@@ -74,7 +70,6 @@ export const MENU_GROUPS: MenuGroup[] = [
     label: "İşlem",
     items: [
       { href: "/binance-tr", label: "Binance", icon: "🏛️", desc: "Kendi hesabında canlı işlem", exchangeLabel: true },
-      { href: "/trade-repair", label: "İşlem Onarımı", icon: "🩹", desc: "Eski kayıtları denetle ve düzelt", adminOnly: true },
       { href: "/reports", label: "Raporlar", icon: "📋", desc: "Sinyal ve işlem raporları" },
       { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Bot konfigürasyonu", adminOnly: true },
       { href: "/profile", label: "Profil", icon: "👤", desc: "Hesap ve şifre" },

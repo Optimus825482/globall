@@ -339,9 +339,11 @@ class AutoPaperMasterSurgeIsolationTests(unittest.IsolatedAsyncioTestCase):
                 settings={"trailing_enabled": False},
             )
             mock_be.assert_awaited_once()
-            # Standart işlemde taban açıklık 0.60 korunmalı: 103.5 * (1 - 0.0060) = 102.879
+            # Standart işlemde taban açıklık (2026-09-27) config'ten 1.0:
+            # ratchet auto_paper.py'de artık AUTO_PAPER_TRAILING_GAP_PCT okur
+            # (eski sabit 0.60 yalnızca Master Surge'de). 103.5 * (1 - 0.010) = 102.465
             called_stop = mock_be.await_args.args[2]
-            self.assertAlmostEqual(called_stop, 103.5 * (1 - 0.006), places=3)
+            self.assertAlmostEqual(called_stop, 103.5 * (1 - 0.01), places=3)
 
 
 if __name__ == "__main__":

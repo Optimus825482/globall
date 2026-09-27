@@ -61,6 +61,37 @@ const SystemHealthView = dynamic(() => import("../system-health/page"), {
   ssr: false,
 });
 
+// (2026-09-27) Menü yeniden yapılandırması: `/risk`, `/alerts`, `/memory`
+// ana menüden kaldırıldı ve Yönetim Merkezi'ne sekme olarak taşındı.
+// Her biri kendi page-shell/heading'inden arındırılmış SAF paneli import
+// eder: RiskPanel (yeni), AlertPanel (modal prop'lu), MemoryTab (zaten saf).
+const RiskView = dynamic(() => import("../risk/RiskPanel"), {
+  loading: () => (
+    <div className="p-12 text-center font-mono text-sm text-bunker-muted animate-pulse">
+      🛡️ Risk yönetimi yükleniyor…
+    </div>
+  ),
+  ssr: false,
+});
+
+const AlertsView = dynamic(() => import("../components/AlertPanel"), {
+  loading: () => (
+    <div className="p-12 text-center font-mono text-sm text-bunker-muted animate-pulse">
+      🔔 Alarmlar yükleniyor…
+    </div>
+  ),
+  ssr: false,
+});
+
+const MemoryView = dynamic(() => import("../memory/MemoryTab"), {
+  loading: () => (
+    <div className="p-12 text-center font-mono text-sm text-bunker-muted animate-pulse">
+      🧠 LLM hafızası yükleniyor…
+    </div>
+  ),
+  ssr: false,
+});
+
 export default function AdminPage() {
   return (
     <Suspense
@@ -75,7 +106,7 @@ export default function AdminPage() {
   );
 }
 
-type AdminTab = "database" | "audit-logs" | "macd-monitor" | "users" | "chat" | "system-health";
+type AdminTab = "database" | "audit-logs" | "macd-monitor" | "users" | "chat" | "system-health" | "risk" | "alerts" | "memory";
 
 const ALL_ADMIN_TABS: { key: AdminTab; label: string; icon: string; adminOnly: boolean }[] = [
   { key: "database", label: "Veritabanı", icon: "🗄️", adminOnly: true },
@@ -84,6 +115,9 @@ const ALL_ADMIN_TABS: { key: AdminTab; label: string; icon: string; adminOnly: b
   { key: "users", label: "Kullanıcı Yönetimi", icon: "👥", adminOnly: true },
   { key: "chat", label: "Chat Merkezi", icon: "💬", adminOnly: true },
   { key: "system-health", label: "Sistem Sağlığı", icon: "🩺", adminOnly: true },
+  { key: "risk", label: "Risk Yönetimi", icon: "🛡️", adminOnly: true },
+  { key: "alerts", label: "Alarmlar", icon: "🔔", adminOnly: true },
+  { key: "memory", label: "LLM Hafızası", icon: "🧠", adminOnly: true },
 ];
 
 function AdminPageInner() {
@@ -144,7 +178,7 @@ function AdminPageInner() {
               <span className="text-neon-green">YÖNETİM</span> MERKEZİ
             </h1>
             <p className="eyebrow mt-0.5">
-              Veritabanı · Olay Kayıtları · MACD Monitör · Kullanıcılar · Chat · Sistem Sağlığı
+              Veritabanı · Olay Kayıtları · MACD Monitör · Kullanıcılar · Chat · Sistem Sağlığı · Risk · Alarmlar · LLM Hafızası
             </p>
           </div>
           <span className="rounded-lg border border-neon-green/40 bg-neon-green/10 px-2.5 py-1 font-mono text-[11px] font-bold text-neon-green">
@@ -187,6 +221,9 @@ function AdminPageInner() {
         {activeTab === "users" && isAdmin && <UsersView />}
         {activeTab === "chat" && isAdmin && <ChatView />}
         {activeTab === "system-health" && isAdmin && <SystemHealthView />}
+        {activeTab === "risk" && isAdmin && <RiskView />}
+        {activeTab === "alerts" && isAdmin && <AlertsView modal />}
+        {activeTab === "memory" && isAdmin && <MemoryView />}
       </div>
     </div>
   );

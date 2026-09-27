@@ -75,7 +75,7 @@ async def deliver_web_push(message, *, title=None, url=None, tag=None, extra=Non
         # (admin işlem bildirimi); None → tüm abonelikler (mevcut davranış).
         subscriptions = await database.list_push_subscriptions(usernames)
         payload_obj = {
-            "title": title or "Scalper Agent alarmı",
+            "title": title or "SCALPER GLOBAL AGENT alarmı",
             "body": message,
             "url": url or "/alerts",
             "sound": "/alarm.wav",
@@ -125,7 +125,7 @@ async def deliver_alert_push(message, *, title=None, url=None, tag=None, extra=N
     Sessizlik sorgusu hata verirse GÖNDERİLİR (fail-open): kullanıcı bu alarmı
     açıkça kurdu; sorgu arızası onu tümüyle sessizleştirmemeli.
     """
-    payload = {"message": message, "title": title or "Scalper Agent alarmı",
+    payload = {"message": message, "title": title or "SCALPER GLOBAL AGENT alarmı",
                "url": url or "/alerts", "tag": tag or "scalper-alert"}
     try:
         from app.routers import monitoring as _monitoring

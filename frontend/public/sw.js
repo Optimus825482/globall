@@ -6,7 +6,7 @@
 // Böylece yeni dağıtımda cache adı kendiliğinden değişir ve kurulu PWA eski
 // shell'i sunmaya devam edemez.
 const BUILD = new URL(self.location.href).searchParams.get("v") || "dev";
-const CACHE = "scalper-agent-v4-shell-" + BUILD;
+const CACHE = "scalper-global-agent-shell-" + BUILD;
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", function (event) {
@@ -27,7 +27,7 @@ self.addEventListener("activate", function (event) {
 
 self.addEventListener("push", function (event) {
   var data = {};
-  try { data = event.data ? event.data.json() : {}; } catch (_) { data = { title: "Scalper Agent", body: event.data ? event.data.text() : "Yeni alarm" }; }
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = { title: "SCALPER GLOBAL AGENT", body: event.data ? event.data.text() : "Yeni alarm" }; }
 
   // MÜKERRER BİLDİRİM ÖNLEMİ (2026-09-17): uygulama ODAKLI ve GÖRÜNÜR bir
   // pencereyle açıksa sayfa kendi modal + sesini zaten gösteriyor (WS
@@ -69,7 +69,7 @@ self.addEventListener("push", function (event) {
       var prob = Math.round(Number(data.ml_hit_probability) * 100);
       notifOpts.body = "[ML %" + prob + "] " + (notifOpts.body || "");
     }
-    return self.registration.showNotification(data.title || "Scalper Agent alarmý", notifOpts);
+    return self.registration.showNotification(data.title || "SCALPER GLOBAL AGENT alarmý", notifOpts);
   };
 
   event.waitUntil(

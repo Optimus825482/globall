@@ -69,7 +69,7 @@ export default function DisclaimerModal() {
             statik bir sistemi yoktur</strong> ve genel olarak öngörülemezdir.
           </p>
           <p>
-            Scalper Agentic Trading <strong className="text-white">geleceği tahmin etmez</strong>; tamamen
+            SCALPER GLOBAL AGENT <strong className="text-white">geleceği tahmin etmez</strong>; tamamen
             matematiksel metotlara dayalı ve kendini geliştirerek sizin trade kararlarınıza yardımcı olmak için
             tasarlanmıştır ve <strong className="text-yellow-300">herhangi bir garanti vermez</strong>.
           </p>

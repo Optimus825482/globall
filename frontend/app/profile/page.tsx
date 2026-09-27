@@ -92,7 +92,7 @@ export default function ProfilePage() {
             </span>
             <div className="mt-5 w-full border-t border-bunker-800 pt-3 text-left text-xs text-bunker-muted">
               <p>Üyelik: <span className="text-white">{fmtDate(memberSince)}</span></p>
-              <p className="mt-1">Uygulama: <span className="text-white">Scalper Agent V4 · Paper Only</span></p>
+              <p className="mt-1">Uygulama: <span className="text-white">SCALPER GLOBAL AGENT · Paper Only</span></p>
             </div>
           </div>
         </section>

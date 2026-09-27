@@ -197,11 +197,15 @@ class LadderParityTests(unittest.TestCase):
     def test_trailing_gap_default_is_truthful(self):
         """Varsayılan, GERÇEKTEN uygulanan değeri söylemeli.
 
-        Kanıt: breakeven ratchet'i (%0.60) hem daha sıkı hem önce değerlendirildiği
-        için 0.80'lik varsayılan hiç uygulanmıyordu (471 işlemlik gerçek replay'de
-        `trailing_stop` 0 kez). Etkin değer 0.60'tı; varsayılan artık onu söylüyor.
+        Kanıt: breakeven ratchet'i eskiden (%0.60 sabiti) hem daha sıkı hem önce
+        değerlendirildiği için 0.80'lik varsayılan hiç uygulanmıyordu (471 işlem-
+        lik gerçek replay'de `trailing_stop` 0 kez) ve etkin değer 0.60'tı.
+        Düzeltme (2026-09-27): ratchet artık `AUTO_PAPER_TRAILING_GAP_PCT`'i
+        okur (satır 841/870) ve üretim varsayılanı %1.0'a gevşetildi (replay
+        kanıtı: 60g BB-MFI v3'te dar trailing runner'ları sıkıştırıyordu). O
+        yüzden varsayılan = etkin = 1.0 ve birebir eşitlik beklenir.
         """
-        self.assertLessEqual(config.AUTO_PAPER_TRAILING_GAP_PCT, 0.6)
+        self.assertEqual(config.AUTO_PAPER_TRAILING_GAP_PCT, 1.0)
 
     def test_take_profit_is_detected(self):
         entry = 100.0
@@ -323,9 +327,12 @@ class LadderParityTests(unittest.TestCase):
         yok sayılsaydı iki sonuç birebir aynı olurdu.)
         """
         base = 1_700_000_000_000
+        # bar2 peak %2.8: yeni BE arm eşiği (max(2.5, hedef*0.7)=2.5) RAHAT üstünde,
+        # TP'ye (~%3.0) yaklaşmadan → breakeven kurulur, TP isabet etmez.
+        # (Eski tepe 102.5 artık %2.47 ile eşiğin ALTINDA kalıyordu — eşik 1.5→2.5.)
         rows = [
-            [base, 100.0, 100.5, 99.9, 100.2, 10.0],
-            [base + 60_000, 100.2, 102.5, 100.4, 102.0, 10.0],
+            [base, 100.0, 101.2, 99.9, 100.5, 10.0],
+            [base + 60_000, 100.5, 102.8, 100.4, 102.6, 10.0],
         ]
         tight = self.replay._simulate_ladder(rows, 100.0, 3.0, 5.0, be_gap_pct=0.3)
         loose = self.replay._simulate_ladder(rows, 100.0, 3.0, 5.0, be_gap_pct=1.5)
@@ -345,9 +352,10 @@ class LadderParityTests(unittest.TestCase):
         out = self.replay._sweep_geometry(inputs, [1.0, 2.0], [1.0], gaps=[0.3, 1.5])
         self.assertEqual(4, len(out))   # 2 hedef × 1 stop × 2 gap × 1 akış
         self.assertEqual({0.3, 1.5}, {r["gap_pct"] for r in out})
-        # Varsayılan (gaps verilmezse) üretim değeri 0.60 kullanılır.
+        # Varsayılan (gaps verilmezse) üretim değeri kullanılır (2026-09-27:
+        # ratchet config'ten okur ve varsayılan %1.0'a gevşetildi; parite kilitli).
         default_out = self.replay._sweep_geometry(inputs, [1.0], [1.0])
-        self.assertEqual({0.6}, {r["gap_pct"] for r in default_out})
+        self.assertEqual({1.0}, {r["gap_pct"] for r in default_out})
 
     def test_emit_survives_non_ascii_report_text(self):
         """Windows cp1254 konsolu rapordaki → ★ × ✗ karakterlerini basamıyordu.

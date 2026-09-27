@@ -90,7 +90,10 @@ def _simulate_ladder(rows, entry_price: float, target_pct: float, horizon_minute
     tp_gain_pct = (tp / entry - 1) * 100
     be_trigger = max(float(config.AUTO_PAPER_BREAKEVEN_TRIGGER_PCT), tp_gain_pct * 0.7)
     tr_trigger = max(float(config.AUTO_PAPER_TRAILING_TRIGGER_PCT), tp_gain_pct * 0.8)
-    be_gap = float(be_gap_pct) if be_gap_pct is not None else 0.60   # auto_paper: BREAKEVEN_TRAIL_GAP_PCT
+    # Parite (2026-09-27): üretim ratchet'i artık config'ten okuyor
+    # (AUTO_PAPER_TRAILING_GAP_PCT, eski sabit %0.60 → %1.0). Simülatör takılmasın.
+    be_gap_default = float(getattr(config, "AUTO_PAPER_TRAILING_GAP_PCT", 0.60))
+    be_gap = float(be_gap_pct) if be_gap_pct is not None else be_gap_default
     be_buffer = float(config.AUTO_PAPER_BREAKEVEN_BUFFER_PCT)
     net_floor = entry * (1 + 2 * commission + be_buffer / 100)
 
@@ -141,9 +144,9 @@ def _simulate_ladder(rows, entry_price: float, target_pct: float, horizon_minute
 
         # (5) trailing zeminini kur + breach (B3: TP'ye yakın aralık yarıya iner)
         # PARİTE: üretimde breakeven ratchet'i (be_gap) daha sıkı olduğu için
-        # trailing ondan GEVŞEK olamaz; auto_paper aynı kırpmayı uygular. Eskiden
-        # simülatör ayarlanan değeri (0.80) kullanırken üretim fiilen 0.60
-        # uyguluyordu → replay BAŞKA bir merdiveni ölçüyordu.
+        # trailing ondan GEVŞEK olamaz; auto_paper aynı kırpmayı uygular
+        # (auto_paper.py `trailing_gap_pct = min(trailing_gap_pct, BE_GAP)`).
+        # Ayar üretimden GEVŞEKSE replay de kırpar — ölçüm aynı merdiveni ölçsün.
         gap = min(float(config.AUTO_PAPER_TRAILING_GAP_PCT), be_gap)
         if gross_pct >= tp_gain_pct * 0.9:
             gap = max(0.2, gap * 0.5)
@@ -321,7 +324,8 @@ def _sweep_geometry(sim_inputs: list[dict], targets: list[float],
     cevaplamak. Per-sinyal MFE'ye göre hedef seçmek İLERİYE BAKIŞ (lookahead)
     olurdu; bu yüzden TÜM sinyallere AYNI sabit oran uygulanır — dürüst politika.
 
-    3. boyut `gaps` = breakeven ratchet açıklığı (üretimde 0.60). Bu parametre
+    3. boyut `gaps` = breakeven ratchet açıklığı (varsayılan: üretim yapılandırması
+    `AUTO_PAPER_TRAILING_GAP_PCT`, 2026-09-27'den beri %1.0). Bu parametre
     MFE'nin ne kadarının KORUNDUĞUNU belirler: velocity ort.MFE %1.96 iken ort.net
     −0.16 → lehine hareketin neredeyse tamamı geri veriliyor. Ratchet çok sıkıysa
     işlem erken kapanır, çok gevşekse kâr sıfıra döner.
@@ -329,7 +333,7 @@ def _sweep_geometry(sim_inputs: list[dict], targets: list[float],
     `sim_inputs`: her sinyal için {stream, rows, entry, horizon, signal_ms}.
     Dönen: her hücre için n / ort.net% / medyan / toplam / kazanma%.
     """
-    grid_gaps = [float(g) for g in (gaps or [0.60])]
+    grid_gaps = [float(g) for g in (gaps or [float(getattr(config, "AUTO_PAPER_TRAILING_GAP_PCT", 0.60))])]
     out: list[dict] = []
     for target in targets:
         for sl in sls:

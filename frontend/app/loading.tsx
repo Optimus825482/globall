@@ -5,7 +5,7 @@ export default function Loading() {
     <AppLoader
       variant="default"
       label="SAYFA YÜKLENİYOR…"
-      sublabel="Scalper Agent v4 arayüzü hazırlanıyor"
+      sublabel="SCALPER GLOBAL AGENT arayüzü hazırlanıyor"
       minHeight="min-h-[50vh]"
     />
   );

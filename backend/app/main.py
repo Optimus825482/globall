@@ -193,7 +193,7 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_wrapper)
 
 
-app = FastAPI(title="Scalper Agent V4 - Paper Trading")
+app = FastAPI(title="SCALPER GLOBAL AGENT")
 cors_origins = _cors_origins_from_env()
 # Explicit method/header allowlist: wildcard methods+headers combined with
 # credentials is a known CORS misconfiguration risk if CORS_ORIGINS is ever
@@ -1466,7 +1466,7 @@ async def send_test_push_notification(request: Request):
 
     result = await alerting.deliver_web_push(
         "Test bildirimi — push zinciri çalışıyor.",
-        title="Scalper Agent · TEST",
+        title="SCALPER GLOBAL AGENT · TEST",
         url="/monitoring",
         tag="scalper-test",
         extra={"source": "settings_test"},
@@ -3309,7 +3309,7 @@ async def binance_buy(payload: dict, request: Request):
                     f"{principal.get('username')} kullanıcısı "
                     f"{str(symbol_u).replace('_', '')} sembolünde "
                     f"{price_txt} fiyatla pozisyon açtı",
-                    title="Scalper Agent · İşlem Bildirimi",
+                    title="SCALPER GLOBAL AGENT · İşlem Bildirimi",
                     url="/binance-tr", tag="admin-trade",
                     extra={"source": "admin_real_buy", "symbol": symbol_u},
                     usernames=recipients)

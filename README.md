@@ -1,6 +1,6 @@
-# Scalper Agent V4 - Paper Trading Bot
+# SCALPER GLOBAL AGENT
 
-Binance spot piyasasında hacim patlaması + trend yakalayan otomatik scalping botu. **Paper trading** modunda çalışır - gerçek emir göndermez, sanal cüzdan üzerinde işlem yapar.
+Binance Global spot piyasasında hacim patlaması + trend yakalayan otomatik scalping botu. **Paper trading** modunda çalışır - gerçek emir göndermez, sanal cüzdan üzerinde işlem yapar.
 
 ## Çalışma Mantığı
 

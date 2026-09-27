@@ -15,6 +15,7 @@ import {
 import { API_BASE, apiRequest } from "../lib/api";
 import { formatPrice, pricePrecision, QUOTE_ASSET, toSymbol, withQuotePrice } from "../lib/format";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
+import { useLiveMessages } from "../lib/liveSocket";
 
 export interface ChartIndicators {
     // EMAs
@@ -695,6 +696,49 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     // çalışmak) anlamsız; repo standardı `useVisibleInterval` (4 kart açıkken
     // arka planda 4 bağımsız döngü çalışıyordu).
     useVisibleInterval(() => { void fetchKlines(); }, 6000);
+
+    // ── CANLI MUM (2026-09-27, Erkan isteği: "grafikler tick ile güncellensin") ──
+    // Teknik grafikler sayfası yalnızca 6 sn'lik HTTP yoklamasıyla tazeleniyordu;
+    // oluşan mum (intrabar fiyat) hiç canlı gelmiyordu. Backend `ws_live_candles`
+    // oluşan mumu YALNIZCA `note_viewed` ile bakılan (sembol, ufuk) çiftlerine
+    // yayınlar; `/api/market-klines` fetch'i her 6 sn'de bu kaydı tazelediği için
+    // burası da WS kanalını dinler ve 0.2 sn aralıklı canlı mumlarla güncellenir.
+    // Zaman kapısı `charts/page.tsx` ile aynı: eski kapanmış → yok say; aynı açılış
+    // → `update()` (canlı tazele); yeni açılış → ekle.
+    useLiveMessages(useCallback((message: any) => {
+        if (message.type !== "kline") return;
+        const d = message.data || {};
+        if (!d || typeof d !== "object") return;
+        if (String(d.symbol).replaceAll("_", "").toUpperCase()
+                !== config.symbol.replaceAll("_", "").toUpperCase()) return;
+        if (String(d.timeframe) !== config.interval) return;
+        const bar: Bar = {
+            time: Math.floor((d.time || 0) / 1000),
+            open: +d.open, high: +d.high, low: +d.low, close: +d.close, volume: +d.volume,
+        };
+        if (!Number.isFinite(bar.close) || bar.close <= 0) return;
+        const series = candleSeriesRef.current;
+        const prev = lastBarsRef.current;
+        if (!series || !prev.length) return;
+        const last = prev[prev.length - 1];
+        if (!last || bar.time < last.time) return;   // eski kapanmış mum → yok say
+        let ok = true;
+        try {
+            series.update(bar as any);
+        } catch (err) {
+            // Seri/state kilidi bozulursa sayfayı patlatmadan atla; sonraki
+            // 6 sn'lik HTTP turu seriyi `setData` ile yeniden kurar.
+            ok = false;
+            console.warn("MultiChartCard kline update atlandı:", err);
+        }
+        if (!ok) return;
+        // Son açılış aynıysa mum zaten yerinde güncellendi; yeni açılışsa barı
+        // ref serisine ekle (mum penceresi 300 bar). Render'da `bars` state'i
+        // olmadığından tek geçerli kaynak `lastBarsRef`'tir.
+        // Başlık (priceData.last/changePct) 6 sn'lik HTTP turunda güncellenir —
+        // WS yalnızca MUMU canlı tutar (intrabar fiyat).
+        lastBarsRef.current = bar.time === last.time ? prev : [...prev.slice(-299), bar];
+    }, [config.symbol, config.interval]));
 
     const activeCount = Object.values(config.indicators).filter(Boolean).length;
     const intervalMs = INTERVAL_MS[config.interval] || 60_000;

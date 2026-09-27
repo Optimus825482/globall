@@ -1,5 +1,5 @@
 {
-  "name": "scalper-agent-v4",
+  "name": "scalper-global-agent",
   "version": "4.0.0",
   "private": true,
   "scripts": {

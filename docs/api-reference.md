@@ -1,4 +1,4 @@
-# Binance TR API Referansı — Scalper Agent V4
+# Binance TR API Referansı — SCALPER GLOBAL AGENT
 
 > **Doğrulama:** 2026-08-19
 > **Kapsam:** Uygulamanın kullandığı tüm Binance TR public API endpoint'leri ve WebSocket stream'leri  

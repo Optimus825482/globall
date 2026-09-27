@@ -13,8 +13,8 @@ const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "700"], variabl
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Scalper Agent V4 — Paper Trading",
-  description: "Binance TR public-data paper scalping terminal",
+  title: "SCALPER GLOBAL AGENT",
+  description: "Binance Global public-data paper scalping terminal",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.svg",

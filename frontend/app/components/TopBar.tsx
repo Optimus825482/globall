@@ -18,12 +18,7 @@ const labels: Record<string, string> = {
   "/macd-monitor": "MACD Monitör",
   "/users": "Kullanıcı Yönetimi",
   "/chat": "Chat Merkezi",
-  "/memory": "LLM Hafızası",
-  "/symbol-analysis": "Sembol Analizi",
-  "/alerts": "Alarmlar & Bildirimler",
-  "/risk": "Risk Yönetimi",
   "/system-health": "Sistem Sağlığı",
-  "/trade-repair": "İşlem Onarımı",
 };
 
 export default function TopBar() {
@@ -32,7 +27,7 @@ export default function TopBar() {
   const raw =
     labels[pathname] ||
     Object.entries(labels).find(([path]) => path !== "/" && pathname.startsWith(path))?.[1] ||
-    "Scalper Agent";
+    "SCALPER GLOBAL AGENT";
   // Özel terminal başlığı borsaya göre değişir. Sabit "Binance TR Canlı
   // İşlem" yazısı Global kullanıcısına yanlış borsayı gösterirdi.
   const currentTitle = raw.startsWith("Binance TR Canlı İşlem")
@@ -42,7 +37,7 @@ export default function TopBar() {
   return (
     <div className="topbar">
       <div>
-        <p className="topbar-kicker">SCALPERAGENT · PAPER TRADING</p>
+        <p className="topbar-kicker">SCALPER GLOBAL AGENT · PAPER TRADING</p>
         <p className="topbar-title">{currentTitle}</p>
       </div>
       <div className="topbar-status">

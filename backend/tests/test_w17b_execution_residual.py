@@ -279,18 +279,19 @@ class AutoPaperExitLadderTests(unittest.IsolatedAsyncioTestCase):
     async def test_trailing_gap_cannot_be_looser_than_breakeven(self):
         """SHADOW KİLİDİ: gevşek ayar KIRPILIR, sıkı ayar etki eder.
 
-        Neden: breakeven ratchet'i (BREAKEVEN_TRAIL_GAP_PCT = %0.60) hem daha sıkı
-        hem bu bloktan ÖNCE değerlendiriliyor. 0.8'lik ayar pratikte hiç
-        uygulanmıyordu (471 işlemlik gerçek replay'de `trailing_stop` 0 kez); ayar
-        sessizce yok sayılmak yerine kırpılır. (Mutasyon: kırpma kaldırılırsa
-        aşağıdaki ilk beklenti 103.5*(1-0.015) olurdu.)
+        Neden: breakeven ratchet'i (BREAKEVEN_TRAIL_GAP_PCT) hem daha sıkı hem bu
+        bloktan ÖNCE değerlendiriliyor (rastgele 1.5 ayarı hiç uygulanmaz; 471
+        işlemlik gerçek replay'de `trailing_stop` 0 kezdi). Ayar sessizce yok
+        sayılmak yerine kırpılır. (Mutasyon: kırpma kaldırılırsa aşağıdaki ilk
+        beklenti 103.5*(1-0.015) olurdu.) 2026-09-27: ratchet config'ten okuduğu
+        için üretimde değer %1.0 — gevşek (1.5) ayar buna kırpılır.
         """
         loose = {"trailing_enabled": True, "trailing_trigger_pct": 2.0,
                  "trailing_gap_pct": 1.5}
         trade = self._trade()
         _, _, trail = await self._manage(trade, 103.5, dict(loose))
         trail.assert_awaited()
-        self.assertAlmostEqual(103.5 * (1 - 0.006), trail.await_args.args[2], places=6)
+        self.assertAlmostEqual(103.5 * (1 - 0.01), trail.await_args.args[2], places=6)
 
         # Sıkı ayar GERÇEKTEN etki eder: 0.3 → tepeye daha yakın kilitler.
         tight = {"trailing_enabled": True, "trailing_trigger_pct": 2.0,

@@ -45,10 +45,17 @@ describe("menu — kapsam", () => {
     // `reports/page.tsx` içine sekme olarak taşındı. Menüde kalsalar
     // 404'e bağlantı verirdi — uygulama çalışırken yanlış yere götürür,
     // sessiz bozulmanın en ucuz görünen ama en sinir bozan türü.
-    const ORPHANS = [
-      "/alerts", "/risk", "/symbol-analysis",
-      "/memory", "/trade-repair",
-    ];
+    //
+    // 2026-09-27: `/risk`, `/alerts`, `/memory`, `/trade-repair` de
+    // LİSTEDEN ÇIKARILDI — menü yeniden yapılandırması: risk/alarm/
+    // hafıza Yönetim Merkezi'ne sekme taşındı (/admin?tab=…), Trade
+    // Repair sayfası silindi. Artık bu routeların menü linki OLMAMALI
+    // (aşağıdaki "SİLİNMİŞ / TAŞINMIŞ" testinin kapsamında).
+    //
+    // 2026-09-27: `/symbol-analysis` de LİSTEDEN ÇIKARILDI — kullanıcı
+    // isteği: menüden kalktı, Grafik sayfasındaki 🔬 ANALİZ butonunun
+    // açtığı modala taşındı (charts/page.tsx iframe).
+    const ORPHANS: string[] = [];
     for (const route of ORPHANS) {
       expect(hrefs).toContain(route);
     }
@@ -64,7 +71,19 @@ describe("menu — kapsam", () => {
     // `db8591d` bu dosyaları sildi. Menüde kalırlarsa bağlantı 404'e gider.
     // Test, menü ile dosya sistemini birbirine bağlayan tek yerde — yeni bir
     // sayfa silinirse ya da menüye eklenirse burada görünür.
-    for (const dead of ["/history", "/reports/forecasts", "/gainer-radar"]) {
+    //
+    // 2026-09-27 menü yeniden yapılandırması — TAŞINAN / SİLİNEN routelar:
+    //   `/risk`, `/alerts`, `/memory` → Yönetim Merkezi sekmeleri
+    //   (/admin?tab=risk|alerts|memory). Ana menüde ayrı link istemniyor;
+    //   `/trade-repair` → sayfa silindi (İşlem Onarımı);
+    //   `/symbol-analysis` → Grafik sayfasındaki 🔬 ANALİZ modalına taşındı
+    //   (menü linki yok, modaldan ulaşılır). Menüde kalırlarsa ana
+    //   navigasyonda gereksiz/404'lük girdi olur.
+    for (const dead of [
+      "/history", "/reports/forecasts", "/gainer-radar",
+      "/risk", "/alerts", "/memory", "/trade-repair",
+      "/symbol-analysis",
+    ]) {
       expect(hrefs).not.toContain(dead);
     }
   });

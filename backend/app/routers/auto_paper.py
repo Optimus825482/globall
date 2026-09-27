@@ -76,7 +76,7 @@ async def _log_blocked_decision(symbol: str, reason: str, price: float, extra: d
             "max_open": f"Maksimum açık pozisyon sınırına ulaşıldı ({extra.get('open_count')}/{extra.get('max_open')})",
             "liquidity": "Likidite yetersizliği (derinlik veya 24s hacim)",
             "cluster": f"Korelasyon küme riski aşıldı (%{extra.get('cluster', {}).get('exposure_pct', 0):.1f})",
-            "order_below_min": f"Bakiye yetersiz ({extra.get('order_value', 0)} TRY < {extra.get('min_order', 0)} TRY)",
+            "order_below_min": f"Bakiye yetersiz ({extra.get('order_value', 0)} {config.QUOTE_ASSET} < {extra.get('min_order', 0)} {config.QUOTE_ASSET})",
             "score_below_min": f"Skor yetersiz ({extra.get('score')} < {extra.get('min_score')})",
         }
         human_reason = reason_tr_map.get(reason, f"Giriş engellendi: {reason}")
@@ -601,9 +601,9 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
             "target_pct": target_pct, "trade_id": trade_id,
         })
 
-        logger.info("auto_paper %s: AÇILDI miktar=%.4f giriş=%.6f TP=%.6f SL=%.6f değer=%.2fTRY skor=%.1f",
+        logger.info("auto_paper %s: AÇILDI miktar=%.4f giriş=%.6f TP=%.6f SL=%.6f değer=%.2f %s skor=%.1f",
                     symbol, quantity, fill_entry, take_profit_price, stop_loss_price,
-                    net_order_value, notification.get("score"))
+                    net_order_value, config.QUOTE_ASSET, notification.get("score"))
 
         return {"status": "opened", "trade_id": trade_id, "symbol": symbol}
 
@@ -838,7 +838,7 @@ async def _manage_single_trade(trade: dict, now: float, breakeven_trigger_pct: f
     # Breakeven kontrolü (isteğe bağlı — erken minik kârla çıkıp ralliyi kaçırmamak için
     # varsayılan KAPALI, 2026-09-22 Erkan kararı).
     breakeven_enabled = bool((settings or {}).get("breakeven_enabled", getattr(config, "AUTO_PAPER_BREAKEVEN_ENABLED", True)))
-    BREAKEVEN_TRAIL_GAP_PCT = 0.60
+    BREAKEVEN_TRAIL_GAP_PCT = float(getattr(config, "AUTO_PAPER_TRAILING_GAP_PCT", 0.60))
     if breakeven_enabled:
         breakeven_activated = bool(trade.get("breakeven_activated", False))
 
@@ -867,7 +867,7 @@ async def _manage_single_trade(trade: dict, now: float, breakeven_trigger_pct: f
         elif is_master_surge:
             BREAKEVEN_TRAIL_GAP_PCT = float(getattr(config, "MASTER_SURGE_BE_GAP_PCT", 0.40))
         else:
-            BREAKEVEN_TRAIL_GAP_PCT = 0.60
+            BREAKEVEN_TRAIL_GAP_PCT = float(getattr(config, "AUTO_PAPER_TRAILING_GAP_PCT", 0.60))
         # In-memory breakeven stop: DB'ye yazılan değerle aynı turdaki koruma
         # kontrolü arasında gecikme olmasın.
         current_breakeven_stop = float(trade.get("breakeven_stop") or 0)
@@ -1001,8 +1001,8 @@ async def _close_trade(trade_id: int, symbol: str, exit_price: float, now: float
             "reason": reason, "trade_id": trade_id,
         })
 
-        logger.info("auto_paper %s: KAPANDI (%s) çıkış=%.6f PnL=%.2fTRY (%+.2f%%) süre=%.0fs",
-                    symbol, reason, fill_price, pnl, pnl_pct, hold_seconds)
+        logger.info("auto_paper %s: KAPANDI (%s) çıkış=%.6f PnL=%.2f %s (%+.2f%%) süre=%.0fs",
+                    symbol, reason, fill_price, pnl, config.QUOTE_ASSET, pnl_pct, hold_seconds)
 
         # Kâr koruma (trailing/breakeven) kapanışı: sembol monitoring sayfasının
         # "uygun adaylar" listesinde kaldığı sürece aynı sembole yeniden aç.
@@ -1223,10 +1223,10 @@ async def update_settings_endpoint(payload: dict, request: Request):
         "breakeven_trigger_pct": max(0.5, min(10.0, float(merged.get("breakeven_trigger_pct", config.AUTO_PAPER_BREAKEVEN_TRIGGER_PCT)))),
         "trailing_enabled": bool(merged.get("trailing_enabled", config.AUTO_PAPER_TRAILING_ENABLED)),
         "trailing_trigger_pct": max(0.5, min(20.0, float(merged.get("trailing_trigger_pct", config.AUTO_PAPER_TRAILING_TRIGGER_PCT)))),
-        # Üst sınır 0.60: breakeven ratchet'i (BREAKEVEN_TRAIL_GAP_PCT) daha sıkı ve
-        # önce değerlendiriliyor, dolayısıyla daha gevşek bir trailing fiilen etkisiz
-        # olurdu. Ayarı kırpıyoruz ki ekrandaki değer gerçekten uygulanan değer olsun.
-        "trailing_gap_pct": max(0.1, min(0.6, float(merged.get("trailing_gap_pct", config.AUTO_PAPER_TRAILING_GAP_PCT)))),
+        # Breakeven ratchet'i artık config.AUTO_PAPER_TRAILING_GAP_PCT'ten okunuyor,
+        # dolayısıyla trailing gap'i ondan daha gevşek ayarlamak fiilen etki eder;
+        # üst sınır 2026-09-27'de 0.6 → 2.0'ye çıkarıldı (Erkan kararı).
+        "trailing_gap_pct": max(0.1, min(2.0, float(merged.get("trailing_gap_pct", config.AUTO_PAPER_TRAILING_GAP_PCT)))),
         "reopen_after_protect_close": bool(merged.get("reopen_after_protect_close", config.AUTO_PAPER_REOPEN_AFTER_PROTECT_CLOSE)),
         "tp_primary_exit_enabled": bool(merged.get("tp_primary_exit_enabled", getattr(config, "AUTO_PAPER_TP_PRIMARY_ENABLED", True))),
         "dynamic_breakeven_enabled": bool(merged.get("dynamic_breakeven_enabled", getattr(config, "AUTO_PAPER_DYNAMIC_BREAKEVEN_ENABLED", False))),
