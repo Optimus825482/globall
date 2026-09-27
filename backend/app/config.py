@@ -210,7 +210,12 @@ class Config:
     # Aynı ayarın doğru adı; yeni kod bunu kullanmalı (eski ad geriye dönük uyum
     # için korunuyor, .env'deki DEFAULT_ORDER_USDT değişkeni hâlâ okunur).
     DEFAULT_ORDER_TRY = DEFAULT_ORDER_USDT
-    MIN_PARTIAL_ORDER_TRY = 100.0
+    # Likidite kapısının ATLANMA eşiği: emir değeri bu değerin altındayken
+    # likidite ön-kapısına bakılmaz. TRY örneğinde 100 TRY; Global (USDT)
+    # örneğinde quote ölçeğinde 2.0 USDT — TR ölçeğine göre ayarlanmış sabitin
+    # Global'da küçük USDT emirlerini kapıya takmasını önler (2026-09-27).
+    MIN_PARTIAL_ORDER_TRY = float(os.getenv(
+        "MIN_PARTIAL_ORDER", "100.0" if QUOTE_ASSET == "TRY" else "2.0"))
     # Normal yüzde tutarı minimumun altına düştüğünde boş bakiyeyi eritmek
     # için kullanılacak kademeli paper işlem tutarı.
     FALLBACK_ORDER_TRY = float(os.getenv("FALLBACK_ORDER_TRY", "250.0"))
@@ -673,8 +678,16 @@ class Config:
     # alanlar artık QUOTE_ASSET cinsinden değer taşır ve env ile ölçeklenir.
     # TRY'de 1M TRY ≈ USDT'de 23K USDT'ye karşılık gelir; doğru ölçek env'den
     # gelir, hard-coded kur çarpanı YOKTUR (kur yüzünden yanlış büyüklük).
-    MIN_24H_QUOTE_VOLUME_TRY = float(os.getenv("MIN_24H_QUOTE_VOLUME", "1000000"))
-    HIGH_LIQUIDITY_BYPASS_VOLUME_TRY = float(os.getenv("HIGH_LIQUIDITY_BYPASS_VOLUME", "3000000"))
+    # Quote ölçekli likidite eşikleri (2026-09-27): adları tarihsel olarak "TRY"
+    # kalsa da değerler QUOTE_ASSET cinsindendir ve ölçek borsaya göre env'den
+    # gelir. TRY örneğinde 1M/3M TRY (değişmeyen davranış); Global'da USDT
+    # ölçeğinde 25K/75K USDT — TR ölçeğine ayarlanmış 1M USDT Küçük USDT
+    # coinlerinin (AMP/W/QNT…) 24h hacmini nadiren aşması nedeniyle otonom
+    # işlemlerin tamamını likidite kapısına taktırıyordu (Erkan kararı).
+    MIN_24H_QUOTE_VOLUME_TRY = float(os.getenv(
+        "MIN_24H_QUOTE_VOLUME", "1000000" if QUOTE_ASSET == "TRY" else "25000"))
+    HIGH_LIQUIDITY_BYPASS_VOLUME_TRY = float(os.getenv(
+        "HIGH_LIQUIDITY_BYPASS_VOLUME", "3000000" if QUOTE_ASSET == "TRY" else "75000"))
     MIN_VOLUME_RATIO = 0.3
     MIN_ORDERBOOK_DEPTH_MULTIPLIER = 5.0
     LIQUIDITY_FILTER_ENABLED = True

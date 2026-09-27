@@ -194,6 +194,10 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
     try:
         settings = await get_auto_paper_settings()
         if not settings.get("enabled", True):
+            # 2026-09-27: sessiz None yerine görünür log — otonom kapalıyken
+            # push gelip işlem açılmayınca operatör neden görebilsin.
+            logger.info("auto_paper %s: otonom paper trade KAPALI (settings.enabled=false) — "
+                        "bildirim işleme alınmadı", str(notification.get("symbol") or "?"))
             return None
 
         symbol = str(notification.get("symbol") or "").upper()
@@ -203,9 +207,13 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
         score = float(notification.get("score") or 0)
         min_score = float(settings.get("min_score", config.AUTO_PAPER_MIN_SCORE_DEFAULT))
         if score < min_score:
+            # 2026-09-27: eskiden sessiz None dönüyordu → push gelip işlem
+            # açılmayınca operatör NEDENİ göremiyordu. Engelin nedenini
+            # decision_logs'a yaz (R3-06 deseni: sessiz düşme yok).
             logger.info("auto_paper %s: skor %.1f < min_score %.1f — açılmadı",
                         symbol, score, min_score)
-            return None
+            return _blocked(symbol, "score_below_min", price=0.0,
+                            score=round(score, 1), min_score=min_score)
 
         # Sinyal teyit kontrolü: Panel veya Push ile gelen tüm geçerli bildirimler
         # açık pozisyon yoksa otonom işleme alınır (2026-09-22 Erkan Kararı).
