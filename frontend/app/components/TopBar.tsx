@@ -45,7 +45,7 @@ export default function TopBar() {
               🌐 GLOBAL
             </span>
             <p className="topbar-kicker text-cyan-400/80 font-mono">
-              BINANCE GLOBAL · USDT ($) · PAPER TRADING
+              BINANCE GLOBAL · $ · PAPER TRADING
             </p>
           </div>
           <p className="topbar-title">{currentTitle}</p>
@@ -56,7 +56,7 @@ export default function TopBar() {
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
             <span className="font-semibold tracking-wider">BINANCE GLOBAL</span>
             <span className="text-cyan-400/50">·</span>
-            <span className="font-bold text-cyan-200">USDT ($)</span>
+            <span className="font-bold text-cyan-200">$</span>
           </div>
           <span className="status-dot" />
           <span className="font-mono text-[10px] tracking-wider text-slate-300">

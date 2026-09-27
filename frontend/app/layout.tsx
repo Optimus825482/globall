@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     default: "🌐 GLOBAL ($) · SCALPER AGENT",
     template: "%s · 🌐 GLOBAL ($)"
   },
-  description: "Binance Global public-data paper scalping terminal (USDT · $)",
+  description: "Binance Global public-data paper scalping terminal ($)",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.svg",

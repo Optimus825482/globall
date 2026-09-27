@@ -126,7 +126,7 @@ export default function Sidebar() {
                                 SCALPER <span className="text-neon-green">GLOBAL</span>
                             </span>
                             <span className="font-mono text-[9px] font-bold text-cyan-400/80 tracking-widest uppercase">
-                                USDT ($) TERMINAL
+                                $ TERMINAL
                             </span>
                         </div>
                     </Link>
@@ -146,8 +146,8 @@ export default function Sidebar() {
                             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
                             {exchange.loading ? "Borsa belirleniyor…" : exchange.label.toUpperCase()}
                         </span>
-                        <span className="rounded bg-cyan-400/20 px-2 py-0.5 text-[10px] font-bold text-cyan-200 border border-cyan-400/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
-                            {exchange.quoteAsset} ($)
+                        <span className="rounded bg-cyan-400/20 px-2.5 py-0.5 text-[11px] font-bold text-cyan-200 border border-cyan-400/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
+                            $
                         </span>
                     </div>
                     <div className="mt-1.5 flex items-center justify-between text-[10px] text-cyan-400/70 font-mono border-t border-cyan-500/20 pt-1.5">

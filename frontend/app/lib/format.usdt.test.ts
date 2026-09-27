@@ -25,7 +25,7 @@ describe("format — Global (USDT) gösterimi", () => {
   it("quote USDT, gösterim birimi '$' (₺ DEĞİL)", () => {
     expect(fmt.QUOTE_ASSET).toBe("USDT");
     expect(fmt.QUOTE_SYMBOL).toBe("$");
-    expect(fmt.QUOTE_ASSET_NAME).toBe("USDT");
+    expect(fmt.QUOTE_ASSET_NAME).toBe("$");
   });
 
   it("formatMoney/formatTL '$' basar — eski ad da aynı işi görür", () => {

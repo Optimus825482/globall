@@ -140,7 +140,11 @@ export const QUOTE_SYMBOL: string = (() => {
   return QUOTE_ASSET;
 })();
 
-export const QUOTE_ASSET_NAME: string = QUOTE_ASSET;
+/**
+ * GÖSTERİM para birimi adı/simgesi. Kullanıcı kuralı: Global örneğinde
+ * kullanıcı isteği gereğince her yerde "$" simgesi gösterilir.
+ */
+export const QUOTE_ASSET_NAME: string = QUOTE_ASSET === "USDT" ? "$" : QUOTE_ASSET;
 
 /**
  * Taban varlık + bu deployment'ın quote'sü → sembol (`"BTC"` + `USDT` =
