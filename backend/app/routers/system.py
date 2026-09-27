@@ -48,7 +48,7 @@ async def health():
     # yeniden başlatma tetiklenir — bu da aracın kurtarılmasını engeller.
     return {
         "status": "alive",
-        "mode": "paper", "market_data": "binance_tr_public",
+        "mode": "paper", "market_data": f"{config.EXCHANGE}_public",
         "market_running": bool(getattr(market, "running", False)),
         "history_loaded": bool(getattr(market, "history_loaded", False)),
         "tracked_symbols": len(getattr(market, "symbols", ()) or ()),

@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
-import { toMs, withQuote, withQuotePrice } from "../lib/format";
+import { toMs, withQuote, withQuotePrice, QUOTE_ASSET_NAME } from "../lib/format";
 import { inspectTtsSettings, TTS_PERSIST_WARNING } from "../lib/ttsSettings";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import MarkdownMessage from "../components/MarkdownMessage";
@@ -12,6 +12,7 @@ import { useLiveMessages } from "../lib/liveSocket";
 import Link from "next/link";
 import { Badge, Button, Card } from "../components/ui";
 import { useAuth } from "../lib/auth";
+import { useExchange } from "../lib/exchange";
 import AppLoader from "../components/AppLoader";
 
 type ScoutCandidate = {
@@ -134,17 +135,17 @@ const QUICK_PROMPTS = [
   {
     icon: "📈",
     label: "Piyasa Özeti & Trendler",
-    prompt: "Binance TR piyasasındaki güncel görünümü, güçlü yükseliş trendinde olan sembolleri ve genel piyasa yapısını bir trader gözüyle özetle.",
+    prompt: `Binance ${QUOTE_ASSET_NAME} piyasasındaki güncel görünümü, güçlü yükseliş trendinde olan sembolleri ve genel piyasa yapısını bir trader gözüyle özetle.`,
   },
   {
     icon: "⚡",
     label: "Hacim & Momentum Liderleri",
-    prompt: "Şu anda en belirgin hacim artışı ve momentum gösteren TRY işlem çiftleri hangileri? Destek/direnç seviyeleriyle açıkla.",
+    prompt: `Şu anda en belirgin hacim artışı ve momentum gösteren ${QUOTE_ASSET_NAME} işlem çiftleri hangileri? Destek/direnç seviyeleriyle açıkla.`,
   },
   {
     icon: "🎯",
     label: "Kritik Destek & Dirençler",
-    prompt: "BTC/TRY ve piyasayı sürükleyen coinlerdeki kritik destek, direnç ve olası kırılım seviyeleri nerelerde?",
+    prompt: `BTC/${QUOTE_ASSET_NAME} ve piyasayı sürükleyen coinlerdeki kritik destek, direnç ve olası kırılım seviyeleri nerelerde?`,
   },
   {
     icon: "🛡️",
@@ -161,7 +162,7 @@ const QUICK_PROMPTS = [
 const starter: Message[] = [
   {
     role: "assistant",
-    content: "Hazır. Binance TR piyasası, trend yönü, kritik seviyeler veya strateji analizi hakkında ne araştırmak istersin?",
+    content: `Hazır. Binance ${QUOTE_ASSET_NAME} piyasası, trend yönü, kritik seviyeler veya strateji analizi hakkında ne araştırmak istersin?`,
     time: "Şimdi",
   },
 ];
@@ -252,6 +253,7 @@ function UpsideScoutCard({ scout }: { scout: ScoutResult }) {
 
 function ChatPageInner() {
   const { username, role } = useAuth();
+  const exchange = useExchange();
   const [messages, setMessages] = useState<Message[]>(starter);
   const [input, setInput] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -815,7 +817,7 @@ function ChatPageInner() {
                   </span>
                 </div>
                 <p className="text-[11px] text-bunker-muted">
-                  {username ? `${username} ile aktif sohbet · ` : ""}Canlı Binance TR piyasa analizi
+                  {username ? `${username} ile aktif sohbet · ` : ""}Canlı {exchange.loading ? "Binance" : exchange.label} piyasa analizi
                 </p>
               </div>
             </div>
@@ -870,7 +872,7 @@ function ChatPageInner() {
                       SCALPER AI <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-neon-green border border-emerald-500/40">{role === "admin" ? "YÖNETİCİ MODU" : "UZMAN TRADER MODU"}</span>
                     </h2>
                     <p className="text-xs text-bunker-muted">
-                      {username ? `Hoş geldin ${username}! ` : ""}Canlı Binance TR piyasa yönü, teknik seviyeler ve risk yönetimi için hazır.
+                      {username ? `Hoş geldin ${username}! ` : ""}Canlı {exchange.loading ? "Binance" : exchange.label} piyasa yönü, teknik seviyeler ve risk yönetimi için hazır.
                     </p>
                   </div>
                 </div>

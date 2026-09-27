@@ -132,7 +132,7 @@ function SettingsPageInner() {
         return r.json();
       })
       .then((d) => setMarketSymbols(d.symbols || []))
-      .catch(() => setError("Binance TR sembolleri alınamadı"));
+      .catch(() => setError("Piyasa sembolleri alınamadı"));
     apiRequest(`${API_BASE}/api/llm/config`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -322,7 +322,7 @@ function SettingsPageInner() {
       setSaved(true);
       const removed = Array.isArray(updated.removed_invalid_symbols) ? updated.removed_invalid_symbols : [];
       window.alert(removed.length
-        ? `Ayarlar kaydedildi. Binance TR'de işlemde olmayan semboller çıkarıldı: ${removed.join(", ")}`
+        ? `Ayarlar kaydedildi. Borsada işlemde olmayan semboller çıkarıldı: ${removed.join(", ")}`
         : "Ayarlar başarıyla kaydedildi.");
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -412,7 +412,7 @@ function SettingsPageInner() {
   };
 
   const startHistoricalMtfBackfill = async () => {
-    if (!window.confirm("Kapanmış işlemler ve açık pozisyonların giriş zamanları Binance TR public history ile yeniden hesaplanacak. PnL, bakiye ve pozisyonlar değişmeyecek. Devam edilsin mi?")) return;
+    if (!window.confirm("Kapanmış işlemler ve açık pozisyonların giriş zamanları borsa public history ile yeniden hesaplanacak. PnL, bakiye ve pozisyonlar değişmeyecek. Devam edilsin mi?")) return;
     setStartingMtfBackfill(true);
     try {
       const response = await apiRequest(`${API_BASE}/api/historical-mtf-backfill/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
@@ -454,7 +454,7 @@ function SettingsPageInner() {
   };
 
   const startRadarOutcomesBackfill = async () => {
-    if (!window.confirm("Ölçülemeyen ('ÖLÇÜLEMEDİ') ve eksik radar/birleşik sinyal bildirimleri Binance TR arşiv 1m mumlarıyla geriye dönük hesaplanacak. Raporlar sayfasındaki başarı oranları güncellenecektir. Devam edilsin mi?")) return;
+    if (!window.confirm("Ölçülemeyen ('ÖLÇÜLEMEDİ') ve eksik radar/birleşik sinyal bildirimleri borsa arşiv 1m mumlarıyla geriye dönük hesaplanacak. Raporlar sayfasındaki başarı oranları güncellenecektir. Devam edilsin mi?")) return;
     setStartingRadarBackfill(true);
     try {
       const response = await apiRequest(`${API_BASE}/api/radar-outcomes-backfill/start`, {
@@ -703,7 +703,7 @@ function SettingsPageInner() {
               <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                 <div>
                   <p className="eyebrow text-neon-green">DİNAMİK TOP-GAINER EVRENİ</p>
-                  <p className="text-xs text-bunker-muted mt-1">Açık olduğunda Binance TR 24 saatlik top-gainer listesinden seçilen semboller izlenir. Liste periyodik yenilenir; aktif strateji koşulları sağlanırsa yalnızca paper işlem açılır.</p>
+                  <p className="text-xs text-bunker-muted mt-1">Açık olduğunda 24 saatlik top-gainer listesinden seçilen semboller izlenir. Liste periyodik yenilenir; aktif strateji koşulları sağlanırsa yalnızca paper işlem açılır.</p>
                 </div>
                 <button type="button" onClick={refreshTopGainers} disabled={refreshingTopGainers} className="rounded border border-neon-green/50 bg-neon-green/10 px-2 py-1 font-mono text-[11px] text-neon-green transition-colors hover:bg-neon-green/20 disabled:cursor-wait disabled:opacity-60">{refreshingTopGainers ? "GÜNCELLENİYOR..." : "LİSTEYİ YENİLE"}</button>
               </div>
@@ -767,8 +767,8 @@ function SettingsPageInner() {
               <p className="text-xs text-bunker-muted mt-1">İşlem açılmadan önce düşük hacim ve sığ emir defteri engellenir.</p>
               <div className="grid sm:grid-cols-2 gap-3 mt-3">
                 {([
-                  ["min_24h_quote_volume_try", "Minimum 24s hacim (TL)", 1000],
-                  ["high_liquidity_bypass_volume_try", "Yüksek likidite eşiği (TL)", 1000],
+                  ["min_24h_quote_volume_try", `Minimum 24s hacim (${QUOTE_SYMBOL})`, 1000],
+                  ["high_liquidity_bypass_volume_try", `Yüksek likidite eşiği (${QUOTE_SYMBOL})`, 1000],
                   ["min_volume_ratio", "Minimum hacim oranı", 0.1],
                   ["min_orderbook_depth_multiplier", "Emir defteri çarpanı", 0.5],
                 ] as const).map(([key, label, step]) => (
@@ -778,7 +778,7 @@ function SettingsPageInner() {
                   </label>
                 ))}
               </div>
-              <p className="text-[11px] text-bunker-muted mt-2 font-mono">Önerilen: 1.000.000 TL · 0,3x · 5x</p>
+              <p className="text-[11px] text-bunker-muted mt-2 font-mono">Önerilen: {QUOTE_ASSET === "TRY" ? "1.000.000 ₺" : "120.000 $"} · 0,3x · 5x</p>
             </div>
           </div>
           <div className={`space-y-4 ${activeTab !== "llm" ? "hidden" : ""}`}>
@@ -863,7 +863,7 @@ function SettingsPageInner() {
               <div>
                 <p className="eyebrow text-purple-300">GEÇMİŞ MTF SNAPSHOT BACKFILL</p>
                 <p className="font-mono text-sm text-white mt-2">Eski işlem girişlerini M1/M5/M15/H1/H4 ile zenginleştir</p>
-                <p className="text-xs text-bunker-muted mt-1">Binance TR public history kullanılır. PnL, bakiye ve işlem sonucu değişmez; geçmişte kaydedilmeyen likidite bağlamı unknown kalır.</p>
+                <p className="text-xs text-bunker-muted mt-1">Borsa public history kullanılır. PnL, bakiye ve işlem sonucu değişmez; geçmişte kaydedilmeyen likidite bağlamı unknown kalır.</p>
               </div>
               <button onClick={startHistoricalMtfBackfill} disabled={startingMtfBackfill || mtfBackfill.status === "running"} className="shrink-0 px-4 py-2 rounded-lg border border-purple-400/50 bg-purple-400/10 text-purple-300 hover:bg-purple-400/20 font-mono text-xs">
                 {startingMtfBackfill || mtfBackfill.status === "running" ? "BACKFILL ÇALIŞIYOR..." : "MTF BACKFILL BAŞLAT"}
@@ -1001,7 +1001,7 @@ function SettingsPageInner() {
               <div>
                 <p className="eyebrow text-neon-green">RADAR ÖLÇÜMLERİNİ YENİDEN HESAPLA (BACKFILL / REPLAY)</p>
                 <p className="text-xs text-bunker-muted mt-1">
-                  Ufku dolmuş ancak geçmişte ölçülememiş (&quot;ÖLÇÜLEMEDİ&quot; kalmış) tüm radar ve birleşik sinyal bildirimlerini Binance TR 1m arşiv mumlarıyla geriye dönük tarar. Gerçek MFE, çıkış yüzdesi ve hedef dokunuşunu hesaplayarak Raporlar sayfasındaki başarı tablosunu günceller.
+                  Ufku dolmuş ancak geçmişte ölçülememiş (&quot;ÖLÇÜLEMEDİ&quot; kalmış) tüm radar ve birleşik sinyal bildirimlerini borsa 1m arşiv mumlarıyla geriye dönük tarar. Gerçek MFE, çıkış yüzdesi ve hedef dokunuşunu hesaplayarak Raporlar sayfasındaki başarı tablosunu günceller.
                 </p>
               </div>
               <button
@@ -1401,7 +1401,7 @@ function NotificationSettingsPanel() {
     <div className="card bg-bunker-950">
       <p className="eyebrow text-neon-green">🔔 BİLDİRİM AYARLARI · YÖNETİCİ İŞLEM BİLDİRİMİ</p>
       <p className="text-xs text-bunker-muted mt-1">
-        Yönetici Binance TR sayfasından gerçek pozisyon açarken <span className="text-white font-bold">“Bildirim gönder”</span> seçeneğini işaretlerse,
+        Yönetici canlı işlem sayfasından gerçek pozisyon açarken <span className="text-white font-bold">“Bildirim gönder”</span> seçeneğini işaretlerse,
         seçili kullanıcılara sembol ve açılış fiyatı bildirilir (tutar/miktar gönderilmez). Bildirim yalnız uygulamada oturum açmış ve push izni vermiş kullanıcılara iletilir.
       </p>
 

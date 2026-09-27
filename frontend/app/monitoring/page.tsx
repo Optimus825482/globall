@@ -934,7 +934,7 @@ export default function MonitoringPage() {
         <AppLoader
           variant="radar"
           label="OTONOM PİYASA RADARI SENKRONİZE EDİLİYOR…"
-          sublabel="Tüm Binance TR işlem çiftleri derinlik, hacim, ATR ve momentum filtrelerinden geçiriliyor"
+          sublabel="Tüm aktif işlem çiftleri derinlik, hacim, ATR ve momentum filtrelerinden geçiriliyor"
           minHeight="min-h-[55vh]"
         />
       </main>
@@ -1270,7 +1270,7 @@ export default function MonitoringPage() {
                   </div>
                   <p className="text-sm text-neon-green font-mono font-bold tracking-wide">RADAR AKTİF · İLK PİYASA TARAMASI YÜRÜTÜLÜYOR…</p>
                   <p className="text-xs text-bunker-muted font-mono max-w-md mx-auto">
-                    Tüm Binance TR çiftleri analiz ediliyor. Kriterleri sağlayan onaylı sinyaller birazdan burada listelenecek.
+                    Tüm aktif piyasa çiftleri analiz ediliyor. Kriterleri sağlayan onaylı sinyaller birazdan burada listelenecek.
                   </p>
                 </div>
               ) : candidates.length === 0 ? (
