@@ -75,3 +75,7 @@ $null
 # Yerel test koşturucu (2026-09-27) — repo değil, geliştiricinin makinesine
 # özel; commit'lenmeyecek.
 /TESTLERI-CALISTIR.bat
+# Root kalintilari (2026-09-27): kazara kok npm install temizligi
+/node_modules/
+/package.json
+/package-lock.json
