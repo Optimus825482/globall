@@ -5708,12 +5708,12 @@ async def close_auto_paper_trade(trade_id: int, exit_price: float, exit_time: fl
         conn.execute(
             "INSERT INTO signals(timestamp,symbol,action,price,reason,strategy,trade_id) VALUES(?,?,?,?,?,?,?)",
             (now, symbol, "CLOSE_LONG", exit_price,
-             f"AUTO_PAPER_{reason.upper()} | PnL={pnl:.2f}TRY", "AUTO_PAPER", f"auto_paper-{trade_id}")
+             f"AUTO_PAPER_{reason.upper()} | PnL={pnl:.2f}{config.QUOTE_ASSET}", "AUTO_PAPER", f"auto_paper-{trade_id}")
         )
         conn.execute(
             "INSERT INTO decision_logs(timestamp,symbol,strategy,decision,reason,price,metadata) VALUES(?,?,?,?,?,?,?)",
             (now, symbol, "AUTO_PAPER", f"CLOSE_{reason.upper()}",
-             f"AUTO_PAPER_{reason.upper()} | PnL={pnl:.2f}TRY", exit_price,
+             f"AUTO_PAPER_{reason.upper()} | PnL={pnl:.2f}{config.QUOTE_ASSET}", exit_price,
              _json_safe_dumps({"trade_id": trade_id, "pnl": pnl, "pnl_pct": pnl_pct, "reason": reason}, default=str))
         )
         conn.commit()

@@ -28,7 +28,7 @@ from app import database, security
 from app.api_common import log_user_action, _background_tasks, _start_background
 # R3-06: likidite + korelasyon küme kapıları (velocity-auto ile aynı kaynak)
 # için analyzer örneği kullanılır (state'ten; market ile aynı yaşam döngüsü).
-from app.state import market, analyzer
+from app.state import market, analyzer, extend_stream_universe
 from app.ws_runtime import ws_manager
 
 
@@ -599,6 +599,13 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
 
         trade_id = trade["id"]
         # trade_id'yi sinyale geri yazamayız (transaction kapandı); id'yi state'te tut
+        # Açılan sembolü anında akış evrenine ekle (market.symbols içinde kalsın ve WS/tazelik verisi canlı aksın)
+        try:
+            extend_stream_universe([symbol], source="auto_paper_open")
+            asyncio.create_task(market.ensure_history(config.PRIORITY_TIMEFRAMES, symbols=[symbol.lower()]))
+        except Exception as exc:
+            logger.warning("auto_paper %s akış evrenine ekleme hatası: %s", symbol, exc)
+
         _AUTO_PAPER_STATE["total_opened"] += 1
 
         await _broadcast_trade({

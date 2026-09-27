@@ -63,6 +63,18 @@ from app.self_learning import build_learning_context
 logger = logging.getLogger("scalper.runtime")
 
 
+async def get_all_open_symbols() -> set[str]:
+    """Tüm açık pozisyonların sembollerini getir (hem analyzer hem auto_paper_trades)."""
+    manual_open = set(analyzer.positions) | set((await database.load_positions()).keys())
+    try:
+        open_auto_trades = await database.list_auto_paper_trades(status="open")
+        auto_open = {str(t.get("symbol") or "").upper() for t in open_auto_trades if t.get("symbol")}
+    except Exception as exc:
+        logger.warning("get_all_open_symbols auto_paper hatası: %s", exc)
+        auto_open = set()
+    return manual_open | auto_open
+
+
 _llm_replenish_lock = asyncio.Lock()
 _llm_last_idle_attempt_at = time.time()
 _radar_lock = asyncio.Lock()
@@ -419,7 +431,7 @@ async def refresh_top_gainer_symbols():
     # DB okuması da kilit dışında: `load_positions` tek bir SELECT'tir ve
     # iki eşzamanlı yenilemenin aynı sonucu görmesi sorun değildir —
     # kilidi tutacak tek şey sonraki saf hesap.
-    open_symbols = set(analyzer.positions) | set((await database.load_positions()).keys())
+    open_symbols = await get_all_open_symbols()
     async with _top_gainers_lock:
         ranked = []
         for item in all_tickers or []:
@@ -899,7 +911,7 @@ async def refresh_symbol_activity():
     """Refresh the full active-universe for this deployment's quote and mark
     inactive symbols. (TR→TRY, Global→USDT; both read from the same adapter.)"""
     known_try = set(await trading_symbols())
-    open_symbols = set(analyzer.positions) | set((await database.load_positions()).keys())
+    open_symbols = await get_all_open_symbols()
     universe = list(dict.fromkeys(sorted(known_try | open_symbols)))
     if not universe:
         raise RuntimeError(f"{config.EXCHANGE_LABEL} {config.QUOTE_ASSET} sembol evreni boş döndü")
@@ -1005,7 +1017,12 @@ async def refresh_symbol_activity():
         # YENİ: Kapsamlı pasif kontrolü - M1 ve M5'de de pasif olmalı
         truly_passive = comprehensive.get("is_passive", False)
         
+        has_pos = symbol in open_symbols
         active = bool(ticker and volume_ok and movement_gate_ok and volume_ratio_ok and m1_flat_ok and not truly_passive)
+        if has_pos and not truly_passive:
+            # Açık pozisyonu olan sembol hacim/menzil dalgalanması yüzünden
+            # pasife alınıp panikle kapatılmamalı; TP/SL/trailing korumasına izin verilmeli.
+            active = True
         flat_reason = (f"m1_flat_candles:5m={m1_activity['flat_5m_count']}/5,"
                        f"30m={m1_activity['flat_30m_count']}/30")
         statuses[symbol] = {
@@ -1031,7 +1048,7 @@ async def refresh_symbol_activity():
             },
             "checks": {"quote_volume": volume_ok, "range_15m": movement_ok, "atr": atr_ok, "volume_ratio": volume_ratio_ok, "m1_flat_candles": m1_flat_ok, "comprehensive_passive": not truly_passive},
             "gates": {"volume_only": config.SYMBOL_ACTIVITY_VOLUME_ONLY, "m1_flat_filter_enabled": config.SYMBOL_ACTIVITY_M1_FLAT_FILTER_ENABLED, "m1_flat_data_ready": m1_activity["ready"]},
-            "has_open_position": symbol in analyzer.positions,
+            "has_open_position": has_pos,
             "reason": "active" if active else (comprehensive.get("combined_reason", flat_reason if not m1_flat_ok else "volume_or_liquidity_below_threshold")),
             "checked_at": time.time(),
         }
@@ -1069,7 +1086,7 @@ async def refresh_symbol_activity():
 async def bootstrap_symbol_activity():
     """Warm all symbols enough for the first activity decision before trading starts."""
     known_try = set(await trading_symbols())
-    open_symbols = set(analyzer.positions) | set((await database.load_positions()).keys())
+    open_symbols = await get_all_open_symbols()
     universe = list(dict.fromkeys(sorted(known_try | open_symbols)))
     if not universe:
         raise RuntimeError(f"{config.EXCHANGE_LABEL} {config.QUOTE_ASSET} sembol evreni boş döndü")

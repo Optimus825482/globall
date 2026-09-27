@@ -697,7 +697,10 @@ class Config:
     # tek başına mean-reversion için işlem yapılabilir menzil anlamına gelmez.
     SYMBOL_ACTIVITY_FILTER_ENABLED = os.getenv("SYMBOL_ACTIVITY_FILTER_ENABLED", "true").lower() == "true"
     SYMBOL_ACTIVITY_REFRESH_SEC = max(60, int(os.getenv("SYMBOL_ACTIVITY_REFRESH_SEC", "3600")))
-    SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME_TRY = float(os.getenv("SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME", "1000000"))
+    SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME_TRY = float(os.getenv(
+        "SYMBOL_ACTIVITY_MIN_QUOTE_VOLUME",
+        "1000000" if QUOTE_ASSET == "TRY" else "25000",
+    ))
     SYMBOL_ACTIVITY_VOLUME_ONLY = os.getenv("SYMBOL_ACTIVITY_VOLUME_ONLY", "false").lower() == "true"
     SYMBOL_ACTIVITY_MIN_RANGE_15M_PCT = float(os.getenv(
         "SYMBOL_ACTIVITY_MIN_RANGE_15M_PCT",
