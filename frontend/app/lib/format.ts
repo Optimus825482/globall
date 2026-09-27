@@ -130,7 +130,7 @@ export function formatPrice(value: number | null | undefined): string {
  * Backend ise `/api/market-symbols` yanıtında `quote_asset` döndürür; bu
  * değer ikisinin aynı olduğunu doğrulamak için kullanılabilir.
  */
-export const QUOTE_ASSET = (process.env.NEXT_PUBLIC_QUOTE_ASSET || "TRY").toUpperCase();
+export const QUOTE_ASSET = (process.env.NEXT_PUBLIC_QUOTE_ASSET || "USDT").toUpperCase();
 
 /** `TRY` → `₺`, `USDT` → `$`, `USD`/`USDC` → `$`. Yalnız GÖSTERİM. */
 export const QUOTE_SYMBOL: string = (() => {

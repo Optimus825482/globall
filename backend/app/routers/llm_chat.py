@@ -2592,12 +2592,14 @@ async def _get_ml_forecast_tool(args: dict) -> dict:
         price = float(feat.get("close_price") or 0.0)
         forecasts = {}
         for h in HORIZONS:
-            pred = ml_forecast.predict_target(feat, horizon_minutes=h, current_price=price)
+            pred = ml_forecast.predict_target(sym, feat, horizon=h)
             if pred:
+                target_pct = float(pred.get("target_pct") or 0.0)
+                target_price = round(price * (1 + target_pct / 100.0), 6) if price > 0 else None
                 forecasts[f"{h}m"] = {
                     "horizon_minutes": h,
-                    "target_pct": pred.get("target_pct"),
-                    "target_price": pred.get("target_price"),
+                    "target_pct": target_pct,
+                    "target_price": target_price,
                     "hit_probability": pred.get("hit_probability"),
                     "direction": "up",
                 }

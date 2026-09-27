@@ -449,32 +449,10 @@ async def refresh_top_gainer_symbols():
         active = list(dict.fromkeys(selected + sorted(open_symbols)))
         previous_active = set(str(symbol).upper() for symbol in market.symbols)
     if not active:
-        raise RuntimeError("Binance TR top-gainer TRY listesi boş döndü")
+        raise RuntimeError(f"Binance top-gainer {config.QUOTE_ASSET} listesi boş döndü")
     # Evreni güncelle: `config.SYMBOLS` + `market.symbols` TEK kapıdan
-    # (bkz. app/state.py). Boş liste reddedilir; burada zaten kontrol edildi.
+    # (bkz. app/state.py). Açık pozisyonlar her zaman akış evreninde korunur.
     apply_symbol_universe(active, source="top_gainers")
-    dropped_symbols = previous_active - set(active)
-    if dropped_symbols:
-        # 2026-09-21 Erkan kararı: Sembol pasife alınırken/listeden düşerken
-        # varsa açık otonom paper pozisyonu kâr/zarara bakılmaksızın kapatılır.
-        # DENETİM (2026-09-26): bu DB yazma işlemi KİLİT DIŞINDA. Hata
-        # yakalansa da evren ataması yukarıda tamamlandığı için tutarlı kalır;
-        # kapanmayan pozisyon sonraki turda yeniden denenir.
-        try:
-            from app.routers import auto_paper as _ap
-            open_auto_trades = await database.list_auto_paper_trades(status="open")
-            for trade in open_auto_trades:
-                sym = str(trade.get("symbol") or "").upper()
-                if sym in dropped_symbols:
-                    trade_id = int(trade["id"])
-                    tk = market.get_ticker(sym)
-                    price = float(tk.get("last_price") or 0) if tk else 0
-                    if not price:
-                        price = float(trade.get("peak_price") or trade.get("entry_price") or 0)
-                    await _ap._close_trade(trade_id, sym, price, time.time(), "symbol_deactivated")
-                    print(f"[Top Gainers] Pasife düşen {sym} için auto_paper pozisyonu ({trade_id}) kapatıldı @ {price}", flush=True)
-        except Exception as exc:
-            print(f"[Top Gainers] auto_paper pasif kapatma hatası: {exc}", flush=True)
     # Newly activated symbols would otherwise wait ~4.6h on the WS alone
     # to collect enough closed 5m candles; hydrate them up front so MTF
     # gates are usable from the first scan.
@@ -688,32 +666,30 @@ def _comprehensive_passive_analysis(m1_bars: dict, m5_bars: dict, now_ms: int) -
     def is_passive(tf: dict) -> tuple[bool, str]:
         """Tek timeframe için pasif kararı verir.
         
-        ÖNEMLİ: Gerçek mum = High > Low. Çizgi veri (H=L) = mum yok!
+        ÖNEMLİ (Erkan kuralı): Durağan hareket etmeyen, herhangi bir fiyat hareketi
+        olmayan semboller pasife alınır.
+        1. Veri hazır değilse (veri_yok) kesinlikle pasif SAYILMAZ (veri bekleniyor).
+        2. Sadece ve sadece fiyat salınımı nerdeyse sıfırsa ve hiç gerçek işlem yoksa pasif sayılır.
         """
         if not tf.get("ready", False):
-            return True, f"veri_yok ({tf.get('reason', 'bilinmiyor')})"
+            return False, f"veri_bekleniyor ({tf.get('reason', 'hazir_degil')})"
         
-        # YENİ: Gerçek mum sayısı yetersizse KESİNLİKLE pasif say
         real_count = tf.get("real_candle_count", 0)
-        required = 7 if tf["name"] == "M1" else 3
         sample_count = tf.get("sample_count", 0)
+        range_pct = float(tf.get("range_pct", 0.0) or 0.0)
+        avg_volume = float(tf.get("avg_volume", 0.0) or 0.0)
+        flat_ratio = float(tf.get("flat_ratio", 0.0) or 0.0)
         
-        # M1: Son 10 mumdan en az 7'si, M5: Son 5 mumdan en az 3'ü gerçek mum olmalı
-        if real_count < required:
-            return True, f"yetersiz_gercek_mum:{real_count}/{required}"
+        # Gerçekten ölü / durağan sembol kriteri (Erkan kuralı):
+        # 1. 50 mumluk periyotta neredeyse hiç gerçek mum yoksa (<= 2 gerçek mum)
+        # 2. VE toplam fiyat salınımı %0.05'ten küçükse (tamamen yatay çizgi)
+        # 3. VE ortalama hacim neredeyse sıfırsa
+        if real_count <= 2 and range_pct < 0.05 and avg_volume < 10.0:
+            return True, f"tamamen_duragan_ve_oluhacim (real={real_count}/{sample_count}, range={range_pct:.4f}%, vol={avg_volume:.2f})"
         
-        # Tüm son N mumların gerçek mum olup olmadığını kontrol et
-        # (AITRY gibi vr=0.00 ama flat=0.00% olanlar için)
-        real_ratio = real_count / sample_count if sample_count > 0 else 0
-        
-        # Eğer gerçek mum oranı çok düşükse pasif
-        min_real_ratio = 0.70  # En az %70'i gerçek mum olmalı
-        if real_ratio < min_real_ratio:
-            return True, f"dusuk_gercek_mum_orani:{real_ratio:.0%}"
-        
-        # Gerçek mum oranı yeterli ama flat oranı çok yüksekse pasif
-        if tf["flat_ratio"] > 0.7:
-            return True, "cok_fazla_flat_mum"
+        # Eğer flat mum oranı %95'in üzerindeyse ve toplam fiyat aralığı %0.05'ten küçükse
+        if flat_ratio >= 0.95 and range_pct < 0.05:
+            return True, f"asiri_flat_cizgi (flat_ratio={flat_ratio:.2f}, range={range_pct:.4f}%)"
         
         return False, "aktif"
     
@@ -1018,11 +994,12 @@ async def refresh_symbol_activity():
         truly_passive = comprehensive.get("is_passive", False)
         
         has_pos = symbol in open_symbols
-        active = bool(ticker and volume_ok and movement_gate_ok and volume_ratio_ok and m1_flat_ok and not truly_passive)
-        if has_pos and not truly_passive:
-            # Açık pozisyonu olan sembol hacim/menzil dalgalanması yüzünden
-            # pasife alınıp panikle kapatılmamalı; TP/SL/trailing korumasına izin verilmeli.
+        if has_pos:
+            # Açık pozisyonu olan sembol her zaman aktif tutulur; TP/SL/trailing/max-hold ile yönetilir.
             active = True
+            truly_passive = False
+        else:
+            active = bool(ticker and volume_ok and movement_gate_ok and volume_ratio_ok and m1_flat_ok and not truly_passive)
         flat_reason = (f"m1_flat_candles:5m={m1_activity['flat_5m_count']}/5,"
                        f"30m={m1_activity['flat_30m_count']}/30")
         statuses[symbol] = {

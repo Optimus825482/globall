@@ -271,6 +271,7 @@ function ChatPageInner() {
   const [livePriceWatch, setLivePriceWatch] = useState<LivePriceWatch | null>(null);
   const [upsideScoutBusy, setUpsideScoutBusy] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
 
   // Sesli mesaj (Speech-to-Text) state'leri
   const [isListening, setIsListening] = useState(false);
@@ -632,6 +633,7 @@ function ChatPageInner() {
     const next = [...messages, { role: "user" as const, content: trimmed, time: nowTime }];
     setMessages(next);
     setInput("");
+    setActionsMenuOpen(false);
     setBusy(true);
     setError("");
     const controller = new AbortController();
@@ -826,6 +828,19 @@ function ChatPageInner() {
               <span className={`chat-context-meter text-[11px] font-mono px-2 py-1 rounded bg-black/40 border border-bunker-800 ${contextTone}`}>
                 {Math.min(100, contextRatio * 100).toFixed(1)}% hafıza
               </span>
+              <button
+                type="button"
+                onClick={() => setActionsMenuOpen((v) => !v)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border font-mono transition-all flex items-center gap-1.5 ${
+                  actionsMenuOpen
+                    ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                    : "border-bunker-700 bg-bunker-900/60 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-300"
+                }`}
+                title="Hızlı Eylemler & Soru Şablonları"
+              >
+                <span>⚡</span>
+                <span className="hidden sm:inline">HIZLI MENÜ</span>
+              </button>
               <Button variant="secondary" onClick={startNewChat} className="text-xs px-2.5 py-1.5 font-mono">
                 ＋ YENİ SOHBET
               </Button>
@@ -891,7 +906,37 @@ function ChatPageInner() {
                   </div>
                   <div className="flex items-start gap-2 text-bunker-muted">
                     <span className="text-neon-green font-bold">✓</span>
-                    <span>Mikrofon simgesine (🎙️) basarak sesli soru gönderebilirsiniz</span>
+                    <span>Aşağıdaki ⚡ butonundan hızlı eylemlere dilediğiniz an erişebilirsiniz</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-3 border-t border-bunker-800/80">
+                  <p className="text-[11px] font-mono text-cyan-300/80 mb-2 flex items-center gap-1.5">
+                    <span>⚡</span>
+                    <span>Hızlı Başlangıç Soruları:</span>
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_PROMPTS.map((item, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => sendMessage(item.prompt)}
+                        disabled={busy}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-bunker-900/90 border border-bunker-700/80 hover:border-cyan-400/60 hover:bg-cyan-950/40 text-slate-200 hover:text-cyan-300 text-xs font-mono transition-all disabled:opacity-40"
+                      >
+                        <span>{item.icon}</span>
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={runUpsideScout}
+                      disabled={upsideScoutBusy || busy}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-400/40 hover:border-cyan-400 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-bold transition-all disabled:opacity-40"
+                    >
+                      <span>🎯</span>
+                      <span>En Hızlı Yükseliş Analizi</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1018,47 +1063,95 @@ function ChatPageInner() {
             <div ref={endRef} />
           </div>
 
-          {/* Hızlı İşlemler & Soru Önerileri */}
-          <div className="chat-quick-toolbar flex flex-col gap-1.5 my-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                className="chat-scan-button-wide flex-1 min-h-[2.4rem] font-mono text-xs border-cyan-500/30 hover:border-cyan-500/60 bg-cyan-950/20"
-                onClick={runUpsideScout}
-                disabled={upsideScoutBusy || busy}
-              >
-                {upsideScoutBusy ? (
-                  <span className="upside-scout-loading flex items-center justify-center gap-2">
-                    <span className="upside-scout-spinner" />
-                    <span className="upside-scout-text text-neon-green font-bold">EN HIZLI YÜKSELİŞ KEŞFEDİLİYOR</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-1.5 text-neon-green font-bold">
-                    <span>🎯</span>
-                    <span>EN HIZLI YÜKSELİŞ ANALİZİ (5DK + 15DK)</span>
-                  </span>
-                )}
-              </Button>
-            </div>
-
-            <div className="chat-quick-prompts flex overflow-x-auto gap-1.5 pb-1" aria-label="Hızlı soru önerileri">
-              {QUICK_PROMPTS.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => sendMessage(item.prompt)}
-                  disabled={busy}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-bunker-900/80 border border-bunker-700/70 hover:border-cyan-500/50 hover:bg-cyan-950/30 text-slate-300 hover:text-neon-green text-xs font-mono transition-all disabled:opacity-40"
-                >
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Mesaj Yazma & Sesli Giriş Bölümü */}
-          <div className="chat-composer-section pt-1">
+          <div className="chat-composer-section pt-1 relative">
+            {/* Hızlı Eylemler & Soru Şablonları Açılır Menüsü */}
+            {actionsMenuOpen && (
+              <div className="chat-actions-popover mb-2 border border-cyan-500/40 bg-gradient-to-b from-bunker-900/98 via-bunker-950/98 to-cyan-950/30 p-3 sm:p-4 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200 z-30">
+                <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-bunker-800">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-xs">
+                      ⚡
+                    </span>
+                    <span className="font-mono text-xs font-bold text-cyan-300 tracking-wide uppercase">
+                      Hızlı Eylemler & Soru Şablonları
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActionsMenuOpen(false)}
+                    className="w-6 h-6 rounded-lg bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 flex items-center justify-center text-xs text-bunker-muted hover:text-white transition-colors"
+                    title="Kapat"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Ana Eylem: En Hızlı Yükseliş Taraması */}
+                <div className="mb-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      runUpsideScout();
+                    }}
+                    disabled={upsideScoutBusy || busy}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl border border-cyan-500/40 hover:border-cyan-400 bg-gradient-to-r from-cyan-950/40 via-bunker-900 to-cyan-950/40 text-left transition-all group disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 flex items-center justify-center text-base group-hover:scale-105 transition-transform">
+                        🎯
+                      </div>
+                      <div>
+                        <div className="text-xs font-mono font-bold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                          <span>EN HIZLI YÜKSELİŞ TESPİTİ</span>
+                          <span className="text-[10px] text-cyan-400 font-normal">(5dk + 15dk Harman)</span>
+                        </div>
+                        <div className="text-[11px] text-bunker-muted">
+                          Tüm izlenen sembolleri tarar ve en yüksek momentumlu USDT çiftlerini sıralar
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-neon-green px-2.5 py-1 rounded bg-neon-green/10 border border-neon-green/30 group-hover:bg-neon-green/20 shrink-0">
+                      {upsideScoutBusy ? "Taranıyor…" : "TARA ➤"}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Soru Şablonları Grid */}
+                <div>
+                  <div className="text-[10px] font-mono text-bunker-muted uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <span>💡</span>
+                    <span>Hazır Analiz Soruları (Tek Tıkla Sor)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {QUICK_PROMPTS.map((item, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          sendMessage(item.prompt);
+                        }}
+                        disabled={busy}
+                        className="flex items-start gap-2 p-2 rounded-xl bg-bunker-900/80 border border-bunker-700/70 hover:border-cyan-500/50 hover:bg-cyan-950/30 text-left transition-all group disabled:opacity-40"
+                      >
+                        <span className="text-base shrink-0 group-hover:scale-110 transition-transform">{item.icon}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-mono font-bold text-slate-200 group-hover:text-cyan-300 truncate">
+                            {item.label}
+                          </div>
+                          <div className="text-[10px] text-bunker-muted line-clamp-1">
+                            {item.prompt}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Canlı Ses Kaydı Paneli */}
             {isListening && (
               <div className="chat-voice-panel card mb-2 border-red-500/50 bg-gradient-to-r from-red-950/40 via-bunker-900/95 to-bunker-950 p-3 shadow-2xl rounded-xl">
@@ -1118,6 +1211,24 @@ function ChatPageInner() {
             {/* Metin & Ses Giriş Formu */}
             <form onSubmit={send} className="chat-input-form relative">
               <div className="flex items-end gap-2 p-2 bg-bunker-900/95 border border-bunker-700/80 rounded-xl focus-within:border-cyan-400/70 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all shadow-xl backdrop-blur-md">
+                {/* Hızlı İşlemler & Şablonlar Butonu */}
+                <button
+                  type="button"
+                  onClick={() => setActionsMenuOpen((v) => !v)}
+                  className={`shrink-0 w-9 h-9 rounded-xl border flex items-center justify-center font-mono text-sm transition-all ${
+                    actionsMenuOpen
+                      ? "border-cyan-400 bg-cyan-500/20 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.35)]"
+                      : "border-bunker-700/80 bg-bunker-800/80 hover:bg-bunker-700/80 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-300"
+                  }`}
+                  title={actionsMenuOpen ? "Hızlı Menüyü Kapat" : "Hızlı Eylemler & Soru Şablonları"}
+                  aria-label="Hızlı işlemler menüsü"
+                  disabled={busy}
+                >
+                  <span className={`text-base leading-none transition-transform duration-200 ${actionsMenuOpen ? "rotate-45" : ""}`}>
+                    {actionsMenuOpen ? "✕" : "⚡"}
+                  </span>
+                </button>
+
                 {/* Mikrofon Tuşu */}
                 <button
                   type="button"
@@ -1135,7 +1246,7 @@ function ChatPageInner() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={isListening ? "Mikrofon dinliyor… konuşabilirsiniz" : "Bir soru sor… örn. BTC/TRY direnç ve trend analizi yap (veya 🎙️ ile sesli sor)"}
+                  placeholder={isListening ? "Mikrofon dinliyor… konuşabilirsiniz" : "Bir soru sor… örn. BTC/$ direnç ve trend analizi yap (veya 🎙️ ile sesli sor)"}
                   rows={1}
                   disabled={busy}
                   className="flex-1 bg-transparent border-0 text-white placeholder-bunker-muted resize-none text-sm py-2 px-1 max-h-36 min-h-[38px] leading-relaxed outline-none font-sans"

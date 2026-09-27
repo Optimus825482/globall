@@ -346,10 +346,22 @@ def _prune_empty_and_truncate(data, depth=0):
     """Recursively strip None/empty fields, round floats, and drop huge raw candle/depth arrays."""
     if depth > 5:
         return None
+    if hasattr(data, "tolist") and callable(data.tolist):
+        try:
+            data = data.tolist()
+        except Exception:
+            pass
     if isinstance(data, dict):
         cleaned = {}
         for k, v in data.items():
-            if v is None or v == "" or v == [] or v == {}:
+            if v is None:
+                continue
+            if hasattr(v, "tolist") and callable(v.tolist):
+                try:
+                    v = v.tolist()
+                except Exception:
+                    pass
+            if isinstance(v, (str, list, dict)) and len(v) == 0:
                 continue
             # Token koruması: prompt şişiren ham klines/derinlik dizilerini düşür
             if k in ("klines", "raw_klines", "candles", "orderbook", "depth", "bids", "asks", "raw_data", "raw_candles"):

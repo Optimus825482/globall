@@ -78,6 +78,8 @@ async def _log_blocked_decision(symbol: str, reason: str, price: float, extra: d
             "cluster": f"Korelasyon küme riski aşıldı (%{extra.get('cluster', {}).get('exposure_pct', 0):.1f})",
             "order_below_min": f"Bakiye yetersiz ({extra.get('order_value', 0)} {config.QUOTE_ASSET} < {extra.get('min_order', 0)} {config.QUOTE_ASSET})",
             "score_below_min": f"Skor yetersiz ({extra.get('score')} < {extra.get('min_score')})",
+            "weak_mtf_confluence": f"MACD MTF zayıf / sahte kırılım riski (skor: {extra.get('confluence')}, karar: {extra.get('verdict')})",
+            "stop_loss_cooldown": f"Stop loss sonrası bekleme devrede (kalan: {extra.get('remaining_sec')} sn)",
         }
         human_reason = reason_tr_map.get(reason, f"Giriş engellendi: {reason}")
         if reason == "liquidity" and isinstance(extra.get("liquidity"), dict):
@@ -149,6 +151,8 @@ _AUTO_PAPER_STATE = {
     # D-16 (2026-09-12): yönetim döngüsü hata sayacı (üstel backoff için).
     "consecutive_errors": 0,
 }
+#: Stop loss sonrası sembol bazında aşırı işlem (churn/peş peşe kayıp) koruma süreleri {symbol: expire_timestamp}
+_stop_loss_cooldowns: dict[str, float] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +254,16 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
                         "açılmadı (fail-closed): %s", symbol, quiet_exc)
             return _blocked(symbol, "quiet_hours_query_error")
 
+        # Stop-loss sonrası bekleme süresi (cooldown) kapısı:
+        # Stop olan sembole hemen peş peşe yeniden girip kayıp serisi (churn) yaratmayı engelle.
+        now_ts = time.time()
+        sl_cooldown_until = _stop_loss_cooldowns.get(symbol, 0.0)
+        if now_ts < sl_cooldown_until:
+            rem = round(sl_cooldown_until - now_ts, 0)
+            logger.info("auto_paper %s: stop_loss sonrası bekleme süresi devrede (kalan: %.0f sn) — açılmadı",
+                        symbol, rem)
+            return _blocked(symbol, "stop_loss_cooldown", remaining_sec=rem)
+
         # Mevcut fiyat
         ticker = market.get_ticker(symbol)
         current_price = float(ticker.get("last_price") or 0) if ticker else 0
@@ -310,6 +324,27 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
             logger.warning("auto_paper %s: taze ticker yok (age=%ss) — bayat fiyata "
                         "açılış engellendi", symbol, freshness.get("age_sec"))
             return _blocked(symbol, "stale_ticker", price=current_price, age_sec=freshness.get("age_sec"))
+
+        # MACD MTF Konfluans Kapısı: ZAYIF MTF / Yüksek sahte kırılım (%75 fake) filtresi
+        block_weak_mtf = bool(settings.get("block_weak_mtf", True))
+        min_mtf_confluence = float(settings.get("min_mtf_confluence", 45.0))
+        if block_weak_mtf:
+            mtf_verdict = notification.get("macd_mtf_verdict")
+            mtf_confluence = notification.get("macd_mtf_confluence")
+            if mtf_verdict is None or mtf_confluence is None:
+                try:
+                    from app import macd_mtf
+                    mtf_compact = macd_mtf.cached_compact(symbol)
+                    if mtf_compact:
+                        mtf_verdict = mtf_compact.get("verdict")
+                        mtf_confluence = mtf_compact.get("confluence")
+                except Exception:
+                    pass
+            if mtf_verdict == "ZAYIF" or (mtf_confluence is not None and float(mtf_confluence) < min_mtf_confluence):
+                logger.warning("auto_paper %s: MACD MTF ZAYIF (skor=%s < %.1f, verdict=%s) — sahte kırılım riskiyle açılmadı",
+                               symbol, mtf_confluence, min_mtf_confluence, mtf_verdict)
+                return _blocked(symbol, "weak_mtf_confluence", price=current_price,
+                                confluence=mtf_confluence, verdict=mtf_verdict)
 
         notification_id = notification.get("id")
         notification_key = notification.get("notification_key")
@@ -485,6 +520,29 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
                             balance_pct=round(balance_pct * 100, 2))
 
         sl_pct = float(settings.get("stop_loss_pct", config.AUTO_PAPER_SL_PCT_DEFAULT)) / 100.0
+
+        # Volatiliteye duyarlı Stop Loss (ATR koruması):
+        # 5m gürültüsü içinde normal -%1.6-1.8 geri çekilmelerde erken stop olmamak için
+        # ATR'ye göre nefes alma payı (maksimum %2.8 ile sınırlı).
+        volatility_sl_enabled = bool(settings.get("volatility_sl_enabled", True))
+        effective_sl_pct = sl_pct
+        if volatility_sl_enabled:
+            try:
+                from app.technical_analysis import _atr
+                kline = market.get_ut_kline(symbol, "5m") or market.get_ut_kline(symbol, "1m")
+                if kline:
+                    highs = kline.get("highs") or []
+                    lows = kline.get("lows") or []
+                    closes = kline.get("closes") or []
+                    if len(closes) >= 15:
+                        atr_val = _atr(highs, lows, closes, 14)
+                        if atr_val and current_price > 0:
+                            atr_pct = atr_val / current_price
+                            # 1.2 * ATR_pct nefes alma alanı, minimum sl_pct, maksimum %2.8
+                            effective_sl_pct = max(sl_pct, min(0.028, 1.2 * atr_pct))
+            except Exception as atr_err:
+                logger.debug("auto_paper %s: ATR stop hesaplama atlandı: %s", symbol, atr_err)
+
         target_pct = _effective_target_pct(notification)
         if target_pct <= 0:
             target_pct = float(settings.get("default_target_pct", config.AUTO_PAPER_DEFAULT_TARGET_PCT))
@@ -510,7 +568,7 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
         # mark-up'lı olmalı ki bildirimdeki hedef gerçekten realize edilsin.
         cost_markup = 2 * commission_pct + float(getattr(config, "ESTIMATED_SLIPPAGE_PCT", 0.0) or 0.0)
         take_profit_price = fill_entry * (1 + target_pct / 100 + cost_markup)
-        stop_loss_price = fill_entry * (1 - sl_pct)
+        stop_loss_price = fill_entry * (1 - effective_sl_pct)
         now = time.time()
         # R3-09 (P0): `notification_id` bigint kolonuna yalnızca TAM SAYI yazılır.
         # Reopen akışının string anahtarı ayrı `notification_key` (TEXT kolon)
@@ -796,27 +854,30 @@ async def _manage_single_trade(trade: dict, now: float, breakeven_trigger_pct: f
         await _close_trade(trade_id, symbol, exit_price, now, "max_duration")
         return
 
-    # 2. SEMBOL PASİFE ALINMIŞ MI? (2026-09-21 Erkan kararı: Pasife alınan sembolün pozisyonu kapatılır):
-    # Sembol aktif listede değilse veya pasif semboller arasındaysa kâr/zarara bakılmaksızın kapatılır.
+    # 2. SEMBOL STREAM GÜVENLİĞİ VE PASİF KONTROLÜ:
+    # Açık pozisyonu olan sembol her zaman WebSocket akışında tutulmalı (asla bu yüzden kapatılmaz)
+    market_symbols = getattr(market, "symbols", None)
+    if isinstance(market_symbols, (list, set, tuple)):
+        symbols_lower = {str(s).lower() for s in market_symbols if isinstance(s, str)}
+        if symbol.lower() not in symbols_lower:
+            try:
+                from app.state import extend_stream_universe
+                extend_stream_universe([symbol], source="auto_paper_stream_guard")
+            except Exception as exc:
+                logger.warning("auto_paper %s akış evrenine ekleme koruması: %s", symbol, exc)
+
+    # Yalnızca açıkça doğrulanmış durağan/ölü semboller (gerçekten ölü tahta / hacimsiz)
     passive_symbols = getattr(config, "PASSIVE_SYMBOLS", None)
     is_passive = bool(passive_symbols and symbol in passive_symbols)
 
-    market_symbols = getattr(market, "symbols", None)
-    is_dropped = False
-    if isinstance(market_symbols, (list, set, tuple)) and len(market_symbols) > 0:
-        symbols_lower = {str(s).lower() for s in market_symbols if isinstance(s, str)}
-        if symbol.lower() not in symbols_lower:
-            is_dropped = True
-
-    if is_passive or is_dropped:
+    if is_passive:
         # D-02: aynı tazelik kuralı — bayat fiyatla kapatma yapılmaz.
         if not price_is_fresh:
-            logger.info("auto_paper %s: sembol pasif ama fiyat bayat — kapanış ertelendi (passive=%s, dropped=%s)",
-                        symbol, is_passive, is_dropped)
+            logger.info("auto_paper %s: sembol pasif ama fiyat bayat — kapanış ertelendi", symbol)
             return
         exit_price = current_price if current_price > 0 else float(trade.get("peak_price") or entry_price)
-        logger.info("auto_paper %s: SEMBOL PASİFE ALINMIŞ (passive=%s, dropped=%s) — açık pozisyon kapatılıyor (çıkış=%.6f)",
-                    symbol, is_passive, is_dropped, exit_price)
+        logger.info("auto_paper %s: SEMBOL PASİFE ALINMIŞ (doğrulanmış durağan) — açık pozisyon kapatılıyor (çıkış=%.6f)",
+                    symbol, exit_price)
         await _close_trade(trade_id, symbol, exit_price, now, "symbol_deactivated")
         return
 
@@ -1032,6 +1093,14 @@ async def _close_trade(trade_id: int, symbol: str, exit_price: float, now: float
                 lambda: _maybe_reopen_after_protect_close(symbol, orig_notification_id),
                 f"auto-paper-reopen-{symbol}", single_pass=True)
 
+        if reason == "stop_loss":
+            settings = await get_auto_paper_settings()
+            cooldown_min = float(settings.get("sl_cooldown_minutes", 10.0))
+            if cooldown_min > 0:
+                _stop_loss_cooldowns[symbol] = now + (cooldown_min * 60.0)
+                logger.info("auto_paper %s: stop_loss sonrası %.0f dakika yeni giriş bekleme süresi (cooldown) başlatıldı",
+                            symbol, cooldown_min)
+
     except Exception as exc:
         logger.exception("auto_paper %s kapatma: %s", symbol, exc)
 
@@ -1182,6 +1251,10 @@ async def get_default_settings() -> dict:
         "breakeven_buffer_pct": getattr(config, "AUTO_PAPER_BREAKEVEN_BUFFER_PCT", 0.02),
         "max_open_positions": config.AUTO_PAPER_MAX_OPEN_POSITIONS,
         "max_hold_minutes": getattr(config, "AUTO_PAPER_MAX_HOLD_MINUTES", 60.0),
+        "block_weak_mtf": True,
+        "min_mtf_confluence": 45.0,
+        "sl_cooldown_minutes": 10.0,
+        "volatility_sl_enabled": True,
     }
 
 
@@ -1216,7 +1289,9 @@ async def update_settings_endpoint(payload: dict, request: Request):
                 "trailing_gap_pct", "reopen_after_protect_close",
                 "tp_primary_exit_enabled", "dynamic_breakeven_enabled",
                 "dynamic_trailing_enabled", "breakeven_buffer_pct",
-                "max_open_positions", "max_hold_minutes")
+                "max_open_positions", "max_hold_minutes",
+                "block_weak_mtf", "min_mtf_confluence",
+                "sl_cooldown_minutes", "volatility_sl_enabled")
     existing = await get_auto_paper_settings()
     merged = {**existing, **{k: payload[k] for k in editable if k in payload}}
 
@@ -1252,6 +1327,10 @@ async def update_settings_endpoint(payload: dict, request: Request):
         # bırakma koruması — sınırsız gerekirse env ile verilir).
         "max_open_positions": max(1, min(30, int(merged.get("max_open_positions", config.AUTO_PAPER_MAX_OPEN_POSITIONS)))),
         "max_hold_minutes": max(5.0, min(1440.0, float(merged.get("max_hold_minutes", getattr(config, "AUTO_PAPER_MAX_HOLD_MINUTES", 60.0))))),
+        "block_weak_mtf": bool(merged.get("block_weak_mtf", True)),
+        "min_mtf_confluence": max(0.0, min(100.0, float(merged.get("min_mtf_confluence", 45.0)))),
+        "sl_cooldown_minutes": max(0.0, min(120.0, float(merged.get("sl_cooldown_minutes", 10.0)))),
+        "volatility_sl_enabled": bool(merged.get("volatility_sl_enabled", True)),
     }
 
     await database.set_llm_setting("auto_paper_settings", json.dumps(settings))
@@ -1348,6 +1427,7 @@ def reset_state():
         "last_check_at": None,
         "consecutive_errors": 0,
     })
+    _stop_loss_cooldowns.clear()
 
 
 def start_auto_paper_loop() -> bool:

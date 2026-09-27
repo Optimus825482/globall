@@ -360,7 +360,7 @@ class MarketData:
         )
         await self.refresh_24h_tickers()
 
-    async def ensure_history(self, timeframes, *, min_candles=55, candle_limit=120):
+    async def ensure_history(self, timeframes, *, min_candles=55, candle_limit=120, symbols=None):
         """Hydrate only cache series that cannot yet support a strategy decision.
 
         This is intentionally narrower than ``fetch_historical_data``: it
@@ -372,7 +372,8 @@ class MarketData:
             return {"requested": 0, "hydrated": 0, "already_ready": 0, "errors": []}
         required = max(1, int(min_candles))
         limit = max(required + 1, min(self.MAX_HISTORY_CANDLES, int(candle_limit)))
-        symbols = list(dict.fromkeys(str(symbol).upper() for symbol in self.symbols))
+        target_symbols = symbols if symbols is not None else self.symbols
+        symbols = list(dict.fromkeys(str(symbol).upper() for symbol in target_symbols))
         missing = [
             (timeframe, symbol)
             for timeframe in requested
@@ -403,7 +404,7 @@ class MarketData:
                             "symbol": symbol,
                             "last_price": history["closes"][-1],
                             "timestamp": int(time.time() * 1000),
-                            "source": "binance_tr_public_rest_kline",
+                            "source": "binance_public_rest_kline",
                         })
                     return True, None
                 except Exception as exc:

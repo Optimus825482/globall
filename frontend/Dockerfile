@@ -12,8 +12,7 @@ ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 # anında sabitlenir, çalışma anında okunmaz. Bu yüzden TR (TRY/₺) ve Global
 # (USDT) örnekleri AYRI imaj/derleme gerektirir — `docker-compose.yaml`'daki
 # `frontend` ve `frontend_global` bu ARG'ı farklı değerlerle geçer.
-# Varsayılan TRY: mevcut TR deploy'u davranış değişmeden kalır.
-ARG NEXT_PUBLIC_QUOTE_ASSET="TRY"
+ARG NEXT_PUBLIC_QUOTE_ASSET="USDT"
 ENV NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_WS_URL=
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
