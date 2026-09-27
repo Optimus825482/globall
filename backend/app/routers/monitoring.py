@@ -1554,6 +1554,13 @@ async def _deliver_scan_notifications(notified: list) -> None:
                         logger.warning("push etiketi güncellenemedi %s: %s", nid, exc)
             else:
                 logger.warning("Monitoring push gönderilemedi: %s", notif.get("symbol"))
+                # 2026-09-27: geçici teslim hatası (ağ/abonelik) kalıcı
+                # "PANEL UYARISI" etiketi bırakmasın. Bildirim yeniden denemek
+                # üzere erteleme kuyruğuna alınır — `_flush_deferred_push`
+                # ufuk+2dk TTL bayatlığını, sessiz saati, enabled ve VAPID'i
+                # zaten yönetir (geçici hatada bir sonraki turda yeniden dener,
+                # bayat olanı düşürür).
+                _deferred_push.append(notif)
     elif new_notifs and not quiet:
         # VAPID yok: push atlanır, bildirim kaydına işlenir
         logger.info("Monitoring push atlandı: VAPID_PRIVATE_KEY yapılandırılmamış (%d bildirim)", len(new_notifs))
@@ -1835,6 +1842,11 @@ async def _unified_fast_notify_impl(symbol: str, kind: str, score: float) -> dic
                     await database.mark_monitoring_push_sent(nid)
                 except Exception as exc:
                     logger.debug("fast push etiketi %s: %s", nid, exc)
+        else:
+            # 2026-09-27: radar yoluyla aynı sözleşme — geçici teslim hatası
+            # kalıcı "PANEL UYARISI" bırakmasın; `_flush_deferred_push` TTL /
+            # sessiz saat / enabled / VAPID kapılarıyla yeniden dener.
+            _deferred_push.append(notif)
     else:
         notif["push_success"] = False
     try:

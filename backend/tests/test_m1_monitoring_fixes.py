@@ -285,10 +285,29 @@ class PushHonestyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(saved["entries"][0]["sent_via_push"])
         mark.assert_not_called()
 
-    async def test_delivery_success_marks_true(self):
+    async def test_delivery_failure_goes_to_retry_queue(self):
+        """2026-09-27: başarısız teslim kalıcı 'PANEL UYARISI' bırakmaz —
+        bildirim `_flush_deferred_push`'ın yeniden denemesi için kuyruğa alınır
+        (geçici ağ/abonelik hatası sonraki turda tekrar denenir)."""
+        from app.routers import monitoring
+        _reset_state()
+        monitoring._deferred_push.clear()
+        res, saved, mark = await self._notify_one(False)
+        self.assertEqual(res[0]["sent_via_push"], False)
+        self.assertEqual(len(monitoring._deferred_push), 1,
+                         "başarısız push retry için erteleme kuyruğunda olmalı")
+        queued = list(monitoring._deferred_push)[0]
+        self.assertEqual(queued.get("symbol"), "PUSHTRY")
+        self.assertFalse(queued.get("sent_via_push"))
+
+    async def test_delivery_success_not_queued(self):
+        """2026-09-27: başarılı teslim retry kuyruğuna GİRMEZ (çift push yok)."""
+        from app.routers import monitoring
+        _reset_state()
+        monitoring._deferred_push.clear()
         res, saved, mark = await self._notify_one(True)
         self.assertTrue(res[0]["sent_via_push"])
-        mark.assert_called_once_with(500)
+        self.assertEqual(len(monitoring._deferred_push), 0)
 
 
 class DeferredFlushTests(unittest.IsolatedAsyncioTestCase):
