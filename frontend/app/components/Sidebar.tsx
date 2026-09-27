@@ -31,7 +31,7 @@ export default function Sidebar() {
     const isGlobal = exchange.exchange === "binance_global";
     const groups = visibleGroups({ isAdmin, canViewMacd, isGlobal });
     const [open, setOpen] = useState(false);
-    // Grup açık/kapalı durumu. undefined = varsayılan (Pano açık, diğerleri kapalı).
+    // Grup açık/kapalı durumu. undefined = varsayılan (ana açık, diğerleri kapalı).
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
     const [busyLogout, setBusyLogout] = useState(false);
     const [installEvent, setInstallEvent] = useState<any>(null);
@@ -157,25 +157,30 @@ export default function Sidebar() {
             <nav className="flex-1 overflow-y-auto p-3 space-y-3" aria-label="Ana gezinme">
                 {groups.map((group) => {
                     if (!group.items.length) return null;
-                    // İlk grup (Pano) her zaman açık: giriş noktası aranmaz.
-                    const open = openGroups[group.id] ?? group.id === "pano";
+                    // 2026-09-27: `ana` grubu DÜZ liste (grup başlığı yok —
+                    // kullanıcı "gruplamayı kaldır" istedi). `diger` grubu
+                    // açık/kapalı chevron'lu; varsayılan kapalı.
+                    const isFlat = group.id === "ana";
+                    const open = openGroups[group.id] ?? isFlat;
                     return (
                         <div key={group.id} className="space-y-1">
-                            <button
-                                type="button"
-                                onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
-                                className="flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-bunker-800/50"
-                                aria-expanded={open}
-                            >
-                                <span className={`text-[10px] text-bunker-muted transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
-                                <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-bunker-muted">
-                                    {group.label}
-                                </span>
-                                <span className="ml-auto font-mono text-[10px] text-bunker-muted/60">
-                                    {group.items.length}
-                                </span>
-                            </button>
-                            {open && group.items.map((m) => {
+                            {!isFlat && (
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
+                                    className="flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-bunker-800/50"
+                                    aria-expanded={open}
+                                >
+                                    <span className={`text-[10px] text-bunker-muted transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+                                    <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-bunker-muted">
+                                        {group.label}
+                                    </span>
+                                    <span className="ml-auto font-mono text-[10px] text-bunker-muted/60">
+                                        {group.items.length}
+                                    </span>
+                                </button>
+                            )}
+                            {(open || isFlat) && group.items.map((m) => {
                                 const active = pathname === m.href
                                     || (m.alsoActive || []).includes(pathname);
                                 // Terminal etiketi çalışan borsaya göre değişir:
@@ -217,7 +222,8 @@ export default function Sidebar() {
             <div className="p-4 border-t border-bunker-800">
                 {username && (
                     <div className="mb-3">
-                        <Link href="/profile" title="Profili düzenle (şifre güncelle)" className="mb-1 flex items-center gap-1.5 rounded-lg border border-transparent px-1 py-1 font-mono text-[11px] text-bunker-muted transition-colors hover:border-bunker-700 hover:bg-bunker-800/60 hover:text-white">
+                        {/* 2026-09-27: Profil Ayarlar'a sekme taşındı (admin-only). */}
+                        <Link href={isAdmin ? "/settings?tab=profile" : "/settings"} title={isAdmin ? "Ayarlar — Profil sekmesi" : "Ayarlar"} className="mb-1 flex items-center gap-1.5 rounded-lg border border-transparent px-1 py-1 font-mono text-[11px] text-bunker-muted transition-colors hover:border-bunker-700 hover:bg-bunker-800/60 hover:text-white">
                             <span className="w-1.5 h-1.5 rounded-full bg-neon-green" />
                             <span className="truncate">{username}</span>
                             <span className={`rounded px-1.5 py-0.5 font-mono text-[9px] ${isAdmin ? "border border-neon-green/50 text-neon-green" : "border border-bunker-600 text-bunker-muted"}`}>{isAdmin ? "ADMIN" : "USER"}</span>

@@ -55,6 +55,10 @@ describe("menu — kapsam", () => {
     // 2026-09-27: `/symbol-analysis` de LİSTEDEN ÇIKARILDI — kullanıcı
     // isteği: menüden kalktı, Grafik sayfasındaki 🔬 ANALİZ butonunun
     // açtığı modala taşındı (charts/page.tsx iframe).
+    //
+    // 2026-09-27: `/admin` (Yönetim Merkezi) ve `/profile` de menüden
+    // ÇIKARILDI — Yönetim Merkezi Raporlar'a, Profil Ayarlar'a sekme
+    // oldu. Menüde linkleri yok; routelar CANLI kalır.
     const ORPHANS: string[] = [];
     for (const route of ORPHANS) {
       expect(hrefs).toContain(route);
@@ -90,8 +94,6 @@ describe("menu — kapsam", () => {
 });
 
 describe("menu — rol görünürlüğü", () => {
-  const find = (href: string) => allItems.find((i) => i.href === href)!;
-
   it("adminOnly öğeler yalnız admin'e görünür", () => {
     for (const item of allItems.filter((i) => i.adminOnly)) {
       expect(isItemVisible(item, ADMIN)).toBe(true);
@@ -99,11 +101,12 @@ describe("menu — rol görünürlüğü", () => {
     }
   });
 
-  it("requiresStaff: admin VEYA MACD yetkilisi", () => {
-    const admin = find("/admin");
-    expect(isItemVisible(admin, ADMIN)).toBe(true);
-    expect(isItemVisible(admin, MACD_VIEWER)).toBe(true);
-    expect(isItemVisible(admin, USER)).toBe(false);
+  it("2026-09-27: Yönetim Merkezi menüden çıktı (Raporlar sekmesi)", () => {
+    // `/admin` artık menüde YOK — Url'den canlı kalır ama Sidebar'dan
+    // link verilmez; Raporlar'ın "Yönetim" sekmesiyle ulaşılır.
+    // Aynı şekilde `/profile` de Ayarlar sekmesine taşındı.
+    expect(hrefs).not.toContain("/admin");
+    expect(hrefs).not.toContain("/profile");
   });
 
   it("normal kullanıcı menüyü boş görmez", () => {
@@ -112,11 +115,16 @@ describe("menu — rol görünürlüğü", () => {
     expect(groups.flatMap((g) => g.items).length).toBeGreaterThan(5);
   });
 
-  it("normal kullanıcıda Yönetim grubu tamamen gizlenir", () => {
-    // collapseWhenEmpty: grup dolu değilse hiç başlık bile basılmaz.
+  it("normal kullanıcıda Diğer grubu görünür öğelerle kalır", () => {
+    // 2026-09-27: `yonetim` grubu kaldırıldı; yerine `diger`.
+    // `diger` öğeleri (Canlı Terminal, Sistem Sağlığı) role-gate DEĞİL —
+    // normal kullanıcı da görür. `collapseWhenEmpty` yalnız hiç öğe
+    // kalmadığında başlığı gizler.
     const groups = visibleGroups(USER);
-    expect(groups.find((g) => g.id === "yonetim")).toBeUndefined();
-    expect(groups.find((g) => g.id === "yonetim")?.items.length ?? 0).toBe(0);
+    const diger = groups.find((g) => g.id === "diger");
+    expect(diger).toBeDefined();
+    expect(diger!.items.map((i) => i.href)).toContain("/");
+    expect(diger!.items.map((i) => i.href)).toContain("/system-health");
   });
 });
 

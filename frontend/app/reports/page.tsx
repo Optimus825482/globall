@@ -1,10 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { API_BASE, apiRequest, getJSON } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { canViewMacdMonitor } from "../lib/macdAccess";
 import SymbolLink from "../components/SymbolLink";
 import MacdMtfTab from "./MacdMtfTab";
+
+// 2026-09-27: Yönetim Merkezi sidebar'dan çıktı — Raporlar'ın "Yönetim"
+// sekmesine taşındı. `admin/page.tsx` kendi yetki korumasını ve alt-sekme
+// yapısını taşır; burada yalnız gömülür. `ssr: false` ile client-only
+// (admin/page zaten böyle render ediliyor).
+const AdminManagementView = dynamic(() => import("../admin/page"), {
+  loading: () => (
+    <div className="p-12 text-center font-mono text-sm text-bunker-muted animate-pulse">
+      🛠️ Yönetim Merkezi yükleniyor…
+    </div>
+  ),
+  ssr: false,
+});
 import {
   formatSignedTL,
   formatTL,
@@ -1407,7 +1422,8 @@ function SymbolsTab({ day }: { day?: string }) {
    ========================================================================== */
 function AdvancedAdminTabs({ subTab, setSubTab }: { subTab: string; setSubTab: (s: string) => void }) {
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-bunker-800">
+    // 2026-09-27: yatay scroll kaldırıldı — flex-wrap ile satır sarılır.
+    <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-bunker-800">
       {[
         { id: "velocity", label: "⚡ Hız Avcısı Journal" },
         { id: "autonomous", label: "📋 Karar Günlüğü" },
@@ -1618,9 +1634,10 @@ function SelfLearningTab() {
    ANA SAYFA (REPORTS PAGE)
    ========================================================================== */
 export default function ReportsPage() {
-  const { role } = useAuth();
+  const { role, username } = useAuth();
   const isAdmin = role === "admin";
-  const [tab, setTab] = useState<"overview" | "radar" | "positions" | "symbols" | "mtf" | "advanced">("overview");
+  const canMacd = canViewMacdMonitor(role, username);
+  const [tab, setTab] = useState<"overview" | "radar" | "positions" | "symbols" | "mtf" | "advanced" | "management">("overview");
   const [advancedSubTab, setAdvancedSubTab] = useState("velocity");
   const [selectedDay, setSelectedDay] = useState<string>(() => localDateInput());
   const todayStr = localDateInput();
@@ -1632,6 +1649,9 @@ export default function ReportsPage() {
     { id: "symbols", label: "📈 Sembol Başarısı", icon: "📈" },
     { id: "mtf", label: "🧠 MTF Konfluans", icon: "🧠" },
     ...(isAdmin ? [{ id: "advanced", label: "⚙️ Gelişmiş Teşhis", icon: "⚙️" }] : []),
+    // 2026-09-27: Yönetim Merkezi buraya taşındı — admin VEYA MACD
+    // yetkilisi görür (admin/page içindeki koruma ikinci katmandır).
+    ...(isAdmin || canMacd ? [{ id: "management", label: "🛠️ Yönetim", icon: "🛠️" }] : []),
   ];
 
   return (
@@ -1695,8 +1715,9 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Sekmeler */}
-      <div className="flex items-center gap-2 overflow-x-auto border-b border-bunker-800 pb-2 no-scrollbar tab-scroll-fade">
+      {/* Sekmeler — 2026-09-27: yatay scroll kaldırıldı; sığmayan buton
+          yeni satıra sarılır (flex-wrap), asla yatay kayma olmaz. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-bunker-800 pb-2">
         {MAIN_TABS.map((item) => (
           <button
             key={item.id}
@@ -1728,6 +1749,7 @@ export default function ReportsPage() {
           {advancedSubTab === "learning" && <SelfLearningTab />}
         </div>
       )}
+      {tab === "management" && (isAdmin || canMacd) && <AdminManagementView />}
     </main>
   );
 }

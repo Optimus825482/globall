@@ -47,41 +47,33 @@ export type MenuGroup = {
 };
 
 export const MENU_GROUPS: MenuGroup[] = [
+  // 2026-09-27: Gruplamalar kaldırıldı. `ana` düz listedir (Sidebar'da
+  // başlık/chevron GÖSTERİLMEZ — kullanıcı isteği: "gruplamayı kaldır").
+  // Sıralama kullanıcının önerdiği öncelik sırasıdır.
   {
-    id: "pano",
-    label: "Pano",
+    id: "ana",
+    label: "Ana",
     items: [
-      { href: "/", label: "Canlı Terminal", icon: "🖥️", desc: "Canlı pano ve son aktivite" },
-      { href: "/portfolio", label: "Sanal Portföy", icon: "💼", desc: "Canlı sanal portföy ve otonom işlemler" },
       { href: "/monitoring", label: "Radar", icon: "📡", desc: "Otonom izleme ve hız avcısı" },
-    ],
-  },
-  {
-    id: "analiz",
-    label: "Analiz",
-    items: [
+      { href: "/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu TradingView ekranı" },
       { href: "/charts", label: "Grafik", icon: "📈", desc: "Mum grafikleri" },
-      { href: "/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu TradingView ekranı", adminOnly: true },
-      { href: "/chat", label: "Chat", icon: "💬", desc: "Uzman trader LLM asistanı" },
-    ],
-  },
-  {
-    id: "islem",
-    label: "İşlem",
-    items: [
       { href: "/binance-tr", label: "Binance", icon: "🏛️", desc: "Kendi hesabında canlı işlem", exchangeLabel: true },
-      { href: "/reports", label: "Raporlar", icon: "📋", desc: "Sinyal ve işlem raporları" },
+      { href: "/portfolio", label: "Sanal Portföy", icon: "💼", desc: "Canlı sanal portföy ve otonom işlemler" },
+      { href: "/chat", label: "Chat", icon: "💬", desc: "Uzman trader LLM asistanı" },
       { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Bot konfigürasyonu", adminOnly: true },
-      { href: "/profile", label: "Profil", icon: "👤", desc: "Hesap ve şifre" },
+      { href: "/reports", label: "Raporlar", icon: "📋", desc: "Sinyal ve işlem raporları" },
     ],
   },
+  // `diger`: kullanıcı isteği — sık kullanılanlar dışındakiler tek, varsayılan
+  // kapalı bölümde. `/admin` Yönetim Merkezi'ne, `/profile` Ayarlar'a sekme
+  // olarak taşındığı için ana listede yerleri yok; routelar CANLI kalır.
   {
-    id: "yonetim",
-    label: "Yönetim",
+    id: "diger",
+    label: "Diğer",
     collapseWhenEmpty: true,
     items: [
-      { href: "/admin", label: "Yönetim Merkezi", icon: "🛠️", desc: "Veritabanı, kayıtlar, MACD monitör", requiresStaff: true,
-        alsoActive: ["/database", "/audit-logs", "/macd-monitor", "/users"] },
+      { href: "/", label: "Canlı Terminal", icon: "🖥️", desc: "Canlı pano ve son aktivite" },
+      { href: "/system-health", label: "Sistem Sağlığı", icon: "🩺", desc: "Detaylı sistem sağlığı" },
     ],
   },
 ];

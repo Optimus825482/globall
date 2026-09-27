@@ -186,9 +186,10 @@ function AdminPageInner() {
           </span>
         </div>
 
-        {/* Yatay Kayan Sekme Çubuğu */}
+        {/* Sekme Çubuğu — 2026-09-27: yatay scroll kaldırıldı; sığmayan
+            sekmeler yeni satıra sarılır (flex-wrap). */}
         <nav
-          className="flex gap-2 overflow-x-auto pb-1 no-scrollbar scrollbar-none touch-pan-x"
+          className="flex flex-wrap gap-2 pb-1"
           aria-label="Yönetim modülleri"
         >
           {visibleTabs.map((t) => {

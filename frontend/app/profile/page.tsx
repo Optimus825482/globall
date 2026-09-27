@@ -9,7 +9,10 @@ import { fmtDate as fmtDateOnly } from "../lib/format";
 
 type Notice = { kind: "ok" | "err"; text: string } | null;
 
-export default function ProfilePage() {
+// 2026-09-27: Profil Ayarlar'a sekme taşındı. Sayfa rotası (`/profile`)
+// canlı kalır; içerik ayrıca headless `ProfileContent` olarak dışa verilir
+// ve `settings/page.tsx` aynı bileşeni kendi sekmesinde gömer.
+export function ProfileContent() {
   const { username, role } = useAuth();
   const [uiMode, toggleUiMode] = useUiMode();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -71,7 +74,9 @@ export default function ProfilePage() {
   const fmtDate = (value: number | null) => (value ? fmtDateOnly(value) : "—");
 
   return (
-    <main className="page-shell">
+    <>
+      {/* 2026-09-27: `page-shell` sarmalayıcı kaldırıldı — settings sekmesi
+          kendi kapsayıcısında gömerken çift kenar boşluğu oluşmasın. */}
       <div className="page-heading">
         <p className="eyebrow text-neon-green">KULLANICI PROFİLİ</p>
         <h1 className="font-mono text-2xl font-bold text-white">Profil</h1>
@@ -188,6 +193,15 @@ export default function ProfilePage() {
           </label>
         </div>
       </section>
+    </>
+  );
+}
+
+// Rota sayfası (`/profile`) — headless içeriği page-shell sarar.
+export default function ProfilePage() {
+  return (
+    <main className="page-shell">
+      <ProfileContent />
     </main>
   );
 }

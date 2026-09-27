@@ -38,6 +38,11 @@ type Config = {
 import ChatSettingsPanel from "./ChatSettingsPanel";
 import RequireAdmin from "../components/RequireAdmin";
 import { useAuth } from "../lib/auth";
+// 2026-09-27: Profil Ayarlar'a sekme taşındı. `ProfileContent` headless
+// bileşendir (kendi page-shell'i yok) — settings kapsayıcısına girer.
+import { ProfileContent } from "../profile/page";
+
+type SettingsTab = "symbols" | "radar" | "app" | "notifications" | "strategies" | "llm" | "chat" | "auto-paper" | "macd" | "profile";
 
 export default function SettingsPage() {
   return <RequireAdmin><SettingsPageInner /></RequireAdmin>;
@@ -48,7 +53,7 @@ export default function SettingsPage() {
 const resetWalletText = QUOTE_ASSET === "TRY" ? "10.000 TL" : `1.000 ${QUOTE_ASSET}`;
 
 function SettingsPageInner() {
-  const [activeTab, setActiveTab] = useState<"symbols" | "radar" | "app" | "notifications" | "strategies" | "llm" | "chat" | "auto-paper" | "macd">("symbols");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("symbols");
   const [cfg, setCfg] = useState<Config | null>(null);
   const [draft, setDraft] = useState<Partial<Config>>({});
   const [saving, setSaving] = useState(false);
@@ -98,12 +103,13 @@ function SettingsPageInner() {
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab") as any;
-    if (tab && ["symbols", "radar", "app", "strategies", "auto-paper", "macd", "llm", "chat"].includes(tab)) {
+    const validTabs: SettingsTab[] = ["symbols", "radar", "app", "strategies", "auto-paper", "macd", "llm", "chat", "notifications", "profile"];
+    if (tab && validTabs.includes(tab)) {
       setActiveTab(tab);
     }
   }, []);
 
-  const selectTab = (key: "symbols" | "radar" | "app" | "notifications" | "strategies" | "llm" | "chat" | "auto-paper" | "macd") => {
+  const selectTab = (key: SettingsTab) => {
     setActiveTab(key);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -621,8 +627,9 @@ function SettingsPageInner() {
       )}
 
       {cfg && (
-        <nav className="flex gap-2 overflow-x-auto border-b border-bunker-800 pb-2 no-scrollbar scrollbar-none touch-pan-x" aria-label="Ayar sekmeleri">
+        <nav className="flex flex-wrap gap-2 border-b border-bunker-800 pb-2" aria-label="Ayar sekmeleri">
           {([
+            ["profile", "Profil", "👤"],
             ["symbols", "Semboller", "🪙"],
             ["radar", "Radar", "📡"],
             ["app", "Uygulama Ayarları", "⚙️"],
@@ -642,6 +649,10 @@ function SettingsPageInner() {
 
       {cfg && (
         <>
+          {/* 2026-09-27: Profil sekmesi — headless ProfileContent gömülür. */}
+          <div className={`${activeTab !== "profile" ? "hidden" : ""}`}>
+            <ProfileContent />
+          </div>
           <div className={`${activeTab !== "radar" ? "hidden" : ""}`}>
             <div className="space-y-4">
               <RadarSettingsPanel />
