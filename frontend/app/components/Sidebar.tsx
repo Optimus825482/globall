@@ -229,64 +229,107 @@ export default function Sidebar() {
                         </div>
                     );
                 })}
-            </nav>
 
-            <div className="p-4 border-t border-bunker-800">
-                {username && (
-                    <div className="mb-3">
-                        {/* 2026-09-27: Profil Ayarlar'a sekme taşındı (admin-only). */}
-                        <Link href={isAdmin ? "/settings?tab=profile" : "/settings"} title={isAdmin ? "Ayarlar — Profil sekmesi" : "Ayarlar"} className="mb-1 flex items-center gap-1.5 rounded-lg border border-transparent px-1 py-1 font-mono text-[11px] text-bunker-muted transition-colors hover:border-bunker-700 hover:bg-bunker-800/60 hover:text-white">
-                            <span className="w-1.5 h-1.5 rounded-full bg-neon-green" />
-                            <span className="truncate">{username}</span>
-                            <span className={`rounded px-1.5 py-0.5 font-mono text-[9px] ${isAdmin ? "border border-neon-green/50 text-neon-green" : "border border-bunker-600 text-bunker-muted"}`}>{isAdmin ? "ADMIN" : "USER"}</span>
-                            <span className="ml-auto text-[10px] opacity-60">⚙</span>
-                        </Link>
+                {/* Alt Bölüm: Artık ayrı/sticky değil, menü akışının içinde doğal olarak yer alır; ultra-kompakt & siber-estetik */}
+                <div className="mt-auto pt-3 border-t border-bunker-800/80 space-y-2">
+                    {username && (
+                        <div className="flex items-center justify-between gap-1.5 p-2 rounded-xl bg-bunker-950/70 border border-cyan-500/20 hover:border-cyan-400/40 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
+                            <Link
+                                href={isAdmin ? "/settings?tab=profile" : "/settings"}
+                                title={isAdmin ? "Ayarlar — Profil sekmesi" : "Ayarlar"}
+                                className="flex items-center gap-2 min-w-0 flex-1 group"
+                            >
+                                <div className="relative w-6 h-6 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center shrink-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="font-mono text-xs font-bold text-white group-hover:text-cyan-300 transition-colors truncate">
+                                            {username}
+                                        </span>
+                                        <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold uppercase ${
+                                            isAdmin
+                                                ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
+                                                : "bg-bunker-800 text-bunker-muted border border-bunker-700"
+                                        }`}>
+                                            {isAdmin ? "ADMIN" : "USER"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </Link>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <Link
+                                    href={isAdmin ? "/settings?tab=profile" : "/settings"}
+                                    title="Ayarlar"
+                                    className="p-1.5 rounded-lg text-bunker-muted hover:text-cyan-300 hover:bg-cyan-950/40 transition-colors"
+                                >
+                                    <span className="text-xs">⚙</span>
+                                </Link>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setBusyLogout(true);
+                                        try { await logout?.(); } finally { setBusyLogout(false); }
+                                    }}
+                                    disabled={busyLogout}
+                                    title="Oturumu kapat ve giriş ekranına dön"
+                                    className="p-1.5 rounded-lg text-bunker-muted hover:text-neon-red hover:bg-neon-red/10 transition-colors disabled:opacity-50"
+                                >
+                                    <span className="text-xs font-bold">{busyLogout ? "…" : "⏻"}</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {installEvent && (
                         <button
                             type="button"
-                            onClick={async () => { setBusyLogout(true); try { await logout?.(); } finally { setBusyLogout(false); } }}
-                            disabled={busyLogout}
-                            className="flex w-full items-center justify-center gap-2 rounded-lg border border-bunker-700 bg-bunker-950/70 px-3 py-2 font-mono text-[11px] font-bold text-bunker-muted transition-colors hover:border-neon-red/60 hover:bg-neon-red/10 hover:text-neon-red disabled:opacity-50"
-                            title="Oturumu kapat ve giriş ekranına dön"
+                            onClick={install}
+                            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg border border-cyan-400/40 bg-cyan-950/40 text-cyan-300 font-mono text-[10px] font-bold tracking-wide hover:bg-cyan-900/50 hover:border-cyan-400 transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)]"
                         >
-                            {busyLogout ? "ÇIKILIYOR…" : "⏻ OTURUMU KAPAT"}
+                            <span>⬇</span> UYGULAMAYI YÜKLE
                         </button>
+                    )}
+
+                    <Link
+                        href="/system-health"
+                        onClick={() => setOpen(false)}
+                        className={`group flex items-center justify-between p-2 rounded-xl border transition-all ${
+                            pathname === "/system-health"
+                                ? "border-cyan-400/60 bg-cyan-950/40 shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+                                : "border-bunker-800 bg-bunker-950/40 hover:border-cyan-500/30 hover:bg-bunker-900/60"
+                        }`}
+                        title="Detaylı sistem sağlığını görüntüle"
+                    >
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                health?.status === "ok" && liveStatus === "open"
+                                    ? "bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]"
+                                    : "bg-yellow-300"
+                            }`} />
+                            <div className="flex flex-col">
+                                <span className="font-mono text-[10px] font-bold tracking-wider text-bunker-muted group-hover:text-white transition-colors">
+                                    SİSTEM SAĞLIĞI
+                                </span>
+                                <span className="font-mono text-[9px] text-cyan-400/80">
+                                    {health ? `${String(health.status || "bilinmiyor").toUpperCase()} · WS ${liveStatus === "open" ? "BAĞLI" : "KAPALI"}` : "BAĞLANTI BEKLENİYOR"}
+                                </span>
+                            </div>
+                        </div>
+                        <span className="font-mono text-[10px] text-bunker-muted group-hover:text-cyan-300 transition-colors ml-1">
+                            →
+                        </span>
+                    </Link>
+
+                    <div className="flex items-center justify-between px-1 text-[9px] font-mono text-bunker-muted/50">
+                        <span className="flex items-center gap-1" title="Build ID">
+                            <span className="w-1 h-1 rounded-full bg-cyan-400/50" />
+                            v{typeof window !== "undefined" ? (document.documentElement.dataset.buildId || process.env.NEXT_PUBLIC_BUILD_ID || "dev") : (process.env.NEXT_PUBLIC_BUILD_ID || "dev")}
+                        </span>
+                        <span className="text-[8px] text-cyan-500/60 font-semibold tracking-wider">GLOBAL SPOT</span>
                     </div>
-                )}
-                <Button variant={installEvent ? "primary" : "secondary"} onClick={install} disabled={!installEvent} className="w-full mb-4">⬇ {installEvent ? "UYGULAMA OLARAK YÜKLE" : "YÜKLEME İÇİN TARAYICI MENÜSÜ"}</Button>
-                {!installed && !installEvent && !isStandalone && (
-                    <div className="mb-4 rounded-lg border border-bunker-700 bg-bunker-900/70 p-3">
-                        <p className="font-mono text-xs font-bold text-white">📱 UYGULAMA OLARAK YÜKLE</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-bunker-muted">
-                            {/iPad|iPhone|iPod/.test(navigator.userAgent)
-                                ? "Tarayıcıda Paylaş (⎋) → “Ana Ekrana Ekle” ile kurun."
-                                : "Butonu kullanarak uygulamayı cihazınıza kurun."}
-                        </p>
-                    </div>
-                )}
-                <Link
-                    href="/system-health"
-                    onClick={() => setOpen(false)}
-                    className={`group block rounded-lg border p-2.5 transition-all ${
-                        pathname === "/system-health"
-                            ? "border-neon-green/50 bg-neon-green/10"
-                            : "border-bunker-800 bg-bunker-950/60 hover:border-bunker-700 hover:bg-bunker-900/80"
-                    }`}
-                    title="Detaylı sistem sağlığını görüntüle"
-                >
-                    <div className="flex items-center justify-between">
-                        <p className="eyebrow group-hover:text-white transition-colors">SİSTEM SAĞLIĞI</p>
-                        <span className="font-mono text-[10px] text-bunker-muted group-hover:text-neon-green transition-colors">Detay →</span>
-                    </div>
-                    <p className={`font-mono text-xs mt-1 flex items-center gap-1.5 ${health?.status === "ok" && liveStatus === "open" ? "text-neon-green" : "text-yellow-300"}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${health?.status === "ok" && liveStatus === "open" ? "bg-neon-green animate-pulse" : "bg-yellow-300"}`} />
-                        {health ? `${String(health.status || "bilinmiyor").toUpperCase()} · WS ${liveStatus === "open" ? "BAĞLI" : "KAPALI"}` : "BAĞLANTI BEKLENİYOR"}
-                    </p>
-                    <p className="font-mono text-[10px] text-bunker-muted mt-0.5">Canlı servis & altyapı durumu</p>
-                </Link>
-                <p className="mt-2 font-mono text-[9px] text-bunker-muted/60" title="Build ID — eğer güncelleme sonrası bu değişmişse yeni sürüm yüklenmiştir">
-                  ● v{typeof window !== "undefined" ? (document.documentElement.dataset.buildId || process.env.NEXT_PUBLIC_BUILD_ID || "dev") : (process.env.NEXT_PUBLIC_BUILD_ID || "dev")}
-                </p>
-            </div>
+                </div>
+            </nav>
         </aside>
         {notificationsOpen && <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4" onClick={() => setNotificationsOpen(false)}>
             <section className="w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="notifications-title">
