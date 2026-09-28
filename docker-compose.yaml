@@ -43,6 +43,9 @@ services:
     image: pgvector/pgvector:pg17-bookworm
     restart: unless-stopped
     stop_grace_period: 10s
+    exclude_from_hc: true
+    labels:
+      - "traefik.enable=false"
     # #74 ile aynı gerekçe: limitli konteyner. Global DB'si TR'den
     # küçük olduğu için bellek tavanı da düşük tutuldu; sınırsız
     # bırakılırsa konteyner host'u OOM'a düşürebilir.
@@ -86,6 +89,8 @@ services:
     image: scalperagent-backend:latest
     restart: unless-stopped
     stop_grace_period: 10s
+    labels:
+      - "traefik.enable=false"
     # ⚠️ Port BİLEREK burada sabitleniyor. `backend/Dockerfile:18,20` 8004'i
     # DÜZ yazıyor (EXPOSE + CMD). Global örneği 8005'i konuşuyor
     # (`nginx-global/default.conf:35` ve aşağıdaki healthcheck).
@@ -230,6 +235,8 @@ services:
         NEXT_PUBLIC_QUOTE_ASSET: USDT
     restart: unless-stopped
     stop_grace_period: 5s
+    labels:
+      - "traefik.enable=false"
     # ⚠️ Aynı tuzak frontend'de de var: `frontend/Dockerfile:25,34` PORT'u
     # 3004 olarak DÜZ yazıyor. Global örneği 3005'i konuşuyor
     # (`nginx-global/default.conf:36` ve healthcheck). Ayrı `PORT` env'i
@@ -275,6 +282,11 @@ services:
     image: scalperagent-gateway-global:latest
     restart: unless-stopped
     stop_grace_period: 5s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.gateway_global.loadbalancer.healthcheck.path=/gateway-health"
+      - "traefik.http.services.gateway_global.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.services.gateway_global.loadbalancer.healthcheck.timeout=3s"
     # #74: nginx düşük ayak izli; 1G üst sınç yeterli (rate-limit zone'ları
     # 10m × 3 = ~30 MB). 1 CPU.
     mem_limit: 1g
@@ -315,6 +327,9 @@ services:
   db-backup-global:
     image: pgvector/pgvector:pg17-bookworm
     restart: unless-stopped
+    exclude_from_hc: true
+    labels:
+      - "traefik.enable=false"
     mem_limit: 512m
     cpus: 0.5
     deploy:
