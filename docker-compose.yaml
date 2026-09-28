@@ -191,6 +191,11 @@ services:
       interval: 15s
       timeout: 12s
       retries: 10
+    networks:
+      - default
+      - coolify
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     logging: *default-logging
 
   # AYRI frontend build'i ZORUNLU: `NEXT_PUBLIC_*` Next.js tarafından build

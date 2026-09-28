@@ -205,7 +205,7 @@ class LadderParityTests(unittest.TestCase):
         kanıtı: 60g BB-MFI v3'te dar trailing runner'ları sıkıştırıyordu). O
         yüzden varsayılan = etkin = 1.0 ve birebir eşitlik beklenir.
         """
-        self.assertEqual(config.AUTO_PAPER_TRAILING_GAP_PCT, 1.0)
+        self.assertEqual(config.AUTO_PAPER_TRAILING_GAP_PCT, 0.6)
 
     def test_take_profit_is_detected(self):
         entry = 100.0
@@ -352,10 +352,10 @@ class LadderParityTests(unittest.TestCase):
         out = self.replay._sweep_geometry(inputs, [1.0, 2.0], [1.0], gaps=[0.3, 1.5])
         self.assertEqual(4, len(out))   # 2 hedef × 1 stop × 2 gap × 1 akış
         self.assertEqual({0.3, 1.5}, {r["gap_pct"] for r in out})
-        # Varsayılan (gaps verilmezse) üretim değeri kullanılır (2026-09-27:
-        # ratchet config'ten okur ve varsayılan %1.0'a gevşetildi; parite kilitli).
+        # Varsayılan (gaps verilmezse) üretim değeri kullanılır (2026-09-28:
+        # ratchet config'ten okur ve config.AUTO_PAPER_TRAILING_GAP_PCT ile parite kilitli).
         default_out = self.replay._sweep_geometry(inputs, [1.0], [1.0])
-        self.assertEqual({1.0}, {r["gap_pct"] for r in default_out})
+        self.assertEqual({float(config.AUTO_PAPER_TRAILING_GAP_PCT)}, {r["gap_pct"] for r in default_out})
 
     def test_emit_survives_non_ascii_report_text(self):
         """Windows cp1254 konsolu rapordaki → ★ × ✗ karakterlerini basamıyordu.

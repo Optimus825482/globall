@@ -362,10 +362,11 @@ async def test_ping_tr(
     }
 
     payload_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    timeout_sec = max(8.0, float(getattr(config, "BINANCE_TR_BRIDGE_TIMEOUT", 5.0)))
     start = time.monotonic()
     try:
         status_code, body = await asyncio.to_thread(
-            _send_http_request, target_url, target_secret, payload_bytes, 4.0
+            _send_http_request, target_url, target_secret, payload_bytes, timeout_sec
         )
         latency = round((time.monotonic() - start) * 1000, 2)
         return {
@@ -377,12 +378,17 @@ async def test_ping_tr(
         }
     except Exception as exc:
         latency = round((time.monotonic() - start) * 1000, 2)
+        err_text = str(exc)
+        if "Read timed out" in err_text:
+            err_text = f"Hedef sunucu yanıt vermedi (Zaman Aşımı): {target_url} ({timeout_sec}s). Hedef servisin ayakta olduğundan veya sunucu içi NAT loopback durumundan emin olun."
+        elif "Connection refused" in err_text:
+            err_text = f"Bağlantı reddedildi: {target_url} adresinde port kapalı veya servis çalışmıyor."
         return {
             "ok": False,
             "status_code": None,
             "latency_ms": latency,
             "target_url": target_url,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": err_text,
         }
 
 
