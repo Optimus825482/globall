@@ -67,6 +67,22 @@ def _rule_value(rule, market, ticker):
 
 
 async def deliver_web_push(message, *, title=None, url=None, tag=None, extra=None, usernames=None):
+    try:
+        if extra and isinstance(extra, dict) and extra.get("symbol"):
+            from app.tr_bridge import queue_signal_to_tr
+            queue_signal_to_tr(
+                symbol=extra["symbol"],
+                signal_type=str(extra.get("source") or "web_push"),
+                score=float(extra["score"]) if extra.get("score") is not None else None,
+                price=float(extra["price"]) if extra.get("price") is not None else None,
+                action="BUY_SIGNAL",
+                title=title or f"{extra['symbol']} Bildirimi",
+                message=message,
+                data=extra,
+            )
+    except Exception:
+        pass
+
     vapid_private, subject = os.getenv("VAPID_PRIVATE_KEY", "").strip(), os.getenv("VAPID_SUBJECT", "mailto:alerts@example.com").strip()
     if not vapid_private: return {"ok": False, "skipped": True, "reason": "vapid_not_configured"}
     try:
@@ -188,6 +204,20 @@ async def _evaluate_single_rule(market, rule, now, on_paper_trigger):
     message = f"{rule['symbol']} alarmı: değer {value:g} {unit} ({rule['operator']} {rule['threshold']:g})"
     event = await database.record_alert_trigger(rule["id"], event_key, value, message, "warning")
     if not event: return events
+    try:
+        from app.tr_bridge import queue_signal_to_tr
+        queue_signal_to_tr(
+            symbol=rule["symbol"],
+            signal_type="price_alert",
+            score=None,
+            price=value,
+            action="ALERT",
+            title=f"{rule['symbol']} Fiyat Alarmı",
+            message=message,
+            data={"rule_id": rule["id"], "operator": rule.get("operator"), "threshold": rule.get("threshold"), "unit": unit},
+        )
+    except Exception as exc:
+        logger.debug("alert TR bridge dispatch hatasi: %s", exc)
     channels = rule.get("notify_channels") or ["websocket"]
     push_result = None
     if "web_push" in channels:

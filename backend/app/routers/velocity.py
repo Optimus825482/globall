@@ -2523,6 +2523,25 @@ async def _open_velocity_position_reserved(candidate: dict, symbol: str) -> dict
                                            entry_context_extra=context)
     if result and str(result.get("action", "")).upper() == "BUY_SIGNAL":
         await ws_manager.broadcast({"type": "signal", "data": result})
+        try:
+            from app.tr_bridge import queue_signal_to_tr
+            queue_signal_to_tr(
+                symbol=symbol,
+                signal_type="velocity_auto",
+                score=float(candidate.get("velocity_score") or 0.0),
+                price=price,
+                action="BUY_SIGNAL",
+                title="Otonom Hız Avcısı Sinyali",
+                message=f"{symbol} Hız Avcısı sinyali (skor: {candidate.get('velocity_score')})",
+                data={
+                    "velocity_score": candidate.get("velocity_score"),
+                    "mode": candidate.get("mode"),
+                    "target_pct": target_pct,
+                    "horizon_minutes": horizon_minutes,
+                },
+            )
+        except Exception as exc:
+            logger.debug("velocity TR bridge dispatch hatasi: %s", exc)
         return {"symbol": symbol, "status": "PAPER_OPENED", "order_value_try": order_value,
                  "entry": price,
                  "stop_loss_pct": (stop_loss_pct * 100) if stop_loss_pct is not None else None,

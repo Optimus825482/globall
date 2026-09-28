@@ -229,6 +229,17 @@ class Config:
     # öncelik: çalışma-anı ayarı > env > bu sabit. Nakit/likidite/sembol-başı
     # (pyramiding) limitleri bundan bağımsız olarak ayrıca geçerlidir.
     MAX_OPEN_POSITIONS = max(0, int(os.getenv("MAX_OPEN_POSITIONS", "5")))
+    # ---- Binance TR Lead-Lag Signal Bridge (2026-09-28) -------------------
+    # Global'deki hareketler TR'den birkaç saniye önce başlar. Global'de
+    # üretilen radar, hızlı, velocity veya push sinyalleri bu köprü üzerinden
+    # Binance TR klonuna HTTP webhook olarak iletilir.
+    BINANCE_TR_BRIDGE_ENABLED = os.getenv("BINANCE_TR_BRIDGE_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+    BINANCE_TR_BRIDGE_URL = os.getenv("BINANCE_TR_BRIDGE_URL", "https://scalper.erkanerdem.online/api/bridge/global-signal").strip()
+    BINANCE_TR_BRIDGE_SECRET = os.getenv("BINANCE_TR_BRIDGE_SECRET", "scalper-global-tr-bridge-secret-key").strip()
+    BINANCE_TR_BRIDGE_TIMEOUT = float(os.getenv("BINANCE_TR_BRIDGE_TIMEOUT", "3.0"))
+    BINANCE_TR_BRIDGE_MIN_SCORE = float(os.getenv("BINANCE_TR_BRIDGE_MIN_SCORE", "0.0"))
+    BINANCE_TR_BRIDGE_COOLDOWN_SEC = float(os.getenv("BINANCE_TR_BRIDGE_COOLDOWN_SEC", "10.0"))
+
     MAX_TICKER_AGE_SEC = 15
     MAX_POSITION_HOLD_SEC = 4 * 60 * 60
     EARLY_FAILURE_SEC = int(os.getenv("EARLY_FAILURE_SEC", str(45 * 60)))

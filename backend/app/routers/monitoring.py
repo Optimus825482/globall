@@ -1588,6 +1588,28 @@ async def _deliver_scan_notifications(notified: list) -> None:
         await ws_manager.broadcast({"type": "monitoring_alert", "data": notified})
     except Exception as exc:
         logger.warning("Monitoring WS broadcast hatasi: %s", exc)
+    try:
+        from app.tr_bridge import queue_signal_to_tr
+        for notif in notified:
+            sym = notif.get("symbol")
+            if sym:
+                queue_signal_to_tr(
+                    symbol=sym,
+                    signal_type="radar",
+                    score=float(notif.get("score") or 0.0),
+                    price=float(notif.get("price") or 0.0) if notif.get("price") else None,
+                    action="BUY_SIGNAL",
+                    title=notif.get("title") or "Radar Yükseliş Sinyali",
+                    message=notif.get("message") or "",
+                    data={
+                        "target_pct": notif.get("target_pct"),
+                        "horizon_minutes": notif.get("horizon_minutes"),
+                        "sources": notif.get("sources"),
+                        "unified": notif.get("unified"),
+                    },
+                )
+    except Exception as exc:
+        logger.debug("TR Bridge radar dispatch hatasi: %s", exc)
     # LLM İKİNCİ GÖZ (2026-09-26): teslim edilen yeni bildirimler şemalı LLM
     # onayına gönderilir; karar ayrı bir bildirim olarak ekrana düşer.
     _maybe_llm_second_eye(new_notifs)
@@ -1858,6 +1880,25 @@ async def _unified_fast_notify_impl(symbol: str, kind: str, score: float) -> dic
         await ws_manager.broadcast({"type": "monitoring_alert", "data": [notif]})
     except Exception as exc:
         logger.debug("fast WS broadcast: %s", exc)
+    try:
+        from app.tr_bridge import queue_signal_to_tr
+        queue_signal_to_tr(
+            symbol=sym,
+            signal_type=f"fast_{kind}",
+            score=float(candidate.get("unified_score") or candidate.get("score") or 0.0),
+            price=float(candidate.get("price") or 0.0) if candidate.get("price") else None,
+            action="BUY_SIGNAL",
+            title=notif.get("title") or "Hızlı Yükseliş Sinyali",
+            message=notif.get("message") or "",
+            data={
+                "kind": kind,
+                "sources": notif.get("sources"),
+                "target_pct": notif.get("target_pct"),
+                "horizon_minutes": notif.get("horizon_minutes"),
+            },
+        )
+    except Exception as exc:
+        logger.debug("fast TR bridge dispatch: %s", exc)
     logger.info("BİRLEŞİK SİNYAL: %s tetik=%s füzyon=%.1f kaynak=%s",
                 sym, kind, float(candidate.get("unified_score") or 0),
                 "+".join(notif.get("sources") or []))
@@ -2135,6 +2176,27 @@ async def _rising_deliver(notified: list) -> None:
             await ws_manager.broadcast({"type": "rising_alert", "data": notified})
         except Exception as exc:
             logger.warning("Yükseliş WS broadcast hatası: %s", exc)
+    try:
+        from app.tr_bridge import queue_signal_to_tr
+        for notif in (primary if unified else notified):
+            sym = notif.get("symbol")
+            if sym:
+                queue_signal_to_tr(
+                    symbol=sym,
+                    signal_type="rising",
+                    score=float(notif.get("score") or 0.0),
+                    price=float(notif.get("price") or 0.0) if notif.get("price") else None,
+                    action="BUY_SIGNAL",
+                    title=notif.get("title") or "Yükseliş Eğilimi Sinyali",
+                    message=notif.get("message") or "",
+                    data={
+                        "target_pct": notif.get("target_pct"),
+                        "horizon_minutes": notif.get("horizon_minutes"),
+                        "sources": notif.get("sources"),
+                    },
+                )
+    except Exception as exc:
+        logger.debug("rising TR bridge dispatch hatasi: %s", exc)
     # LLM İKİNCİ GÖZ: birincil (bastırılmamış) yükseliş bildirimleri değerlendirmeye girer.
     _maybe_llm_second_eye(primary if unified else notified)
 
