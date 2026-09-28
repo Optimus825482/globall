@@ -97,6 +97,49 @@ class BinancePublicAdapterTests(unittest.TestCase):
             self.assertEqual(1, len(sleep_calls))
             self.assertEqual(2.0, sleep_calls[0])
 
+    def test_dynamic_pacing_under_threshold(self):
+        """Under 950 weight, no throttling delay should be introduced."""
+        saved = (pub._rate_limit_used["total"], pub._weight_reported_at)
+        try:
+            pub._rate_limit_used["total"] = 500
+            pub._weight_reported_at = time.time()
+            with mock.patch.object(time, "sleep") as mock_sleep:
+                pub._throttle_for_weight()
+            self.assertFalse(mock_sleep.called)
+        finally:
+            pub._rate_limit_used["total"], pub._weight_reported_at = saved
+
+    def test_dynamic_pacing_between_950_and_1100(self):
+        """Between 950 and 1100, dynamic micro-delay (200-450ms) should be introduced."""
+        saved = (pub._rate_limit_used["total"], pub._weight_reported_at)
+        try:
+            pub._rate_limit_used["total"] = 1000
+            pub._weight_reported_at = time.time()
+            sleeps = []
+            with mock.patch.object(time, "sleep", side_effect=lambda s: sleeps.append(s)):
+                pub._throttle_for_weight()
+            self.assertEqual(1, len(sleeps))
+            self.assertGreaterEqual(sleeps[0], 0.20)
+            self.assertLessEqual(sleeps[0], 0.45)
+        finally:
+            pub._rate_limit_used["total"], pub._weight_reported_at = saved
+
+    def test_dynamic_pacing_emergency_capped_at_15s(self):
+        """At 1100+ emergency weight, wait time should be capped at 15s max (not 60s freeze)."""
+        saved = (pub._rate_limit_used["total"], pub._weight_reported_at)
+        try:
+            pub._rate_limit_used["total"] = 1150
+            # Reported 5 seconds ago -> remaining window is 55s, but emergency cap is 15s
+            pub._weight_reported_at = time.time() - 5.0
+            sleeps = []
+            with mock.patch.object(time, "sleep", side_effect=lambda s: sleeps.append(s)):
+                pub._throttle_for_weight()
+            self.assertEqual(1, len(sleeps))
+            self.assertLessEqual(sleeps[0], 15.0)
+            self.assertGreater(sleeps[0], 0.0)
+        finally:
+            pub._rate_limit_used["total"], pub._weight_reported_at = saved
+
     def test_rate_limit_snapshot_schema(self):
         snap = pub.rate_limit_snapshot()
         self.assertIn("total_weight_used", snap)

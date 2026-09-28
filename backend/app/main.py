@@ -2848,6 +2848,7 @@ def _invalidate_binance_cost_cache(user_id: int, asset: str | None = None) -> No
 # ÇOK KULLANICILI: anahtar (user_id, date) — A kullanıcısının gün işlemleri
 # B kullanıcısına sızmasın.
 _binance_day_trades_cache: dict[tuple[int, str], tuple[float, dict]] = {}
+_binance_day_trades_inflight: dict[tuple[int, str, int], asyncio.Future] = {}
 
 
 async def _load_seen_binance_assets(username: str) -> set[str]:
@@ -3576,34 +3577,11 @@ async def binance_set_sl_tp(payload: dict, request: Request):
 
 
 
-@app.get("/api/binance/trades-day")
-async def binance_trades_day(request: Request, date: str, limit_per_symbol: int = 200):
-    """Seçilen günün (YYYY-MM-DD, TR saatine göre) TÜM alım/satım işlemleri.
-
-    Binance TR'de sembolsüz işlem geçmişi ucu yoktur; bu yüzden varlık
-    havuzundan (mevcut bakiyeler + geçmişte görülmüş varlıklar) türetilen
-    {ASSET}_TRY / {ASSET}_USDT çiftleri paralel sorgulanır. Sonuç zamana
-    göre sıralı döner; gün bazında 60 sn cache'lenir.
-    """
-    api_key, api_secret = await _decrypt_binance_creds(request)
-    try:
-        day_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=3)))
-    except ValueError:
-        raise HTTPException(status_code=422, detail="date YYYY-MM-DD formatında olmalı")
+async def _compute_binance_trades_day(api_key: str, api_secret: str, date: str, limit_per_symbol: int,
+                                     username: str, user_id: int, day_start: datetime) -> dict:
     day_end = day_start + timedelta(days=1)
     start_ms = int(day_start.timestamp() * 1000)
     end_ms = int(day_end.timestamp() * 1000)
-
-    # ÇOK KULLANICILI (2026-09-19): cache ve görülmüş varlık havuzu kullanıcıya özel.
-    principal = _require_user(request)
-    username = str(principal.get("username") or "").strip()
-    user = await database.get_user_by_username(username)
-    user_id = int(user["id"]) if user else 0
-
-    now_ts = time.time()
-    cache = _binance_day_trades_cache.get((user_id, date))
-    if cache and cache[0] > now_ts:
-        return cache[1]
 
     # Varlık havuzu: mevcut bakiyeler + daha önce görülmüş varlıklar
     # (tamamen satılmış varlıkların o günkü işlemleri kaçmasın).
@@ -3884,10 +3862,63 @@ async def binance_trades_day(request: Request, date: str, limit_per_symbol: int 
                "daily": {"realized_pnl_try": round(daily_net, 2),
                          "gross_pnl_try": round(daily_gross, 2),
                          "wins": wins, "losses": losses, "unmatched": unmatched}}
-    today_str = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d")
-    cache_ttl = 20.0 if date == today_str else 300.0
-    _binance_day_trades_cache[(user_id, date)] = (now_ts + cache_ttl, payload)
     return payload
+
+
+@app.get("/api/binance/trades-day")
+async def binance_trades_day(request: Request, date: str, limit_per_symbol: int = 200):
+    """Seçilen günün (YYYY-MM-DD, TR saatine göre) TÜM alım/satım işlemleri.
+
+    Binance TR'de sembolsüz işlem geçmişi ucu yoktur; bu yüzden varlık
+    havuzundan (mevcut bakiyeler + geçmişte görülmüş varlıklar) türetilen
+    {ASSET}_TRY / {ASSET}_USDT çiftleri paralel sorgulanır. Sonuç zamana
+    göre sıralı döner; gün bazında 60 sn cache'lenir.
+    """
+    api_key, api_secret = await _decrypt_binance_creds(request)
+    try:
+        day_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=3)))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="date YYYY-MM-DD formatında olmalı")
+
+    principal = _require_user(request)
+    username = str(principal.get("username") or "").strip()
+    user = await database.get_user_by_username(username)
+    user_id = int(user["id"]) if user else 0
+
+    now_ts = time.time()
+    cache = _binance_day_trades_cache.get((user_id, date))
+    if cache and cache[0] > now_ts:
+        return cache[1]
+
+    # In-flight coalescing: aynı kullanıcı ve tarih için paralel gelen istekleri birleştir
+    inflight_key = (user_id, date, int(limit_per_symbol))
+    inflight_fut = _binance_day_trades_inflight.get(inflight_key)
+    if inflight_fut is not None:
+        try:
+            return await asyncio.shield(inflight_fut)
+        except Exception:
+            pass
+
+    loop = asyncio.get_running_loop()
+    curr_fut = loop.create_future()
+    _binance_day_trades_inflight[inflight_key] = curr_fut
+
+    try:
+        payload = await _compute_binance_trades_day(
+            api_key, api_secret, date, limit_per_symbol, username, user_id, day_start
+        )
+        today_str = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d")
+        cache_ttl = 20.0 if date == today_str else 300.0
+        _binance_day_trades_cache[(user_id, date)] = (time.time() + cache_ttl, payload)
+        if not curr_fut.done():
+            curr_fut.set_result(payload)
+        return payload
+    except Exception as exc:
+        if not curr_fut.done():
+            curr_fut.set_exception(exc)
+        raise
+    finally:
+        _binance_day_trades_inflight.pop(inflight_key, None)
 
 
 @app.get("/api/binance/trades")

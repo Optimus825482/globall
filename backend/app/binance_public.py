@@ -40,6 +40,9 @@ REST_BAN_BACKOFF_BASE_SEC = 600.0
 REST_BAN_BACKOFF_MAX_SEC = 3600.0
 REST_MAX_CONCURRENCY = 8
 REST_WEIGHT_SOFT_LIMIT = 5000
+REST_WEIGHT_PACING_START = 950
+REST_WEIGHT_EMERGENCY_LIMIT = 1100
+REST_EMERGENCY_WAIT_MAX_SEC = 15.0
 REST_WEIGHT_WINDOW_SEC = 60.0
 
 _REQUEST_SEMAPHORE = threading.Semaphore(REST_MAX_CONCURRENCY)
@@ -75,15 +78,34 @@ class TransientDecodeError(RuntimeError):
 
 
 def _throttle_for_weight() -> None:
-    """Sunucunun bildirdiği ağırlık tavana yaklaştıysa pencereyi bekle."""
+    """Akıllı Dinamik Pacing (60s Kaba Blokaj Yerine):
+
+    - used < 950: 0ms gecikme (tam hızda akış).
+    - 950 <= used < 1100: İstekler arasına 200-400ms mikro gecikme koyarak harcamayı yavaşlatır.
+    - used >= 1100: Yalnızca acil durumda maksimum 15 saniyelik koruma beklemesi uygular.
+    """
     with _weight_lock:
         used = int(_rate_limit_used.get("total") or 0)
         reported_at = _weight_reported_at
-    if used < REST_WEIGHT_SOFT_LIMIT or not reported_at:
+
+    if used < REST_WEIGHT_PACING_START or not reported_at:
         return
-    wait = REST_WEIGHT_WINDOW_SEC - (time.time() - reported_at)
-    if wait > 0:
-        time.sleep(min(wait, REST_WEIGHT_WINDOW_SEC))
+
+    now = time.time()
+    elapsed = now - reported_at
+    if elapsed >= REST_WEIGHT_WINDOW_SEC:
+        return
+
+    if used < REST_WEIGHT_EMERGENCY_LIMIT:
+        # 950 - 1100 aralığında 200ms - 400ms kademeli mikro gecikme
+        progress = (used - REST_WEIGHT_PACING_START) / float(REST_WEIGHT_EMERGENCY_LIMIT - REST_WEIGHT_PACING_START)
+        micro_delay = 0.20 + (progress * 0.20) + random.uniform(0.01, 0.04)
+        time.sleep(micro_delay)
+    else:
+        # Acil durum: 1100+ üzeri, kaba 60s yerine maksimum 15s tavanlı bekleme
+        wait = REST_WEIGHT_WINDOW_SEC - elapsed
+        if wait > 0:
+            time.sleep(min(wait, REST_EMERGENCY_WAIT_MAX_SEC))
 
 
 def _retry_delay(attempt: int, headers=None) -> float:
