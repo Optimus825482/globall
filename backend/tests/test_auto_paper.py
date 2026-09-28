@@ -530,6 +530,30 @@ class AutoPaperQualityFiltersTests(unittest.IsolatedAsyncioTestCase):
         finally:
             auto_paper._stop_loss_cooldowns.clear()
 
+    async def test_stop_loss_cooldown_from_db_blocks_reentry(self):
+        sym = "DBSLTEST"
+        now = time.time()
+        # Hafıza boş olsa dahi DB'de son 5 dk içinde stop_loss varsa engeller
+        auto_paper._stop_loss_cooldowns.clear()
+        with patch.object(auto_paper.database, "get_last_auto_paper_stop_loss_time", AsyncMock(return_value=now - 60.0)), \
+             patch("app.routers.auto_paper.market.ticker_freshness", return_value={"fresh": True, "age_sec": 1.0}), \
+             patch("app.routers.auto_paper.market.get_ticker", return_value={"last_price": 100.0, "timestamp": now * 1000}):
+            notif = _make_notification(symbol=sym, score=80.0, price=100.0)
+            res = await auto_paper.try_open_from_notification(notif)
+            self.assertIsNotNone(res)
+            self.assertEqual(res.get("status"), "blocked")
+            self.assertEqual(res.get("reason"), "stop_loss_cooldown")
+
+    async def test_open_trade_discards_symbol_from_passive_symbols(self):
+        sym = "PASSDISCARD"
+        config.PASSIVE_SYMBOLS = {sym}
+        notif = _make_notification(symbol=sym, score=80.0, price=100.0)
+        with patch("app.routers.auto_paper.market.ticker_freshness", return_value={"fresh": True, "age_sec": 1.0}), \
+             patch("app.routers.auto_paper.market.get_ticker", return_value={"last_price": 100.0, "timestamp": time.time() * 1000}), \
+             patch.object(auto_paper, "_open_new_trade", AsyncMock(return_value={"status": "opened"})):
+            await auto_paper.try_open_from_notification(notif)
+            self.assertNotIn(sym, config.PASSIVE_SYMBOLS)
+
     def test_reset_state_clears_sl_cooldowns(self):
         auto_paper._stop_loss_cooldowns["COIN1"] = time.time() + 100
         auto_paper.reset_state()

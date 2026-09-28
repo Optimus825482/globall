@@ -860,13 +860,17 @@ async def _close_positions_on_passivation(passive_symbols):
                 await ws_manager.broadcast({"type": "signal", "data": sig})
                 print(f"[Activity passive exit] {symbol} pasif; açık pozisyon PnL'den bağımsız kapatıldı @ {price}", flush=True)
 
-    # 2. Otonom paper trade açık pozisyonları kapat (2026-09-21 Erkan kararı)
+    # 2. Otonom paper trade açık pozisyonları:
+    # Otonom paper pozisyonları TP/SL/Trailing ve Max Hold ile yönetilir;
+    # piyasa akışı veya taze hacmi olan pozisyonlar symbol_deactivated ile kapatılmaz.
     try:
         from app.routers import auto_paper as _ap
         open_auto_trades = await database.list_auto_paper_trades(status="open")
         for trade in open_auto_trades:
             sym = str(trade.get("symbol") or "").upper()
             if sym in passive_symbols:
+                if sym in set(getattr(market, "symbols", []) or []) or float(market.ticker_24h.get(sym, 0) or 0) > 0:
+                    continue
                 trade_id = int(trade["id"])
                 try:
                     price, _ = await _fresh_public_price(sym)
@@ -898,6 +902,10 @@ async def refresh_symbol_activity():
     all_tickers = await ticker_24h()
     market.ticker_24h = {
         str(row.get("symbol", "")).upper(): float(row.get("quoteVolume", 0) or 0)
+        for row in all_tickers or [] if row.get("symbol")
+    }
+    ticker_24h_changes = {
+        str(row.get("symbol", "")).upper(): float(row.get("priceChangePercent", 0) or 0.0)
         for row in all_tickers or [] if row.get("symbol")
     }
     now_ms = int(time.time() * 1000)
@@ -993,13 +1001,26 @@ async def refresh_symbol_activity():
         # YENİ: Kapsamlı pasif kontrolü - M1 ve M5'de de pasif olmalı
         truly_passive = comprehensive.get("is_passive", False)
         
+        chg_24h = ticker_24h_changes.get(symbol, 0.0)
+        # Yükselen veya radar/stream evrenindeki semboller pasife alınamaz
+        is_rising = bool(
+            chg_24h > 0.0 or
+            symbol in set(config.SYMBOLS) or
+            symbol in set(getattr(market, "symbols", []) or [])
+        )
+        if is_rising:
+            truly_passive = False
+
         has_pos = symbol in open_symbols
-        if has_pos:
-            # Açık pozisyonu olan sembol her zaman aktif tutulur; TP/SL/trailing/max-hold ile yönetilir.
+        if has_pos or is_rising:
+            # Açık pozisyonu olan veya yükselen sembol her zaman aktif tutulur; TP/SL/trailing/max-hold ile yönetilir.
             active = True
             truly_passive = False
         else:
-            active = bool(ticker and volume_ok and movement_gate_ok and volume_ratio_ok and m1_flat_ok and not truly_passive)
+            # Yalnızca gerçekten ölü veya hacimsiz semboller pasiftir.
+            # Anlık 5m hacim dalgalanması yaşayan normal semboller pasife alınmaz.
+            is_dead = truly_passive or (not volume_ok and chg_24h <= 0.0)
+            active = bool(ticker and volume_ok and not is_dead)
         flat_reason = (f"m1_flat_candles:5m={m1_activity['flat_5m_count']}/5,"
                        f"30m={m1_activity['flat_30m_count']}/30")
         statuses[symbol] = {

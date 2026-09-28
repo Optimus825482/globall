@@ -1896,7 +1896,7 @@ function AutoPaperSettingsPanel() {
             </div>
             <div>
               <label className="text-xs font-mono text-bunker-muted block mb-1">Stop Sonrası Bekleme (dk)</label>
-              <input type="number" min="0" max="120" step="1" disabled={pending} value={draft.sl_cooldown_minutes ?? 10} onChange={(e) => set("sl_cooldown_minutes", Number(e.target.value))} className="input" />
+              <input type="number" min="0" max="120" step="1" disabled={pending} value={draft.sl_cooldown_minutes ?? 5} onChange={(e) => set("sl_cooldown_minutes", Number(e.target.value))} className="input" />
             </div>
             <div>
               <label className="text-xs font-mono text-bunker-muted block mb-1">Volatilite Stopu (ATR)</label>

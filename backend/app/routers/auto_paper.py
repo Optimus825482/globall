@@ -254,15 +254,29 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
                         "açılmadı (fail-closed): %s", symbol, quiet_exc)
             return _blocked(symbol, "quiet_hours_query_error")
 
-        # Stop-loss sonrası bekleme süresi (cooldown) kapısı:
+        # Stop-loss sonrası bekleme süresi (cooldown) kapısı (5 dk):
         # Stop olan sembole hemen peş peşe yeniden girip kayıp serisi (churn) yaratmayı engelle.
         now_ts = time.time()
+        cooldown_min = float(settings.get("sl_cooldown_minutes", 5.0))
         sl_cooldown_until = _stop_loss_cooldowns.get(symbol, 0.0)
+        if cooldown_min > 0 and now_ts >= sl_cooldown_until:
+            try:
+                last_sl = await database.get_last_auto_paper_stop_loss_time(symbol)
+                if last_sl and (now_ts - last_sl) < (cooldown_min * 60.0):
+                    sl_cooldown_until = last_sl + (cooldown_min * 60.0)
+                    _stop_loss_cooldowns[symbol] = sl_cooldown_until
+            except Exception as exc:
+                logger.debug("auto_paper %s db sl cooldown kontrol hatası: %s", symbol, exc)
+
         if now_ts < sl_cooldown_until:
             rem = round(sl_cooldown_until - now_ts, 0)
             logger.info("auto_paper %s: stop_loss sonrası bekleme süresi devrede (kalan: %.0f sn) — açılmadı",
                         symbol, rem)
             return _blocked(symbol, "stop_loss_cooldown", remaining_sec=rem)
+
+        # Aktif işleme giren sembol pasif listesinden temizlenir
+        if hasattr(config, "PASSIVE_SYMBOLS") and isinstance(config.PASSIVE_SYMBOLS, set):
+            config.PASSIVE_SYMBOLS.discard(symbol)
 
         # Mevcut fiyat
         ticker = market.get_ticker(symbol)
@@ -1095,7 +1109,7 @@ async def _close_trade(trade_id: int, symbol: str, exit_price: float, now: float
 
         if reason == "stop_loss":
             settings = await get_auto_paper_settings()
-            cooldown_min = float(settings.get("sl_cooldown_minutes", 10.0))
+            cooldown_min = float(settings.get("sl_cooldown_minutes", 5.0))
             if cooldown_min > 0:
                 _stop_loss_cooldowns[symbol] = now + (cooldown_min * 60.0)
                 logger.info("auto_paper %s: stop_loss sonrası %.0f dakika yeni giriş bekleme süresi (cooldown) başlatıldı",
@@ -1253,7 +1267,7 @@ async def get_default_settings() -> dict:
         "max_hold_minutes": getattr(config, "AUTO_PAPER_MAX_HOLD_MINUTES", 60.0),
         "block_weak_mtf": True,
         "min_mtf_confluence": 45.0,
-        "sl_cooldown_minutes": 10.0,
+        "sl_cooldown_minutes": 5.0,
         "volatility_sl_enabled": True,
     }
 
@@ -1329,7 +1343,7 @@ async def update_settings_endpoint(payload: dict, request: Request):
         "max_hold_minutes": max(5.0, min(1440.0, float(merged.get("max_hold_minutes", getattr(config, "AUTO_PAPER_MAX_HOLD_MINUTES", 60.0))))),
         "block_weak_mtf": bool(merged.get("block_weak_mtf", True)),
         "min_mtf_confluence": max(0.0, min(100.0, float(merged.get("min_mtf_confluence", 45.0)))),
-        "sl_cooldown_minutes": max(0.0, min(120.0, float(merged.get("sl_cooldown_minutes", 10.0)))),
+        "sl_cooldown_minutes": max(0.0, min(120.0, float(merged.get("sl_cooldown_minutes", 5.0)))),
         "volatility_sl_enabled": bool(merged.get("volatility_sl_enabled", True)),
     }
 

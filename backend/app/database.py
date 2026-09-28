@@ -5451,6 +5451,18 @@ async def get_auto_paper_trade(trade_id: int) -> dict | None:
     return await _run_db(op)
 
 
+async def get_last_auto_paper_stop_loss_time(symbol: str) -> float | None:
+    """Sembolün son stop_loss kapanış zamanını getir (cooldown kontrolü için)."""
+    sym = str(symbol).upper()
+    def op(conn):
+        row = conn.execute(
+            "SELECT exit_time FROM auto_paper_trades WHERE symbol=? AND status='closed' AND exit_reason='stop_loss' ORDER BY exit_time DESC LIMIT 1",
+            (sym,)
+        ).fetchone()
+        return float(row[0]) if (row and row[0] is not None) else None
+    return await _run_db(op)
+
+
 async def list_auto_paper_trades(
     status: str | None = None,
     limit: int = 100,
