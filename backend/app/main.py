@@ -40,8 +40,9 @@ from app.promotion import pipeline as promotion_pipeline
 from app import universe_registry
 from app import database
 from app import runtime_deps
-from app.binance_tr_public import klines as fetch_klines, historical_klines, trading_symbols, ticker_24h, orderbook, top_gainers
-from app import binance_tr_public
+from app.binance_public import klines as fetch_klines, historical_klines, trading_symbols, ticker_24h, orderbook, top_gainers
+from app import binance_public
+binance_tr_public = binance_public
 from app.technical_analysis import calculate_snapshot, _atr, _bollinger, _cci, _ema, _mfi, _sma
 from app.forecast_learning import normalize_direction, evaluate_forecast, derive_lessons
 from app import ml_forecast
@@ -960,10 +961,15 @@ async def startup_market_warmup():
     """Hydrate only active paper timeframes without blocking process startup."""
     priority_timeframes = list(config.PRIORITY_TIMEFRAMES)
     try:
+        active_syms = list(dict.fromkeys(
+            [str(s).upper() for s in (config.SYMBOLS or [])] +
+            [str(s).upper() for s in (analyzer.positions.keys() if hasattr(analyzer, "positions") else [])]
+        ))
         hydration = await market.ensure_history(
             priority_timeframes,
             min_candles=55,
             candle_limit=120,
+            symbols=active_syms,
         )
         ready = int(hydration.get("hydrated", 0) or 0) + int(hydration.get("already_ready", 0) or 0)
         if ready:
@@ -975,7 +981,7 @@ async def startup_market_warmup():
         error_count = len(hydration.get("errors", []) or [])
         print(
             f"[MarketData] startup warmup tamamlandı | timeframes={len(priority_timeframes)} "
-            f"ready_series={ready} errors={error_count}",
+            f"symbols={len(active_syms)} ready_series={ready} errors={error_count}",
             flush=True,
         )
     except Exception as exc:
@@ -1078,48 +1084,78 @@ async def startup_services():
     # (G-19: market.timeframes/evren yukarıda, analyzer.load_state()'ten önce
     #  atanır — burada tekrar atama yok.)
     _start_background(startup_market_warmup, "startup-market-warmup")
+    await asyncio.sleep(0.05)
     _start_background(backfill_missing_active_history, "historical-backfill-active")
+    await asyncio.sleep(0.05)
     _start_background(history_candle_loop, "history-candle-loop")
+    await asyncio.sleep(0.05)
     _start_background(lambda: market.connect(skip_history=True), "market-connect")
+    await asyncio.sleep(0.05)
     _start_background(microstructure_snapshot_loop, "microstructure-snapshot")
+    await asyncio.sleep(0.05)
     _start_background(strategy_loop, "strategy-loop")
+    await asyncio.sleep(0.05)
     # Canlı Hesap açık pozisyonları: WS fiyat + 24s hacim tick'leri (4 sn)
     _start_background(binance_price_tick_loop, "binance-price-tick")
-    # Binance TR hesap + pozisyon verisi: 15 sn'de bir WS push (REST polling yerine)
+    await asyncio.sleep(0.05)
+    # Binance hesap + pozisyon verisi: 15 sn'de bir WS push (REST polling yerine)
     _start_background(binance_account_push_loop, "binance-account-push")
+    await asyncio.sleep(0.05)
     _start_background(llm_forecast_evaluation_loop, "llm-forecast-evaluator")
+    await asyncio.sleep(0.05)
     _start_background(chart_forecast_evaluation_loop, "chart-forecast-evaluator")
+    await asyncio.sleep(0.05)
     _start_background(chat_prediction_learning_loop, "chat-prediction-learner")
+    await asyncio.sleep(0.05)
     _start_background(chat_prediction_auto_trade_loop, "chat-prediction-auto-trade")
+    await asyncio.sleep(0.05)
     # Velocity ATR profillerini hemen yükle (ilk scan doğru eşikle çalışsın)
     await load_velocity_atr_profiles()
     _start_background(velocity_learning_loop, "velocity-learner")
+    await asyncio.sleep(0.05)
     # Otonom Hız Avcısı: her M5 kapanışında tarama yapıp en iyi adaya paper
     # pozisyon açar. Kendi içinde kapılıdır (her turda VELOCITY_AUTO_ENABLED +
     # llm_paper_trade_enabled yeniden okunur) → ayar kapatılınca tarama durur,
     # yeniden açılınca restart gerekmeden devam eder. Paper-only; gerçek emir yok.
     _start_background(autonomous_velocity_loop, "velocity-autonomous")
+    await asyncio.sleep(0.05)
     _start_background(radar_loop, "radar-loop")
+    await asyncio.sleep(0.05)
     _start_background(top_gainers_refresh_loop, "top-gainers-monitor")
+    await asyncio.sleep(0.05)
     _start_background(symbol_activity_loop, "symbol-activity")
+    await asyncio.sleep(0.05)
     _start_background(llm_idle_trigger_loop, "llm-idle-trigger")
+    await asyncio.sleep(0.05)
     _start_background(llm_position_manager_loop, "llm-position-manager")
+    await asyncio.sleep(0.05)
     _start_background(learning_promotion_loop, "learning-promotion")
+    await asyncio.sleep(0.05)
     _start_background(retention_loop, "retention")
+    await asyncio.sleep(0.05)
     _start_background(ml_training_loop, "ml_training")
+    await asyncio.sleep(0.05)
     _start_background(calibration_refresh_loop, "calibration-refresh")
+    await asyncio.sleep(0.05)
     _start_background(correlation_refresh_loop, "correlation-refresh")
+    await asyncio.sleep(0.05)
     # 2026-09-26 denetimi (bölüm 2.3): türev + BTC makro cache'ini periyodik
     # dolduran döngü. Bu olmadan Master Surge'un EXTREME_LONG (-15) cezası ve
     # BTC panik kapısı yapısal olarak HİÇ uygulanmıyordu.
     _start_background(derivatives_refresh_loop, "derivatives-refresh")
+    await asyncio.sleep(0.05)
     _start_background(ws_broadcast_loop, "ws-broadcast")
+    await asyncio.sleep(0.05)
     _start_background(alert_loop, "alert-engine")
+    await asyncio.sleep(0.05)
     _start_background(monitoring_start_loop, "monitoring-start")
+    await asyncio.sleep(0.05)
     # Yükseliş sinyali kanıt doldurma: Raporlar > YÜKSELİŞ EĞİLİMİ Sonuç sütunu
     # bu döngü olmadan sonsuza dek BEKLİYOR kalıyordu (kolonlar vardı, dolduran yok).
     _start_background(rising_evidence_loop, "rising-evidence")
+    await asyncio.sleep(0.05)
     _start_background(auto_paper_start_loop, "auto-paper-start")
+    await asyncio.sleep(0.05)
     _start_background(macd_monitor_start_loop, "macd-monitor")
 
 async def monitoring_start_loop():
@@ -1626,33 +1662,93 @@ async def get_market_symbols():
                                      "exchange": config.EXCHANGE,
                                      "exchange_label": config.EXCHANGE_LABEL})
 
+_market_klines_cache: dict[str, tuple[float, list]] = {}
+_market_klines_inflight: dict[str, asyncio.Future] = {}
+_MARKET_KLINES_CACHE_TTL_SEC = 4.0
+
 @app.get("/api/market-klines/{symbol}")
 async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200):
-    """Single public market-data adapter used by all UI candle consumers."""
-    # "3m" (M3): teknik grafik sayfası seçilebilir ufuklar arasında sunuyor;
-    # listede yoktu ve uç 400 dönüyordu → M3 grafiği BOŞ çiziyordu.
+    """Single public market-data adapter used by all UI candle consumers.
+
+    Features 4s RAM micro-cache and inflight request coalescing to eliminate 499s
+    and redundant upstream hits.
+    """
     if interval not in {"1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"}:
         raise HTTPException(status_code=400, detail="Geçersiz timeframe")
-    rows = await fetch_klines(symbol, interval, limit=max(20, min(int(limit), 500)))
-    # CANLI AKIS (2026-09-16): grafik bu (sembol, ufuk) çiftini görüntülüyor →
-    # WS canlı yayınına al. Böylece `ws_live_candles` OLUŞAN mumu yalnızca
-    # gerçekten bakılan çift için yayınlar (70 sembol × 6 ufuk = ~420 stream'in
-    # tamamı için yayın yapmak gereksiz yüktü). Kayıt TTL'lidir ve grafik bu uç
-    # noktayı zaten 10 sn'de bir çağırdığı için kendiliğinden tazelenir —
-    # istemci tarafında değişiklik GEREKMEZ.
+
+    clean_sym = symbol.replace("_", "").upper()
+    candle_limit = max(20, min(int(limit), 500))
+    cache_key = f"{clean_sym}:{interval}:{candle_limit}"
+    now = time.monotonic()
+
+    # 1. Hızlı 4 saniyelik mikro RAM önbelleği
+    cached = _market_klines_cache.get(cache_key)
+    if cached and now < cached[0]:
+        try:
+            from app.ws_live_candles import note_viewed
+            note_viewed(clean_sym, interval)
+        except Exception:
+            pass
+        return {
+            "symbol": clean_sym,
+            "interval": interval,
+            "candles": cached[1],
+            "source": "binance_public_cache",
+        }
+
+    # 2. Eşzamanlı istek birleştirme (inflight coalescing + asyncio.shield)
+    future = _market_klines_inflight.get(cache_key)
+    if future is not None:
+        try:
+            rows = await asyncio.shield(future)
+            try:
+                from app.ws_live_candles import note_viewed
+                note_viewed(clean_sym, interval)
+            except Exception:
+                pass
+            return {
+                "symbol": clean_sym,
+                "interval": interval,
+                "candles": rows,
+                "source": "binance_public_coalesced",
+            }
+        except Exception:
+            pass
+
+    # 3. Sıfırdan fetch & inflight yayını
+    loop = asyncio.get_running_loop()
+    inflight_fut = loop.create_future()
+    _market_klines_inflight[cache_key] = inflight_fut
+    try:
+        rows = await fetch_klines(clean_sym, interval, limit=candle_limit)
+        _market_klines_cache[cache_key] = (time.monotonic() + _MARKET_KLINES_CACHE_TTL_SEC, rows)
+        if not inflight_fut.done():
+            inflight_fut.set_result(rows)
+    except Exception as exc:
+        if not inflight_fut.done():
+            inflight_fut.set_exception(exc)
+        raise
+    finally:
+        _market_klines_inflight.pop(cache_key, None)
+
     try:
         from app.ws_live_candles import note_viewed
-        note_viewed(symbol, interval)
+        note_viewed(clean_sym, interval)
     except Exception as exc:
         logger.debug("canlı mum aboneliği kaydedilemedi: %s", exc)
-    return {"symbol": symbol.replace("_", "").upper(), "interval": interval,
-            "candles": rows, "source": "binance_tr_public"}
+
+    return {
+        "symbol": clean_sym,
+        "interval": interval,
+        "candles": rows,
+        "source": "binance_public",
+    }
 
 @app.get("/api/market-depth/{symbol}")
 async def get_market_depth(symbol: str, limit: int = 20):
-    """Binance TR canlı tahta derinliğini frontend için güvenli ve CORS'suz proxy eder."""
+    """Binance Global canlı tahta derinliğini frontend için güvenli ve CORS'suz proxy eder."""
     try:
-        from app.binance_tr_public import depth as fetch_depth
+        from app.binance_public import depth as fetch_depth
         data = await fetch_depth(symbol, limit=max(5, min(int(limit), 100)))
         return data
     except Exception as exc:

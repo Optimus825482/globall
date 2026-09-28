@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 import numpy as np
 import websockets
 
-from app.binance_tr_public import WS_BASE, WS_BASES, klines as fetch_klines, ticker_24h, book_tickers
+from app.binance_public import WS_BASE, WS_BASES, klines as fetch_klines, ticker_24h, book_tickers
 from app.config import config
 from app.market_intelligence import whale_activity_from_tape
 
@@ -209,7 +209,7 @@ class MarketData:
             history["last_closed_at_ms"] = closed_at_ms
         if history["timestamps"]:
             history["updated_at"] = time.time()
-            history["source"] = "binance_tr_public_rest"
+            history["source"] = "binance_public_rest"
         return history
 
     async def repair_history_gaps(self, symbols=None, timeframes=None):
@@ -289,7 +289,7 @@ class MarketData:
                     result["last_closed_at_ms"] = max(
                         int(history.get("last_closed_at_ms") or 0), fresh_rows["last_closed_at_ms"])
                     result["updated_at"] = time.time()
-                    result["source"] = "binance_tr_public_rest_gap_fill"
+                    result["source"] = "binance_public_rest_gap_fill"
                     self.klines[timeframe][symbol] = result
                     repaired += 1
                 except Exception as exc:
@@ -331,7 +331,7 @@ class MarketData:
                             "symbol": symbol,
                             "last_price": last_price,
                             "timestamp": int(time.time() * 1000),
-                            "source": "binance_tr_public_rest_kline",
+                            "source": "binance_public_rest_kline",
                         })
                     print(
                         f"[MarketData] geçmiş hazır | symbol={symbol} timeframe={tf} "

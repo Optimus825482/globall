@@ -93,7 +93,7 @@ services:
     # 8005'e gider ve konteyner sağlıklı görünmeden ÖLÜR — 2026-09-27'deki
     # deploy'un ikinci gizli hatası bu olurdu. Kaynak kod iki yerde
     # (Dockerfile + compose) yaşadığı için burada tek doğru yer bırakıldı.
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005", "--timeout-keep-alive", "65", "--backlog", "4096"]
     # #74: en yüksek tüketici — 309 sembollük evrende scanner + LLM + WS
     # yayıncısı aynı süreçte. 2G / 2 CPU.
     mem_limit: 2g

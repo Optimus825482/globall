@@ -17,4 +17,4 @@ RUN mkdir -p /data
 ENV SCALPER_DB_PATH=/data/scalper_db_v4.sqlite
 EXPOSE 8004
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004", "--timeout-keep-alive", "65", "--backlog", "4096"]
