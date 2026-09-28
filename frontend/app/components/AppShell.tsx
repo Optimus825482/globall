@@ -8,6 +8,7 @@ import RadarAlertModal from "./RadarAlertModal";
 import BottomNav from "./BottomNav";
 import { reconcilePushSubscription } from "../lib/push";
 import { useExchangeProvider } from "../lib/exchange";
+import { MarketModeProvider } from "../lib/marketMode";
 
 const CURRENT_BUILD = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
 
@@ -48,15 +49,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
   return (
     <ExchangeContext.Provider value={exchange}>
-    <div className="flex min-h-screen">
-      <div data-sidebar><Sidebar /></div>
-      <main className="flex-1 min-w-0 min-h-screen overflow-y-auto">
-        <div data-topbar><TopBar /></div>
-        <div className="content-shell">{children}</div>
-      </main>
-      <BottomNav />
-      <RadarAlertModal />
-    </div>
+      <MarketModeProvider>
+        <div className="flex min-h-screen">
+          <div data-sidebar><Sidebar /></div>
+          <main className="flex-1 min-w-0 min-h-screen overflow-y-auto">
+            <div data-topbar><TopBar /></div>
+            <div className="content-shell">{children}</div>
+          </main>
+          <BottomNav />
+          <RadarAlertModal />
+        </div>
+      </MarketModeProvider>
     </ExchangeContext.Provider>
   );
 }

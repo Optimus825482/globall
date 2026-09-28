@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BOTTOM_NAV_ITEMS } from "../lib/menu";
-
-const NAV_ITEMS = BOTTOM_NAV_ITEMS;
+import { BOTTOM_NAV_ITEMS, FOREX_BOTTOM_NAV_ITEMS } from "../lib/menu";
+import { useMarketMode } from "../lib/marketMode";
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const { marketMode } = useMarketMode();
+  const navItems = marketMode === "forex" ? FOREX_BOTTOM_NAV_ITEMS : BOTTOM_NAV_ITEMS;
 
   const handleOpenMenu = () => {
     if (typeof window !== "undefined") {
@@ -21,7 +22,7 @@ export default function BottomNav() {
       style={{ paddingBottom: "max(0.35rem, env(safe-area-inset-bottom, 0px))" }}
       aria-label="Mobil Hızlı Gezinme"
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
         return (
           <Link

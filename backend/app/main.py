@@ -215,9 +215,11 @@ app.include_router(monitoring.router)
 from app.routers import auto_paper as auto_paper_routes
 from app.routers import macd_monitor as macd_monitor_routes
 from app.routers import bridge as bridge_routes
+from app.routers import forex as forex_routes
 app.include_router(auto_paper_routes.router)
 app.include_router(macd_monitor_routes.router)
 app.include_router(bridge_routes.router)
+app.include_router(forex_routes.router)
 
 
 _TTS_VOICE = "tr-TR-EmelNeural"

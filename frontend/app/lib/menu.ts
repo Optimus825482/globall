@@ -79,6 +79,30 @@ export const MENU_GROUPS: MenuGroup[] = [
   },
 ];
 
+export const FOREX_MENU_GROUPS: MenuGroup[] = [
+  {
+    id: "forex_ana",
+    label: "Forex & Emtia",
+    items: [
+      { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
+      { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex TradingView ekranı" },
+      { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği" },
+      { href: "/forex/calendar", label: "Ekonomik Takvim", icon: "📅", desc: "Canlı makroekonomik veriler ve haberler" },
+      { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı demo hesap yönetimi" },
+      { href: "/chat", label: "Forex Chat", icon: "💬", desc: "Makroekonomi ve FX uzman AI asistanı" },
+    ],
+  },
+  {
+    id: "forex_diger",
+    label: "Diğer",
+    collapseWhenEmpty: true,
+    items: [
+      { href: "/system-health", label: "Sistem Sağlığı", icon: "🩺", desc: "Detaylı sistem sağlığı" },
+      { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Sistem konfigürasyonu", adminOnly: true },
+    ],
+  },
+];
+
 /**
  * Mobil alt navigasyon — en sık kullanılan 4 iş + menü düğmesi.
  * Masaüstü menüsünün kısaltması değil, AYRI bir yüzeydir: mobilde 4 öğe
@@ -89,6 +113,13 @@ export const BOTTOM_NAV_ITEMS: MenuItem[] = [
   { href: "/monitoring", label: "Radar", icon: "📡", desc: "" },
   { href: "/charts", label: "Grafik", icon: "📈", desc: "" },
   { href: "/reports", label: "Raporlar", icon: "📋", desc: "" },
+];
+
+export const FOREX_BOTTOM_NAV_ITEMS: MenuItem[] = [
+  { href: "/forex/portfolio", label: "Portföy", icon: "💼", desc: "" },
+  { href: "/forex", label: "Forex Radar", icon: "📡", desc: "" },
+  { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "" },
+  { href: "/forex/calendar", label: "Takvim", icon: "📅", desc: "" },
 ];
 
 export type Visibility = {
@@ -105,8 +136,10 @@ export function isItemVisible(item: MenuItem, v: Visibility): boolean {
   return true;
 }
 
-export function visibleGroups(v: Visibility): MenuGroup[] {
-  return MENU_GROUPS
+export function visibleGroups(v: Visibility, marketMode: "spot" | "forex" = "spot"): MenuGroup[] {
+  const targetGroups = marketMode === "forex" ? FOREX_MENU_GROUPS : MENU_GROUPS;
+  return targetGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => isItemVisible(item, v)) }))
     .filter((group) => !group.collapseWhenEmpty || group.items.length > 0);
 }
+

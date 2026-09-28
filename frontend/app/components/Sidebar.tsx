@@ -13,6 +13,7 @@ import { canViewMacdMonitor } from "../lib/macdAccess";
 import { ML_PROB_CLASS, ML_PROB_TITLE, formatMlProbability } from "../lib/mlProbability";
 import { visibleGroups } from "../lib/menu";
 import { useExchange } from "../lib/exchange";
+import { useMarketMode } from "../lib/marketMode";
 
 const formatNotificationDate = (value: unknown) => {
     const numeric = Number(value);
@@ -26,10 +27,11 @@ export default function Sidebar() {
     const isAdmin = role === "admin";
     const canViewMacd = canViewMacdMonitor(role, username);
     const exchange = useExchange();
+    const { marketMode, setMarketMode } = useMarketMode();
     // Menü borsaya göre değişir: `/binance-tr` private API'ye bağlıdır ve
     // Global örneğinde (api.binance.com) hiç çalışmaz.
     const isGlobal = exchange.exchange === "binance_global";
-    const groups = visibleGroups({ isAdmin, canViewMacd, isGlobal });
+    const groups = visibleGroups({ isAdmin, canViewMacd, isGlobal }, marketMode);
     const [open, setOpen] = useState(false);
     // Grup açık/kapalı durumu. undefined = varsayılan (ana açık, diğerleri kapalı).
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -139,20 +141,60 @@ export default function Sidebar() {
                         ✕
                     </button>
                 </div>
-                {/* Global Borsa Rozet Kartı: TR ile yan yana açıldığında anında ayırt edilir */}
-                <div className="mt-3 rounded-lg border border-cyan-500/30 bg-gradient-to-r from-cyan-950/60 via-slate-900/60 to-blue-950/50 p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)]">
+                {/* PİYASA MODU SEÇİCİ (SPOT / FOREX) */}
+                <div className="mt-3 grid grid-cols-2 p-1 rounded-xl bg-bunker-950/90 border border-bunker-700/80 shadow-inner">
+                    <button
+                        type="button"
+                        onClick={() => setMarketMode("spot")}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all ${
+                            marketMode === "spot"
+                                ? "bg-gradient-to-r from-amber-500/25 to-yellow-600/25 text-yellow-400 border border-yellow-500/40 shadow-[0_0_10px_rgba(234,179,8,0.2)]"
+                                : "text-bunker-muted hover:text-white"
+                        }`}
+                    >
+                        <span>🟡</span>
+                        <span>SPOT</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMarketMode("forex")}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all ${
+                            marketMode === "forex"
+                                ? "bg-gradient-to-r from-blue-500/25 to-cyan-600/25 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(0,240,255,0.25)]"
+                                : "text-bunker-muted hover:text-white"
+                        }`}
+                    >
+                        <span>💱</span>
+                        <span>FOREX</span>
+                    </button>
+                </div>
+
+                {/* Global Borsa / Forex Rozet Kartı */}
+                <div className={`mt-2.5 rounded-lg border p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-colors ${
+                    marketMode === "forex"
+                        ? "border-blue-500/40 bg-gradient-to-r from-blue-950/70 via-slate-900/70 to-indigo-950/60"
+                        : "border-cyan-500/30 bg-gradient-to-r from-cyan-950/60 via-slate-900/60 to-blue-950/50"
+                }`}>
                     <div className="flex items-center justify-between font-mono">
                         <span className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
-                            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
-                            {exchange.loading ? "Borsa belirleniyor…" : exchange.label.toUpperCase()}
+                            <span className={`w-2 h-2 rounded-full animate-pulse ${marketMode === "forex" ? "bg-blue-400 shadow-[0_0_8px_#38bdf8]" : "bg-cyan-400 shadow-[0_0_8px_#00f0ff]"}`} />
+                            {marketMode === "forex" ? "GLOBAL FOREX" : (exchange.loading ? "Borsa belirleniyor…" : exchange.label.toUpperCase())}
                         </span>
-                        <span className="rounded bg-cyan-400/20 px-2.5 py-0.5 text-[11px] font-bold text-cyan-200 border border-cyan-400/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
-                            $
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold border ${
+                            marketMode === "forex"
+                                ? "bg-blue-500/20 text-blue-200 border-blue-400/40 shadow-[0_0_8px_rgba(59,130,246,0.2)]"
+                                : "bg-cyan-400/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+                        }`}>
+                            {marketMode === "forex" ? "FX" : "$"}
                         </span>
                     </div>
-                    <div className="mt-1.5 flex items-center justify-between text-[10px] text-cyan-400/70 font-mono border-t border-cyan-500/20 pt-1.5">
-                        <span>PİYASA: GLOBAL SPOT</span>
-                        <span className="text-amber-400 font-bold">PAPER TRADING</span>
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono border-t border-bunker-700/60 pt-1.5">
+                        <span className={marketMode === "forex" ? "text-blue-300/80" : "text-cyan-400/70"}>
+                            {marketMode === "forex" ? "PARİTE & EMTİA" : "PİYASA: GLOBAL SPOT"}
+                        </span>
+                        <span className={marketMode === "forex" ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                            {marketMode === "forex" ? "DEMO / LIVE" : "PAPER TRADING"}
+                        </span>
                     </div>
                 </div>
                 <button
