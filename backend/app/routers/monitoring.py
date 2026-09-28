@@ -803,6 +803,7 @@ async def _send_push(notif: dict) -> bool:
                 "detected_at": notif.get("detected_at"),
                 "horizon_minutes": notif.get("horizon_minutes"),
                 "source": notif.get("source", "monitoring"),
+                "skip_tr_bridge": True,
             },
         )
         ok = bool(result.get("ok", False))
@@ -1590,7 +1591,7 @@ async def _deliver_scan_notifications(notified: list) -> None:
         logger.warning("Monitoring WS broadcast hatasi: %s", exc)
     try:
         from app.tr_bridge import queue_signal_to_tr
-        for notif in notified:
+        for notif in new_notifs:
             sym = notif.get("symbol")
             if sym:
                 queue_signal_to_tr(
@@ -1652,6 +1653,20 @@ async def _llm_second_eye_task(notif: dict) -> None:
                     sym, str(envelope.get("llm_verdict")))
     except Exception as exc:
         logger.debug("LLM ikinci göz WS yayını %s: %s", sym, exc)
+    try:
+        from app.tr_bridge import queue_signal_to_tr
+        queue_signal_to_tr(
+            symbol=sym,
+            signal_type="llm_second_eye",
+            score=float(envelope.get("score") or 0.0),
+            price=float(envelope.get("price") or 0.0) if envelope.get("price") else None,
+            action="BUY_SIGNAL" if str(envelope.get("llm_verdict") or "").upper() == "BUY" else "EVALUATION",
+            title=envelope.get("title") or f"LLM İkinci Göz: {sym}",
+            message=envelope.get("message") or "",
+            data=envelope,
+        )
+    except Exception as exc:
+        logger.debug("LLM second eye TR bridge dispatch hatasi %s: %s", sym, exc)
 
 
 def _maybe_llm_second_eye(notified) -> None:

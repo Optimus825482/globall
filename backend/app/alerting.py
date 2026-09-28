@@ -68,7 +68,7 @@ def _rule_value(rule, market, ticker):
 
 async def deliver_web_push(message, *, title=None, url=None, tag=None, extra=None, usernames=None):
     try:
-        if extra and isinstance(extra, dict) and extra.get("symbol"):
+        if extra and isinstance(extra, dict) and extra.get("symbol") and not extra.get("skip_tr_bridge"):
             from app.tr_bridge import queue_signal_to_tr
             queue_signal_to_tr(
                 symbol=extra["symbol"],

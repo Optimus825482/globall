@@ -250,5 +250,55 @@ class LeadLagBridgeTests(unittest.TestCase):
                 self.assertTrue(disp_res["ok"])
                 self.assertEqual("test-123", disp_res["event_id"])
 
+    def test_deliver_web_push_skip_tr_bridge(self):
+        from app.alerting import deliver_web_push
+
+        async def run():
+            with patch("app.tr_bridge.queue_signal_to_tr") as mock_q:
+                # With skip_tr_bridge=True, queue_signal_to_tr must NOT be called
+                await deliver_web_push(
+                    "Test alert",
+                    extra={"symbol": "BTCUSDT", "source": "monitoring", "skip_tr_bridge": True},
+                )
+                mock_q.assert_not_called()
+
+                # Without skip_tr_bridge, queue_signal_to_tr IS called
+                await deliver_web_push(
+                    "Test alert 2",
+                    extra={"symbol": "BTCUSDT", "source": "web_push"},
+                )
+                mock_q.assert_called_once()
+
         asyncio.run(run())
+
+    def test_monitoring_dispatch_only_for_new_notifs(self):
+        from app.routers.monitoring import _deliver_scan_notifications
+
+        async def run():
+            with patch("app.tr_bridge.queue_signal_to_tr") as mock_q, \
+                 patch("app.routers.monitoring._send_push", return_value=True), \
+                 patch("app.routers.monitoring.ws_manager.broadcast"):
+
+                notif_old = {
+                    "symbol": "QNTUSDT",
+                    "score": 90.0,
+                    "price": 238.0,
+                    "updated": True,  # Bekleyen / güncellenen bildirim
+                }
+                notif_new = {
+                    "symbol": "SOLUSDT",
+                    "score": 95.0,
+                    "price": 145.0,
+                    "updated": False,  # Yeni sinyal!
+                }
+
+                await _deliver_scan_notifications([notif_old, notif_new])
+
+                # Sadece SOLUSDT (new_notif) köprüye gitmeli, QNTUSDT (updated) gitmemeli!
+                self.assertEqual(1, mock_q.call_count)
+                called_symbol = mock_q.call_args.kwargs.get("symbol")
+                self.assertEqual("SOLUSDT", called_symbol)
+
+        asyncio.run(run())
+
 
