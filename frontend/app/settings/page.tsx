@@ -41,8 +41,9 @@ import { useAuth } from "../lib/auth";
 // 2026-09-27: Profil Ayarlar'a sekme taşındı. `ProfileContent` headless
 // bileşendir (kendi page-shell'i yok) — settings kapsayıcısına girer.
 import { ProfileContent } from "../profile/page";
+import BridgeSettingsPanel from "./BridgeSettingsPanel";
 
-type SettingsTab = "symbols" | "radar" | "app" | "notifications" | "strategies" | "llm" | "chat" | "auto-paper" | "macd" | "profile";
+type SettingsTab = "symbols" | "radar" | "app" | "notifications" | "strategies" | "llm" | "chat" | "auto-paper" | "macd" | "bridge" | "profile";
 
 export default function SettingsPage() {
   return <RequireAdmin><SettingsPageInner /></RequireAdmin>;
@@ -103,7 +104,7 @@ function SettingsPageInner() {
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab") as any;
-    const validTabs: SettingsTab[] = ["symbols", "radar", "app", "strategies", "auto-paper", "macd", "llm", "chat", "notifications", "profile"];
+    const validTabs: SettingsTab[] = ["symbols", "radar", "app", "strategies", "auto-paper", "macd", "llm", "chat", "notifications", "bridge", "profile"];
     if (tab && validTabs.includes(tab)) {
       setActiveTab(tab);
     }
@@ -630,6 +631,7 @@ function SettingsPageInner() {
         <nav className="flex flex-wrap gap-2 border-b border-bunker-800 pb-2" aria-label="Ayar sekmeleri">
           {([
             ["profile", "Profil", "👤"],
+            ["bridge", "TR Köprüsü", "🌉"],
             ["symbols", "Semboller", "🪙"],
             ["radar", "Radar", "📡"],
             ["app", "Uygulama Ayarları", "⚙️"],
@@ -652,6 +654,10 @@ function SettingsPageInner() {
           {/* 2026-09-27: Profil sekmesi — headless ProfileContent gömülür. */}
           <div className={`${activeTab !== "profile" ? "hidden" : ""}`}>
             <ProfileContent />
+          </div>
+          {/* 2026-09-28: Binance TR Köprü sekmesi (Lead-Lag haberleşme ve canlı sinyal akışı) */}
+          <div className={`${activeTab !== "bridge" ? "hidden" : ""}`}>
+            <BridgeSettingsPanel />
           </div>
           <div className={`${activeTab !== "radar" ? "hidden" : ""}`}>
             <div className="space-y-4">
