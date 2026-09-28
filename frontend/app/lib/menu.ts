@@ -55,6 +55,7 @@ export const MENU_GROUPS: MenuGroup[] = [
     label: "Ana",
     items: [
       { href: "/monitoring", label: "Radar", icon: "📡", desc: "Otonom izleme ve hız avcısı" },
+      { href: "/mtf-scanner", label: "MTF Tarama", icon: "🧠", desc: "MACD & Signal MTF canlı tarayıcı" },
       { href: "/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu TradingView ekranı" },
       { href: "/charts", label: "Grafik", icon: "📈", desc: "Mum grafikleri" },
       { href: "/binance-tr", label: "Binance", icon: "🏛️", desc: "Kendi hesabında canlı işlem", exchangeLabel: true },
