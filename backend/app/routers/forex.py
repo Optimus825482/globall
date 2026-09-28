@@ -215,16 +215,87 @@ def _get_market_sessions() -> List[Dict[str, Any]]:
     return result
 
 
-def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
-    """Maintain micro-fluctuating live bid/ask/spread rates for Forex & Commodities."""
+import asyncio
+import urllib.request
+import json
+
+_LAST_LIVE_FETCH_TIME = 0.0
+_LIVE_PRICES_CACHE: Dict[str, float] = {}
+
+
+def _sync_fetch_live_rates() -> Dict[str, float]:
+    """Fetch real-world live FX rates from ECB/Frankfurter and Commodities from Yahoo."""
+    rates_map: Dict[str, float] = {}
+
+    # 1. Major Forex Rates from European Central Bank / Frankfurter API
+    try:
+        req = urllib.request.Request(
+            "https://api.frankfurter.app/latest?from=USD",
+            headers={"User-Agent": "ScalperGlobal-Forex/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=4.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            r = data.get("rates", {})
+            if "EUR" in r and r["EUR"] > 0:
+                rates_map["EURUSD"] = round(1.0 / float(r["EUR"]), 5)
+            if "GBP" in r and r["GBP"] > 0:
+                rates_map["GBPUSD"] = round(1.0 / float(r["GBP"]), 5)
+            if "JPY" in r and r["JPY"] > 0:
+                rates_map["USDJPY"] = round(float(r["JPY"]), 3)
+            if "CHF" in r and r["CHF"] > 0:
+                rates_map["USDCHF"] = round(float(r["CHF"]), 5)
+            if "AUD" in r and r["AUD"] > 0:
+                rates_map["AUDUSD"] = round(1.0 / float(r["AUD"]), 5)
+            if "CAD" in r and r["CAD"] > 0:
+                rates_map["USDCAD"] = round(float(r["CAD"]), 5)
+            if "NZD" in r and r["NZD"] > 0:
+                rates_map["NZDUSD"] = round(1.0 / float(r["NZD"]), 5)
+    except Exception:
+        pass
+
+    # 2. Live Gold, Silver & Oil from Yahoo Finance Chart API
+    commodity_symbols = [("XAUUSD", "GC=F"), ("XAGUSD", "SI=F"), ("USOIL", "CL=F")]
+    for fx_sym, yf_sym in commodity_symbols:
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=1m"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                meta = data["chart"]["result"][0]["meta"]
+                price = meta.get("regularMarketPrice")
+                if price and float(price) > 0:
+                    rates_map[fx_sym] = float(price)
+        except Exception:
+            pass
+
+    return rates_map
+
+
+async def _refresh_live_rates_if_needed():
+    """Update live prices cache every 10 seconds asynchronously without blocking."""
+    global _LAST_LIVE_FETCH_TIME, _LIVE_PRICES_CACHE
+    now = time.time()
+    if now - _LAST_LIVE_FETCH_TIME > 10.0 or not _LIVE_PRICES_CACHE:
+        _LAST_LIVE_FETCH_TIME = now
+        try:
+            fresh = await asyncio.to_thread(_sync_fetch_live_rates)
+            if fresh:
+                _LIVE_PRICES_CACHE.update(fresh)
+        except Exception:
+            pass
+
+
+async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
+    """Maintain live bid/ask/spread rates grounded in real live market prices."""
     global _LAST_CACHE_TIME, _TICK_CACHE
+    await _refresh_live_rates_if_needed()
     now = time.time()
 
     # Seed if empty
     if not _TICK_CACHE:
         for item in FOREX_SYMBOLS:
             sym = item["symbol"]
-            base_p = item["default_price"]
+            base_p = _LIVE_PRICES_CACHE.get(sym, item["default_price"])
             pip = item["pip_size"]
             spread_pips = 1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else 3.0)
             spread_val = spread_pips * pip
@@ -249,15 +320,22 @@ def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
                 "updated_at": now,
             }
 
-    # Micro-fluctuate every couple seconds
+    # Update with latest live prices and add micro-jitter
     if now - _LAST_CACHE_TIME > 1.5:
         _LAST_CACHE_TIME = now
         for sym, data in _TICK_CACHE.items():
+            base_p = _LIVE_PRICES_CACHE.get(sym)
             pip = data["pip_size"]
             digits = data["digits"]
-            jitter_pips = random.choice([-0.8, -0.4, 0.0, 0.4, 0.8, 1.2]) * 0.5
+            jitter_pips = random.choice([-0.8, -0.4, 0.0, 0.4, 0.8, 1.2]) * 0.4
             delta = jitter_pips * pip
-            new_bid = round(data["bid"] + delta, digits)
+
+            if base_p and abs(data["bid"] - base_p) > (50 * pip):
+                # Align smoothly to live price if drifting
+                new_bid = round(base_p + delta, digits)
+            else:
+                new_bid = round(data["bid"] + delta, digits)
+
             spread_val = data["spread_pips"] * pip
             data["bid"] = new_bid
             data["ask"] = round(new_bid + spread_val, digits)
@@ -297,7 +375,7 @@ async def get_market_sessions():
 @router.get("/tickers")
 async def get_forex_tickers(category: Optional[str] = None):
     """Return live tickers with bid/ask, spreads and daily changes."""
-    ticks = _generate_realistic_ticks()
+    ticks = await _generate_realistic_ticks()
     results = list(ticks.values())
     if category:
         results = [t for t in results if t["category"] == category]
@@ -311,7 +389,7 @@ async def get_forex_tickers(category: Optional[str] = None):
 @router.get("/radar")
 async def get_forex_radar():
     """Return high-probability forex momentum and breakout opportunities."""
-    ticks = _generate_realistic_ticks()
+    ticks = await _generate_realistic_ticks()
     candidates = []
 
     for sym, t in ticks.items():
