@@ -18,6 +18,13 @@ type TfCell = {
   parallel_up: boolean;
   expanding?: boolean;
   fresh_bull_cross: boolean;
+  hist_turn_up?: boolean;
+  hist_trough?: boolean;
+  squeeze?: boolean;
+  zl_green?: boolean;
+  zl_fresh_cross?: boolean;
+  wt_bullish?: boolean;
+  wt_oversold_cross?: boolean;
 };
 
 type ScanItem = {
@@ -30,6 +37,11 @@ type ScanItem = {
   parallel_up_count: number;
   expanding_count: number;
   fresh_cross: string[];
+  early_trough_count?: number;
+  squeeze_count?: number;
+  wt_oversold_cross?: string[];
+  zl_fresh_cross?: string[];
+  early_spark?: boolean;
   coverage: number;
   tfs: TfCell[];
 };
@@ -42,6 +54,9 @@ type ScanResponse = {
   zayif_count: number;
   fresh_cross_count: number;
   parallel_up_count: number;
+  early_trough_count?: number;
+  squeeze_count?: number;
+  early_spark_count?: number;
   tfs: string[];
   scope: string;
   duration_sec: number;
@@ -49,7 +64,8 @@ type ScanResponse = {
   items: ScanItem[];
 };
 
-type FilterType = "ALL" | "GUCLU" | "GUCLU_ORTA" | "FRESH" | "PARALLEL";
+type FilterType = "ALL" | "GUCLU" | "GUCLU_ORTA" | "EARLY_DIP" | "SQUEEZE" | "FRESH" | "PARALLEL";
+
 
 export default function MtfScannerPage() {
   const [data, setData] = useState<ScanResponse | null>(null);
@@ -102,11 +118,20 @@ export default function MtfScannerPage() {
       list = list.filter((it) => it.verdict === "GÜÇLÜ");
     } else if (filter === "GUCLU_ORTA") {
       list = list.filter((it) => it.verdict === "GÜÇLÜ" || it.verdict === "ORTA");
+    } else if (filter === "EARLY_DIP") {
+      list = list.filter((it) => (it.early_trough_count || 0) >= 2 || it.early_spark);
+    } else if (filter === "SQUEEZE") {
+      list = list.filter(
+        (it) =>
+          (it.squeeze_count || 0) >= 1 &&
+          ((it.green_count || 0) >= 1 || (it.early_trough_count || 0) >= 1)
+      );
     } else if (filter === "FRESH") {
       list = list.filter((it) => it.fresh_cross && it.fresh_cross.length > 0);
     } else if (filter === "PARALLEL") {
       list = list.filter((it) => it.parallel_up_count >= 2);
     }
+
 
     return list;
   }, [data, filter, search]);
@@ -151,9 +176,7 @@ export default function MtfScannerPage() {
               </span>
             </div>
             <p className="mt-1.5 text-xs text-bunker-muted leading-relaxed max-w-3xl">
-              MACD ve Signal çizgileri <b className="text-white">araları açık ve yukarı yönlü (paralel yukarı)</b> olan
-              veya <b className="text-white">MACD&apos;nin Signal&apos;i taze yukarı kestiği</b> sembolleri çoklu zaman
-              diliminde filtreler. Listelenen bir sembole tıkladığınızda doğrudan{" "}
+              MACD ve Signal çizgilerinin yönü ve kesişimlerine ek olarak, <b className="text-white">🌱 Histogram Dip Dönüşü (kesişimden 3-7 bar önceki en erken dip)</b>, <b className="text-white">⚡ Squeeze (patlama öncesi enerji sıkışması)</b>, <b className="text-white">🚀 Zero-Lag MACD</b> ve <b className="text-white">⭐ WaveTrend</b> öncü göstergelerini çoklu zaman diliminde tarar. Listelenen bir sembole tıkladığınızda doğrudan{" "}
               <b className="text-neon-green">4&apos;lü Teknik Grafik</b> ekranı açılır.
             </p>
           </div>
@@ -220,50 +243,59 @@ export default function MtfScannerPage() {
 
       {/* ── KPI KARTLARI ────────────────────────────────────────────────── */}
       {data && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 font-mono">
-          <div className="rounded-xl border border-neon-green/30 bg-neon-green/5 p-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 font-mono">
+          <div className="rounded-xl border border-neon-green/30 bg-neon-green/5 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-neon-green font-bold">GÜÇLÜ SİNYAL</span>
-              <span className="text-base">🔥</span>
+              <span className="text-[11px] text-neon-green font-bold">GÜÇLÜ SİNYAL</span>
+              <span className="text-sm">🔥</span>
             </div>
             <p className="text-2xl font-black text-neon-green mt-1">{data.guclu_count}</p>
-            <p className="text-[10px] text-bunker-muted mt-0.5">Yüksek konfluans & paralel</p>
+            <p className="text-[10px] text-bunker-muted mt-0.5">Yüksek konfluans</p>
           </div>
 
-          <div className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-3.5">
+          <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-yellow-300 font-bold">ORTA SİNYAL</span>
-              <span className="text-base">⚡</span>
+              <span className="text-[11px] text-emerald-300 font-bold">🌱 ERKEN DİP</span>
+              <span className="text-sm">🌱</span>
             </div>
-            <p className="text-2xl font-black text-yellow-300 mt-1">{data.orta_count}</p>
-            <p className="text-[10px] text-bunker-muted mt-0.5">Çoklu TF yükseliş eğilimi</p>
+            <p className="text-2xl font-black text-emerald-300 mt-1">{data.early_trough_count || 0}</p>
+            <p className="text-[10px] text-bunker-muted mt-0.5">Hist dip dönüşü (en erken)</p>
           </div>
 
-          <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3.5">
+          <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-cyan-300 font-bold">TAZE KESİŞİM</span>
-              <span className="text-base">🚀</span>
+              <span className="text-[11px] text-amber-300 font-bold">⚡ SIKIŞMA (SQZ)</span>
+              <span className="text-sm">⚡</span>
+            </div>
+            <p className="text-2xl font-black text-amber-300 mt-1">{data.squeeze_count || 0}</p>
+            <p className="text-[10px] text-bunker-muted mt-0.5">Patlama öncesi enerji</p>
+          </div>
+
+          <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-cyan-300 font-bold">TAZE KESİŞİM</span>
+              <span className="text-sm">🚀</span>
             </div>
             <p className="text-2xl font-black text-cyan-300 mt-1">{data.fresh_cross_count}</p>
-            <p className="text-[10px] text-bunker-muted mt-0.5">Son 1-3 barda yukarı kesen</p>
+            <p className="text-[10px] text-bunker-muted mt-0.5">Son 1-3 barda kesen</p>
           </div>
 
-          <div className="rounded-xl border border-purple-400/30 bg-purple-400/5 p-3.5">
+          <div className="rounded-xl border border-purple-400/30 bg-purple-400/5 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-purple-300 font-bold">PARALEL YUKARI</span>
-              <span className="text-base">⇈</span>
+              <span className="text-[11px] text-purple-300 font-bold">PARALEL YUKARI</span>
+              <span className="text-sm">⇈</span>
             </div>
             <p className="text-2xl font-black text-purple-300 mt-1">{data.parallel_up_count}</p>
-            <p className="text-[10px] text-bunker-muted mt-0.5">≥2 TF her iki çizgi eğimi pozitif</p>
+            <p className="text-[10px] text-bunker-muted mt-0.5">≥2 TF pozitif eğim</p>
           </div>
 
-          <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3.5 col-span-2 sm:col-span-1">
+          <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-bunker-muted font-bold">TARANAN SEMBOL</span>
-              <span className="text-base">📊</span>
+              <span className="text-[11px] text-bunker-muted font-bold">TARANAN</span>
+              <span className="text-sm">📊</span>
             </div>
             <p className="text-2xl font-black text-white mt-1">{data.total_scanned}</p>
-            <p className="text-[10px] text-bunker-muted mt-0.5">{data.zayif_count} zayıf / yatay</p>
+            <p className="text-[10px] text-bunker-muted mt-0.5">{data.valid_count} aktif sembol</p>
           </div>
         </div>
       )}
@@ -284,6 +316,30 @@ export default function MtfScannerPage() {
               }`}
             >
               Tümü ({data?.items?.length || 0})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("EARLY_DIP")}
+              className={`rounded-lg px-3 py-1.5 font-bold transition-colors flex items-center gap-1.5 ${
+                filter === "EARLY_DIP"
+                  ? "bg-emerald-400/20 text-emerald-300 border border-emerald-400/60 shadow-sm shadow-emerald-400/10"
+                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-emerald-300"
+              }`}
+              title="Kesişimden 3-7 bar önce dipten dönenler (En Erken)"
+            >
+              <span>🌱</span> Erken Dip ({data?.early_trough_count || 0})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("SQUEEZE")}
+              className={`rounded-lg px-3 py-1.5 font-bold transition-colors flex items-center gap-1.5 ${
+                filter === "SQUEEZE"
+                  ? "bg-amber-400/20 text-amber-300 border border-amber-400/60 shadow-sm shadow-amber-400/10"
+                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-amber-300"
+              }`}
+              title="Bollinger-Keltner enerji sıkışması yaşayanlar (En Doğru Patlama Öncüsü)"
+            >
+              <span>⚡</span> Sıkışma / Patlama ({data?.squeeze_count || 0})
             </button>
             <button
               type="button"
@@ -330,6 +386,7 @@ export default function MtfScannerPage() {
               <span>⇈</span> Paralel Yukarı ({data?.parallel_up_count || 0})
             </button>
           </div>
+
 
           {/* Kapsam & Arama */}
           <div className="flex items-center gap-2">
@@ -407,6 +464,7 @@ export default function MtfScannerPage() {
                     <th className="py-3 px-2 text-right">24S DEĞİŞİM</th>
                     <th className="py-3 px-3 text-center">KARAR</th>
                     <th className="py-3 px-2 text-center">SKOR</th>
+                    <th className="py-3 px-2 text-center">ÖNCÜ SİNYAL</th>
                     <th className="py-3 px-3 text-center">ZAMAN DİLİMLERİ (M1 · M3 · M5 · M15 · M30)</th>
                     <th className="py-3 px-2 text-center">TAZE KESİŞİM</th>
                     <th className="py-3 px-2 text-center">PARALEL YUKARI</th>
@@ -475,6 +533,50 @@ export default function MtfScannerPage() {
                           </div>
                         </td>
 
+                        {/* Öncü Sinyal (Erken Dip / Squeeze / WT / ZL) */}
+                        <td className="py-3 px-2 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            {(item.early_trough_count || 0) >= 2 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-400/15 text-emerald-300 border border-emerald-400/40"
+                                title="Histogram kesişimden 3-7 bar önce dipten yukarı ivmelendi"
+                              >
+                                <span>🌱</span> {item.early_trough_count} TF Dip
+                              </span>
+                            )}
+                            {(item.squeeze_count || 0) >= 1 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/40"
+                                title="Bollinger/Keltner enerji sıkışması aktif"
+                              >
+                                <span>⚡</span> {item.squeeze_count} TF SQZ
+                              </span>
+                            )}
+                            {item.wt_oversold_cross && item.wt_oversold_cross.length > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-400/15 text-pink-300 border border-pink-400/40"
+                                title="WaveTrend aşırı satım kesişimi"
+                              >
+                                <span>⭐</span> WT {item.wt_oversold_cross.join(",")}
+                              </span>
+                            )}
+                            {item.zl_fresh_cross && item.zl_fresh_cross.length > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-400/15 text-indigo-300 border border-indigo-400/40"
+                                title="Zero-Lag MACD taze kesişim"
+                              >
+                                <span>🚀</span> ZL {item.zl_fresh_cross.join(",")}
+                              </span>
+                            )}
+                            {!(item.early_trough_count && item.early_trough_count >= 2) &&
+                              !(item.squeeze_count && item.squeeze_count >= 1) &&
+                              !(item.wt_oversold_cross && item.wt_oversold_cross.length > 0) &&
+                              !(item.zl_fresh_cross && item.zl_fresh_cross.length > 0) && (
+                                <span className="text-bunker-muted/50 text-[10px]">—</span>
+                            )}
+                          </div>
+                        </td>
+
                         {/* Zaman Dilimleri Hapları (M1..M30) */}
                         <td className="py-3 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -496,6 +598,9 @@ export default function MtfScannerPage() {
                               const isFresh = cell.fresh_bull_cross;
                               const isParallel = cell.parallel_up;
                               const isExpanding = cell.expanding;
+                              const isTrough = cell.hist_trough;
+                              const isSqueeze = cell.squeeze;
+                              const isWtCross = cell.wt_oversold_cross;
 
                               return (
                                 <div
@@ -503,17 +608,32 @@ export default function MtfScannerPage() {
                                   className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 border transition-all ${
                                     isGreen
                                       ? "bg-neon-green/10 border-neon-green/40 text-neon-green"
+                                      : isTrough
+                                      ? "bg-emerald-400/10 border-emerald-400/50 text-emerald-300 shadow-sm shadow-emerald-400/10"
                                       : "bg-neon-red/10 border-neon-red/30 text-neon-red/80"
                                   }`}
                                   title={`${tfName.toUpperCase()} · MACD: ${cell.macd.toFixed(
                                     4
                                   )} · Sig: ${cell.signal.toFixed(4)} · Hist: ${cell.hist.toFixed(
                                     4
-                                  )} | ${isGreen ? "Yeşil (MACD > Sig)" : "Kırmızı"} ${
-                                    isFresh ? "· 🚀 Taze Kesişim" : ""
-                                  } ${isParallel ? "· ⇈ Paralel Yukarı" : ""}`}
+                                  )} | ${
+                                    isGreen
+                                      ? "Yeşil (MACD > Sig)"
+                                      : isTrough
+                                      ? "🌱 Erken Dip Dönüşü (Hist yukarı büküldü)"
+                                      : "Kırmızı (Negatif)"
+                                  } ${isFresh ? "· 🚀 Taze Kesişim" : ""} ${
+                                    isParallel ? "· ⇈ Paralel Yukarı" : ""
+                                  } ${isSqueeze ? "· ⚡ Sıkışma Aktif" : ""} ${
+                                    isWtCross ? "· ⭐ WaveTrend Dip Kesişimi" : ""
+                                  }`}
                                 >
                                   <span className="font-bold">{tfName}</span>
+                                  {isSqueeze && (
+                                    <span className="text-[9px] text-amber-300" title="Sıkışma">
+                                      ⚡
+                                    </span>
+                                  )}
                                   {isFresh ? (
                                     <span title="Taze Kesişim">🚀</span>
                                   ) : isParallel ? (
@@ -522,6 +642,10 @@ export default function MtfScannerPage() {
                                     <span title="Araları Açık">↗</span>
                                   ) : isGreen ? (
                                     <span>✔</span>
+                                  ) : isTrough ? (
+                                    <span title="Erken Dip Dönüşü" className="text-emerald-400 font-bold">
+                                      🌱
+                                    </span>
                                   ) : (
                                     <span>✖</span>
                                   )}
@@ -530,6 +654,7 @@ export default function MtfScannerPage() {
                             })}
                           </div>
                         </td>
+
 
                         {/* Taze Kesişim */}
                         <td className="py-3 px-2 text-center">
