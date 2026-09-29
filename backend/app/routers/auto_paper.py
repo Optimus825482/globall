@@ -80,6 +80,9 @@ async def _log_blocked_decision(symbol: str, reason: str, price: float, extra: d
             "score_below_min": f"Skor yetersiz ({extra.get('score')} < {extra.get('min_score')})",
             "weak_mtf_confluence": f"MACD MTF zayıf / sahte kırılım riski (skor: {extra.get('confluence')}, karar: {extra.get('verdict')})",
             "stop_loss_cooldown": f"Stop loss sonrası bekleme devrede (kalan: {extra.get('remaining_sec')} sn)",
+            "post_win_cooldown": f"Kâr koruma beklemesi devrede (kalan: {extra.get('remaining_sec')} sn)",
+            "llm_fake_blocked": f"LLM İkinci Göz sahte sinyal/tuzak engeli (güven: %{extra.get('confidence')})",
+            "llm_low_confidence": f"LLM İkinci Göz düşük güven engeli (güven: %{extra.get('confidence')} < %60)",
         }
         human_reason = reason_tr_map.get(reason, f"Giriş engellendi: {reason}")
         if reason == "liquidity" and isinstance(extra.get("liquidity"), dict):
@@ -153,6 +156,8 @@ _AUTO_PAPER_STATE = {
 }
 #: Stop loss sonrası sembol bazında aşırı işlem (churn/peş peşe kayıp) koruma süreleri {symbol: expire_timestamp}
 _stop_loss_cooldowns: dict[str, float] = {}
+#: Kârlı kapanış (take_profit/trailing_stop) sonrası kârı geri vermeme (post-win churn) koruma süreleri {symbol: expire_timestamp}
+_post_win_cooldowns: dict[str, float] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +240,21 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
             logger.warning("auto_paper %s: Master Surge kontrolünden geçmedi — açılmadı", symbol)
             return _blocked(symbol, "master_surge_failed")
 
+        # LLM Sinyal Hakemi Kapısı: FAKE/Tuzak kararı varsa veya güven çok zayıfsa açma (2026-09-29 analiz kanıtı: +22.59 TRY koruma)
+        if settings.get("llm_gate_enabled", True):
+            llm_v = str(notification.get("llm_verdict") or "").strip().upper()
+            try:
+                llm_c = float(notification.get("llm_confidence") or 0)
+            except (ValueError, TypeError):
+                llm_c = 0.0
+            min_c = float(settings.get("llm_min_confidence", 60.0))
+            if llm_v in ("FAKE", "TUZAK") and llm_c >= 50:
+                logger.warning("auto_paper %s: LLM İkinci Göz FAKE/TUZAK uyarısı verdi (Güven: %%%.0f) — işlem açılmadı", symbol, llm_c)
+                return _blocked(symbol, "llm_fake_blocked", block_reason=f"LLM_FAKE_%{round(llm_c)}", verdict=llm_v, confidence=round(llm_c))
+            if llm_v == "DEVAM" and llm_c > 0 and llm_c < min_c:
+                logger.warning("auto_paper %s: LLM DEVAM dedi ancak güven yetersiz (%%%s < %%%s) — açılmadı", symbol, llm_c, min_c)
+                return _blocked(symbol, "llm_low_confidence", block_reason="LLM_LOW_CONFIDENCE", verdict=llm_v, confidence=round(llm_c))
+
         # R3-07 (P0): SESSİZ SAATLERDE otonom işlem DURDURULUR. Web push'un sessiz
         # saatlerde ertelenmesi monitoring._notify içinde zaten korunur (onun
         # ALTERNATİFİ değil, POSITION açılışında ek kapı). Aday bir sonraki taramada
@@ -276,6 +296,25 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
             logger.info("auto_paper %s: stop_loss sonrası bekleme süresi devrede (kalan: %.0f sn) — açılmadı",
                         symbol, rem)
             return _blocked(symbol, "stop_loss_cooldown", remaining_sec=rem)
+
+        # Kârlı işlem sonrası kâr koruma beklemesi (post-win cooldown) kapısı:
+        # Kârla kapanan sembole hemen tekrar girip kârı geri verme tuzağını engeller (2026-09-29 analiz kanıtı: 9 işlemde -79.40 TRY kayıp).
+        win_cooldown_min = float(settings.get("post_win_cooldown_minutes", getattr(config, "AUTO_PAPER_POST_WIN_COOLDOWN_MINUTES", 15.0)))
+        win_cooldown_until = _post_win_cooldowns.get(symbol, 0.0)
+        if win_cooldown_min > 0 and now_ts >= win_cooldown_until:
+            try:
+                last_win = await database.get_last_auto_paper_winning_trade_time(symbol)
+                if last_win and (now_ts - last_win) < (win_cooldown_min * 60.0):
+                    win_cooldown_until = last_win + (win_cooldown_min * 60.0)
+                    _post_win_cooldowns[symbol] = win_cooldown_until
+            except Exception as exc:
+                logger.debug("auto_paper %s db post win cooldown kontrol hatası: %s", symbol, exc)
+
+        if now_ts < win_cooldown_until:
+            rem = round(win_cooldown_until - now_ts, 0)
+            logger.info("auto_paper %s: karlı kapanış sonrası kâr koruma beklemesi devrede (kalan: %.0f sn) — açılmadı",
+                        symbol, rem)
+            return _blocked(symbol, "post_win_cooldown", remaining_sec=rem)
 
         # Aktif işleme giren sembol pasif listesinden temizlenir
         if hasattr(config, "PASSIVE_SYMBOLS") and isinstance(config.PASSIVE_SYMBOLS, set):
@@ -1108,21 +1147,27 @@ async def _close_trade(trade_id: int, symbol: str, exit_price: float, now: float
         logger.info("auto_paper %s: KAPANDI (%s) çıkış=%.6f PnL=%.2f %s (%+.2f%%) süre=%.0fs",
                     symbol, reason, fill_price, pnl, config.QUOTE_ASSET, pnl_pct, hold_seconds)
 
-        # Kâr koruma (trailing/breakeven) kapanışı: sembol monitoring sayfasının
-        # "uygun adaylar" listesinde kaldığı sürece aynı sembole yeniden aç.
-        # D-15 (2026-09-12): yeniden açma artık bu zincirin DIŞINDA, tek
-        # seferlik arka plan görevi olarak çalışır. Eskiden `await
-        # _maybe_reopen_after_protect_close(...)` kapanışın içinde senkron
-        # çağrılıyordu (REST + DB transaction); döngü tek task olduğundan bu
-        # süre boyunca DİĞER sembollerin TP/SL yönetimi bekliyordu.
-        if reason in ("trailing_stop", "breakeven_stop"):
+        settings = await get_auto_paper_settings()
+
+        # Kâr koruma (trailing/breakeven) kapanışı: yalnızca ayar AÇIKSA yeniden açma dene (varsayılan: False)
+        # 2026-09-29 analizi: koruma kapanışı sonrası hemen yeniden açma 9 işlemde +79.40 TRY kârı geri vermişti.
+        reopen_enabled = bool(settings.get("reopen_after_protect_close", getattr(config, "AUTO_PAPER_REOPEN_AFTER_PROTECT_CLOSE", False)))
+        if reason in ("trailing_stop", "breakeven_stop") and reopen_enabled:
             orig_notification_id = trade.get("notification_id")
             _start_background(
                 lambda: _maybe_reopen_after_protect_close(symbol, orig_notification_id),
                 f"auto-paper-reopen-{symbol}", single_pass=True)
 
+        # Kârlı işlem sonrası kâr koruma beklemesi (post-win cooldown):
+        # Kâr realizasyonu sonrası aynı sembole 15 dk yeni pozisyon açılmasını engelleyerek kârı koru.
+        if pnl > 0 or reason in ("take_profit", "trailing_stop", "breakeven_stop"):
+            win_cooldown_min = float(settings.get("post_win_cooldown_minutes", getattr(config, "AUTO_PAPER_POST_WIN_COOLDOWN_MINUTES", 15.0)))
+            if win_cooldown_min > 0:
+                _post_win_cooldowns[symbol] = now + (win_cooldown_min * 60.0)
+                logger.info("auto_paper %s: karlı kapanış (PnL=%.2f) sonrası %.0f dakika kâr koruma bekleme süresi (post_win_cooldown) başlatıldı",
+                            symbol, pnl, win_cooldown_min)
+
         if reason == "stop_loss":
-            settings = await get_auto_paper_settings()
             cooldown_min = float(settings.get("sl_cooldown_minutes", 5.0))
             if cooldown_min > 0:
                 _stop_loss_cooldowns[symbol] = now + (cooldown_min * 60.0)
@@ -1282,6 +1327,9 @@ async def get_default_settings() -> dict:
         "block_weak_mtf": True,
         "min_mtf_confluence": 45.0,
         "sl_cooldown_minutes": 5.0,
+        "post_win_cooldown_minutes": getattr(config, "AUTO_PAPER_POST_WIN_COOLDOWN_MINUTES", 15.0),
+        "llm_gate_enabled": True,
+        "llm_min_confidence": 60.0,
         "volatility_sl_enabled": True,
     }
 
@@ -1319,7 +1367,9 @@ async def update_settings_endpoint(payload: dict, request: Request):
                 "dynamic_trailing_enabled", "breakeven_buffer_pct",
                 "max_open_positions", "max_hold_minutes",
                 "block_weak_mtf", "min_mtf_confluence",
-                "sl_cooldown_minutes", "volatility_sl_enabled")
+                "sl_cooldown_minutes", "post_win_cooldown_minutes",
+                "llm_gate_enabled", "llm_min_confidence",
+                "volatility_sl_enabled")
     existing = await get_auto_paper_settings()
     merged = {**existing, **{k: payload[k] for k in editable if k in payload}}
 
@@ -1358,6 +1408,9 @@ async def update_settings_endpoint(payload: dict, request: Request):
         "block_weak_mtf": bool(merged.get("block_weak_mtf", True)),
         "min_mtf_confluence": max(0.0, min(100.0, float(merged.get("min_mtf_confluence", 45.0)))),
         "sl_cooldown_minutes": max(0.0, min(120.0, float(merged.get("sl_cooldown_minutes", 5.0)))),
+        "post_win_cooldown_minutes": max(0.0, min(120.0, float(merged.get("post_win_cooldown_minutes", getattr(config, "AUTO_PAPER_POST_WIN_COOLDOWN_MINUTES", 15.0))))),
+        "llm_gate_enabled": bool(merged.get("llm_gate_enabled", True)),
+        "llm_min_confidence": max(50.0, min(100.0, float(merged.get("llm_min_confidence", 60.0)))),
         "volatility_sl_enabled": bool(merged.get("volatility_sl_enabled", True)),
     }
 
@@ -1456,6 +1509,7 @@ def reset_state():
         "consecutive_errors": 0,
     })
     _stop_loss_cooldowns.clear()
+    _post_win_cooldowns.clear()
 
 
 def start_auto_paper_loop() -> bool:

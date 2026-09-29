@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import RequireAdmin from "../components/RequireAdmin";
 import { API_BASE, apiRequest } from "../lib/api";
-import { toSymbol } from "../lib/format";
+import { toSymbol, QUOTE_ASSET } from "../lib/format";
 import type { MultiChartConfig, ChartIndicators } from "./MultiChartCard";
 
 // Dynamic import with ssr: false for Lightweight Charts
@@ -160,7 +160,7 @@ export default function TechnicalChartsPage() {
             if (querySymbol) {
                 let clean = querySymbol.trim().toUpperCase();
                 if (!clean.endsWith("TRY") && !clean.endsWith("USDT") && !clean.endsWith("FDUSD")) {
-                    clean = clean + (process.env.NEXT_PUBLIC_QUOTE_ASSET || "TRY").toUpperCase();
+                    clean = toSymbol(clean);
                 }
                 setGlobalSymbol(clean);
                 setGlobalSymbolInput(clean);
@@ -231,8 +231,10 @@ export default function TechnicalChartsPage() {
     const applyGlobalSymbolToAll = (sym: string) => {
         let clean = sym.trim().toUpperCase();
         if (!clean) return;
-        if (!clean.endsWith("TRY") && availableSymbols.includes(clean + "TRY")) {
-            clean = clean + "TRY";
+        if (!clean.endsWith(QUOTE_ASSET) && availableSymbols.includes(clean + QUOTE_ASSET)) {
+            clean = clean + QUOTE_ASSET;
+        } else if (!clean.endsWith(QUOTE_ASSET) && !clean.endsWith("TRY") && !clean.endsWith("USDT") && !clean.endsWith("FDUSD")) {
+            clean = toSymbol(clean);
         }
         setSlots((prev) => {
             const next = prev.map((s) => ({ ...s, symbol: clean }));
@@ -246,7 +248,12 @@ export default function TechnicalChartsPage() {
 
     // ── MTF Şablonu: 1m,3m,5m,15m ─────────────────────────────────────────────
     const applyMtfTemplate = () => {
-        const targetSymbol = globalSymbol || slots[0]?.symbol || toSymbol("BTC");
+        let targetSymbol = globalSymbol || slots[0]?.symbol || toSymbol("BTC");
+        if (!targetSymbol.endsWith(QUOTE_ASSET) && availableSymbols.includes(targetSymbol + QUOTE_ASSET)) {
+            targetSymbol = targetSymbol + QUOTE_ASSET;
+        } else if (!targetSymbol.endsWith(QUOTE_ASSET) && !targetSymbol.endsWith("TRY") && !targetSymbol.endsWith("USDT") && !targetSymbol.endsWith("FDUSD")) {
+            targetSymbol = toSymbol(targetSymbol);
+        }
         const mtfIntervals = ["1m", "3m", "5m", "15m"];
         setSlots((prev) => {
             const next = prev.map((s, idx) => ({
@@ -420,7 +427,7 @@ export default function TechnicalChartsPage() {
                                         >
                                             ⚡ {(() => {
                                                 const q = globalSymbolInput.trim().toUpperCase();
-                                                return !q.endsWith("TRY") && availableSymbols.includes(q + "TRY") ? q + "TRY" : q;
+                                                return !q.endsWith(QUOTE_ASSET) && availableSymbols.includes(q + QUOTE_ASSET) ? q + QUOTE_ASSET : toSymbol(q);
                                             })()} Aç
                                         </button>
                                     )}

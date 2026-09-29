@@ -1668,13 +1668,13 @@ async def get_market_symbols():
 
 _market_klines_cache: dict[str, tuple[float, list]] = {}
 _market_klines_inflight: dict[str, asyncio.Future] = {}
-_MARKET_KLINES_CACHE_TTL_SEC = 4.0
+_MARKET_KLINES_CACHE_TTL_SEC = 12.0
 
 @app.get("/api/market-klines/{symbol}")
 async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200):
     """Single public market-data adapter used by all UI candle consumers.
 
-    Features 4s RAM micro-cache and inflight request coalescing to eliminate 499s
+    Features 12s RAM micro-cache and inflight request coalescing to eliminate 499s
     and redundant upstream hits.
     """
     if interval not in {"1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"}:
@@ -1685,7 +1685,7 @@ async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200)
     cache_key = f"{clean_sym}:{interval}:{candle_limit}"
     now = time.monotonic()
 
-    # 1. Hızlı 4 saniyelik mikro RAM önbelleği
+    # 1. Hızlı mikro RAM önbelleği
     cached = _market_klines_cache.get(cache_key)
     if cached and now < cached[0]:
         try:
@@ -1746,6 +1746,32 @@ async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200)
         "interval": interval,
         "candles": rows,
         "source": "binance_public",
+    }
+
+
+@app.get("/api/market-klines-batch")
+async def get_market_klines_batch(symbol: str, intervals: str = "1m,3m,5m,15m", limit: int = 200):
+    """Çoklu teknik grafik ekranı için birden fazla TF mumunu paralel olarak tek istekte döndürür."""
+    clean_sym = symbol.replace("_", "").upper()
+    tf_list = [tf.strip() for tf in intervals.split(",") if tf.strip() in {"1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"}]
+    if not tf_list:
+        raise HTTPException(status_code=400, detail="Geçerli timeframe listesi belirtilmedi")
+
+    candle_limit = max(20, min(int(limit), 500))
+
+    async def _fetch_tf(tf: str):
+        try:
+            res = await get_market_klines(clean_sym, interval=tf, limit=candle_limit)
+            return tf, res.get("candles", [])
+        except Exception:
+            return tf, []
+
+    done = await asyncio.gather(*(_fetch_tf(tf) for tf in tf_list))
+    results = dict(done)
+
+    return {
+        "symbol": clean_sym,
+        "results": results,
     }
 
 @app.get("/api/market-depth/{symbol}")

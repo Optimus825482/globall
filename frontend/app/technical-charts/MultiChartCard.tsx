@@ -387,6 +387,8 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     const [isDark, setIsDark] = useState(true); // dark varsayılan
     const klineReqIdRef = useRef(0);
     const lastBarsRef = useRef<Bar[]>([]);
+    const loadedSymbolRef = useRef("");
+    const loadedIntervalRef = useRef("");
     // Son tam gösterge yeniden kurulumunun zaman damgası (bkz. INDICATOR_REBUILD_MIN_MS).
     const lastIndicatorRebuildAtRef = useRef(0);
 
@@ -468,69 +470,6 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     //      Aradaki turlarda yalnız mum serisi tazelenir (fiyat canlı kalır);
     //      gösterge son noktası en geç 60 sn'de bir yenilenir.
     // Aynı pencere = aynı mum sayısı VE aynı son mum zaman damgası.
-    const fetchKlines = useCallback(async () => {
-        if (!config.symbol) return;
-        const reqId = ++klineReqIdRef.current;
-        try {
-            const res = await apiRequest(`${API_BASE}/api/market-klines/${config.symbol}?interval=${config.interval}&limit=300`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const payload = await res.json();
-            if (reqId !== klineReqIdRef.current) return;
-            const candlesRaw = payload.candles || [];
-            if (!candlesRaw.length || !candleSeriesRef.current || !chartRef.current) return;
-            const bars: Bar[] = candlesRaw.map((k: number[]) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
-            const previous = lastBarsRef.current;
-            const previousLast = previous.length ? previous[previous.length - 1] : null;
-            const currentLast = bars[bars.length - 1];
-            const sameWindow = previous.length === bars.length
-                && !!previousLast && !!currentLast
-                && previousLast.time === currentLast.time;
-            const lastBarMoved = !!previousLast && !!currentLast && (
-                previousLast.close !== currentLast.close
-                || previousLast.high !== currentLast.high
-                || previousLast.low !== currentLast.low
-                || previousLast.volume !== currentLast.volume
-            );
-            lastBarsRef.current = bars;
-            // Aynı pencere + son mum değişmemişse mum serisine hiç dokunma.
-            if (!sameWindow || lastBarMoved) {
-                candleSeriesRef.current.setData(bars.map(b => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
-            }
-            const last = bars[bars.length - 1];
-            if (last) {
-                const precision = pricePrecision(last.close);
-                candleSeriesRef.current.applyOptions({ priceFormat: { type: "price", precision, minMove: 1 / Math.pow(10, precision) } });
-                // changePct: son mumun açılış→kapanış değişimi (gerçek mum hareketi)
-                const lastChangePct = last.open > 0 ? ((last.close - last.open) / last.open) * 100 : 0;
-                // 24 saatlik değişim için ~288 mum (1m) veya ~96 mum (15m) geriye git
-                const barsPerDay = Math.round(86_400_000 / (INTERVAL_MS[config.interval] || 60_000));
-                const refIdx = Math.max(0, bars.length - 1 - barsPerDay);
-                const refBar = bars[refIdx];
-                const dayChangePct = refBar?.open > 0 ? ((last.close - refBar.open) / refBar.open) * 100 : lastChangePct;
-                setPriceData({ last: last.close, changePct: dayChangePct });
-            }
-            // Başlık göstergeleri: seçili TF'nin son mumlarından RSI-14 / ADX-14.
-            // Bunlar ucuz (O(n) tek geçiş) ve her turda görünür oldukları için
-            // yenilemeye devam ediyoruz; pahalı olan 14'lük grafik serisi.
-            const rsiSeries = calcRSI(bars, 14);
-            setMomentum({
-                rsi14: rsiSeries.length ? rsiSeries[rsiSeries.length - 1].value : null,
-                adx14: calcADXLatest(bars, 14),
-            });
-            const nowAt = Date.now();
-            const barClosed = !sameWindow;
-            if (barClosed || nowAt - lastIndicatorRebuildAtRef.current >= INDICATOR_REBUILD_MIN_MS) {
-                lastIndicatorRebuildAtRef.current = nowAt;
-                rebuildIndicators(bars);
-            }
-            setLoading(false);
-        } catch (err) {
-            console.error(`MultiChartCard [${config.symbol}] error:`, err);
-            setLoading(false);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [config.symbol, config.interval]);
-
     // ── Rebuild indicators ────────────────────────────────────────────────────
     const rebuildIndicators = useCallback((bars: Bar[]) => {
         const chart = chartRef.current;
@@ -690,7 +629,97 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         }
     }, [config.indicators]);
 
-    useEffect(() => { setLoading(true); fetchKlines().then(() => chartRef.current?.timeScale().fitContent()); }, [fetchKlines]);
+    // ── Fetch klines ──────────────────────────────────────────────────────────
+    const fetchKlines = useCallback(async () => {
+        if (!config.symbol) return;
+        const reqId = ++klineReqIdRef.current;
+        try {
+            const res = await apiRequest(`${API_BASE}/api/market-klines/${config.symbol}?interval=${config.interval}&limit=200`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const payload = await res.json();
+            if (reqId !== klineReqIdRef.current) return;
+            const candlesRaw = payload.candles || [];
+            if (!candlesRaw.length || !candleSeriesRef.current || !chartRef.current) {
+                setLoading(false);
+                return;
+            }
+            const bars: Bar[] = candlesRaw.map((k: number[]) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+            
+            const isSymbolOrTfChange = loadedSymbolRef.current !== config.symbol || loadedIntervalRef.current !== config.interval;
+            const previous = lastBarsRef.current;
+            const previousLast = previous.length ? previous[previous.length - 1] : null;
+            const currentLast = bars[bars.length - 1];
+            
+            // Eğer sembol veya TF değiştiyse asla sameWindow sayılmaz
+            const sameWindow = !isSymbolOrTfChange
+                && previous.length === bars.length
+                && !!previousLast && !!currentLast
+                && previousLast.time === currentLast.time;
+                
+            const lastBarMoved = !!previousLast && !!currentLast && (
+                previousLast.close !== currentLast.close
+                || previousLast.high !== currentLast.high
+                || previousLast.low !== currentLast.low
+                || previousLast.volume !== currentLast.volume
+            );
+            
+            lastBarsRef.current = bars;
+            
+            // Sembol değiştiyse veya bar değiştiyse mum serisini güncelle
+            if (isSymbolOrTfChange || !sameWindow || lastBarMoved) {
+                candleSeriesRef.current.setData(bars.map(b => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
+            }
+            
+            const last = bars[bars.length - 1];
+            if (last) {
+                const precision = pricePrecision(last.close);
+                candleSeriesRef.current.applyOptions({ priceFormat: { type: "price", precision, minMove: 1 / Math.pow(10, precision) } });
+                // changePct: son mumun açılış→kapanış değişimi (gerçek mum hareketi)
+                const lastChangePct = last.open > 0 ? ((last.close - last.open) / last.open) * 100 : 0;
+                // 24 saatlik değişim için ~288 mum (1m) veya ~96 mum (15m) geriye git
+                const barsPerDay = Math.round(86_400_000 / (INTERVAL_MS[config.interval] || 60_000));
+                const refIdx = Math.max(0, bars.length - 1 - barsPerDay);
+                const refBar = bars[refIdx];
+                const dayChangePct = refBar?.open > 0 ? ((last.close - refBar.open) / refBar.open) * 100 : lastChangePct;
+                setPriceData({ last: last.close, changePct: dayChangePct });
+            }
+            
+            // Başlık göstergeleri: seçili TF'nin son mumlarından RSI-14 / ADX-14.
+            const rsiSeries = calcRSI(bars, 14);
+            setMomentum({
+                rsi14: rsiSeries.length ? rsiSeries[rsiSeries.length - 1].value : null,
+                adx14: calcADXLatest(bars, 14),
+            });
+            
+            const nowAt = Date.now();
+            const barClosed = !sameWindow;
+            // DİKKAT: Sembol veya TF değiştiğinde 60sn bekleme UYGULANMAZ — göstergeler ANINDA yeniden çizilir!
+            if (isSymbolOrTfChange || barClosed || nowAt - lastIndicatorRebuildAtRef.current >= INDICATOR_REBUILD_MIN_MS) {
+                lastIndicatorRebuildAtRef.current = nowAt;
+                rebuildIndicators(bars);
+            }
+            
+            if (isSymbolOrTfChange) {
+                loadedSymbolRef.current = config.symbol;
+                loadedIntervalRef.current = config.interval;
+                chartRef.current?.timeScale().fitContent();
+            }
+            
+            setLoading(false);
+        } catch (err) {
+            console.error(`MultiChartCard [${config.symbol}] error:`, err);
+            setLoading(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config.symbol, config.interval, rebuildIndicators]);
+
+    useEffect(() => {
+        setLoading(true);
+        lastBarsRef.current = [];
+        setPriceData(null);
+        setMomentum(null);
+        fetchKlines().then(() => chartRef.current?.timeScale().fitContent());
+    }, [config.symbol, config.interval, fetchKlines]);
     useEffect(() => { if (lastBarsRef.current.length > 0) rebuildIndicators(lastBarsRef.current); }, [config.indicators, rebuildIndicators]);
     // Sekme gizliyken 6 sn'de bir kline çekmek (ve 14 göstergeyi kurmaya
     // çalışmak) anlamsız; repo standardı `useVisibleInterval` (4 kart açıkken
@@ -750,8 +779,10 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     const handleSelectSymbol = (raw: string) => {
         let clean = raw.trim().toUpperCase();
         if (!clean) return;
-        if (!clean.endsWith("TRY") && availableSymbols.includes(clean + "TRY")) {
-            clean = clean + "TRY";
+        if (!clean.endsWith(QUOTE_ASSET) && availableSymbols.includes(clean + QUOTE_ASSET)) {
+            clean = clean + QUOTE_ASSET;
+        } else if (!clean.endsWith(QUOTE_ASSET) && !clean.endsWith("TRY") && !clean.endsWith("USDT") && !clean.endsWith("FDUSD")) {
+            clean = toSymbol(clean);
         }
         onUpdateConfig({ symbol: clean });
         setSymbolSearchOpen(false);

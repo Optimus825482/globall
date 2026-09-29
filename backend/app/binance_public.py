@@ -162,81 +162,81 @@ def _get_json(path: str, params: dict):
         "Accept": "application/json",
     }
     last_error = None
-    with _REQUEST_SEMAPHORE:
-        for attempt in range(1, REST_MAX_ATTEMPTS + 1):
-            _throttle_for_weight()
-            # Host fallback: her denemede sırayla havuzdaki hostu dene
-            base_url = REST_BASES[(attempt - 1) % len(REST_BASES)]
-            url = f"{base_url}{path}{query_str}"
-            try:
+    for attempt in range(1, REST_MAX_ATTEMPTS + 1):
+        _throttle_for_weight()
+        # Host fallback: her denemede sırayla havuzdaki hostu dene
+        base_url = REST_BASES[(attempt - 1) % len(REST_BASES)]
+        url = f"{base_url}{path}{query_str}"
+        try:
+            with _REQUEST_SEMAPHORE:
                 response = _HTTP_POOL.request(
                     "GET",
                     url,
                     headers=headers,
                 )
-                # X-MBX-USED-WEIGHT-1M izleme
+            # X-MBX-USED-WEIGHT-1M izleme
+            try:
+                used_val = (
+                    response.headers.get("X-MBX-USED-WEIGHT-1M")
+                    or response.headers.get("x-mbx-used-weight-1m")
+                )
+                if used_val is not None:
+                    used = int(used_val or 0)
+                    global _rate_limit_last_reset, _weight_reported_at
+                    with _weight_lock:
+                        _rate_limit_used["total"] = used
+                        _rate_limit_used["by_endpoint"][path] = max(
+                            _rate_limit_used["by_endpoint"].get(path, 0), used
+                        )
+                        _rate_limit_last_reset = time.time()
+                        _weight_reported_at = _rate_limit_last_reset
+            except (TypeError, ValueError):
+                pass
+
+            status = response.status
+            if status == 200:
+                raw = response.data
                 try:
-                    used_val = (
-                        response.headers.get("X-MBX-USED-WEIGHT-1M")
-                        or response.headers.get("x-mbx-used-weight-1m")
-                    )
-                    if used_val is not None:
-                        used = int(used_val or 0)
-                        global _rate_limit_last_reset, _weight_reported_at
-                        with _weight_lock:
-                            _rate_limit_used["total"] = used
-                            _rate_limit_used["by_endpoint"][path] = max(
-                                _rate_limit_used["by_endpoint"].get(path, 0), used
-                            )
-                            _rate_limit_last_reset = time.time()
-                            _weight_reported_at = _rate_limit_last_reset
-                except (TypeError, ValueError):
-                    pass
-
-                status = response.status
-                if status == 200:
-                    raw = response.data
-                    try:
-                        return _decode_payload(raw)
-                    except TransientDecodeError as exc:
-                        last_error = exc
-                        if attempt == REST_MAX_ATTEMPTS:
-                            break
-                        time.sleep(_retry_delay(attempt, response.headers))
-                        continue
-                elif status == 418:
-                    msg = response.data.decode("utf-8", "ignore")
-                    last_error = RuntimeError(f"Binance IP Ban (HTTP 418): {msg}")
-                    if attempt == REST_MAX_ATTEMPTS:
-                        break
-                    time.sleep(_ban_delay(attempt, response.headers))
-                    continue
-                elif status == 429:
-                    msg = response.data.decode("utf-8", "ignore")
-                    last_error = RuntimeError(f"Binance Rate Limit (HTTP 429): {msg}")
+                    return _decode_payload(raw)
+                except TransientDecodeError as exc:
+                    last_error = exc
                     if attempt == REST_MAX_ATTEMPTS:
                         break
                     time.sleep(_retry_delay(attempt, response.headers))
                     continue
-                elif 500 <= status < 600:
-                    last_error = RuntimeError(f"Binance Server Error (HTTP {status}) from {base_url}")
-                    if attempt == REST_MAX_ATTEMPTS:
-                        break
-                    time.sleep(_retry_delay(attempt, response.headers))
-                    continue
-                else:
-                    msg = response.data.decode("utf-8", "ignore")
-                    raise RuntimeError(f"Binance public API HTTP {status}: {msg}")
-
-            except (urllib3.exceptions.HTTPError, TimeoutError, ConnectionError, OSError) as exc:
-                last_error = exc
+            elif status == 418:
+                msg = response.data.decode("utf-8", "ignore")
+                last_error = RuntimeError(f"Binance IP Ban (HTTP 418): {msg}")
                 if attempt == REST_MAX_ATTEMPTS:
                     break
-                time.sleep(_retry_delay(attempt))
+                time.sleep(_ban_delay(attempt, response.headers))
+                continue
+            elif status == 429:
+                msg = response.data.decode("utf-8", "ignore")
+                last_error = RuntimeError(f"Binance Rate Limit (HTTP 429): {msg}")
+                if attempt == REST_MAX_ATTEMPTS:
+                    break
+                time.sleep(_retry_delay(attempt, response.headers))
+                continue
+            elif 500 <= status < 600:
+                last_error = RuntimeError(f"Binance Server Error (HTTP {status}) from {base_url}")
+                if attempt == REST_MAX_ATTEMPTS:
+                    break
+                time.sleep(_retry_delay(attempt, response.headers))
+                continue
+            else:
+                msg = response.data.decode("utf-8", "ignore")
+                raise RuntimeError(f"Binance public API HTTP {status}: {msg}")
 
-        raise RuntimeError(
-            f"Binance public API {REST_MAX_ATTEMPTS} denemede yanıt vermedi: {last_error}"
-        ) from last_error
+        except (urllib3.exceptions.HTTPError, TimeoutError, ConnectionError, OSError) as exc:
+            last_error = exc
+            if attempt == REST_MAX_ATTEMPTS:
+                break
+            time.sleep(_retry_delay(attempt))
+
+    raise RuntimeError(
+        f"Binance public API {REST_MAX_ATTEMPTS} denemede yanıt vermedi: {last_error}"
+    ) from last_error
 
 
 async def klines(symbol: str, interval: str, limit: int = 500, start_time_ms: int | None = None,
