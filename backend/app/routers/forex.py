@@ -724,20 +724,51 @@ async def _forex_auto_paper_loop():
                             f"{pos['display']} Başabaş (BE) kilitlendi: Kâr +{pnl_pips:.1f} pip. Stop seviyesi {be_sl} yapıldı.",
                             symbol=sym,
                         )
+                        # MT5 açık biletlerinde de Stop Loss'u başabaş seviyesine çek
+                        if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                            for mpos in _MT5_STATE.get("open_positions", []):
+                                if mpos.get("symbol", "").upper() == sym.upper():
+                                    t_id = mpos.get("ticket")
+                                    if t_id:
+                                        _MT5_STATE["pending_commands"].append({
+                                            "id": f"CMD-MODIFY-{t_id}-BE",
+                                            "action": "MODIFY_SLTP",
+                                            "ticket": t_id,
+                                            "sl": be_sl,
+                                            "tp": mpos.get("tp_price", 0.0),
+                                        })
+                                        _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {be_sl} olarak kilitlendi.", symbol=sym)
 
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
                     if pnl_pips >= _AUTO_SETTINGS.trailing_stop_pips:
                         trail_dist = _AUTO_SETTINGS.trailing_stop_pips * pip_size
+                        updated_trail = False
                         if direction == "BUY":
                             cand_sl = round(cur_p - trail_dist, digits)
                             if cand_sl > pos["sl_price"]:
                                 pos["sl_price"] = cand_sl
                                 pos["trailing_activated"] = True
+                                updated_trail = True
                         else:
                             cand_sl = round(cur_p + trail_dist, digits)
                             if cand_sl < pos["sl_price"]:
                                 pos["sl_price"] = cand_sl
                                 pos["trailing_activated"] = True
+                                updated_trail = True
+
+                        # MT5 açık biletinde de Stop Loss seviyesini dinamik olarak yukarı sür
+                        if updated_trail and _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                            for mpos in _MT5_STATE.get("open_positions", []):
+                                if mpos.get("symbol", "").upper() == sym.upper():
+                                    t_id = mpos.get("ticket")
+                                    if t_id:
+                                        _MT5_STATE["pending_commands"].append({
+                                            "id": f"CMD-MODIFY-{t_id}-TR",
+                                            "action": "MODIFY_SLTP",
+                                            "ticket": t_id,
+                                            "sl": pos["sl_price"],
+                                            "tp": mpos.get("tp_price", 0.0),
+                                        })
 
                     # (c) KÂR AL (TAKE PROFIT) KONTROLÜ
                     if direction == "BUY" and cur_p >= pos["tp_price"]:

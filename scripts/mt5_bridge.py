@@ -193,6 +193,40 @@ def execute_close_order(cmd: dict) -> dict:
         return {"success": False, "error": comment_err}
 
 
+def execute_modify_sltp(cmd: dict) -> dict:
+    """Açık pozisyonun SL veya TP seviyesini günceller (Breakeven & Trailing)."""
+    ticket = int(cmd.get("ticket", 0))
+    sl = float(cmd.get("sl", 0.0))
+    tp = float(cmd.get("tp", 0.0))
+    positions = mt5.positions_get(ticket=ticket)
+    if not positions:
+        return {"success": False, "error": f"Pozisyon #{ticket} bulunamadı"}
+
+    pos = positions[0]
+    symbol = pos.symbol
+    s_info = mt5.symbol_info(symbol)
+    digits = s_info.digits if s_info else 5
+    sl = round(sl, digits)
+    tp = round(tp, digits) if tp > 0 else pos.tp
+
+    req = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "position": ticket,
+        "symbol": symbol,
+        "sl": sl,
+        "tp": tp,
+    }
+
+    res = mt5.order_send(req)
+    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        print(f"  🛡️ [DİNAMİK SL GÜNCELLENDİ]: Bilet #{ticket} ({symbol}) -> Yeni SL: {sl} (BE/Trailing)")
+        return {"success": True, "ticket": ticket}
+    else:
+        err_msg = res.comment if res else str(mt5.last_error())
+        print(f"  ⚠️ [SL GÜNCELLEME UYARISI]: Bilet #{ticket} -> {err_msg}")
+        return {"success": False, "error": err_msg}
+
+
 def sync_with_server(api_base: str) -> list:
     """MT5 durumunu web sunucusuna raporlar ve bekleyen komutları çeker."""
     acc = mt5.account_info()
@@ -320,6 +354,8 @@ def main():
                     execute_market_order(cmd)
                 elif action == "CLOSE_ORDER":
                     execute_close_order(cmd)
+                elif action == "MODIFY_SLTP":
+                    execute_modify_sltp(cmd)
 
             time.sleep(1.5)
 
