@@ -134,7 +134,27 @@ export default function ForexRadarPage() {
       </div>
 
       {/* HIZLI ERİŞİM KARTLARI */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Link
+          href="/forex/portfolio"
+          className="p-3.5 rounded-xl bg-bunker-900/80 border border-blue-500/30 hover:border-blue-400 transition-all group"
+        >
+          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">💼</div>
+          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
+            Otonom Portföy
+          </div>
+          <div className="text-[11px] text-bunker-muted font-mono">Canlı Scalper Takip</div>
+        </Link>
+        <Link
+          href="/forex/reports"
+          className="p-3.5 rounded-xl bg-bunker-900/80 border border-indigo-500/30 hover:border-indigo-400 transition-all group"
+        >
+          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📊</div>
+          <div className="font-mono text-sm font-bold text-white group-hover:text-indigo-300">
+            İşlem Raporları
+          </div>
+          <div className="text-[11px] text-bunker-muted font-mono">Tüm Giriş/Çıkış & CSV</div>
+        </Link>
         <Link
           href="/forex/technical-charts"
           className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group"
@@ -164,16 +184,6 @@ export default function ForexRadarPage() {
             Takvim
           </div>
           <div className="text-[11px] text-bunker-muted font-mono">Ekonomik Veriler</div>
-        </Link>
-        <Link
-          href="/forex/portfolio"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">💼</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            Forex Portföy
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Demo Pozisyonlar</div>
         </Link>
       </div>
 

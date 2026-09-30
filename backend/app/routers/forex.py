@@ -9,14 +9,16 @@ Provides:
 """
 from __future__ import annotations
 
+import csv
 import datetime
+import io
 import logging
 import math
 import random
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -570,16 +572,39 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         pnl_usd = round(pnl_pips * target["lots"] * pip_usd_val, 2)
         pnl_pips = round(pnl_pips, 1)
 
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        now_time = time.time()
+        open_ts = target.get("opened_at_ts", now_time)
+        dur_sec = max(1, int(now_time - open_ts))
+        dur_human = f"{dur_sec // 60} dk {dur_sec % 60} sn" if dur_sec >= 60 else f"{dur_sec} sn"
+
+        reason_titles = {
+            "TP_HIT": "🎯 Kâr Al (TP)",
+            "SL_HIT": "🛑 Zarar Kes (SL)",
+            "BE_HIT": "🛡️ Başabaş (BE)",
+            "TRAILING_HIT": "📈 İz Süren (Trailing)",
+            "MANUAL": "✋ Manuel Kapatma",
+        }
+        human_reason = reason_titles.get(reason, reason)
+        bal_after = round(_AUTO_STATE["balance"] + pnl_usd, 2)
+
         closed_item = {
             **target,
             "exit_price": cur_p,
-            "exit_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+            "exit_time": now_utc.strftime("%H:%M:%S UTC"),
+            "exit_time_iso": now_utc.isoformat(),
+            "closed_at_ts": now_time,
+            "duration_sec": dur_sec,
+            "duration_human": dur_human,
             "exit_reason": reason,
+            "exit_reason_title": human_reason,
             "pnl_usd": pnl_usd,
             "pnl_pips": pnl_pips,
+            "balance_after": bal_after,
+            "outcome": "WIN" if pnl_usd >= 0 else "LOSS",
         }
 
-        _AUTO_STATE["balance"] = round(_AUTO_STATE["balance"] + pnl_usd, 2)
+        _AUTO_STATE["balance"] = bal_after
         _AUTO_STATE["realized_pnl_usd"] = round(_AUTO_STATE["realized_pnl_usd"] + pnl_usd, 2)
         _AUTO_STATE["realized_pnl_pips"] = round(_AUTO_STATE["realized_pnl_pips"] + pnl_pips, 1)
         _AUTO_STATE["total_trades"] += 1
@@ -589,17 +614,9 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             _AUTO_STATE["losses"] += 1
 
         _AUTO_STATE["closed_trades"].insert(0, closed_item)
-        if len(_AUTO_STATE["closed_trades"]) > 60:
-            _AUTO_STATE["closed_trades"] = _AUTO_STATE["closed_trades"][:60]
+        if len(_AUTO_STATE["closed_trades"]) > 1000:
+            _AUTO_STATE["closed_trades"] = _AUTO_STATE["closed_trades"][:1000]
 
-        reason_titles = {
-            "TP_HIT": "🎯 Kâr Al (Take Profit)",
-            "SL_HIT": "🛑 Zarar Kes (Stop Loss)",
-            "BE_HIT": "🛡️ Başabaş Koruma (Breakeven)",
-            "TRAILING_HIT": "📈 İz Süren Stop (Trailing)",
-            "MANUAL": "✋ Manuel Kapatma",
-        }
-        human_reason = reason_titles.get(reason, reason)
         _log_auto_decision(
             "EXIT",
             f"{target['display']} {human_reason} ile kapandı: ${pnl_usd:+.2f} ({pnl_pips:+.1f} pip)",
@@ -813,6 +830,8 @@ async def _forex_auto_paper_loop():
                     "breakeven_activated": False,
                     "trailing_activated": False,
                     "open_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+                    "open_time_iso": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "opened_at_ts": time.time(),
                     "pnl_usd": 0.0,
                     "pnl_pips": 0.0,
                     "pip_size": pip_size,
@@ -941,3 +960,172 @@ async def reset_forex_auto_paper():
 
     _log_auto_decision("SYSTEM", "Forex demo hesabı $10,000 bakiyeyle sıfırlandı.")
     return {"status": "reset", "balance": 10000.0}
+
+
+@router.get("/auto-paper/trades")
+async def get_forex_trades_report(
+    symbol: Optional[str] = None,
+    outcome: Optional[str] = None,
+    reason: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 500,
+):
+    """Forex Otonom Scalper ayrıntılı işlem raporları, filtreleme ve performans analitiği."""
+    all_closed = list(_AUTO_STATE["closed_trades"])
+    filtered = all_closed
+
+    if symbol and symbol != "ALL":
+        filtered = [t for t in filtered if t.get("symbol") == symbol or t.get("display") == symbol]
+
+    if outcome and outcome != "ALL":
+        outcome_upper = str(outcome).upper()
+        filtered = [t for t in filtered if str(t.get("outcome", "")).upper() == outcome_upper]
+
+    if reason and reason != "ALL":
+        filtered = [t for t in filtered if t.get("exit_reason") == reason]
+
+    if search:
+        s_low = search.lower()
+        filtered = [
+            t for t in filtered
+            if s_low in t.get("id", "").lower()
+            or s_low in t.get("symbol", "").lower()
+            or s_low in t.get("display", "").lower()
+        ]
+
+    # Performans Analitiği (Tüm Kapanan İşlemler Üzerinden)
+    total_trades = len(all_closed)
+    wins = [t for t in all_closed if t.get("pnl_usd", 0.0) >= 0]
+    losses = [t for t in all_closed if t.get("pnl_usd", 0.0) < 0]
+
+    win_count = len(wins)
+    loss_count = len(losses)
+    win_rate = round((win_count / total_trades * 100.0), 1) if total_trades > 0 else 0.0
+
+    gross_profit = round(sum(t.get("pnl_usd", 0.0) for t in wins), 2)
+    gross_loss = round(abs(sum(t.get("pnl_usd", 0.0) for t in losses)), 2)
+
+    if gross_loss > 0:
+        profit_factor = round(gross_profit / gross_loss, 2)
+    elif gross_profit > 0:
+        profit_factor = 999.0
+    else:
+        profit_factor = 0.0
+
+    total_pnl_usd = round(sum(t.get("pnl_usd", 0.0) for t in all_closed), 2)
+    total_pnl_pips = round(sum(t.get("pnl_pips", 0.0) for t in all_closed), 1)
+    total_lots = round(sum(t.get("lots", 0.0) for t in all_closed), 2)
+
+    avg_trade_usd = round(total_pnl_usd / total_trades, 2) if total_trades > 0 else 0.0
+    avg_win_usd = round(gross_profit / win_count, 2) if win_count > 0 else 0.0
+    avg_loss_usd = round(gross_loss / loss_count, 2) if loss_count > 0 else 0.0
+
+    max_win_usd = max([t.get("pnl_usd", 0.0) for t in wins], default=0.0)
+    max_loss_usd = min([t.get("pnl_usd", 0.0) for t in losses], default=0.0)
+
+    # Açık Pozisyonlar
+    open_positions = list(_AUTO_STATE["open_positions"])
+    open_pnl_usd = round(sum(p.get("pnl_usd", 0.0) for p in open_positions), 2)
+    equity = round(_AUTO_STATE["balance"] + open_pnl_usd, 2)
+
+    return {
+        "kpi": {
+            "total_trades": total_trades,
+            "wins": win_count,
+            "losses": loss_count,
+            "win_rate": win_rate,
+            "total_pnl_usd": total_pnl_usd,
+            "total_pnl_pips": total_pnl_pips,
+            "gross_profit_usd": gross_profit,
+            "gross_loss_usd": gross_loss,
+            "profit_factor": profit_factor,
+            "avg_trade_usd": avg_trade_usd,
+            "avg_win_usd": avg_win_usd,
+            "avg_loss_usd": avg_loss_usd,
+            "max_win_usd": max_win_usd,
+            "max_loss_usd": max_loss_usd,
+            "total_lots": total_lots,
+            "balance": _AUTO_STATE["balance"],
+            "equity": equity,
+            "open_positions_count": len(open_positions),
+            "open_pnl_usd": open_pnl_usd,
+        },
+        "trades": filtered[:limit],
+        "total_filtered": len(filtered),
+        "open_positions": open_positions,
+    }
+
+
+@router.get("/auto-paper/export-csv")
+async def export_forex_trades_csv(
+    symbol: Optional[str] = None,
+    outcome: Optional[str] = None,
+):
+    """Forex scalper işlem geçmişini Excel uyumlu UTF-8 CSV olarak dışa aktarır."""
+    trades = list(_AUTO_STATE["closed_trades"])
+    if symbol and symbol != "ALL":
+        trades = [t for t in trades if t.get("symbol") == symbol or t.get("display") == symbol]
+    if outcome and outcome != "ALL":
+        trades = [t for t in trades if str(t.get("outcome", "")).upper() == str(outcome).upper()]
+
+    output = io.StringIO()
+    # UTF-8 BOM yaz (Excel'in Türkçe karakterleri düzgün açması için)
+    output.write('\ufeff')
+    writer = csv.writer(output, delimiter=';')
+
+    # Başlık Satırı
+    writer.writerow([
+        "Bilet No",
+        "Parite",
+        "Sembol",
+        "İşlem Yönü",
+        "Lot",
+        "Radar Skoru",
+        "Giriş Fiyatı",
+        "Açılış Zamanı (UTC)",
+        "Çıkış Fiyatı",
+        "Kapanış Zamanı (UTC)",
+        "İşlem Süresi",
+        "Çıkış Nedeni",
+        "Zarar Durdur (SL)",
+        "Kâr Al (TP)",
+        "Kâr/Zarar (Pip)",
+        "Net Getiri (USD)",
+        "Bakiye Sonrası (USD)",
+        "Sonuç",
+    ])
+
+    for tr in trades:
+        writer.writerow([
+            tr.get("id", ""),
+            tr.get("display", tr.get("symbol", "")),
+            tr.get("symbol", ""),
+            tr.get("direction", ""),
+            tr.get("lots", 0.0),
+            tr.get("score", ""),
+            tr.get("entry_price", ""),
+            tr.get("open_time", ""),
+            tr.get("exit_price", ""),
+            tr.get("exit_time", ""),
+            tr.get("duration_human", f"{tr.get('duration_sec', 0)} sn"),
+            tr.get("exit_reason_title", tr.get("exit_reason", "")),
+            tr.get("sl_price", ""),
+            tr.get("tp_price", ""),
+            f"{tr.get('pnl_pips', 0.0):+.1f}",
+            f"{tr.get('pnl_usd', 0.0):+.2f}",
+            tr.get("balance_after", ""),
+            "KAZANÇ (WIN)" if tr.get("pnl_usd", 0.0) >= 0 else "KAYIP (LOSS)",
+        ])
+
+    csv_data = output.getvalue().encode("utf-8-sig")
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"forex_scalper_raporu_{now_str}.csv"
+
+    return Response(
+        content=csv_data,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "text/csv; charset=utf-8",
+        },
+    )

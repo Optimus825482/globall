@@ -263,6 +263,56 @@ export default function ForexPortfolioPage() {
     }
   };
 
+  // Kapanan İşlemleri CSV Olarak İndir
+  const downloadCsv = () => {
+    try {
+      const headers = [
+        "Bilet No",
+        "Parite",
+        "Sembol",
+        "Yön",
+        "Lot",
+        "Giriş Fiyatı",
+        "Çıkış Fiyatı",
+        "Kapanış Zamanı (UTC)",
+        "Çıkış Nedeni",
+        "Kâr/Zarar (Pip)",
+        "Net Getiri (USD)",
+        "Sonuç",
+      ];
+      const rows = closedTrades.map((t) => [
+        t.id,
+        t.display || t.symbol,
+        t.symbol,
+        t.direction,
+        t.lots,
+        t.entry_price,
+        t.exit_price,
+        t.exit_time,
+        t.exit_reason,
+        `${t.pnl_pips >= 0 ? "+" : ""}${t.pnl_pips}`,
+        `${t.pnl_usd >= 0 ? "+" : ""}${t.pnl_usd.toFixed(2)}`,
+        t.pnl_usd >= 0 ? "KAZANÇ (WIN)" : "KAYIP (LOSS)",
+      ]);
+      const csvContent =
+        "\uFEFF" +
+        [headers.join(";"), ...rows.map((r) => r.map((cell) => `"${cell}"`).join(";"))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `forex_scalper_kapanan_islemler_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("CSV indirme hatası:", e);
+      alert("CSV indirilirken bir hata oluştu.");
+    }
+  };
+
   // Hesabı Sıfırla
   const resetAccount = async () => {
     if (confirm("Forex demo hesabını $10,000 başlangıç bakiyesiyle sıfırlamak istiyor musunuz?")) {
@@ -941,7 +991,26 @@ export default function ForexPortfolioPage() {
                 Kapanan Scalp İşlemleri ({closedTrades.length})
               </h3>
             </div>
-            <span className="text-[10px] text-bunker-muted">Net Kazanç / Kayıp</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={downloadCsv}
+                disabled={closedTrades.length === 0}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-600/30 text-blue-300 border border-blue-400/40 hover:bg-blue-600/50 transition-all disabled:opacity-40 flex items-center gap-1 shadow-sm"
+                title="Kapanan İşlemleri CSV İndir"
+              >
+                <span>📥</span>
+                <span>CSV</span>
+              </button>
+              <Link
+                href="/forex/reports"
+                className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-bunker-800 hover:bg-bunker-700 text-white transition-all flex items-center gap-1"
+                title="Tüm İşlem Raporları ve Analitik"
+              >
+                <span>📊</span>
+                <span>Raporlar →</span>
+              </Link>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
@@ -1005,10 +1074,16 @@ export default function ForexPortfolioPage() {
       </div>
 
       {/* ALT BAĞLANTILAR */}
-      <div className="flex items-center justify-between text-xs text-bunker-muted pt-2 border-t border-bunker-800">
-        <Link href="/forex" className="hover:text-blue-400 transition-colors">
-          ← Forex Radar & Canlı Piyasa
-        </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-bunker-muted pt-2 border-t border-bunker-800">
+        <div className="flex items-center gap-4">
+          <Link href="/forex" className="hover:text-blue-400 transition-colors">
+            ← Forex Radar & Canlı Piyasa
+          </Link>
+          <span className="text-bunker-700">|</span>
+          <Link href="/forex/reports" className="hover:text-blue-300 font-bold text-blue-400 transition-colors flex items-center gap-1">
+            📊 Tüm İşlem Raporları & CSV İndir →
+          </Link>
+        </div>
         <Link href="/forex/technical-charts" className="hover:text-blue-400 transition-colors">
           4'lü TradingView Çoklu Ekran →
         </Link>

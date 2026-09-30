@@ -175,6 +175,52 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         # Default session_filter is False, meaning all sessions are open
         self.assertFalse(forex._AUTO_SETTINGS.session_filter)
 
+    async def test_trades_report_and_csv_export(self):
+        # Insert a closed test trade
+        closed_sample = {
+            "id": "FX-REP-123",
+            "symbol": "EURUSD",
+            "display": "EUR/USD",
+            "direction": "BUY",
+            "lots": 0.50,
+            "entry_price": 1.08500,
+            "exit_price": 1.08750,
+            "open_time": "10:00:00 UTC",
+            "exit_time": "10:05:00 UTC",
+            "exit_reason": "TP_HIT",
+            "exit_reason_title": "🎯 Kâr Al (TP)",
+            "pnl_usd": 125.0,
+            "pnl_pips": 25.0,
+            "pip_size": 0.0001,
+            "digits": 5,
+            "duration_sec": 300,
+            "duration_human": "5 dk 0 sn",
+            "balance_after": 10125.0,
+            "outcome": "WIN",
+            "score": 85.0,
+        }
+        async with forex._AUTO_PAPER_LOCK:
+            forex._AUTO_STATE["closed_trades"].insert(0, closed_sample)
+
+        # 1. Report endpoint
+        rep = await forex.get_forex_trades_report()
+        self.assertIn("kpi", rep)
+        self.assertGreaterEqual(rep["kpi"]["total_trades"], 1)
+        self.assertGreaterEqual(rep["kpi"]["wins"], 1)
+        self.assertGreater(rep["kpi"]["gross_profit_usd"], 0)
+        self.assertTrue(any(t["id"] == "FX-REP-123" for t in rep["trades"]))
+
+        # 2. Filter by symbol
+        rep_sym = await forex.get_forex_trades_report(symbol="EURUSD")
+        self.assertTrue(all(t["symbol"] == "EURUSD" for t in rep_sym["trades"]))
+
+        # 3. CSV export endpoint
+        csv_res = await forex.export_forex_trades_csv()
+        self.assertEqual(csv_res.status_code, 200)
+        self.assertEqual(csv_res.media_type, "text/csv; charset=utf-8")
+        self.assertIn("Content-Disposition", csv_res.headers)
+        self.assertGreater(len(csv_res.body), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
