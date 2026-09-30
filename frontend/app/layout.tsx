@@ -1,16 +1,9 @@
 import type { Metadata } from "next";
-import { Poppins, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AuthGate from "./components/AuthGate";
 import AppShell from "./components/AppShell";
 
 export const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
-
-// Google Fonts'u next/font ile yükle: render-blocking @import yerine
-// self-hosted, optimize edilmiş font (CLS + FCP iyileşir).
-const poppins = Poppins({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-display", display: "swap" });
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "700"], variable: "--font-sans", display: "swap" });
-const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: {
@@ -48,8 +41,7 @@ export default function RootLayout({
     // before hydration (e.g. rtrvr-*); ignore mismatches on this element only.
     <html lang="tr" className="dark" suppressHydrationWarning data-build-id={BUILD_ID}>
       <head><meta name="mobile-web-app-capable" content="yes" /><meta name="build-id" content={BUILD_ID} /></head>
-      {/* Extension noise lands on <body> too; same suppression, children unaffected. */}
-      <body suppressHydrationWarning className={`${poppins.variable} ${inter.variable} ${jetbrains.variable}`}>
+      <body suppressHydrationWarning className="font-sans antialiased">
         <AuthGate>
         <AppShell>{children}</AppShell>
         </AuthGate>
