@@ -353,23 +353,79 @@ def sync_with_server(api_base: str):
             "open_time": datetime.datetime.fromtimestamp(p.time, datetime.timezone.utc).strftime("%H:%M:%S UTC"),
         })
 
-    # Son 20 kapanan işlem (deal)
+    # Kapanan işlem geçmişi (Broker zaman dilimi farkını tolere etmek için +2 gün buffer)
     deals = []
     now = datetime.datetime.now()
-    from_date = now - datetime.timedelta(days=2)
-    history = mt5.history_deals_get(from_date, now) or []
-    for d in reversed(history[-20:]):
-        if d.entry == mt5.DEAL_ENTRY_OUT:  # Kapanış işlemleri
-            deals.append({
-                "ticket": d.position_id,
-                "symbol": d.symbol,
-                "direction": "BUY" if d.type == mt5.DEAL_TYPE_SELL else "SELL",
-                "lots": d.volume,
-                "price": d.price,
-                "profit": round(d.profit, 2),
-                "commission": round(d.commission, 2),
-                "time": datetime.datetime.fromtimestamp(d.time, datetime.timezone.utc).strftime("%H:%M:%S UTC"),
-            })
+    from_date = now - datetime.timedelta(days=30)
+    to_date = now + datetime.timedelta(days=2)
+    history = mt5.history_deals_get(from_date, to_date) or []
+
+    # Sadece kapanış (OUT) işlemlerini filtrele
+    out_deals = [d for d in history if d.entry == mt5.DEAL_ENTRY_OUT]
+    # En son 300 kapanmış işlemi dahil et
+    for d in reversed(out_deals[-300:]):
+        pos_id = d.position_id
+        # Pozisyonun açılış biletini bul (in_deal)
+        in_deal = None
+        for cand in history:
+            if cand.position_id == pos_id and cand.entry == mt5.DEAL_ENTRY_IN:
+                in_deal = cand
+                break
+
+        entry_p = in_deal.price if in_deal else d.price
+        open_time_str = datetime.datetime.fromtimestamp(in_deal.time, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") if in_deal else "-"
+        close_time_str = datetime.datetime.fromtimestamp(d.time, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        direction = "BUY" if in_deal and in_deal.type == mt5.DEAL_TYPE_BUY else ("SELL" if d.type == mt5.DEAL_TYPE_BUY else "BUY")
+
+        comment = str(d.comment or "")
+        reason = "IC Markets MT5"
+        if "[tp" in comment.lower():
+            reason = "🎯 Kâr Al (TP)"
+        elif "[sl" in comment.lower():
+            reason = "🛑 Zarar Durdur (SL)"
+        elif "[be" in comment.lower():
+            reason = "🛡️ Başabaş (BE)"
+        elif comment:
+            reason = comment
+
+        dur_sec = max(1, d.time - (in_deal.time if in_deal else d.time))
+        dur_human = f"{dur_sec // 60} dk {dur_sec % 60} sn" if dur_sec >= 60 else f"{dur_sec} sn"
+
+        # PnL Pip hesabı
+        pips = 0.0
+        s_info = mt5.symbol_info(d.symbol)
+        if s_info:
+            point = s_info.point
+            digits = s_info.digits
+            pip_size = point * 10 if digits in (3, 5) else point
+            if direction == "BUY":
+                pips = round((d.price - entry_p) / pip_size, 1)
+            else:
+                pips = round((entry_p - d.price) / pip_size, 1)
+
+        deals.append({
+            "id": f"MT5-{pos_id}",
+            "ticket": pos_id,
+            "symbol": d.symbol,
+            "display": d.symbol,
+            "direction": direction,
+            "lots": d.volume,
+            "entry_price": entry_p,
+            "exit_price": d.price,
+            "profit": round(d.profit, 2),
+            "pnl_usd": round(d.profit, 2),
+            "pnl_pips": pips,
+            "commission": round(d.commission, 2),
+            "swap": round(d.swap, 2),
+            "open_time": open_time_str,
+            "exit_time": close_time_str,
+            "duration_sec": dur_sec,
+            "duration_human": dur_human,
+            "exit_reason": reason,
+            "exit_reason_title": reason,
+            "outcome": "WIN" if d.profit >= 0 else "LOSS",
+        })
 
     payload = {
         "account": account_data,

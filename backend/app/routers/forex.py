@@ -1091,7 +1091,8 @@ async def get_forex_trades_report(
     limit: int = 500,
 ):
     """Forex Otonom Scalper ayrıntılı işlem raporları, filtreleme ve performans analitiği."""
-    all_closed = list(_AUTO_STATE["closed_trades"])
+    # MT5 Deals önceliklidir; yoksa auto_state geçmişi kullanılır
+    all_closed = list(_MT5_STATE.get("closed_deals", [])) or list(_AUTO_STATE.get("closed_trades", []))
     filtered = all_closed
 
     if symbol and symbol != "ALL":
@@ -1102,28 +1103,30 @@ async def get_forex_trades_report(
         filtered = [t for t in filtered if str(t.get("outcome", "")).upper() == outcome_upper]
 
     if reason and reason != "ALL":
-        filtered = [t for t in filtered if t.get("exit_reason") == reason]
+        filtered = [t for t in filtered if reason.lower() in str(t.get("exit_reason", "")).lower() or reason.lower() in str(t.get("exit_reason_title", "")).lower()]
 
     if search:
         s_low = search.lower()
         filtered = [
             t for t in filtered
-            if s_low in t.get("id", "").lower()
-            or s_low in t.get("symbol", "").lower()
-            or s_low in t.get("display", "").lower()
+            if s_low in str(t.get("id", "")).lower()
+            or s_low in str(t.get("ticket", "")).lower()
+            or s_low in str(t.get("symbol", "")).lower()
+            or s_low in str(t.get("display", "")).lower()
+            or s_low in str(t.get("exit_reason", "")).lower()
         ]
 
     # Performans Analitiği (Tüm Kapanan İşlemler Üzerinden)
     total_trades = len(all_closed)
-    wins = [t for t in all_closed if t.get("pnl_usd", 0.0) >= 0]
-    losses = [t for t in all_closed if t.get("pnl_usd", 0.0) < 0]
+    wins = [t for t in all_closed if float(t.get("pnl_usd", t.get("profit", 0.0))) >= 0]
+    losses = [t for t in all_closed if float(t.get("pnl_usd", t.get("profit", 0.0))) < 0]
 
     win_count = len(wins)
     loss_count = len(losses)
     win_rate = round((win_count / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
-    gross_profit = round(sum(t.get("pnl_usd", 0.0) for t in wins), 2)
-    gross_loss = round(abs(sum(t.get("pnl_usd", 0.0) for t in losses)), 2)
+    gross_profit = round(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in wins), 2)
+    gross_loss = round(abs(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in losses)), 2)
 
     if gross_loss > 0:
         profit_factor = round(gross_profit / gross_loss, 2)
@@ -1132,21 +1135,22 @@ async def get_forex_trades_report(
     else:
         profit_factor = 0.0
 
-    total_pnl_usd = round(sum(t.get("pnl_usd", 0.0) for t in all_closed), 2)
-    total_pnl_pips = round(sum(t.get("pnl_pips", 0.0) for t in all_closed), 1)
-    total_lots = round(sum(t.get("lots", 0.0) for t in all_closed), 2)
+    total_pnl_usd = round(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in all_closed), 2)
+    total_pnl_pips = round(sum(float(t.get("pnl_pips", 0.0)) for t in all_closed), 1)
+    total_lots = round(sum(float(t.get("lots", 0.0)) for t in all_closed), 2)
 
     avg_trade_usd = round(total_pnl_usd / total_trades, 2) if total_trades > 0 else 0.0
     avg_win_usd = round(gross_profit / win_count, 2) if win_count > 0 else 0.0
     avg_loss_usd = round(gross_loss / loss_count, 2) if loss_count > 0 else 0.0
 
-    max_win_usd = max([t.get("pnl_usd", 0.0) for t in wins], default=0.0)
-    max_loss_usd = min([t.get("pnl_usd", 0.0) for t in losses], default=0.0)
+    max_win_usd = max([float(t.get("pnl_usd", t.get("profit", 0.0))) for t in wins], default=0.0)
+    max_loss_usd = min([float(t.get("pnl_usd", t.get("profit", 0.0))) for t in losses], default=0.0)
 
-    # Açık Pozisyonlar
-    open_positions = list(_AUTO_STATE["open_positions"])
-    open_pnl_usd = round(sum(p.get("pnl_usd", 0.0) for p in open_positions), 2)
-    equity = round(_AUTO_STATE["balance"] + open_pnl_usd, 2)
+    # Açık Pozisyonlar (MT5 veya Auto)
+    open_positions = list(_MT5_STATE.get("open_positions", [])) or list(_AUTO_STATE.get("open_positions", []))
+    open_pnl_usd = round(sum(float(p.get("pnl_usd", p.get("profit", 0.0))) for p in open_positions), 2)
+    acc_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"]))
+    acc_eq = float(_MT5_STATE.get("account", {}).get("equity", round(acc_bal + open_pnl_usd, 2)))
 
     return {
         "kpi": {
@@ -1165,8 +1169,8 @@ async def get_forex_trades_report(
             "max_win_usd": max_win_usd,
             "max_loss_usd": max_loss_usd,
             "total_lots": total_lots,
-            "balance": _AUTO_STATE["balance"],
-            "equity": equity,
+            "balance": acc_bal,
+            "equity": acc_eq,
             "open_positions_count": len(open_positions),
             "open_pnl_usd": open_pnl_usd,
         },
@@ -1182,7 +1186,7 @@ async def export_forex_trades_csv(
     outcome: Optional[str] = None,
 ):
     """Forex scalper işlem geçmişini Excel uyumlu UTF-8 CSV olarak dışa aktarır."""
-    trades = list(_AUTO_STATE["closed_trades"])
+    trades = list(_MT5_STATE.get("closed_deals", [])) or list(_AUTO_STATE.get("closed_trades", []))
     if symbol and symbol != "ALL":
         trades = [t for t in trades if t.get("symbol") == symbol or t.get("display") == symbol]
     if outcome and outcome != "ALL":
@@ -1216,25 +1220,28 @@ async def export_forex_trades_csv(
     ])
 
     for tr in trades:
+        pnl = float(tr.get("pnl_usd", tr.get("profit", 0.0)))
+        pips = float(tr.get("pnl_pips", 0.0))
+        t_id = tr.get("id") or (f"#{tr['ticket']}" if tr.get("ticket") else "-")
         writer.writerow([
-            tr.get("id", ""),
+            t_id,
             tr.get("display", tr.get("symbol", "")),
             tr.get("symbol", ""),
             tr.get("direction", ""),
             tr.get("lots", 0.0),
-            tr.get("score", ""),
-            tr.get("entry_price", ""),
-            tr.get("open_time", ""),
-            tr.get("exit_price", ""),
-            tr.get("exit_time", ""),
-            tr.get("duration_human", f"{tr.get('duration_sec', 0)} sn"),
-            tr.get("exit_reason_title", tr.get("exit_reason", "")),
-            tr.get("sl_price", ""),
-            tr.get("tp_price", ""),
-            f"{tr.get('pnl_pips', 0.0):+.1f}",
-            f"{tr.get('pnl_usd', 0.0):+.2f}",
-            tr.get("balance_after", ""),
-            "KAZANÇ (WIN)" if tr.get("pnl_usd", 0.0) >= 0 else "KAYIP (LOSS)",
+            tr.get("score", "-"),
+            tr.get("entry_price", "-"),
+            tr.get("open_time", "-"),
+            tr.get("exit_price", "-"),
+            tr.get("exit_time", "-"),
+            tr.get("duration_human", f"{tr.get('duration_sec', 0)} sn" if tr.get("duration_sec") else "-"),
+            tr.get("exit_reason_title", tr.get("exit_reason", "IC Markets MT5")),
+            tr.get("sl_price", "-"),
+            tr.get("tp_price", "-"),
+            f"{pips:+.1f}",
+            f"{pnl:+.2f}",
+            tr.get("balance_after", "-"),
+            "KAZANÇ (WIN)" if pnl >= 0 else "KAYIP (LOSS)",
         ])
 
     csv_data = output.getvalue().encode("utf-8-sig")
