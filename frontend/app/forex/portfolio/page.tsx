@@ -133,8 +133,8 @@ export default function ForexPortfolioPage() {
   // Otonom Sistem Durumu
   const [autoStatus, setAutoStatus] = useState<string>("Yükleniyor…");
   const [autoEnabled, setAutoEnabled] = useState<boolean>(false);
-  const [balance, setBalance] = useState<number>(10000.0);
-  const [equity, setEquity] = useState<number>(10000.0);
+  const [balance, setBalance] = useState<number>(1000.0);
+  const [equity, setEquity] = useState<number>(1000.0);
   const [openPnlUsd, setOpenPnlUsd] = useState<number>(0.0);
   const [openPnlPips, setOpenPnlPips] = useState<number>(0.0);
   const [realizedPnlUsd, setRealizedPnlUsd] = useState<number>(0.0);
@@ -153,7 +153,7 @@ export default function ForexPortfolioPage() {
   // Ayarlar & Düzenleme
   const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
-    balance: 10000.0,
+    balance: 1000.0,
     risk_per_trade_pct: 1.0,
     max_open_positions: 3,
     min_score: 70.0,
@@ -168,7 +168,7 @@ export default function ForexPortfolioPage() {
 
   const [formSettings, setFormSettings] = useState<AutoSettings>({
     enabled: false,
-    balance: 10000.0,
+    balance: 1000.0,
     risk_per_trade_pct: 1.0,
     max_open_positions: 3,
     min_score: 70.0,
@@ -485,15 +485,15 @@ export default function ForexPortfolioPage() {
   return (
     <div className="space-y-6 pb-12 font-mono">
       {/* ÜST BAŞLIK & MASTER OTONOM KONTROL KARTI */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900/70 to-indigo-950/40 border border-blue-500/30 backdrop-blur-md shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-bunker-900/90 to-blue-950/40 border border-emerald-500/40 backdrop-blur-md shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-13 h-13 rounded-2xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(59,130,246,0.35)]">
+          <div className="w-13 h-13 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(16,185,129,0.35)]">
             🤖
           </div>
           <div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-white tracking-tight">
-                OTONOM FOREX SCALPER MOTORU
+                IC MARKETS METATRADER 5 · OTONOM SCALPER
               </h1>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${
@@ -502,11 +502,22 @@ export default function ForexPortfolioPage() {
                     : "bg-bunker-800 text-bunker-muted border-bunker-700"
                 }`}
               >
-                {autoEnabled ? "● ÇALIŞIYOR" : "○ DURDURULDU"}
+                {autoEnabled ? "● OTONOM ÇALIŞIYOR" : "○ OTONOM DURDURULDU"}
+              </span>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                  mt5.connected
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
+                    : "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                }`}
+              >
+                {mt5.connected
+                  ? `🟢 MT5 KÖPRÜ BAĞLI (${mt5.last_ping_seconds_ago !== null ? `${mt5.last_ping_seconds_ago}s önce` : "Canlı"})`
+                  : "⚪ MT5 KÖPRÜSÜ ÇEVRİMDIŞI"}
               </span>
             </div>
             <p className="text-xs text-bunker-muted mt-1">
-              M1 / M5 Çoklu Zaman Dilimi (MTF), Dinamik Başabaş (BE) & İz Süren Stop (Trailing SL)
+              Hesap: <span className="text-cyan-300 font-bold">{mt5.account?.login || 53077151}</span> ({mt5.account?.server || "ICMarketsSC-Demo"}) · Sahip: <span className="text-white font-bold">{mt5.account?.name || "ERKAN ERDEM"}</span> · M1 / M5 Çoklu Zaman Dilimi & Dinamik SL
             </p>
           </div>
         </div>
@@ -533,13 +544,22 @@ export default function ForexPortfolioPage() {
             <span>⚙️ Parametreler</span>
           </button>
 
+          {mt5.open_positions && mt5.open_positions.length > 0 && (
+            <button
+              type="button"
+              onClick={closeAllMt5Positions}
+              className="px-3.5 py-2 rounded-xl bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm"
+            >
+              <span>🛑 Tüm MT5 Pozisyonlarını Kapat ({mt5.open_positions.length})</span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={resetAccount}
-            title="Hesabı Sıfırla"
-            className="px-3 py-2 rounded-xl bg-bunker-900 border border-bunker-800 text-bunker-muted hover:text-rose-400 hover:border-rose-500/30 transition-all text-xs"
+            onClick={() => setShowMt5Guide(!showMt5Guide)}
+            className="px-3 py-2 rounded-xl bg-bunker-900 border border-bunker-800 text-bunker-muted hover:text-blue-400 text-xs flex items-center gap-1"
           >
-            ↺ Sıfırla
+            <span>ℹ️ Rehber</span>
           </button>
         </div>
       </div>
@@ -814,188 +834,105 @@ export default function ForexPortfolioPage() {
         </form>
       )}
 
-      {/* PERFORMANS VE HESAP METRİKLERİ KARTLARI */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Hesap Bakiyesi (Nakit)</span>
-          <span className="text-lg font-bold text-white">${balance.toFixed(2)}</span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Özsermaye (Equity)</span>
-          <span
-            className={`text-lg font-bold ${
-              equity >= balance ? "text-emerald-400" : "text-rose-400"
-            }`}
-          >
-            ${equity.toFixed(2)}
-          </span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">Açık PnL dahil canlı bakiye</span>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Açık PnL (Anlık)</span>
-          <span
-            className={`text-lg font-bold ${
-              openPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
-            }`}
-          >
-            {openPnlUsd >= 0 ? "+" : ""}${openPnlUsd.toFixed(2)}
-            <span className="text-xs ml-1 font-normal opacity-80">
-              ({openPnlPips >= 0 ? "+" : ""}{openPnlPips}p)
-            </span>
-          </span>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Net Kâr / Zarar</span>
-          <span
-            className={`text-lg font-bold ${
-              realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
-            }`}
-          >
-            {realizedPnlUsd >= 0 ? "+" : ""}${realizedPnlUsd.toFixed(2)}
-            <span className="text-xs ml-1 font-normal opacity-80">
-              ({realizedPnlPips >= 0 ? "+" : ""}{realizedPnlPips}p)
-            </span>
-          </span>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Kazanma Oranı</span>
-          <span className="text-lg font-bold text-cyan-300">
-            %{winRate.toFixed(1)}
-            <span className="text-[11px] text-bunker-muted ml-1 font-normal">
-              ({wins}W / {losses}L)
-            </span>
-          </span>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Aktif Seanslar</span>
-          <div className="flex items-center gap-1 mt-1 overflow-x-auto">
-            {activeSessions.length > 0 ? (
-              activeSessions.map((s) => (
-                <span
-                  key={s.name}
-                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                >
-                  {s.flag} {s.name}
-                </span>
-              ))
-            ) : (
-              <span className="text-[11px] text-bunker-muted">Kapalı (Asya / Rollover)</span>
-            )}
+      {/* Rehber / Yardım Paneli */}
+      {showMt5Guide && (
+        <div className="p-4 rounded-xl bg-bunker-950 border border-blue-500/30 text-xs text-bunker-muted space-y-2">
+          <div className="font-bold text-white flex items-center gap-1.5">
+            <span>🚀 IC Markets MT5 Köprüsü Nasıl Çalışır?</span>
           </div>
+          <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
+            <li>Bilgisayarınızda proje klasöründeki <span className="text-emerald-400 font-mono font-bold">run_mt5_bridge.bat</span> dosyasını çift tıklayarak çalıştırın.</li>
+            <li>Açılan konsol penceresi, bilgisayarınızdaki IC Markets MT5 terminaline otomatik olarak bağlanır (<span className="text-cyan-300 font-mono">53077151</span> hesabı).</li>
+            <li>MetaTrader 5 terminalinde üst menüdeki <span className="text-yellow-400 font-bold">&quot;Algo Trading&quot; (Otomatik İşlem)</span> butonunun yeşil yandığından emin olun (Komut dosyasında otomatik yapılandırıldı).</li>
+            <li>Yukarıdaki <span className="text-emerald-400 font-bold">&quot;Otonom Scalper&apos;ı Başlat&quot;</span> butonuna bastığınızda, sistemin tespit ettiği tüm teyitli sinyaller doğrudan IC Markets demo hesabınızda canlı piyasa emri olarak açılır, kârda başabaş (BE) ve dinamik iz süren stop (Trailing) uygulanır!</li>
+          </ol>
         </div>
-      </div>
+      )}
 
-      {/* IC MARKETS METATRADER 5 (MT5) CANLI DEMO KÖPRÜSÜ KARTI */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-bunker-900/90 to-blue-950/40 border border-emerald-500/40 backdrop-blur-md shadow-2xl">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-bunker-800 pb-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(16,185,129,0.25)]">
-              📈
+      {/* IC MARKETS MT5 CANLI METRİKLERİ */}
+      {(() => {
+        const liveBal = mt5.account?.balance ?? balance;
+        const liveEq = mt5.account?.equity ?? liveBal;
+        const liveMargin = mt5.account?.free_margin ?? liveBal;
+        const livePnl = (mt5.open_positions || []).reduce((acc, p) => acc + (p.pnl_usd || 0), 0);
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">IC Markets Bakiye</span>
+              <span className="text-lg font-bold text-emerald-400 font-mono">
+                ${liveBal.toFixed(2)} <span className="text-xs font-normal text-bunker-muted">{mt5.account?.currency || "USD"}</span>
+              </span>
+              <span className="text-[9px] text-bunker-muted block mt-0.5">Kapanan net MT5 bakiye</span>
             </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h2 className="text-base font-bold text-white tracking-wide">
-                  IC MARKETS METATRADER 5 (MT5) CANLI KÖPRÜ
-                </h2>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
-                    mt5.connected
-                      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse"
-                      : "bg-bunker-800 text-bunker-muted border-bunker-700"
-                  }`}
-                >
-                  {mt5.connected
-                    ? `🟢 BAĞLI (${mt5.last_ping_seconds_ago !== null ? `${mt5.last_ping_seconds_ago}s önce` : "Canlı"})`
-                    : "⚪ KÖPRÜ ÇEVRİMDIŞI (run_mt5_bridge.bat bekleniyor)"}
-                </span>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">Özsermaye (Equity)</span>
+              <span className={`text-lg font-bold font-mono ${liveEq >= liveBal ? "text-cyan-300" : "text-rose-400"}`}>
+                ${liveEq.toFixed(2)}
+              </span>
+              <span className="text-[9px] text-bunker-muted block mt-0.5">Serbest: ${liveMargin.toFixed(2)}</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">Açık MT5 PnL (Anlık)</span>
+              <span className={`text-lg font-bold font-mono ${livePnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
+              </span>
+              <span className="text-[9px] text-bunker-muted block mt-0.5">{mt5.open_positions?.length || 0} açık MT5 işlemi</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">Hesap / Sunucu</span>
+              <span className="text-base font-bold text-white tracking-wide">
+                {mt5.account?.login || 53077151}
+              </span>
+              <span className="text-[9px] text-emerald-400 block mt-0.5 truncate">{mt5.account?.server || "ICMarketsSC-Demo"}</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">Kaldıraç & Sahip</span>
+              <span className="text-base font-bold text-yellow-300">
+                1:{mt5.account?.leverage || 5000}
+              </span>
+              <span className="text-[9px] text-bunker-muted block mt-0.5 truncate">{mt5.account?.name || "ERKAN ERDEM"}</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">Aktif Seanslar</span>
+              <div className="flex items-center gap-1 mt-1 overflow-x-auto">
+                {activeSessions.length > 0 ? (
+                  activeSessions.map((s) => (
+                    <span
+                      key={s.name}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap"
+                    >
+                      {s.flag} {s.name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[11px] text-bunker-muted">24/5 Açık</span>
+                )}
               </div>
-              <p className="text-xs text-bunker-muted mt-0.5">
-                MetaTrader 5 Windows istemcisi ile çift yönlü emir iletimi & anlık hesap senkronizasyonu
-              </p>
             </div>
           </div>
+        );
+      })()}
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <button
-              type="button"
-              onClick={toggleMt5Auto}
-              disabled={isTogglingMt5}
-              className={`px-4 py-2 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 shadow-md ${
-                mt5.auto_trade
-                  ? "bg-emerald-500/25 text-emerald-300 border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                  : "bg-bunker-800/80 text-bunker-muted border-bunker-700 hover:text-white"
-              }`}
-            >
-              <span>{mt5.auto_trade ? "⚡ Otonom Sinyalleri MT5'e İlet: AKTİF" : "⏸ Otonom Sinyalleri MT5'e İlet: PASİF"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowMt5Guide(!showMt5Guide)}
-              className="px-3 py-2 rounded-xl bg-bunker-900 border border-bunker-800 text-bunker-muted hover:text-blue-400 text-xs flex items-center gap-1"
-            >
-              <span>ℹ️ Rehber</span>
-            </button>
-          </div>
-        </div>
-
-        {mt5Message && (
-          <div className="mt-3 p-2.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold animate-pulse">
-            {mt5Message}
-          </div>
-        )}
-
-        {/* Canlı MT5 Hesap Bilgileri */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 text-xs">
-          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
-            <span className="text-[10px] text-bunker-muted uppercase block">Hesap / Sunucu</span>
-            <span className="text-sm font-bold text-white">{mt5.account?.login || 53077151}</span>
-            <span className="text-[10px] text-emerald-400 block">{mt5.account?.server || "ICMarketsSC-Demo"}</span>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
-            <span className="text-[10px] text-bunker-muted uppercase block">Hesap Sahibi</span>
-            <span className="text-sm font-bold text-white">{mt5.account?.name || "ERKAN ERDEM"}</span>
-            <span className="text-[10px] text-bunker-muted block">Demo Hesap</span>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
-            <span className="text-[10px] text-bunker-muted uppercase block">Gerçek MT5 Bakiye</span>
-            <span className="text-sm font-bold text-emerald-400 font-mono">
-              ${(mt5.account?.balance ?? 1000.0).toFixed(2)} {mt5.account?.currency || "USD"}
-            </span>
-            <span className="text-[10px] text-bunker-muted block">IC Markets SC</span>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
-            <span className="text-[10px] text-bunker-muted uppercase block">Özsermaye (Equity)</span>
-            <span className="text-sm font-bold text-cyan-300 font-mono">
-              ${(mt5.account?.equity ?? mt5.account?.balance ?? 1000.0).toFixed(2)}
-            </span>
-            <span className="text-[10px] text-bunker-muted block">Serbest: ${(mt5.account?.free_margin ?? 1000.0).toFixed(2)}</span>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
-            <span className="text-[10px] text-bunker-muted uppercase block">Kaldıraç & Durum</span>
-            <span className="text-sm font-bold text-yellow-300">1:{mt5.account?.leverage || 5000}</span>
-            <span className="text-[10px] text-bunker-muted block">
-              {mt5.open_positions?.length || 0} Açık MT5 Pozisyonu
+      {/* CANLI IC MARKETS MT5 AÇIK POZİSYONLARI */}
+      <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 overflow-hidden shadow-xl">
+        <div className="p-4 border-b border-bunker-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⚡</span>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <span>Canlı IC Markets MT5 Açık Pozisyonları ({mt5.open_positions?.length || 0})</span>
+            </h2>
+            <span className="text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30">
+              ICMarketsSC-Demo · 53077151
             </span>
           </div>
-        </div>
 
-        {/* Açık MT5 Pozisyonları (Varsa) */}
-        {mt5.open_positions && mt5.open_positions.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-bunker-800">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <span>⚡ Canlı MT5 Açık Pozisyonları ({mt5.open_positions.length})</span>
-              </h3>
+          <div className="flex items-center gap-3">
+            {mt5.open_positions && mt5.open_positions.length > 0 && (
               <button
                 type="button"
                 onClick={closeAllMt5Positions}
@@ -1003,181 +940,74 @@ export default function ForexPortfolioPage() {
               >
                 <span>🛑 Tüm MT5 Pozisyonlarını Kapat ({mt5.open_positions.length})</span>
               </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
-                  <tr>
-                    <th className="py-2 px-3">Bilet</th>
-                    <th className="py-2 px-3">Parite</th>
-                    <th className="py-2 px-3">Yön</th>
-                    <th className="py-2 px-3">Lot</th>
-                    <th className="py-2 px-3">Açılış</th>
-                    <th className="py-2 px-3">Güncel</th>
-                    <th className="py-2 px-3">SL / TP</th>
-                    <th className="py-2 px-3">Kâr ($)</th>
-                    <th className="py-2 px-3 text-right">Aksiyon</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-bunker-800/50">
-                  {mt5.open_positions.map((p) => (
-                    <tr key={p.ticket} className="hover:bg-bunker-800/30">
-                      <td className="py-2 px-3 font-mono text-[11px] text-bunker-muted">#{p.ticket}</td>
-                      <td className="py-2 px-3 font-bold text-white">{p.symbol}</td>
-                      <td className="py-2 px-3">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          p.direction === "BUY" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
-                        }`}>
-                          {p.direction}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 font-semibold text-white">{p.lots} Lot</td>
-                      <td className="py-2 px-3 font-mono text-bunker-muted">{p.entry_price}</td>
-                      <td className="py-2 px-3 font-mono text-white">{p.current_price}</td>
-                      <td className="py-2 px-3 font-mono text-[10px] text-bunker-muted">
-                        SL: {p.sl_price || "-"} | TP: {p.tp_price || "-"}
-                      </td>
-                      <td className={`py-2 px-3 font-bold font-mono ${p.pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        {p.pnl_usd >= 0 ? "+" : ""}${p.pnl_usd.toFixed(2)}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => closeMt5Ticket(p.ticket)}
-                          className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 text-[10px] font-bold"
-                        >
-                          Kapat ✕
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            )}
+            <span className="text-xs text-blue-400 font-bold animate-pulse">
+              {autoEnabled ? "Canlı Takip Devrede" : "Otonom Beklemede"}
+            </span>
           </div>
-        )}
-
-        {/* Rehber / Yardım Paneli */}
-        {showMt5Guide && (
-          <div className="mt-4 p-3.5 rounded-xl bg-bunker-950 border border-blue-500/30 text-xs text-bunker-muted space-y-2">
-            <div className="font-bold text-white flex items-center gap-1.5">
-              <span>🚀 IC Markets MT5 Köprüsü Nasıl Çalışır?</span>
-            </div>
-            <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
-              <li>Bilgisayarınızda proje klasöründeki <span className="text-emerald-400 font-mono font-bold">run_mt5_bridge.bat</span> dosyasını çift tıklayarak çalıştırın.</li>
-              <li>Açılan konsol penceresi, bilgisayarınızdaki IC Markets MT5 terminaline otomatik olarak bağlanır (<span className="text-cyan-300 font-mono">53077151</span> hesabı).</li>
-              <li>MetaTrader 5 terminalinde üst menüdeki <span className="text-yellow-400 font-bold">&quot;Algo Trading&quot; (Otomatik İşlem)</span> butonunun yeşil yandığından emin olun (Biz komut dosyasında bunu otomatik açtık).</li>
-              <li>Yukarıdaki <span className="text-emerald-400 font-bold">&quot;Otonom Sinyalleri MT5&apos;e İlet&quot;</span> butonunu aktif ettiğinizde, sistemin yakaladığı tüm kaliteli sinyaller anında IC Markets demo hesabınızda canlı piyasa emri olarak açılır!</li>
-            </ol>
-          </div>
-        )}
-      </div>
-
-      {/* AÇIK OTONOM POZİSYONLAR */}
-      <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-bunker-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">⚡</span>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-              Açık Otonom Pozisyonlar ({openPositions.length} / {appliedSettings.max_open_positions})
-            </h2>
-          </div>
-          <span className="text-xs text-blue-400 font-bold animate-pulse">
-            {autoEnabled ? "Canlı Takip Devrede" : "Otonom Beklemede"}
-          </span>
         </div>
 
-        {openPositions.length === 0 ? (
-          <div className="p-12 text-center text-bunker-muted text-xs">
-            {autoEnabled
-              ? "Şu an açık bir Forex pozisyonu yok. Sistem radar sinyallerini ve seans şartlarını denetliyor…"
-              : "Otonom motor şu an durdurulmuş durumda. Başlatmak için yukarıdaki butonu kullanabilirsiniz."}
+        {(!mt5.open_positions || mt5.open_positions.length === 0) ? (
+          <div className="p-12 text-center text-bunker-muted text-xs space-y-1">
+            <p className="text-sm font-semibold text-white">Şu an açık bir IC Markets MT5 pozisyonu bulunmuyor.</p>
+            <p className="text-bunker-muted">
+              {autoEnabled
+                ? "Otonom scalper radar sinyallerini ve seans fırsatlarını denetliyor. Sinyal geldiğinde emir anında IC Markets hesabınızda açılır."
+                : "Otonom motor şu an durdurulmuş durumda. Başlatmak için yukarıdaki '▶ Otonom Scalper'ı Başlat' butonunu kullanabilirsiniz."}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
                 <tr>
-                  <th className="py-3 px-4">Bilet No</th>
+                  <th className="py-3 px-4">Bilet</th>
                   <th className="py-3 px-3">Parite</th>
                   <th className="py-3 px-3">Yön</th>
                   <th className="py-3 px-3">Lot</th>
-                  <th className="py-3 px-3">Giriş</th>
-                  <th className="py-3 px-3">Güncel</th>
-                  <th className="py-3 px-3">Dinamik SL</th>
-                  <th className="py-3 px-3">Hedef (TP)</th>
-                  <th className="py-3 px-3">Kâr (Pips)</th>
-                  <th className="py-3 px-3">PnL ($)</th>
+                  <th className="py-3 px-3">Giriş Fiyatı</th>
+                  <th className="py-3 px-3">Güncel Fiyat</th>
+                  <th className="py-3 px-3">SL / TP Seviyeleri</th>
+                  <th className="py-3 px-3">Kâr ($)</th>
                   <th className="py-3 px-4 text-right">Aksiyon</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-bunker-800/60">
-                {openPositions.map((pos) => {
-                  const isProfit = pos.pnl_usd >= 0;
+                {mt5.open_positions.map((p) => {
+                  const isProfit = p.pnl_usd >= 0;
                   return (
-                    <tr key={pos.id} className="hover:bg-bunker-800/40 transition-colors">
-                      <td className="py-3.5 px-4 text-bunker-muted text-[11px]">{pos.id}</td>
-                      <td className="py-3.5 px-3">
-                        <span className="font-bold text-white text-sm">{pos.display}</span>
-                        <div className="text-[10px] text-bunker-muted">{pos.open_time}</div>
-                      </td>
-                      <td className="py-3.5 px-3">
+                    <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
+                      <td className="py-3 px-4 font-mono text-[11px] text-cyan-300 font-bold">#{p.ticket}</td>
+                      <td className="py-3 px-3 font-bold text-white text-sm">{p.symbol}</td>
+                      <td className="py-3 px-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            pos.direction === "BUY"
+                            p.direction === "BUY"
                               ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                               : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
                           }`}
                         >
-                          {pos.direction}
+                          {p.direction}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 font-semibold text-white">{pos.lots} Lot</td>
-                      <td className="py-3.5 px-3 text-bunker-muted">{pos.entry_price}</td>
-                      <td className="py-3.5 px-3 font-bold text-white">{pos.current_price}</td>
-                      <td className="py-3.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-rose-300">{pos.sl_price}</span>
-                          {pos.breakeven_activated && (
-                            <span
-                              className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40"
-                              title="Başabaş kilitlendi, sermaye risksiz!"
-                            >
-                              BE 🛡️
-                            </span>
-                          )}
-                          {pos.trailing_activated && (
-                            <span
-                              className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-400/40"
-                              title="İz süren stop aktif"
-                            >
-                              TRAIL 📈
-                            </span>
-                          )}
+                      <td className="py-3 px-3 font-semibold text-white">{p.lots} Lot</td>
+                      <td className="py-3 px-3 font-mono text-bunker-muted">{p.entry_price}</td>
+                      <td className="py-3 px-3 font-bold font-mono text-white">{p.current_price}</td>
+                      <td className="py-3 px-3 font-mono text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-rose-300">SL: {p.sl_price || "-"}</span>
+                          <span className="text-bunker-600">|</span>
+                          <span className="text-emerald-300">TP: {p.tp_price || "-"}</span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-3 text-emerald-300 font-mono">{pos.tp_price}</td>
-                      <td
-                        className={`py-3.5 px-3 font-bold ${
-                          pos.pnl_pips >= 0 ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {pos.pnl_pips >= 0 ? "+" : ""}
-                        {pos.pnl_pips} p
+                      <td className={`py-3 px-3 font-bold font-mono text-sm ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+                        {isProfit ? "+" : ""}${p.pnl_usd.toFixed(2)}
                       </td>
-                      <td
-                        className={`py-3.5 px-3 font-bold text-sm ${
-                          isProfit ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {isProfit ? "+" : ""}
-                        ${pos.pnl_usd.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3 px-4 text-right">
                         <button
                           type="button"
-                          onClick={() => closePosition(pos.id)}
-                          className="px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all font-bold text-[11px]"
+                          onClick={() => closeMt5Ticket(p.ticket)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
                         >
                           Kapat ✕
                         </button>

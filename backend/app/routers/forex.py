@@ -517,7 +517,7 @@ _AUTO_SETTINGS = ForexAutoPaperSettings()
 _MT5_STATE: Dict[str, Any] = {
     "connected": False,
     "last_ping": 0.0,
-    "auto_trade": False,
+    "auto_trade": True,
     "account": {
         "login": 53077151,
         "name": "ERKAN ERDEM",
@@ -794,22 +794,10 @@ async def _forex_auto_paper_loop():
                 await _close_position_internal(pid, rsn, p_exit)
 
             # ---------------------------------------------------------------
-            # 2. YENİ İŞLEM FIRSATLARI DEĞERLENDİRME & GİRİŞ
+            # 2. YENİ İŞLEM FIRSATLARI DEĞERLENDİRME & GİRİŞ (IC MARKETS MT5)
             # ---------------------------------------------------------------
-            open_count = len(_AUTO_STATE["open_positions"])
-            if open_count >= _AUTO_SETTINGS.max_open_positions:
-                if now_ts - _LAST_SCAN_PULSE_TIME > 30.0:
-                    _LAST_SCAN_PULSE_TIME = now_ts
-                    _log_auto_decision(
-                        "GATE",
-                        f"Maksimum açık pozisyon limitine ulaşıldı ({open_count}/{_AUTO_SETTINGS.max_open_positions}). Yeni işlem taraması beklemede.",
-                    )
-                continue
-
-            # MT5 Köprüsü de maksimum pozisyon limitini denetlesin
-            mt5_is_live = _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade")
             mt5_open_count = len(_MT5_STATE.get("open_positions", []))
-            if mt5_is_live and mt5_open_count >= _AUTO_SETTINGS.max_open_positions:
+            if mt5_open_count >= _AUTO_SETTINGS.max_open_positions:
                 if now_ts - _LAST_SCAN_PULSE_TIME > 30.0:
                     _LAST_SCAN_PULSE_TIME = now_ts
                     _log_auto_decision(
@@ -818,7 +806,7 @@ async def _forex_auto_paper_loop():
                     )
                 continue
 
-            # Seans Filtresi Kontrolü (Asya seansı: Tokyo & Sydney dahil tüm seanslar serbest)
+            # Seans Filtresi Kontrolü
             active_names = [s["name"] for s in sessions if s["active"]]
             any_session_active = len(active_names) > 0
             if _AUTO_SETTINGS.session_filter and not any_session_active:
@@ -844,7 +832,6 @@ async def _forex_auto_paper_loop():
                     f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
                 )
 
-            open_syms = {p["symbol"].upper() for p in _AUTO_STATE["open_positions"]}
             mt5_active_syms = {p.get("symbol", "").upper() for p in _MT5_STATE.get("open_positions", [])}
             pending_mt5_syms = {c.get("symbol", "").upper() for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER"}
 
@@ -854,12 +841,12 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Hedging & Anti-Duplicate)
-                if sym in open_syms or (mt5_is_live and (sym in mt5_active_syms or sym in pending_mt5_syms)):
+                if sym in mt5_active_syms or sym in pending_mt5_syms:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
                         _log_auto_decision(
                             "SCAN",
-                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
+                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat IC Markets MT5'te pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
                             symbol=sym,
                         )
                     continue
@@ -890,90 +877,44 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # Dinamik Lot Hesaplama
+                # Dinamik Lot Hesaplama - MT5 Gerçek Bakiyesi üzerinden
                 t = ticks.get(sym)
                 if not t:
                     continue
 
-                pip_size = t["pip_size"]
-                digits = t["digits"]
                 direction = cand["action"]  # BUY or SELL
                 pip_val = 6.60 if "JPY" in sym else 10.0
-
-                risk_usd = _AUTO_STATE["balance"] * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
                 sl_pips = _AUTO_SETTINGS.sl_pips
                 tp_pips = _AUTO_SETTINGS.tp_pips
 
-                calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
-                lots = max(0.01, min(calc_lots, 5.0))
+                mt5_acc_bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
+                mt5_risk_usd = mt5_acc_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                mt5_calc_lots = round(mt5_risk_usd / (sl_pips * pip_val), 2)
+                mt5_lots = max(0.01, min(mt5_calc_lots, 5.0))
 
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
-                if direction == "BUY":
-                    sl_p = round(entry_p - (sl_pips * pip_size), digits)
-                    tp_p = round(entry_p + (tp_pips * pip_size), digits)
-                else:
-                    sl_p = round(entry_p + (sl_pips * pip_size), digits)
-                    tp_p = round(entry_p - (tp_pips * pip_size), digits)
 
-                new_pos = {
-                    "id": f"FX-{int(time.time() * 1000) % 1000000}",
+                # IC Markets MT5'e doğrudan canlı emir kuyruğuna ekle
+                cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
+                _MT5_STATE["pending_commands"].append({
+                    "id": cmd_id,
+                    "action": "OPEN_ORDER",
                     "symbol": sym,
-                    "display": cand["display"],
                     "direction": direction,
-                    "lots": lots,
-                    "entry_price": entry_p,
-                    "current_price": entry_p,
-                    "sl_price": sl_p,
-                    "tp_price": tp_p,
-                    "initial_sl_price": sl_p,
-                    "breakeven_activated": False,
-                    "trailing_activated": False,
-                    "open_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
-                    "open_time_iso": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    "opened_at_ts": time.time(),
-                    "pnl_usd": 0.0,
-                    "pnl_pips": 0.0,
-                    "pip_size": pip_size,
-                    "digits": digits,
-                    "score": cand["score"],
-                    "strategy": "M1_M5_RADAR_SCALPER",
-                }
-
-                async with _AUTO_PAPER_LOCK:
-                    _AUTO_STATE["open_positions"].append(new_pos)
+                    "lots": mt5_lots,
+                    "sl_pips": sl_pips,
+                    "tp_pips": tp_pips,
+                    "comment": f"Scalper MT5 {cand['score']:.0f}",
+                })
 
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
 
                 _log_auto_decision(
                     "ENTRY",
-                    f"⚡ [{cand['display']}] OTONOM GİRİŞ: {lots} Lot {direction} @ {entry_p} | TP: {tp_p} (+{tp_pips}p) | SL: {sl_p} (-{sl_pips}p) | Skor: {cand['score']}",
+                    f"⚡ [IC MARKETS MT5] EMİR İLETİLDİ: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${mt5_risk_usd:.2f} (Skor: {cand['score']:.0f})",
                     symbol=sym,
-                    metadata={"lots": lots, "entry_price": entry_p, "score": cand["score"]},
+                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"]},
                 )
-
-                # Eğer MT5 Köprüsü bağlıysa ve MT5 otomatik al-sat aktifse, emri MT5'e de ilet
-                if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
-                    mt5_acc_bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
-                    # MT5 gerçek bakiyesine göre tam %1 risk (veya kullanıcının seçtiği risk_per_trade_pct)
-                    mt5_risk_usd = mt5_acc_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
-                    mt5_calc_lots = round(mt5_risk_usd / (sl_pips * pip_val), 2)
-                    mt5_lots = max(0.01, min(mt5_calc_lots, 1.0))
-
-                    _MT5_STATE["pending_commands"].append({
-                        "id": f"CMD-{int(time.time() * 1000) % 1000000}",
-                        "action": "OPEN_ORDER",
-                        "symbol": sym,
-                        "direction": direction,
-                        "lots": mt5_lots,
-                        "sl_pips": sl_pips,
-                        "tp_pips": tp_pips,
-                        "comment": f"Scalper MT5 {cand['score']:.0f}",
-                    })
-                    _log_auto_decision(
-                        "ENTRY",
-                        f"🚀 [MT5] IC Markets Gerçek Demo Emri İletildi: {mt5_lots} Lot {direction} {sym} (Risk: ${mt5_risk_usd:.2f})",
-                        symbol=sym,
-                    )
 
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
                 break
@@ -990,34 +931,43 @@ async def _forex_auto_paper_loop():
 
 @router.get("/auto-paper/status")
 async def get_forex_auto_paper_status():
-    """Otonom Forex scalper sistem durumu, açık pozisyonlar ve performans metrikleri."""
-    open_pnl_usd = sum(p["pnl_usd"] for p in _AUTO_STATE["open_positions"])
-    open_pnl_pips = sum(p["pnl_pips"] for p in _AUTO_STATE["open_positions"])
-    equity = round(_AUTO_STATE["balance"] + open_pnl_usd, 2)
+    """IC Markets MT5 Otonom Scalper sistem durumu, canlı MT5 pozisyonları ve hesap metrikleri."""
+    mt5_acc = _MT5_STATE.get("account", {})
+    mt5_positions = _MT5_STATE.get("open_positions", [])
+    mt5_deals = _MT5_STATE.get("closed_deals", [])
 
-    total_closed = _AUTO_STATE["total_trades"]
-    wins = _AUTO_STATE["wins"]
-    win_rate = round((wins / total_closed * 100.0), 1) if total_closed > 0 else 0.0
+    balance = float(mt5_acc.get("balance", 1000.0))
+    open_pnl_usd = round(sum(float(p.get("pnl_usd", 0.0)) for p in mt5_positions), 2)
+    equity = float(mt5_acc.get("equity", round(balance + open_pnl_usd, 2)))
+
+    # Realized PnL ve Kazanma Oranı (MT5 Kapanan İşlemleri)
+    wins = sum(1 for d in mt5_deals if float(d.get("profit", 0.0)) > 0)
+    losses = sum(1 for d in mt5_deals if float(d.get("profit", 0.0)) < 0)
+    total_trades = len(mt5_deals)
+    realized_usd = round(sum(float(d.get("profit", 0.0)) for d in mt5_deals), 2)
+    win_rate = round((wins / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
     return {
         "status": _AUTO_STATE["last_status"],
         "enabled": _AUTO_STATE["enabled"],
-        "balance": _AUTO_STATE["balance"],
+        "balance": balance,
         "equity": equity,
-        "open_pnl_usd": round(open_pnl_usd, 2),
-        "open_pnl_pips": round(open_pnl_pips, 1),
-        "realized_pnl_usd": _AUTO_STATE["realized_pnl_usd"],
-        "realized_pnl_pips": _AUTO_STATE["realized_pnl_pips"],
-        "total_trades": total_closed,
+        "open_pnl_usd": open_pnl_usd,
+        "open_pnl_pips": 0.0,
+        "realized_pnl_usd": realized_usd,
+        "realized_pnl_pips": 0.0,
+        "total_trades": total_trades,
         "wins": wins,
-        "losses": _AUTO_STATE["losses"],
+        "losses": losses,
         "win_rate": win_rate,
         "settings": _AUTO_SETTINGS.model_dump(),
-        "open_positions": _AUTO_STATE["open_positions"],
-        "closed_trades": _AUTO_STATE["closed_trades"][:20],
+        "open_positions": mt5_positions,
+        "closed_trades": mt5_deals,
         "decision_logs": _AUTO_STATE["decision_logs"][:60],
         "sessions": _get_market_sessions(),
         "last_scan_time": _AUTO_STATE["last_scan_time"],
+        "mt5_account": mt5_acc,
+        "mt5_connected": _MT5_STATE.get("connected", False),
     }
 
 
@@ -1027,17 +977,24 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
     global _AUTO_PAPER_TASK
     _AUTO_STATE["enabled"] = req.enabled
     _AUTO_SETTINGS.enabled = req.enabled
+    _MT5_STATE["auto_trade"] = req.enabled
 
     if req.enabled:
         if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
             _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
-            _log_auto_decision("SYSTEM", "Otonom Forex Scalper kullanıcı tarafından ETKİNLEŞTİRİLDİ.")
+            _log_auto_decision("SYSTEM", "IC Markets MT5 Otonom Scalper kullanıcı tarafından ETKİNLEŞTİRİLDİ.")
     else:
         if _AUTO_PAPER_TASK and not _AUTO_PAPER_TASK.done():
             _AUTO_PAPER_TASK.cancel()
             _AUTO_PAPER_TASK = None
         _AUTO_STATE["last_status"] = "Durduruldu"
-        _log_auto_decision("SYSTEM", "Otonom Forex Scalper kullanıcı tarafından DURDURULDU.")
+        _log_auto_decision("SYSTEM", "IC Markets MT5 Otonom Scalper kullanıcı tarafından DURDURULDU.")
+
+    return {
+        "enabled": _AUTO_STATE["enabled"],
+        "status": _AUTO_STATE["last_status"],
+        "message": "Otonom Forex Scalper durumu güncellendi.",
+    }
 
     return {
         "enabled": _AUTO_STATE["enabled"],
@@ -1063,7 +1020,25 @@ async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings)
 
 @router.post("/auto-paper/close-position")
 async def close_forex_position_manually(req: ClosePositionRequest):
-    """Belirli bir açık pozisyonu manuel olarak kapatır."""
+    """Belirli bir açık pozisyonu veya MT5 biletini kapatır."""
+    ticket = None
+    try:
+        raw = req.id.replace("#", "").replace("FX-", "").replace("CMD-CLOSE-", "").strip()
+        if raw.isdigit():
+            ticket = int(raw)
+    except Exception:
+        pass
+
+    if ticket:
+        cmd_id = f"CMD-CLOSE-{ticket}"
+        _MT5_STATE["pending_commands"].append({
+            "id": cmd_id,
+            "action": "CLOSE_ORDER",
+            "ticket": ticket,
+        })
+        _log_auto_decision("EXIT", f"🛑 [IC Markets MT5] Bilet #{ticket} kapatma emri iletildi.")
+        return {"status": "closed", "ticket": ticket}
+
     res = await _close_position_internal(req.id, "MANUAL")
     if not res:
         raise HTTPException(status_code=404, detail="Pozisyon bulunamadı veya zaten kapalı.")
@@ -1072,20 +1047,13 @@ async def close_forex_position_manually(req: ClosePositionRequest):
 
 @router.post("/auto-paper/reset")
 async def reset_forex_auto_paper():
-    """Demo bakiyeyi $10,000'a ve istatistikleri sıfırlar."""
+    """IC Markets MT5 Scalper günlüklerini sıfırlar."""
     async with _AUTO_PAPER_LOCK:
-        _AUTO_STATE["balance"] = 10000.0
-        _AUTO_STATE["realized_pnl_usd"] = 0.0
-        _AUTO_STATE["realized_pnl_pips"] = 0.0
-        _AUTO_STATE["total_trades"] = 0
-        _AUTO_STATE["wins"] = 0
-        _AUTO_STATE["losses"] = 0
-        _AUTO_STATE["open_positions"] = []
-        _AUTO_STATE["closed_trades"] = []
         _AUTO_STATE["decision_logs"] = []
 
-    _log_auto_decision("SYSTEM", "Forex demo hesabı $10,000 bakiyeyle sıfırlandı.")
-    return {"status": "reset", "balance": 10000.0}
+    _log_auto_decision("SYSTEM", "IC Markets MT5 Scalper günlükleri ve karar akışı sıfırlandı.")
+    bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
+    return {"status": "reset", "balance": bal}
 
 
 @router.get("/auto-paper/trades")
