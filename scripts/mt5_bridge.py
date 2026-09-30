@@ -250,11 +250,13 @@ def sync_with_server(api_base: str) -> list:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
+        with urllib.request.urlopen(req, timeout=7.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            return data.get("commands", [])
+            return True, data.get("commands", []), None
+    except urllib.error.HTTPError as he:
+        return False, [], f"HTTP {he.code}: {he.reason}"
     except Exception as e:
-        return []
+        return False, [], str(e)
 
 
 def main():
@@ -279,16 +281,26 @@ def main():
     print("\n[✓] Canlı Köprü Dinleme Döngüsü Başlatıldı. Çıkmak için Ctrl+C'ye basın.\n")
 
     sync_counter = 0
+    last_err_time = 0.0
+    first_sync = True
+
     while True:
         try:
-            commands = sync_with_server(args.api)
-            sync_counter += 1
+            success, commands, err_msg = sync_with_server(args.api)
 
-            if sync_counter % 20 == 0:
-                acc = mt5.account_info()
-                pos_count = len(mt5.positions_get() or [])
-                if acc:
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Eşitlendi: Bakiye=${acc.balance:.2f} | Equity=${acc.equity:.2f} | Açık MT5 Pozisyon: {pos_count}")
+            if success:
+                sync_counter += 1
+                if first_sync or sync_counter % 15 == 0:
+                    first_sync = False
+                    acc = mt5.account_info()
+                    pos_count = len(mt5.positions_get() or [])
+                    if acc:
+                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🟢 Web Paneliyle Senkronize: Bakiye=${acc.balance:.2f} | Equity=${acc.equity:.2f} | Açık MT5 Pozisyon: {pos_count}")
+            else:
+                now_t = time.time()
+                if now_t - last_err_time > 10.0:
+                    last_err_time = now_t
+                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ⚠️ Sunucu senkronizasyon uyarısı: {err_msg}")
 
             for cmd in commands:
                 action = cmd.get("action")

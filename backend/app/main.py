@@ -279,7 +279,12 @@ async def edge_tts_audio(payload: dict, request: Request = None):
 
 @app.middleware("http")
 async def require_admin_session(request: Request, call_next):
-    public_paths = {"/health", "/api/auth/status", "/api/auth/login"}
+    public_paths = {
+        "/health",
+        "/api/auth/status",
+        "/api/auth/login",
+        "/api/forex/mt5/sync",
+    }
     if request.method == "OPTIONS" or request.url.path in public_paths:
         return await call_next(request)
     if not security.auth_configured():
