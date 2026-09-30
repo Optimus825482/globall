@@ -851,10 +851,10 @@ export default function ForexPortfolioPage() {
 
       {/* IC MARKETS MT5 CANLI METRİKLERİ */}
       {(() => {
-        const liveBal = mt5.account?.balance ?? balance;
-        const liveEq = mt5.account?.equity ?? liveBal;
-        const liveMargin = mt5.account?.free_margin ?? liveBal;
-        const livePnl = (mt5.open_positions || []).reduce((acc, p) => acc + (p.pnl_usd || 0), 0);
+        const liveBal = Number(mt5.account?.balance ?? balance ?? 1000.0);
+        const liveEq = Number(mt5.account?.equity ?? liveBal);
+        const liveMargin = Number(mt5.account?.free_margin ?? liveBal);
+        const livePnl = (mt5.open_positions || []).reduce((acc, p) => acc + Number(p.pnl_usd ?? (p as any).profit ?? 0), 0);
         return (
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
@@ -974,7 +974,8 @@ export default function ForexPortfolioPage() {
               </thead>
               <tbody className="divide-y divide-bunker-800/60">
                 {mt5.open_positions.map((p) => {
-                  const isProfit = p.pnl_usd >= 0;
+                  const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
+                  const isProfit = pnlVal >= 0;
                   return (
                     <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
                       <td className="py-3 px-4 font-mono text-[11px] text-cyan-300 font-bold">#{p.ticket}</td>
@@ -1001,7 +1002,7 @@ export default function ForexPortfolioPage() {
                         </div>
                       </td>
                       <td className={`py-3 px-3 font-bold font-mono text-sm ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-                        {isProfit ? "+" : ""}${p.pnl_usd.toFixed(2)}
+                        {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button
@@ -1163,32 +1164,43 @@ export default function ForexPortfolioPage() {
                 Henüz kapanmış bir işlem bulunmuyor.
               </div>
             ) : (
-              closedTrades.map((tr) => {
-                const isWin = tr.pnl_usd >= 0;
+              closedTrades.map((tr: any, idx: number) => {
+                const pnlVal = Number(tr.pnl_usd ?? tr.profit ?? 0);
+                const isWin = pnlVal >= 0;
+                const pnlPips = tr.pnl_pips != null ? Number(tr.pnl_pips) : null;
+                const keyId = tr.id ?? tr.ticket ?? `deal-${idx}`;
+                const symDisplay = tr.display ?? tr.symbol ?? "FX";
+                const dir = tr.direction ?? "BUY";
+                const lotsVal = tr.lots ?? 0.01;
+                const entryP = tr.entry_price ?? tr.price ?? "-";
+                const exitP = tr.exit_price ?? tr.price ?? "-";
+                const timeStr = tr.exit_time ?? tr.time ?? "-";
+                const reasonStr = tr.exit_reason_title ?? tr.exit_reason ?? "IC Markets MT5";
+
                 return (
                   <div
-                    key={tr.id}
+                    key={keyId}
                     className="p-2.5 rounded-lg border border-bunker-800 bg-bunker-950/60 flex items-center justify-between hover:border-bunker-700 transition-colors"
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-xs">{tr.display}</span>
+                        <span className="font-bold text-white text-xs">{symDisplay}</span>
                         <span
                           className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                            tr.direction === "BUY"
+                            dir === "BUY"
                               ? "bg-emerald-500/15 text-emerald-400"
                               : "bg-rose-500/15 text-rose-400"
                           }`}
                         >
-                          {tr.direction}
+                          {dir}
                         </span>
-                        <span className="text-[10px] text-bunker-muted">{tr.lots} Lot</span>
+                        <span className="text-[10px] text-bunker-muted">{lotsVal} Lot</span>
                         <span className="text-[10px] px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted">
-                          {tr.exit_reason}
+                          {reasonStr}
                         </span>
                       </div>
                       <div className="text-[10px] text-bunker-muted mt-0.5">
-                        Giriş: {tr.entry_price} → Çıkış: {tr.exit_price} ({tr.exit_time})
+                        Giriş: {entryP} → Çıkış: {exitP} ({timeStr})
                       </div>
                     </div>
 
@@ -1198,16 +1210,18 @@ export default function ForexPortfolioPage() {
                           isWin ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
-                        {isWin ? "+" : ""}${tr.pnl_usd.toFixed(2)}
+                        {isWin ? "+" : ""}${pnlVal.toFixed(2)}
                       </div>
-                      <div
-                        className={`text-[10px] ${
-                          tr.pnl_pips >= 0 ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {tr.pnl_pips >= 0 ? "+" : ""}
-                        {tr.pnl_pips} p
-                      </div>
+                      {pnlPips !== null && (
+                        <div
+                          className={`text-[10px] ${
+                            pnlPips >= 0 ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          {pnlPips >= 0 ? "+" : ""}
+                          {pnlPips} p
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

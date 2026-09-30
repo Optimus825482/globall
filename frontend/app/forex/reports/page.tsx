@@ -121,26 +121,31 @@ export default function ForexReportsPage() {
         "Sonuç",
       ];
 
-      const rows = trades.map((t) => [
-        t.id,
-        t.display || t.symbol,
-        t.symbol,
-        t.direction,
-        t.lots,
-        t.score || "-",
-        t.entry_price,
-        t.open_time,
-        t.exit_price,
-        t.exit_time,
-        t.duration_human || (t.duration_sec ? `${t.duration_sec} sn` : "-"),
-        t.exit_reason_title || t.exit_reason,
-        t.sl_price || "-",
-        t.tp_price || "-",
-        `${t.pnl_pips >= 0 ? "+" : ""}${t.pnl_pips}`,
-        `${t.pnl_usd >= 0 ? "+" : ""}${t.pnl_usd.toFixed(2)}`,
-        t.balance_after ? `$${t.balance_after.toFixed(2)}` : "-",
-        t.pnl_usd >= 0 ? "KAZANÇ (WIN)" : "KAYIP (LOSS)",
-      ]);
+      const rows = trades.map((t: any) => {
+        const pnl = Number(t.pnl_usd ?? t.profit ?? 0);
+        const pips = Number(t.pnl_pips ?? 0);
+        const balAfter = t.balance_after != null ? Number(t.balance_after) : null;
+        return [
+          t.id || "-",
+          t.display || t.symbol || "-",
+          t.symbol || "-",
+          t.direction || "BUY",
+          t.lots || 0.01,
+          t.score || "-",
+          t.entry_price || "-",
+          t.open_time || "-",
+          t.exit_price || "-",
+          t.exit_time || "-",
+          t.duration_human || (t.duration_sec ? `${t.duration_sec} sn` : "-"),
+          t.exit_reason_title || t.exit_reason || "IC Markets MT5",
+          t.sl_price || "-",
+          t.tp_price || "-",
+          `${pips >= 0 ? "+" : ""}${pips.toFixed(1)}`,
+          `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`,
+          balAfter !== null ? `$${balAfter.toFixed(2)}` : "-",
+          pnl >= 0 ? "KAZANÇ (WIN)" : "KAYIP (LOSS)",
+        ];
+      });
 
       // Excel uyumluluğu için UTF-8 BOM ve noktalı virgül (;) ayırıcı
       const csvContent =
@@ -497,13 +502,16 @@ export default function ForexReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-bunker-800/60">
-                {trades.map((tr) => {
-                  const isWin = tr.pnl_usd >= 0;
+                {trades.map((tr: any, idx: number) => {
+                  const pnl = Number(tr.pnl_usd ?? tr.profit ?? 0);
+                  const isWin = pnl >= 0;
+                  const pips = Number(tr.pnl_pips ?? 0);
+                  const balAfter = tr.balance_after != null ? Number(tr.balance_after) : null;
                   return (
-                    <tr key={tr.id} className="hover:bg-bunker-800/40 transition-colors">
+                    <tr key={tr.id ?? tr.ticket ?? `rep-${idx}`} className="hover:bg-bunker-800/40 transition-colors">
                       {/* Bilet ID */}
                       <td className="py-3 px-3 text-bunker-muted text-[11px] font-bold">
-                        {tr.id}
+                        {tr.id ?? tr.ticket ?? "-"}
                       </td>
 
                       {/* Parite & Display */}
@@ -521,30 +529,30 @@ export default function ForexReportsPage() {
                               : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
                           }`}
                         >
-                          {tr.direction}
+                          {tr.direction || "BUY"}
                         </span>
                       </td>
 
                       {/* Lot */}
                       <td className="py-3 px-2 font-bold text-white">
-                        {tr.lots}
+                        {tr.lots ?? 0.01}
                       </td>
 
                       {/* Skor */}
                       <td className="py-3 px-2 text-blue-300 font-semibold">
-                        {tr.score ? tr.score.toFixed(0) : "-"}
+                        {tr.score ? Number(tr.score).toFixed(0) : "-"}
                       </td>
 
                       {/* Giriş */}
                       <td className="py-3 px-3">
-                        <span className="text-white font-bold block">{tr.entry_price}</span>
-                        <span className="text-[10px] text-bunker-muted">{tr.open_time}</span>
+                        <span className="text-white font-bold block">{tr.entry_price ?? "-"}</span>
+                        <span className="text-[10px] text-bunker-muted">{tr.open_time ?? "-"}</span>
                       </td>
 
                       {/* Çıkış */}
                       <td className="py-3 px-3">
-                        <span className="text-white font-bold block">{tr.exit_price}</span>
-                        <span className="text-[10px] text-bunker-muted">{tr.exit_time}</span>
+                        <span className="text-white font-bold block">{tr.exit_price ?? "-"}</span>
+                        <span className="text-[10px] text-bunker-muted">{tr.exit_time ?? "-"}</span>
                       </td>
 
                       {/* Süre */}
@@ -567,18 +575,18 @@ export default function ForexReportsPage() {
                               : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
                           }`}
                         >
-                          {tr.exit_reason_title || tr.exit_reason}
+                          {tr.exit_reason_title || tr.exit_reason || "IC Markets MT5"}
                         </span>
                       </td>
 
                       {/* Pip */}
                       <td
                         className={`py-3 px-3 text-right font-bold ${
-                          tr.pnl_pips >= 0 ? "text-emerald-400" : "text-rose-400"
+                          pips >= 0 ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
-                        {tr.pnl_pips >= 0 ? "+" : ""}
-                        {tr.pnl_pips.toFixed(1)} p
+                        {pips >= 0 ? "+" : ""}
+                        {pips.toFixed(1)} p
                       </td>
 
                       {/* Net USD PnL */}
@@ -588,12 +596,12 @@ export default function ForexReportsPage() {
                         }`}
                       >
                         {isWin ? "+" : ""}
-                        ${tr.pnl_usd.toFixed(2)}
+                        ${pnl.toFixed(2)}
                       </td>
 
                       {/* Sonraki Bakiye */}
                       <td className="py-3 px-3 text-right text-bunker-muted font-bold">
-                        {tr.balance_after ? `$${tr.balance_after.toFixed(2)}` : "-"}
+                        {balAfter !== null ? `$${balAfter.toFixed(2)}` : "-"}
                       </td>
                     </tr>
                   );

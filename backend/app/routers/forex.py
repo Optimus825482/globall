@@ -937,14 +937,46 @@ async def get_forex_auto_paper_status():
     mt5_deals = _MT5_STATE.get("closed_deals", [])
 
     balance = float(mt5_acc.get("balance", 1000.0))
-    open_pnl_usd = round(sum(float(p.get("pnl_usd", 0.0)) for p in mt5_positions), 2)
+    # Pozisyonları ve Kapanan İşlemleri Güvenli Formatla Normalize Et
+    normalized_positions = []
+    for p in mt5_positions:
+        pnl = float(p.get("pnl_usd", p.get("profit", 0.0)))
+        normalized_positions.append({
+            **p,
+            "pnl_usd": round(pnl, 2),
+            "pnl_pips": float(p.get("pnl_pips", 0.0)),
+        })
+
+    normalized_deals = []
+    for d in mt5_deals:
+        pnl = float(d.get("profit", d.get("pnl_usd", 0.0)))
+        t_id = d.get("ticket") or d.get("id") or 0
+        normalized_deals.append({
+            "id": f"MT5-{t_id}",
+            "ticket": t_id,
+            "symbol": d.get("symbol", ""),
+            "display": d.get("symbol", ""),
+            "direction": d.get("direction", "BUY"),
+            "lots": float(d.get("lots", 0.01)),
+            "entry_price": d.get("price", d.get("entry_price", 0.0)),
+            "exit_price": d.get("price", d.get("exit_price", 0.0)),
+            "open_time": d.get("time", ""),
+            "exit_time": d.get("time", ""),
+            "exit_reason": "MT5 Kapanış",
+            "exit_reason_title": "IC Markets MT5",
+            "pnl_usd": round(pnl, 2),
+            "pnl_pips": float(d.get("pnl_pips", 0.0)),
+            "outcome": "WIN" if pnl >= 0 else "LOSS",
+        })
+
+    open_pnl_usd = round(sum(p["pnl_usd"] for p in normalized_positions), 2)
     equity = float(mt5_acc.get("equity", round(balance + open_pnl_usd, 2)))
 
     # Realized PnL ve Kazanma Oranı (MT5 Kapanan İşlemleri)
-    wins = sum(1 for d in mt5_deals if float(d.get("profit", 0.0)) > 0)
-    losses = sum(1 for d in mt5_deals if float(d.get("profit", 0.0)) < 0)
-    total_trades = len(mt5_deals)
-    realized_usd = round(sum(float(d.get("profit", 0.0)) for d in mt5_deals), 2)
+    wins = sum(1 for d in normalized_deals if d["pnl_usd"] > 0)
+    losses = sum(1 for d in normalized_deals if d["pnl_usd"] < 0)
+    total_trades = len(normalized_deals)
+    realized_usd = round(sum(d["pnl_usd"] for d in normalized_deals), 2)
     win_rate = round((wins / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
     return {
@@ -961,8 +993,8 @@ async def get_forex_auto_paper_status():
         "losses": losses,
         "win_rate": win_rate,
         "settings": _AUTO_SETTINGS.model_dump(),
-        "open_positions": mt5_positions,
-        "closed_trades": mt5_deals,
+        "open_positions": normalized_positions,
+        "closed_trades": normalized_deals,
         "decision_logs": _AUTO_STATE["decision_logs"][:60],
         "sessions": _get_market_sessions(),
         "last_scan_time": _AUTO_STATE["last_scan_time"],
@@ -989,12 +1021,6 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
             _AUTO_PAPER_TASK = None
         _AUTO_STATE["last_status"] = "Durduruldu"
         _log_auto_decision("SYSTEM", "IC Markets MT5 Otonom Scalper kullanıcı tarafından DURDURULDU.")
-
-    return {
-        "enabled": _AUTO_STATE["enabled"],
-        "status": _AUTO_STATE["last_status"],
-        "message": "Otonom Forex Scalper durumu güncellendi.",
-    }
 
     return {
         "enabled": _AUTO_STATE["enabled"],
