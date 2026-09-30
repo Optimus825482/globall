@@ -892,23 +892,13 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
 async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings):
     """Otonom scalper risk ve filtre parametrelerini günceller."""
     global _AUTO_SETTINGS
+    # Çalışma durumunu koru (motorun durdurulup başlatılması toggle endpoint'iyle yönetilir)
+    new_settings.enabled = _AUTO_STATE["enabled"]
     _AUTO_SETTINGS = new_settings
-    _AUTO_STATE["enabled"] = new_settings.enabled
-
-    # Toggle task if enabled status changed
-    global _AUTO_PAPER_TASK
-    if new_settings.enabled:
-        if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
-            _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
-    else:
-        if _AUTO_PAPER_TASK and not _AUTO_PAPER_TASK.done():
-            _AUTO_PAPER_TASK.cancel()
-            _AUTO_PAPER_TASK = None
-        _AUTO_STATE["last_status"] = "Durduruldu"
 
     _log_auto_decision(
         "SYSTEM",
-        f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p",
+        f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p, Trailing: {new_settings.trailing_stop_pips}p, Min Skor: {new_settings.min_score}",
     )
     return {"status": "ok", "settings": _AUTO_SETTINGS.model_dump()}
 

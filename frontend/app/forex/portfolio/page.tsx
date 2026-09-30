@@ -87,7 +87,7 @@ export default function ForexPortfolioPage() {
   const [logFilter, setLogFilter] = useState<string>("ALL");
 
   // Ayarlar & Düzenleme
-  const [settings, setSettings] = useState<AutoSettings>({
+  const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 10000.0,
     risk_per_trade_pct: 1.0,
@@ -101,7 +101,25 @@ export default function ForexPortfolioPage() {
     max_spread_pips: 2.2,
     allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
   });
+
+  const [formSettings, setFormSettings] = useState<AutoSettings>({
+    enabled: false,
+    balance: 10000.0,
+    risk_per_trade_pct: 1.0,
+    max_open_positions: 3,
+    min_score: 75.0,
+    tp_pips: 25.0,
+    sl_pips: 15.0,
+    breakeven_pips: 8.0,
+    trailing_stop_pips: 12.0,
+    session_filter: false,
+    max_spread_pips: 2.2,
+    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
+  });
+
   const [showSettings, setShowSettings] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
 
   // Manuel İşlem Formu
@@ -131,7 +149,7 @@ export default function ForexPortfolioPage() {
         setDecisionLogs(res.decision_logs || []);
         setSessions(res.sessions || []);
         if (res.settings) {
-          setSettings(res.settings);
+          setAppliedSettings(res.settings);
         }
       }
     } catch (err) {
@@ -163,21 +181,40 @@ export default function ForexPortfolioPage() {
     }
   };
 
+  // Ayarları Düzenleme Modalını Aç
+  const handleOpenSettings = () => {
+    if (!showSettings) {
+      setFormSettings({ ...appliedSettings });
+      setSaveSuccessMsg(null);
+    }
+    setShowSettings(!showSettings);
+  };
+
   // Ayarları Kaydet
   const saveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingSettings(true);
+    setSaveSuccessMsg(null);
     try {
       const res = await apiFetch("/api/forex/auto-paper/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(formSettings),
       });
       if (res && res.status === "ok") {
-        setShowSettings(false);
-        fetchStatus();
+        setAppliedSettings(res.settings);
+        setFormSettings(res.settings);
+        setSaveSuccessMsg("✓ Parametreler başarıyla güncellendi ve kaydedildi!");
+        setTimeout(() => {
+          setShowSettings(false);
+          setSaveSuccessMsg(null);
+        }, 1200);
       }
     } catch (err) {
       console.error("Ayarları kaydetme hatası:", err);
+      alert("Parametre kaydedilirken bir hata oluştu.");
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -277,7 +314,7 @@ export default function ForexPortfolioPage() {
 
           <button
             type="button"
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={handleOpenSettings}
             className="px-3.5 py-2 rounded-xl bg-bunker-900 border border-bunker-700 text-white hover:border-blue-400 transition-all text-xs font-bold flex items-center gap-1.5"
           >
             <span>⚙️ Parametreler</span>
@@ -298,7 +335,7 @@ export default function ForexPortfolioPage() {
       {showSettings && (
         <form
           onSubmit={saveSettings}
-          className="p-5 rounded-2xl bg-bunker-900/90 border border-blue-500/40 shadow-xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
+          className="p-5 rounded-2xl bg-bunker-900/95 border border-blue-500/40 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
         >
           <div className="flex items-center justify-between border-b border-bunker-800 pb-3">
             <div className="flex items-center gap-2">
@@ -316,6 +353,12 @@ export default function ForexPortfolioPage() {
             </button>
           </div>
 
+          {saveSuccessMsg && (
+            <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-pulse">
+              <span>{saveSuccessMsg}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">
@@ -326,9 +369,9 @@ export default function ForexPortfolioPage() {
                 step="0.1"
                 min="0.1"
                 max="5.0"
-                value={settings.risk_per_trade_pct}
+                value={formSettings.risk_per_trade_pct}
                 onChange={(e) =>
-                  setSettings({ ...settings, risk_per_trade_pct: parseFloat(e.target.value) || 1.0 })
+                  setFormSettings({ ...formSettings, risk_per_trade_pct: parseFloat(e.target.value) || 1.0 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
@@ -343,9 +386,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="5"
                 max="100"
-                value={settings.tp_pips}
+                value={formSettings.tp_pips}
                 onChange={(e) =>
-                  setSettings({ ...settings, tp_pips: parseFloat(e.target.value) || 25 })
+                  setFormSettings({ ...formSettings, tp_pips: parseFloat(e.target.value) || 25 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-emerald-400 font-bold outline-none focus:border-blue-400"
               />
@@ -360,9 +403,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="5"
                 max="50"
-                value={settings.sl_pips}
+                value={formSettings.sl_pips}
                 onChange={(e) =>
-                  setSettings({ ...settings, sl_pips: parseFloat(e.target.value) || 15 })
+                  setFormSettings({ ...formSettings, sl_pips: parseFloat(e.target.value) || 15 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-rose-400 font-bold outline-none focus:border-blue-400"
               />
@@ -377,9 +420,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="2"
                 max="30"
-                value={settings.breakeven_pips}
+                value={formSettings.breakeven_pips}
                 onChange={(e) =>
-                  setSettings({ ...settings, breakeven_pips: parseFloat(e.target.value) || 8 })
+                  setFormSettings({ ...formSettings, breakeven_pips: parseFloat(e.target.value) || 8 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-cyan-300 font-bold outline-none focus:border-blue-400"
               />
@@ -394,9 +437,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="4"
                 max="40"
-                value={settings.trailing_stop_pips}
+                value={formSettings.trailing_stop_pips}
                 onChange={(e) =>
-                  setSettings({ ...settings, trailing_stop_pips: parseFloat(e.target.value) || 12 })
+                  setFormSettings({ ...formSettings, trailing_stop_pips: parseFloat(e.target.value) || 12 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-yellow-300 font-bold outline-none focus:border-blue-400"
               />
@@ -411,9 +454,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="50"
                 max="98"
-                value={settings.min_score}
+                value={formSettings.min_score}
                 onChange={(e) =>
-                  setSettings({ ...settings, min_score: parseFloat(e.target.value) || 75 })
+                  setFormSettings({ ...formSettings, min_score: parseFloat(e.target.value) || 75 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
@@ -429,25 +472,42 @@ export default function ForexPortfolioPage() {
                 step="0.1"
                 min="0.5"
                 max="5.0"
-                value={settings.max_spread_pips}
+                value={formSettings.max_spread_pips}
                 onChange={(e) =>
-                  setSettings({ ...settings, max_spread_pips: parseFloat(e.target.value) || 2.2 })
+                  setFormSettings({ ...formSettings, max_spread_pips: parseFloat(e.target.value) || 2.2 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
               <span className="text-[10px] text-bunker-muted">Spread yüksekse işlem açılmaz</span>
             </div>
 
-            <div className="flex flex-col justify-center">
+            <div>
+              <label className="text-[11px] text-bunker-muted block mb-1">
+                Max. Açık İşlem (1-10):
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={formSettings.max_open_positions}
+                onChange={(e) =>
+                  setFormSettings({ ...formSettings, max_open_positions: parseInt(e.target.value) || 1 })
+                }
+                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
+              />
+              <span className="text-[10px] text-bunker-muted">Aynı anda açık en fazla pozisyon</span>
+            </div>
+
+            <div className="flex flex-col justify-center col-span-2">
               <label className="text-[11px] text-bunker-muted block mb-2">
                 Hafta Sonu Kalkanı:
               </label>
               <label className="inline-flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={settings.session_filter}
+                  checked={formSettings.session_filter}
                   onChange={(e) =>
-                    setSettings({ ...settings, session_filter: e.target.checked })
+                    setFormSettings({ ...formSettings, session_filter: e.target.checked })
                   }
                   className="rounded bg-bunker-950 border-bunker-700 text-blue-500 focus:ring-0 w-4 h-4"
                 />
@@ -471,9 +531,10 @@ export default function ForexPortfolioPage() {
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all"
+              disabled={isSavingSettings}
+              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
             >
-              Kaydet ve Uygula
+              {isSavingSettings ? "Kaydediliyor…" : "Kaydet ve Uygula"}
             </button>
           </div>
         </form>
@@ -560,7 +621,7 @@ export default function ForexPortfolioPage() {
           <div className="flex items-center gap-2">
             <span className="text-lg">⚡</span>
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-              Açık Otonom Pozisyonlar ({openPositions.length} / {settings.max_open_positions})
+              Açık Otonom Pozisyonlar ({openPositions.length} / {appliedSettings.max_open_positions})
             </h2>
           </div>
           <span className="text-xs text-blue-400 font-bold animate-pulse">
