@@ -1303,6 +1303,13 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
         "server_time": now_ts,
         "auto_trade": _MT5_STATE["auto_trade"],
         "commands": commands,
+        "settings": {
+            "breakeven_pips": _AUTO_SETTINGS.breakeven_pips,
+            "trailing_stop_pips": _AUTO_SETTINGS.trailing_stop_pips,
+            "sl_pips": _AUTO_SETTINGS.sl_pips,
+            "tp_pips": _AUTO_SETTINGS.tp_pips,
+            "max_open_positions": _AUTO_SETTINGS.max_open_positions,
+        },
     }
 
 
@@ -1356,6 +1363,19 @@ async def close_mt5_position(req: MT5CloseRequest):
     _MT5_STATE["pending_commands"].append(cmd)
     _log_auto_decision("EXIT", f"🛑 [MT5 Kapatma Kuyruğa Alındı]: Bilet #{req.ticket}")
     return {"status": "queued", "ticket": req.ticket}
+
+
+@router.post("/mt5/close-all")
+async def close_all_mt5_positions():
+    """Tüm açık MT5 pozisyonlarını tek seferde kapatma emri kuyruğa alır."""
+    cmd_id = f"CMD-CLOSE-ALL-{int(time.time()*1000)%10000}"
+    cmd = {
+        "id": cmd_id,
+        "action": "CLOSE_ALL",
+    }
+    _MT5_STATE["pending_commands"].append(cmd)
+    _log_auto_decision("EXIT", "🛑 [MT5 Toplu Kapatma Kuyruğa Alındı]: Tüm açık MT5 pozisyonları kapatılıyor")
+    return {"status": "queued", "command_id": cmd_id}
 
 
 @router.post("/mt5/toggle-auto")

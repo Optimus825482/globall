@@ -279,6 +279,22 @@ export default function ForexPortfolioPage() {
     }
   };
 
+  // Tüm MT5 Pozisyonlarını Tek Tıkla Kapat
+  const closeAllMt5Positions = async () => {
+    const count = mt5.open_positions?.length || 0;
+    if (!confirm(`Açık olan TÜM (${count}) IC Markets MT5 pozisyonunu tek seferde kapatmak istiyor musunuz?`)) return;
+    try {
+      await apiFetch("/api/forex/mt5/close-all", {
+        method: "POST",
+      });
+      setMt5Message(`🛑 Tüm (${count}) MT5 pozisyonunu kapatma emri köprüye iletildi.`);
+      setTimeout(() => setMt5Message(null), 5000);
+      fetchStatus();
+    } catch (err) {
+      console.error("MT5 close-all hatası:", err);
+    }
+  };
+
   // Otonom Motoru Aç / Kapat
   const toggleAutoEngine = async () => {
     try {
@@ -976,9 +992,18 @@ export default function ForexPortfolioPage() {
         {/* Açık MT5 Pozisyonları (Varsa) */}
         {mt5.open_positions && mt5.open_positions.length > 0 && (
           <div className="mt-4 pt-4 border-t border-bunker-800">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <span>⚡ Canlı MT5 Açık Pozisyonları ({mt5.open_positions.length})</span>
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <span>⚡ Canlı MT5 Açık Pozisyonları ({mt5.open_positions.length})</span>
+              </h3>
+              <button
+                type="button"
+                onClick={closeAllMt5Positions}
+                className="px-3 py-1 rounded-lg bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              >
+                <span>🛑 Tüm MT5 Pozisyonlarını Kapat ({mt5.open_positions.length})</span>
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">

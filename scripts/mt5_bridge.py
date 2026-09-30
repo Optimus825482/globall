@@ -227,7 +227,99 @@ def execute_modify_sltp(cmd: dict) -> dict:
         return {"success": False, "error": err_msg}
 
 
-def sync_with_server(api_base: str) -> list:
+def execute_close_all(cmd: dict) -> dict:
+    """Tüm açık MT5 pozisyonlarını sırayla kapatır."""
+    positions = mt5.positions_get() or []
+    if not positions:
+        print("  ℹ️ Kapatılacak açık MT5 pozisyonu yok.")
+        return {"success": True, "closed_count": 0}
+
+    print(f"\n🚨 [TOPLU KAPATMA BAŞLATILDI]: {len(positions)} açık MT5 pozisyonu kapatılıyor...")
+    closed_count = 0
+    for p in positions:
+        res = execute_close_order({"ticket": p.ticket})
+        if res.get("success"):
+            closed_count += 1
+        time.sleep(0.1)
+
+    print(f"  🏁 [TOPLU KAPATMA TAMAMLANDI]: {closed_count}/{len(positions)} pozisyon kapatıldı.\n")
+    return {"success": True, "closed_count": closed_count}
+
+
+def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
+    """Her açık MT5 pozisyonu için Breakeven ve Trailing Stop seviyelerini yerel olarak denetler ve uygular."""
+    positions = mt5.positions_get() or []
+    if not positions:
+        return
+
+    for p in positions:
+        ticket = p.ticket
+        sym = p.symbol
+        s_info = mt5.symbol_info(sym)
+        if not s_info:
+            continue
+
+        point = s_info.point
+        digits = s_info.digits
+        pip_size = point * 10 if digits in (3, 5) else point
+
+        direction = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+        entry_p = p.price_open
+        cur_p = p.price_current
+        cur_sl = p.sl
+        cur_tp = p.tp
+
+        if direction == "BUY":
+            pnl_pips = (cur_p - entry_p) / pip_size
+        else:
+            pnl_pips = (entry_p - cur_p) / pip_size
+
+        target_sl = None
+
+        # 1. BREAKEVEN (Başabaş Koruması)
+        # Fiyat be_pips kadar kâra ulaştığında, SL'i girişe (+0.5 pip kâr tamponuyla) taşı
+        if be_pips > 0 and pnl_pips >= be_pips:
+            be_sl = round(entry_p + (0.5 * pip_size if direction == "BUY" else -0.5 * pip_size), digits)
+            if direction == "BUY":
+                if cur_sl < be_sl:
+                    target_sl = be_sl
+            else:
+                if cur_sl == 0.0 or cur_sl > be_sl:
+                    target_sl = be_sl
+
+        # 2. TRAILING STOP (İz Süren Stop)
+        # Fiyat trail_pips kadar kârda ise fiyatın arkasından takip et
+        if trail_pips > 0 and pnl_pips >= trail_pips:
+            trail_dist = trail_pips * pip_size
+            if direction == "BUY":
+                cand_sl = round(cur_p - trail_dist, digits)
+                if target_sl is None and cand_sl > cur_sl:
+                    target_sl = cand_sl
+                elif target_sl is not None and cand_sl > target_sl:
+                    target_sl = cand_sl
+            else:
+                cand_sl = round(cur_p + trail_dist, digits)
+                if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
+                    target_sl = cand_sl
+                elif target_sl is not None and cand_sl < target_sl:
+                    target_sl = cand_sl
+
+        # Eğer yeni bir SL seviyesi belirlendiyse ve mevcut SL'den farklıysa emri MT5'e gönder
+        if target_sl is not None and abs(target_sl - cur_sl) >= (0.3 * pip_size):
+            req = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "position": ticket,
+                "symbol": sym,
+                "sl": target_sl,
+                "tp": cur_tp,
+            }
+            res = mt5.order_send(req)
+            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                label = "İz Süren Stop" if (trail_pips > 0 and pnl_pips >= trail_pips) else "Başabaş (BE)"
+                print(f"  🛡️ [{label.upper()} KİLİTLENDİ]: Bilet #{ticket} ({sym} {direction}) | Yeni SL: {target_sl} (Kâr: +{pnl_pips:.1f}p)")
+
+
+def sync_with_server(api_base: str):
     """MT5 durumunu web sunucusuna raporlar ve bekleyen komutları çeker."""
     acc = mt5.account_info()
     if not acc:
@@ -297,11 +389,11 @@ def sync_with_server(api_base: str) -> list:
     try:
         with urllib.request.urlopen(req, timeout=7.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            return True, data.get("commands", []), None
+            return True, data.get("commands", []), data.get("settings", {}), None
     except urllib.error.HTTPError as he:
-        return False, [], f"HTTP {he.code}: {he.reason}"
+        return False, [], {}, f"HTTP {he.code}: {he.reason}"
     except Exception as e:
-        return False, [], str(e)
+        return False, [], {}, str(e)
 
 
 def main():
@@ -331,16 +423,21 @@ def main():
 
     while True:
         try:
-            success, commands, err_msg = sync_with_server(args.api)
+            success, commands, settings, err_msg = sync_with_server(args.api)
 
             if success:
                 sync_counter += 1
+                be_pips = float(settings.get("breakeven_pips", 8.0))
+                trail_pips = float(settings.get("trailing_stop_pips", 12.0))
+                # Her açık MT5 pozisyonu için yerel Dinamik Başabaş (BE) ve İz Süren Stop (Trailing) uygula
+                check_and_apply_dynamic_exits(be_pips, trail_pips)
+
                 if first_sync or sync_counter % 15 == 0:
                     first_sync = False
                     acc = mt5.account_info()
                     pos_count = len(mt5.positions_get() or [])
                     if acc:
-                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🟢 Web Paneliyle Senkronize: Bakiye=${acc.balance:.2f} | Equity=${acc.equity:.2f} | Açık MT5 Pozisyon: {pos_count}")
+                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🟢 Web Paneliyle Senkronize: Bakiye=${acc.balance:.2f} | Equity=${acc.equity:.2f} | Açık MT5 Pozisyon: {pos_count} (BE: {be_pips}p, Trail: {trail_pips}p)")
             else:
                 now_t = time.time()
                 if now_t - last_err_time > 10.0:
@@ -354,6 +451,8 @@ def main():
                     execute_market_order(cmd)
                 elif action == "CLOSE_ORDER":
                     execute_close_order(cmd)
+                elif action == "CLOSE_ALL":
+                    execute_close_all(cmd)
                 elif action == "MODIFY_SLTP":
                     execute_modify_sltp(cmd)
 
