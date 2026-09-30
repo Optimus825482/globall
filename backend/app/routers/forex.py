@@ -492,6 +492,8 @@ class ToggleAutoPaperRequest(BaseModel):
 _AUTO_PAPER_LOCK = asyncio.Lock()
 _AUTO_PAPER_TASK: Optional[asyncio.Task] = None
 _LAST_SESSION_BLOCK_LOG_TIME = 0.0
+_LAST_SCAN_PULSE_TIME = 0.0
+_LAST_CANDIDATE_LOG_TIME: Dict[str, float] = {}
 
 _AUTO_SETTINGS = ForexAutoPaperSettings()
 
@@ -523,8 +525,8 @@ def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None
         "metadata": metadata or {},
     }
     _AUTO_STATE["decision_logs"].insert(0, log_item)
-    if len(_AUTO_STATE["decision_logs"]) > 60:
-        _AUTO_STATE["decision_logs"] = _AUTO_STATE["decision_logs"][:60]
+    if len(_AUTO_STATE["decision_logs"]) > 120:
+        _AUTO_STATE["decision_logs"] = _AUTO_STATE["decision_logs"][:120]
 
 
 async def _close_position_internal(pos_id: str, reason: str, exit_price: Optional[float] = None) -> Optional[Dict[str, Any]]:
@@ -687,6 +689,12 @@ async def _forex_auto_paper_loop():
             # ---------------------------------------------------------------
             open_count = len(_AUTO_STATE["open_positions"])
             if open_count >= _AUTO_SETTINGS.max_open_positions:
+                if now_ts - _LAST_SCAN_PULSE_TIME > 30.0:
+                    _LAST_SCAN_PULSE_TIME = now_ts
+                    _log_auto_decision(
+                        "GATE",
+                        f"Maksimum açık pozisyon limitine ulaşıldı ({open_count}/{_AUTO_SETTINGS.max_open_positions}). Yeni işlem taraması beklemede.",
+                    )
                 continue
 
             # Seans Filtresi Kontrolü (Asya seansı: Tokyo & Sydney dahil tüm seanslar serbest)
@@ -705,6 +713,16 @@ async def _forex_auto_paper_loop():
             radar_res = await get_forex_radar()
             candidates = radar_res.get("candidates", [])
 
+            # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
+            if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
+                _LAST_SCAN_PULSE_TIME = now_ts
+                active_str = ", ".join(active_names) if active_names else "24/5 Açık"
+                top_3 = ", ".join([f"{c['display']} (Skor:{c['score']:.0f} {c['action']})" for c in candidates[:3]])
+                _log_auto_decision(
+                    "SCAN",
+                    f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
+                )
+
             open_syms = {p["symbol"] for p in _AUTO_STATE["open_positions"]}
 
             for cand in candidates:
@@ -712,14 +730,35 @@ async def _forex_auto_paper_loop():
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
                 if sym in open_syms:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
+                        _log_auto_decision(
+                            "SCAN",
+                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat pozisyon zaten açık. Yeni giriş pas geçildi.",
+                            symbol=sym,
+                        )
                     continue
 
                 # Spread Filtresi
                 if cand["spread_pips"] > _AUTO_SETTINGS.max_spread_pips:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}] Tarandı: Spread engeli ({cand['spread_pips']:.1f}p > {_AUTO_SETTINGS.max_spread_pips:.1f}p limit). İşlem engellendi.",
+                            symbol=sym,
+                        )
                     continue
 
                 # Skor Eşiği
                 if cand["score"] < _AUTO_SETTINGS.min_score:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
+                        _log_auto_decision(
+                            "SCAN",
+                            f"[{cand['display']}] Tarandı: Skor yetersiz ({cand['score']:.1f} < {_AUTO_SETTINGS.min_score:.0f} eşik) | Yön: {cand['action']} | Spread: {cand['spread_pips']:.1f}p | Beklemede.",
+                            symbol=sym,
+                        )
                     continue
 
                 # Dinamik Lot Hesaplama
@@ -774,7 +813,7 @@ async def _forex_auto_paper_loop():
 
                 _log_auto_decision(
                     "ENTRY",
-                    f"{cand['display']} {direction} açıldı: {lots} Lot @ {entry_p} | TP: {tp_p} (+{tp_pips}p) | SL: {sl_p} (-{sl_pips}p) | Skor: {cand['score']}",
+                    f"⚡ [{cand['display']}] OTONOM GİRİŞ: {lots} Lot {direction} @ {entry_p} | TP: {tp_p} (+{tp_pips}p) | SL: {sl_p} (-{sl_pips}p) | Skor: {cand['score']}",
                     symbol=sym,
                     metadata={"lots": lots, "entry_price": entry_p, "score": cand["score"]},
                 )
@@ -818,7 +857,7 @@ async def get_forex_auto_paper_status():
         "settings": _AUTO_SETTINGS.model_dump(),
         "open_positions": _AUTO_STATE["open_positions"],
         "closed_trades": _AUTO_STATE["closed_trades"][:20],
-        "decision_logs": _AUTO_STATE["decision_logs"][:30],
+        "decision_logs": _AUTO_STATE["decision_logs"][:60],
         "sessions": _get_market_sessions(),
         "last_scan_time": _AUTO_STATE["last_scan_time"],
     }

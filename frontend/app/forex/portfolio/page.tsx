@@ -44,7 +44,7 @@ interface ClosedTrade {
 interface DecisionLog {
   id: string;
   time: string;
-  category: "ENTRY" | "EXIT" | "PROTECT" | "GATE" | "SYSTEM";
+  category: "ENTRY" | "EXIT" | "PROTECT" | "GATE" | "SYSTEM" | "SCAN";
   symbol?: string;
   message: string;
   metadata?: any;
@@ -84,6 +84,7 @@ export default function ForexPortfolioPage() {
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
   const [decisionLogs, setDecisionLogs] = useState<DecisionLog[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
+  const [logFilter, setLogFilter] = useState<string>("ALL");
 
   // Ayarlar & Düzenleme
   const [settings, setSettings] = useState<AutoSettings>({
@@ -673,53 +674,111 @@ export default function ForexPortfolioPage() {
 
       {/* KARAR GÜNLÜĞÜ (DECISION STREAM) VE GEÇMİŞ İŞLEMLER */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Canlı Otonom Karar Günlüğü */}
-        <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl flex flex-col h-[340px]">
-          <div className="flex items-center justify-between border-b border-bunker-800 pb-3 mb-2">
+        {/* Canlı Otonom Karar & Tarama Günlüğü */}
+        <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl flex flex-col h-[420px]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-bunker-800 pb-2.5 mb-2 gap-2">
             <div className="flex items-center gap-2">
               <span className="text-base">📜</span>
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                Otonom Karar & Güvenlik Akışı (Decision Stream)
+                Otonom Karar & Tarama Akışı (Decision Stream)
               </h3>
             </div>
-            <span className="text-[10px] text-bunker-muted">Son 30 Olay</span>
+            <span className="text-[10px] text-bunker-muted">
+              {decisionLogs.length} Olay Kaydedildi
+            </span>
+          </div>
+
+          {/* Kategori Filtre Butonları */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 border-b border-bunker-800/60 scrollbar-none text-[10px]">
+            {[
+              { id: "ALL", label: "Tümü", icon: "🌐" },
+              { id: "SCAN", label: "Taramalar", icon: "🔍" },
+              { id: "ENTRY", label: "Girişler", icon: "⚡" },
+              { id: "PROTECT", label: "Koruma", icon: "🛡️" },
+              { id: "EXIT", label: "Çıkışlar", icon: "🎯" },
+              { id: "GATE", label: "Engeller", icon: "⛔" },
+            ].map((tab) => {
+              const count =
+                tab.id === "ALL"
+                  ? decisionLogs.length
+                  : decisionLogs.filter((l) => l.category === tab.id).length;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setLogFilter(tab.id)}
+                  className={`px-2 py-1 rounded-md transition-all font-bold whitespace-nowrap flex items-center gap-1 ${
+                    logFilter === tab.id
+                      ? "bg-blue-600/30 text-blue-300 border border-blue-400/40 shadow-sm"
+                      : "bg-bunker-950/60 text-bunker-muted hover:text-white border border-transparent"
+                  }`}
+                >
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  <span className="opacity-70 text-[9px]">({count})</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
-            {decisionLogs.length === 0 ? (
-              <div className="text-center py-10 text-bunker-muted">Henüz kayıt oluşmadı.</div>
-            ) : (
-              decisionLogs.map((log) => {
-                const catColors: Record<string, string> = {
-                  ENTRY: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-                  EXIT: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-                  PROTECT: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
-                  GATE: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-                  SYSTEM: "border-bunker-700 bg-bunker-800/40 text-bunker-muted",
-                };
+            {(() => {
+              const filtered =
+                logFilter === "ALL"
+                  ? decisionLogs
+                  : decisionLogs.filter((l) => l.category === logFilter);
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-14 text-bunker-muted text-xs">
+                    Bu filtreye ait bir kayıt henüz bulunmuyor.
+                  </div>
+                );
+              }
+
+              const catColors: Record<string, string> = {
+                SCAN: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+                ENTRY: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+                EXIT: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+                PROTECT: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+                GATE: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+                SYSTEM: "border-bunker-700 bg-bunker-800/40 text-bunker-muted",
+              };
+
+              const catIcons: Record<string, string> = {
+                SCAN: "🔍",
+                ENTRY: "⚡",
+                EXIT: "🎯",
+                PROTECT: "🛡️",
+                GATE: "⛔",
+                SYSTEM: "⚙️",
+              };
+
+              return filtered.map((log) => {
+                const icon = catIcons[log.category] || "•";
                 return (
                   <div
                     key={log.id}
-                    className={`p-2 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 ${
+                    className={`p-2 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 transition-all ${
                       catColors[log.category] || "border-bunker-800 bg-bunker-900"
                     }`}
                   >
                     <div>
                       <span className="font-bold mr-1.5 uppercase tracking-wider text-[10px]">
-                        [{log.category}]
+                        {icon} [{log.category}]
                       </span>
                       <span>{log.message}</span>
                     </div>
                     <span className="text-[10px] opacity-70 whitespace-nowrap">{log.time}</span>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         </div>
 
         {/* Kapanan İşlemler Geçmişi */}
-        <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl flex flex-col h-[340px]">
+        <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl flex flex-col h-[420px]">
           <div className="flex items-center justify-between border-b border-bunker-800 pb-3 mb-2">
             <div className="flex items-center gap-2">
               <span className="text-base">🏁</span>
