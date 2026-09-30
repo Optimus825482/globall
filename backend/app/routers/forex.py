@@ -509,8 +509,30 @@ _AUTO_PAPER_TASK: Optional[asyncio.Task] = None
 _LAST_SESSION_BLOCK_LOG_TIME = 0.0
 _LAST_SCAN_PULSE_TIME = 0.0
 _LAST_CANDIDATE_LOG_TIME: Dict[str, float] = {}
+_LAST_SYMBOL_ENTRY_TIME: Dict[str, float] = {}
 
 _AUTO_SETTINGS = ForexAutoPaperSettings()
+
+# IC Markets MT5 Durumu (Global Köprü Paylaşımı)
+_MT5_STATE: Dict[str, Any] = {
+    "connected": False,
+    "last_ping": 0.0,
+    "auto_trade": False,
+    "account": {
+        "login": 53077151,
+        "name": "ERKAN ERDEM",
+        "server": "ICMarketsSC-Demo",
+        "balance": 1000.0,
+        "equity": 1000.0,
+        "margin": 0.0,
+        "free_margin": 1000.0,
+        "leverage": 5000,
+        "currency": "USD",
+    },
+    "open_positions": [],
+    "closed_deals": [],
+    "pending_commands": [],
+}
 
 _AUTO_STATE: Dict[str, Any] = {
     "enabled": False,
@@ -623,6 +645,27 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             symbol=target["symbol"],
             metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason},
         )
+
+        # MT5 Köprüsü bağlıysa ve otomatik iletim aktifse, MT5'teki açık pozisyonu da otomatik kapat
+        if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+            sym_target = target["symbol"].upper()
+            for mpos in list(_MT5_STATE.get("open_positions", [])):
+                if mpos.get("symbol", "").upper() == sym_target:
+                    t_id = mpos.get("ticket")
+                    if t_id:
+                        already_closing = any(c.get("ticket") == t_id for c in _MT5_STATE.get("pending_commands", []))
+                        if not already_closing:
+                            _MT5_STATE["pending_commands"].append({
+                                "id": f"CMD-CLOSE-{t_id}",
+                                "action": "CLOSE_ORDER",
+                                "ticket": t_id,
+                            })
+                            _log_auto_decision(
+                                "EXIT",
+                                f"🛑 [MT5 Senkron Kapatma]: {target['display']} Bilet #{t_id} kapatma emri iletildi ({human_reason})",
+                                symbol=target["symbol"],
+                            )
+
         return closed_item
 
 
@@ -727,6 +770,18 @@ async def _forex_auto_paper_loop():
                     )
                 continue
 
+            # MT5 Köprüsü de maksimum pozisyon limitini denetlesin
+            mt5_is_live = _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade")
+            mt5_open_count = len(_MT5_STATE.get("open_positions", []))
+            if mt5_is_live and mt5_open_count >= _AUTO_SETTINGS.max_open_positions:
+                if now_ts - _LAST_SCAN_PULSE_TIME > 30.0:
+                    _LAST_SCAN_PULSE_TIME = now_ts
+                    _log_auto_decision(
+                        "GATE",
+                        f"IC Markets MT5 açık pozisyon limitine ulaşıldı ({mt5_open_count}/{_AUTO_SETTINGS.max_open_positions}). Yeni emir iletimi beklemede.",
+                    )
+                continue
+
             # Seans Filtresi Kontrolü (Asya seansı: Tokyo & Sydney dahil tüm seanslar serbest)
             active_names = [s["name"] for s in sessions if s["active"]]
             any_session_active = len(active_names) > 0
@@ -753,20 +808,28 @@ async def _forex_auto_paper_loop():
                     f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
                 )
 
-            open_syms = {p["symbol"] for p in _AUTO_STATE["open_positions"]}
+            open_syms = {p["symbol"].upper() for p in _AUTO_STATE["open_positions"]}
+            mt5_active_syms = {p.get("symbol", "").upper() for p in _MT5_STATE.get("open_positions", [])}
+            pending_mt5_syms = {c.get("symbol", "").upper() for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER"}
 
             for cand in candidates:
-                sym = cand["symbol"]
+                sym = cand["symbol"].upper()
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
-                if sym in open_syms:
+
+                # Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Hedging & Anti-Duplicate)
+                if sym in open_syms or (mt5_is_live and (sym in mt5_active_syms or sym in pending_mt5_syms)):
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
                         _log_auto_decision(
                             "SCAN",
-                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat pozisyon zaten açık. Yeni giriş pas geçildi.",
+                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
                             symbol=sym,
                         )
+                    continue
+
+                # Sembol soğuma süresi (Son işlemden sonra en az 45 sn bekle)
+                if now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0) < 45.0:
                     continue
 
                 # Spread Filtresi
@@ -843,6 +906,8 @@ async def _forex_auto_paper_loop():
                 async with _AUTO_PAPER_LOCK:
                     _AUTO_STATE["open_positions"].append(new_pos)
 
+                _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
+
                 _log_auto_decision(
                     "ENTRY",
                     f"⚡ [{cand['display']}] OTONOM GİRİŞ: {lots} Lot {direction} @ {entry_p} | TP: {tp_p} (+{tp_pips}p) | SL: {sl_p} (-{sl_pips}p) | Skor: {cand['score']}",
@@ -852,17 +917,27 @@ async def _forex_auto_paper_loop():
 
                 # Eğer MT5 Köprüsü bağlıysa ve MT5 otomatik al-sat aktifse, emri MT5'e de ilet
                 if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                    mt5_acc_bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
+                    # MT5 gerçek bakiyesine göre tam %1 risk (veya kullanıcının seçtiği risk_per_trade_pct)
+                    mt5_risk_usd = mt5_acc_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                    mt5_calc_lots = round(mt5_risk_usd / (sl_pips * pip_val), 2)
+                    mt5_lots = max(0.01, min(mt5_calc_lots, 1.0))
+
                     _MT5_STATE["pending_commands"].append({
                         "id": f"CMD-{int(time.time() * 1000) % 1000000}",
                         "action": "OPEN_ORDER",
                         "symbol": sym,
                         "direction": direction,
-                        "lots": lots,
+                        "lots": mt5_lots,
                         "sl_pips": sl_pips,
                         "tp_pips": tp_pips,
                         "comment": f"Scalper MT5 {cand['score']:.0f}",
                     })
-                    _log_auto_decision("ENTRY", f"🚀 [MT5] IC Markets Gerçek Demo Emri İletildi: {lots} Lot {direction} {sym}", symbol=sym)
+                    _log_auto_decision(
+                        "ENTRY",
+                        f"🚀 [MT5] IC Markets Gerçek Demo Emri İletildi: {mt5_lots} Lot {direction} {sym} (Risk: ${mt5_risk_usd:.2f})",
+                        symbol=sym,
+                    )
 
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
                 break
@@ -1149,26 +1224,6 @@ async def export_forex_trades_csv(
 # ============================================================================
 # IC MARKETS META-TRADER 5 (MT5) BRIDGE HUB & REST API
 # ============================================================================
-
-_MT5_STATE: Dict[str, Any] = {
-    "connected": False,
-    "last_ping": 0.0,
-    "auto_trade": False,
-    "account": {
-        "login": 53077151,
-        "name": "ERKAN ERDEM",
-        "server": "ICMarketsSC-Demo",
-        "balance": 1000.0,
-        "equity": 1000.0,
-        "margin": 0.0,
-        "free_margin": 1000.0,
-        "leverage": 5000,
-        "currency": "USD",
-    },
-    "open_positions": [],
-    "closed_deals": [],
-    "pending_commands": [],
-}
 
 
 class MT5SyncRequest(BaseModel):
