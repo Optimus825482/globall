@@ -456,3 +456,446 @@ async def calculate_lot_size(req: LotCalculatorRequest):
         "micro_lots": micro_lots,
         "units": int(standard_lots * 100_000),
     }
+
+
+# ============================================================================
+# OTONOM FOREX PAPER TRADE SCALPING MOTORU (M1 / M5 Dynamic Exit & Risk Engine)
+# ============================================================================
+
+class ForexAutoPaperSettings(BaseModel):
+    enabled: bool = False
+    balance: float = Field(10000.0, ge=100.0, description="Demo bakiye (USD)")
+    risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
+    max_open_positions: int = Field(3, ge=1, le=10, description="Aynı anda maksimum açık işlem")
+    min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
+    tp_pips: float = Field(25.0, ge=5.0, le=100.0, description="Kâr al mesafesi (pip)")
+    sl_pips: float = Field(15.0, ge=5.0, le=50.0, description="Zarar durdur mesafesi (pip)")
+    breakeven_pips: float = Field(8.0, ge=2.0, le=30.0, description="Başabaş kilit tetik mesafesi (pip)")
+    trailing_stop_pips: float = Field(12.0, ge=4.0, le=40.0, description="İz süren stop mesafesi (pip)")
+    session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
+    max_spread_pips: float = Field(2.2, ge=0.5, le=5.0, description="Maksimum izin verilen spread (pip)")
+    allowed_symbols: List[str] = Field(
+        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
+        description="İşleme izin verilen pariteler",
+    )
+
+
+class ClosePositionRequest(BaseModel):
+    id: str
+
+
+class ToggleAutoPaperRequest(BaseModel):
+    enabled: bool
+
+
+# Engine In-Memory State
+_AUTO_PAPER_LOCK = asyncio.Lock()
+_AUTO_PAPER_TASK: Optional[asyncio.Task] = None
+_LAST_SESSION_BLOCK_LOG_TIME = 0.0
+
+_AUTO_SETTINGS = ForexAutoPaperSettings()
+
+_AUTO_STATE: Dict[str, Any] = {
+    "enabled": False,
+    "balance": 10000.0,
+    "initial_balance": 10000.0,
+    "total_trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "realized_pnl_usd": 0.0,
+    "realized_pnl_pips": 0.0,
+    "open_positions": [],
+    "closed_trades": [],
+    "decision_logs": [],
+    "last_scan_time": 0.0,
+    "last_status": "Durduruldu",
+}
+
+
+def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+    """Kayıt defterine otonom karar gerekçesi ekler (şeffaf izleme)."""
+    log_item = {
+        "id": f"LOG-{int(time.time() * 1000) % 1000000}",
+        "time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+        "category": category,
+        "symbol": symbol,
+        "message": message,
+        "metadata": metadata or {},
+    }
+    _AUTO_STATE["decision_logs"].insert(0, log_item)
+    if len(_AUTO_STATE["decision_logs"]) > 60:
+        _AUTO_STATE["decision_logs"] = _AUTO_STATE["decision_logs"][:60]
+
+
+async def _close_position_internal(pos_id: str, reason: str, exit_price: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """Açık pozisyonu kapatır ve muhasebeleştirir."""
+    async with _AUTO_PAPER_LOCK:
+        open_list = _AUTO_STATE["open_positions"]
+        target = None
+        for p in open_list:
+            if p["id"] == pos_id:
+                target = p
+                break
+        if not target:
+            return None
+
+        open_list.remove(target)
+
+        pip_size = target["pip_size"]
+        cur_p = exit_price if exit_price is not None else target["current_price"]
+        direction = target["direction"]
+
+        # Final PnL hesaplama
+        if direction == "BUY":
+            pnl_pips = (cur_p - target["entry_price"]) / pip_size
+        else:
+            pnl_pips = (target["entry_price"] - cur_p) / pip_size
+
+        pip_usd_val = 6.60 if "JPY" in target["symbol"] else 10.0
+        pnl_usd = round(pnl_pips * target["lots"] * pip_usd_val, 2)
+        pnl_pips = round(pnl_pips, 1)
+
+        closed_item = {
+            **target,
+            "exit_price": cur_p,
+            "exit_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+            "exit_reason": reason,
+            "pnl_usd": pnl_usd,
+            "pnl_pips": pnl_pips,
+        }
+
+        _AUTO_STATE["balance"] = round(_AUTO_STATE["balance"] + pnl_usd, 2)
+        _AUTO_STATE["realized_pnl_usd"] = round(_AUTO_STATE["realized_pnl_usd"] + pnl_usd, 2)
+        _AUTO_STATE["realized_pnl_pips"] = round(_AUTO_STATE["realized_pnl_pips"] + pnl_pips, 1)
+        _AUTO_STATE["total_trades"] += 1
+        if pnl_usd >= 0:
+            _AUTO_STATE["wins"] += 1
+        else:
+            _AUTO_STATE["losses"] += 1
+
+        _AUTO_STATE["closed_trades"].insert(0, closed_item)
+        if len(_AUTO_STATE["closed_trades"]) > 60:
+            _AUTO_STATE["closed_trades"] = _AUTO_STATE["closed_trades"][:60]
+
+        reason_titles = {
+            "TP_HIT": "🎯 Kâr Al (Take Profit)",
+            "SL_HIT": "🛑 Zarar Kes (Stop Loss)",
+            "BE_HIT": "🛡️ Başabaş Koruma (Breakeven)",
+            "TRAILING_HIT": "📈 İz Süren Stop (Trailing)",
+            "MANUAL": "✋ Manuel Kapatma",
+        }
+        human_reason = reason_titles.get(reason, reason)
+        _log_auto_decision(
+            "EXIT",
+            f"{target['display']} {human_reason} ile kapandı: ${pnl_usd:+.2f} ({pnl_pips:+.1f} pip)",
+            symbol=target["symbol"],
+            metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason},
+        )
+        return closed_item
+
+
+async def _forex_auto_paper_loop():
+    """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
+    global _LAST_SESSION_BLOCK_LOG_TIME
+    logger.info("Forex Otonom Scalper Döngüsü Başlatıldı.")
+    _AUTO_STATE["last_status"] = "Çalışıyor (Canlı Piyasa Taranıyor)"
+
+    while _AUTO_STATE["enabled"]:
+        try:
+            await asyncio.sleep(1.5)
+            ticks = await _generate_realistic_ticks()
+            sessions = _get_market_sessions()
+            now_ts = time.time()
+            _AUTO_STATE["last_scan_time"] = now_ts
+
+            # ---------------------------------------------------------------
+            # 1. AÇIK POZİSYONLARI GÜNCELLE & SL/TP/TRAILING/BE DENETLE
+            # ---------------------------------------------------------------
+            positions_to_close = []
+            async with _AUTO_PAPER_LOCK:
+                for pos in _AUTO_STATE["open_positions"]:
+                    sym = pos["symbol"]
+                    t = ticks.get(sym)
+                    if not t:
+                        continue
+
+                    pip_size = pos["pip_size"]
+                    digits = pos["digits"]
+                    direction = pos["direction"]
+                    entry_p = pos["entry_price"]
+
+                    # Alış pozisyonu Bid fiyatından, Satış pozisyonu Ask fiyatından kapatılır
+                    cur_p = t["bid"] if direction == "BUY" else t["ask"]
+                    pos["current_price"] = cur_p
+
+                    # PnL hesapla
+                    if direction == "BUY":
+                        pnl_pips = (cur_p - entry_p) / pip_size
+                    else:
+                        pnl_pips = (entry_p - cur_p) / pip_size
+
+                    pip_usd_val = 6.60 if "JPY" in sym else 10.0
+                    pos["pnl_pips"] = round(pnl_pips, 1)
+                    pos["pnl_usd"] = round(pnl_pips * pos["lots"] * pip_usd_val, 2)
+
+                    # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
+                    if pnl_pips >= _AUTO_SETTINGS.breakeven_pips and not pos["breakeven_activated"]:
+                        # SL'i giriş fiyatına + 0.5 pip komisyon payı ile çek
+                        be_sl = round(entry_p + (0.5 * pip_size if direction == "BUY" else -0.5 * pip_size), digits)
+                        pos["sl_price"] = be_sl
+                        pos["breakeven_activated"] = True
+                        _log_auto_decision(
+                            "PROTECT",
+                            f"{pos['display']} Başabaş (BE) kilitlendi: Kâr +{pnl_pips:.1f} pip. Stop seviyesi {be_sl} yapıldı.",
+                            symbol=sym,
+                        )
+
+                    # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
+                    if pnl_pips >= _AUTO_SETTINGS.trailing_stop_pips:
+                        trail_dist = _AUTO_SETTINGS.trailing_stop_pips * pip_size
+                        if direction == "BUY":
+                            cand_sl = round(cur_p - trail_dist, digits)
+                            if cand_sl > pos["sl_price"]:
+                                pos["sl_price"] = cand_sl
+                                pos["trailing_activated"] = True
+                        else:
+                            cand_sl = round(cur_p + trail_dist, digits)
+                            if cand_sl < pos["sl_price"]:
+                                pos["sl_price"] = cand_sl
+                                pos["trailing_activated"] = True
+
+                    # (c) KÂR AL (TAKE PROFIT) KONTROLÜ
+                    if direction == "BUY" and cur_p >= pos["tp_price"]:
+                        positions_to_close.append((pos["id"], "TP_HIT", cur_p))
+                    elif direction == "SELL" and cur_p <= pos["tp_price"]:
+                        positions_to_close.append((pos["id"], "TP_HIT", cur_p))
+
+                    # (d) ZARAR DURDUR (STOP LOSS) KONTROLÜ
+                    elif direction == "BUY" and cur_p <= pos["sl_price"]:
+                        reason = "BE_HIT" if pos["breakeven_activated"] and pos["pnl_pips"] >= 0 else "SL_HIT"
+                        positions_to_close.append((pos["id"], reason, cur_p))
+                    elif direction == "SELL" and cur_p >= pos["sl_price"]:
+                        reason = "BE_HIT" if pos["breakeven_activated"] and pos["pnl_pips"] >= 0 else "SL_HIT"
+                        positions_to_close.append((pos["id"], reason, cur_p))
+
+            # Pozisyonları kapat
+            for pid, rsn, p_exit in positions_to_close:
+                await _close_position_internal(pid, rsn, p_exit)
+
+            # ---------------------------------------------------------------
+            # 2. YENİ İŞLEM FIRSATLARI DEĞERLENDİRME & GİRİŞ
+            # ---------------------------------------------------------------
+            open_count = len(_AUTO_STATE["open_positions"])
+            if open_count >= _AUTO_SETTINGS.max_open_positions:
+                continue
+
+            # Seans Filtresi Kontrolü (Asya seansı: Tokyo & Sydney dahil tüm seanslar serbest)
+            active_names = [s["name"] for s in sessions if s["active"]]
+            any_session_active = len(active_names) > 0
+            if _AUTO_SETTINGS.session_filter and not any_session_active:
+                if now_ts - _LAST_SESSION_BLOCK_LOG_TIME > 120:
+                    _LAST_SESSION_BLOCK_LOG_TIME = now_ts
+                    _log_auto_decision(
+                        "GATE",
+                        "Hafta sonu Forex piyasası kapalı. Yeni seans açılışı bekleniyor.",
+                    )
+                continue
+
+            # Radar Sinyallerini Al
+            radar_res = await get_forex_radar()
+            candidates = radar_res.get("candidates", [])
+
+            open_syms = {p["symbol"] for p in _AUTO_STATE["open_positions"]}
+
+            for cand in candidates:
+                sym = cand["symbol"]
+                if sym not in _AUTO_SETTINGS.allowed_symbols:
+                    continue
+                if sym in open_syms:
+                    continue
+
+                # Spread Filtresi
+                if cand["spread_pips"] > _AUTO_SETTINGS.max_spread_pips:
+                    continue
+
+                # Skor Eşiği
+                if cand["score"] < _AUTO_SETTINGS.min_score:
+                    continue
+
+                # Dinamik Lot Hesaplama
+                t = ticks.get(sym)
+                if not t:
+                    continue
+
+                pip_size = t["pip_size"]
+                digits = t["digits"]
+                direction = cand["action"]  # BUY or SELL
+                pip_val = 6.60 if "JPY" in sym else 10.0
+
+                risk_usd = _AUTO_STATE["balance"] * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                sl_pips = _AUTO_SETTINGS.sl_pips
+                tp_pips = _AUTO_SETTINGS.tp_pips
+
+                calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
+                lots = max(0.01, min(calc_lots, 5.0))
+
+                entry_p = t["ask"] if direction == "BUY" else t["bid"]
+                if direction == "BUY":
+                    sl_p = round(entry_p - (sl_pips * pip_size), digits)
+                    tp_p = round(entry_p + (tp_pips * pip_size), digits)
+                else:
+                    sl_p = round(entry_p + (sl_pips * pip_size), digits)
+                    tp_p = round(entry_p - (tp_pips * pip_size), digits)
+
+                new_pos = {
+                    "id": f"FX-{int(time.time() * 1000) % 1000000}",
+                    "symbol": sym,
+                    "display": cand["display"],
+                    "direction": direction,
+                    "lots": lots,
+                    "entry_price": entry_p,
+                    "current_price": entry_p,
+                    "sl_price": sl_p,
+                    "tp_price": tp_p,
+                    "initial_sl_price": sl_p,
+                    "breakeven_activated": False,
+                    "trailing_activated": False,
+                    "open_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+                    "pnl_usd": 0.0,
+                    "pnl_pips": 0.0,
+                    "pip_size": pip_size,
+                    "digits": digits,
+                    "score": cand["score"],
+                    "strategy": "M1_M5_RADAR_SCALPER",
+                }
+
+                async with _AUTO_PAPER_LOCK:
+                    _AUTO_STATE["open_positions"].append(new_pos)
+
+                _log_auto_decision(
+                    "ENTRY",
+                    f"{cand['display']} {direction} açıldı: {lots} Lot @ {entry_p} | TP: {tp_p} (+{tp_pips}p) | SL: {sl_p} (-{sl_pips}p) | Skor: {cand['score']}",
+                    symbol=sym,
+                    metadata={"lots": lots, "entry_price": entry_p, "score": cand["score"]},
+                )
+                # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
+                break
+
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.error("Forex otonom döngü hatası: %s", exc)
+            await asyncio.sleep(3.0)
+
+    _AUTO_STATE["last_status"] = "Durduruldu"
+    logger.info("Forex Otonom Scalper Döngüsü Durduruldu.")
+
+
+@router.get("/auto-paper/status")
+async def get_forex_auto_paper_status():
+    """Otonom Forex scalper sistem durumu, açık pozisyonlar ve performans metrikleri."""
+    open_pnl_usd = sum(p["pnl_usd"] for p in _AUTO_STATE["open_positions"])
+    open_pnl_pips = sum(p["pnl_pips"] for p in _AUTO_STATE["open_positions"])
+    equity = round(_AUTO_STATE["balance"] + open_pnl_usd, 2)
+
+    total_closed = _AUTO_STATE["total_trades"]
+    wins = _AUTO_STATE["wins"]
+    win_rate = round((wins / total_closed * 100.0), 1) if total_closed > 0 else 0.0
+
+    return {
+        "status": _AUTO_STATE["last_status"],
+        "enabled": _AUTO_STATE["enabled"],
+        "balance": _AUTO_STATE["balance"],
+        "equity": equity,
+        "open_pnl_usd": round(open_pnl_usd, 2),
+        "open_pnl_pips": round(open_pnl_pips, 1),
+        "realized_pnl_usd": _AUTO_STATE["realized_pnl_usd"],
+        "realized_pnl_pips": _AUTO_STATE["realized_pnl_pips"],
+        "total_trades": total_closed,
+        "wins": wins,
+        "losses": _AUTO_STATE["losses"],
+        "win_rate": win_rate,
+        "settings": _AUTO_SETTINGS.model_dump(),
+        "open_positions": _AUTO_STATE["open_positions"],
+        "closed_trades": _AUTO_STATE["closed_trades"][:20],
+        "decision_logs": _AUTO_STATE["decision_logs"][:30],
+        "sessions": _get_market_sessions(),
+        "last_scan_time": _AUTO_STATE["last_scan_time"],
+    }
+
+
+@router.post("/auto-paper/toggle")
+async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
+    """Otonom scalper'ı başlatır veya durdurur."""
+    global _AUTO_PAPER_TASK
+    _AUTO_STATE["enabled"] = req.enabled
+    _AUTO_SETTINGS.enabled = req.enabled
+
+    if req.enabled:
+        if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
+            _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
+            _log_auto_decision("SYSTEM", "Otonom Forex Scalper kullanıcı tarafından ETKİNLEŞTİRİLDİ.")
+    else:
+        if _AUTO_PAPER_TASK and not _AUTO_PAPER_TASK.done():
+            _AUTO_PAPER_TASK.cancel()
+            _AUTO_PAPER_TASK = None
+        _AUTO_STATE["last_status"] = "Durduruldu"
+        _log_auto_decision("SYSTEM", "Otonom Forex Scalper kullanıcı tarafından DURDURULDU.")
+
+    return {
+        "enabled": _AUTO_STATE["enabled"],
+        "status": _AUTO_STATE["last_status"],
+        "message": "Otonom Forex Scalper durumu güncellendi.",
+    }
+
+
+@router.post("/auto-paper/settings")
+async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings):
+    """Otonom scalper risk ve filtre parametrelerini günceller."""
+    global _AUTO_SETTINGS
+    _AUTO_SETTINGS = new_settings
+    _AUTO_STATE["enabled"] = new_settings.enabled
+
+    # Toggle task if enabled status changed
+    global _AUTO_PAPER_TASK
+    if new_settings.enabled:
+        if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
+            _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
+    else:
+        if _AUTO_PAPER_TASK and not _AUTO_PAPER_TASK.done():
+            _AUTO_PAPER_TASK.cancel()
+            _AUTO_PAPER_TASK = None
+        _AUTO_STATE["last_status"] = "Durduruldu"
+
+    _log_auto_decision(
+        "SYSTEM",
+        f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p",
+    )
+    return {"status": "ok", "settings": _AUTO_SETTINGS.model_dump()}
+
+
+@router.post("/auto-paper/close-position")
+async def close_forex_position_manually(req: ClosePositionRequest):
+    """Belirli bir açık pozisyonu manuel olarak kapatır."""
+    res = await _close_position_internal(req.id, "MANUAL")
+    if not res:
+        raise HTTPException(status_code=404, detail="Pozisyon bulunamadı veya zaten kapalı.")
+    return {"status": "closed", "position": res}
+
+
+@router.post("/auto-paper/reset")
+async def reset_forex_auto_paper():
+    """Demo bakiyeyi $10,000'a ve istatistikleri sıfırlar."""
+    async with _AUTO_PAPER_LOCK:
+        _AUTO_STATE["balance"] = 10000.0
+        _AUTO_STATE["realized_pnl_usd"] = 0.0
+        _AUTO_STATE["realized_pnl_pips"] = 0.0
+        _AUTO_STATE["total_trades"] = 0
+        _AUTO_STATE["wins"] = 0
+        _AUTO_STATE["losses"] = 0
+        _AUTO_STATE["open_positions"] = []
+        _AUTO_STATE["closed_trades"] = []
+        _AUTO_STATE["decision_logs"] = []
+
+    _log_auto_decision("SYSTEM", "Forex demo hesabı $10,000 bakiyeyle sıfırlandı.")
+    return {"status": "reset", "balance": 10000.0}
