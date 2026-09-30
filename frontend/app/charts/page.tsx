@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { API_BASE, apiRequest } from "../lib/api";
+import { fastFetchKlines, prefetchKlines } from "../lib/fastKlines";
 import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
 import { useUiMode } from "../lib/ui-mode";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
@@ -405,13 +406,10 @@ export default function ChartsPage() {
         // BAYAT YANIT KORUMASI: yalnız EN SON isteğin yanıtı uygulanır.
         const requestId = ++klineReqIdRef.current;
         try {
-            const res = await apiRequest(`${API_BASE}/api/market-klines/${symbol}?interval=${interval}&limit=200`);
-            if (!res.ok) throw new Error(`kline HTTP ${res.status}`);
-            const payload = await res.json();
+            const candles = await fastFetchKlines(symbol, interval, 200);
             if (requestId !== klineReqIdRef.current) return;   // bayat yanıt → uygulama
-            const data = payload.candles || [];
             if (!candleRef.current) return;
-            if (!data.length) {
+            if (!candles.length) {
                 // BOŞ YANIT KORUMASI (2026-09-16): `setData([])` BÜTÜN MUMLARI SİLER.
                 // Yukarı akış (Binance) kısa süreliğine boş dönerse grafiğin tamamen
                 // silinmesi yerine MEVCUT mumlar korunur; bir sonraki tur (10 sn)
@@ -419,9 +417,6 @@ export default function ChartsPage() {
                 console.warn(`kline: ${symbol}/${interval} boş yanıt — mevcut mumlar korundu`);
                 return;
             }
-            const candles: Bar[] = data.map((k: number[]) => ({
-                time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5]
-            }));
             setBars(candles);
             // Ayna, state ile AYNI anda güncellenir: canlı akışın `barsRef` üzerinden
             // verdiği karar, serideki gerçek son mumla tutarlı kalır.
@@ -1388,12 +1383,14 @@ export default function ChartsPage() {
     };
 
     const changeSymbol = (s: string) => {
+        prefetchKlines(s, [interval], 200);
         setSymbol(s);
         localStorage.setItem(LS_SYMBOL, JSON.stringify(s));
         loadFromDb(s);
     };
 
     const changeInterval = (i: string) => {
+        prefetchKlines(symbol, [i], 200);
         setTf(i);
         localStorage.setItem(LS_INTERVAL, JSON.stringify(i));
     };

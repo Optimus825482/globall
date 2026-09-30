@@ -16,6 +16,7 @@ import { API_BASE, apiRequest } from "../lib/api";
 import { formatPrice, pricePrecision, QUOTE_ASSET, toSymbol, withQuotePrice } from "../lib/format";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import { useLiveMessages } from "../lib/liveSocket";
+import { fastFetchKlines, prefetchKlines } from "../lib/fastKlines";
 
 export interface ChartIndicators {
     // EMAs
@@ -634,16 +635,12 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         if (!config.symbol) return;
         const reqId = ++klineReqIdRef.current;
         try {
-            const res = await apiRequest(`${API_BASE}/api/market-klines/${config.symbol}?interval=${config.interval}&limit=200`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const payload = await res.json();
+            const bars = await fastFetchKlines(config.symbol, config.interval, 200);
             if (reqId !== klineReqIdRef.current) return;
-            const candlesRaw = payload.candles || [];
-            if (!candlesRaw.length || !candleSeriesRef.current || !chartRef.current) {
+            if (!bars.length || !candleSeriesRef.current || !chartRef.current) {
                 setLoading(false);
                 return;
             }
-            const bars: Bar[] = candlesRaw.map((k: number[]) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
             
             const isSymbolOrTfChange = loadedSymbolRef.current !== config.symbol || loadedIntervalRef.current !== config.interval;
             const previous = lastBarsRef.current;
@@ -784,6 +781,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         } else if (!clean.endsWith(QUOTE_ASSET) && !clean.endsWith("TRY") && !clean.endsWith("USDT") && !clean.endsWith("FDUSD")) {
             clean = toSymbol(clean);
         }
+        prefetchKlines(clean, [config.interval], 200);
         onUpdateConfig({ symbol: clean });
         setSymbolSearchOpen(false);
         setSearchFilter("");

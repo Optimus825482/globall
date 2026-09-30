@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import RequireAdmin from "../components/RequireAdmin";
 import { API_BASE, apiRequest } from "../lib/api";
 import { toSymbol, QUOTE_ASSET } from "../lib/format";
+import { prefetchKlines } from "../lib/fastKlines";
 import type { MultiChartConfig, ChartIndicators } from "./MultiChartCard";
 
 // Dynamic import with ssr: false for Lightweight Charts
@@ -162,6 +163,7 @@ export default function TechnicalChartsPage() {
                 if (!clean.endsWith("TRY") && !clean.endsWith("USDT") && !clean.endsWith("FDUSD")) {
                     clean = toSymbol(clean);
                 }
+                prefetchKlines(clean, ["1m", "3m", "5m", "15m"], 200);
                 setGlobalSymbol(clean);
                 setGlobalSymbolInput(clean);
                 const mtfIntervals = ["1m", "3m", "5m", "15m"];
@@ -236,6 +238,7 @@ export default function TechnicalChartsPage() {
         } else if (!clean.endsWith(QUOTE_ASSET) && !clean.endsWith("TRY") && !clean.endsWith("USDT") && !clean.endsWith("FDUSD")) {
             clean = toSymbol(clean);
         }
+        prefetchKlines(clean, ["1m", "3m", "5m", "15m"], 200);
         setSlots((prev) => {
             const next = prev.map((s) => ({ ...s, symbol: clean }));
             try { localStorage.setItem(LS_KEY_SLOTS, JSON.stringify(next)); } catch { }
@@ -254,6 +257,7 @@ export default function TechnicalChartsPage() {
         } else if (!targetSymbol.endsWith(QUOTE_ASSET) && !targetSymbol.endsWith("TRY") && !targetSymbol.endsWith("USDT") && !targetSymbol.endsWith("FDUSD")) {
             targetSymbol = toSymbol(targetSymbol);
         }
+        prefetchKlines(targetSymbol, ["1m", "3m", "5m", "15m"], 200);
         const mtfIntervals = ["1m", "3m", "5m", "15m"];
         setSlots((prev) => {
             const next = prev.map((s, idx) => ({
