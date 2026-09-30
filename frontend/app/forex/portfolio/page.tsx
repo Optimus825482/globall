@@ -65,7 +65,71 @@ interface AutoSettings {
   allowed_symbols: string[];
 }
 
+interface MT5State {
+  connected: boolean;
+  last_ping_seconds_ago: number | null;
+  auto_trade: boolean;
+  account: {
+    login: number;
+    name: string;
+    server: string;
+    balance: number;
+    equity: number;
+    margin: number;
+    free_margin: number;
+    leverage: number;
+    currency: string;
+  };
+  open_positions: Array<{
+    ticket: number;
+    symbol: string;
+    direction: "BUY" | "SELL";
+    lots: number;
+    entry_price: number;
+    current_price: number;
+    sl_price: number;
+    tp_price: number;
+    pnl_usd: number;
+    open_time: string;
+  }>;
+  closed_deals: Array<{
+    ticket: number;
+    symbol: string;
+    direction: "BUY" | "SELL";
+    lots: number;
+    price: number;
+    profit: number;
+    commission: number;
+    time: string;
+  }>;
+  pending_commands_count: number;
+}
+
 export default function ForexPortfolioPage() {
+  // IC Markets MT5 Canlı Köprü Durumu
+  const [mt5, setMt5] = useState<MT5State>({
+    connected: false,
+    last_ping_seconds_ago: null,
+    auto_trade: false,
+    account: {
+      login: 53077151,
+      name: "ERKAN ERDEM",
+      server: "ICMarketsSC-Demo",
+      balance: 1000.0,
+      equity: 1000.0,
+      margin: 0.0,
+      free_margin: 1000.0,
+      leverage: 5000,
+      currency: "USD",
+    },
+    open_positions: [],
+    closed_deals: [],
+    pending_commands_count: 0,
+  });
+  const [isTogglingMt5, setIsTogglingMt5] = useState(false);
+  const [mt5Message, setMt5Message] = useState<string | null>(null);
+  const [showMt5Guide, setShowMt5Guide] = useState(false);
+
   // Otonom Sistem Durumu
   const [autoStatus, setAutoStatus] = useState<string>("Yükleniyor…");
   const [autoEnabled, setAutoEnabled] = useState<boolean>(false);
@@ -155,6 +219,15 @@ export default function ForexPortfolioPage() {
     } catch (err) {
       console.error("Forex auto-paper status alınamadı:", err);
     }
+
+    try {
+      const mt5Res = await apiFetch("/api/forex/mt5/status");
+      if (mt5Res) {
+        setMt5(mt5Res);
+      }
+    } catch (err) {
+      // MT5 köprüsü sorgulama
+    }
   };
 
   useEffect(() => {
@@ -162,6 +235,49 @@ export default function ForexPortfolioPage() {
     const interval = setInterval(fetchStatus, 1500);
     return () => clearInterval(interval);
   }, []);
+
+  // MT5 Otomatik Emir İletimini Aç / Kapat
+  const toggleMt5Auto = async () => {
+    setIsTogglingMt5(true);
+    try {
+      const nextState = !mt5.auto_trade;
+      const res = await apiFetch("/api/forex/mt5/toggle-auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_trade: nextState }),
+      });
+      if (res) {
+        setMt5((prev) => ({ ...prev, auto_trade: res.auto_trade }));
+        setMt5Message(
+          res.auto_trade
+            ? "⚡ IC Markets MT5 otomatik emir iletimi AÇILDI. Scalper sinyalleri gerçek MT5 Demo hesabınızda açılacak."
+            : "🛑 IC Markets MT5 otomatik emir iletimi DURDURULDU."
+        );
+        setTimeout(() => setMt5Message(null), 5000);
+      }
+    } catch (err) {
+      console.error("MT5 toggle hatası:", err);
+    } finally {
+      setIsTogglingMt5(false);
+    }
+  };
+
+  // MT5 Belirli Bileti Kapat
+  const closeMt5Ticket = async (ticket: number) => {
+    if (!confirm(`Bilet #${ticket} nolu IC Markets MT5 pozisyonunu kapatmak istiyor musunuz?`)) return;
+    try {
+      await apiFetch("/api/forex/mt5/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticket }),
+      });
+      setMt5Message(`Bilet #${ticket} kapatma emri MT5 köprüsüne iletildi.`);
+      setTimeout(() => setMt5Message(null), 4000);
+      fetchStatus();
+    } catch (err) {
+      console.error("MT5 close hatası:", err);
+    }
+  };
 
   // Otonom Motoru Aç / Kapat
   const toggleAutoEngine = async () => {
@@ -757,6 +873,179 @@ export default function ForexPortfolioPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* IC MARKETS METATRADER 5 (MT5) CANLI DEMO KÖPRÜSÜ KARTI */}
+      <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-bunker-900/90 to-blue-950/40 border border-emerald-500/40 backdrop-blur-md shadow-2xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-bunker-800 pb-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(16,185,129,0.25)]">
+              📈
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-base font-bold text-white tracking-wide">
+                  IC MARKETS METATRADER 5 (MT5) CANLI KÖPRÜ
+                </h2>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
+                    mt5.connected
+                      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse"
+                      : "bg-bunker-800 text-bunker-muted border-bunker-700"
+                  }`}
+                >
+                  {mt5.connected
+                    ? `🟢 BAĞLI (${mt5.last_ping_seconds_ago !== null ? `${mt5.last_ping_seconds_ago}s önce` : "Canlı"})`
+                    : "⚪ KÖPRÜ ÇEVRİMDIŞI (run_mt5_bridge.bat bekleniyor)"}
+                </span>
+              </div>
+              <p className="text-xs text-bunker-muted mt-0.5">
+                MetaTrader 5 Windows istemcisi ile çift yönlü emir iletimi & anlık hesap senkronizasyonu
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={toggleMt5Auto}
+              disabled={isTogglingMt5}
+              className={`px-4 py-2 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 shadow-md ${
+                mt5.auto_trade
+                  ? "bg-emerald-500/25 text-emerald-300 border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                  : "bg-bunker-800/80 text-bunker-muted border-bunker-700 hover:text-white"
+              }`}
+            >
+              <span>{mt5.auto_trade ? "⚡ Otonom Sinyalleri MT5'e İlet: AKTİF" : "⏸ Otonom Sinyalleri MT5'e İlet: PASİF"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMt5Guide(!showMt5Guide)}
+              className="px-3 py-2 rounded-xl bg-bunker-900 border border-bunker-800 text-bunker-muted hover:text-blue-400 text-xs flex items-center gap-1"
+            >
+              <span>ℹ️ Rehber</span>
+            </button>
+          </div>
+        </div>
+
+        {mt5Message && (
+          <div className="mt-3 p-2.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold animate-pulse">
+            {mt5Message}
+          </div>
+        )}
+
+        {/* Canlı MT5 Hesap Bilgileri */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 text-xs">
+          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
+            <span className="text-[10px] text-bunker-muted uppercase block">Hesap / Sunucu</span>
+            <span className="text-sm font-bold text-white">{mt5.account?.login || 53077151}</span>
+            <span className="text-[10px] text-emerald-400 block">{mt5.account?.server || "ICMarketsSC-Demo"}</span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
+            <span className="text-[10px] text-bunker-muted uppercase block">Hesap Sahibi</span>
+            <span className="text-sm font-bold text-white">{mt5.account?.name || "ERKAN ERDEM"}</span>
+            <span className="text-[10px] text-bunker-muted block">Demo Hesap</span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
+            <span className="text-[10px] text-bunker-muted uppercase block">Gerçek MT5 Bakiye</span>
+            <span className="text-sm font-bold text-emerald-400 font-mono">
+              ${(mt5.account?.balance ?? 1000.0).toFixed(2)} {mt5.account?.currency || "USD"}
+            </span>
+            <span className="text-[10px] text-bunker-muted block">IC Markets SC</span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
+            <span className="text-[10px] text-bunker-muted uppercase block">Özsermaye (Equity)</span>
+            <span className="text-sm font-bold text-cyan-300 font-mono">
+              ${(mt5.account?.equity ?? mt5.account?.balance ?? 1000.0).toFixed(2)}
+            </span>
+            <span className="text-[10px] text-bunker-muted block">Serbest: ${(mt5.account?.free_margin ?? 1000.0).toFixed(2)}</span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-bunker-950/60 border border-bunker-800/80">
+            <span className="text-[10px] text-bunker-muted uppercase block">Kaldıraç & Durum</span>
+            <span className="text-sm font-bold text-yellow-300">1:{mt5.account?.leverage || 5000}</span>
+            <span className="text-[10px] text-bunker-muted block">
+              {mt5.open_positions?.length || 0} Açık MT5 Pozisyonu
+            </span>
+          </div>
+        </div>
+
+        {/* Açık MT5 Pozisyonları (Varsa) */}
+        {mt5.open_positions && mt5.open_positions.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-bunker-800">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <span>⚡ Canlı MT5 Açık Pozisyonları ({mt5.open_positions.length})</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
+                  <tr>
+                    <th className="py-2 px-3">Bilet</th>
+                    <th className="py-2 px-3">Parite</th>
+                    <th className="py-2 px-3">Yön</th>
+                    <th className="py-2 px-3">Lot</th>
+                    <th className="py-2 px-3">Açılış</th>
+                    <th className="py-2 px-3">Güncel</th>
+                    <th className="py-2 px-3">SL / TP</th>
+                    <th className="py-2 px-3">Kâr ($)</th>
+                    <th className="py-2 px-3 text-right">Aksiyon</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-bunker-800/50">
+                  {mt5.open_positions.map((p) => (
+                    <tr key={p.ticket} className="hover:bg-bunker-800/30">
+                      <td className="py-2 px-3 font-mono text-[11px] text-bunker-muted">#{p.ticket}</td>
+                      <td className="py-2 px-3 font-bold text-white">{p.symbol}</td>
+                      <td className="py-2 px-3">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          p.direction === "BUY" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                        }`}>
+                          {p.direction}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 font-semibold text-white">{p.lots} Lot</td>
+                      <td className="py-2 px-3 font-mono text-bunker-muted">{p.entry_price}</td>
+                      <td className="py-2 px-3 font-mono text-white">{p.current_price}</td>
+                      <td className="py-2 px-3 font-mono text-[10px] text-bunker-muted">
+                        SL: {p.sl_price || "-"} | TP: {p.tp_price || "-"}
+                      </td>
+                      <td className={`py-2 px-3 font-bold font-mono ${p.pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {p.pnl_usd >= 0 ? "+" : ""}${p.pnl_usd.toFixed(2)}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => closeMt5Ticket(p.ticket)}
+                          className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 text-[10px] font-bold"
+                        >
+                          Kapat ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Rehber / Yardım Paneli */}
+        {showMt5Guide && (
+          <div className="mt-4 p-3.5 rounded-xl bg-bunker-950 border border-blue-500/30 text-xs text-bunker-muted space-y-2">
+            <div className="font-bold text-white flex items-center gap-1.5">
+              <span>🚀 IC Markets MT5 Köprüsü Nasıl Çalışır?</span>
+            </div>
+            <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
+              <li>Bilgisayarınızda proje klasöründeki <span className="text-emerald-400 font-mono font-bold">run_mt5_bridge.bat</span> dosyasını çift tıklayarak çalıştırın.</li>
+              <li>Açılan konsol penceresi, bilgisayarınızdaki IC Markets MT5 terminaline otomatik olarak bağlanır (<span className="text-cyan-300 font-mono">53077151</span> hesabı).</li>
+              <li>MetaTrader 5 terminalinde üst menüdeki <span className="text-yellow-400 font-bold">&quot;Algo Trading&quot; (Otomatik İşlem)</span> butonunun yeşil yandığından emin olun (Biz komut dosyasında bunu otomatik açtık).</li>
+              <li>Yukarıdaki <span className="text-emerald-400 font-bold">&quot;Otonom Sinyalleri MT5&apos;e İlet&quot;</span> butonunu aktif ettiğinizde, sistemin yakaladığı tüm kaliteli sinyaller anında IC Markets demo hesabınızda canlı piyasa emri olarak açılır!</li>
+            </ol>
+          </div>
+        )}
       </div>
 
       {/* AÇIK OTONOM POZİSYONLAR */}

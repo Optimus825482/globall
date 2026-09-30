@@ -849,6 +849,21 @@ async def _forex_auto_paper_loop():
                     symbol=sym,
                     metadata={"lots": lots, "entry_price": entry_p, "score": cand["score"]},
                 )
+
+                # Eğer MT5 Köprüsü bağlıysa ve MT5 otomatik al-sat aktifse, emri MT5'e de ilet
+                if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                    _MT5_STATE["pending_commands"].append({
+                        "id": f"CMD-{int(time.time() * 1000) % 1000000}",
+                        "action": "OPEN_ORDER",
+                        "symbol": sym,
+                        "direction": direction,
+                        "lots": lots,
+                        "sl_pips": sl_pips,
+                        "tp_pips": tp_pips,
+                        "comment": f"Scalper MT5 {cand['score']:.0f}",
+                    })
+                    _log_auto_decision("ENTRY", f"🚀 [MT5] IC Markets Gerçek Demo Emri İletildi: {lots} Lot {direction} {sym}", symbol=sym)
+
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
                 break
 
@@ -1129,3 +1144,138 @@ async def export_forex_trades_csv(
             "Content-Type": "text/csv; charset=utf-8",
         },
     )
+
+
+# ============================================================================
+# IC MARKETS META-TRADER 5 (MT5) BRIDGE HUB & REST API
+# ============================================================================
+
+_MT5_STATE: Dict[str, Any] = {
+    "connected": False,
+    "last_ping": 0.0,
+    "auto_trade": False,
+    "account": {
+        "login": 53077151,
+        "name": "ERKAN ERDEM",
+        "server": "ICMarketsSC-Demo",
+        "balance": 1000.0,
+        "equity": 1000.0,
+        "margin": 0.0,
+        "free_margin": 1000.0,
+        "leverage": 5000,
+        "currency": "USD",
+    },
+    "open_positions": [],
+    "closed_deals": [],
+    "pending_commands": [],
+}
+
+
+class MT5SyncRequest(BaseModel):
+    account: Dict[str, Any] = Field(default_factory=dict)
+    positions: List[Dict[str, Any]] = Field(default_factory=list)
+    deals: List[Dict[str, Any]] = Field(default_factory=list)
+    version: str = "1.0.0"
+
+
+class MT5ManualOrderRequest(BaseModel):
+    symbol: str = "EURUSD"
+    direction: str = "BUY"
+    lots: float = Field(0.01, ge=0.01, le=10.0)
+    sl_pips: Optional[float] = 15.0
+    tp_pips: Optional[float] = 25.0
+    comment: Optional[str] = "Scalper Manual"
+
+
+class MT5CloseRequest(BaseModel):
+    ticket: int
+
+
+class MT5ToggleAutoRequest(BaseModel):
+    auto_trade: bool
+
+
+@router.post("/mt5/sync")
+async def sync_mt5_bridge(req: MT5SyncRequest):
+    """Windows MT5 köprüsünden gelen canlı veriyi alır ve bekleyen emirleri iletir."""
+    now_ts = time.time()
+    _MT5_STATE["connected"] = True
+    _MT5_STATE["last_ping"] = now_ts
+
+    if req.account:
+        _MT5_STATE["account"].update(req.account)
+    _MT5_STATE["open_positions"] = req.positions
+    if req.deals:
+        _MT5_STATE["closed_deals"] = req.deals
+
+    # Bekleyen emirleri al ve boşalt
+    commands = list(_MT5_STATE["pending_commands"])
+    _MT5_STATE["pending_commands"].clear()
+
+    return {
+        "status": "ok",
+        "server_time": now_ts,
+        "auto_trade": _MT5_STATE["auto_trade"],
+        "commands": commands,
+    }
+
+
+@router.get("/mt5/status")
+async def get_mt5_bridge_status():
+    """IC Markets MT5 köprüsü bağlantı durumunu ve canlı hesap verisini döner."""
+    now_ts = time.time()
+    # 10 saniye boyunca köprüden ping gelmezse çevrimdışı say
+    is_alive = _MT5_STATE["connected"] and (now_ts - _MT5_STATE["last_ping"] < 10.0)
+    _MT5_STATE["connected"] = is_alive
+
+    return {
+        "connected": is_alive,
+        "last_ping_seconds_ago": round(now_ts - _MT5_STATE["last_ping"], 1) if _MT5_STATE["last_ping"] > 0 else None,
+        "auto_trade": _MT5_STATE["auto_trade"],
+        "account": _MT5_STATE["account"],
+        "open_positions": _MT5_STATE["open_positions"],
+        "closed_deals": _MT5_STATE["closed_deals"][:50],
+        "pending_commands_count": len(_MT5_STATE["pending_commands"]),
+    }
+
+
+@router.post("/mt5/order")
+async def send_mt5_order(req: MT5ManualOrderRequest):
+    """MT5 köprüsüne yeni bir piyasa emri iletir."""
+    cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
+    cmd = {
+        "id": cmd_id,
+        "action": "OPEN_ORDER",
+        "symbol": req.symbol.upper(),
+        "direction": req.direction.upper(),
+        "lots": req.lots,
+        "sl_pips": req.sl_pips,
+        "tp_pips": req.tp_pips,
+        "comment": req.comment or "Scalper Agent",
+    }
+    _MT5_STATE["pending_commands"].append(cmd)
+    _log_auto_decision("ENTRY", f"🚀 [MT5 Manuel Emir Kuyruğa Alındı]: {req.lots} Lot {req.direction} {req.symbol}", symbol=req.symbol)
+    return {"status": "queued", "command": cmd}
+
+
+@router.post("/mt5/close")
+async def close_mt5_position(req: MT5CloseRequest):
+    """MT5 köprüsüne belirli bir açık bileti kapatma emri iletir."""
+    cmd_id = f"CMD-CLOSE-{req.ticket}"
+    cmd = {
+        "id": cmd_id,
+        "action": "CLOSE_ORDER",
+        "ticket": req.ticket,
+    }
+    _MT5_STATE["pending_commands"].append(cmd)
+    _log_auto_decision("EXIT", f"🛑 [MT5 Kapatma Kuyruğa Alındı]: Bilet #{req.ticket}")
+    return {"status": "queued", "ticket": req.ticket}
+
+
+@router.post("/mt5/toggle-auto")
+async def toggle_mt5_auto_trading(req: MT5ToggleAutoRequest):
+    """Sinyallerin doğrudan MT5'e otomatik iletilmesini açar veya kapatır."""
+    _MT5_STATE["auto_trade"] = req.auto_trade
+    state_str = "ETKİNLEŞTİRİLDİ" if req.auto_trade else "DURDURULDU"
+    _log_auto_decision("SYSTEM", f"⚡ IC Markets MT5 Otomatik Emir İletimi: {state_str}")
+    return {"status": "ok", "auto_trade": _MT5_STATE["auto_trade"]}
