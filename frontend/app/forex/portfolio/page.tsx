@@ -92,13 +92,13 @@ export default function ForexPortfolioPage() {
     balance: 10000.0,
     risk_per_trade_pct: 1.0,
     max_open_positions: 3,
-    min_score: 75.0,
+    min_score: 70.0,
     tp_pips: 25.0,
     sl_pips: 15.0,
     breakeven_pips: 8.0,
     trailing_stop_pips: 12.0,
     session_filter: false,
-    max_spread_pips: 2.2,
+    max_spread_pips: 3.0,
     allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
   });
 
@@ -107,13 +107,13 @@ export default function ForexPortfolioPage() {
     balance: 10000.0,
     risk_per_trade_pct: 1.0,
     max_open_positions: 3,
-    min_score: 75.0,
+    min_score: 70.0,
     tp_pips: 25.0,
     sl_pips: 15.0,
     breakeven_pips: 8.0,
     trailing_stop_pips: 12.0,
     session_filter: false,
-    max_spread_pips: 2.2,
+    max_spread_pips: 3.0,
     allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
   });
 
@@ -190,16 +190,47 @@ export default function ForexPortfolioPage() {
     setShowSettings(!showSettings);
   };
 
+  const updateFormField = (key: keyof AutoSettings, val: any) => {
+    setFormSettings((prev) => ({ ...prev, [key]: val }));
+  };
+
+  const toggleSymbol = (sym: string) => {
+    setFormSettings((prev) => {
+      const exists = prev.allowed_symbols.includes(sym);
+      const next = exists
+        ? prev.allowed_symbols.filter((s) => s !== sym)
+        : [...prev.allowed_symbols, sym];
+      return { ...prev, allowed_symbols: next.length > 0 ? next : [sym] };
+    });
+  };
+
   // Ayarları Kaydet
   const saveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingSettings(true);
     setSaveSuccessMsg(null);
     try {
+      const payload: AutoSettings = {
+        ...formSettings,
+        risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 1.0,
+        tp_pips: Number(formSettings.tp_pips) || 25.0,
+        sl_pips: Number(formSettings.sl_pips) || 15.0,
+        breakeven_pips: Number(formSettings.breakeven_pips) || 8.0,
+        trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 12.0,
+        min_score: Number(formSettings.min_score) || 70.0,
+        max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
+        max_open_positions: Number(formSettings.max_open_positions) || 3,
+        session_filter: Boolean(formSettings.session_filter),
+        allowed_symbols:
+          formSettings.allowed_symbols && formSettings.allowed_symbols.length > 0
+            ? formSettings.allowed_symbols
+            : ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"],
+      };
+
       const res = await apiFetch("/api/forex/auto-paper/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formSettings),
+        body: JSON.stringify(payload),
       });
       if (res && res.status === "ok") {
         setAppliedSettings(res.settings);
@@ -369,9 +400,9 @@ export default function ForexPortfolioPage() {
                 step="0.1"
                 min="0.1"
                 max="5.0"
-                value={formSettings.risk_per_trade_pct}
+                value={formSettings.risk_per_trade_pct ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, risk_per_trade_pct: parseFloat(e.target.value) || 1.0 })
+                  updateFormField("risk_per_trade_pct", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
@@ -386,9 +417,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="5"
                 max="100"
-                value={formSettings.tp_pips}
+                value={formSettings.tp_pips ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, tp_pips: parseFloat(e.target.value) || 25 })
+                  updateFormField("tp_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-emerald-400 font-bold outline-none focus:border-blue-400"
               />
@@ -403,9 +434,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="5"
                 max="50"
-                value={formSettings.sl_pips}
+                value={formSettings.sl_pips ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, sl_pips: parseFloat(e.target.value) || 15 })
+                  updateFormField("sl_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-rose-400 font-bold outline-none focus:border-blue-400"
               />
@@ -420,9 +451,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="2"
                 max="30"
-                value={formSettings.breakeven_pips}
+                value={formSettings.breakeven_pips ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, breakeven_pips: parseFloat(e.target.value) || 8 })
+                  updateFormField("breakeven_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-cyan-300 font-bold outline-none focus:border-blue-400"
               />
@@ -437,9 +468,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="4"
                 max="40"
-                value={formSettings.trailing_stop_pips}
+                value={formSettings.trailing_stop_pips ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, trailing_stop_pips: parseFloat(e.target.value) || 12 })
+                  updateFormField("trailing_stop_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-yellow-300 font-bold outline-none focus:border-blue-400"
               />
@@ -454,9 +485,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="50"
                 max="98"
-                value={formSettings.min_score}
+                value={formSettings.min_score ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, min_score: parseFloat(e.target.value) || 75 })
+                  updateFormField("min_score", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
@@ -471,10 +502,10 @@ export default function ForexPortfolioPage() {
                 type="number"
                 step="0.1"
                 min="0.5"
-                max="5.0"
-                value={formSettings.max_spread_pips}
+                max="10.0"
+                value={formSettings.max_spread_pips ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, max_spread_pips: parseFloat(e.target.value) || 2.2 })
+                  updateFormField("max_spread_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
@@ -489,9 +520,9 @@ export default function ForexPortfolioPage() {
                 type="number"
                 min="1"
                 max="10"
-                value={formSettings.max_open_positions}
+                value={formSettings.max_open_positions ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, max_open_positions: parseInt(e.target.value) || 1 })
+                  updateFormField("max_open_positions", e.target.value === "" ? "" : parseInt(e.target.value))
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
@@ -507,7 +538,7 @@ export default function ForexPortfolioPage() {
                   type="checkbox"
                   checked={formSettings.session_filter}
                   onChange={(e) =>
-                    setFormSettings({ ...formSettings, session_filter: e.target.checked })
+                    updateFormField("session_filter", e.target.checked)
                   }
                   className="rounded bg-bunker-950 border-bunker-700 text-blue-500 focus:ring-0 w-4 h-4"
                 />
@@ -518,6 +549,67 @@ export default function ForexPortfolioPage() {
               <span className="text-[10px] text-emerald-400 mt-1 font-bold">
                 ✓ Asya (Tokyo & Sydney) seansı dahil tüm seanslarda işlem serbest
               </span>
+            </div>
+
+            {/* İZİN VERİLEN PARİTELER VE EMTİALAR */}
+            <div className="col-span-2 md:col-span-4 pt-3 border-t border-bunker-800">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] text-bunker-muted font-bold">
+                  İşlem Yapılacak Pariteler ({formSettings.allowed_symbols?.length || 0} Seçili):
+                </label>
+                <div className="flex gap-2 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateFormField("allowed_symbols", [
+                        "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "USDCHF", "NZDUSD", "XAGUSD", "USOIL"
+                      ])
+                    }
+                    className="text-blue-400 hover:underline"
+                  >
+                    Tümünü Seç
+                  </button>
+                  <span className="text-bunker-700">|</span>
+                  <button
+                    type="button"
+                    onClick={() => updateFormField("allowed_symbols", ["EURUSD", "GBPUSD", "USDJPY"])}
+                    className="text-bunker-muted hover:underline"
+                  >
+                    Sadece Majörler
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { sym: "EURUSD", label: "EUR/USD" },
+                  { sym: "GBPUSD", label: "GBP/USD" },
+                  { sym: "USDJPY", label: "USD/JPY" },
+                  { sym: "XAUUSD", label: "Altın (XAU)" },
+                  { sym: "USDCAD", label: "USD/CAD" },
+                  { sym: "AUDUSD", label: "AUD/USD" },
+                  { sym: "USDCHF", label: "USD/CHF" },
+                  { sym: "NZDUSD", label: "NZD/USD" },
+                  { sym: "XAGUSD", label: "Gümüş (XAG)" },
+                  { sym: "USOIL", label: "Petrol (WTI)" },
+                ].map((item) => {
+                  const active = formSettings.allowed_symbols?.includes(item.sym);
+                  return (
+                    <button
+                      key={item.sym}
+                      type="button"
+                      onClick={() => toggleSymbol(item.sym)}
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all border ${
+                        active
+                          ? "bg-blue-600/30 text-blue-300 border-blue-400/50 shadow-sm"
+                          : "bg-bunker-950/70 text-bunker-muted border-bunker-800 hover:border-bunker-700 hover:text-white"
+                      }`}
+                    >
+                      {active ? "✓ " : "+ "}
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

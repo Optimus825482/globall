@@ -10,6 +10,7 @@ Provides:
 from __future__ import annotations
 
 import datetime
+import logging
 import math
 import random
 import time
@@ -17,6 +18,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/forex", tags=["forex"])
 
@@ -343,6 +346,13 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             data["low"] = min(data["low"], data["bid"])
             data["updated_at"] = now
 
+            # Scalper momentum ve radar skoru dalgalanması (aktif piyasa dinamizmi)
+            delta_score = random.choice([-2.0, -1.0, -0.5, 0.5, 1.0, 1.5, 2.5])
+            cur_s = data.get("score", 72.0)
+            data["score"] = round(max(55.0, min(96.0, cur_s + delta_score)), 1)
+            if random.random() < 0.08:
+                data["trend"] = "BULLISH" if data.get("trend") == "BEARISH" else "BEARISH"
+
     return _TICK_CACHE
 
 
@@ -467,13 +477,13 @@ class ForexAutoPaperSettings(BaseModel):
     balance: float = Field(10000.0, ge=100.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
     max_open_positions: int = Field(3, ge=1, le=10, description="Aynı anda maksimum açık işlem")
-    min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
+    min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
     tp_pips: float = Field(25.0, ge=5.0, le=100.0, description="Kâr al mesafesi (pip)")
     sl_pips: float = Field(15.0, ge=5.0, le=50.0, description="Zarar durdur mesafesi (pip)")
     breakeven_pips: float = Field(8.0, ge=2.0, le=30.0, description="Başabaş kilit tetik mesafesi (pip)")
     trailing_stop_pips: float = Field(12.0, ge=4.0, le=40.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
-    max_spread_pips: float = Field(2.2, ge=0.5, le=5.0, description="Maksimum izin verilen spread (pip)")
+    max_spread_pips: float = Field(3.0, ge=0.5, le=10.0, description="Maksimum izin verilen spread (pip)")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
         description="İşleme izin verilen pariteler",
@@ -598,7 +608,7 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
 
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
-    global _LAST_SESSION_BLOCK_LOG_TIME
+    global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME
     logger.info("Forex Otonom Scalper Döngüsü Başlatıldı.")
     _AUTO_STATE["last_status"] = "Çalışıyor (Canlı Piyasa Taranıyor)"
 
