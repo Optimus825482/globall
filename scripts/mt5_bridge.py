@@ -111,12 +111,14 @@ def execute_market_order(cmd: dict) -> dict:
         sl = round(price + (sl_pips * pip_size), digits) if sl_pips > 0 else 0.0
         tp = round(price - (tp_pips * pip_size), digits) if tp_pips > 0 else 0.0
 
-    # Dolum modunu broker desteğine göre seç
+    # Dolum modunu broker desteğine göre seç (bitmask: 1=FOK, 2=IOC)
     filling = mt5.ORDER_FILLING_IOC
-    if s_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
+    if s_info.filling_mode & 2:
         filling = mt5.ORDER_FILLING_IOC
-    elif s_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
+    elif s_info.filling_mode & 1:
         filling = mt5.ORDER_FILLING_FOK
+    else:
+        filling = mt5.ORDER_FILLING_RETURN
 
     req = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -155,6 +157,15 @@ def execute_close_order(cmd: dict) -> dict:
     direction = "SELL" if pos.type == mt5.POSITION_TYPE_BUY else "BUY"
     order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
 
+    s_info = mt5.symbol_info(symbol)
+    filling = mt5.ORDER_FILLING_IOC
+    if s_info and (s_info.filling_mode & 2):
+        filling = mt5.ORDER_FILLING_IOC
+    elif s_info and (s_info.filling_mode & 1):
+        filling = mt5.ORDER_FILLING_FOK
+    else:
+        filling = mt5.ORDER_FILLING_RETURN
+
     tick = mt5.symbol_info_tick(symbol)
     price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask
 
@@ -169,7 +180,7 @@ def execute_close_order(cmd: dict) -> dict:
         "magic": 825482,
         "comment": "Scalper Close",
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
+        "type_filling": filling,
     }
 
     res = mt5.order_send(req)
