@@ -30,11 +30,13 @@ if %errorlevel% neq 0 (
     %PYTHON_CMD% -m pip install MetaTrader5
 )
 
+:loop
 echo.
 echo [*] Kopru baslatiliyor...
 %PYTHON_CMD% "%~dp0scripts\mt5_bridge.py"
 
 echo.
 echo ==========================================================
-echo Kopru sonlandi. Yeniden baslatmak icin bir tusa basin.
-pause
+echo Kopru kapandi veya guncellendi. 3 saniye icinde yeniden baslatilacak...
+timeout /t 3 /nobreak >nul
+goto loop
