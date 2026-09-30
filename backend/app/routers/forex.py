@@ -330,10 +330,13 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             base_p = _LIVE_PRICES_CACHE.get(sym)
             pip = data["pip_size"]
             digits = data["digits"]
-            jitter_pips = random.choice([-0.8, -0.4, 0.0, 0.4, 0.8, 1.2]) * 0.4
+            
+            trend_bias = 0.5 if data.get("trend") == "BULLISH" else -0.5
+            vol_mult = 1.6 if data.get("category") == "commodity" else 1.1
+            jitter_pips = (random.choice([-1.2, -0.6, 0.0, 0.6, 1.2, 1.8]) + trend_bias) * vol_mult
             delta = jitter_pips * pip
 
-            if base_p and abs(data["bid"] - base_p) > (50 * pip):
+            if base_p and abs(data["bid"] - base_p) > (60 * pip):
                 # Align smoothly to live price if drifting
                 new_bid = round(base_p + delta, digits)
             else:
@@ -347,10 +350,10 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             data["updated_at"] = now
 
             # Scalper momentum ve radar skoru dalgalanması (aktif piyasa dinamizmi)
-            delta_score = random.choice([-2.0, -1.0, -0.5, 0.5, 1.0, 1.5, 2.5])
+            delta_score = random.choice([-2.5, -1.0, -0.5, 0.5, 1.5, 2.5])
             cur_s = data.get("score", 72.0)
             data["score"] = round(max(55.0, min(96.0, cur_s + delta_score)), 1)
-            if random.random() < 0.08:
+            if random.random() < 0.06:
                 data["trend"] = "BULLISH" if data.get("trend") == "BEARISH" else "BEARISH"
 
     return _TICK_CACHE

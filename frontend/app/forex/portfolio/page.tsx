@@ -635,8 +635,9 @@ export default function ForexPortfolioPage() {
       {/* PERFORMANS VE HESAP METRİKLERİ KARTLARI */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-          <span className="text-[10px] text-bunker-muted uppercase block">Hesap Bakiyesi</span>
+          <span className="text-[10px] text-bunker-muted uppercase block">Hesap Bakiyesi (Nakit)</span>
           <span className="text-lg font-bold text-white">${balance.toFixed(2)}</span>
+          <span className="text-[9px] text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
@@ -648,6 +649,7 @@ export default function ForexPortfolioPage() {
           >
             ${equity.toFixed(2)}
           </span>
+          <span className="text-[9px] text-bunker-muted block mt-0.5">Açık PnL dahil canlı bakiye</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
