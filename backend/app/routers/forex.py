@@ -553,6 +553,11 @@ _AUTO_STATE: Dict[str, Any] = {
 
 def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
     """Kayıt defterine otonom karar gerekçesi ekler (şeffaf izleme)."""
+    # Mükerrer ardışık logları engelle
+    if _AUTO_STATE["decision_logs"]:
+        if _AUTO_STATE["decision_logs"][0].get("message") == message:
+            return
+
     log_item = {
         "id": f"LOG-{int(time.time() * 1000) % 1000000}",
         "time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
