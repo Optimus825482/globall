@@ -182,6 +182,8 @@ services:
       # quote-ölçekli (TRY→10000, Global→1000); bu env yalnız operatör
       # isterse üzerine yazar.
       INITIAL_BALANCE: ${INITIAL_BALANCE_GLOBAL:-1000.0}
+      # TR Bridge: scalper.erkanerdem.online aktif değilse gereksiz ReadTimeoutError ve gecikmeyi önle
+      BINANCE_TR_BRIDGE_ENABLED: ${BINANCE_TR_BRIDGE_ENABLED:-false}
     volumes:
       - scalper_global_data:/data
     expose:
@@ -284,6 +286,8 @@ services:
     stop_grace_period: 5s
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.services.gateway_global.loadbalancer.server.port=80"
       - "traefik.http.services.gateway_global.loadbalancer.healthcheck.path=/gateway-health"
       - "traefik.http.services.gateway_global.loadbalancer.healthcheck.interval=10s"
       - "traefik.http.services.gateway_global.loadbalancer.healthcheck.timeout=3s"

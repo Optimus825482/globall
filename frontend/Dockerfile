@@ -21,7 +21,7 @@ RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production PORT=3004
+ENV NODE_ENV=production PORT=3005
 # Next.js yalnızca $HOSTNAME değerine bağlanıyor; varsayılanda container
 # hostname'i kullanıyor → 127.0.0.1/localhost'ta dinlemiyor → healthcheck
 # "Connection refused" ile unhealthy düşüyor (gateway timeout + route düşmesi).
@@ -30,5 +30,5 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/public ./public
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
-EXPOSE 3004
+EXPOSE 3005
 CMD ["node", "server.js"]
