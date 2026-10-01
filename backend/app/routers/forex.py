@@ -9,15 +9,20 @@ Provides:
 """
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import csv
 import datetime
 import io
+import json
 import logging
 import math
 import random
 import time
+import urllib.request
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
@@ -220,20 +225,62 @@ def _get_market_sessions() -> List[Dict[str, Any]]:
     return result
 
 
-import asyncio
-import urllib.request
-import json
-
 _LAST_LIVE_FETCH_TIME = 0.0
 _LIVE_PRICES_CACHE: Dict[str, float] = {}
+
+# Hard Risk Constants (Strict ceilings enforced under all conditions)
+HARD_MAX_FOREX_LOT = 0.05
+HARD_MAX_GOLD_LOT = 0.02
+HARD_MIN_GOLD_COOLDOWN_SEC = 180.0
+HARD_MIN_BREAKEVEN_PIPS = 10.0
+
+# Technical Analysis & Indicator Cache
+_TECHNICAL_CACHE: Dict[str, Dict[str, Any]] = {}
+_LAST_TECH_FETCH_TIME = 0.0
+_LAST_GOLD_EXIT_TIME = 0.0
+_LAST_CLOSED_DEAL_IDS: set = set()
+
+YAHOO_SYMBOL_MAP = {
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "USDJPY": "USDJPY=X",
+    "USDCHF": "USDCHF=X",
+    "AUDUSD": "AUDUSD=X",
+    "USDCAD": "USDCAD=X",
+    "NZDUSD": "NZDUSD=X",
+    "XAUUSD": "GC=F",
+    "XAGUSD": "SI=F",
+    "USOIL": "CL=F",
+    "SPX500": "^GSPC",
+    "NAS100": "^NDX",
+}
+
+
+def get_usd_bias(symbol: str, direction: str) -> str:
+    """Determine if an order has USD_LONG, USD_SHORT, or USD_NEUTRAL exposure.
+    Resilient to broker suffixes (.raw, .ecn, +, -, #) and non-standard commodity tickers.
+    - Pairs with USD as Base (USDJPY, USDCAD, USDCHF): BUY -> USD_LONG, SELL -> USD_SHORT
+    - Pairs with USD as Quote (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD, XAGUSD, USOIL, SPX500, NAS100):
+      BUY -> USD_SHORT, SELL -> USD_LONG
+    """
+    s = str(symbol).upper().replace("/", "").strip()
+    clean_sym = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    d = str(direction).upper()
+
+    if clean_sym.startswith("USD"):
+        return "USD_LONG" if d == "BUY" else "USD_SHORT"
+    elif clean_sym.endswith("USD") or clean_sym in ("USOIL", "OIL", "WTI", "XAUUSD", "XAGUSD", "SPX500", "NAS100"):
+        return "USD_SHORT" if d == "BUY" else "USD_LONG"
+    return "USD_NEUTRAL"
 
 
 def get_symbol_trading_specs(
     symbol: str,
-    base_sl: float = 15.0,
-    base_tp: float = 25.0,
-    base_be: float = 8.0,
-    base_trail: float = 12.0,
+    base_sl: float = 12.0,
+    base_tp: float = 22.0,
+    base_be: float = 10.0,
+    base_trail: float = 16.0,
+    atr_pips: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Her parite ve emtia için doğru pip büyüklüğünü (pip_size),
@@ -241,47 +288,83 @@ def get_symbol_trading_specs(
 
     Özellikle Ons Altın (XAUUSD) için:
     - MT5 ve uluslararası piyasalarda 1 pip = 0.10 USD (10 point / 10 cent) kabul edilir.
-    - Altın'ın yüksek oynaklığı ($4,170 seviyesinde dakikalık mumlar $2 - $4 hareket eder)
-      nedeniyle 1-3 saniyede gürültüde erken stop olmaması için 2.5x volatilite tamponu uygulanır.
-      Böylece 15 pip SL -> 37.5 pip ($3.75 USD koruma alanı), 25 pip TP -> 62.5 pip ($6.25 USD hedef) olur.
+    - Altın'ın yüksek oynaklığı nedeniyle en az 3.0x volatilite tamponu (min 36 pip / $3.60 USD koruma)
+      ve dinamik ATR(14) volatilite tamponu uygulanır. Volatilite arttığında SL dinamik olarak genişler.
+    - Erken başabaş (breakeven) stop kilitlenmesini engellemek için altın BE eşiği en az 25 pip ($2.50) olmalıdır.
+    - Standart paritelerde de erken boğulmayı engellemek için BE eşiği en az 10.0 pip olmalıdır.
     """
     s = str(symbol).upper().replace("/", "").strip()
-    if "XAUUSD" in s or "GOLD" in s:
+    clean_sym = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    base_be_floored = max(HARD_MIN_BREAKEVEN_PIPS, base_be)
+
+    if "XAU" in clean_sym or "GOLD" in clean_sym:
         pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
-        mult = 2.5               # 2.5x volatilite nefes alma çarpanı
+        mult = 3.0               # 3.0x taban volatilite nefes alma çarpanı
         digits = 2
         pip_val = 10.0           # 1 lot (100 oz) * 0.10 USD = $10.0
-    elif "XAGUSD" in s or "SILVER" in s:
+        base_sl_pips = round(base_sl * mult, 1)  # 12.0 * 3.0 = 36.0 pips ($3.60)
+        base_tp_pips = round(base_tp * mult, 1)  # 22.0 * 3.0 = 66.0 pips ($6.60)
+
+        # Dinamik ATR volatilite tamponu: ATR genişlediğinde SL ve TP dinamik genişletilir
+        if atr_pips is not None and atr_pips > 0:
+            eff_sl_pips = max(base_sl_pips, round(atr_pips * 1.5, 1))
+        else:
+            eff_sl_pips = base_sl_pips
+
+        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.83, 1))
+        eff_be_pips = max(25.0, round(eff_sl_pips * 0.7, 1))
+        eff_trail_pips = max(40.0, round(eff_sl_pips * 1.2, 1))
+
+    elif "XAG" in clean_sym or "SILVER" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD
         mult = 2.0
         digits = 3
         pip_val = 50.0           # 1 lot (5000 oz) * 0.01 USD = $50.0
-    elif "USOIL" in s or "OIL" in s or "WTI" in s:
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "USOIL" in clean_sym or "OIL" in clean_sym or "WTI" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD (1 cent)
         mult = 2.0
         digits = 2
         pip_val = 10.0           # 1 lot (1000 varil) * 0.01 USD = $10.0
-    elif "JPY" in s:
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "JPY" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 JPY (10 point)
         mult = 1.0
         digits = 3
         pip_val = 6.60
-    elif "BTC" in s:
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "BTC" in clean_sym:
         pip_size = 1.0           # 1 pip = $1.00
         mult = 5.0
         digits = 2
         pip_val = 1.0
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(40.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
     else:
         # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
         pip_size = 0.0001        # 1 pip = 0.0001 (10 point)
         mult = 1.0
         digits = 5
         pip_val = 10.0
-
-    eff_sl_pips = round(base_sl * mult, 1)
-    eff_tp_pips = round(base_tp * mult, 1)
-    eff_be_pips = round(base_be * mult, 1)
-    eff_trail_pips = round(base_trail * mult, 1)
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
 
     return {
         "pip_size": pip_size,
@@ -295,17 +378,250 @@ def get_symbol_trading_specs(
     }
 
 
-def _sync_fetch_live_rates() -> Dict[str, float]:
-    """Fetch real-world live FX rates from ECB/Frankfurter and Commodities from Yahoo."""
-    rates_map: Dict[str, float] = {}
+def _resample_5m_to_15m(
+    opens: List[float],
+    highs: List[float],
+    lows: List[float],
+    closes: List[float],
+) -> Tuple[List[float], List[float], List[float], List[float]]:
+    """Resample 5-minute candles into 15-minute candles for multi-timeframe analysis."""
+    n = len(closes)
+    rem = n % 3
+    o15, h15, l15, c15 = [], [], [], []
+    for i in range(rem, n, 3):
+        chunk_o = opens[i:i + 3]
+        chunk_h = highs[i:i + 3]
+        chunk_l = lows[i:i + 3]
+        chunk_c = closes[i:i + 3]
+        if chunk_c:
+            o15.append(chunk_o[0])
+            h15.append(max(chunk_h))
+            l15.append(min(chunk_l))
+            c15.append(chunk_c[-1])
+    return o15, h15, l15, c15
 
-    # 1. Major Forex Rates from European Central Bank / Frankfurter API
+
+def _compute_technical_indicators(
+    closes: List[float],
+    highs: List[float],
+    lows: List[float],
+    opens: List[float],
+    symbol: str,
+) -> Optional[Dict[str, Any]]:
+    """Calculates Multi-Timeframe (15M HTF Trend + 5M LTF Execution) indicators, RSI(14), MACD, ATR, and composite score."""
+    if len(closes) < 15:
+        return None
+    c = np.asarray(closes, dtype=float)
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+
+    def _calc_ema(series: np.ndarray, period: int) -> np.ndarray:
+        alpha = 2.0 / (period + 1)
+        res = [float(series[0])]
+        for val in series[1:]:
+            res.append(alpha * float(val) + (1.0 - alpha) * res[-1])
+        return np.array(res, dtype=float)
+
+    # 1. 5M LTF EMAs
+    ema9_series = _calc_ema(c, 9)
+    ema21_series = _calc_ema(c, 21)
+    ema50_series = _calc_ema(c, min(len(c), 50))
+
+    ema9 = float(ema9_series[-1])
+    ema21 = float(ema21_series[-1])
+    ema50 = float(ema50_series[-1])
+    last_price = float(c[-1])
+
+    # 2. 15M HTF Trend Filter (Resampled from 5M bars)
+    o15, h15, l15, c15 = _resample_5m_to_15m(opens, highs, lows, closes)
+    if len(c15) >= 15:
+        c15_arr = np.asarray(c15, dtype=float)
+        ema_fast_15m = float(_calc_ema(c15_arr, 10)[-1])
+        ema_slow_15m = float(_calc_ema(c15_arr, min(len(c15_arr), 25))[-1])
+        if ema_fast_15m > ema_slow_15m and last_price >= ema_slow_15m * 0.998:
+            htf_trend = "BULLISH"
+        elif ema_fast_15m < ema_slow_15m and last_price <= ema_slow_15m * 1.002:
+            htf_trend = "BEARISH"
+        else:
+            htf_trend = "NEUTRAL"
+    else:
+        # Fallback to 5M EMA21 vs EMA50 if not enough 15M bars
+        htf_trend = "BULLISH" if ema21 > ema50 else ("BEARISH" if ema21 < ema50 else "NEUTRAL")
+
+    # 3. Wilder-smoothed RSI 14 (5M)
+    deltas = np.diff(c)
+    gains = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+    period = 14
+    if len(deltas) >= period:
+        avg_gain = float(np.mean(gains[:period]))
+        avg_loss = float(np.mean(losses[:period]))
+        for i in range(period, len(deltas)):
+            avg_gain = (avg_gain * 13.0 + float(gains[i])) / 14.0
+            avg_loss = (avg_loss * 13.0 + float(losses[i])) / 14.0
+        rs = avg_gain / avg_loss if avg_loss != 0 else 100.0
+        rsi = float(100.0 - (100.0 / (1.0 + rs)))
+    else:
+        rsi = 50.0
+
+    # 4. MACD (12, 26, 9)
+    fast = _calc_ema(c, 12)
+    slow = _calc_ema(c, 26)
+    macd_line = fast - slow
+    signal_line = _calc_ema(macd_line, 9)
+    hist = float(macd_line[-1] - signal_line[-1])
+
+    # 5. ATR 14
+    if len(h) >= 15:
+        tr = np.maximum(h[1:] - l[1:], np.maximum(abs(h[1:] - c[:-1]), abs(l[1:] - c[:-1])))
+        atr = float(np.mean(tr[-14:]))
+    else:
+        atr = float(np.mean(h - l)) if len(h) > 0 else 0.001
+
+    first_open = float(opens[0]) if opens else float(c[0])
+    change_pct = round(((last_price - first_open) / first_open) * 100.0, 2) if first_open > 0 else 0.0
+
+    # 6. Multi-Timeframe Scoring & Trend Synthesis
+    bullish_pts = 0
+    bearish_pts = 0
+
+    # (a) HTF 15M Trend Filter (30 Pts) - Trend direction gate
+    if htf_trend == "BULLISH":
+        bullish_pts += 30
+    elif htf_trend == "BEARISH":
+        bearish_pts += 30
+    else:
+        bullish_pts += 10
+        bearish_pts += 10
+
+    # (b) LTF 5M EMA Alignment (25 Pts)
+    if last_price > ema9 > ema21 > ema50:
+        bullish_pts += 25
+    elif last_price < ema9 < ema21 < ema50:
+        bearish_pts += 25
+    elif ema9 > ema21:
+        bullish_pts += 15
+    elif ema9 < ema21:
+        bearish_pts += 15
+
+    # (c) RSI Pullback & Momentum (25 Pts)
+    # Healthy pullback zone (sweet spot for scalper entry without chasing extremes)
+    if 40.0 <= rsi <= 60.0:
+        if htf_trend == "BULLISH":
+            bullish_pts += 25
+        elif htf_trend == "BEARISH":
+            bearish_pts += 25
+        else:
+            bullish_pts += 12
+            bearish_pts += 12
+    elif 30.0 <= rsi < 40.0:
+        # Oversold bounce opportunity
+        bullish_pts += 20
+    elif 60.0 < rsi <= 70.0:
+        # Overbought pullback opportunity
+        bearish_pts += 20
+    elif rsi > 72.0:
+        # Chasing extreme high - penalize bullish
+        bullish_pts -= 15
+        bearish_pts += 15
+    elif rsi < 28.0:
+        # Chasing extreme low - penalize bearish
+        bearish_pts -= 15
+        bullish_pts += 15
+
+    # (d) MACD Histogram Momentum (20 Pts)
+    if hist > 0:
+        bullish_pts += 20
+    else:
+        bearish_pts += 20
+
+    # MTF Alignment Verdict
+    ltf_bullish = (ema9 > ema21 and last_price >= ema21 * 0.999)
+    ltf_bearish = (ema9 < ema21 and last_price <= ema21 * 1.001)
+
+    if (htf_trend == "BULLISH" or htf_trend == "NEUTRAL") and ltf_bullish and bullish_pts >= bearish_pts:
+        trend = "BULLISH"
+        action = "BUY" if rsi <= 78.0 else "HOLD"
+        score = round(min(96.0, max(60.0, 50.0 + (bullish_pts * 0.46))), 1)
+        macd_verdict = f"AL (MTF Boğa Uyumu | 15M: {htf_trend} + 5M Momentum)"
+    elif (htf_trend == "BEARISH" or htf_trend == "NEUTRAL") and ltf_bearish and bearish_pts >= bullish_pts:
+        trend = "BEARISH"
+        action = "SELL" if rsi >= 22.0 else "HOLD"
+        score = round(min(96.0, max(60.0, 50.0 + (bearish_pts * 0.46))), 1)
+        macd_verdict = f"SAT (MTF Ayı Uyumu | 15M: {htf_trend} + 5M Momentum)"
+    else:
+        # Choppy, conflicting timeframes, or indecisive market
+        trend = "NEUTRAL"
+        action = "HOLD"
+        score = round(max(50.0, min(58.0, 50.0 + abs(bullish_pts - bearish_pts) * 0.1)), 1)
+        macd_verdict = f"NÖTR (MTF Uyumsuzluğu | 15M: {htf_trend}, 5M: {'Boğa' if ltf_bullish else 'Ayı'} - Beklemede)"
+
+    return {
+        "price": last_price,
+        "high": float(np.max(h)),
+        "low": float(np.min(l)),
+        "change_pct": change_pct,
+        "ema9": ema9,
+        "ema21": ema21,
+        "ema50": ema50,
+        "rsi": round(rsi, 1),
+        "macd_hist": round(hist, 6),
+        "macd_verdict": macd_verdict,
+        "atr": atr,
+        "trend": trend,
+        "action": action,
+        "score": score,
+        "htf_trend": htf_trend,
+        "updated_at": time.time(),
+    }
+
+
+def _sync_fetch_candles_for_symbol(fx_sym: str, yf_sym: str) -> Optional[Dict[str, Any]]:
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=2d"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            result = data["chart"]["result"][0]
+            quote = result["indicators"]["quote"][0]
+            opens = [o for o in quote.get("open", []) if o is not None]
+            highs = [h for h in quote.get("high", []) if h is not None]
+            lows = [l for l in quote.get("low", []) if l is not None]
+            closes = [c for c in quote.get("close", []) if c is not None]
+            if len(closes) >= 15:
+                return _compute_technical_indicators(closes, highs, lows, opens, fx_sym)
+    except Exception:
+        pass
+    return None
+
+
+def _sync_fetch_all_technical_data() -> Dict[str, Dict[str, Any]]:
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        future_map = {
+            executor.submit(_sync_fetch_candles_for_symbol, fx, yf): fx
+            for fx, yf in YAHOO_SYMBOL_MAP.items()
+        }
+        for fut in concurrent.futures.as_completed(future_map, timeout=6.0):
+            fx = future_map[fut]
+            try:
+                tech = fut.result()
+                if tech:
+                    results[fx] = tech
+            except Exception:
+                pass
+    return results
+
+
+def _sync_fetch_live_rates() -> Dict[str, float]:
+    """Fetch real-world live FX rates from ECB/Frankfurter and fallback feeds."""
+    rates_map: Dict[str, float] = {}
     try:
         req = urllib.request.Request(
             "https://api.frankfurter.app/latest?from=USD",
             headers={"User-Agent": "ScalperGlobal-Forex/1.0"},
         )
-        with urllib.request.urlopen(req, timeout=4.0) as resp:
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             r = data.get("rates", {})
             if "EUR" in r and r["EUR"] > 0:
@@ -324,106 +640,103 @@ def _sync_fetch_live_rates() -> Dict[str, float]:
                 rates_map["NZDUSD"] = round(1.0 / float(r["NZD"]), 5)
     except Exception:
         pass
-
-    # 2. Live Gold, Silver & Oil from Yahoo Finance Chart API
-    commodity_symbols = [("XAUUSD", "GC=F"), ("XAGUSD", "SI=F"), ("USOIL", "CL=F")]
-    for fx_sym, yf_sym in commodity_symbols:
-        try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=1m"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                meta = data["chart"]["result"][0]["meta"]
-                price = meta.get("regularMarketPrice")
-                if price and float(price) > 0:
-                    rates_map[fx_sym] = float(price)
-        except Exception:
-            pass
-
     return rates_map
 
 
 async def _refresh_live_rates_if_needed():
-    """Update live prices cache every 10 seconds asynchronously without blocking."""
-    global _LAST_LIVE_FETCH_TIME, _LIVE_PRICES_CACHE
+    """Update live prices and technical indicators cache asynchronously."""
+    global _LAST_LIVE_FETCH_TIME, _LIVE_PRICES_CACHE, _TECHNICAL_CACHE, _LAST_TECH_FETCH_TIME
     now = time.time()
-    if now - _LAST_LIVE_FETCH_TIME > 10.0 or not _LIVE_PRICES_CACHE:
+
+    # 1. Update Technical Indicators from Yahoo Finance candles every 15s
+    if now - _LAST_TECH_FETCH_TIME > 15.0 or not _TECHNICAL_CACHE:
+        _LAST_TECH_FETCH_TIME = now
+        try:
+            fresh_tech = await asyncio.to_thread(_sync_fetch_all_technical_data)
+            if fresh_tech:
+                _TECHNICAL_CACHE.update(fresh_tech)
+                for sym, tech in fresh_tech.items():
+                    _LIVE_PRICES_CACHE[sym] = tech["price"]
+        except Exception:
+            pass
+
+    # 2. Update ECB Frankfurter rates every 20s as robust fallback
+    if now - _LAST_LIVE_FETCH_TIME > 20.0 or not _LIVE_PRICES_CACHE:
         _LAST_LIVE_FETCH_TIME = now
         try:
-            fresh = await asyncio.to_thread(_sync_fetch_live_rates)
-            if fresh:
-                _LIVE_PRICES_CACHE.update(fresh)
+            fresh_fx = await asyncio.to_thread(_sync_fetch_live_rates)
+            if fresh_fx:
+                for sym, p in fresh_fx.items():
+                    if sym not in _LIVE_PRICES_CACHE:
+                        _LIVE_PRICES_CACHE[sym] = p
         except Exception:
             pass
 
 
 async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
-    """Maintain live bid/ask/spread rates grounded in real live market prices."""
+    """Maintain live bid/ask/spread rates grounded in real live market technical indicators."""
     global _LAST_CACHE_TIME, _TICK_CACHE
     await _refresh_live_rates_if_needed()
     now = time.time()
 
-    # Seed if empty
-    if not _TICK_CACHE:
-        for item in FOREX_SYMBOLS:
-            sym = item["symbol"]
-            base_p = _LIVE_PRICES_CACHE.get(sym, item["default_price"])
-            pip = item["pip_size"]
-            spread_pips = 1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else 3.0)
-            spread_val = spread_pips * pip
+    for item in FOREX_SYMBOLS:
+        sym = item["symbol"]
+        pip = item["pip_size"]
+        digits = item["digits"]
 
-            _TICK_CACHE[sym] = {
-                "symbol": sym,
-                "display": item["display"],
-                "name": item["name"],
-                "category": item["category"],
-                "tv_symbol": item["tv_symbol"],
-                "bid": round(base_p - spread_val / 2, item["digits"]),
-                "ask": round(base_p + spread_val / 2, item["digits"]),
-                "spread_pips": spread_pips,
-                "change_pct": round(random.uniform(-0.45, 0.65), 2),
-                "high": round(base_p * 1.004, item["digits"]),
-                "low": round(base_p * 0.996, item["digits"]),
-                "digits": item["digits"],
-                "pip_size": pip,
-                "score": round(random.uniform(55, 96), 1),
-                "trend": "BULLISH" if random.random() > 0.4 else "BEARISH",
-                "volatility": "NORMAL",
-                "updated_at": now,
-            }
+        tech = _TECHNICAL_CACHE.get(sym)
+        live_p = _LIVE_PRICES_CACHE.get(sym) or (tech["price"] if tech else item["default_price"])
 
-    # Update with latest live prices and add micro-jitter
-    if now - _LAST_CACHE_TIME > 1.5:
-        _LAST_CACHE_TIME = now
-        for sym, data in _TICK_CACHE.items():
-            base_p = _LIVE_PRICES_CACHE.get(sym)
-            pip = data["pip_size"]
-            digits = data["digits"]
-            
-            trend_bias = 0.5 if data.get("trend") == "BULLISH" else -0.5
-            vol_mult = 1.6 if data.get("category") == "commodity" else 1.1
-            jitter_pips = (random.choice([-1.2, -0.6, 0.0, 0.6, 1.2, 1.8]) + trend_bias) * vol_mult
-            delta = jitter_pips * pip
+        spread_pips = 1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else 3.0)
+        spread_val = spread_pips * pip
 
-            if base_p and abs(data["bid"] - base_p) > (60 * pip):
-                # Align smoothly to live price if drifting
-                new_bid = round(base_p + delta, digits)
-            else:
-                new_bid = round(data["bid"] + delta, digits)
+        bid_p = round(live_p - spread_val / 2.0, digits)
+        ask_p = round(live_p + spread_val / 2.0, digits)
 
-            spread_val = data["spread_pips"] * pip
-            data["bid"] = new_bid
-            data["ask"] = round(new_bid + spread_val, digits)
-            data["high"] = max(data["high"], data["ask"])
-            data["low"] = min(data["low"], data["bid"])
-            data["updated_at"] = now
+        if tech:
+            score = tech["score"]
+            trend = tech["trend"]
+            action = tech.get("action", "BUY" if trend == "BULLISH" else ("SELL" if trend == "BEARISH" else "HOLD"))
+            rsi = tech["rsi"]
+            macd_verdict = tech["macd_verdict"]
+            change_pct = tech["change_pct"]
+            high_p = round(max(tech["high"], ask_p), digits)
+            low_p = round(min(tech["low"], bid_p), digits)
+            atr_val = tech["atr"]
+        else:
+            score = 50.0
+            trend = "NEUTRAL"
+            action = "HOLD"
+            rsi = 50.0
+            macd_verdict = "NÖTR (Veri Bekleniyor)"
+            change_pct = 0.0
+            high_p = round(live_p * 1.002, digits)
+            low_p = round(live_p * 0.998, digits)
+            atr_val = 15.0 * pip
 
-            # Scalper momentum ve radar skoru dalgalanması (aktif piyasa dinamizmi)
-            delta_score = random.choice([-2.5, -1.0, -0.5, 0.5, 1.5, 2.5])
-            cur_s = data.get("score", 72.0)
-            data["score"] = round(max(55.0, min(96.0, cur_s + delta_score)), 1)
-            if random.random() < 0.06:
-                data["trend"] = "BULLISH" if data.get("trend") == "BEARISH" else "BEARISH"
+        _TICK_CACHE[sym] = {
+            "symbol": sym,
+            "display": item["display"],
+            "name": item["name"],
+            "category": item["category"],
+            "tv_symbol": item["tv_symbol"],
+            "bid": bid_p,
+            "ask": ask_p,
+            "spread_pips": spread_pips,
+            "change_pct": change_pct,
+            "high": high_p,
+            "low": low_p,
+            "digits": digits,
+            "pip_size": pip,
+            "score": score,
+            "trend": trend,
+            "action": action,
+            "rsi": rsi,
+            "macd_verdict": macd_verdict,
+            "atr": atr_val,
+            "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
+            "updated_at": now,
+        }
 
     return _TICK_CACHE
 
@@ -470,14 +783,23 @@ async def get_forex_tickers(category: Optional[str] = None):
 
 @router.get("/radar")
 async def get_forex_radar():
-    """Return high-probability forex momentum and breakout opportunities."""
+    """Return high-probability forex momentum and breakout opportunities based on real indicators."""
     ticks = await _generate_realistic_ticks()
     candidates = []
 
     for sym, t in ticks.items():
-        score = t.get("score", 70.0)
-        trend = t.get("trend", "BULLISH")
+        score = t.get("score", 45.0)
+        trend = t.get("trend", "NEUTRAL")
+        action = t.get("action", "BUY" if trend == "BULLISH" else ("SELL" if trend == "BEARISH" else "HOLD"))
         spread = t.get("spread_pips", 1.5)
+        atr_pips = round(t.get("atr", 0.001) / t["pip_size"], 1) if t.get("pip_size", 0) > 0 else 15.0
+
+        spec = get_symbol_trading_specs(
+            sym,
+            base_sl=_AUTO_SETTINGS.sl_pips,
+            base_tp=_AUTO_SETTINGS.tp_pips,
+            atr_pips=atr_pips,
+        )
 
         candidates.append({
             "symbol": sym,
@@ -490,12 +812,13 @@ async def get_forex_radar():
             "spread_pips": spread,
             "score": score,
             "trend": trend,
-            "action": "BUY" if trend == "BULLISH" else "SELL",
-            "rsi_15m": round(random.uniform(42, 68), 1),
-            "macd_verdict": "AL (Bullish Cross)" if trend == "BULLISH" else "SAT (Bearish Cross)",
-            "pip_target": 35.0,
-            "stop_loss_pips": 18.0,
-            "risk_reward": "1:1.94",
+            "action": action,
+            "rsi_15m": t.get("rsi", 50.0),
+            "macd_verdict": t.get("macd_verdict", "NÖTR (Beklemede)"),
+            "pip_target": spec["tp_pips"],
+            "stop_loss_pips": spec["sl_pips"],
+            "risk_reward": f"1:{round(spec['tp_pips'] / spec['sl_pips'], 2)}" if spec["sl_pips"] > 0 else "1:1.83",
+            "atr_pips": atr_pips,
             "tv_symbol": t["tv_symbol"],
         })
 
@@ -512,7 +835,7 @@ async def get_forex_radar():
 
 @router.post("/calculate-lot")
 async def calculate_lot_size(req: LotCalculatorRequest):
-    """Calculate standard, mini, and micro lot sizes based on capital risk."""
+    """Calculate standard, mini, and micro lot sizes based on capital risk with hard ceilings."""
     risk_amount_usd = req.account_balance * (req.risk_percentage / 100.0)
 
     spec = get_symbol_trading_specs(req.symbol, base_sl=req.stop_loss_pips)
@@ -526,6 +849,11 @@ async def calculate_lot_size(req: LotCalculatorRequest):
     mini_lots = round(recommended_lots * 10, 2)
     micro_lots = round(recommended_lots * 100, 2)
 
+    # Sert lot tavanı koruması (asla aşılamaz)
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
+    lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+    safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
+
     return {
         "symbol": req.symbol,
         "account_balance": req.account_balance,
@@ -533,9 +861,10 @@ async def calculate_lot_size(req: LotCalculatorRequest):
         "risk_amount_usd": round(risk_amount_usd, 2),
         "stop_loss_pips": eff_sl_pips,
         "standard_lots": standard_lots,
+        "safe_capped_lots": safe_lots,
         "mini_lots": mini_lots,
         "micro_lots": micro_lots,
-        "units": int(standard_lots * 100_000),
+        "units": int(safe_lots * 100_000),
     }
 
 
@@ -549,12 +878,16 @@ class ForexAutoPaperSettings(BaseModel):
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
     max_open_positions: int = Field(3, ge=1, le=10, description="Aynı anda maksimum açık işlem")
     min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
-    tp_pips: float = Field(25.0, ge=5.0, le=100.0, description="Kâr al mesafesi (pip)")
-    sl_pips: float = Field(15.0, ge=5.0, le=50.0, description="Zarar durdur mesafesi (pip)")
-    breakeven_pips: float = Field(8.0, ge=2.0, le=30.0, description="Başabaş kilit tetik mesafesi (pip)")
-    trailing_stop_pips: float = Field(12.0, ge=4.0, le=40.0, description="İz süren stop mesafesi (pip)")
+    tp_pips: float = Field(22.0, ge=18.0, le=80.0, description="Kâr al mesafesi (pip)")
+    sl_pips: float = Field(12.0, ge=10.0, le=30.0, description="Zarar durdur mesafesi (pip)")
+    breakeven_pips: float = Field(10.0, ge=5.0, le=30.0, description="Başabaş kilit tetik mesafesi (varsayılan: 10.0 pip, min uygulanan: 10.0 pip)")
+    trailing_stop_pips: float = Field(16.0, ge=12.0, le=40.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
     max_spread_pips: float = Field(3.0, ge=0.5, le=10.0, description="Maksimum izin verilen spread (pip)")
+    max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
+    max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı (Sert tavan: 0.02)")
+    gold_cooldown_sec: float = Field(180.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 180 sn)")
+    usd_correlation_guard: bool = Field(True, description="USD yönlü kümelenmeyi engelleyen kalkan")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
         description="İşleme izin verilen pariteler",
@@ -717,6 +1050,12 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason},
         )
 
+        # Altın pozisyonu kapandığında 180 saniye soğuma sayacını başlat
+        sym_closed = target.get("symbol", "").upper()
+        if "XAU" in sym_closed or "GOLD" in sym_closed:
+            global _LAST_GOLD_EXIT_TIME
+            _LAST_GOLD_EXIT_TIME = time.time()
+
         # MT5 Köprüsü bağlıysa ve otomatik iletim aktifse, MT5'teki açık pozisyonu da otomatik kapat
         if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
             sym_target = target["symbol"].upper()
@@ -794,7 +1133,7 @@ async def _forex_auto_paper_loop():
 
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
                     if pnl_pips >= eff_be_pips and not pos["breakeven_activated"]:
-                        buffer_pips = 1.0 if "XAU" in sym else 0.5
+                        buffer_pips = 2.0 if ("XAU" in sym or "GOLD" in sym) else 0.5
                         be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
                         pos["sl_price"] = be_sl
                         pos["breakeven_activated"] = True
@@ -870,13 +1209,13 @@ async def _forex_auto_paper_loop():
             # ---------------------------------------------------------------
             # 2. YENİ İŞLEM FIRSATLARI DEĞERLENDİRME & GİRİŞ (IC MARKETS MT5)
             # ---------------------------------------------------------------
-            mt5_open_count = len(_MT5_STATE.get("open_positions", []))
-            if mt5_open_count >= _AUTO_SETTINGS.max_open_positions:
+            active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
+            if active_count >= _AUTO_SETTINGS.max_open_positions:
                 if now_ts - _LAST_SCAN_PULSE_TIME > 30.0:
                     _LAST_SCAN_PULSE_TIME = now_ts
                     _log_auto_decision(
                         "GATE",
-                        f"IC Markets MT5 açık pozisyon limitine ulaşıldı ({mt5_open_count}/{_AUTO_SETTINGS.max_open_positions}). Yeni emir iletimi beklemede.",
+                        f"Maksimum açık pozisyon limitine ulaşıldı ({active_count}/{_AUTO_SETTINGS.max_open_positions}). Yeni emir beklemede.",
                     )
                 continue
 
@@ -907,29 +1246,79 @@ async def _forex_auto_paper_loop():
                 )
 
             mt5_active_syms = {p.get("symbol", "").upper() for p in _MT5_STATE.get("open_positions", [])}
+            auto_active_syms = {p.get("symbol", "").upper() for p in _AUTO_STATE.get("open_positions", [])}
             pending_mt5_syms = {c.get("symbol", "").upper() for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER"}
+            all_active_syms = mt5_active_syms | auto_active_syms | pending_mt5_syms
 
             for cand in candidates:
                 sym = cand["symbol"].upper()
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
 
-                # Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Hedging & Anti-Duplicate)
-                if sym in mt5_active_syms or sym in pending_mt5_syms:
+                # 1. Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Hedging & Anti-Duplicate)
+                if sym in all_active_syms:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
                         _log_auto_decision(
                             "SCAN",
-                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat IC Markets MT5'te pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
+                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
                             symbol=sym,
                         )
                     continue
 
-                # Sembol soğuma süresi (Son işlemden sonra en az 45 sn bekle)
-                if now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0) < 45.0:
+                is_gold = ("XAU" in sym or "GOLD" in sym)
+
+                # 2. Ons Altın (XAUUSD) Özel Soğuma Koruması (Kapanıştan sonra en az 180 sn bekleme kuralı)
+                if is_gold:
+                    time_since_gold_exit = now_ts - _LAST_GOLD_EXIT_TIME
+                    if time_since_gold_exit < _AUTO_SETTINGS.gold_cooldown_sec:
+                        remaining_cd = int(_AUTO_SETTINGS.gold_cooldown_sec - time_since_gold_exit)
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_gold_cd", 0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_gold_cd"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] Ons Altın Soğuma Kalkanı: Kapanıştan sonra {remaining_cd} sn bekleniyor (min {_AUTO_SETTINGS.gold_cooldown_sec:.0f} sn kuralı).",
+                                symbol=sym,
+                            )
+                        continue
+
+                # 3. Sembol Soğuma Süresi
+                sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else 60.0
+                if now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0) < sym_cd:
                     continue
 
-                # Spread Filtresi
+                # 4. USD Korelasyon Kalkanı (Anti-Clustering Koruması)
+                direction = cand.get("action", "")  # BUY or SELL
+                if direction not in ("BUY", "SELL"):
+                    continue
+                cand_usd_bias = get_usd_bias(sym, direction)
+
+                if _AUTO_SETTINGS.usd_correlation_guard and cand_usd_bias != "USD_NEUTRAL":
+                    active_usd_biases = []
+                    all_active_positions = list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
+                    for p in all_active_positions:
+                        b = get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY"))
+                        if b != "USD_NEUTRAL":
+                            active_usd_biases.append((p.get("symbol", ""), b))
+                    for c in _MT5_STATE.get("pending_commands", []):
+                        if c.get("action") == "OPEN_ORDER":
+                            b = get_usd_bias(c.get("symbol", ""), c.get("direction", "BUY"))
+                            if b != "USD_NEUTRAL":
+                                active_usd_biases.append((c.get("symbol", ""), b))
+
+                    conflicting = [item for item in active_usd_biases if item[1] == cand_usd_bias]
+                    if conflicting:
+                        conf_sym = conflicting[0][0]
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_usd_corr", 0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_usd_corr"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] USD Korelasyon Kalkanı: Zaten {cand_usd_bias} yönlü açık pozisyon var ({conf_sym}). Aynı yönlü yeni USD riski engellendi.",
+                                symbol=sym,
+                            )
+                        continue
+
+                # 5. Spread Filtresi
                 if cand["spread_pips"] > _AUTO_SETTINGS.max_spread_pips:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
@@ -940,7 +1329,7 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # Skor Eşiği
+                # 6. Skor Eşiği
                 if cand["score"] < _AUTO_SETTINGS.min_score:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
@@ -951,50 +1340,84 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # Dinamik Lot Hesaplama - MT5 Gerçek Bakiyesi üzerinden
+                # 7. Dinamik Lot & Sert Lot Tavanı (Hard Lot Cap)
                 t = ticks.get(sym)
                 if not t:
                     continue
 
-                direction = cand["action"]  # BUY or SELL
+                atr_pips = round(t.get("atr", 0.001) / t["pip_size"], 1) if t.get("pip_size", 0) > 0 else 15.0
                 spec = get_symbol_trading_specs(
                     sym,
                     base_sl=_AUTO_SETTINGS.sl_pips,
                     base_tp=_AUTO_SETTINGS.tp_pips,
                     base_be=_AUTO_SETTINGS.breakeven_pips,
                     base_trail=_AUTO_SETTINGS.trailing_stop_pips,
+                    atr_pips=atr_pips,
                 )
                 sl_pips = spec["sl_pips"]
                 tp_pips = spec["tp_pips"]
                 pip_val = spec["pip_val"]
 
-                mt5_acc_bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
-                mt5_risk_usd = mt5_acc_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
-                mt5_calc_lots = round(mt5_risk_usd / (sl_pips * pip_val), 2)
-                mt5_lots = max(0.01, min(mt5_calc_lots, 5.0))
+                active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
+                risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                raw_calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
+
+                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın max 0.02 lot)
+                lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+                mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
+                mt5_lots = round(mt5_lots, 2)
 
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
 
-                # IC Markets MT5'e doğrudan canlı emir kuyruğuna ekle
-                cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
-                _MT5_STATE["pending_commands"].append({
-                    "id": cmd_id,
-                    "action": "OPEN_ORDER",
-                    "symbol": sym,
-                    "direction": direction,
-                    "lots": mt5_lots,
-                    "sl_pips": sl_pips,
-                    "tp_pips": tp_pips,
-                    "comment": f"Scalper MT5 {cand['score']:.0f}",
-                })
+                # IC Markets MT5 bağlıysa doğrudan MT5 emir kuyruğuna ekle
+                if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                    cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
+                    _MT5_STATE["pending_commands"].append({
+                        "id": cmd_id,
+                        "action": "OPEN_ORDER",
+                        "symbol": sym,
+                        "direction": direction,
+                        "lots": mt5_lots,
+                        "sl_pips": sl_pips,
+                        "tp_pips": tp_pips,
+                        "comment": f"Scalper MT5 {cand['score']:.0f}",
+                    })
+                else:
+                    # MT5 bağlı değilse Paper Engine sanal pozisyon havuzuna ekle
+                    sl_dist = sl_pips * spec["pip_size"]
+                    tp_dist = tp_pips * spec["pip_size"]
+                    pos_item = {
+                        "id": f"FX-{int(time.time() * 1000) % 1000000}",
+                        "symbol": sym,
+                        "display": cand["display"],
+                        "direction": direction,
+                        "lots": mt5_lots,
+                        "entry_price": entry_p,
+                        "current_price": entry_p,
+                        "sl_price": round(entry_p - sl_dist if direction == "BUY" else entry_p + sl_dist, spec["digits"]),
+                        "tp_price": round(entry_p + tp_dist if direction == "BUY" else entry_p - tp_dist, spec["digits"]),
+                        "initial_sl_price": round(entry_p - sl_dist if direction == "BUY" else entry_p + sl_dist, spec["digits"]),
+                        "breakeven_activated": False,
+                        "trailing_activated": False,
+                        "opened_at_ts": now_ts,
+                        "open_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+                        "pnl_usd": 0.0,
+                        "pnl_pips": 0.0,
+                        "pip_size": spec["pip_size"],
+                        "digits": spec["digits"],
+                        "score": cand["score"],
+                        "strategy": "M1_M5_RADAR_SCALPER",
+                    }
+                    async with _AUTO_PAPER_LOCK:
+                        _AUTO_STATE["open_positions"].append(pos_item)
 
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
 
                 _log_auto_decision(
                     "ENTRY",
-                    f"⚡ [IC MARKETS MT5] EMİR İLETİLDİ: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${mt5_risk_usd:.2f} (Skor: {cand['score']:.0f})",
+                    f"⚡ [İŞLEM AÇILDI]: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${risk_usd:.2f} (Skor: {cand['score']:.0f} | Lot Tavanı: {lot_ceiling})",
                     symbol=sym,
-                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"]},
+                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"], "lot_ceiling": lot_ceiling},
                 )
 
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
@@ -1013,14 +1436,21 @@ async def _forex_auto_paper_loop():
 @router.get("/auto-paper/status")
 async def get_forex_auto_paper_status():
     """IC Markets MT5 Otonom Scalper sistem durumu, canlı MT5 pozisyonları ve hesap metrikleri."""
+    is_mt5_conn = _MT5_STATE.get("connected", False)
     mt5_acc = _MT5_STATE.get("account", {})
-    mt5_positions = _MT5_STATE.get("open_positions", [])
-    mt5_deals = _MT5_STATE.get("closed_deals", [])
 
-    balance = float(mt5_acc.get("balance", 1000.0))
+    if is_mt5_conn:
+        balance = float(mt5_acc.get("balance", 1000.0))
+        active_positions_source = _MT5_STATE.get("open_positions", [])
+        closed_deals_source = _MT5_STATE.get("closed_deals", [])
+    else:
+        balance = float(_AUTO_STATE.get("balance", 10000.0))
+        active_positions_source = _AUTO_STATE.get("open_positions", [])
+        closed_deals_source = _AUTO_STATE.get("closed_trades", [])
+
     # Pozisyonları ve Kapanan İşlemleri Güvenli Formatla Normalize Et
     normalized_positions = []
-    for p in mt5_positions:
+    for p in active_positions_source:
         pnl = float(p.get("pnl_usd", p.get("profit", 0.0)))
         normalized_positions.append({
             **p,
@@ -1029,35 +1459,35 @@ async def get_forex_auto_paper_status():
         })
 
     normalized_deals = []
-    for d in mt5_deals:
+    for d in closed_deals_source:
         pnl = float(d.get("profit", d.get("pnl_usd", 0.0)))
         t_id = d.get("ticket") or d.get("id") or 0
         normalized_deals.append({
-            "id": f"MT5-{t_id}",
+            "id": d.get("id") or f"MT5-{t_id}",
             "ticket": t_id,
             "symbol": d.get("symbol", ""),
-            "display": d.get("symbol", ""),
+            "display": d.get("display", d.get("symbol", "")),
             "direction": d.get("direction", "BUY"),
             "lots": float(d.get("lots", 0.01)),
             "entry_price": d.get("price", d.get("entry_price", 0.0)),
             "exit_price": d.get("price", d.get("exit_price", 0.0)),
-            "open_time": d.get("time", ""),
-            "exit_time": d.get("time", ""),
-            "exit_reason": "MT5 Kapanış",
-            "exit_reason_title": "IC Markets MT5",
+            "open_time": d.get("open_time", d.get("time", "")),
+            "exit_time": d.get("exit_time", d.get("time", "")),
+            "exit_reason": d.get("exit_reason", "MT5 Kapanış"),
+            "exit_reason_title": d.get("exit_reason_title", "IC Markets MT5"),
             "pnl_usd": round(pnl, 2),
             "pnl_pips": float(d.get("pnl_pips", 0.0)),
             "outcome": "WIN" if pnl >= 0 else "LOSS",
         })
 
     open_pnl_usd = round(sum(p["pnl_usd"] for p in normalized_positions), 2)
-    equity = float(mt5_acc.get("equity", round(balance + open_pnl_usd, 2)))
+    equity = float(mt5_acc.get("equity", round(balance + open_pnl_usd, 2))) if is_mt5_conn else round(balance + open_pnl_usd, 2)
 
-    # Realized PnL ve Kazanma Oranı (MT5 Kapanan İşlemleri)
+    # Realized PnL ve Kazanma Oranı
     wins = sum(1 for d in normalized_deals if d["pnl_usd"] > 0)
     losses = sum(1 for d in normalized_deals if d["pnl_usd"] < 0)
     total_trades = len(normalized_deals)
-    realized_usd = round(sum(d["pnl_usd"] for d in normalized_deals), 2)
+    realized_usd = round(sum(d["pnl_usd"] for d in normalized_deals), 2) if is_mt5_conn else _AUTO_STATE["realized_pnl_usd"]
     win_rate = round((wins / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
     return {
@@ -1080,7 +1510,7 @@ async def get_forex_auto_paper_status():
         "sessions": _get_market_sessions(),
         "last_scan_time": _AUTO_STATE["last_scan_time"],
         "mt5_account": mt5_acc,
-        "mt5_connected": _MT5_STATE.get("connected", False),
+        "mt5_connected": is_mt5_conn,
     }
 
 
@@ -1157,9 +1587,16 @@ async def reset_forex_auto_paper():
     """IC Markets MT5 Scalper günlüklerini sıfırlar."""
     async with _AUTO_PAPER_LOCK:
         _AUTO_STATE["decision_logs"] = []
+        _AUTO_STATE["closed_trades"] = []
+        _AUTO_STATE["realized_pnl_usd"] = 0.0
+        _AUTO_STATE["realized_pnl_pips"] = 0.0
+        _AUTO_STATE["wins"] = 0
+        _AUTO_STATE["losses"] = 0
+        _AUTO_STATE["total_trades"] = 0
+        _AUTO_STATE["balance"] = 10000.0
 
     _log_auto_decision("SYSTEM", "IC Markets MT5 Scalper günlükleri ve karar akışı sıfırlandı.")
-    bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
+    bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0)) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
     return {"status": "reset", "balance": bal}
 
 
@@ -1348,6 +1785,7 @@ class MT5SyncRequest(BaseModel):
     account: Dict[str, Any] = Field(default_factory=dict)
     positions: List[Dict[str, Any]] = Field(default_factory=list)
     deals: List[Dict[str, Any]] = Field(default_factory=list)
+    ticks: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     version: str = "1.0.0"
 
 
@@ -1378,8 +1816,28 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
     if req.account:
         _MT5_STATE["account"].update(req.account)
     _MT5_STATE["open_positions"] = req.positions
+
+    # MT5 canlı tick fiyatlarını entegre et
+    if req.ticks:
+        for sym_code, tick_dict in req.ticks.items():
+            live_val = tick_dict.get("ask") or tick_dict.get("last") or tick_dict.get("bid")
+            if live_val and live_val > 0:
+                _LIVE_PRICES_CACHE[sym_code.upper()] = float(live_val)
+
     if req.deals:
         _MT5_STATE["closed_deals"] = req.deals
+        is_first_sync = len(_LAST_CLOSED_DEAL_IDS) == 0
+        for d in req.deals:
+            deal_id = d.get("ticket") or d.get("id")
+            if deal_id and deal_id not in _LAST_CLOSED_DEAL_IDS:
+                _LAST_CLOSED_DEAL_IDS.add(deal_id)
+                d_sym = str(d.get("symbol", "")).upper()
+                if "XAU" in d_sym or "GOLD" in d_sym:
+                    deal_time = float(d.get("time", 0)) if isinstance(d.get("time"), (int, float)) else 0.0
+                    # İlk senkronizasyonda eski geçmiş deals için false cooldown başlatma; sadece son 180s içinde kapananlar için başlat
+                    if not is_first_sync or (deal_time > 0 and (now_ts - deal_time < _AUTO_SETTINGS.gold_cooldown_sec)):
+                        global _LAST_GOLD_EXIT_TIME
+                        _LAST_GOLD_EXIT_TIME = now_ts
 
     # Bekleyen emirleri al ve boşalt
     commands = list(_MT5_STATE["pending_commands"])
@@ -1396,6 +1854,10 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "sl_pips": _AUTO_SETTINGS.sl_pips,
             "tp_pips": _AUTO_SETTINGS.tp_pips,
             "max_open_positions": _AUTO_SETTINGS.max_open_positions,
+            "max_forex_lot": _AUTO_SETTINGS.max_forex_lot,
+            "max_gold_lot": _AUTO_SETTINGS.max_gold_lot,
+            "gold_cooldown_sec": _AUTO_SETTINGS.gold_cooldown_sec,
+            "usd_correlation_guard": _AUTO_SETTINGS.usd_correlation_guard,
         },
     }
 
@@ -1456,19 +1918,23 @@ async def get_mt5_bridge_status():
 @router.post("/mt5/order")
 async def send_mt5_order(req: MT5ManualOrderRequest):
     """MT5 köprüsüne yeni bir piyasa emri iletir."""
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
+    lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+    actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
+
     cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
     cmd = {
         "id": cmd_id,
         "action": "OPEN_ORDER",
         "symbol": req.symbol.upper(),
         "direction": req.direction.upper(),
-        "lots": req.lots,
+        "lots": actual_lots,
         "sl_pips": req.sl_pips,
         "tp_pips": req.tp_pips,
         "comment": req.comment or "Scalper Agent",
     }
     _MT5_STATE["pending_commands"].append(cmd)
-    _log_auto_decision("ENTRY", f"🚀 [MT5 Manuel Emir Kuyruğa Alındı]: {req.lots} Lot {req.direction} {req.symbol}", symbol=req.symbol)
+    _log_auto_decision("ENTRY", f"🚀 [MT5 Manuel Emir Kuyruğa Alındı]: {actual_lots} Lot {req.direction} {req.symbol} (Limit: {lot_cap})", symbol=req.symbol)
     return {"status": "queued", "command": cmd}
 
 

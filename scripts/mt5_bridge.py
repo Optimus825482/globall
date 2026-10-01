@@ -38,6 +38,12 @@ DEFAULT_PASSWORD = os.environ.get("MT5_PASSWORD", "gE&w5OzpUyQmWx")
 DEFAULT_SERVER = os.environ.get("MT5_SERVER", "ICMarketsSC-Demo")
 DEFAULT_API_URL = os.environ.get("SCALPER_API_URL", "https://global.erkanerdem.online")
 
+# Sert Risk Sınırları (Asla aşılamaz)
+HARD_MAX_FOREX_LOT = 0.05
+HARD_MAX_GOLD_LOT = 0.02
+HARD_MIN_GOLD_COOLDOWN_SEC = 180.0
+LAST_GOLD_EXIT_TIME = 0.0
+
 
 def print_banner():
     print(r"""
@@ -77,10 +83,11 @@ def connect_mt5(path: str, login: int, password: str, server: str) -> bool:
 
 def get_symbol_trading_specs(
     symbol: str,
-    base_sl: float = 15.0,
-    base_tp: float = 25.0,
-    base_be: float = 8.0,
-    base_trail: float = 12.0,
+    base_sl: float = 12.0,
+    base_tp: float = 22.0,
+    base_be: float = 10.0,
+    base_trail: float = 16.0,
+    atr_pips: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Her parite ve emtia için doğru pip büyüklüğünü (pip_size),
@@ -88,47 +95,82 @@ def get_symbol_trading_specs(
 
     Özellikle Ons Altın (XAUUSD) için:
     - MT5 ve uluslararası piyasalarda 1 pip = 0.10 USD (10 point / 10 cent) kabul edilir.
-    - Altın'ın yüksek oynaklığı ($4,170 seviyesinde dakikalık mumlar $2 - $4 hareket eder)
-      nedeniyle 1-3 saniyede gürültüde erken stop olmaması için 2.5x volatilite tamponu uygulanır.
-      Böylece 15 pip SL -> 37.5 pip ($3.75 USD koruma alanı), 25 pip TP -> 62.5 pip ($6.25 USD hedef) olur.
+    - Altın'ın yüksek oynaklığı ($4,200 seviyesinde dakikalık mumlar $2 - $5 hareket eder)
+      nedeniyle 3.0x taban volatilite tamponu (min 36 pip / $3.60 USD) ve dinamik ATR tamponu uygulanır.
+    - Erken başabaş (breakeven) stop kilitlenmesini engellemek için altın BE eşiği en az 25 pip ($2.50) olmalıdır.
+    - Standart Forex paritelerinde de erken boğulmayı önlemek için BE eşiği en az 10.0 pip olmalıdır.
     """
     s = str(symbol).upper().replace("/", "").strip()
-    if "XAUUSD" in s or "GOLD" in s:
+    clean_sym = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    base_be_floored = max(10.0, base_be)
+
+    if "XAU" in clean_sym or "GOLD" in clean_sym:
         pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
-        mult = 2.5               # 2.5x volatilite nefes alma çarpanı
+        mult = 3.0               # 3.0x volatilite nefes alma çarpanı
         digits = 2
         pip_val = 10.0           # 1 lot (100 oz) * 0.10 USD = $10.0
-    elif "XAGUSD" in s or "SILVER" in s:
+        base_sl_pips = round(base_sl * mult, 1)
+        base_tp_pips = round(base_tp * mult, 1)
+
+        if atr_pips is not None and atr_pips > 0:
+            eff_sl_pips = max(base_sl_pips, round(atr_pips * 1.5, 1))
+        else:
+            eff_sl_pips = base_sl_pips
+
+        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.83, 1))
+        eff_be_pips = max(25.0, round(eff_sl_pips * 0.7, 1))
+        eff_trail_pips = max(40.0, round(eff_sl_pips * 1.2, 1))
+
+    elif "XAG" in clean_sym or "SILVER" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD
         mult = 2.0
         digits = 3
         pip_val = 50.0           # 1 lot (5000 oz) * 0.01 USD = $50.0
-    elif "USOIL" in s or "OIL" in s or "WTI" in s:
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "USOIL" in clean_sym or "OIL" in clean_sym or "WTI" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD (1 cent)
         mult = 2.0
         digits = 2
         pip_val = 10.0           # 1 lot (1000 varil) * 0.01 USD = $10.0
-    elif "JPY" in s:
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "JPY" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 JPY (10 point)
         mult = 1.0
         digits = 3
         pip_val = 6.60
-    elif "BTC" in s:
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(10.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "BTC" in clean_sym:
         pip_size = 1.0           # 1 pip = $1.00
         mult = 5.0
         digits = 2
         pip_val = 1.0
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(40.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
     else:
         # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
         pip_size = 0.0001        # 1 pip = 0.0001 (10 point)
         mult = 1.0
         digits = 5
         pip_val = 10.0
-
-    eff_sl_pips = round(base_sl * mult, 1)
-    eff_tp_pips = round(base_tp * mult, 1)
-    eff_be_pips = round(base_be * mult, 1)
-    eff_trail_pips = round(base_trail * mult, 1)
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(10.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
 
     return {
         "pip_size": pip_size,
@@ -146,10 +188,30 @@ def execute_market_order(cmd: dict) -> dict:
     """MT5 üzerinde piyasa emri açar."""
     symbol = cmd.get("symbol", "EURUSD").upper()
     direction = cmd.get("direction", "BUY").upper()
-    lots = float(cmd.get("lots", 0.01))
-    sl_pips = float(cmd.get("sl_pips", 15.0))
-    tp_pips = float(cmd.get("tp_pips", 25.0))
+    raw_lots = float(cmd.get("lots", 0.01))
+    sl_pips = float(cmd.get("sl_pips", 12.0))
+    tp_pips = float(cmd.get("tp_pips", 22.0))
     comment = str(cmd.get("comment", "Scalper Global"))[:31]
+
+    # SERT LOT TAVANI KORUMASI: Forex max 0.05 lot, Ons Altın (XAUUSD) max 0.02 lot
+    is_gold = ("XAU" in symbol or "GOLD" in symbol)
+    configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT)) if is_gold else float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
+    lot_ceiling = min(HARD_MAX_GOLD_LOT if is_gold else HARD_MAX_FOREX_LOT, max(0.01, configured_cap))
+    if raw_lots > lot_ceiling:
+        print(f"  🛡️ [SERT LOT TAVANI UYGULANDI]: {raw_lots} lot -> {lot_ceiling} lot olarak sınırlandırıldı ({symbol})")
+        lots = lot_ceiling
+    else:
+        lots = raw_lots
+    lots = round(max(0.01, lots), 2)
+
+    # Ons Altın (XAUUSD) Soğuma Koruması (Kapanıştan sonra en az 180 sn bekleme kuralı)
+    if is_gold:
+        cd_sec = float(CURRENT_SETTINGS.get("gold_cooldown_sec", HARD_MIN_GOLD_COOLDOWN_SEC))
+        elapsed = time.time() - LAST_GOLD_EXIT_TIME
+        if elapsed < cd_sec:
+            err = f"Ons Altın soğuma kalkanı aktif: {int(cd_sec - elapsed)} sn kaldı (min {cd_sec:.0f}s)"
+            print(f"  🛑 {err}")
+            return {"success": False, "error": err}
 
     # Sembolü aktif et ve bilgileri çek
     if not mt5.symbol_select(symbol, True):
@@ -164,6 +226,11 @@ def execute_market_order(cmd: dict) -> dict:
         return {"success": False, "error": f"Canlı fiyat alınamadı: {symbol}"}
 
     spec = get_symbol_trading_specs(symbol)
+    # Altın için stop mesafesini dinamik spec koruma seviyesinin altına düşürme
+    if is_gold:
+        sl_pips = max(sl_pips, spec["sl_pips"])
+        tp_pips = max(tp_pips, spec["tp_pips"])
+
     digits = s_info.digits if s_info else spec["digits"]
     pip_size = spec["pip_size"]
 
@@ -253,6 +320,9 @@ def execute_close_order(cmd: dict) -> dict:
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"  🏁 [POZİSYON KAPATILDI]: Bilet #{ticket} | {symbol} Kapatıldı @ {price}")
+        if "XAU" in symbol or "GOLD" in symbol:
+            global LAST_GOLD_EXIT_TIME
+            LAST_GOLD_EXIT_TIME = time.time()
         return {"success": True, "ticket": ticket}
     else:
         comment_err = res.comment if res else str(mt5.last_error())
@@ -275,6 +345,11 @@ def execute_modify_sltp(cmd: dict) -> dict:
     digits = s_info.digits if s_info else 5
     sl = round(sl, digits)
     tp = round(tp, digits) if tp > 0 else pos.tp
+
+    spec = get_symbol_trading_specs(symbol)
+    pip_size = spec["pip_size"]
+    if abs(sl - pos.sl) < (0.3 * pip_size) and (tp == 0.0 or abs(tp - pos.tp) < (0.3 * pip_size)):
+        return {"success": True, "ticket": ticket, "message": "no changes"}
 
     req = {
         "action": mt5.TRADE_ACTION_SLTP,
@@ -314,7 +389,15 @@ def execute_close_all(cmd: dict) -> dict:
 
 
 POSITION_PROTECTION_MAP: Dict[int, str] = {}  # ticket -> "BREAKEVEN" | "TRAILING"
-CURRENT_SETTINGS: Dict[str, float] = {"breakeven_pips": 8.0, "trailing_stop_pips": 12.0}
+CURRENT_SETTINGS: Dict[str, float] = {
+    "breakeven_pips": 10.0,
+    "trailing_stop_pips": 16.0,
+    "sl_pips": 12.0,
+    "tp_pips": 22.0,
+    "max_forex_lot": 0.05,
+    "max_gold_lot": 0.02,
+    "gold_cooldown_sec": 180.0,
+}
 
 
 def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
@@ -358,7 +441,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # 1. BREAKEVEN (Başabaş Koruması)
         # Fiyat eff_be_pips kadar kâra ulaştığında, SL'i girişe (+tampon ile) taşı
         if eff_be_pips > 0 and pnl_pips >= eff_be_pips:
-            buffer_pips = 1.0 if "XAU" in sym else 0.5
+            buffer_pips = 2.0 if ("XAU" in sym or "GOLD" in sym) else 0.5
             be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
             if direction == "BUY":
                 if cur_sl < be_sl:
@@ -422,8 +505,8 @@ def sync_with_server(api_base: str):
 
     # Açık Pozisyonlar (Dinamik Koruma ve Rozet Bilgileri Dahil)
     positions = []
-    be_threshold = float(CURRENT_SETTINGS.get("breakeven_pips", 8.0))
-    trail_threshold = float(CURRENT_SETTINGS.get("trailing_stop_pips", 12.0))
+    be_threshold = float(CURRENT_SETTINGS.get("breakeven_pips", 10.0))
+    trail_threshold = float(CURRENT_SETTINGS.get("trailing_stop_pips", 16.0))
 
     for p in mt5.positions_get() or []:
         ticket = p.ticket
@@ -563,10 +646,26 @@ def sync_with_server(api_base: str):
             "outcome": "WIN" if d.profit >= 0 else "LOSS",
         })
 
+    # Altın kapanışlarını takip et (Soğuma kalkanı için son kapanış zamanı)
+    for d in out_deals[-15:]:
+        d_sym = str(d.symbol).upper()
+        if "XAU" in d_sym or "GOLD" in d_sym:
+            global LAST_GOLD_EXIT_TIME
+            if float(d.time) > LAST_GOLD_EXIT_TIME:
+                LAST_GOLD_EXIT_TIME = float(d.time)
+
+    # MT5 Terminalinden anlık canlı fiyatları topla
+    ticks_data = {}
+    for s_check in ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "XAUUSD", "XAGUSD", "USOIL"]:
+        t = mt5.symbol_info_tick(s_check)
+        if t and t.bid > 0:
+            ticks_data[s_check] = {"bid": float(t.bid), "ask": float(t.ask), "last": float(t.last if t.last > 0 else t.ask)}
+
     payload = {
         "account": account_data,
         "positions": positions,
         "deals": deals,
+        "ticks": ticks_data,
         "version": "1.0.0",
     }
 
@@ -615,8 +714,8 @@ def main():
 
     while True:
         try:
-            be_pips = float(CURRENT_SETTINGS.get("breakeven_pips", 8.0))
-            trail_pips = float(CURRENT_SETTINGS.get("trailing_stop_pips", 12.0))
+            be_pips = float(CURRENT_SETTINGS.get("breakeven_pips", 10.0))
+            trail_pips = float(CURRENT_SETTINGS.get("trailing_stop_pips", 16.0))
             # Her açık MT5 pozisyonu için yerel Dinamik Başabaş (BE) ve İz Süren Stop (Trailing) uygula
             check_and_apply_dynamic_exits(be_pips, trail_pips)
 
@@ -625,8 +724,8 @@ def main():
             if success:
                 sync_counter += 1
                 CURRENT_SETTINGS.update(settings)
-                be_pips = float(CURRENT_SETTINGS.get("breakeven_pips", 8.0))
-                trail_pips = float(CURRENT_SETTINGS.get("trailing_stop_pips", 12.0))
+                be_pips = float(CURRENT_SETTINGS.get("breakeven_pips", 10.0))
+                trail_pips = float(CURRENT_SETTINGS.get("trailing_stop_pips", 16.0))
 
                 if first_sync or sync_counter % 15 == 0:
                     first_sync = False

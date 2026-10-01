@@ -125,7 +125,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         # Simulate price moving up by +10 pips (above 8.0 breakeven threshold)
         cur_p = 1.08100
         pip_size = test_pos["pip_size"]
-        pnl_pips = (cur_p - test_pos["entry_price"]) / pip_size
+        pnl_pips = round((cur_p - test_pos["entry_price"]) / pip_size, 1)
         self.assertGreaterEqual(pnl_pips, forex._AUTO_SETTINGS.breakeven_pips)
 
         # Breakeven logic execution
