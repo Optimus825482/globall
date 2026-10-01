@@ -75,6 +75,73 @@ def connect_mt5(path: str, login: int, password: str, server: str) -> bool:
     return True
 
 
+def get_symbol_trading_specs(
+    symbol: str,
+    base_sl: float = 15.0,
+    base_tp: float = 25.0,
+    base_be: float = 8.0,
+    base_trail: float = 12.0,
+) -> Dict[str, Any]:
+    """
+    Her parite ve emtia için doğru pip büyüklüğünü (pip_size),
+    volatilite çarpanını (mult), basamak sayısını (digits) ve lot başına 1 pip dolar değerini döner.
+
+    Özellikle Ons Altın (XAUUSD) için:
+    - MT5 ve uluslararası piyasalarda 1 pip = 0.10 USD (10 point / 10 cent) kabul edilir.
+    - Altın'ın yüksek oynaklığı ($4,170 seviyesinde dakikalık mumlar $2 - $4 hareket eder)
+      nedeniyle 1-3 saniyede gürültüde erken stop olmaması için 2.5x volatilite tamponu uygulanır.
+      Böylece 15 pip SL -> 37.5 pip ($3.75 USD koruma alanı), 25 pip TP -> 62.5 pip ($6.25 USD hedef) olur.
+    """
+    s = str(symbol).upper().replace("/", "").strip()
+    if "XAUUSD" in s or "GOLD" in s:
+        pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
+        mult = 2.5               # 2.5x volatilite nefes alma çarpanı
+        digits = 2
+        pip_val = 10.0           # 1 lot (100 oz) * 0.10 USD = $10.0
+    elif "XAGUSD" in s or "SILVER" in s:
+        pip_size = 0.01          # 1 pip = 0.01 USD
+        mult = 2.0
+        digits = 3
+        pip_val = 50.0           # 1 lot (5000 oz) * 0.01 USD = $50.0
+    elif "USOIL" in s or "OIL" in s or "WTI" in s:
+        pip_size = 0.01          # 1 pip = 0.01 USD (1 cent)
+        mult = 2.0
+        digits = 2
+        pip_val = 10.0           # 1 lot (1000 varil) * 0.01 USD = $10.0
+    elif "JPY" in s:
+        pip_size = 0.01          # 1 pip = 0.01 JPY (10 point)
+        mult = 1.0
+        digits = 3
+        pip_val = 6.60
+    elif "BTC" in s:
+        pip_size = 1.0           # 1 pip = $1.00
+        mult = 5.0
+        digits = 2
+        pip_val = 1.0
+    else:
+        # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
+        pip_size = 0.0001        # 1 pip = 0.0001 (10 point)
+        mult = 1.0
+        digits = 5
+        pip_val = 10.0
+
+    eff_sl_pips = round(base_sl * mult, 1)
+    eff_tp_pips = round(base_tp * mult, 1)
+    eff_be_pips = round(base_be * mult, 1)
+    eff_trail_pips = round(base_trail * mult, 1)
+
+    return {
+        "pip_size": pip_size,
+        "digits": digits,
+        "pip_val": pip_val,
+        "mult": mult,
+        "sl_pips": eff_sl_pips,
+        "tp_pips": eff_tp_pips,
+        "be_pips": eff_be_pips,
+        "trail_pips": eff_trail_pips,
+    }
+
+
 def execute_market_order(cmd: dict) -> dict:
     """MT5 üzerinde piyasa emri açar."""
     symbol = cmd.get("symbol", "EURUSD").upper()
@@ -96,9 +163,9 @@ def execute_market_order(cmd: dict) -> dict:
     if not tick:
         return {"success": False, "error": f"Canlı fiyat alınamadı: {symbol}"}
 
-    point = s_info.point
-    digits = s_info.digits
-    pip_size = point * 10 if digits in (3, 5) else point
+    spec = get_symbol_trading_specs(symbol)
+    digits = s_info.digits if s_info else spec["digits"]
+    pip_size = spec["pip_size"]
 
     if direction == "BUY":
         order_type = mt5.ORDER_TYPE_BUY
@@ -269,9 +336,11 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         if not s_info:
             continue
 
-        point = s_info.point
-        digits = s_info.digits
-        pip_size = point * 10 if digits in (3, 5) else point
+        spec = get_symbol_trading_specs(sym, base_be=be_pips, base_trail=trail_pips)
+        digits = s_info.digits if s_info else spec["digits"]
+        pip_size = spec["pip_size"]
+        eff_be_pips = spec["be_pips"]
+        eff_trail_pips = spec["trail_pips"]
 
         direction = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
         entry_p = p.price_open
@@ -287,9 +356,10 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         target_sl = None
 
         # 1. BREAKEVEN (Başabaş Koruması)
-        # Fiyat be_pips kadar kâra ulaştığında, SL'i girişe (+0.5 pip kâr tamponuyla) taşı
-        if be_pips > 0 and pnl_pips >= be_pips:
-            be_sl = round(entry_p + (0.5 * pip_size if direction == "BUY" else -0.5 * pip_size), digits)
+        # Fiyat eff_be_pips kadar kâra ulaştığında, SL'i girişe (+tampon ile) taşı
+        if eff_be_pips > 0 and pnl_pips >= eff_be_pips:
+            buffer_pips = 1.0 if "XAU" in sym else 0.5
+            be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
             if direction == "BUY":
                 if cur_sl < be_sl:
                     target_sl = be_sl
@@ -300,9 +370,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                 POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
 
         # 2. TRAILING STOP (İz Süren Stop)
-        # Fiyat trail_pips kadar kârda ise fiyatın arkasından takip et
-        if trail_pips > 0 and pnl_pips >= trail_pips:
-            trail_dist = trail_pips * pip_size
+        # Fiyat eff_trail_pips kadar kârda ise fiyatın arkasından takip et
+        if eff_trail_pips > 0 and pnl_pips >= eff_trail_pips:
+            trail_dist = eff_trail_pips * pip_size
             if direction == "BUY":
                 cand_sl = round(cur_p - trail_dist, digits)
                 if target_sl is None and cand_sl > cur_sl:
@@ -359,9 +429,11 @@ def sync_with_server(api_base: str):
         ticket = p.ticket
         sym = p.symbol
         s_info = mt5.symbol_info(sym)
-        point = s_info.point if s_info else 0.0001
-        digits = s_info.digits if s_info else 5
-        pip_size = point * 10 if digits in (3, 5) else point
+        spec = get_symbol_trading_specs(sym, base_be=be_threshold, base_trail=trail_threshold)
+        digits = s_info.digits if s_info else spec["digits"]
+        pip_size = spec["pip_size"]
+        eff_be_pips = spec["be_pips"]
+        eff_trail_pips = spec["trail_pips"]
 
         direction = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
         entry_p = p.price_open
@@ -392,9 +464,9 @@ def sync_with_server(api_base: str):
 
         # Kâr Pip Değerine Göre Doğrulama
         if prot == "NORMAL":
-            if trail_threshold > 0 and pnl_pips >= trail_threshold:
+            if eff_trail_pips > 0 and pnl_pips >= eff_trail_pips:
                 prot = "TRAILING"
-            elif be_threshold > 0 and pnl_pips >= be_threshold:
+            elif eff_be_pips > 0 and pnl_pips >= eff_be_pips:
                 prot = "BREAKEVEN"
 
         prot_label = (
@@ -461,15 +533,12 @@ def sync_with_server(api_base: str):
 
         # PnL Pip hesabı
         pips = 0.0
-        s_info = mt5.symbol_info(d.symbol)
-        if s_info:
-            point = s_info.point
-            digits = s_info.digits
-            pip_size = point * 10 if digits in (3, 5) else point
-            if direction == "BUY":
-                pips = round((d.price - entry_p) / pip_size, 1)
-            else:
-                pips = round((entry_p - d.price) / pip_size, 1)
+        spec = get_symbol_trading_specs(d.symbol)
+        pip_size = spec["pip_size"]
+        if direction == "BUY":
+            pips = round((d.price - entry_p) / pip_size, 1)
+        else:
+            pips = round((entry_p - d.price) / pip_size, 1)
 
         deals.append({
             "id": f"MT5-{pos_id}",

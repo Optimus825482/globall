@@ -228,6 +228,73 @@ _LAST_LIVE_FETCH_TIME = 0.0
 _LIVE_PRICES_CACHE: Dict[str, float] = {}
 
 
+def get_symbol_trading_specs(
+    symbol: str,
+    base_sl: float = 15.0,
+    base_tp: float = 25.0,
+    base_be: float = 8.0,
+    base_trail: float = 12.0,
+) -> Dict[str, Any]:
+    """
+    Her parite ve emtia için doğru pip büyüklüğünü (pip_size),
+    volatilite çarpanını (mult), basamak sayısını (digits) ve lot başına 1 pip dolar değerini döner.
+
+    Özellikle Ons Altın (XAUUSD) için:
+    - MT5 ve uluslararası piyasalarda 1 pip = 0.10 USD (10 point / 10 cent) kabul edilir.
+    - Altın'ın yüksek oynaklığı ($4,170 seviyesinde dakikalık mumlar $2 - $4 hareket eder)
+      nedeniyle 1-3 saniyede gürültüde erken stop olmaması için 2.5x volatilite tamponu uygulanır.
+      Böylece 15 pip SL -> 37.5 pip ($3.75 USD koruma alanı), 25 pip TP -> 62.5 pip ($6.25 USD hedef) olur.
+    """
+    s = str(symbol).upper().replace("/", "").strip()
+    if "XAUUSD" in s or "GOLD" in s:
+        pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
+        mult = 2.5               # 2.5x volatilite nefes alma çarpanı
+        digits = 2
+        pip_val = 10.0           # 1 lot (100 oz) * 0.10 USD = $10.0
+    elif "XAGUSD" in s or "SILVER" in s:
+        pip_size = 0.01          # 1 pip = 0.01 USD
+        mult = 2.0
+        digits = 3
+        pip_val = 50.0           # 1 lot (5000 oz) * 0.01 USD = $50.0
+    elif "USOIL" in s or "OIL" in s or "WTI" in s:
+        pip_size = 0.01          # 1 pip = 0.01 USD (1 cent)
+        mult = 2.0
+        digits = 2
+        pip_val = 10.0           # 1 lot (1000 varil) * 0.01 USD = $10.0
+    elif "JPY" in s:
+        pip_size = 0.01          # 1 pip = 0.01 JPY (10 point)
+        mult = 1.0
+        digits = 3
+        pip_val = 6.60
+    elif "BTC" in s:
+        pip_size = 1.0           # 1 pip = $1.00
+        mult = 5.0
+        digits = 2
+        pip_val = 1.0
+    else:
+        # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
+        pip_size = 0.0001        # 1 pip = 0.0001 (10 point)
+        mult = 1.0
+        digits = 5
+        pip_val = 10.0
+
+    eff_sl_pips = round(base_sl * mult, 1)
+    eff_tp_pips = round(base_tp * mult, 1)
+    eff_be_pips = round(base_be * mult, 1)
+    eff_trail_pips = round(base_trail * mult, 1)
+
+    return {
+        "pip_size": pip_size,
+        "digits": digits,
+        "pip_val": pip_val,
+        "mult": mult,
+        "sl_pips": eff_sl_pips,
+        "tp_pips": eff_tp_pips,
+        "be_pips": eff_be_pips,
+        "trail_pips": eff_trail_pips,
+    }
+
+
 def _sync_fetch_live_rates() -> Dict[str, float]:
     """Fetch real-world live FX rates from ECB/Frankfurter and Commodities from Yahoo."""
     rates_map: Dict[str, float] = {}
@@ -448,12 +515,11 @@ async def calculate_lot_size(req: LotCalculatorRequest):
     """Calculate standard, mini, and micro lot sizes based on capital risk."""
     risk_amount_usd = req.account_balance * (req.risk_percentage / 100.0)
 
-    # Standard pip value for 1.00 standard lot in USD quote is $10.00
-    pip_val_standard_lot = 10.0
-    if "JPY" in req.symbol.upper():
-        pip_val_standard_lot = 6.60
+    spec = get_symbol_trading_specs(req.symbol, base_sl=req.stop_loss_pips)
+    pip_val_standard_lot = spec["pip_val"]
+    eff_sl_pips = spec["sl_pips"]
 
-    total_risk_per_standard_lot = req.stop_loss_pips * pip_val_standard_lot
+    total_risk_per_standard_lot = eff_sl_pips * pip_val_standard_lot
     recommended_lots = risk_amount_usd / total_risk_per_standard_lot if total_risk_per_standard_lot > 0 else 0.0
 
     standard_lots = round(recommended_lots, 2)
@@ -465,7 +531,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
         "account_balance": req.account_balance,
         "risk_percentage": req.risk_percentage,
         "risk_amount_usd": round(risk_amount_usd, 2),
-        "stop_loss_pips": req.stop_loss_pips,
+        "stop_loss_pips": eff_sl_pips,
         "standard_lots": standard_lots,
         "mini_lots": mini_lots,
         "micro_lots": micro_lots,
@@ -718,10 +784,18 @@ async def _forex_auto_paper_loop():
                     pos["pnl_pips"] = round(pnl_pips, 1)
                     pos["pnl_usd"] = round(pnl_pips * pos["lots"] * pip_usd_val, 2)
 
+                    spec = get_symbol_trading_specs(
+                        sym,
+                        base_be=_AUTO_SETTINGS.breakeven_pips,
+                        base_trail=_AUTO_SETTINGS.trailing_stop_pips,
+                    )
+                    eff_be_pips = spec["be_pips"]
+                    eff_trail_pips = spec["trail_pips"]
+
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
-                    if pnl_pips >= _AUTO_SETTINGS.breakeven_pips and not pos["breakeven_activated"]:
-                        # SL'i giriş fiyatına + 0.5 pip komisyon payı ile çek
-                        be_sl = round(entry_p + (0.5 * pip_size if direction == "BUY" else -0.5 * pip_size), digits)
+                    if pnl_pips >= eff_be_pips and not pos["breakeven_activated"]:
+                        buffer_pips = 1.0 if "XAU" in sym else 0.5
+                        be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
                         pos["sl_price"] = be_sl
                         pos["breakeven_activated"] = True
                         _log_auto_decision(
@@ -745,8 +819,8 @@ async def _forex_auto_paper_loop():
                                         _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {be_sl} olarak kilitlendi.", symbol=sym)
 
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
-                    if pnl_pips >= _AUTO_SETTINGS.trailing_stop_pips:
-                        trail_dist = _AUTO_SETTINGS.trailing_stop_pips * pip_size
+                    if pnl_pips >= eff_trail_pips:
+                        trail_dist = eff_trail_pips * pip_size
                         updated_trail = False
                         if direction == "BUY":
                             cand_sl = round(cur_p - trail_dist, digits)
@@ -883,9 +957,16 @@ async def _forex_auto_paper_loop():
                     continue
 
                 direction = cand["action"]  # BUY or SELL
-                pip_val = 6.60 if "JPY" in sym else 10.0
-                sl_pips = _AUTO_SETTINGS.sl_pips
-                tp_pips = _AUTO_SETTINGS.tp_pips
+                spec = get_symbol_trading_specs(
+                    sym,
+                    base_sl=_AUTO_SETTINGS.sl_pips,
+                    base_tp=_AUTO_SETTINGS.tp_pips,
+                    base_be=_AUTO_SETTINGS.breakeven_pips,
+                    base_trail=_AUTO_SETTINGS.trailing_stop_pips,
+                )
+                sl_pips = spec["sl_pips"]
+                tp_pips = spec["tp_pips"]
+                pip_val = spec["pip_val"]
 
                 mt5_acc_bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0))
                 mt5_risk_usd = mt5_acc_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
