@@ -402,6 +402,70 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["status"], "queued")
         self.assertEqual(res["command"]["lots"], 0.50)
 
+    def test_target_twelve_symbols_configuration(self):
+        """Verify strictly the 12 requested instruments are set in allowed_symbols."""
+        expected_12 = [
+            "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
+            "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"
+        ]
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertEqual(len(cfg.allowed_symbols), 12)
+        for s in expected_12:
+            self.assertIn(s, cfg.allowed_symbols)
+
+        # Check MT5 Bridge check_syms list contains these 12
+        for s in expected_12:
+            self.assertIn(s, forex.YAHOO_SYMBOL_MAP)
+
+    def test_nas100_and_us30_specs_and_alias(self):
+        """Verify Nasdaq (NAS100/USTEC) and Dow Jones (US30) trading specs and MT5 alias resolution."""
+        # Check alias
+        self.assertEqual(mt5_bridge.resolve_mt5_symbol("NAS100"), "USTEC" if mt5_bridge.mt5.symbol_info("USTEC") else "USTEC")
+        self.assertEqual(mt5_bridge.REVERSE_SYMBOL_ALIAS_MAP.get("USTEC"), "NAS100")
+
+        # Check NAS100 specs
+        nas_specs = forex.get_symbol_trading_specs("NAS100", base_sl=12.0, base_tp=22.0)
+        self.assertEqual(nas_specs["pip_size"], 1.0)
+        self.assertEqual(nas_specs["digits"], 2)
+        self.assertEqual(nas_specs["pip_val"], 1.0)
+        self.assertEqual(nas_specs["sl_pips"], 30.0)
+
+        # Check US30 specs
+        us30_specs = forex.get_symbol_trading_specs("US30", base_sl=12.0, base_tp=22.0)
+        self.assertEqual(us30_specs["pip_size"], 1.0)
+        self.assertEqual(us30_specs["digits"], 2)
+        self.assertEqual(us30_specs["pip_val"], 1.0)
+        self.assertEqual(us30_specs["sl_pips"], 36.0)
+
+    async def test_index_and_eth_lot_capping(self):
+        """Verify indices enforce min 0.10 lot and max 0.20 lot, and ETHUSD enforces max 0.02 lot."""
+        # Index with small lot (0.01) must be bumped to 0.10 min volume
+        order_nas = forex.MT5ManualOrderRequest(
+            symbol="NAS100",
+            direction="BUY",
+            lots=0.01,
+        )
+        res_nas = await forex.send_mt5_order(order_nas)
+        self.assertEqual(res_nas["command"]["lots"], 0.10)
+
+        # Index with huge lot (2.0) must be capped to 0.20
+        order_us30 = forex.MT5ManualOrderRequest(
+            symbol="US30",
+            direction="BUY",
+            lots=2.00,
+        )
+        res_us30 = await forex.send_mt5_order(order_us30)
+        self.assertEqual(res_us30["command"]["lots"], 0.20)
+
+        # ETHUSD with huge lot (1.0) must be capped to 0.02
+        order_eth = forex.MT5ManualOrderRequest(
+            symbol="ETHUSD",
+            direction="BUY",
+            lots=1.00,
+        )
+        res_eth = await forex.send_mt5_order(order_eth)
+        self.assertEqual(res_eth["command"]["lots"], 0.02)
+
 
 if __name__ == "__main__":
     unittest.main()

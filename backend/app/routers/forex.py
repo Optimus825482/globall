@@ -174,10 +174,22 @@ FOREX_SYMBOLS = [
         "category": "index",
         "base": "NDX",
         "quote": "USD",
-        "pip_size": 0.1,
+        "pip_size": 1.0,
         "digits": 2,
         "tv_symbol": "FOREXCOM:NSXUSD",
         "default_price": 20420.50,
+    },
+    {
+        "symbol": "US30",
+        "display": "Dow Jones 30",
+        "name": "Wall Street 30 / Dow Jones",
+        "category": "index",
+        "base": "DJI",
+        "quote": "USD",
+        "pip_size": 1.0,
+        "digits": 2,
+        "tv_symbol": "FOREXCOM:DJI",
+        "default_price": 43500.0,
     },
     # Crypto
     {
@@ -191,6 +203,18 @@ FOREX_SYMBOLS = [
         "digits": 2,
         "tv_symbol": "BINANCE:BTCUSDT",
         "default_price": 66500.0,
+    },
+    {
+        "symbol": "ETHUSD",
+        "display": "ETH/USD",
+        "name": "Ethereum / US Dollar",
+        "category": "crypto",
+        "base": "ETH",
+        "quote": "USD",
+        "pip_size": 1.0,
+        "digits": 2,
+        "tv_symbol": "BINANCE:ETHUSDT",
+        "default_price": 2700.0,
     },
 ]
 
@@ -266,7 +290,9 @@ YAHOO_SYMBOL_MAP = {
     "USOIL": "CL=F",
     "SPX500": "^GSPC",
     "NAS100": "^NDX",
+    "US30": "^DJI",
     "BTCUSD": "BTC-USD",
+    "ETHUSD": "ETH-USD",
 }
 
 
@@ -274,7 +300,7 @@ def get_usd_bias(symbol: str, direction: str) -> str:
     """Determine if an order has USD_LONG, USD_SHORT, or USD_NEUTRAL exposure.
     Resilient to broker suffixes (.raw, .ecn, +, -, #) and non-standard commodity tickers.
     - Pairs with USD as Base (USDJPY, USDCAD, USDCHF): BUY -> USD_LONG, SELL -> USD_SHORT
-    - Pairs with USD as Quote (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD, XAGUSD, USOIL, SPX500, NAS100):
+    - Pairs with USD as Quote (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD, XAGUSD, USOIL, SPX500, NAS100, US30, USTEC, BTCUSD, ETHUSD):
       BUY -> USD_SHORT, SELL -> USD_LONG
     """
     s = str(symbol).upper().replace("/", "").strip()
@@ -283,7 +309,7 @@ def get_usd_bias(symbol: str, direction: str) -> str:
 
     if clean_sym.startswith("USD"):
         return "USD_LONG" if d == "BUY" else "USD_SHORT"
-    elif clean_sym.endswith("USD") or clean_sym in ("USOIL", "OIL", "WTI", "XAUUSD", "XAGUSD", "SPX500", "NAS100"):
+    elif clean_sym.endswith("USD") or clean_sym in ("USOIL", "OIL", "WTI", "XAUUSD", "XAGUSD", "SPX500", "NAS100", "US30", "USTEC"):
         return "USD_SHORT" if d == "BUY" else "USD_LONG"
     return "USD_NEUTRAL"
 
@@ -367,6 +393,36 @@ def get_symbol_trading_specs(
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(40.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "ETH" in clean_sym:
+        pip_size = 1.0           # 1 pip = $1.00
+        mult = 2.0
+        digits = 2
+        pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * $1.0 = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "USTEC" in clean_sym or "NAS100" in clean_sym or "US100" in clean_sym or "NDX" in clean_sym:
+        pip_size = 1.0           # 1 pip = 1.0 index point
+        mult = 2.5
+        digits = 2
+        pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * 1.0 point = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = max(35.0, round(base_trail * mult, 1))
+
+    elif "US30" in clean_sym or "DJ30" in clean_sym or "WS30" in clean_sym:
+        pip_size = 1.0           # 1 pip = 1.0 index point
+        mult = 3.0
+        digits = 2
+        pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * 1.0 point = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
     else:
@@ -864,9 +920,13 @@ async def calculate_lot_size(req: LotCalculatorRequest):
     micro_lots = round(recommended_lots * 100, 2)
 
     # Sert lot tavanı koruması (asla aşılamaz)
-    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper())
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
-    if is_oil:
+    is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
+    if is_index:
+        lot_ceiling = 0.20
+        safe_lots = round(max(0.10, min(standard_lots, lot_ceiling)), 2)
+    elif is_oil:
         lot_ceiling = 1.0
         safe_lots = round(max(0.50, min(standard_lots, lot_ceiling)), 2)
     elif is_gold:
@@ -911,7 +971,7 @@ class ForexAutoPaperSettings(BaseModel):
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
     allowed_symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "BTCUSD", "USOIL"],
+        default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
         description="İşleme izin verilen pariteler",
     )
 
@@ -1445,10 +1505,14 @@ async def _forex_auto_paper_loop():
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
                 raw_calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
 
-                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın/BTC max 0.02 lot, Petrol min 0.50 max 1.0)
+                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın/BTC/ETH max 0.02 lot, Endeksler min 0.10 max 0.20 lot, Petrol min 0.50 max 1.0)
+                is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
                 is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
-                is_gold_or_crypto = is_gold or ("BTC" in sym)
-                if is_oil:
+                is_gold_or_crypto = is_gold or ("BTC" in sym or "ETH" in sym)
+                if is_index:
+                    lot_ceiling = 0.20
+                    mt5_lots = max(0.10, min(round(raw_calc_lots * 10) / 10, lot_ceiling))
+                elif is_oil:
                     lot_ceiling = 1.0
                     mt5_lots = max(0.50, min(raw_calc_lots, lot_ceiling))
                 elif is_gold_or_crypto:
@@ -2010,9 +2074,13 @@ async def get_mt5_bridge_status():
 @router.post("/mt5/order")
 async def send_mt5_order(req: MT5ManualOrderRequest):
     """MT5 köprüsüne yeni bir piyasa emri iletir."""
-    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper())
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
-    if is_oil:
+    is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
+    if is_index:
+        lot_cap = 0.20
+        actual_lots = round(max(0.10, min(req.lots, lot_cap)), 2)
+    elif is_oil:
         lot_cap = 1.0
         actual_lots = round(max(0.50, min(req.lots, lot_cap)), 2)
     elif is_gold:

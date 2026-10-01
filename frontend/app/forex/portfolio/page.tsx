@@ -168,7 +168,7 @@ export default function ForexPortfolioPage() {
     trailing_stop_pips: 12.0,
     session_filter: false,
     max_spread_pips: 3.0,
-    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
+    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
   });
 
   const [formSettings, setFormSettings] = useState<AutoSettings>({
@@ -183,7 +183,7 @@ export default function ForexPortfolioPage() {
     trailing_stop_pips: 16.0,
     session_filter: false,
     max_spread_pips: 3.0,
-    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "USOIL"],
+    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
   });
 
   const [showSettings, setShowSettings] = useState(false);
@@ -361,7 +361,7 @@ export default function ForexPortfolioPage() {
         allowed_symbols:
           formSettings.allowed_symbols && formSettings.allowed_symbols.length > 0
             ? formSettings.allowed_symbols
-            : ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USOIL"],
+            : ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {
@@ -769,20 +769,20 @@ export default function ForexPortfolioPage() {
                     type="button"
                     onClick={() =>
                       updateFormField("allowed_symbols", [
-                        "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "USDCHF", "NZDUSD", "XAGUSD", "USOIL"
+                        "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"
                       ])
                     }
                     className="text-blue-400 hover:underline"
                   >
-                    Tümünü Seç
+                    Tümünü Seç (12 Enstrüman)
                   </button>
                   <span className="text-bunker-700">|</span>
                   <button
                     type="button"
-                    onClick={() => updateFormField("allowed_symbols", ["EURUSD", "GBPUSD", "USDJPY"])}
+                    onClick={() => updateFormField("allowed_symbols", ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"])}
                     className="text-bunker-muted hover:underline"
                   >
-                    Sadece Majörler
+                    Sadece 7 Majör
                   </button>
                 </div>
               </div>
@@ -791,13 +791,15 @@ export default function ForexPortfolioPage() {
                   { sym: "EURUSD", label: "EUR/USD" },
                   { sym: "GBPUSD", label: "GBP/USD" },
                   { sym: "USDJPY", label: "USD/JPY" },
-                  { sym: "XAUUSD", label: "Altın (XAU)" },
-                  { sym: "USDCAD", label: "USD/CAD" },
-                  { sym: "AUDUSD", label: "AUD/USD" },
                   { sym: "USDCHF", label: "USD/CHF" },
+                  { sym: "AUDUSD", label: "AUD/USD" },
+                  { sym: "USDCAD", label: "USD/CAD" },
                   { sym: "NZDUSD", label: "NZD/USD" },
-                  { sym: "XAGUSD", label: "Gümüş (XAG)" },
-                  { sym: "USOIL", label: "Petrol (WTI)" },
+                  { sym: "BTCUSD", label: "Bitcoin (BTC)" },
+                  { sym: "ETHUSD", label: "Ethereum (ETH)" },
+                  { sym: "NAS100", label: "Nasdaq 100 (USTEC)" },
+                  { sym: "US30", label: "Dow Jones (US30)" },
+                  { sym: "XAUUSD", label: "Ons Altın (XAU)" },
                 ].map((item) => {
                   const active = formSettings.allowed_symbols?.includes(item.sym);
                   return (

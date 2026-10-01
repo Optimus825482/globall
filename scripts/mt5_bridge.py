@@ -83,17 +83,25 @@ def connect_mt5(path: str, login: int, password: str, server: str) -> bool:
 
 # Bilinen Sembol Eşleşmeleri (Web Paneli <-> IC Markets MT5)
 SYMBOL_ALIAS_MAP = {
+    "NAS100": ["USTEC", "NAS100", "US100", "NDX"],
+    "USTEC": ["USTEC", "NAS100"],
+    "US30": ["US30", "DJ30", "WS30"],
+    "ETHUSD": ["ETHUSD"],
+    "ETH": ["ETHUSD"],
+    "BTCUSD": ["BTCUSD"],
+    "BTC": ["BTCUSD"],
+    "GOLD": ["XAUUSD"],
+    "XAUUSD": ["XAUUSD"],
+    "SILVER": ["XAGUSD"],
     "USOIL": ["XTIUSD", "WTICRUDE", "WTI", "USOUSD", "OIL"],
     "UKOIL": ["XBRUSD", "BRENT", "UKOUSD"],
     "BRENT": ["XBRUSD", "UKOIL"],
     "WTI": ["XTIUSD", "USOIL"],
-    "GOLD": ["XAUUSD"],
-    "SILVER": ["XAGUSD"],
-    "BTC": ["BTCUSD"],
-    "ETH": ["ETHUSD"],
 }
 
 REVERSE_SYMBOL_ALIAS_MAP = {
+    "USTEC": "NAS100",
+    "US30": "US30",
     "XTIUSD": "USOIL",
     "XBRUSD": "UKOIL",
 }
@@ -123,11 +131,18 @@ def resolve_mt5_symbol(symbol: str) -> str:
                 for n in names:
                     if "XBRUSD" in n:
                         return n
+            if clean in ("NAS100", "USTEC", "US100", "NDX"):
+                for n in names:
+                    if "USTEC" in n:
+                        return n
             for n in names:
                 if clean in n:
                     return n
     except Exception:
         pass
+
+    if candidates:
+        return candidates[0]
 
     return raw
 
@@ -212,6 +227,36 @@ def get_symbol_trading_specs(
         eff_be_pips = max(40.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
+    elif "ETH" in clean_sym:
+        pip_size = 1.0           # 1 pip = $1.00
+        mult = 2.0
+        digits = 2
+        pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * $1.0 = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "USTEC" in clean_sym or "NAS100" in clean_sym or "US100" in clean_sym or "NDX" in clean_sym:
+        pip_size = 1.0           # 1 pip = 1.0 index point
+        mult = 2.5
+        digits = 2
+        pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * 1.0 point = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = max(35.0, round(base_trail * mult, 1))
+
+    elif "US30" in clean_sym or "DJ30" in clean_sym or "WS30" in clean_sym:
+        pip_size = 1.0           # 1 pip = 1.0 index point
+        mult = 3.0
+        digits = 2
+        pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * 1.0 point = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
     else:
         # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
         pip_size = 0.0001        # 1 pip = 0.0001 (10 point)
@@ -251,6 +296,7 @@ def execute_market_order(cmd: dict) -> dict:
 
     is_gold = ("XAU" in symbol or "GOLD" in symbol)
     is_crypto = ("BTC" in symbol or "ETH" in symbol)
+    is_index = ("USTEC" in symbol or "NAS100" in symbol or "US30" in symbol or "US100" in symbol or "DJ30" in symbol or "SPX" in symbol)
     is_oil = ("XTI" in symbol or "XBR" in symbol or "OIL" in symbol or "USOIL" in raw_symbol)
 
     # Ons Altın (XAUUSD) Soğuma Koruması (Kapanıştan sonra en az 180 sn bekleme kuralı)
@@ -286,8 +332,10 @@ def execute_market_order(cmd: dict) -> dict:
     max_vol = float(s_info.volume_max) if s_info.volume_max > 0 else 50.0
 
     # SERT LOT TAVANI KORUMASI:
-    # Forex max 0.05 lot, Ons Altın (XAUUSD) & BTC max 0.02 lot, Ham Petrol (XTIUSD/USOIL) broker tabanına göre min 0.50 lot
-    if is_oil:
+    # Forex max 0.05 lot, Ons Altın (XAUUSD) & BTC/ETH max 0.02 lot, Endeksler min 0.10 max 0.20 lot, Ham Petrol min 0.50 lot
+    if is_index:
+        lot_ceiling = max(min_vol, 0.20)
+    elif is_oil:
         lot_ceiling = max(min_vol, 1.0)
     elif is_gold:
         configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT))
@@ -757,7 +805,7 @@ def sync_with_server(api_base: str):
 
     # MT5 Terminalinden anlık canlı fiyatları topla
     ticks_data = {}
-    check_syms = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "XAUUSD", "XAGUSD", "USOIL", "BTCUSD", "ETHUSD"]
+    check_syms = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"]
     for s_check in check_syms:
         res_sym = resolve_mt5_symbol(s_check)
         t = mt5.symbol_info_tick(res_sym)
