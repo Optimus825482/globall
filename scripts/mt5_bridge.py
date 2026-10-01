@@ -213,6 +213,15 @@ def execute_market_order(cmd: dict) -> dict:
             print(f"  🛑 {err}")
             return {"success": False, "error": err}
 
+    # Reversal Flip Kontrolü: Aynı sembolde ters yönde pozisyon varsa önce kapat
+    open_positions = mt5.positions_get(symbol=symbol) or []
+    for pos in open_positions:
+        pos_dir = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+        if pos_dir != direction:
+            print(f"  🔄 [TREND DÖNÜŞÜ (FLIP)]: Bilet #{pos.ticket} {pos_dir} pozisyonu kapatılıyor -> Yeni {direction} açılacak...")
+            execute_close_order({"ticket": pos.ticket})
+            time.sleep(0.3)
+
     # Sembolü aktif et ve bilgileri çek
     if not mt5.symbol_select(symbol, True):
         return {"success": False, "error": f"Sembol seçilemedi: {symbol}"}

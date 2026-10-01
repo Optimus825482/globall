@@ -887,7 +887,7 @@ class ForexAutoPaperSettings(BaseModel):
     max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
     max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı (Sert tavan: 0.02)")
     gold_cooldown_sec: float = Field(180.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 180 sn)")
-    usd_correlation_guard: bool = Field(True, description="USD yönlü kümelenmeyi engelleyen kalkan")
+    usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
         description="İşleme izin verilen pariteler",
@@ -1010,6 +1010,7 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             "BE_HIT": "🛡️ Başabaş (BE)",
             "TRAILING_HIT": "📈 İz Süren (Trailing)",
             "MANUAL": "✋ Manuel Kapatma",
+            "REVERSAL_FLIP": "🔄 Trend Dönüşü (Flip Reversal)",
         }
         human_reason = reason_titles.get(reason, reason)
         bal_after = round(_AUTO_STATE["balance"] + pnl_usd, 2)
@@ -1045,7 +1046,7 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
 
         _log_auto_decision(
             "EXIT",
-            f"{target['display']} {human_reason} ile kapandı: ${pnl_usd:+.2f} ({pnl_pips:+.1f} pip)",
+            f"{target.get('display', target.get('symbol', ''))} {human_reason} ile kapandı: ${pnl_usd:+.2f} ({pnl_pips:+.1f} pip)",
             symbol=target["symbol"],
             metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason},
         )
@@ -1255,16 +1256,75 @@ async def _forex_auto_paper_loop():
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
 
-                # 1. Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Hedging & Anti-Duplicate)
+                # 1. Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Duplicate & Position Reversal/Flip)
+                new_action = cand.get("action", "")  # "BUY" or "SELL"
+                if new_action not in ("BUY", "SELL"):
+                    continue
+
                 if sym in all_active_syms:
-                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
-                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
+                    existing_dirs = set()
+                    matching_auto = [p for p in _AUTO_STATE.get("open_positions", []) if p.get("symbol", "").upper() == sym]
+                    matching_mt5 = [p for p in _MT5_STATE.get("open_positions", []) if p.get("symbol", "").upper() == sym]
+                    matching_pending = [c for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER" and c.get("symbol", "").upper() == sym]
+
+                    for p in matching_auto:
+                        existing_dirs.add(p.get("direction", "").upper())
+                    for p in matching_mt5:
+                        existing_dirs.add(p.get("direction", "").upper())
+                    for c in matching_pending:
+                        existing_dirs.add(c.get("direction", "").upper())
+
+                    # (a) Aynı yönlü pozisyon zaten açıksa (örn: BUY açıkken tekrar BUY) -> Mükerrer açma, pas geç
+                    if new_action in existing_dirs:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
+                            _log_auto_decision(
+                                "SCAN",
+                                f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({new_action}) fakat aynı yönlü pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
+                                symbol=sym,
+                            )
+                        continue
+
+                    # (b) ZIT yönlü pozisyon varsa (örn: BUY açıkken SELL sinyali geldiyse veya tersi):
+                    # Ve sinyal yeterince güçlüyse (skor >= min_score ve spread uygunsa)
+                    if cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score and cand.get("spread_pips", 99.0) <= _AUTO_SETTINGS.max_spread_pips:
+                        old_dir_str = "/".join(existing_dirs) if existing_dirs else "TERS"
                         _log_auto_decision(
-                            "SCAN",
-                            f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({cand['action']}) fakat pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
+                            "REVERSAL",
+                            f"🔄 [{cand['display']}] TREND DÖNÜŞÜ (FLIP): Açık {old_dir_str} pozisyonu kapatılıyor -> Yeni {new_action} açılıyor! (Skor: {cand['score']:.1f})",
                             symbol=sym,
                         )
-                    continue
+                        # Önce açık auto-paper pozisyonunu kapat
+                        for ap in matching_auto:
+                            t_sym = ticks.get(sym)
+                            exit_p = (t_sym["bid"] if ap.get("direction") == "BUY" else t_sym["ask"]) if t_sym else None
+                            await _close_position_internal(ap["id"], "REVERSAL_FLIP", exit_p)
+
+                        # MT5 açık pozisyonu varsa kapatma komutu ilet
+                        for mp in matching_mt5:
+                            t_id = mp.get("ticket")
+                            if t_id:
+                                _MT5_STATE["pending_commands"].append({
+                                    "id": f"CMD-CLOSE-{t_id}-FLIP",
+                                    "action": "CLOSE_ORDER",
+                                    "ticket": t_id,
+                                })
+
+                        # Eski yöndeki bekleyen emirler varsa temizle
+                        _MT5_STATE["pending_commands"] = [
+                            c for c in _MT5_STATE.get("pending_commands", [])
+                            if not (c.get("action") == "OPEN_ORDER" and c.get("symbol", "").upper() == sym and c.get("direction") != new_action)
+                        ]
+
+                        # Anında ters yöne geçebilmek için sembol soğumasını sıfırla
+                        _LAST_SYMBOL_ENTRY_TIME[sym] = 0.0
+                        if "XAU" in sym or "GOLD" in sym:
+                            _LAST_GOLD_EXIT_TIME = 0.0
+
+                        # Döngü devam eder ve aşağıda yeni new_action (BUY/SELL) emrini açar!
+                    else:
+                        # Zıt yönlü ama skor eşiğini henüz aşmamışsa mevcut işlemi bozma
+                        continue
 
                 is_gold = ("XAU" in sym or "GOLD" in sym)
 

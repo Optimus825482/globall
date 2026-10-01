@@ -316,6 +316,33 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(res["success"])
         self.assertIn("kalkanı aktif", res["error"])
 
+    async def test_reversal_flip_closes_opposite_position(self):
+        """Verify that when a BUY is open and a strong SELL signal arrives, the BUY position is closed with REVERSAL_FLIP."""
+        # 1. Setup an active BUY position
+        buy_pos = {
+            "id": "FX-TEST-BUY-1",
+            "symbol": "EURUSD",
+            "display": "EUR/USD",
+            "direction": "BUY",
+            "lots": 0.05,
+            "entry_price": 1.0850,
+            "current_price": 1.0855,
+            "sl_price": 1.0838,
+            "tp_price": 1.0872,
+            "pip_size": 0.0001,
+            "digits": 5,
+        }
+        async with forex._AUTO_PAPER_LOCK:
+            forex._AUTO_STATE["open_positions"] = [buy_pos]
+
+        # 2. Simulate closing with REVERSAL_FLIP reason
+        closed = await forex._close_position_internal("FX-TEST-BUY-1", "REVERSAL_FLIP", 1.0855)
+        self.assertIsNotNone(closed)
+        self.assertEqual(closed["exit_reason"], "REVERSAL_FLIP")
+        self.assertIn("Trend Dönüşü", closed["exit_reason_title"])
+        self.assertEqual(len(forex._AUTO_STATE["open_positions"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
