@@ -339,7 +339,10 @@ export default function ForexReportsPage() {
               Şu Anda {openPositions.length} Otonom Pozisyon Canlı Piyasada Açık
             </span>
             <span className="text-bunker-muted">
-              ({openPositions.map((p) => `${p.display} ${p.direction}`).join(", ")})
+              ({openPositions.map((p) => {
+                const badge = (p.protection === "TRAILING" || p.trailing_activated) ? " [🏃 Trailing]" : (p.protection === "BREAKEVEN" || p.breakeven_activated) ? " [🛡️ BE]" : "";
+                return `${p.display || p.symbol} ${p.direction}${badge}`;
+              }).join(", ")})
             </span>
           </div>
           <div className="flex items-center gap-3">

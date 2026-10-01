@@ -1327,12 +1327,46 @@ async def get_mt5_bridge_status():
     is_alive = _MT5_STATE["connected"] and (now_ts - _MT5_STATE["last_ping"] < 10.0)
     _MT5_STATE["connected"] = is_alive
 
+    enriched_positions = []
+    for p in _MT5_STATE.get("open_positions", []):
+        pos = dict(p)
+        prot = pos.get("protection")
+        if not prot or prot == "NORMAL":
+            if pos.get("trailing_activated"):
+                prot = "TRAILING"
+            elif pos.get("breakeven_activated"):
+                prot = "BREAKEVEN"
+            else:
+                dir_ = pos.get("direction", "BUY")
+                entry_p = float(pos.get("entry_price", 0.0))
+                sl_p = float(pos.get("sl_price", 0.0))
+                if sl_p > 0 and entry_p > 0:
+                    if dir_ == "BUY":
+                        if sl_p > entry_p + 0.0006:
+                            prot = "TRAILING"
+                        elif sl_p >= entry_p - 0.0001:
+                            prot = "BREAKEVEN"
+                    else:
+                        if sl_p < entry_p - 0.0006:
+                            prot = "TRAILING"
+                        elif sl_p <= entry_p + 0.0001:
+                            prot = "BREAKEVEN"
+        prot = prot or "NORMAL"
+        pos["protection"] = prot
+        pos["protection_label"] = (
+            "İz Süren Stop (Trailing)" if prot == "TRAILING"
+            else ("Başabaş (BE)" if prot == "BREAKEVEN" else "Sabit SL")
+        )
+        pos["breakeven_activated"] = prot in ("BREAKEVEN", "TRAILING")
+        pos["trailing_activated"] = prot == "TRAILING"
+        enriched_positions.append(pos)
+
     return {
         "connected": is_alive,
         "last_ping_seconds_ago": round(now_ts - _MT5_STATE["last_ping"], 1) if _MT5_STATE["last_ping"] > 0 else None,
         "auto_trade": _MT5_STATE["auto_trade"],
         "account": _MT5_STATE["account"],
-        "open_positions": _MT5_STATE["open_positions"],
+        "open_positions": enriched_positions,
         "closed_deals": _MT5_STATE["closed_deals"][:50],
         "pending_commands_count": len(_MT5_STATE["pending_commands"]),
     }

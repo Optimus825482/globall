@@ -246,11 +246,21 @@ def execute_close_all(cmd: dict) -> dict:
     return {"success": True, "closed_count": closed_count}
 
 
+POSITION_PROTECTION_MAP: Dict[int, str] = {}  # ticket -> "BREAKEVEN" | "TRAILING"
+CURRENT_SETTINGS: Dict[str, float] = {"breakeven_pips": 8.0, "trailing_stop_pips": 12.0}
+
+
 def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
     """Her açık MT5 pozisyonu için Breakeven ve Trailing Stop seviyelerini yerel olarak denetler ve uygular."""
     positions = mt5.positions_get() or []
     if not positions:
+        POSITION_PROTECTION_MAP.clear()
         return
+
+    active_tickets = {p.ticket for p in positions}
+    for old_t in list(POSITION_PROTECTION_MAP.keys()):
+        if old_t not in active_tickets:
+            POSITION_PROTECTION_MAP.pop(old_t, None)
 
     for p in positions:
         ticket = p.ticket
@@ -286,6 +296,8 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
             else:
                 if cur_sl == 0.0 or cur_sl > be_sl:
                     target_sl = be_sl
+            if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+                POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
 
         # 2. TRAILING STOP (İz Süren Stop)
         # Fiyat trail_pips kadar kârda ise fiyatın arkasından takip et
@@ -303,6 +315,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                     target_sl = cand_sl
                 elif target_sl is not None and cand_sl < target_sl:
                     target_sl = cand_sl
+            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
 
         # Eğer yeni bir SL seviyesi belirlendiyse ve mevcut SL'den farklıysa emri MT5'e gönder
         if target_sl is not None and abs(target_sl - cur_sl) >= (0.3 * pip_size):
@@ -337,19 +350,73 @@ def sync_with_server(api_base: str):
         "currency": acc.currency,
     }
 
-    # Açık Pozisyonlar
+    # Açık Pozisyonlar (Dinamik Koruma ve Rozet Bilgileri Dahil)
     positions = []
+    be_threshold = float(CURRENT_SETTINGS.get("breakeven_pips", 8.0))
+    trail_threshold = float(CURRENT_SETTINGS.get("trailing_stop_pips", 12.0))
+
     for p in mt5.positions_get() or []:
+        ticket = p.ticket
+        sym = p.symbol
+        s_info = mt5.symbol_info(sym)
+        point = s_info.point if s_info else 0.0001
+        digits = s_info.digits if s_info else 5
+        pip_size = point * 10 if digits in (3, 5) else point
+
+        direction = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+        entry_p = p.price_open
+        cur_p = p.price_current
+        cur_sl = p.sl
+        cur_tp = p.tp
+
+        if direction == "BUY":
+            pnl_pips = round((cur_p - entry_p) / pip_size, 1)
+        else:
+            pnl_pips = round((entry_p - cur_p) / pip_size, 1)
+
+        # Koruma Durumunu (Rozet) Belirle
+        prot = POSITION_PROTECTION_MAP.get(ticket, "NORMAL")
+
+        # Gerçek Stop Seviyesine Göre Doğrulama
+        if cur_sl > 0:
+            if direction == "BUY":
+                if cur_sl >= round(entry_p + 1.0 * pip_size, digits):
+                    prot = "TRAILING"
+                elif cur_sl >= round(entry_p - 0.2 * pip_size, digits) and prot != "TRAILING":
+                    prot = "BREAKEVEN"
+            else:
+                if cur_sl <= round(entry_p - 1.0 * pip_size, digits):
+                    prot = "TRAILING"
+                elif cur_sl <= round(entry_p + 0.2 * pip_size, digits) and prot != "TRAILING":
+                    prot = "BREAKEVEN"
+
+        # Kâr Pip Değerine Göre Doğrulama
+        if prot == "NORMAL":
+            if trail_threshold > 0 and pnl_pips >= trail_threshold:
+                prot = "TRAILING"
+            elif be_threshold > 0 and pnl_pips >= be_threshold:
+                prot = "BREAKEVEN"
+
+        prot_label = (
+            "İz Süren Stop (Trailing)" if prot == "TRAILING"
+            else ("Başabaş (BE)" if prot == "BREAKEVEN" else "Sabit SL")
+        )
+
         positions.append({
-            "ticket": p.ticket,
-            "symbol": p.symbol,
-            "direction": "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL",
+            "ticket": ticket,
+            "symbol": sym,
+            "direction": direction,
             "lots": p.volume,
-            "entry_price": p.price_open,
-            "current_price": p.price_current,
-            "sl_price": p.sl,
-            "tp_price": p.tp,
+            "entry_price": entry_p,
+            "current_price": cur_p,
+            "sl_price": cur_sl,
+            "tp_price": cur_tp,
             "pnl_usd": round(p.profit, 2),
+            "pnl_pips": pnl_pips,
+            "protection": prot,
+            "protection_label": prot_label,
+            "breakeven_activated": (prot in ("BREAKEVEN", "TRAILING")),
+            "trailing_activated": (prot == "TRAILING"),
             "open_time": datetime.datetime.fromtimestamp(p.time, datetime.timezone.utc).strftime("%H:%M:%S UTC"),
         })
 
@@ -479,14 +546,18 @@ def main():
 
     while True:
         try:
+            be_pips = float(CURRENT_SETTINGS.get("breakeven_pips", 8.0))
+            trail_pips = float(CURRENT_SETTINGS.get("trailing_stop_pips", 12.0))
+            # Her açık MT5 pozisyonu için yerel Dinamik Başabaş (BE) ve İz Süren Stop (Trailing) uygula
+            check_and_apply_dynamic_exits(be_pips, trail_pips)
+
             success, commands, settings, err_msg = sync_with_server(args.api)
 
             if success:
                 sync_counter += 1
-                be_pips = float(settings.get("breakeven_pips", 8.0))
-                trail_pips = float(settings.get("trailing_stop_pips", 12.0))
-                # Her açık MT5 pozisyonu için yerel Dinamik Başabaş (BE) ve İz Süren Stop (Trailing) uygula
-                check_and_apply_dynamic_exits(be_pips, trail_pips)
+                CURRENT_SETTINGS.update(settings)
+                be_pips = float(CURRENT_SETTINGS.get("breakeven_pips", 8.0))
+                trail_pips = float(CURRENT_SETTINGS.get("trailing_stop_pips", 12.0))
 
                 if first_sync or sync_counter % 15 == 0:
                     first_sync = False

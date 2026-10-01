@@ -90,6 +90,11 @@ interface MT5State {
     sl_price: number;
     tp_price: number;
     pnl_usd: number;
+    pnl_pips?: number;
+    protection?: "TRAILING" | "BREAKEVEN" | "NORMAL";
+    protection_label?: string;
+    breakeven_activated?: boolean;
+    trailing_activated?: boolean;
     open_time: string;
   }>;
   closed_deals: Array<{
@@ -964,11 +969,12 @@ export default function ForexPortfolioPage() {
                   <th className="py-3 px-4">Bilet</th>
                   <th className="py-3 px-3">Parite</th>
                   <th className="py-3 px-3">Yön</th>
+                  <th className="py-3 px-3">Koruma / Rozet</th>
                   <th className="py-3 px-3">Lot</th>
                   <th className="py-3 px-3">Giriş Fiyatı</th>
                   <th className="py-3 px-3">Güncel Fiyat</th>
                   <th className="py-3 px-3">SL / TP Seviyeleri</th>
-                  <th className="py-3 px-3">Kâr ($)</th>
+                  <th className="py-3 px-3">Kâr ($ / Pip)</th>
                   <th className="py-3 px-4 text-right">Aksiyon</th>
                 </tr>
               </thead>
@@ -976,6 +982,9 @@ export default function ForexPortfolioPage() {
                 {mt5.open_positions.map((p) => {
                   const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
                   const isProfit = pnlVal >= 0;
+                  const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
+                  const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
+
                   return (
                     <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
                       <td className="py-3 px-4 font-mono text-[11px] text-cyan-300 font-bold">#{p.ticket}</td>
@@ -991,19 +1000,69 @@ export default function ForexPortfolioPage() {
                           {p.direction}
                         </span>
                       </td>
+
+                      {/* DİNAMİK ROZET (TRAILING / BREAKEVEN / SABİT SL) */}
+                      <td className="py-3 px-3">
+                        {isTrailing ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500/25 via-orange-500/30 to-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse tracking-wide">
+                            <span className="text-xs">🏃</span>
+                            <span>TRAILING STOP</span>
+                          </span>
+                        ) : isBE ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(6,182,212,0.25)] tracking-wide">
+                            <span className="text-xs">🛡️</span>
+                            <span>BAŞABAŞ (BE)</span>
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-400/20 text-cyan-200 font-normal">SIFIR RİSK</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-bunker-800 text-bunker-muted border border-bunker-700/60">
+                            <span>🛑 Sabit SL</span>
+                          </span>
+                        )}
+                      </td>
+
                       <td className="py-3 px-3 font-semibold text-white">{p.lots} Lot</td>
                       <td className="py-3 px-3 font-mono text-bunker-muted">{p.entry_price}</td>
                       <td className="py-3 px-3 font-bold font-mono text-white">{p.current_price}</td>
+
+                      {/* SL / TP SEVİYELERİ (KORUMA VURGULARIYLA) */}
                       <td className="py-3 px-3 font-mono text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-rose-300">SL: {p.sl_price || "-"}</span>
-                          <span className="text-bunker-600">|</span>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            {isTrailing ? (
+                              <span className="text-amber-300 font-bold flex items-center gap-1">
+                                <span>SL: {p.sl_price || "-"}</span>
+                                <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-amber-500/20 border border-amber-500/30 text-amber-200">
+                                  🏃 Takipte
+                                </span>
+                              </span>
+                            ) : isBE ? (
+                              <span className="text-cyan-300 font-bold flex items-center gap-1">
+                                <span>SL: {p.sl_price || "-"}</span>
+                                <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-200">
+                                  🛡️ BE Kilitli
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-rose-300">SL: {p.sl_price || "-"}</span>
+                            )}
+                          </div>
                           <span className="text-emerald-300">TP: {p.tp_price || "-"}</span>
                         </div>
                       </td>
-                      <td className={`py-3 px-3 font-bold font-mono text-sm ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-                        {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
+
+                      {/* KÂR ($ / PİP) */}
+                      <td className={`py-3 px-3 font-mono ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+                        <div className="font-bold text-sm">
+                          {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
+                        </div>
+                        {p.pnl_pips != null && (
+                          <div className={`text-[10px] font-semibold ${Number(p.pnl_pips) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            {Number(p.pnl_pips) >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)} p
+                          </div>
+                        )}
                       </td>
+
                       <td className="py-3 px-4 text-right">
                         <button
                           type="button"
