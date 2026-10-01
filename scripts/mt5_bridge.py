@@ -406,7 +406,7 @@ def sync_with_server(api_base: str):
     """MT5 durumunu web sunucusuna raporlar ve bekleyen komutları çeker."""
     acc = mt5.account_info()
     if not acc:
-        return []
+        return False, [], {}, "MT5 hesabı bağlı değil"
 
     account_data = {
         "login": acc.login,
