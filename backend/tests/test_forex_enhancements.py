@@ -342,6 +342,43 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Trend Dönüşü", closed["exit_reason_title"])
         self.assertEqual(len(forex._AUTO_STATE["open_positions"]), 0)
 
+    # -------------------------------------------------------------------------
+    # 6. BTCUSD INTEGRATION & 60S GOLD COOLDOWN TESTS
+    # -------------------------------------------------------------------------
+    def test_btcusd_integration_and_specs(self):
+        """Verify BTCUSD is present in universe, symbol maps, allowed symbols and specs."""
+        sym_names = [s["symbol"] for s in forex.FOREX_SYMBOLS]
+        self.assertIn("BTCUSD", sym_names)
+        self.assertEqual(forex.YAHOO_SYMBOL_MAP.get("BTCUSD"), "BTC-USD")
+
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertIn("BTCUSD", cfg.allowed_symbols)
+
+        specs = forex.get_symbol_trading_specs("BTCUSD", base_sl=12.0, base_tp=26.0)
+        self.assertEqual(specs["pip_size"], 1.0)
+        self.assertEqual(specs["mult"], 5.0)
+        self.assertEqual(specs["sl_pips"], 60.0)
+        self.assertEqual(specs["tp_pips"], 130.0)
+
+    async def test_btcusd_lot_capping(self):
+        """Verify BTCUSD lot size is capped to 0.02 under any condition."""
+        order_btc = forex.MT5ManualOrderRequest(
+            symbol="BTCUSD",
+            direction="BUY",
+            lots=1.00,  # attempt 1.0 BTC
+        )
+        res = await forex.send_mt5_order(order_btc)
+        self.assertEqual(res["status"], "queued")
+        self.assertEqual(res["command"]["lots"], 0.02)  # capped to 0.02
+
+    def test_gold_cooldown_reduced_to_60s(self):
+        """Verify gold cooldown minimum and default are updated to 60.0 seconds."""
+        self.assertEqual(forex.HARD_MIN_GOLD_COOLDOWN_SEC, 60.0)
+        self.assertEqual(mt5_bridge.HARD_MIN_GOLD_COOLDOWN_SEC, 60.0)
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertEqual(cfg.gold_cooldown_sec, 60.0)
+        self.assertEqual(mt5_bridge.CURRENT_SETTINGS["gold_cooldown_sec"], 60.0)
+
 
 if __name__ == "__main__":
     unittest.main()

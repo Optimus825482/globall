@@ -41,7 +41,7 @@ DEFAULT_API_URL = os.environ.get("SCALPER_API_URL", "https://global.erkanerdem.o
 # Sert Risk Sınırları (Asla aşılamaz)
 HARD_MAX_FOREX_LOT = 0.05
 HARD_MAX_GOLD_LOT = 0.02
-HARD_MIN_GOLD_COOLDOWN_SEC = 180.0
+HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 LAST_GOLD_EXIT_TIME = 0.0
 
 
@@ -193,10 +193,11 @@ def execute_market_order(cmd: dict) -> dict:
     tp_pips = float(cmd.get("tp_pips", 22.0))
     comment = str(cmd.get("comment", "Scalper Global"))[:31]
 
-    # SERT LOT TAVANI KORUMASI: Forex max 0.05 lot, Ons Altın (XAUUSD) max 0.02 lot
+    # SERT LOT TAVANI KORUMASI: Forex max 0.05 lot, Ons Altın (XAUUSD) & BTC max 0.02 lot
     is_gold = ("XAU" in symbol or "GOLD" in symbol)
-    configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT)) if is_gold else float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
-    lot_ceiling = min(HARD_MAX_GOLD_LOT if is_gold else HARD_MAX_FOREX_LOT, max(0.01, configured_cap))
+    is_gold_or_crypto = is_gold or ("BTC" in symbol)
+    configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT)) if is_gold_or_crypto else float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
+    lot_ceiling = min(HARD_MAX_GOLD_LOT if is_gold_or_crypto else HARD_MAX_FOREX_LOT, max(0.01, configured_cap))
     if raw_lots > lot_ceiling:
         print(f"  🛡️ [SERT LOT TAVANI UYGULANDI]: {raw_lots} lot -> {lot_ceiling} lot olarak sınırlandırıldı ({symbol})")
         lots = lot_ceiling
@@ -405,7 +406,7 @@ CURRENT_SETTINGS: Dict[str, float] = {
     "tp_pips": 26.0,
     "max_forex_lot": 0.05,
     "max_gold_lot": 0.02,
-    "gold_cooldown_sec": 180.0,
+    "gold_cooldown_sec": 60.0,
 }
 
 
@@ -450,7 +451,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # 1. BREAKEVEN (Başabaş Koruması)
         # Fiyat eff_be_pips kadar kâra ulaştığında, SL'i girişe (+tampon ile) taşı
         if eff_be_pips > 0 and pnl_pips >= eff_be_pips:
-            buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else 3.0
+            buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 3.0)
             be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
             if direction == "BUY":
                 if cur_sl < be_sl:

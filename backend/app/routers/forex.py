@@ -179,6 +179,19 @@ FOREX_SYMBOLS = [
         "tv_symbol": "FOREXCOM:NSXUSD",
         "default_price": 20420.50,
     },
+    # Crypto
+    {
+        "symbol": "BTCUSD",
+        "display": "BTC/USD",
+        "name": "Bitcoin / US Dollar",
+        "category": "crypto",
+        "base": "BTC",
+        "quote": "USD",
+        "pip_size": 1.0,
+        "digits": 2,
+        "tv_symbol": "BINANCE:BTCUSDT",
+        "default_price": 66500.0,
+    },
 ]
 
 # In-memory realistic price and tick cache
@@ -231,7 +244,7 @@ _LIVE_PRICES_CACHE: Dict[str, float] = {}
 # Hard Risk Constants (Strict ceilings enforced under all conditions)
 HARD_MAX_FOREX_LOT = 0.05
 HARD_MAX_GOLD_LOT = 0.02
-HARD_MIN_GOLD_COOLDOWN_SEC = 180.0
+HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 HARD_MIN_BREAKEVEN_PIPS = 14.0
 
 # Technical Analysis & Indicator Cache
@@ -253,6 +266,7 @@ YAHOO_SYMBOL_MAP = {
     "USOIL": "CL=F",
     "SPX500": "^GSPC",
     "NAS100": "^NDX",
+    "BTCUSD": "BTC-USD",
 }
 
 
@@ -687,7 +701,7 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
         tech = _TECHNICAL_CACHE.get(sym)
         live_p = _LIVE_PRICES_CACHE.get(sym) or (tech["price"] if tech else item["default_price"])
 
-        spread_pips = 1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else 3.0)
+        spread_pips = 1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else (12.0 if item["category"] == "crypto" else 3.0))
         spread_val = spread_pips * pip
 
         bid_p = round(live_p - spread_val / 2.0, digits)
@@ -850,7 +864,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
     micro_lots = round(recommended_lots * 100, 2)
 
     # Sert lot tavanı koruması (asla aşılamaz)
-    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper())
     lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
     safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
 
@@ -885,11 +899,11 @@ class ForexAutoPaperSettings(BaseModel):
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
     max_spread_pips: float = Field(3.0, ge=0.5, le=10.0, description="Maksimum izin verilen spread (pip)")
     max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
-    max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı (Sert tavan: 0.02)")
-    gold_cooldown_sec: float = Field(180.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 180 sn)")
+    max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) ve Kripto lot tavanı (Sert tavan: 0.02)")
+    gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
     allowed_symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
+        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "BTCUSD"],
         description="İşleme izin verilen pariteler",
     )
 
@@ -1134,7 +1148,7 @@ async def _forex_auto_paper_loop():
 
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
                     if pnl_pips >= eff_be_pips and not pos["breakeven_activated"]:
-                        buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else 3.0
+                        buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 3.0)
                         be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
                         pos["sl_price"] = be_sl
                         pos["breakeven_activated"] = True
@@ -1379,12 +1393,13 @@ async def _forex_auto_paper_loop():
                         continue
 
                 # 5. Spread Filtresi
-                if cand["spread_pips"] > _AUTO_SETTINGS.max_spread_pips:
+                effective_max_spread = 20.0 if "BTC" in sym else _AUTO_SETTINGS.max_spread_pips
+                if cand["spread_pips"] > effective_max_spread:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"[{cand['display']}] Tarandı: Spread engeli ({cand['spread_pips']:.1f}p > {_AUTO_SETTINGS.max_spread_pips:.1f}p limit). İşlem engellendi.",
+                            f"[{cand['display']}] Tarandı: Spread engeli ({cand['spread_pips']:.1f}p > {effective_max_spread:.1f}p limit). İşlem engellendi.",
                             symbol=sym,
                         )
                     continue
@@ -1422,8 +1437,9 @@ async def _forex_auto_paper_loop():
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
                 raw_calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
 
-                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın max 0.02 lot)
-                lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın/BTC max 0.02 lot)
+                is_gold_or_crypto = is_gold or ("BTC" in sym)
+                lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold_or_crypto else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
                 mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 mt5_lots = round(mt5_lots, 2)
 
@@ -1978,7 +1994,7 @@ async def get_mt5_bridge_status():
 @router.post("/mt5/order")
 async def send_mt5_order(req: MT5ManualOrderRequest):
     """MT5 köprüsüne yeni bir piyasa emri iletir."""
-    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper())
     lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
     actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
 
