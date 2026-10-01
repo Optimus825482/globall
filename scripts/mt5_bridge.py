@@ -81,6 +81,57 @@ def connect_mt5(path: str, login: int, password: str, server: str) -> bool:
     return True
 
 
+# Bilinen Sembol Eşleşmeleri (Web Paneli <-> IC Markets MT5)
+SYMBOL_ALIAS_MAP = {
+    "USOIL": ["XTIUSD", "WTICRUDE", "WTI", "USOUSD", "OIL"],
+    "UKOIL": ["XBRUSD", "BRENT", "UKOUSD"],
+    "BRENT": ["XBRUSD", "UKOIL"],
+    "WTI": ["XTIUSD", "USOIL"],
+    "GOLD": ["XAUUSD"],
+    "SILVER": ["XAGUSD"],
+    "BTC": ["BTCUSD"],
+    "ETH": ["ETHUSD"],
+}
+
+REVERSE_SYMBOL_ALIAS_MAP = {
+    "XTIUSD": "USOIL",
+    "XBRUSD": "UKOIL",
+}
+
+
+def resolve_mt5_symbol(symbol: str) -> str:
+    """Web panelinden gelen sembolü MT5 terminalindeki gerçek sembol adı ile eşleştirir."""
+    raw = str(symbol).upper().replace("/", "").strip()
+    if mt5.symbol_info(raw) is not None:
+        return raw
+
+    clean = raw.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    candidates = SYMBOL_ALIAS_MAP.get(raw, []) + SYMBOL_ALIAS_MAP.get(clean, [])
+    for cand in candidates:
+        if mt5.symbol_info(cand) is not None:
+            return cand
+
+    try:
+        all_syms = mt5.symbols_get()
+        if all_syms:
+            names = [s.name for s in all_syms]
+            if clean in ("USOIL", "OIL", "WTI"):
+                for n in names:
+                    if "XTIUSD" in n:
+                        return n
+            if clean in ("UKOIL", "BRENT"):
+                for n in names:
+                    if "XBRUSD" in n:
+                        return n
+            for n in names:
+                if clean in n:
+                    return n
+    except Exception:
+        pass
+
+    return raw
+
+
 def get_symbol_trading_specs(
     symbol: str,
     base_sl: float = 12.0,
@@ -131,11 +182,11 @@ def get_symbol_trading_specs(
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
-    elif "USOIL" in clean_sym or "OIL" in clean_sym or "WTI" in clean_sym:
+    elif "USOIL" in clean_sym or "OIL" in clean_sym or "WTI" in clean_sym or "XTI" in clean_sym or "XBR" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD (1 cent)
         mult = 2.0
         digits = 2
-        pip_val = 10.0           # 1 lot (1000 varil) * 0.01 USD = $10.0
+        pip_val = 1.0            # IC Markets: 1 lot (100 varil) * 0.01 USD = $1.00
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
@@ -186,24 +237,21 @@ def get_symbol_trading_specs(
 
 def execute_market_order(cmd: dict) -> dict:
     """MT5 üzerinde piyasa emri açar."""
-    symbol = cmd.get("symbol", "EURUSD").upper()
+    raw_symbol = cmd.get("symbol", "EURUSD").upper()
     direction = cmd.get("direction", "BUY").upper()
     raw_lots = float(cmd.get("lots", 0.01))
     sl_pips = float(cmd.get("sl_pips", 12.0))
     tp_pips = float(cmd.get("tp_pips", 22.0))
     comment = str(cmd.get("comment", "Scalper Global"))[:31]
 
-    # SERT LOT TAVANI KORUMASI: Forex max 0.05 lot, Ons Altın (XAUUSD) & BTC max 0.02 lot
+    # Sembolü MT5 broker formatına çözümle (Örn: USOIL -> XTIUSD)
+    symbol = resolve_mt5_symbol(raw_symbol)
+    if symbol != raw_symbol:
+        print(f"  🔄 [SEMBOL EŞLEŞTİRME]: {raw_symbol} -> MT5 Sembolü: {symbol}")
+
     is_gold = ("XAU" in symbol or "GOLD" in symbol)
-    is_gold_or_crypto = is_gold or ("BTC" in symbol)
-    configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT)) if is_gold_or_crypto else float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
-    lot_ceiling = min(HARD_MAX_GOLD_LOT if is_gold_or_crypto else HARD_MAX_FOREX_LOT, max(0.01, configured_cap))
-    if raw_lots > lot_ceiling:
-        print(f"  🛡️ [SERT LOT TAVANI UYGULANDI]: {raw_lots} lot -> {lot_ceiling} lot olarak sınırlandırıldı ({symbol})")
-        lots = lot_ceiling
-    else:
-        lots = raw_lots
-    lots = round(max(0.01, lots), 2)
+    is_crypto = ("BTC" in symbol or "ETH" in symbol)
+    is_oil = ("XTI" in symbol or "XBR" in symbol or "OIL" in symbol or "USOIL" in raw_symbol)
 
     # Ons Altın (XAUUSD) Soğuma Koruması (Kapanıştan sonra en az 180 sn bekleme kuralı)
     if is_gold:
@@ -214,26 +262,65 @@ def execute_market_order(cmd: dict) -> dict:
             print(f"  🛑 {err}")
             return {"success": False, "error": err}
 
+    # Sembolü aktif et ve bilgileri çek
+    if not mt5.symbol_select(symbol, True):
+        err = f"Sembol seçilemedi: {symbol} (Orijinal: {raw_symbol}, Hata: {mt5.last_error()})"
+        print(f"  ❌ [İŞLEM BAŞARISIZ]: {err}")
+        return {"success": False, "error": err}
+
+    s_info = mt5.symbol_info(symbol)
+    if not s_info:
+        err = f"Sembol bilgisi alınamadı: {symbol} (Orijinal: {raw_symbol})"
+        print(f"  ❌ [İŞLEM BAŞARISIZ]: {err}")
+        return {"success": False, "error": err}
+
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        err = f"Canlı fiyat alınamadı: {symbol}"
+        print(f"  ❌ [İŞLEM BAŞARISIZ]: {err}")
+        return {"success": False, "error": err}
+
+    # Minimum, Maksimum ve Adım (Step) Lot Kısıtları
+    min_vol = float(s_info.volume_min) if s_info.volume_min > 0 else 0.01
+    step_vol = float(s_info.volume_step) if s_info.volume_step > 0 else 0.01
+    max_vol = float(s_info.volume_max) if s_info.volume_max > 0 else 50.0
+
+    # SERT LOT TAVANI KORUMASI:
+    # Forex max 0.05 lot, Ons Altın (XAUUSD) & BTC max 0.02 lot, Ham Petrol (XTIUSD/USOIL) broker tabanına göre min 0.50 lot
+    if is_oil:
+        lot_ceiling = max(min_vol, 1.0)
+    elif is_gold:
+        configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT))
+        lot_ceiling = min(HARD_MAX_GOLD_LOT, max(min_vol, configured_cap))
+    elif is_crypto:
+        lot_ceiling = min(0.05, max(min_vol, 0.02))
+    else:
+        configured_cap = float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
+        lot_ceiling = min(HARD_MAX_FOREX_LOT, max(min_vol, configured_cap))
+
+    lots = min(raw_lots, lot_ceiling)
+    if lots < min_vol:
+        print(f"  ℹ️ [LOT DÜZENLENDİ]: Talep edilen {raw_lots} lot sembol minimumu {min_vol} lotun altında! {min_vol} lot olarak ayarlandı ({symbol})")
+        lots = min_vol
+
+    # Step yuvarlama
+    if step_vol > 0:
+        steps = round((lots - min_vol) / step_vol)
+        lots = round(min_vol + (steps * step_vol), 2)
+    lots = round(max(min_vol, min(lots, max_vol)), 2)
+
     # Reversal Flip Kontrolü: Aynı sembolde ters yönde pozisyon varsa önce kapat
-    open_positions = mt5.positions_get(symbol=symbol) or []
+    open_positions = (mt5.positions_get(symbol=symbol) or []) + (mt5.positions_get(symbol=raw_symbol) or [])
+    checked_tickets = set()
     for pos in open_positions:
+        if pos.ticket in checked_tickets:
+            continue
+        checked_tickets.add(pos.ticket)
         pos_dir = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
         if pos_dir != direction:
             print(f"  🔄 [TREND DÖNÜŞÜ (FLIP)]: Bilet #{pos.ticket} {pos_dir} pozisyonu kapatılıyor -> Yeni {direction} açılacak...")
             execute_close_order({"ticket": pos.ticket})
             time.sleep(0.3)
-
-    # Sembolü aktif et ve bilgileri çek
-    if not mt5.symbol_select(symbol, True):
-        return {"success": False, "error": f"Sembol seçilemedi: {symbol}"}
-
-    s_info = mt5.symbol_info(symbol)
-    if not s_info:
-        return {"success": False, "error": f"Sembol bilgisi alınamadı: {symbol}"}
-
-    tick = mt5.symbol_info_tick(symbol)
-    if not tick:
-        return {"success": False, "error": f"Canlı fiyat alınamadı: {symbol}"}
 
     spec = get_symbol_trading_specs(symbol)
     # Altın için stop mesafesini dinamik spec koruma seviyesinin altına düşürme
@@ -567,9 +654,11 @@ def sync_with_server(api_base: str):
             else ("Başabaş (BE)" if prot == "BREAKEVEN" else "Sabit SL")
         )
 
+        mapped_sym = REVERSE_SYMBOL_ALIAS_MAP.get(sym, sym)
         positions.append({
             "ticket": ticket,
-            "symbol": sym,
+            "symbol": mapped_sym,
+            "mt5_symbol": sym,
             "direction": direction,
             "lots": p.volume,
             "entry_price": entry_p,
@@ -633,11 +722,13 @@ def sync_with_server(api_base: str):
         else:
             pips = round((entry_p - d.price) / pip_size, 1)
 
+        mapped_deal_sym = REVERSE_SYMBOL_ALIAS_MAP.get(d.symbol, d.symbol)
         deals.append({
             "id": f"MT5-{pos_id}",
             "ticket": pos_id,
-            "symbol": d.symbol,
-            "display": d.symbol,
+            "symbol": mapped_deal_sym,
+            "mt5_symbol": d.symbol,
+            "display": mapped_deal_sym,
             "direction": direction,
             "lots": d.volume,
             "entry_price": entry_p,
@@ -666,10 +757,15 @@ def sync_with_server(api_base: str):
 
     # MT5 Terminalinden anlık canlı fiyatları topla
     ticks_data = {}
-    for s_check in ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "XAUUSD", "XAGUSD", "USOIL"]:
-        t = mt5.symbol_info_tick(s_check)
+    check_syms = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "XAUUSD", "XAGUSD", "USOIL", "BTCUSD", "ETHUSD"]
+    for s_check in check_syms:
+        res_sym = resolve_mt5_symbol(s_check)
+        t = mt5.symbol_info_tick(res_sym)
         if t and t.bid > 0:
-            ticks_data[s_check] = {"bid": float(t.bid), "ask": float(t.ask), "last": float(t.last if t.last > 0 else t.ask)}
+            t_obj = {"bid": float(t.bid), "ask": float(t.ask), "last": float(t.last if t.last > 0 else t.ask)}
+            ticks_data[s_check] = t_obj
+            if res_sym != s_check:
+                ticks_data[res_sym] = t_obj
 
     payload = {
         "account": account_data,
@@ -752,14 +848,18 @@ def main():
             for cmd in commands:
                 action = cmd.get("action")
                 print(f"\n⚡ [WEB SİNYALİ ALINDI]: {action} -> {cmd}")
+                res = None
                 if action == "OPEN_ORDER":
-                    execute_market_order(cmd)
+                    res = execute_market_order(cmd)
                 elif action == "CLOSE_ORDER":
-                    execute_close_order(cmd)
+                    res = execute_close_order(cmd)
                 elif action == "CLOSE_ALL":
-                    execute_close_all(cmd)
+                    res = execute_close_all(cmd)
                 elif action == "MODIFY_SLTP":
-                    execute_modify_sltp(cmd)
+                    res = execute_modify_sltp(cmd)
+
+                if res and not res.get("success"):
+                    print(f"  ❌ [İŞLEM İPTAL/HATA]: {res.get('error')}")
 
             time.sleep(1.5)
 

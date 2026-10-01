@@ -379,7 +379,31 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.gold_cooldown_sec, 60.0)
         self.assertEqual(mt5_bridge.CURRENT_SETTINGS["gold_cooldown_sec"], 60.0)
 
+    def test_oil_symbol_resolution_and_specs(self):
+        """Verify USOIL and XTIUSD specs and alias mapping."""
+        self.assertIn("XTIUSD", mt5_bridge.SYMBOL_ALIAS_MAP["USOIL"])
+        specs_xti = mt5_bridge.get_symbol_trading_specs("XTIUSD")
+        self.assertEqual(specs_xti["pip_size"], 0.01)
+        self.assertEqual(specs_xti["digits"], 2)
+        self.assertEqual(specs_xti["pip_val"], 1.0)
+
+        forex_specs = forex.get_symbol_trading_specs("USOIL")
+        self.assertEqual(forex_specs["pip_size"], 0.01)
+        self.assertEqual(forex_specs["pip_val"], 1.0)
+
+    async def test_oil_lot_handling(self):
+        """Verify USOIL manual order enforces minimum 0.50 lot for IC Markets instead of 0.05."""
+        order_oil = forex.MT5ManualOrderRequest(
+            symbol="USOIL",
+            direction="BUY",
+            lots=0.05,
+        )
+        res = await forex.send_mt5_order(order_oil)
+        self.assertEqual(res["status"], "queued")
+        self.assertEqual(res["command"]["lots"], 0.50)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

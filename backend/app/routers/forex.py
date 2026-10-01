@@ -339,11 +339,11 @@ def get_symbol_trading_specs(
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
-    elif "USOIL" in clean_sym or "OIL" in clean_sym or "WTI" in clean_sym:
+    elif "USOIL" in clean_sym or "OIL" in clean_sym or "WTI" in clean_sym or "XTI" in clean_sym or "XBR" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD (1 cent)
         mult = 2.0
         digits = 2
-        pip_val = 10.0           # 1 lot (1000 varil) * 0.01 USD = $10.0
+        pip_val = 1.0            # IC Markets: 1 lot (100 varil) * 0.01 USD = $1.00
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
@@ -865,8 +865,16 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 
     # Sert lot tavanı koruması (asla aşılamaz)
     is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper())
-    lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
-    safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
+    is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
+    if is_oil:
+        lot_ceiling = 1.0
+        safe_lots = round(max(0.50, min(standard_lots, lot_ceiling)), 2)
+    elif is_gold:
+        lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+        safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
+    else:
+        lot_ceiling = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+        safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
 
     return {
         "symbol": req.symbol,
@@ -1437,10 +1445,18 @@ async def _forex_auto_paper_loop():
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
                 raw_calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
 
-                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın/BTC max 0.02 lot)
+                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın/BTC max 0.02 lot, Petrol min 0.50 max 1.0)
+                is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
                 is_gold_or_crypto = is_gold or ("BTC" in sym)
-                lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold_or_crypto else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
-                mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
+                if is_oil:
+                    lot_ceiling = 1.0
+                    mt5_lots = max(0.50, min(raw_calc_lots, lot_ceiling))
+                elif is_gold_or_crypto:
+                    lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+                    mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
+                else:
+                    lot_ceiling = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+                    mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 mt5_lots = round(mt5_lots, 2)
 
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
@@ -1995,8 +2011,16 @@ async def get_mt5_bridge_status():
 async def send_mt5_order(req: MT5ManualOrderRequest):
     """MT5 köprüsüne yeni bir piyasa emri iletir."""
     is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper())
-    lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot) if is_gold else min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
-    actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
+    is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
+    if is_oil:
+        lot_cap = 1.0
+        actual_lots = round(max(0.50, min(req.lots, lot_cap)), 2)
+    elif is_gold:
+        lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+        actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
+    else:
+        lot_cap = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+        actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
 
     cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
     cmd = {
