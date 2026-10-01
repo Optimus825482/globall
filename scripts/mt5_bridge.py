@@ -102,7 +102,7 @@ def get_symbol_trading_specs(
     """
     s = str(symbol).upper().replace("/", "").strip()
     clean_sym = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
-    base_be_floored = max(10.0, base_be)
+    base_be_floored = max(14.0, base_be)
 
     if "XAU" in clean_sym or "GOLD" in clean_sym:
         pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
@@ -399,10 +399,10 @@ def execute_close_all(cmd: dict) -> dict:
 
 POSITION_PROTECTION_MAP: Dict[int, str] = {}  # ticket -> "BREAKEVEN" | "TRAILING"
 CURRENT_SETTINGS: Dict[str, float] = {
-    "breakeven_pips": 10.0,
-    "trailing_stop_pips": 16.0,
+    "breakeven_pips": 14.0,
+    "trailing_stop_pips": 20.0,
     "sl_pips": 12.0,
-    "tp_pips": 22.0,
+    "tp_pips": 26.0,
     "max_forex_lot": 0.05,
     "max_gold_lot": 0.02,
     "gold_cooldown_sec": 180.0,
@@ -450,7 +450,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # 1. BREAKEVEN (Başabaş Koruması)
         # Fiyat eff_be_pips kadar kâra ulaştığında, SL'i girişe (+tampon ile) taşı
         if eff_be_pips > 0 and pnl_pips >= eff_be_pips:
-            buffer_pips = 2.0 if ("XAU" in sym or "GOLD" in sym) else 0.5
+            buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else 3.0
             be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
             if direction == "BUY":
                 if cur_sl < be_sl:

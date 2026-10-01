@@ -232,7 +232,7 @@ _LIVE_PRICES_CACHE: Dict[str, float] = {}
 HARD_MAX_FOREX_LOT = 0.05
 HARD_MAX_GOLD_LOT = 0.02
 HARD_MIN_GOLD_COOLDOWN_SEC = 180.0
-HARD_MIN_BREAKEVEN_PIPS = 10.0
+HARD_MIN_BREAKEVEN_PIPS = 14.0
 
 # Technical Analysis & Indicator Cache
 _TECHNICAL_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -878,10 +878,10 @@ class ForexAutoPaperSettings(BaseModel):
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
     max_open_positions: int = Field(3, ge=1, le=10, description="Aynı anda maksimum açık işlem")
     min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
-    tp_pips: float = Field(22.0, ge=18.0, le=80.0, description="Kâr al mesafesi (pip)")
+    tp_pips: float = Field(26.0, ge=18.0, le=80.0, description="Kâr al mesafesi (pip)")
     sl_pips: float = Field(12.0, ge=10.0, le=30.0, description="Zarar durdur mesafesi (pip)")
-    breakeven_pips: float = Field(10.0, ge=5.0, le=30.0, description="Başabaş kilit tetik mesafesi (varsayılan: 10.0 pip, min uygulanan: 10.0 pip)")
-    trailing_stop_pips: float = Field(16.0, ge=12.0, le=40.0, description="İz süren stop mesafesi (pip)")
+    breakeven_pips: float = Field(14.0, ge=8.0, le=35.0, description="Başabaş kilit tetik mesafesi (varsayılan: 14.0 pip, min uygulanan: 14.0 pip)")
+    trailing_stop_pips: float = Field(20.0, ge=14.0, le=50.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
     max_spread_pips: float = Field(3.0, ge=0.5, le=10.0, description="Maksimum izin verilen spread (pip)")
     max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
@@ -1134,7 +1134,7 @@ async def _forex_auto_paper_loop():
 
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
                     if pnl_pips >= eff_be_pips and not pos["breakeven_activated"]:
-                        buffer_pips = 2.0 if ("XAU" in sym or "GOLD" in sym) else 0.5
+                        buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else 3.0
                         be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
                         pos["sl_price"] = be_sl
                         pos["breakeven_activated"] = True

@@ -215,11 +215,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         """Verify default settings provide favorable R:R ratio >= 1.8."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.sl_pips, 12.0)
-        self.assertEqual(cfg.tp_pips, 22.0)
+        self.assertEqual(cfg.tp_pips, 26.0)
         rr_ratio = cfg.tp_pips / cfg.sl_pips
         self.assertGreaterEqual(rr_ratio, 1.8)
-        self.assertEqual(cfg.breakeven_pips, 10.0)
-        self.assertEqual(cfg.trailing_stop_pips, 16.0)
+        self.assertEqual(cfg.breakeven_pips, 14.0)
+        self.assertEqual(cfg.trailing_stop_pips, 20.0)
 
     # -------------------------------------------------------------------------
     # 5. REAL TECHNICAL INDICATOR & MTF ENGINE TESTS
