@@ -958,11 +958,13 @@ class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
-    max_open_positions: int = Field(3, ge=1, le=10, description="Aynı anda maksimum açık işlem")
+    max_open_positions: int = Field(6, ge=1, le=20, description="Aynı anda maksimum açık işlem")
+    max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
     min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
     tp_pips: float = Field(26.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip)")
     sl_pips: float = Field(12.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip)")
     breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
+    breakeven_usd: float = Field(1.0, ge=0.5, le=10.0, description="Başabaş kilit tetikleme net kârı ($)")
     trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
     max_spread_pips: float = Field(3.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip)")
@@ -1206,53 +1208,70 @@ async def _forex_auto_paper_loop():
                     pos["pnl_pips"] = round(pnl_pips, 1)
                     pos["pnl_usd"] = round(pnl_pips * pos["lots"] * pip_usd_val, 2)
 
+                    atr_pips = round(t.get("atr", 0.001) / pip_size, 1) if pip_size > 0 else 15.0
                     spec = get_symbol_trading_specs(
                         sym,
                         base_be=_AUTO_SETTINGS.breakeven_pips,
                         base_trail=_AUTO_SETTINGS.trailing_stop_pips,
+                        atr_pips=atr_pips,
                     )
                     eff_be_pips = spec["be_pips"]
                     eff_trail_pips = spec["trail_pips"]
 
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
-                    if pnl_pips >= eff_be_pips and not pos["breakeven_activated"]:
-                        buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 3.0)
-                        be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
-                        pos["sl_price"] = be_sl
-                        pos["breakeven_activated"] = True
-                        _log_auto_decision(
-                            "PROTECT",
-                            f"{pos['display']} Başabaş (BE) kilitlendi: Kâr +{pnl_pips:.1f} pip. Stop seviyesi {be_sl} yapıldı.",
-                            symbol=sym,
-                        )
-                        # MT5 açık biletlerinde de Stop Loss'u başabaş seviyesine çek
-                        if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
-                            for mpos in _MT5_STATE.get("open_positions", []):
-                                if mpos.get("symbol", "").upper() == sym.upper():
-                                    t_id = mpos.get("ticket")
-                                    if t_id:
-                                        _MT5_STATE["pending_commands"].append({
-                                            "id": f"CMD-MODIFY-{t_id}-BE",
-                                            "action": "MODIFY_SLTP",
-                                            "ticket": t_id,
-                                            "sl": be_sl,
-                                            "tp": mpos.get("tp_price", 0.0),
-                                        })
-                                        _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {be_sl} olarak kilitlendi.", symbol=sym)
+                    # Herhangi bir işlem net $1.00 dolar kâra geçtiğinde VEYA eff_be_pips aşıldığında kâr kilitlenir
+                    is_dollar_be = pos.get("pnl_usd", 0.0) >= _AUTO_SETTINGS.breakeven_usd
+                    is_pip_be = pnl_pips >= eff_be_pips
+                    if (is_dollar_be or is_pip_be) and not pos.get("breakeven_activated"):
+                        buffer_pips = 3.0 if ("XAU" in sym or "GOLD" in sym) else (10.0 if "BTC" in sym else 1.5)
+                        locked_pips = min(buffer_pips, max(0.5, pnl_pips * 0.4))
+                        if direction == "BUY":
+                            cand_be = round(entry_p + (locked_pips * pip_size), digits)
+                            if cand_be > pos["sl_price"] and cand_be < cur_p:
+                                pos["sl_price"] = cand_be
+                                pos["breakeven_activated"] = True
+                        else:
+                            cand_be = round(entry_p - (locked_pips * pip_size), digits)
+                            if (pos["sl_price"] == 0 or cand_be < pos["sl_price"]) and cand_be > cur_p:
+                                pos["sl_price"] = cand_be
+                                pos["breakeven_activated"] = True
+
+                        if pos.get("breakeven_activated"):
+                            _log_auto_decision(
+                                "PROTECT",
+                                f"{pos['display']} Başabaş (BE) kilitlendi: Net Kâr ${pos['pnl_usd']:+.2f} (+{pnl_pips:.1f} pip). Stop seviyesi {pos['sl_price']} yapıldı.",
+                                symbol=sym,
+                            )
+                            # MT5 açık biletlerinde de Stop Loss'u başabaş seviyesine çek
+                            if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                                for mpos in _MT5_STATE.get("open_positions", []):
+                                    if mpos.get("symbol", "").upper() == sym.upper():
+                                        t_id = mpos.get("ticket")
+                                        if t_id:
+                                            _MT5_STATE["pending_commands"].append({
+                                                "id": f"CMD-MODIFY-{t_id}-BE",
+                                                "action": "MODIFY_SLTP",
+                                                "ticket": t_id,
+                                                "sl": pos["sl_price"],
+                                                "tp": mpos.get("tp_price", 0.0),
+                                            })
+                                            _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {pos['sl_price']} olarak kilitlendi.", symbol=sym)
 
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
-                    if pnl_pips >= eff_trail_pips:
+                    # Sembole ve volatiliteye (ATR) göre trailing mesafesi
+                    # BE kilitlendikten sonra VEYA pnl_pips >= eff_trail_pips olduğunda fiyatı arkasından takip et
+                    if pos.get("breakeven_activated") or pnl_pips >= eff_trail_pips:
                         trail_dist = eff_trail_pips * pip_size
                         updated_trail = False
                         if direction == "BUY":
                             cand_sl = round(cur_p - trail_dist, digits)
-                            if cand_sl > pos["sl_price"]:
+                            if cand_sl > pos["sl_price"] and cand_sl > entry_p:
                                 pos["sl_price"] = cand_sl
                                 pos["trailing_activated"] = True
                                 updated_trail = True
                         else:
                             cand_sl = round(cur_p + trail_dist, digits)
-                            if cand_sl < pos["sl_price"]:
+                            if (pos["sl_price"] == 0 or cand_sl < pos["sl_price"]) and cand_sl < entry_p:
                                 pos["sl_price"] = cand_sl
                                 pos["trailing_activated"] = True
                                 updated_trail = True
@@ -1356,16 +1375,43 @@ async def _forex_auto_paper_loop():
                     for c in matching_pending:
                         existing_dirs.add(c.get("direction", "").upper())
 
-                    # (a) Aynı yönlü pozisyon zaten açıksa (örn: BUY açıkken tekrar BUY) -> Mükerrer açma, pas geç
+                    # (a) Aynı yönlü pozisyon zaten açıksa (örn: BUY açıkken tekrar BUY)
                     if new_action in existing_dirs:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_open", 0) > 40.0:
-                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_open"] = now_ts
-                            _log_auto_decision(
-                                "SCAN",
-                                f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({new_action}) fakat aynı yönlü pozisyon zaten açık/beklemede. Yeni giriş pas geçildi.",
-                                symbol=sym,
-                            )
-                        continue
+                        same_dir_count = sum(1 for p in matching_auto if p.get("direction", "").upper() == new_action) + \
+                                         sum(1 for p in matching_mt5 if p.get("direction", "").upper() == new_action) + \
+                                         sum(1 for c in matching_pending if c.get("direction", "").upper() == new_action)
+
+                        max_pyr = _AUTO_SETTINGS.max_positions_per_symbol  # Varsayılan: 3
+                        if same_dir_count >= max_pyr:
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_max_pyr", 0) > 40.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_max_pyr"] = now_ts
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({new_action}) fakat bu yönde maksimum {max_pyr} pozisyon zaten açık ({same_dir_count}/{max_pyr}). Yeni giriş pas geçildi.",
+                                    symbol=sym,
+                                )
+                            continue
+
+                        # 1 dakika (60 sn) aralık denetimi
+                        last_entry_ts = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
+                        time_since_entry = now_ts - last_entry_ts
+                        if time_since_entry < 60.0:
+                            rem_sec = int(60.0 - time_since_entry)
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_same_cd", 0) > 20.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_same_cd"] = now_ts
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({new_action}) - Aynı yönde ek pozisyon için 1 dk kuralı ({same_dir_count}/{max_pyr} açık, {rem_sec} sn kaldı).",
+                                    symbol=sym,
+                                )
+                            continue
+
+                        # 60 saniye dolduysa ve count < 3 ise: Aynı yönde ekleme onaylandı!
+                        _log_auto_decision(
+                            "SCAN",
+                            f"[{cand['display']}] 📈 AYNI YÖNDE EK POZİSYON ONAYLANDI: Skor {cand['score']:.1f} ({new_action}) | 1 dk süre doldu ({same_dir_count + 1}/{max_pyr}. pozisyon).",
+                            symbol=sym,
+                        )
 
                     # (b) ZIT yönlü pozisyon varsa (örn: BUY açıkken SELL sinyali geldiyse veya tersi):
                     # Ve sinyal yeterince güçlüyse (skor >= min_score ve spread uygunsa)

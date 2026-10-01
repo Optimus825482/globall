@@ -370,6 +370,14 @@ def execute_market_order(cmd: dict) -> dict:
             execute_close_order({"ticket": pos.ticket})
             time.sleep(0.3)
 
+    # Aynı sembolde aynı yönde maksimum 3 pozisyon denetimi
+    active_now = (mt5.positions_get(symbol=symbol) or []) + (mt5.positions_get(symbol=raw_symbol) or [])
+    same_dir_count = sum(1 for pos in active_now if ("BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL") == direction)
+    if same_dir_count >= 3:
+        err = f"{symbol} için {direction} yönünde zaten {same_dir_count} açık pozisyon var (Maksimum 3 kuralı)."
+        print(f"  🛑 {err}")
+        return {"success": False, "error": err}
+
     spec = get_symbol_trading_specs(symbol)
     # Altın için stop mesafesini dinamik spec koruma seviyesinin altına düşürme
     if is_gold:
@@ -582,38 +590,52 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
             pnl_pips = (entry_p - cur_p) / pip_size
 
         target_sl = None
+        cur_profit = getattr(p, "profit", 0.0)
 
-        # 1. BREAKEVEN (Başabaş Koruması)
-        # Fiyat eff_be_pips kadar kâra ulaştığında, SL'i girişe (+tampon ile) taşı
-        if eff_be_pips > 0 and pnl_pips >= eff_be_pips:
-            buffer_pips = 5.0 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 3.0)
-            be_sl = round(entry_p + (buffer_pips * pip_size if direction == "BUY" else -buffer_pips * pip_size), digits)
+        # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi)
+        # Herhangi bir işlem net $1.00 USD kâra ulaştığında VEYA eff_be_pips aşıldığında
+        is_dollar_be = cur_profit >= 1.0
+        is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
+
+        if (is_dollar_be or is_pip_be):
+            buffer_pips = 3.0 if ("XAU" in sym or "GOLD" in sym) else (10.0 if "BTC" in sym else 1.5)
+            locked_pips = min(buffer_pips, max(0.5, pnl_pips * 0.4))
             if direction == "BUY":
-                if cur_sl < be_sl:
+                be_sl = round(entry_p + (locked_pips * pip_size), digits)
+                if cur_sl < be_sl and be_sl < cur_p:
                     target_sl = be_sl
+                    if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+                        POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
             else:
-                if cur_sl == 0.0 or cur_sl > be_sl:
+                be_sl = round(entry_p - (locked_pips * pip_size), digits)
+                if (cur_sl == 0.0 or cur_sl > be_sl) and be_sl > cur_p:
                     target_sl = be_sl
-            if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
-                POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
+                    if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+                        POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
 
         # 2. TRAILING STOP (İz Süren Stop)
-        # Fiyat eff_trail_pips kadar kârda ise fiyatın arkasından takip et
-        if eff_trail_pips > 0 and pnl_pips >= eff_trail_pips:
+        # Sembole ve volatiliteye göre belirlenen mesafeden fiyatı takip et
+        # BE kilitlendikten sonra VEYA pnl_pips >= eff_trail_pips olduğunda
+        if eff_trail_pips > 0 and (POSITION_PROTECTION_MAP.get(ticket) == "BREAKEVEN" or pnl_pips >= eff_trail_pips):
             trail_dist = eff_trail_pips * pip_size
             if direction == "BUY":
                 cand_sl = round(cur_p - trail_dist, digits)
-                if target_sl is None and cand_sl > cur_sl:
-                    target_sl = cand_sl
-                elif target_sl is not None and cand_sl > target_sl:
-                    target_sl = cand_sl
+                if cand_sl > entry_p:
+                    if target_sl is None and cand_sl > cur_sl:
+                        target_sl = cand_sl
+                        POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                    elif target_sl is not None and cand_sl > target_sl:
+                        target_sl = cand_sl
+                        POSITION_PROTECTION_MAP[ticket] = "TRAILING"
             else:
                 cand_sl = round(cur_p + trail_dist, digits)
-                if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
-                    target_sl = cand_sl
-                elif target_sl is not None and cand_sl < target_sl:
-                    target_sl = cand_sl
-            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                if cand_sl < entry_p:
+                    if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
+                        target_sl = cand_sl
+                        POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                    elif target_sl is not None and cand_sl < target_sl:
+                        target_sl = cand_sl
+                        POSITION_PROTECTION_MAP[ticket] = "TRAILING"
 
         # Eğer yeni bir SL seviyesi belirlendiyse ve mevcut SL'den farklıysa emri MT5'e gönder
         if target_sl is not None and abs(target_sl - cur_sl) >= (0.3 * pip_size):

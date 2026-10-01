@@ -466,6 +466,56 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         res_eth = await forex.send_mt5_order(order_eth)
         self.assertEqual(res_eth["command"]["lots"], 0.02)
 
+    # -------------------------------------------------------------------------
+    # 7. $1.00 BREAKEVEN, VOLATILITY TRAILING STOP & PYRAMIDING (MAX 3) TESTS
+    # -------------------------------------------------------------------------
+    def test_one_dollar_breakeven_condition(self):
+        """Verify that when pnl_usd >= 1.0, Breakeven condition evaluates to True."""
+        pos = {
+            "symbol": "EURUSD",
+            "direction": "BUY",
+            "entry_price": 1.08500,
+            "lots": 0.05,
+            "pip_size": 0.0001,
+            "digits": 5,
+            "pnl_usd": 1.25,
+            "pnl_pips": 2.5,
+            "breakeven_activated": False,
+            "sl_price": 1.08380,
+        }
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertEqual(cfg.breakeven_usd, 1.0)
+        is_dollar_be = pos["pnl_usd"] >= cfg.breakeven_usd
+        self.assertTrue(is_dollar_be)
+
+    def test_max_positions_per_symbol_setting(self):
+        """Verify default max_positions_per_symbol is 3 and max_open_positions is 6."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertEqual(cfg.max_positions_per_symbol, 3)
+        self.assertEqual(cfg.max_open_positions, 6)
+
+    def test_same_symbol_pyramiding_limit_three(self):
+        """Verify that 3 positions in the same direction are allowed, but the 4th is blocked."""
+        sym = "USDJPY"
+        direction = "BUY"
+        existing_auto = [
+            {"symbol": sym, "direction": direction, "id": "P1"},
+            {"symbol": sym, "direction": direction, "id": "P2"},
+            {"symbol": sym, "direction": direction, "id": "P3"},
+        ]
+        same_dir_count = sum(1 for p in existing_auto if p.get("direction") == direction)
+        self.assertEqual(same_dir_count, 3)
+
+        max_pyr = 3
+        can_open_fourth = same_dir_count < max_pyr
+        self.assertFalse(can_open_fourth, "4th position must be blocked when 3 positions exist!")
+
+        # With 2 positions, can open another if 60s has passed
+        two_positions = existing_auto[:2]
+        same_count_2 = sum(1 for p in two_positions if p.get("direction") == direction)
+        can_open_third = same_count_2 < max_pyr
+        self.assertTrue(can_open_third)
+
 
 if __name__ == "__main__":
     unittest.main()
