@@ -179,11 +179,11 @@ export default function ForexPortfolioPage() {
     min_score: 70.0,
     tp_pips: 25.0,
     sl_pips: 15.0,
-    breakeven_pips: 8.0,
-    trailing_stop_pips: 12.0,
+    breakeven_pips: 10.0,
+    trailing_stop_pips: 16.0,
     session_filter: false,
     max_spread_pips: 3.0,
-    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD"],
+    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "USOIL"],
   });
 
   const [showSettings, setShowSettings] = useState(false);
@@ -352,8 +352,8 @@ export default function ForexPortfolioPage() {
         risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 1.0,
         tp_pips: Number(formSettings.tp_pips) || 25.0,
         sl_pips: Number(formSettings.sl_pips) || 15.0,
-        breakeven_pips: Number(formSettings.breakeven_pips) || 8.0,
-        trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 12.0,
+        breakeven_pips: Number(formSettings.breakeven_pips) || 10.0,
+        trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 16.0,
         min_score: Number(formSettings.min_score) || 70.0,
         max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
         max_open_positions: Number(formSettings.max_open_positions) || 3,
@@ -361,7 +361,7 @@ export default function ForexPortfolioPage() {
         allowed_symbols:
           formSettings.allowed_symbols && formSettings.allowed_symbols.length > 0
             ? formSettings.allowed_symbols
-            : ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"],
+            : ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USOIL"],
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {

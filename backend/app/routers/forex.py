@@ -896,22 +896,22 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
-    balance: float = Field(10000.0, ge=100.0, description="Demo bakiye (USD)")
+    balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
     max_open_positions: int = Field(3, ge=1, le=10, description="Aynı anda maksimum açık işlem")
     min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
-    tp_pips: float = Field(26.0, ge=18.0, le=80.0, description="Kâr al mesafesi (pip)")
-    sl_pips: float = Field(12.0, ge=10.0, le=30.0, description="Zarar durdur mesafesi (pip)")
-    breakeven_pips: float = Field(14.0, ge=8.0, le=35.0, description="Başabaş kilit tetik mesafesi (varsayılan: 14.0 pip, min uygulanan: 14.0 pip)")
-    trailing_stop_pips: float = Field(20.0, ge=14.0, le=50.0, description="İz süren stop mesafesi (pip)")
+    tp_pips: float = Field(26.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip)")
+    sl_pips: float = Field(12.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip)")
+    breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
+    trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
-    max_spread_pips: float = Field(3.0, ge=0.5, le=10.0, description="Maksimum izin verilen spread (pip)")
+    max_spread_pips: float = Field(3.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip)")
     max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
     max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) ve Kripto lot tavanı (Sert tavan: 0.02)")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
     allowed_symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "BTCUSD"],
+        default=["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDCAD", "AUDUSD", "BTCUSD", "USOIL"],
         description="İşleme izin verilen pariteler",
     )
 
