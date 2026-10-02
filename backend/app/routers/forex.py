@@ -1508,9 +1508,9 @@ class ForexAutoPaperSettings(BaseModel):
     supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
     ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
-    ev_min_trades: int = Field(8, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı")
-    ev_max_win_rate: float = Field(42.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir")
-    ev_loss_risk_mult: float = Field(2.0, ge=0.5, le=20.0, description="Akut kayıp eşiği: pencere zararı işlem-başı risk bütçesinin bu katını aşarsa sembol dinlenir")
+    ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
+    ev_max_win_rate: float = Field(35.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (yumuşatıldı: 42 → 35)")
+    ev_loss_risk_mult: float = Field(3.0, ge=0.5, le=20.0, description="Akut kayıp eşiği: pencere zararı işlem-başı risk bütçesinin bu katını aşarsa sembol dinlenir (yumuşatıldı: 2x → 3x)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],

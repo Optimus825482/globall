@@ -509,12 +509,12 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.supertrend_filter_enabled)
         # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
         self.assertEqual(list(cfg.blocked_hours_utc), [])
-        # EV kalkanı varsayılanları (canlı veriyle kalibre: USDCAD/USDJPY desenleri tetiklenir)
+        # EV kalkanı varsayılanları (yumuşatılmış: 10 işlem, WR<%35, 3x risk akut eşik)
         self.assertTrue(cfg.ev_guard_enabled)
         self.assertEqual(cfg.ev_window_hours, 24.0)
-        self.assertEqual(cfg.ev_min_trades, 8)
-        self.assertEqual(cfg.ev_max_win_rate, 42.0)
-        self.assertEqual(cfg.ev_loss_risk_mult, 2.0)
+        self.assertEqual(cfg.ev_min_trades, 10)
+        self.assertEqual(cfg.ev_max_win_rate, 35.0)
+        self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
         # allowed_symbols hâlâ tam 12 işlem yapılabilir sembol (DXY hariç)
         self.assertEqual(len(cfg.allowed_symbols), 12)
         self.assertNotIn("DXY", cfg.allowed_symbols)
@@ -572,35 +572,36 @@ class TestRiskNormalization(unittest.IsolatedAsyncioTestCase):
 
 
 class TestEVGuard(unittest.IsolatedAsyncioTestCase):
-    """Sembol EV kalkanı: kararı ve istatistik toplama."""
+    """Sembol EV kalkanı (yumuşatılmış eşikler): kararı ve istatistik toplama."""
 
     def test_decision_blocks_chronic_bleeder(self):
-        # Canlı kanıt: USDCAD 25 işlem, %40 WR, net negatif → dinlenmeli
-        stats = {"n": 25, "net": -11.5, "win_rate": 40.0}
-        self.assertTrue(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+        # Derin kronik kaybeden: 10+ işlem, %30 WR, net negatif → dinlenmeli
+        stats = {"n": 12, "net": -11.5, "win_rate": 30.0}
+        self.assertTrue(forex.ev_guard_decision(stats, 10, 35.0, 30.0))
 
     def test_decision_blocks_acute_loss(self):
-        # Canlı kanıt: USDCAD 12 işlem, %25 WR, −$24 (risk bütçesi $10, 2x=$20 eşiği)
-        stats = {"n": 12, "net": -24.0, "win_rate": 25.0}
-        self.assertTrue(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+        # Akut: zarar 3x risk bütçesini (3 x $10 = $30) aştı → WR fark etmeksizin dinlenmeli
+        stats = {"n": 10, "net": -45.0, "win_rate": 55.0}
+        self.assertTrue(forex.ev_guard_decision(stats, 10, 35.0, 30.0))
 
-    def test_decision_blocks_asymmetric_loser(self):
-        # WR sağlam görünüyor ama zarar risk bütçesinin 2 katını aştı
-        stats = {"n": 10, "net": -25.0, "win_rate": 55.0}
-        self.assertTrue(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+    def test_decision_frees_marginal_bleeder(self):
+        # Yumuşatmanın amacı: "haklı ama az zarar veren" sembol serbest
+        # (canlı örneği: USDCAD 25 işlem %40 WR −$11.54 → tetiklenmemeli)
+        stats = {"n": 25, "net": -11.5, "win_rate": 40.0}
+        self.assertFalse(forex.ev_guard_decision(stats, 10, 35.0, 30.0))
 
     def test_decision_allows_small_sample(self):
-        stats = {"n": 5, "net": -20.0, "win_rate": 20.0}
-        self.assertFalse(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+        stats = {"n": 8, "net": -20.0, "win_rate": 20.0}
+        self.assertFalse(forex.ev_guard_decision(stats, 10, 35.0, 30.0))
 
     def test_decision_allows_profitable(self):
-        stats = {"n": 12, "net": 30.0, "win_rate": 38.0}
-        self.assertFalse(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+        stats = {"n": 12, "net": 30.0, "win_rate": 30.0}
+        self.assertFalse(forex.ev_guard_decision(stats, 10, 35.0, 30.0))
 
     def test_decision_allows_healthy_wr_with_tiny_loss(self):
-        # Zarar var ama WR sağlıklı ve zarar akut eşiğin altında → dokunulmaz
+        # Zarar var ama WR sağlıklı ve zarar akut eşiğin (3x=$30) altında → dokunulmaz
         stats = {"n": 10, "net": -5.0, "win_rate": 55.0}
-        self.assertFalse(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+        self.assertFalse(forex.ev_guard_decision(stats, 10, 35.0, 30.0))
 
     def test_collect_symbol_ev_from_paper_book(self):
         forex._AUTO_STATE["closed_trades"].clear()

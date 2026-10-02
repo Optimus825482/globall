@@ -52,11 +52,11 @@ CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index":
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV")
 
-# EV kalkanı (canlı motorla aynı eşikler)
+# EV kalkanı (canlı motorla aynı, yumuşatılmış eşikler)
 EV_WINDOW_SEC = 24 * 3600
-EV_MIN_TRADES = 8
-EV_MAX_WIN_RATE = 42.0
-EV_LOSS_RISK_MULT = 2.0
+EV_MIN_TRADES = 10
+EV_MAX_WIN_RATE = 35.0
+EV_LOSS_RISK_MULT = 3.0
 EV_GUARD = True
 
 # Ayarlanabilir tuning parametreleri (CLI ile override edilir)
