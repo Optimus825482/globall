@@ -495,19 +495,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     continue
                 candidates[vname].append(cand())
 
-        # 4) USD kalkanı + skor sırasına göre açılış
+        # 4) Skor sırasına göre açılış (eski USD-yön sayacı kaldırıldı — korelasyon kalkanı koruyor)
         for vname, book in books.items():
             opened = 0
-            used_biases: List[Tuple[str, str]] = [(p.symbol, forex.get_usd_bias(p.symbol, p.direction)) for p in book.positions]
             for cand_d in sorted(candidates[vname], key=lambda x: -x["score"]):
                 if len(book.positions) >= MAX_OPEN_POSITIONS or opened >= TRADES_PER_BAR_CAP:
                     break
-                bias = forex.get_usd_bias(cand_d["symbol"], cand_d["action"])
-                if bias != "USD_NEUTRAL":
-                    same_bias_syms = {s for s, b in used_biases if b == bias and s != cand_d["symbol"]}
-                    if len(same_bias_syms) >= 2:
-                        continue
-                    used_biases.append((cand_d["symbol"], bias))
                 spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
                 if vname == "NEW":
                     levels = forex.get_atr_exit_levels(

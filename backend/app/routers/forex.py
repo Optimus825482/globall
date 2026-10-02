@@ -1499,7 +1499,6 @@ class ForexAutoPaperSettings(BaseModel):
     max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
     max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) ve Kripto lot tavanı (Sert tavan: 0.02)")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
-    usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
@@ -2125,38 +2124,11 @@ async def _forex_auto_paper_loop():
                     if veto_reason == "dxy_strict_neutral":
                         weak_symbol_score_bump = 5.0
 
-                # 5. USD Korelasyon Kalkanı (Anti-Clustering Koruması)
-                cand_usd_bias = get_usd_bias(sym, direction)
-
-                if cand_usd_bias != "USD_NEUTRAL":
-                    active_usd_biases = []
-                    all_active_positions = list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
-                    for p in all_active_positions:
-                        b = get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY"))
-                        if b != "USD_NEUTRAL":
-                            active_usd_biases.append((p.get("symbol", "").upper(), b))
-                    for c in _MT5_STATE.get("pending_commands", []):
-                        if c.get("action") == "OPEN_ORDER":
-                            b = get_usd_bias(c.get("symbol", ""), c.get("direction", "BUY"))
-                            if b != "USD_NEUTRAL":
-                                active_usd_biases.append((c.get("symbol", "").upper(), b))
-
-                    # Farklı sembollerdeki aynı yönlü USD pozisyonları
-                    conflicting_symbols = {item[0] for item in active_usd_biases if item[1] == cand_usd_bias and item[0] != sym}
-                    max_allowed_symbols = 1 if _AUTO_SETTINGS.usd_correlation_guard else 2
-                    if len(conflicting_symbols) >= max_allowed_symbols:
-                        conf_str = ", ".join(list(conflicting_symbols)[:3])
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_usd_corr", 0) > 30.0:
-                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_usd_corr"] = now_ts
-                            _log_auto_decision(
-                                "GATE",
-                                f"[{cand['display']}] USD Risk Kalkanı: Zaten {cand_usd_bias} yönlü {len(conflicting_symbols)} farklı parite açık ({conf_str}). Portföy kümelenme riskini sınırlamak için yeni {cand_usd_bias} pas geçildi.",
-                                symbol=sym,
-                            )
-                        continue
-
+                # (Eski "USD Korelasyon Kalkanı" kaldırıldı — kullanıcı kararı.
+                # Kaba USD-yön sayacı yerine 5b'deki gerçek Pearson korelasyon kalkanı koruyor.)
                 # 5b. Parite Korelasyon Kalkanı (FX Correlation Cluster Guard)
                 # |ρ|>=0.85 aynı USD bias'lı çakışma ve yüksek korelasyonlu küme girişlerini sınırlar.
+                cand_usd_bias = get_usd_bias(sym, direction)
                 if _AUTO_SETTINGS.correlation_guard and cand_usd_bias != "USD_NEUTRAL":
                     corr_positions: List[tuple] = []
                     for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])):
@@ -2811,7 +2783,6 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "max_forex_lot": _AUTO_SETTINGS.max_forex_lot,
             "max_gold_lot": _AUTO_SETTINGS.max_gold_lot,
             "gold_cooldown_sec": _AUTO_SETTINGS.gold_cooldown_sec,
-            "usd_correlation_guard": _AUTO_SETTINGS.usd_correlation_guard,
             "atr_exit_enabled": _AUTO_SETTINGS.atr_exit_enabled,
             "partial_tp_enabled": _AUTO_SETTINGS.partial_tp_enabled,
             "dxy_filter_enabled": _AUTO_SETTINGS.dxy_filter_enabled,

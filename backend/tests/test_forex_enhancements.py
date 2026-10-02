@@ -144,10 +144,13 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(specs["digits"], 2)
 
     # -------------------------------------------------------------------------
-    # 3. USD CORRELATION SHIELD (ANTI-CLUSTERING) TESTS
+    # 3. USD BIAS & KORELASYON TESTS
+    # (Not: eski kaba "USD Risk Kalkanı" kullanıcı kararıyla kaldırıldı; portföy
+    #  kümelenme koruması artık gerçek Pearson korelasyonuyla çalışan 5b kalkanında
+    #  — bkz. test_forex_improvements.TestFXCorrelationGuard.)
     # -------------------------------------------------------------------------
     def test_usd_bias_mapping(self):
-        """Verify accurate USD directional bias detection across pairs."""
+        """Verify accurate USD directional bias detection across pairs (DXY veto + korelasyon kapısı girdisi)."""
         # Pairs where USD is base:
         self.assertEqual(forex.get_usd_bias("USDJPY", "BUY"), "USD_LONG")
         self.assertEqual(forex.get_usd_bias("USDJPY", "SELL"), "USD_SHORT")
@@ -165,48 +168,6 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forex.get_usd_bias("AUDUSD", "SELL"), "USD_LONG")
         self.assertEqual(forex.get_usd_bias("XAUUSD", "BUY"), "USD_SHORT")
         self.assertEqual(forex.get_usd_bias("XAUUSD", "SELL"), "USD_LONG")
-
-    async def test_usd_correlation_shield_blocks_same_direction_clustering(self):
-        """Verify that active USD_LONG position prevents opening another USD_LONG trade."""
-        # Add an active USDJPY BUY (USD_LONG) position
-        active_pos = {
-            "id": "FX-USDJPY-1",
-            "symbol": "USDJPY",
-            "direction": "BUY",
-            "lots": 0.05,
-            "entry_price": 154.00,
-            "current_price": 154.00,
-            "sl_price": 153.88,
-            "tp_price": 154.22,
-            "pip_size": 0.01,
-            "digits": 3,
-        }
-        forex._AUTO_STATE["open_positions"] = [active_pos]
-
-        # Scan active biases
-        active_biases = [
-            (p["symbol"], forex.get_usd_bias(p["symbol"], p["direction"]))
-            for p in forex._AUTO_STATE["open_positions"]
-        ]
-        self.assertIn(("USDJPY", "USD_LONG"), active_biases)
-
-        # Now test candidate USDCAD BUY (also USD_LONG)
-        cand_usdcad_bias = forex.get_usd_bias("USDCAD", "BUY")
-        self.assertEqual(cand_usdcad_bias, "USD_LONG")
-        conflicts = [b for b in active_biases if b[1] == cand_usdcad_bias]
-        self.assertTrue(len(conflicts) > 0, "USDCAD BUY must conflict with active USDJPY BUY!")
-
-        # Test candidate EURUSD SELL (also USD_LONG)
-        cand_eurusd_bias = forex.get_usd_bias("EURUSD", "SELL")
-        self.assertEqual(cand_eurusd_bias, "USD_LONG")
-        conflicts2 = [b for b in active_biases if b[1] == cand_eurusd_bias]
-        self.assertTrue(len(conflicts2) > 0, "EURUSD SELL must conflict with active USDJPY BUY!")
-
-        # In contrast, EURUSD BUY is USD_SHORT, which does not add to USD_LONG risk
-        cand_eurusd_buy_bias = forex.get_usd_bias("EURUSD", "BUY")
-        self.assertEqual(cand_eurusd_buy_bias, "USD_SHORT")
-        conflicts3 = [b for b in active_biases if b[1] == cand_eurusd_buy_bias]
-        self.assertEqual(len(conflicts3), 0, "EURUSD BUY should NOT conflict with USD_LONG")
 
     # -------------------------------------------------------------------------
     # 4. IMPROVED RISK:REWARD & DYNAMIC EXIT TESTS
@@ -594,21 +555,6 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         pnl_win = sum(p.get("pnl_usd", 0.0) for p in matching_auto_win)
         can_pyramid_win = pnl_win >= 0.20
         self.assertTrue(can_pyramid_win, "Adding to winning profitable trades must be allowed!")
-
-    def test_usd_correlation_max_symbols_cap(self):
-        """Verify that portfolio correlation caps simultaneous same-direction USD exposure to max 2 different symbols."""
-        active_biases = [
-            ("USDJPY", "USD_LONG"),
-            ("GBPUSD", "USD_LONG"),
-        ]
-        cand_sym = "AUDUSD"
-        cand_bias = "USD_LONG"
-        conflicting_symbols = {item[0] for item in active_biases if item[1] == cand_bias and item[0] != cand_sym}
-        self.assertEqual(len(conflicting_symbols), 2)
-        # Even when usd_correlation_guard is False, max 2 different symbols are allowed
-        max_allowed = 2
-        is_blocked = len(conflicting_symbols) >= max_allowed
-        self.assertTrue(is_blocked, "3rd different USD_LONG symbol must be capped to prevent correlated drawdown!")
 
     def test_gold_commodity_score_threshold(self):
         """Verify Gold and Oil require higher conviction score >= 78.0 while standard forex requires 75.0 (replay-tuned)."""
