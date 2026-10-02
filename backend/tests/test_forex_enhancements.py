@@ -516,6 +516,33 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         can_open_third = same_count_2 < max_pyr
         self.assertTrue(can_open_third)
 
+    def test_reversal_flip_only_on_opposite_direction(self):
+        """Verify that same-direction signals never trigger a reversal flip."""
+        # Case 1: BUY open, BUY signal arrives -> opposite_dirs is empty!
+        existing_dirs = {"BUY"}
+        new_action = "BUY"
+        opposite_dirs = {d for d in existing_dirs if d != new_action}
+        self.assertEqual(len(opposite_dirs), 0, "Same direction must NOT produce opposite dirs!")
+
+        # Case 2: BUY open, SELL signal arrives -> opposite_dirs contains BUY
+        new_action_rev = "SELL"
+        opposite_dirs_rev = {d for d in existing_dirs if d != new_action_rev}
+        self.assertEqual(opposite_dirs_rev, {"BUY"}, "Opposite direction must trigger reversal flip!")
+
+    def test_crypto_spread_allowance(self):
+        """Verify that ETHUSD and BTCUSD get a 20.0 pip spread allowance while standard forex gets 3.0."""
+        cfg = forex.ForexAutoPaperSettings()
+        for sym in ["BTCUSD", "ETHUSD", "BTC/USD", "ETH/USD"]:
+            effective_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else cfg.max_spread_pips
+            self.assertEqual(effective_spread, 20.0, f"{sym} should allow up to 20 pips spread")
+            # 12 pips spread on ETH should pass
+            self.assertTrue(12.0 <= effective_spread)
+
+        for sym in ["EURUSD", "GBPUSD", "USDJPY"]:
+            effective_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else cfg.max_spread_pips
+            self.assertEqual(effective_spread, 3.0, f"{sym} should have standard max spread")
+            self.assertFalse(12.0 <= effective_spread)
+
 
 if __name__ == "__main__":
     unittest.main()

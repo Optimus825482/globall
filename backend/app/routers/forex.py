@@ -1375,8 +1375,55 @@ async def _forex_auto_paper_loop():
                     for c in matching_pending:
                         existing_dirs.add(c.get("direction", "").upper())
 
-                    # (a) Aynı yönlü pozisyon zaten açıksa (örn: BUY açıkken tekrar BUY)
-                    if new_action in existing_dirs:
+                    opposite_dirs = {d for d in existing_dirs if d != new_action}
+
+                    if opposite_dirs:
+                        # (b) ZIT yönlü pozisyon varsa (örn: BUY açıkken SELL sinyali geldiyse veya tersi):
+                        # Ve sinyal yeterince güçlüyse (skor >= min_score ve spread uygunsa)
+                        effective_spread_limit = 20.0 if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
+                        if cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score and cand.get("spread_pips", 99.0) <= effective_spread_limit:
+                            old_dir_str = "/".join(opposite_dirs)
+                            _log_auto_decision(
+                                "REVERSAL",
+                                f"🔄 [{cand['display']}] TREND DÖNÜŞÜ (FLIP): Açık {old_dir_str} pozisyonu kapatılıyor -> Yeni {new_action} açılıyor! (Skor: {cand['score']:.1f})",
+                                symbol=sym,
+                            )
+                            # Önce açık auto-paper ZIT pozisyonunu kapat
+                            for ap in matching_auto:
+                                if ap.get("direction", "").upper() in opposite_dirs:
+                                    t_sym = ticks.get(sym)
+                                    exit_p = (t_sym["bid"] if ap.get("direction") == "BUY" else t_sym["ask"]) if t_sym else None
+                                    await _close_position_internal(ap["id"], "REVERSAL_FLIP", exit_p)
+
+                            # MT5 açık ZIT pozisyonu varsa kapatma komutu ilet
+                            for mp in matching_mt5:
+                                if mp.get("direction", "").upper() in opposite_dirs:
+                                    t_id = mp.get("ticket")
+                                    if t_id:
+                                        _MT5_STATE["pending_commands"].append({
+                                            "id": f"CMD-CLOSE-{t_id}-FLIP",
+                                            "action": "CLOSE_ORDER",
+                                            "ticket": t_id,
+                                        })
+
+                            # Eski ZIT yöndeki bekleyen emirler varsa temizle
+                            _MT5_STATE["pending_commands"] = [
+                                c for c in _MT5_STATE.get("pending_commands", [])
+                                if not (c.get("action") == "OPEN_ORDER" and c.get("symbol", "").upper() == sym and c.get("direction") != new_action)
+                            ]
+
+                            # Anında ters yöne geçebilmek için sembol soğumasını sıfırla
+                            _LAST_SYMBOL_ENTRY_TIME[sym] = 0.0
+                            if "XAU" in sym or "GOLD" in sym:
+                                _LAST_GOLD_EXIT_TIME = 0.0
+
+                            # Döngü devam eder ve aşağıda yeni new_action (BUY/SELL) emrini açar!
+                        else:
+                            # Zıt yönlü ama skor eşiğini henüz aşmamışsa mevcut işlemi bozma
+                            continue
+
+                    elif new_action in existing_dirs:
+                        # (a) Aynı yönlü pozisyon zaten açıksa (örn: BUY açıkken tekrar BUY)
                         same_dir_count = sum(1 for p in matching_auto if p.get("direction", "").upper() == new_action) + \
                                          sum(1 for p in matching_mt5 if p.get("direction", "").upper() == new_action) + \
                                          sum(1 for c in matching_pending if c.get("direction", "").upper() == new_action)
@@ -1412,47 +1459,6 @@ async def _forex_auto_paper_loop():
                             f"[{cand['display']}] 📈 AYNI YÖNDE EK POZİSYON ONAYLANDI: Skor {cand['score']:.1f} ({new_action}) | 1 dk süre doldu ({same_dir_count + 1}/{max_pyr}. pozisyon).",
                             symbol=sym,
                         )
-
-                    # (b) ZIT yönlü pozisyon varsa (örn: BUY açıkken SELL sinyali geldiyse veya tersi):
-                    # Ve sinyal yeterince güçlüyse (skor >= min_score ve spread uygunsa)
-                    if cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score and cand.get("spread_pips", 99.0) <= _AUTO_SETTINGS.max_spread_pips:
-                        old_dir_str = "/".join(existing_dirs) if existing_dirs else "TERS"
-                        _log_auto_decision(
-                            "REVERSAL",
-                            f"🔄 [{cand['display']}] TREND DÖNÜŞÜ (FLIP): Açık {old_dir_str} pozisyonu kapatılıyor -> Yeni {new_action} açılıyor! (Skor: {cand['score']:.1f})",
-                            symbol=sym,
-                        )
-                        # Önce açık auto-paper pozisyonunu kapat
-                        for ap in matching_auto:
-                            t_sym = ticks.get(sym)
-                            exit_p = (t_sym["bid"] if ap.get("direction") == "BUY" else t_sym["ask"]) if t_sym else None
-                            await _close_position_internal(ap["id"], "REVERSAL_FLIP", exit_p)
-
-                        # MT5 açık pozisyonu varsa kapatma komutu ilet
-                        for mp in matching_mt5:
-                            t_id = mp.get("ticket")
-                            if t_id:
-                                _MT5_STATE["pending_commands"].append({
-                                    "id": f"CMD-CLOSE-{t_id}-FLIP",
-                                    "action": "CLOSE_ORDER",
-                                    "ticket": t_id,
-                                })
-
-                        # Eski yöndeki bekleyen emirler varsa temizle
-                        _MT5_STATE["pending_commands"] = [
-                            c for c in _MT5_STATE.get("pending_commands", [])
-                            if not (c.get("action") == "OPEN_ORDER" and c.get("symbol", "").upper() == sym and c.get("direction") != new_action)
-                        ]
-
-                        # Anında ters yöne geçebilmek için sembol soğumasını sıfırla
-                        _LAST_SYMBOL_ENTRY_TIME[sym] = 0.0
-                        if "XAU" in sym or "GOLD" in sym:
-                            _LAST_GOLD_EXIT_TIME = 0.0
-
-                        # Döngü devam eder ve aşağıda yeni new_action (BUY/SELL) emrini açar!
-                    else:
-                        # Zıt yönlü ama skor eşiğini henüz aşmamışsa mevcut işlemi bozma
-                        continue
 
                 is_gold = ("XAU" in sym or "GOLD" in sym)
 
@@ -1494,7 +1500,7 @@ async def _forex_auto_paper_loop():
                             if b != "USD_NEUTRAL":
                                 active_usd_biases.append((c.get("symbol", ""), b))
 
-                    conflicting = [item for item in active_usd_biases if item[1] == cand_usd_bias]
+                    conflicting = [item for item in active_usd_biases if item[1] == cand_usd_bias and item[0] != sym]
                     if conflicting:
                         conf_sym = conflicting[0][0]
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_usd_corr", 0) > 30.0:
@@ -1507,7 +1513,7 @@ async def _forex_auto_paper_loop():
                         continue
 
                 # 5. Spread Filtresi
-                effective_max_spread = 20.0 if "BTC" in sym else _AUTO_SETTINGS.max_spread_pips
+                effective_max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
                 if cand["spread_pips"] > effective_max_spread:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
