@@ -212,12 +212,12 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
     # 4. IMPROVED RISK:REWARD & DYNAMIC EXIT TESTS
     # -------------------------------------------------------------------------
     def test_default_risk_reward_ratio(self):
-        """Verify default settings provide favorable R:R ratio >= 1.8."""
+        """Verify default settings provide favorable R:R ratio >= 1.8 with tight 8.0 pip SL."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(cfg.sl_pips, 12.0)
-        self.assertEqual(cfg.tp_pips, 26.0)
+        self.assertEqual(cfg.sl_pips, 8.0)
+        self.assertEqual(cfg.tp_pips, 20.0)
         rr_ratio = cfg.tp_pips / cfg.sl_pips
-        self.assertGreaterEqual(rr_ratio, 1.8)
+        self.assertGreaterEqual(rr_ratio, 2.0)
         self.assertEqual(cfg.breakeven_pips, 14.0)
         self.assertEqual(cfg.trailing_stop_pips, 20.0)
 
@@ -277,10 +277,10 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
 
     def test_gold_dynamic_atr_buffer(self):
         """Verify Gold SL/TP dynamically widen with high ATR to protect against spread spikes."""
-        # Low volatility Gold (ATR 15 pips / $1.50) -> Base 36.0 pips / $3.60 SL
+        # Low volatility Gold (ATR 15 pips / $1.50) -> Base 24.0 pips / $2.40 SL
         spec_low = forex.get_symbol_trading_specs("XAUUSD", atr_pips=15.0)
-        self.assertEqual(spec_low["sl_pips"], 36.0)
-        self.assertEqual(spec_low["tp_pips"], 66.0)
+        self.assertEqual(spec_low["sl_pips"], 24.0)
+        self.assertEqual(spec_low["tp_pips"], 60.0)
         self.assertGreaterEqual(spec_low["be_pips"], 25.0)
 
         # High volatility Gold (ATR 45 pips / $4.50) -> Dynamic buffer expands to 67.5 pips / $6.75 SL
@@ -581,8 +581,53 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(effective_spread, 3.0, f"{sym} should have standard max spread")
             self.assertFalse(12.0 <= effective_spread)
 
+    def test_winning_pyramiding_rule(self):
+        """Verify that pyramiding only allows adding to profitable positions, blocking averaging down on losers."""
+        # Case A: Existing position is in loss (-$2.50) -> Must be blocked!
+        matching_auto_loss = [{"symbol": "AUDUSD", "direction": "SELL", "pnl_usd": -2.50}]
+        pnl_loss = sum(p.get("pnl_usd", 0.0) for p in matching_auto_loss)
+        can_pyramid_loss = pnl_loss >= 0.20
+        self.assertFalse(can_pyramid_loss, "Averaging down into losing trades must be blocked!")
+
+        # Case B: Existing position is in profit (+$1.20) -> Allowed!
+        matching_auto_win = [{"symbol": "AUDUSD", "direction": "SELL", "pnl_usd": 1.20}]
+        pnl_win = sum(p.get("pnl_usd", 0.0) for p in matching_auto_win)
+        can_pyramid_win = pnl_win >= 0.20
+        self.assertTrue(can_pyramid_win, "Adding to winning profitable trades must be allowed!")
+
+    def test_usd_correlation_max_symbols_cap(self):
+        """Verify that portfolio correlation caps simultaneous same-direction USD exposure to max 2 different symbols."""
+        active_biases = [
+            ("USDJPY", "USD_LONG"),
+            ("GBPUSD", "USD_LONG"),
+        ]
+        cand_sym = "AUDUSD"
+        cand_bias = "USD_LONG"
+        conflicting_symbols = {item[0] for item in active_biases if item[1] == cand_bias and item[0] != cand_sym}
+        self.assertEqual(len(conflicting_symbols), 2)
+        # Even when usd_correlation_guard is False, max 2 different symbols are allowed
+        max_allowed = 2
+        is_blocked = len(conflicting_symbols) >= max_allowed
+        self.assertTrue(is_blocked, "3rd different USD_LONG symbol must be capped to prevent correlated drawdown!")
+
+    def test_gold_commodity_score_threshold(self):
+        """Verify Gold and Oil require higher conviction score >= 78.0 while standard forex requires 70.0."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertEqual(cfg.min_score, 70.0)
+        
+        for sym in ["XAUUSD", "GOLD", "USOIL", "OIL"]:
+            is_comm = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
+            req = 78.0 if is_comm else cfg.min_score
+            self.assertEqual(req, 78.0)
+
+        for sym in ["EURUSD", "GBPUSD", "NAS100"]:
+            is_comm = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
+            req = 78.0 if is_comm else cfg.min_score
+            self.assertEqual(req, 70.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

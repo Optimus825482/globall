@@ -149,8 +149,8 @@ def resolve_mt5_symbol(symbol: str) -> str:
 
 def get_symbol_trading_specs(
     symbol: str,
-    base_sl: float = 12.0,
-    base_tp: float = 22.0,
+    base_sl: float = 8.0,
+    base_tp: float = 20.0,
     base_be: float = 10.0,
     base_trail: float = 16.0,
     atr_pips: Optional[float] = None,
@@ -370,13 +370,21 @@ def execute_market_order(cmd: dict) -> dict:
             execute_close_order({"ticket": pos.ticket})
             time.sleep(0.3)
 
-    # Aynı sembolde aynı yönde maksimum 3 pozisyon denetimi
+    # Aynı sembolde aynı yönde maksimum 3 pozisyon ve Kârdaki Pozisyona Ekleme denetimi
     active_now = (mt5.positions_get(symbol=symbol) or []) + (mt5.positions_get(symbol=raw_symbol) or [])
-    same_dir_count = sum(1 for pos in active_now if ("BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL") == direction)
+    same_dir_positions = [pos for pos in active_now if ("BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL") == direction]
+    same_dir_count = len(same_dir_positions)
     if same_dir_count >= 3:
         err = f"{symbol} için {direction} yönünde zaten {same_dir_count} açık pozisyon var (Maksimum 3 kuralı)."
         print(f"  🛑 {err}")
         return {"success": False, "error": err}
+
+    if same_dir_positions:
+        total_dir_profit = sum(getattr(pos, "profit", 0.0) for pos in same_dir_positions)
+        if total_dir_profit < 0.20:
+            err = f"{symbol} {direction} yönünde açık {same_dir_count} pozisyon henüz kârda değil (${total_dir_profit:+.2f}). Zarara ekleme engellendi!"
+            print(f"  🛑 [PİRAMİTLEME ENGELİ]: {err}")
+            return {"success": False, "error": err}
 
     spec = get_symbol_trading_specs(symbol)
     # Altın için stop mesafesini dinamik spec koruma seviyesinin altına düşürme
@@ -596,8 +604,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         dollar_per_pip = max(0.0001, vol * pip_val)
         pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
 
-        # Piyasa gürültüsü ve broker toleransı için min nefes payı
-        min_headroom_pips = 1.5 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 0.8)
+        # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
+        # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
+        min_headroom_pips = 6.0 if ("XAU" in sym or "GOLD" in sym) else (35.0 if "BTC" in sym else 2.5)
 
         # 1. BREAKEVEN (Başabaş / Net $1.00 USD Kâr Kilidi)
         # Herhangi bir işlem net $1.00 USD kâr seviyesini nefes payıyla aştığında VEYA eff_be_pips aşıldığında

@@ -316,8 +316,8 @@ def get_usd_bias(symbol: str, direction: str) -> str:
 
 def get_symbol_trading_specs(
     symbol: str,
-    base_sl: float = 12.0,
-    base_tp: float = 22.0,
+    base_sl: float = 8.0,
+    base_tp: float = 20.0,
     base_be: float = 10.0,
     base_trail: float = 16.0,
     atr_pips: Optional[float] = None,
@@ -961,8 +961,8 @@ class ForexAutoPaperSettings(BaseModel):
     max_open_positions: int = Field(6, ge=1, le=20, description="Aynı anda maksimum açık işlem")
     max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
     min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
-    tp_pips: float = Field(26.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip)")
-    sl_pips: float = Field(12.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip)")
+    tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
+    sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
     breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
     breakeven_usd: float = Field(1.0, ge=0.5, le=10.0, description="Başabaş kilit tetikleme net kârı ($)")
     trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
@@ -1225,7 +1225,9 @@ async def _forex_auto_paper_loop():
                     dollar_per_pip = max(0.0001, lots * pip_val)
                     pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
 
-                    min_headroom_pips = 1.5 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 0.8)
+                    # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
+                    # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
+                    min_headroom_pips = 6.0 if ("XAU" in sym or "GOLD" in sym) else (35.0 if "BTC" in sym else 2.5)
                     is_dollar_be = (pos.get("pnl_usd", 0.0) >= (1.0 + (min_headroom_pips * dollar_per_pip))) or (pnl_pips >= (pips_for_1usd + min_headroom_pips))
                     is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
 
@@ -1452,6 +1454,21 @@ async def _forex_auto_paper_loop():
                                 )
                             continue
 
+                        # KRİTİK KÂRLILIK KURALI: Yalnızca KÂRDAKİ Pozisyona Ekleme Yap (Winning Pyramiding)
+                        # Mevcut açık pozisyonların toplam kârı >= +0.20$ olmalı!
+                        # Zarardaki pozisyona maliyet düşürme (averaging down) KESİNLİKLE ENGELLENİR!
+                        existing_pnl_usd = sum(p.get("pnl_usd", 0.0) for p in matching_auto if p.get("direction", "").upper() == new_action) + \
+                                           sum(float(getattr(p, "profit", p.get("pnl_usd", 0.0))) for p in matching_mt5 if p.get("direction", "").upper() == new_action)
+                        if existing_pnl_usd < 0.20:
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_pyr_loss", 0) > 30.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_pyr_loss"] = now_ts
+                                _log_auto_decision(
+                                    "GATE",
+                                    f"[{cand['display']}] Piramitleme Kalkanı: Mevcut açık {same_dir_count} pozisyon henüz kârda değil (${existing_pnl_usd:+.2f}). Zarara ekleme engellendi (Kazanana ekleme kuralı).",
+                                    symbol=sym,
+                                )
+                            continue
+
                         # 1 dakika (60 sn) aralık denetimi
                         last_entry_ts = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
                         time_since_entry = now_ts - last_entry_ts
@@ -1466,10 +1483,10 @@ async def _forex_auto_paper_loop():
                                 )
                             continue
 
-                        # 60 saniye dolduysa ve count < 3 ise: Aynı yönde ekleme onaylandı!
+                        # 60 saniye dolduysa ve count < 3 ise ve pozisyon kârdaysa: Aynı yönde ekleme onaylandı!
                         _log_auto_decision(
                             "SCAN",
-                            f"[{cand['display']}] 📈 AYNI YÖNDE EK POZİSYON ONAYLANDI: Skor {cand['score']:.1f} ({new_action}) | 1 dk süre doldu ({same_dir_count + 1}/{max_pyr}. pozisyon).",
+                            f"[{cand['display']}] 📈 KÂRDA EK POZİSYON ONAYLANDI: Skor {cand['score']:.1f} ({new_action}) | Mevcut Kâr: ${existing_pnl_usd:+.2f} ({same_dir_count + 1}/{max_pyr}. pozisyon).",
                             symbol=sym,
                         )
 
@@ -1500,27 +1517,29 @@ async def _forex_auto_paper_loop():
                     continue
                 cand_usd_bias = get_usd_bias(sym, direction)
 
-                if _AUTO_SETTINGS.usd_correlation_guard and cand_usd_bias != "USD_NEUTRAL":
+                if cand_usd_bias != "USD_NEUTRAL":
                     active_usd_biases = []
                     all_active_positions = list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
                     for p in all_active_positions:
                         b = get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY"))
                         if b != "USD_NEUTRAL":
-                            active_usd_biases.append((p.get("symbol", ""), b))
+                            active_usd_biases.append((p.get("symbol", "").upper(), b))
                     for c in _MT5_STATE.get("pending_commands", []):
                         if c.get("action") == "OPEN_ORDER":
                             b = get_usd_bias(c.get("symbol", ""), c.get("direction", "BUY"))
                             if b != "USD_NEUTRAL":
-                                active_usd_biases.append((c.get("symbol", ""), b))
+                                active_usd_biases.append((c.get("symbol", "").upper(), b))
 
-                    conflicting = [item for item in active_usd_biases if item[1] == cand_usd_bias and item[0] != sym]
-                    if conflicting:
-                        conf_sym = conflicting[0][0]
+                    # Farklı sembollerdeki aynı yönlü USD pozisyonları
+                    conflicting_symbols = {item[0] for item in active_usd_biases if item[1] == cand_usd_bias and item[0] != sym}
+                    max_allowed_symbols = 1 if _AUTO_SETTINGS.usd_correlation_guard else 2
+                    if len(conflicting_symbols) >= max_allowed_symbols:
+                        conf_str = ", ".join(list(conflicting_symbols)[:3])
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_usd_corr", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_usd_corr"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] USD Korelasyon Kalkanı: Zaten {cand_usd_bias} yönlü açık pozisyon var ({conf_sym}). Aynı yönlü yeni USD riski engellendi.",
+                                f"[{cand['display']}] USD Risk Kalkanı: Zaten {cand_usd_bias} yönlü {len(conflicting_symbols)} farklı parite açık ({conf_str}). Portföy kümelenme riskini sınırlamak için yeni {cand_usd_bias} pas geçildi.",
                                 symbol=sym,
                             )
                         continue
@@ -1537,8 +1556,18 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # 6. Skor Eşiği
-                if cand["score"] < _AUTO_SETTINGS.min_score:
+                # 6. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
+                is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
+                req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
+                if cand["score"] < req_score:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
+                        _log_auto_decision(
+                            "SCAN",
+                            f"[{cand['display']}] Tarandı: Skor yetersiz ({cand['score']:.1f} < {req_score:.0f} eşik) | Yön: {cand['action']} | Spread: {cand['spread_pips']:.1f}p | Beklemede.",
+                            symbol=sym,
+                        )
+                    continue
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
                         _log_auto_decision(
