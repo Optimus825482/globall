@@ -550,17 +550,26 @@ def get_symbol_trading_specs(
     }
 
 
-def get_atr_exit_levels(atr_pips: Optional[float], sl_pips: float, tp_pips: float) -> Dict[str, float]:
+def get_atr_exit_levels(
+    atr_pips: Optional[float],
+    sl_pips: float,
+    tp_pips: float,
+    sl_atr_mult: float = 1.1,
+    tp_atr_mult: float = 1.4,
+    rr_floor: float = 1.5,
+) -> Dict[str, float]:
     """ATR bazlı dinamik çıkış motoru (saf fonksiyon — test edilebilir).
 
     Gerçek işlem verisinde TP isabet oranı %5.3'te kalmıştı: sabit 2.5R hedef
     volatiliteden uzaktı. Bu motor TP'yi volatiliteye çeker:
-    - SL: ATR * 1.1 volatilite nefes payı (spec SL'inin altına inmez) → gürültü stopları azalır
-    - TP: ATR * 1.4 hedef, ama TP asla SL * 1.2'nin altına inmez (spread maliyeti koruması)
-      ve asla spec TP'sinin üzerine çıkmaz (ulaşılamaz hedef sorunu)
+    - SL: ATR * sl_atr_mult volatilite nefes payı (spec SL'inin altına inmez)
+    - TP: ATR * tp_atr_mult hedef, ama TP asla SL * rr_floor'un altına inmez
+      (spread maliyeti koruması) ve asla spec TP'sinin üzerine çıkmaz
     - first_target_pips: Kısmi kâr hedefi (max(SL*0.9, ATR*1.0), TP'nin altında)
 
     ATR verisi yoksa passthrough döner (eski davranış).
+    rr_floor=1.5 ve min_score=75.0 varsayılanları 7 günlük replay A/B ile seçildi;
+    tümü ayarlanabilir (replay: scripts/forex_replay_backtest.py).
     """
     if atr_pips is None or atr_pips <= 0:
         return {
@@ -568,9 +577,9 @@ def get_atr_exit_levels(atr_pips: Optional[float], sl_pips: float, tp_pips: floa
             "tp_pips": float(tp_pips),
             "first_target_pips": round(float(tp_pips) * 0.6, 1),
         }
-    eff_sl = max(float(sl_pips), round(atr_pips * 1.1, 1))
-    min_tp = round(eff_sl * 1.2, 1)
-    atr_tp = round(atr_pips * 1.4, 1)
+    eff_sl = max(float(sl_pips), round(atr_pips * sl_atr_mult, 1))
+    min_tp = round(eff_sl * rr_floor, 1)
+    atr_tp = round(atr_pips * tp_atr_mult, 1)
     eff_tp = max(min_tp, min(float(tp_pips), max(atr_tp, min_tp)))
     first_target = min(eff_tp, max(round(eff_sl * 0.9, 1), round(atr_pips * 1.0, 1)))
     first_target = max(1.0, first_target)
@@ -691,14 +700,127 @@ def _compute_cci(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period
     return float((float(tp[-1]) - sma) / (0.015 * mean_dev))
 
 
+def _compute_adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+    """Ortalama Yönsel Endeks (ADX, Wilder): trend VAR mı sorusuna odaklanır (0-100).
+
+    ADX < 20-22 → yönsüz/çalkantılı piyasa (trend girişleri için riskli bölge),
+    ADX >= 25 → güçlü trend. Yön bilgisi +DI/-DI'dan gelir; burada yalnız güç döner.
+    Yetersiz veri veya sıfır aralıkta 0.0 döner.
+    """
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    n = min(len(h), len(l), len(c))
+    if n < 2 * period + 2:
+        return 0.0
+    h, l, c = h[-n:], l[-n:], c[-n:]
+    up_move = h[1:] - h[:-1]
+    down_move = l[:-1] - l[1:]
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    tr = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
+
+    def _wilder(series: np.ndarray) -> float:
+        first = float(np.sum(series[:period]))
+        if first <= 0:
+            return 0.0
+        val = first
+        for x in series[period:]:
+            val = val - val / period + float(x)
+        return val
+
+    atr_w = _wilder(tr)
+    if atr_w <= 0:
+        return 0.0
+    plus_di = 100.0 * _wilder(plus_dm) / atr_w
+    minus_di = 100.0 * _wilder(minus_dm) / atr_w
+    denom = plus_di + minus_di
+    if denom <= 0:
+        return 0.0
+    dx = 100.0 * abs(plus_di - minus_di) / denom
+    # ADX = DX serisinin Wilder düzleştirmesi
+    dx_series = []
+    plus_w = float(np.sum(plus_dm[:period]))
+    minus_w = float(np.sum(minus_dm[:period]))
+    tr_w = float(np.sum(tr[:period]))
+    for i in range(period, len(tr)):
+        plus_w = plus_w - plus_w / period + float(plus_dm[i - 1])
+        minus_w = minus_w - minus_w / period + float(minus_dm[i - 1])
+        tr_w = tr_w - tr_w / period + float(tr[i - 1])
+        if tr_w > 0:
+            pdi = 100.0 * plus_w / tr_w
+            mdi = 100.0 * minus_w / tr_w
+            d = pdi + mdi
+            dx_series.append(100.0 * abs(pdi - mdi) / d if d > 0 else 0.0)
+        else:
+            dx_series.append(0.0)
+    if not dx_series:
+        return dx
+    # Wilder düzleştirme: ilk değer ilk `period` DX ortalaması, sonra özyinelemeli
+    adx_val = float(np.mean(dx_series[:period]))
+    for x in dx_series[period:]:
+        adx_val = (adx_val * (period - 1) + float(x)) / period
+    return max(0.0, min(100.0, adx_val))
+
+
+def _compute_supertrend(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
+                        period: int = 10, mult: float = 3.0) -> Tuple[int, float]:
+    """SuperTrend (ATR bandlı trend takibi): yön (+1 boğa / -1 ayı) ve bant seviyesi döner.
+
+    Fiyat bant üstündeyse trend boğa, altındaysa ayı; bant ratchet (tek yönlü)
+    kilitlenir. Trend yönü filtresi ve ATR tabanlı stop referansı sağlar.
+    """
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    n = min(len(h), len(l), len(c))
+    if n < period + 2:
+        return 0, 0.0
+    h, l, c = h[-n:], l[-n:], c[-n:]
+    tr = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
+    atr_series = []
+    atr_val = float(np.mean(tr[:period]))
+    atr_series.append(atr_val)
+    for i in range(period, len(tr)):
+        atr_val = (atr_val * (period - 1) + float(tr[i])) / period
+        atr_series.append(atr_val)
+
+    hl2 = (h + l) / 2.0
+    direction = 0
+    final_upper = 0.0
+    final_lower = 0.0
+    st_level = 0.0
+    for i in range(period, n):
+        atr_i = atr_series[i - period] if (i - period) < len(atr_series) else atr_series[-1]
+        upper = hl2[i] + mult * atr_i
+        lower = hl2[i] - mult * atr_i
+        prev_close = c[i - 1]
+        if i == period:
+            final_upper, final_lower = upper, lower
+            direction = 1 if c[i] >= hl2[i] else -1
+        else:
+            final_upper = upper if (upper < final_upper or prev_close > final_upper) else final_upper
+            final_lower = lower if (lower > final_lower or prev_close < final_lower) else final_lower
+            if c[i] > final_upper:
+                direction = 1
+            elif c[i] < final_lower:
+                direction = -1
+        st_level = final_lower if direction == 1 else final_upper
+    return direction, float(st_level)
+
+
 def _compute_technical_indicators(
     closes: List[float],
     highs: List[float],
     lows: List[float],
     opens: List[float],
     symbol: str,
+    include_momentum: bool = True,
 ) -> Optional[Dict[str, Any]]:
-    """Calculates Multi-Timeframe (15M HTF Trend + 5M LTF Execution) indicators, RSI(14), MACD, ATR, and composite score."""
+    """Calculates Multi-Timeframe (15M HTF Trend + 5M LTF Execution) indicators, RSI(14), MACD, ATR, CMO, CCI and composite score.
+
+    include_momentum=False → CMO/CCI/üçlü teyit puanları devre dışı (eski skor davranışı — A/B replay için).
+    """
     if len(closes) < 15:
         return None
     c = np.asarray(closes, dtype=float)
@@ -767,6 +889,10 @@ def _compute_technical_indicators(
         atr = float(np.mean(tr[-14:]))
     else:
         atr = float(np.mean(h - l)) if len(h) > 0 else 0.001
+
+    # 5b. ADX (trend gücü) ve SuperTrend (trend yönü) — giriş kapıları için
+    adx_val = _compute_adx(h, l, c, 14)
+    st_dir, _st_level = _compute_supertrend(h, l, c, 10, 3.0)
 
     first_open = float(opens[0]) if opens else float(c[0])
     change_pct = round(((last_price - first_open) / first_open) * 100.0, 2) if first_open > 0 else 0.0
@@ -840,47 +966,50 @@ def _compute_technical_indicators(
         bearish_pts += 20
 
     # (e) CMO — Chande Momentum Osilatörü (5M, 14): yön + hız teyidi
-    cmo = _compute_cmo(c, 14)
-    if cmo > 0.0:
-        bullish_pts += 5
-    elif cmo < 0.0:
-        bearish_pts += 5
-    if cmo > 25.0:
-        # Güçlü boğa momentumu ayı tezini çürütüyor
-        bearish_pts -= 8
-    elif cmo < -25.0:
-        bullish_pts -= 8
-    if cmo > 65.0:
-        # Aşırı uzama — trend kovalamayı engelle (RSI > 75 cezasının CMO karşılığı)
-        bullish_pts -= 10
-        bearish_pts += 5
-    elif cmo < -65.0:
-        bearish_pts -= 10
-        bullish_pts += 5
-
     # (f) CCI — Commodity Channel Index (5M, 20): tipik fiyat sapma teyidi
-    cci = _compute_cci(h, l, c, 20)
-    if cci > 0.0:
-        bullish_pts += 6
-    elif cci < 0.0:
-        bearish_pts += 6
-    if cci > 100.0:
-        bearish_pts -= 6
-    elif cci < -100.0:
-        bullish_pts -= 6
-    if cci > 200.0:
-        # Aşırı uzama — mean reversion riski
-        bullish_pts -= 6
-        bearish_pts += 3
-    elif cci < -200.0:
-        bearish_pts -= 6
-        bullish_pts += 3
-
     # (g) Üçlü Momentum Teyidi: RSI + CMO + CCI aynı yönde → bonus
-    if rsi >= 50.0 and cmo > 0.0 and cci > 0.0:
-        bullish_pts += 8
-    elif rsi <= 50.0 and cmo < 0.0 and cci < 0.0:
-        bearish_pts += 8
+    cmo = 0.0
+    cci = 0.0
+    if include_momentum:
+        cmo = _compute_cmo(c, 14)
+        if cmo > 0.0:
+            bullish_pts += 5
+        elif cmo < 0.0:
+            bearish_pts += 5
+        if cmo > 25.0:
+            # Güçlü boğa momentumu ayı tezini çürütüyor
+            bearish_pts -= 8
+        elif cmo < -25.0:
+            bullish_pts -= 8
+        if cmo > 65.0:
+            # Aşırı uzama — trend kovalamayı engelle (RSI > 75 cezasının CMO karşılığı)
+            bullish_pts -= 10
+            bearish_pts += 5
+        elif cmo < -65.0:
+            bearish_pts -= 10
+            bullish_pts += 5
+
+        cci = _compute_cci(h, l, c, 20)
+        if cci > 0.0:
+            bullish_pts += 6
+        elif cci < 0.0:
+            bearish_pts += 6
+        if cci > 100.0:
+            bearish_pts -= 6
+        elif cci < -100.0:
+            bullish_pts -= 6
+        if cci > 200.0:
+            # Aşırı uzama — mean reversion riski
+            bullish_pts -= 6
+            bearish_pts += 3
+        elif cci < -200.0:
+            bearish_pts -= 6
+            bullish_pts += 3
+
+        if rsi >= 50.0 and cmo > 0.0 and cci > 0.0:
+            bullish_pts += 8
+        elif rsi <= 50.0 and cmo < 0.0 and cci < 0.0:
+            bearish_pts += 8
 
     # MTF Alignment Verdict
     ltf_bullish = (ema9 > ema21 and last_price >= ema21 * 0.999)
@@ -916,6 +1045,8 @@ def _compute_technical_indicators(
         "macd_verdict": macd_verdict,
         "cmo": round(cmo, 1),
         "cci": round(cci, 1),
+        "adx": round(adx_val, 1),
+        "supertrend_dir": int(st_dir),
         "atr": atr,
         "trend": trend,
         "action": action,
@@ -1055,6 +1186,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             macd_verdict = tech["macd_verdict"]
             cmo = tech.get("cmo", 0.0)
             cci = tech.get("cci", 0.0)
+            adx = tech.get("adx", 25.0)
+            st_dir = int(tech.get("supertrend_dir", 0))
             change_pct = tech["change_pct"]
             high_p = round(max(tech["high"], ask_p), digits)
             low_p = round(min(tech["low"], bid_p), digits)
@@ -1067,6 +1200,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             macd_verdict = "NÖTR (Veri Bekleniyor)"
             cmo = 0.0
             cci = 0.0
+            adx = 25.0
+            st_dir = 0
             change_pct = 0.0
             high_p = round(live_p * 1.002, digits)
             low_p = round(live_p * 0.998, digits)
@@ -1093,6 +1228,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "macd_verdict": macd_verdict,
             "cmo": cmo,
             "cci": cci,
+            "adx": adx,
+            "supertrend_dir": st_dir,
             "atr": atr_val,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "updated_at": now,
@@ -1175,6 +1312,10 @@ async def get_forex_radar():
             "action": action,
             "rsi_15m": t.get("rsi", 50.0),
             "macd_verdict": t.get("macd_verdict", "NÖTR (Beklemede)"),
+            "cmo": t.get("cmo", 0.0),
+            "cci": t.get("cci", 0.0),
+            "adx": t.get("adx", 25.0),
+            "supertrend_dir": t.get("supertrend_dir", 0),
             "pip_target": spec["tp_pips"],
             "stop_loss_pips": spec["sl_pips"],
             "risk_reward": f"1:{round(spec['tp_pips'] / spec['sl_pips'], 2)}" if spec["sl_pips"] > 0 else "1:1.83",
@@ -1251,7 +1392,7 @@ class ForexAutoPaperSettings(BaseModel):
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
     max_open_positions: int = Field(6, ge=1, le=20, description="Aynı anda maksimum açık işlem")
     max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
-    min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
+    min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
     sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
     breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
@@ -1266,8 +1407,11 @@ class ForexAutoPaperSettings(BaseModel):
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
-    partial_tp_enabled: bool = Field(True, description="Kısmi kâr alma: ilk hedefte pozisyonun yarısı kapatılır, SL başabaş kârına çekilir")
-    blocked_hours_utc: List[int] = Field(default_factory=lambda: [5, 15], description="İstatistiksel olarak zayıf UTC saatleri (geçmiş işlem verisine göre) — bu saatlerde yeni işlem açılmaz")
+    partial_tp_enabled: bool = Field(True, description="Kısmi kâr alma: ilk hedefte %50 pozisyon kapatılır, SL başabaş kârına çekilir")
+    adx_filter_enabled: bool = Field(True, description="ADX trend gücü kalkanı: ADX eşiğin altındayken (çalkantılı piyasa) trend girişi yapılmaz")
+    adx_min: float = Field(28.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (0 = kalkan kapalı; 28.0 in-sample + out-of-sample replay A/B ile seçildi)")
+    supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
+    blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
         description="İşleme izin verilen pariteler",
@@ -1943,6 +2087,31 @@ async def _forex_auto_paper_loop():
                             symbol=sym,
                         )
                     continue
+
+                # 7b. ADX Trend Gücü Kalkanı — çalkantılı/yönsüz piyasada trend girişi yapılmaz
+                adx_val = float(cand.get("adx", 25.0))
+                if _AUTO_SETTINGS.adx_filter_enabled and adx_val < _AUTO_SETTINGS.adx_min:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_adx", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_adx"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}] ADX Kalkanı: Trend gücü yetersiz (ADX {adx_val:.1f} < {_AUTO_SETTINGS.adx_min:.0f}) — piyasa yönsüz. İşlem engellendi.",
+                            symbol=sym,
+                        )
+                    continue
+
+                # 7c. SuperTrend Yön Teyidi — giriş yalnızca SuperTrend tarafıyla uyumlu açılır
+                st_dir = int(cand.get("supertrend_dir", 0))
+                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0:
+                    if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] SuperTrend Teyidi: {direction} yönü SuperTrend yönüyle ({'BOĞA' if st_dir > 0 else 'AYI'}) çelişiyor. İşlem engellendi.",
+                                symbol=sym,
+                            )
+                        continue
 
                 # 8. Dinamik Lot & Sert Lot Tavanı (Hard Lot Cap)
                 t = ticks.get(sym)

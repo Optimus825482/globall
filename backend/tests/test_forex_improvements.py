@@ -305,27 +305,27 @@ class TestATRExitEngine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(levels["first_target_pips"], 12.0)
 
     def test_eurusd_tp_pulled_to_volatility(self):
-        # ATR 5 pip: TP 20 → 9.6 pips'e çekilir (min TP = SL*1.2), SL nefes payı korunur
+        # ATR 5 pip: TP 20 → 12 pips'e çekilir (min TP = SL*1.5), SL nefes payı korunur
         levels = forex.get_atr_exit_levels(5.0, 8.0, 20.0)
         self.assertEqual(levels["sl_pips"], 8.0)
-        self.assertEqual(levels["tp_pips"], 9.6)
+        self.assertEqual(levels["tp_pips"], 12.0)
         self.assertEqual(levels["first_target_pips"], 7.2)
-        # TP asla SL*1.2'nin altına inmemeli
-        self.assertGreaterEqual(levels["tp_pips"], levels["sl_pips"] * 1.2)
+        # TP asla SL*1.5'in altına inmemeli
+        self.assertGreaterEqual(levels["tp_pips"], levels["sl_pips"] * 1.5)
 
     def test_gold_volatility_buffer_expands_sl(self):
-        # ATR 30 pip, spec SL 45 → SL korunur; TP 82.4 → 54'e çekilir
+        # ATR 30 pip, spec SL 45 → SL korunur; TP 82.4 → 67.5'e çekilir
         levels = forex.get_atr_exit_levels(30.0, 45.0, 82.4)
         self.assertEqual(levels["sl_pips"], 45.0)
-        self.assertEqual(levels["tp_pips"], 54.0)
+        self.assertEqual(levels["tp_pips"], 67.5)
         self.assertEqual(levels["first_target_pips"], 40.5)
 
     def test_btc_noise_protection_expands_sl(self):
-        # BTC ATR 300 pip: SL 40 → 330'a genişler (gürültü stoplarını önler), TP 130 → 396
+        # BTC ATR 300 pip: SL 40 → 330'a genişler (gürültü stoplarını önler), TP 130 → 495
         levels = forex.get_atr_exit_levels(300.0, 40.0, 130.0)
         self.assertEqual(levels["sl_pips"], 330.0)
-        self.assertEqual(levels["tp_pips"], 396.0)
-        self.assertGreaterEqual(levels["tp_pips"], levels["sl_pips"] * 1.2)
+        self.assertEqual(levels["tp_pips"], 495.0)
+        self.assertGreaterEqual(levels["tp_pips"], levels["sl_pips"] * 1.5)
 
     def test_zero_atr_passthrough(self):
         levels = forex.get_atr_exit_levels(0.0, 8.0, 20.0)
@@ -502,10 +502,62 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.correlation_guard)
         self.assertTrue(cfg.atr_exit_enabled)
         self.assertTrue(cfg.partial_tp_enabled)
-        self.assertEqual(list(cfg.blocked_hours_utc), [5, 15])
+        self.assertTrue(cfg.adx_filter_enabled)
+        # 28.0: in-sample ve out-of-sample replay A/B'de pozitif veren eşik
+        self.assertEqual(cfg.adx_min, 28.0)
+        self.assertTrue(cfg.supertrend_filter_enabled)
+        # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
+        self.assertEqual(list(cfg.blocked_hours_utc), [])
         # allowed_symbols hâlâ tam 12 işlem yapılabilir sembol (DXY hariç)
         self.assertEqual(len(cfg.allowed_symbols), 12)
         self.assertNotIn("DXY", cfg.allowed_symbols)
+
+
+class TestADXAndSuperTrend(unittest.IsolatedAsyncioTestCase):
+    """ADX (trend gücü) ve SuperTrend (trend yönü) göstergeleri."""
+
+    def test_adx_trending_series_high(self):
+        closes = [1.08 + i * 0.0008 for i in range(60)]
+        highs = [c + 0.0004 for c in closes]
+        lows = [c - 0.0004 for c in closes]
+        self.assertGreater(forex._compute_adx(highs, lows, closes, 14), 25.0)
+
+    def test_adx_flat_series_low(self):
+        closes = [1.08] * 60
+        highs = [1.0802] * 60
+        lows = [1.0798] * 60
+        self.assertLess(forex._compute_adx(highs, lows, closes, 14), 20.0)
+
+    def test_adx_short_series_guarded(self):
+        self.assertEqual(forex._compute_adx([1.08] * 10, [1.0801] * 10, [1.08] * 10, 14), 0.0)
+
+    def test_supertrend_bull_in_uptrend(self):
+        closes = [1.08 + i * 0.0008 for i in range(60)]
+        highs = [c + 0.0004 for c in closes]
+        lows = [c - 0.0004 for c in closes]
+        st_dir, st_level = forex._compute_supertrend(highs, lows, closes, 10, 3.0)
+        self.assertEqual(st_dir, 1)
+        self.assertLess(st_level, closes[-1])
+
+    def test_supertrend_bear_in_downtrend(self):
+        closes = [1.08 - i * 0.0008 for i in range(60)]
+        highs = [c + 0.0004 for c in closes]
+        lows = [c - 0.0004 for c in closes]
+        st_dir, st_level = forex._compute_supertrend(highs, lows, closes, 10, 3.0)
+        self.assertEqual(st_dir, -1)
+        self.assertGreater(st_level, closes[-1])
+
+    def test_indicators_include_adx_and_supertrend(self):
+        closes = [1.08 + i * 0.0008 for i in range(60)]
+        highs = [c + 0.0004 for c in closes]
+        lows = [c - 0.0004 for c in closes]
+        opens = [c - 0.0002 for c in closes]
+        tech = forex._compute_technical_indicators(closes, highs, lows, opens, "EURUSD")
+        self.assertIsNotNone(tech)
+        self.assertIn("adx", tech)
+        self.assertIn("supertrend_dir", tech)
+        self.assertGreater(tech["adx"], 25.0)
+        self.assertEqual(tech["supertrend_dir"], 1)
 
     def test_dxy_not_tradeable_symbol(self):
         """DXY işlem yapılabilir evrende değil, yalnızca veri haritasında."""

@@ -611,10 +611,10 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(is_blocked, "3rd different USD_LONG symbol must be capped to prevent correlated drawdown!")
 
     def test_gold_commodity_score_threshold(self):
-        """Verify Gold and Oil require higher conviction score >= 78.0 while standard forex requires 70.0."""
+        """Verify Gold and Oil require higher conviction score >= 78.0 while standard forex requires 75.0 (replay-tuned)."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(cfg.min_score, 70.0)
-        
+        self.assertEqual(cfg.min_score, 75.0)
+
         for sym in ["XAUUSD", "GOLD", "USOIL", "OIL"]:
             is_comm = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
             req = 78.0 if is_comm else cfg.min_score
@@ -623,7 +623,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         for sym in ["EURUSD", "GBPUSD", "NAS100"]:
             is_comm = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
             req = 78.0 if is_comm else cfg.min_score
-            self.assertEqual(req, 70.0)
+            self.assertEqual(req, 75.0)
 
 
 if __name__ == "__main__":
