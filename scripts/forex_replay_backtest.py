@@ -50,7 +50,14 @@ BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0}
 # Gölge defter tutulan kapılar (yeni özellikler)
-SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND")
+SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV")
+
+# EV kalkanı (canlı motorla aynı eşikler)
+EV_WINDOW_SEC = 24 * 3600
+EV_MIN_TRADES = 8
+EV_MAX_WIN_RATE = 42.0
+EV_LOSS_RISK_MULT = 2.0
+EV_GUARD = True
 
 # Ayarlanabilir tuning parametreleri (CLI ile override edilir)
 TUN_MIN_SCORE = 70.0
@@ -158,7 +165,7 @@ def size_lots(symbol: str, sl_pips: float, pip_val: float) -> float:
     return round(max(0.01, min(raw, 0.05)), 2)
 
 
-def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: float, idx: int) -> SimPos:
+def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: float, idx: int) -> Optional[SimPos]:
     sym = cand["symbol"]
     half_spread = cand["spread_pips"] * cand["pip_size"] / 2.0
     mid = cand["price"]
@@ -170,8 +177,13 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         entry = round(mid - half_spread, cand["digits"])
         sl = round(entry + sl_pips * cand["pip_size"], cand["digits"])
         tp = round(entry - tp_pips * cand["pip_size"], cand["digits"])
+    lots = size_lots(sym, sl_pips, cand["pip_val"])
+    # Canlı motorla aynı risk normalizasyonu (tek kaynak: forex.apply_risk_normalization)
+    lots, risk_skip = forex.apply_risk_normalization(sym, lots, sl_pips, cand["pip_val"], BALANCE * RISK_PCT / 100.0)
+    if risk_skip:
+        return None
     return SimPos(
-        symbol=sym, direction=cand["action"], lots=size_lots(sym, sl_pips, cand["pip_val"]),
+        symbol=sym, direction=cand["action"], lots=lots,
         entry_price=entry, sl_price=sl, tp_price=tp, pip_size=cand["pip_size"],
         pip_val=cand["pip_val"], digits=cand["digits"], opened_bar=idx,
         partial_target_pips=partial_pips, fill_adjust=half_spread,
@@ -266,7 +278,7 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     return None
 
 
-def close_position(book: Book, pos: SimPos, reason: str, exit_price: float) -> float:
+def close_position(book: Book, pos: SimPos, reason: str, exit_price: float, closed_ts: float = 0.0) -> float:
     if pos.direction == "BUY":
         pnl_pips = (exit_price - pos.entry_price) / pos.pip_size
     else:
@@ -283,6 +295,7 @@ def close_position(book: Book, pos: SimPos, reason: str, exit_price: float) -> f
     book.closed.append({
         "symbol": pos.symbol, "direction": pos.direction, "lots": pos.lots,
         "pnl_usd": total, "reason": reason, "trail": pos.trail_active,
+        "closed_ts": closed_ts,
     })
     return total
 
@@ -305,7 +318,7 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float):
         spec = forex.get_symbol_trading_specs(pos.symbol, base_be=BASE_BE_PIPS, base_trail=BASE_TRAIL_PIPS)
         res = manage_position(pos, bar, spec["trail_pips"], spec["be_pips"])
         if res and res[0] in ("SL", "BE", "TP"):
-            close_position(book, pos, res[0], res[1])
+            close_position(book, pos, res[0], res[1], closed_ts=ts)
         else:
             still.append(pos)
     book.positions = still
@@ -428,6 +441,18 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     }
 
                 # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
+                if vname == "NEW" and EV_GUARD:
+                    ev_rows = [c["pnl_usd"] for c in book.closed
+                               if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - EV_WINDOW_SEC]
+                    ev_stats = {
+                        "n": len(ev_rows),
+                        "net": round(sum(ev_rows), 2),
+                        "win_rate": round(100.0 * sum(1 for p in ev_rows if p >= 0) / len(ev_rows), 1) if ev_rows else 0.0,
+                    }
+                    ev_risk_floor = BALANCE * RISK_PCT / 100.0 * EV_LOSS_RISK_MULT
+                    if forex.ev_guard_decision(ev_stats, EV_MIN_TRADES, EV_MAX_WIN_RATE, ev_risk_floor):
+                        blocked_events.append(("EV", cand("EV")))
+                        continue
                 if vname == "NEW" and BLOCKED_HOURS and forex.is_entry_hour_blocked(hour, BLOCKED_HOURS):
                     blocked_events.append(("SAAT", cand("SAAT")))
                     continue
@@ -492,7 +517,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     partial = levels["first_target_pips"]
                 else:
                     sl_pips, tp_pips, partial = spec["sl_pips"], spec["tp_pips"], 0.0
-                book.positions.append(open_position(cand_d, sl_pips, tp_pips, partial, idx))
+                pos = open_position(cand_d, sl_pips, tp_pips, partial, idx)
+                if pos is None:
+                    continue  # Risk kalkanı: en küçük mümkün lot bile sert risk sınırını aşıyor
+                book.positions.append(pos)
                 last_entry_bar[(cand_d["symbol"], cand_d["action"])] = idx
                 opened += 1
 
@@ -508,8 +536,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             levels = forex.get_atr_exit_levels(
                 cand_d["atr_pips"], spec["sl_pips"], spec["tp_pips"],
                 sl_atr_mult=TUN_SL_ATR_MULT, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
-            sh["book"].positions.append(open_position(
-                cand_d, levels["sl_pips"], levels["tp_pips"], levels["first_target_pips"], idx))
+            spos = open_position(cand_d, levels["sl_pips"], levels["tp_pips"], levels["first_target_pips"], idx)
+            if spos is not None:
+                sh["book"].positions.append(spos)
 
         if idx % 300 == 0:
             print(f"  ... bar {idx}/{len(common_ts)} | OLD: {len(books['OLD'].closed)} işlem ${books['OLD'].balance:+.2f} | "
@@ -519,7 +548,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     for book in list(books.values()) + [sh["book"] for sh in shadow_book.values()]:
         for pos in list(book.positions):
             last_bar = data[pos.symbol][-1]
-            close_position(book, pos, "EOM", last_bar[4])
+            close_position(book, pos, "EOM", last_bar[4], closed_ts=last_bar[0])
         book.positions = []
 
     if orig_dxy is not None:
@@ -567,7 +596,7 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
-    global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS
+    global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -582,6 +611,7 @@ def main():
     parser.add_argument("--adx-min", type=float, default=0.0, help="ADX eşiği (0 = kapalı)")
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
+    parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
@@ -592,10 +622,11 @@ def main():
     TUN_HEADROOM_FOREX = args.headroom
     TUN_ADX_MIN = args.adx_min
     TUN_ST_FILTER = args.st_filter
+    EV_GUARD = not args.no_ev_guard
     BLOCKED_HOURS = [int(h) for h in args.hours.split(",") if h.strip().isdigit()]
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
-               f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window}")
+               f"ev_guard={EV_GUARD} hours={BLOCKED_HOURS or 'kapalı'} window={args.window}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
 

@@ -10,6 +10,7 @@ Kapsam:
 - Zayıf saat kalkanı (is_entry_hour_blocked)
 """
 import asyncio
+import datetime
 import pathlib
 import sys
 import unittest
@@ -508,9 +509,137 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.supertrend_filter_enabled)
         # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
         self.assertEqual(list(cfg.blocked_hours_utc), [])
+        # EV kalkanı varsayılanları (canlı veriyle kalibre: USDCAD/USDJPY desenleri tetiklenir)
+        self.assertTrue(cfg.ev_guard_enabled)
+        self.assertEqual(cfg.ev_window_hours, 24.0)
+        self.assertEqual(cfg.ev_min_trades, 8)
+        self.assertEqual(cfg.ev_max_win_rate, 42.0)
+        self.assertEqual(cfg.ev_loss_risk_mult, 2.0)
         # allowed_symbols hâlâ tam 12 işlem yapılabilir sembol (DXY hariç)
         self.assertEqual(len(cfg.allowed_symbols), 12)
         self.assertNotIn("DXY", cfg.allowed_symbols)
+
+
+class TestRiskNormalization(unittest.IsolatedAsyncioTestCase):
+    """ATR genişlemiş SL'de lot risk normalizasyonu (gerçek olay: US30 0.20 lot × 81.7 pip = $16.3, bütçe $10)."""
+
+    def test_index_narrow_sl_unchanged(self):
+        # MT5 demo hesabı $1000 → işlem başına risk bütçesi $10 (hedef tolerans $12.5)
+        lots, skip = forex.apply_risk_normalization("US30", 0.20, 24.0, 1.0, 10.0)
+        self.assertEqual(lots, 0.20)
+        self.assertFalse(skip)
+
+    def test_index_wide_sl_shrinks(self):
+        # 0.20 × 80 pip = $16 > hedef $12.5 → 0.15 lota çekilmeli ($12)
+        lots, skip = forex.apply_risk_normalization("US30", 0.20, 80.0, 1.0, 10.0)
+        self.assertEqual(lots, 0.15)
+        self.assertFalse(skip)
+        self.assertLessEqual(lots * 80.0 * 1.0, 12.5)
+
+    def test_index_extreme_sl_floor_with_hard_cap(self):
+        # 0.15'e sığmaz; kategori minimumu 0.10 × 150 pip = $15 ≤ sert sınır $20 → 0.10 devam
+        lots, skip = forex.apply_risk_normalization("US30", 0.20, 150.0, 1.0, 10.0)
+        self.assertEqual(lots, 0.10)
+        self.assertFalse(skip)
+
+    def test_index_extreme_sl_skips_entirely(self):
+        # 0.10 × 250 pip = $25 > sert sınır $20 → işlem tamamen pas geçilmeli
+        lots, skip = forex.apply_risk_normalization("US30", 0.20, 250.0, 1.0, 10.0)
+        self.assertTrue(skip)
+
+    def test_paper_account_budget_unchanged(self):
+        # Paper hesabı $10.000 → bütçe $100: 0.20 × 80 = $16 zaten sığıyor
+        lots, skip = forex.apply_risk_normalization("US30", 0.20, 80.0, 1.0, 100.0)
+        self.assertEqual(lots, 0.20)
+        self.assertFalse(skip)
+
+    def test_forex_narrow_sl_unchanged(self):
+        lots, skip = forex.apply_risk_normalization("EURUSD", 0.05, 8.0, 10.0, 10.0)
+        self.assertEqual(lots, 0.05)
+        self.assertFalse(skip)
+
+    def test_gold_wide_sl_shrinks(self):
+        # 0.02 × 67.5 pip × $10/pip = $13.5 > $12.5 → 0.01 lota çekilmeli
+        lots, skip = forex.apply_risk_normalization("XAUUSD", 0.02, 67.5, 10.0, 10.0)
+        self.assertEqual(lots, 0.01)
+        self.assertFalse(skip)
+
+    def test_btc_wide_sl_unchanged(self):
+        # 0.02 × 330 pip × $1/pip = $6.6 ≤ $12.5 → dokunulmaz
+        lots, skip = forex.apply_risk_normalization("BTCUSD", 0.02, 330.0, 1.0, 10.0)
+        self.assertEqual(lots, 0.02)
+        self.assertFalse(skip)
+
+
+class TestEVGuard(unittest.IsolatedAsyncioTestCase):
+    """Sembol EV kalkanı: kararı ve istatistik toplama."""
+
+    def test_decision_blocks_chronic_bleeder(self):
+        # Canlı kanıt: USDCAD 25 işlem, %40 WR, net negatif → dinlenmeli
+        stats = {"n": 25, "net": -11.5, "win_rate": 40.0}
+        self.assertTrue(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+
+    def test_decision_blocks_acute_loss(self):
+        # Canlı kanıt: USDCAD 12 işlem, %25 WR, −$24 (risk bütçesi $10, 2x=$20 eşiği)
+        stats = {"n": 12, "net": -24.0, "win_rate": 25.0}
+        self.assertTrue(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+
+    def test_decision_blocks_asymmetric_loser(self):
+        # WR sağlam görünüyor ama zarar risk bütçesinin 2 katını aştı
+        stats = {"n": 10, "net": -25.0, "win_rate": 55.0}
+        self.assertTrue(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+
+    def test_decision_allows_small_sample(self):
+        stats = {"n": 5, "net": -20.0, "win_rate": 20.0}
+        self.assertFalse(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+
+    def test_decision_allows_profitable(self):
+        stats = {"n": 12, "net": 30.0, "win_rate": 38.0}
+        self.assertFalse(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+
+    def test_decision_allows_healthy_wr_with_tiny_loss(self):
+        # Zarar var ama WR sağlıklı ve zarar akut eşiğin altında → dokunulmaz
+        stats = {"n": 10, "net": -5.0, "win_rate": 55.0}
+        self.assertFalse(forex.ev_guard_decision(stats, 8, 42.0, 20.0))
+
+    def test_collect_symbol_ev_from_paper_book(self):
+        forex._AUTO_STATE["closed_trades"].clear()
+        forex._MT5_STATE["connected"] = False
+        now = __import__("time").time()
+        for i, pnl in enumerate([-5.0, -4.0, -3.0, -2.0, -1.0, -1.0]):
+            forex._AUTO_STATE["closed_trades"].append({
+                "symbol": "USDCAD", "pnl_usd": pnl,
+                "closed_at_ts": now - i * 600,   # son 1 saat içinde
+            })
+            forex._AUTO_STATE["closed_trades"].append({
+                "symbol": "EURUSD", "pnl_usd": 2.0,
+                "closed_at_ts": now - i * 600,
+            })
+        stats = forex._collect_symbol_ev("USDCAD", now, 12 * 3600)
+        self.assertEqual(stats["n"], 6)
+        self.assertAlmostEqual(stats["net"], -16.0, places=2)
+        self.assertEqual(stats["win_rate"], 0.0)
+        self.assertTrue(forex.ev_guard_decision(stats, 5, 10.0, 45.0))
+        # Pencere dışındaki işlemler sayılmaz
+        stats_narrow = forex._collect_symbol_ev("USDCAD", now, 900)
+        self.assertEqual(stats_narrow["n"], 2)
+        forex._AUTO_STATE["closed_trades"].clear()
+
+    def test_collect_symbol_ev_prefers_mt5_when_connected(self):
+        forex._MT5_STATE["connected"] = True
+        forex._MT5_STATE["closed_deals"] = [
+            {"symbol": "USDCAD", "pnl_usd": -30.0, "exit_time": "2026-10-02 10:00:00 UTC"},
+            {"symbol": "USDCAD", "pnl_usd": -30.0, "exit_time": "2026-10-02 10:30:00 UTC"},
+        ]
+        try:
+            # Sabit "şimdi"referansı: son işlem 10:30 → pencereyi 11:00'e koy
+            now = datetime.datetime(2026, 10, 2, 11, 0, 0, tzinfo=datetime.timezone.utc).timestamp()
+            stats = forex._collect_symbol_ev("USDCAD", now, 12 * 3600)
+            self.assertEqual(stats["n"], 2)
+            self.assertAlmostEqual(stats["net"], -60.0, places=2)
+        finally:
+            forex._MT5_STATE["connected"] = False
+            forex._MT5_STATE["closed_deals"] = []
 
 
 class TestADXAndSuperTrend(unittest.IsolatedAsyncioTestCase):

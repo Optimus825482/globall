@@ -409,6 +409,102 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     return None
 
 
+def _collect_symbol_ev(symbol: str, now_ts: float, window_sec: float, source: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Kapanmış işlemlerden sembol bazlı son `window_sec` EV istatistiği.
+
+    Kaynak önceliği: MT5 kapanmış anlaşmalar (bağlıysa) → paper defteri.
+    Döner: {"n", "net", "wins", "win_rate"}.
+    """
+    sym = str(symbol).upper()
+    if source is None:
+        if _MT5_STATE.get("connected"):
+            source = _MT5_STATE.get("closed_deals", [])
+        else:
+            source = _AUTO_STATE.get("closed_trades", [])
+    rows: List[float] = []
+    for d in source or []:
+        if str(d.get("symbol", "")).upper() != sym:
+            continue
+        ts = d.get("closed_at_ts")
+        if ts is None:
+            iso = d.get("exit_time_iso") or d.get("exit_time") or ""
+            try:
+                ts = datetime.datetime.strptime(str(iso)[:19], "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=datetime.timezone.utc).timestamp()
+            except Exception:
+                continue
+        try:
+            if now_ts - float(ts) > window_sec:
+                continue
+            pnl = float(d.get("pnl_usd", d.get("profit", 0.0)) or 0.0)
+        except Exception:
+            continue
+        rows.append(pnl)
+    n = len(rows)
+    wins = sum(1 for p in rows if p >= 0)
+    return {
+        "n": n,
+        "net": round(sum(rows), 2),
+        "wins": wins,
+        "win_rate": round(100.0 * wins / n, 1) if n else 0.0,
+    }
+
+
+def ev_guard_decision(stats: Dict[str, Any], min_samples: int, max_win_rate: float, risk_loss_floor: float) -> bool:
+    """Sembol EV kalkanı kararı (saf fonksiyon — test edilebilir).
+
+    True = sembol dinlenmeye alınmalı. İki tetik (yeterli örnek ve net zarar şartıyla):
+    - Kronik kaybeden: kazanma oranı max_win_rate altında,
+    - Akut kayıp: toplam net zarar risk bütçesinin `risk_loss_floor` katını aştı.
+    Kendini onaran yapı: sembol işlem yapmadıkça kayıplar zaman penceresinden
+    yaşlanarak dışarı düşer ve kalkan kendiliğinden kalkar.
+    """
+    n = int(stats.get("n", 0))
+    if n < min_samples:
+        return False
+    net = float(stats.get("net", 0.0))
+    if net > 0:
+        return False
+    wr = float(stats.get("win_rate", 100.0))
+    return wr < float(max_win_rate) or net <= -abs(float(risk_loss_floor))
+
+
+def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
+    """Lot × SL × pip_val riskini bütçeye sıkıştırır (saf fonksiyon — test edilebilir).
+
+    Kategori lot tavanı (endeks 0.20, emtia/kripto 0.02) dar SL'ler için tasarlandı;
+    ATR çıkış motoru SL'i genişlettiğinde tavan lotu risk bütçesini aşabilir
+    (gerçek örnek: US30 0.20 lot × 81.7 pip = %1.6 risk). Bu fonksiyon:
+    - risk ≤ hedef×1.25 ise dokunmaz (mevcut davranış),
+    - aşım varsa lotu adım adım aşağı çeker (endeks 0.05, petrol 0.05, diğer 0.01),
+    - kategori minimum lotu bile hedefin 2 katını (sert sınır) aşıyorsa skip=True
+      döner ve arayan taraf işlemi tamamen pas geçmelidir.
+    """
+    s = str(symbol).upper()
+    if "NAS" in s or "USTEC" in s or "US30" in s or "SPX" in s:
+        floor_lot, step = 0.10, 0.05
+    elif "OIL" in s or "WTI" in s:
+        floor_lot, step = 0.50, 0.05
+    else:
+        floor_lot, step = 0.01, 0.01
+
+    if sl_pips <= 0 or pip_val <= 0 or lots <= 0:
+        return round(float(lots), 2), False
+    target_risk = float(risk_usd) * 1.25
+    hard_risk = float(risk_usd) * 2.0
+    current_risk = float(lots) * float(sl_pips) * float(pip_val)
+    if current_risk <= target_risk:
+        return round(float(lots), 2), False
+
+    fitted = math.floor((target_risk / (float(sl_pips) * float(pip_val))) / step) * step
+    fitted = round(max(0.0, fitted), 2)
+    if fitted < floor_lot:
+        if floor_lot * float(sl_pips) * float(pip_val) <= hard_risk:
+            return floor_lot, False
+        return round(float(lots), 2), True
+    return fitted, False
+
+
 def is_entry_hour_blocked(current_utc_hour: int, blocked_hours: List[int]) -> bool:
     """Zayıf saat kalkanı (saf fonksiyon): UTC saati engelli listedeyse True."""
     if not blocked_hours:
@@ -1411,6 +1507,11 @@ class ForexAutoPaperSettings(BaseModel):
     adx_filter_enabled: bool = Field(True, description="ADX trend gücü kalkanı: ADX eşiğin altındayken (çalkantılı piyasa) trend girişi yapılmaz")
     adx_min: float = Field(28.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (0 = kalkan kapalı; 28.0 in-sample + out-of-sample replay A/B ile seçildi)")
     supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
+    ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
+    ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
+    ev_min_trades: int = Field(8, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı")
+    ev_max_win_rate: float = Field(42.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir")
+    ev_loss_risk_mult: float = Field(2.0, ge=0.5, le=20.0, description="Akut kayıp eşiği: pencere zararı işlem-başı risk bütçesinin bu katını aşarsa sembol dinlenir")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
@@ -1984,6 +2085,25 @@ async def _forex_auto_paper_loop():
                 if now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0) < sym_cd:
                     continue
 
+                # 3b. Sembol EV Kalkanı — son pencerede sermaye yakan semboller dinlenir
+                # (kendini onarır: kayıplar zaman penceresinden yaşlanıp çıkınca kalkan kalkar)
+                if _AUTO_SETTINGS.ev_guard_enabled:
+                    ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
+                    ev_risk_usd = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                    ev_stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
+                    if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades,
+                                         _AUTO_SETTINGS.ev_max_win_rate,
+                                         ev_risk_usd * _AUTO_SETTINGS.ev_loss_risk_mult):
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_ev", 0) > 60.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_ev"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] Sembol EV Kalkanı: Son {ev_stats['n']} işlemde ${ev_stats['net']:+.2f} "
+                                f"(WR %{ev_stats['win_rate']:.0f}) — sembol {_AUTO_SETTINGS.ev_window_hours:.0f} saatlik pencere boyunca dinlenmeye alındı.",
+                                symbol=sym,
+                            )
+                        continue
+
                 # 4. DXY (ABD Dolar Endeksi) Rejim Filtresi
                 # Pozisyon DXY rejimiyle çelişiyorsa veto; zayıf semboller nötr rejimde ekstra skor ister.
                 direction = cand.get("action", "")  # BUY or SELL
@@ -2163,6 +2283,21 @@ async def _forex_auto_paper_loop():
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 mt5_lots = round(mt5_lots, 2)
 
+                # 8b. Risk Normalizasyonu: ATR ile genişleyen SL'de lot tavanı risk
+                # bütçesini aşabilir (gerçek örnek: US30 0.20 lot × 81.7 pip = %1.6).
+                # Lot bütçeye çekilir; kategori minimumu bile sert sınırı aşıyorsa pas.
+                mt5_lots, risk_skip = apply_risk_normalization(sym, mt5_lots, sl_pips, pip_val, risk_usd)
+                if risk_skip:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_risk", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_risk"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}] Risk Kalkanı: SL {sl_pips:.0f}p ile en küçük mümkün lot bile "
+                            f"{_AUTO_SETTINGS.risk_per_trade_pct:.1f}% bütçenin 2 katını aşıyor. İşlem pas geçildi.",
+                            symbol=sym,
+                        )
+                    continue
+
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
 
                 # IC Markets MT5 bağlıysa doğrudan MT5 emir kuyruğuna ekle
@@ -2312,6 +2447,10 @@ async def get_forex_auto_paper_status():
         "dxy": get_dxy_regime(),
         "correlations": _FX_CORR.snapshot(),
         "correlations_updated_at": _FX_CORR.last_updated,
+        "symbol_ev": {
+            s: _collect_symbol_ev(s, time.time(), _AUTO_SETTINGS.ev_window_hours * 3600.0)
+            for s in _AUTO_SETTINGS.allowed_symbols
+        },
         "last_scan_time": _AUTO_STATE["last_scan_time"],
         "mt5_account": mt5_acc,
         "mt5_connected": is_mt5_conn,
