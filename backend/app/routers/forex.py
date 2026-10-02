@@ -26,6 +26,11 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
+try:
+    from app.forex_correlation import FXCorrelationMonitor
+except ImportError:  # paket dışı bağlam (test/script)
+    from ..forex_correlation import FXCorrelationMonitor
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/forex", tags=["forex"])
@@ -277,6 +282,28 @@ _LAST_TECH_FETCH_TIME = 0.0
 _LAST_GOLD_EXIT_TIME = 0.0
 _LAST_CLOSED_DEAL_IDS: set = set()
 
+# FX korelasyon kalkanı: 5M kapanış önbelleğinden rolling Pearson matrisi
+_CLOSES_CACHE: Dict[str, List[float]] = {}
+_FX_CORR = FXCorrelationMonitor()
+
+# MT5 köprüsünden gelen gerçek spread (pip) önbelleği
+_LIVE_SPREAD_PIPS: Dict[str, float] = {}
+# Köprü MT5 sembol adı -> uygulama sembol adı (spread eşlemesi için)
+_MT5_TO_APP_SYMBOLS: Dict[str, str] = {
+    "XTIUSD": "USOIL",
+    "XBRUSD": "USOIL",
+    "USTEC": "NAS100",
+    "US100": "NAS100",
+    "NDX100": "NAS100",
+    "DJ30": "US30",
+    "WS30": "US30",
+    "W30": "US30",
+    "GOLD": "XAUUSD",
+    "XAU": "XAUUSD",
+    "SILVER": "XAGUSD",
+    "XAG": "XAGUSD",
+}
+
 YAHOO_SYMBOL_MAP = {
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
@@ -293,6 +320,8 @@ YAHOO_SYMBOL_MAP = {
     "US30": "^DJI",
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
+    # ABD Dolar Endeksi (DXY) — işlem yapılmaz, yalnızca rejim filtresi için çekilir
+    "DXY": "DX-Y.NYB",
 }
 
 
@@ -312,6 +341,79 @@ def get_usd_bias(symbol: str, direction: str) -> str:
     elif clean_sym.endswith("USD") or clean_sym in ("USOIL", "OIL", "WTI", "XAUUSD", "XAGUSD", "SPX500", "NAS100", "US30", "USTEC"):
         return "USD_SHORT" if d == "BUY" else "USD_LONG"
     return "USD_NEUTRAL"
+
+
+# DXY uyum şartı aranan zayıf semboller (geçmiş veride en yüksek kayıp üretenler):
+# Ons Altın, USDJPY ve USDCHF — bu sembollerde dolar rejimi nötr/uyumsuzken giriş ekstra skor ister.
+DXY_STRICT_SYMBOLS = ("XAU", "GOLD", "USDJPY", "USDCHF")
+
+
+def get_dxy_regime() -> Optional[Dict[str, Any]]:
+    """ABD Dolar Endeksi (DXY / DX-Y.NYB) rejimini döner.
+
+    DXY ile EURUSD korelasyonu ~-0.97 olduğu için değer yalnızca yön değil,
+    doların güçlü/zayıf/sıkışık rejim bilgisidir:
+    - USD_STRONG: DXY 15M trendi boğa ve momentum teyitli → USD lehine baskı
+    - USD_WEAK:   DXY 15M trendi ayı ve momentum teyitli → USD aleyhine baskı
+    - USD_NEUTRAL: Sıkışık/ belirsiz rejim → filtre etkisiz
+    Veri yoksa None döner (fail-open).
+    """
+    tech = _TECHNICAL_CACHE.get("DXY")
+    if not tech:
+        return None
+    trend = tech.get("trend", "NEUTRAL")
+    score = float(tech.get("score", 50.0))
+    rsi = float(tech.get("rsi", 50.0))
+    if trend == "BULLISH" and (score >= 65.0 or rsi >= 55.0):
+        regime = "USD_STRONG"
+    elif trend == "BEARISH" and (score >= 65.0 or rsi <= 45.0):
+        regime = "USD_WEAK"
+    else:
+        regime = "USD_NEUTRAL"
+    return {
+        "regime": regime,
+        "trend": trend,
+        "score": score,
+        "rsi": rsi,
+        "cmo": tech.get("cmo", 0.0),
+        "change_pct": tech.get("change_pct", 0.0),
+        "updated_at": tech.get("updated_at", 0.0),
+    }
+
+
+def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -> Optional[str]:
+    """DXY rejimine göre giriş denetimi (saf fonksiyon — test edilebilir).
+
+    Dönen değer:
+    - None: İzin var (DXY verisi yoksa da fail-open olarak izin).
+    - "dxy_conflict": Pozisyon DXY rejimiyle ÇELİŞİYOR → giriş veto.
+        (USD_LONG isteği + USD_WEAK rejimi, veya USD_SHORT isteği + USD_STRONG rejimi)
+    - "dxy_strict_neutral": Zayıf sembol (XAUUSD/USDJPY/USDCHF) ve rejim nötr →
+        giriş ancak ekstra skor eşiğiyle kabul (req_score + 5).
+    """
+    if not dxy:
+        # DXY verisi hiç yoksa kalkan devre dışı (fail-open)
+        return None
+    if dxy.get("regime", "USD_NEUTRAL") == "USD_NEUTRAL":
+        s = str(symbol).upper()
+        if any(w in s for w in DXY_STRICT_SYMBOLS):
+            return "dxy_strict_neutral"
+        return None
+
+    regime = dxy["regime"]
+    bias = get_usd_bias(symbol, direction)
+    if bias == "USD_LONG" and regime == "USD_WEAK":
+        return "dxy_conflict"
+    if bias == "USD_SHORT" and regime == "USD_STRONG":
+        return "dxy_conflict"
+    return None
+
+
+def is_entry_hour_blocked(current_utc_hour: int, blocked_hours: List[int]) -> bool:
+    """Zayıf saat kalkanı (saf fonksiyon): UTC saati engelli listedeyse True."""
+    if not blocked_hours:
+        return False
+    return int(current_utc_hour) in {int(h) for h in blocked_hours}
 
 
 def get_symbol_trading_specs(
@@ -448,6 +550,85 @@ def get_symbol_trading_specs(
     }
 
 
+def get_atr_exit_levels(atr_pips: Optional[float], sl_pips: float, tp_pips: float) -> Dict[str, float]:
+    """ATR bazlı dinamik çıkış motoru (saf fonksiyon — test edilebilir).
+
+    Gerçek işlem verisinde TP isabet oranı %5.3'te kalmıştı: sabit 2.5R hedef
+    volatiliteden uzaktı. Bu motor TP'yi volatiliteye çeker:
+    - SL: ATR * 1.1 volatilite nefes payı (spec SL'inin altına inmez) → gürültü stopları azalır
+    - TP: ATR * 1.4 hedef, ama TP asla SL * 1.2'nin altına inmez (spread maliyeti koruması)
+      ve asla spec TP'sinin üzerine çıkmaz (ulaşılamaz hedef sorunu)
+    - first_target_pips: Kısmi kâr hedefi (max(SL*0.9, ATR*1.0), TP'nin altında)
+
+    ATR verisi yoksa passthrough döner (eski davranış).
+    """
+    if atr_pips is None or atr_pips <= 0:
+        return {
+            "sl_pips": float(sl_pips),
+            "tp_pips": float(tp_pips),
+            "first_target_pips": round(float(tp_pips) * 0.6, 1),
+        }
+    eff_sl = max(float(sl_pips), round(atr_pips * 1.1, 1))
+    min_tp = round(eff_sl * 1.2, 1)
+    atr_tp = round(atr_pips * 1.4, 1)
+    eff_tp = max(min_tp, min(float(tp_pips), max(atr_tp, min_tp)))
+    first_target = min(eff_tp, max(round(eff_sl * 0.9, 1), round(atr_pips * 1.0, 1)))
+    first_target = max(1.0, first_target)
+    return {
+        "sl_pips": eff_sl,
+        "tp_pips": round(eff_tp, 1),
+        "first_target_pips": round(first_target, 1),
+    }
+
+
+def apply_partial_take_profit(pos: Dict[str, Any], pnl_pips: float, pip_usd_val: float) -> Optional[float]:
+    """Kısmi kâr alma (saf fonksiyon — test edilebilir).
+
+    Pozisyon ilk kâr hedefine (partial_target_pips) ulaştıysa lot'un yarısını
+    kapatıp gerçekleştirilen kârı (USD) döner; kalan pozisyonda SL'i başabaş
+    üstü net kâra kilitler. Pozisyon dict'i yerinde güncellenir.
+
+    Dönüş: gerçekleşen kısmi kâr USD (henüz alınmadıysa None).
+    """
+    target = float(pos.get("partial_target_pips") or 0.0)
+    if target <= 0.0 or pos.get("partial_taken"):
+        return None
+    if pnl_pips < target:
+        return None
+
+    pos["partial_taken"] = True
+    lots = float(pos.get("lots", 0.0))
+    close_lots = round(lots / 2.0, 2)
+
+    if close_lots < 0.01 or close_lots >= lots:
+        # Yarısı minimum lotun altında → kapatma yok, sadece kilit işaretle
+        return None
+
+    realized = round(pnl_pips * close_lots * pip_usd_val, 2)
+    pos["lots"] = round(lots - close_lots, 2)
+    pos["partial_realized_usd"] = round(float(pos.get("partial_realized_usd", 0.0)) + realized, 2)
+
+    # Kalan pozisyon için SL'i başabaş üstü net kâra kilit ($1 garantisinden aşağı inmez)
+    pip_size = float(pos.get("pip_size", 0.0001))
+    digits = int(pos.get("digits", 5))
+    direction = pos.get("direction", "BUY")
+    entry_p = float(pos["entry_price"])
+    dollar_per_pip = max(0.0001, float(pos["lots"]) * pip_usd_val)
+    lock_pips = max(0.5, round(1.0 / dollar_per_pip, 1))
+    if direction == "BUY":
+        lock_sl = round(entry_p + (lock_pips * pip_size), digits)
+        if lock_sl > float(pos.get("sl_price", 0.0)) and lock_sl < entry_p + (target * pip_size):
+            pos["sl_price"] = lock_sl
+            pos["breakeven_activated"] = True
+    else:
+        lock_sl = round(entry_p - (lock_pips * pip_size), digits)
+        cur_sl = float(pos.get("sl_price", 0.0))
+        if (cur_sl == 0.0 or lock_sl < cur_sl) and lock_sl > entry_p - (target * pip_size):
+            pos["sl_price"] = lock_sl
+            pos["breakeven_activated"] = True
+    return realized
+
+
 def _resample_5m_to_15m(
     opens: List[float],
     highs: List[float],
@@ -469,6 +650,45 @@ def _resample_5m_to_15m(
             l15.append(min(chunk_l))
             c15.append(chunk_c[-1])
     return o15, h15, l15, c15
+
+
+def _compute_cmo(closes: np.ndarray, period: int = 14) -> float:
+    """Chande Momentum Oscillator (CMO): -100..+100.
+
+    CMO = 100 * (toplam kazanç - toplam kayıp) / (toplam kazanç + toplam kayıp)
+    RSI'dan farkı: momentumun hem yönünü hem hızını ölçer; 0 çizgisi trend onayıdır.
+    Düz/ hareketsiz seride 0 döner (0/0 koruması).
+    """
+    n = len(closes)
+    if n < period + 1:
+        return 0.0
+    deltas = np.diff(closes[-(period + 1):])
+    gains = float(deltas[deltas > 0].sum())
+    losses = float(-deltas[deltas < 0].sum())
+    denom = gains + losses
+    if denom <= 0.0:
+        return 0.0
+    return float(100.0 * (gains - losses) / denom)
+
+
+def _compute_cci(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 20) -> float:
+    """Commodity Channel Index (CCI): tipik fiyat (H+L+C)/3 ile SMA sapması / (0.015 * ortalama sapma).
+
+    +100 üstü güçlü yukarı momentum, -100 altı güçlü aşağı momentum; ±200 aşırı uzama.
+    Hareketsiz seride (ortalama sapma ~0) 0 döner (0/0 koruması).
+    """
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    n = min(len(h), len(l), len(c))
+    if n < period:
+        return 0.0
+    tp = (h[-period:] + l[-period:] + c[-period:]) / 3.0
+    sma = float(np.mean(tp))
+    mean_dev = float(np.mean(np.abs(tp - sma)))
+    if mean_dev <= 1e-12:
+        return 0.0
+    return float((float(tp[-1]) - sma) / (0.015 * mean_dev))
 
 
 def _compute_technical_indicators(
@@ -619,6 +839,49 @@ def _compute_technical_indicators(
     else:
         bearish_pts += 20
 
+    # (e) CMO — Chande Momentum Osilatörü (5M, 14): yön + hız teyidi
+    cmo = _compute_cmo(c, 14)
+    if cmo > 0.0:
+        bullish_pts += 5
+    elif cmo < 0.0:
+        bearish_pts += 5
+    if cmo > 25.0:
+        # Güçlü boğa momentumu ayı tezini çürütüyor
+        bearish_pts -= 8
+    elif cmo < -25.0:
+        bullish_pts -= 8
+    if cmo > 65.0:
+        # Aşırı uzama — trend kovalamayı engelle (RSI > 75 cezasının CMO karşılığı)
+        bullish_pts -= 10
+        bearish_pts += 5
+    elif cmo < -65.0:
+        bearish_pts -= 10
+        bullish_pts += 5
+
+    # (f) CCI — Commodity Channel Index (5M, 20): tipik fiyat sapma teyidi
+    cci = _compute_cci(h, l, c, 20)
+    if cci > 0.0:
+        bullish_pts += 6
+    elif cci < 0.0:
+        bearish_pts += 6
+    if cci > 100.0:
+        bearish_pts -= 6
+    elif cci < -100.0:
+        bullish_pts -= 6
+    if cci > 200.0:
+        # Aşırı uzama — mean reversion riski
+        bullish_pts -= 6
+        bearish_pts += 3
+    elif cci < -200.0:
+        bearish_pts -= 6
+        bullish_pts += 3
+
+    # (g) Üçlü Momentum Teyidi: RSI + CMO + CCI aynı yönde → bonus
+    if rsi >= 50.0 and cmo > 0.0 and cci > 0.0:
+        bullish_pts += 8
+    elif rsi <= 50.0 and cmo < 0.0 and cci < 0.0:
+        bearish_pts += 8
+
     # MTF Alignment Verdict
     ltf_bullish = (ema9 > ema21 and last_price >= ema21 * 0.999)
     ltf_bearish = (ema9 < ema21 and last_price <= ema21 * 1.001)
@@ -651,6 +914,8 @@ def _compute_technical_indicators(
         "rsi": round(rsi, 1),
         "macd_hist": round(hist, 6),
         "macd_verdict": macd_verdict,
+        "cmo": round(cmo, 1),
+        "cci": round(cci, 1),
         "atr": atr,
         "trend": trend,
         "action": action,
@@ -673,6 +938,7 @@ def _sync_fetch_candles_for_symbol(fx_sym: str, yf_sym: str) -> Optional[Dict[st
             lows = [l for l in quote.get("low", []) if l is not None]
             closes = [c for c in quote.get("close", []) if c is not None]
             if len(closes) >= 15:
+                _CLOSES_CACHE[fx_sym] = closes[-250:]
                 return _compute_technical_indicators(closes, highs, lows, opens, fx_sym)
     except Exception:
         pass
@@ -741,6 +1007,8 @@ async def _refresh_live_rates_if_needed():
                 _TECHNICAL_CACHE.update(fresh_tech)
                 for sym, tech in fresh_tech.items():
                     _LIVE_PRICES_CACHE[sym] = tech["price"]
+            # Korelasyon matrisi yalnızca bayatladığında yenilenir (varsayılan 30 dk)
+            _FX_CORR.maybe_refresh(_CLOSES_CACHE)
         except Exception:
             pass
 
@@ -771,7 +1039,9 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
         tech = _TECHNICAL_CACHE.get(sym)
         live_p = _LIVE_PRICES_CACHE.get(sym) or (tech["price"] if tech else item["default_price"])
 
-        spread_pips = 1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else (12.0 if item["category"] == "crypto" else 3.0))
+        spread_pips = _LIVE_SPREAD_PIPS.get(sym) or (
+            1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else (12.0 if item["category"] == "crypto" else 3.0))
+        )
         spread_val = spread_pips * pip
 
         bid_p = round(live_p - spread_val / 2.0, digits)
@@ -783,6 +1053,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             action = tech.get("action", "BUY" if trend == "BULLISH" else ("SELL" if trend == "BEARISH" else "HOLD"))
             rsi = tech["rsi"]
             macd_verdict = tech["macd_verdict"]
+            cmo = tech.get("cmo", 0.0)
+            cci = tech.get("cci", 0.0)
             change_pct = tech["change_pct"]
             high_p = round(max(tech["high"], ask_p), digits)
             low_p = round(min(tech["low"], bid_p), digits)
@@ -793,6 +1065,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             action = "HOLD"
             rsi = 50.0
             macd_verdict = "NÖTR (Veri Bekleniyor)"
+            cmo = 0.0
+            cci = 0.0
             change_pct = 0.0
             high_p = round(live_p * 1.002, digits)
             low_p = round(live_p * 0.998, digits)
@@ -817,6 +1091,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "action": action,
             "rsi": rsi,
             "macd_verdict": macd_verdict,
+            "cmo": cmo,
+            "cci": cci,
             "atr": atr_val,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "updated_at": now,
@@ -912,6 +1188,7 @@ async def get_forex_radar():
     return {
         "candidates": candidates,
         "sessions": _get_market_sessions(),
+        "dxy": get_dxy_regime(),
         "total": len(candidates),
         "updated_at": time.time(),
     }
@@ -986,6 +1263,11 @@ class ForexAutoPaperSettings(BaseModel):
     max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) ve Kripto lot tavanı (Sert tavan: 0.02)")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
+    dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
+    correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
+    atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
+    partial_tp_enabled: bool = Field(True, description="Kısmi kâr alma: ilk hedefte pozisyonun yarısı kapatılır, SL başabaş kârına çekilir")
+    blocked_hours_utc: List[int] = Field(default_factory=lambda: [5, 15], description="İstatistiksel olarak zayıf UTC saatleri (geçmiş işlem verisine göre) — bu saatlerde yeni işlem açılmaz")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
         description="İşleme izin verilen pariteler",
@@ -1004,6 +1286,7 @@ class ToggleAutoPaperRequest(BaseModel):
 _AUTO_PAPER_LOCK = asyncio.Lock()
 _AUTO_PAPER_TASK: Optional[asyncio.Task] = None
 _LAST_SESSION_BLOCK_LOG_TIME = 0.0
+_LAST_BLOCKED_HOUR_LOG_TIME = 0.0
 _LAST_SCAN_PULSE_TIME = 0.0
 _LAST_CANDIDATE_LOG_TIME: Dict[str, float] = {}
 _LAST_SYMBOL_ENTRY_TIME: Dict[str, float] = {}
@@ -1092,7 +1375,9 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         else:
             pnl_pips = (target["entry_price"] - cur_p) / pip_size
 
-        pip_usd_val = 6.60 if "JPY" in target["symbol"] else 10.0
+        # Pip başına USD değeri sembol spec'inden alınır — BTCUSD/ETHUSD/NAS100/USOIL
+        # için pip_val 1.0'dır; sabit 10.0 kullanmak paper PnL'i 10 kat şişiriyordu.
+        pip_usd_val = get_symbol_trading_specs(target["symbol"])["pip_val"]
         pnl_usd = round(pnl_pips * target["lots"] * pip_usd_val, 2)
         pnl_pips = round(pnl_pips, 1)
 
@@ -1212,16 +1497,6 @@ async def _forex_auto_paper_loop():
                     cur_p = t["bid"] if direction == "BUY" else t["ask"]
                     pos["current_price"] = cur_p
 
-                    # PnL hesapla
-                    if direction == "BUY":
-                        pnl_pips = (cur_p - entry_p) / pip_size
-                    else:
-                        pnl_pips = (entry_p - cur_p) / pip_size
-
-                    pip_usd_val = 6.60 if "JPY" in sym else 10.0
-                    pos["pnl_pips"] = round(pnl_pips, 1)
-                    pos["pnl_usd"] = round(pnl_pips * pos["lots"] * pip_usd_val, 2)
-
                     atr_pips = round(t.get("atr", 0.001) / pip_size, 1) if pip_size > 0 else 15.0
                     spec = get_symbol_trading_specs(
                         sym,
@@ -1231,6 +1506,31 @@ async def _forex_auto_paper_loop():
                     )
                     eff_be_pips = spec["be_pips"]
                     eff_trail_pips = spec["trail_pips"]
+
+                    # PnL hesapla — pip başına USD değeri sembol spec'inden alınır
+                    # (BTCUSD/ETHUSD/endeks/petrol için pip_val 1.0; sabit 10.0 → 10x hatalıydı)
+                    pip_usd_val = spec["pip_val"]
+                    if direction == "BUY":
+                        pnl_pips = (cur_p - entry_p) / pip_size
+                    else:
+                        pnl_pips = (entry_p - cur_p) / pip_size
+
+                    pos["pnl_pips"] = round(pnl_pips, 1)
+                    pos["pnl_usd"] = round(pnl_pips * pos["lots"] * pip_usd_val, 2)
+
+                    # (a0) KISMİ KÂR ALMA (Partial TP): İlk hedefte lot'un yarısı
+                    # kapatılır; kalan pozisyonda SL başabaş üstü net kâra kilitlenir.
+                    if _AUTO_SETTINGS.partial_tp_enabled:
+                        realized_partial = apply_partial_take_profit(pos, pnl_pips, pip_usd_val)
+                        if realized_partial:
+                            _AUTO_STATE["balance"] = round(_AUTO_STATE["balance"] + realized_partial, 2)
+                            _AUTO_STATE["realized_pnl_usd"] = round(_AUTO_STATE["realized_pnl_usd"] + realized_partial, 2)
+                            _log_auto_decision(
+                                "PROTECT",
+                                f"{pos['display']} 💰 Kısmi Kâr Alındı: ${realized_partial:+.2f} (kalan {pos['lots']} lot, SL başabaş kârına kilitli).",
+                                symbol=sym,
+                                metadata={"partial_usd": realized_partial, "remaining_lots": pos["lots"]},
+                            )
 
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
                     # Herhangi bir işlem net $1.00 kâr seviyesine ulaştığında SL tam $1.00 kâr seviyesine kilitlenir
@@ -1363,9 +1663,23 @@ async def _forex_auto_paper_loop():
                     )
                 continue
 
+            # Zayıf Saat Kalkanı: Geçmiş işlem verisinde istatistiksel kayıp üreten
+            # UTC saatlerinde (varsayılan 05:00 ve 15:00) yeni işlem açılmaz.
+            # Açık pozisyon yönetimi (BE/trailing/TP/SL) aynen devam eder.
+            current_utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
+            if is_entry_hour_blocked(current_utc_hour, _AUTO_SETTINGS.blocked_hours_utc):
+                if now_ts - _LAST_BLOCKED_HOUR_LOG_TIME > 120.0:
+                    _LAST_BLOCKED_HOUR_LOG_TIME = now_ts
+                    _log_auto_decision(
+                        "GATE",
+                        f"⏰ Zayıf Saat Kalkanı: UTC {current_utc_hour:02d}:00 saati geçmiş veride istatistiksel kayıp üretiyor. Yeni işlem girişleri bu saat boyunca kapalı.",
+                    )
+                continue
+
             # Radar Sinyallerini Al
             radar_res = await get_forex_radar()
             candidates = radar_res.get("candidates", [])
+            dxy_regime = radar_res.get("dxy")
 
             # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
@@ -1526,10 +1840,28 @@ async def _forex_auto_paper_loop():
                 if now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0) < sym_cd:
                     continue
 
-                # 4. USD Korelasyon Kalkanı (Anti-Clustering Koruması)
+                # 4. DXY (ABD Dolar Endeksi) Rejim Filtresi
+                # Pozisyon DXY rejimiyle çelişiyorsa veto; zayıf semboller nötr rejimde ekstra skor ister.
                 direction = cand.get("action", "")  # BUY or SELL
                 if direction not in ("BUY", "SELL"):
                     continue
+
+                weak_symbol_score_bump = 0.0
+                if _AUTO_SETTINGS.dxy_filter_enabled:
+                    veto_reason = dxy_entry_veto(sym, direction, dxy_regime)
+                    if veto_reason == "dxy_conflict":
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_dxy", 0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_dxy"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] DXY Kalkanı: {direction} yönü dolar rejimiyle ({dxy_regime.get('regime')}) çelişiyor. İşlem engellendi.",
+                                symbol=sym,
+                            )
+                        continue
+                    if veto_reason == "dxy_strict_neutral":
+                        weak_symbol_score_bump = 5.0
+
+                # 5. USD Korelasyon Kalkanı (Anti-Clustering Koruması)
                 cand_usd_bias = get_usd_bias(sym, direction)
 
                 if cand_usd_bias != "USD_NEUTRAL":
@@ -1559,7 +1891,33 @@ async def _forex_auto_paper_loop():
                             )
                         continue
 
-                # 5. Spread Filtresi
+                # 5b. Parite Korelasyon Kalkanı (FX Correlation Cluster Guard)
+                # |ρ|>=0.85 aynı USD bias'lı çakışma ve yüksek korelasyonlu küme girişlerini sınırlar.
+                if _AUTO_SETTINGS.correlation_guard and cand_usd_bias != "USD_NEUTRAL":
+                    corr_positions: List[tuple] = []
+                    for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])):
+                        corr_positions.append((
+                            str(p.get("symbol", "")).upper(),
+                            get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY")),
+                        ))
+                    for c in _MT5_STATE.get("pending_commands", []):
+                        if c.get("action") == "OPEN_ORDER":
+                            corr_positions.append((
+                                str(c.get("symbol", "")).upper(),
+                                get_usd_bias(c.get("symbol", ""), c.get("direction", "BUY")),
+                            ))
+                    corr_ok, corr_reason = _FX_CORR.cluster_check(sym, cand_usd_bias, corr_positions)
+                    if not corr_ok:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_fxcorr", 0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_fxcorr"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] Korelasyon Kalkanı: {cand_usd_bias} yönlü yüksek korelasyonlu açık pozisyon var ({corr_reason}). Aynı teze ikinci kapıdan giriş engellendi.",
+                                symbol=sym,
+                            )
+                        continue
+
+                # 6. Spread Filtresi
                 effective_max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
                 if cand["spread_pips"] > effective_max_spread:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
@@ -1571,9 +1929,11 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # 6. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
+                # 7. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
+                # DXY nötr rejimdeki zayıf semboller (XAUUSD/USDJPY/USDCHF) +5.0 ekstra skor ister.
                 is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
                 req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
+                req_score += weak_symbol_score_bump
                 if cand["score"] < req_score:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
@@ -1584,7 +1944,7 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # 7. Dinamik Lot & Sert Lot Tavanı (Hard Lot Cap)
+                # 8. Dinamik Lot & Sert Lot Tavanı (Hard Lot Cap)
                 t = ticks.get(sym)
                 if not t:
                     continue
@@ -1601,6 +1961,16 @@ async def _forex_auto_paper_loop():
                 sl_pips = spec["sl_pips"]
                 tp_pips = spec["tp_pips"]
                 pip_val = spec["pip_val"]
+
+                # ATR bazlı dinamik çıkış motoru: TP'yi volatiliteye çeker,
+                # SL'e volatilite nefes payı ekler (gürültü stoplarını azaltır).
+                first_target_pips = 0.0
+                if _AUTO_SETTINGS.atr_exit_enabled:
+                    atr_levels = get_atr_exit_levels(atr_pips, spec["sl_pips"], spec["tp_pips"])
+                    sl_pips = atr_levels["sl_pips"]
+                    tp_pips = atr_levels["tp_pips"]
+                    if _AUTO_SETTINGS.partial_tp_enabled:
+                        first_target_pips = atr_levels["first_target_pips"]
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
@@ -1637,6 +2007,7 @@ async def _forex_auto_paper_loop():
                         "lots": mt5_lots,
                         "sl_pips": sl_pips,
                         "tp_pips": tp_pips,
+                        "partial_pips": first_target_pips,
                         "comment": f"Scalper MT5 {cand['score']:.0f}",
                     })
                 else:
@@ -1656,6 +2027,10 @@ async def _forex_auto_paper_loop():
                         "initial_sl_price": round(entry_p - sl_dist if direction == "BUY" else entry_p + sl_dist, spec["digits"]),
                         "breakeven_activated": False,
                         "trailing_activated": False,
+                        "partial_taken": False,
+                        "partial_target_pips": first_target_pips,
+                        "partial_realized_usd": 0.0,
+                        "initial_lots": mt5_lots,
                         "opened_at_ts": now_ts,
                         "open_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
                         "pnl_usd": 0.0,
@@ -1765,6 +2140,9 @@ async def get_forex_auto_paper_status():
         "closed_trades": normalized_deals,
         "decision_logs": _AUTO_STATE["decision_logs"][:60],
         "sessions": _get_market_sessions(),
+        "dxy": get_dxy_regime(),
+        "correlations": _FX_CORR.snapshot(),
+        "correlations_updated_at": _FX_CORR.last_updated,
         "last_scan_time": _AUTO_STATE["last_scan_time"],
         "mt5_account": mt5_acc,
         "mt5_connected": is_mt5_conn,
@@ -2077,9 +2455,20 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
     # MT5 canlı tick fiyatlarını entegre et
     if req.ticks:
         for sym_code, tick_dict in req.ticks.items():
+            sym_up = str(sym_code).upper()
             live_val = tick_dict.get("ask") or tick_dict.get("last") or tick_dict.get("bid")
             if live_val and live_val > 0:
-                _LIVE_PRICES_CACHE[sym_code.upper()] = float(live_val)
+                _LIVE_PRICES_CACHE[sym_up] = float(live_val)
+            # Köprüden GERÇEK spread (pip) — panel varsayım yerine broker gerçekliğini kullanır
+            bid_v = tick_dict.get("bid")
+            ask_v = tick_dict.get("ask")
+            if bid_v and ask_v and float(ask_v) > float(bid_v) > 0:
+                app_sym = _MT5_TO_APP_SYMBOLS.get(sym_up, sym_up)
+                pip_size = get_symbol_trading_specs(app_sym)["pip_size"]
+                if pip_size > 0:
+                    spread_pips = (float(ask_v) - float(bid_v)) / pip_size
+                    if 0.0 < spread_pips <= 100.0:
+                        _LIVE_SPREAD_PIPS[app_sym] = round(spread_pips, 2)
 
     if req.deals:
         _MT5_STATE["closed_deals"] = req.deals
@@ -2115,6 +2504,10 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "max_gold_lot": _AUTO_SETTINGS.max_gold_lot,
             "gold_cooldown_sec": _AUTO_SETTINGS.gold_cooldown_sec,
             "usd_correlation_guard": _AUTO_SETTINGS.usd_correlation_guard,
+            "atr_exit_enabled": _AUTO_SETTINGS.atr_exit_enabled,
+            "partial_tp_enabled": _AUTO_SETTINGS.partial_tp_enabled,
+            "dxy_filter_enabled": _AUTO_SETTINGS.dxy_filter_enabled,
+            "correlation_guard": _AUTO_SETTINGS.correlation_guard,
         },
     }
 

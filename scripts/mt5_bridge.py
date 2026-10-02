@@ -440,6 +440,16 @@ def execute_market_order(cmd: dict) -> dict:
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"  ⚡ [İŞLEM AÇILDI]: Bilet #{res.order} | {symbol} {direction} {lots} Lot @ {price} (TP: {tp}, SL: {sl})")
+        # Kısmi Kâr Al hedefini açılan pozisyona bağla (server: partial_pips)
+        partial_pips = float(cmd.get("partial_pips", 0.0) or 0.0)
+        if partial_pips > 0 and bool(CURRENT_SETTINGS.get("partial_tp_enabled", True)):
+            time.sleep(0.2)
+            for p in (mt5.positions_get(symbol=symbol) or []):
+                p_dir = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+                if p_dir == direction and abs(float(p.volume) - lots) < 1e-6 and p.ticket not in PARTIAL_TP_MAP:
+                    PARTIAL_TP_MAP[p.ticket] = {"target_pips": partial_pips, "done": False}
+                    print(f"  💰 [KISMİ TP PLANI]: Bilet #{p.ticket} ilk kâr hedefi +{partial_pips:.1f}p")
+                    break
         return {"success": True, "ticket": res.order, "price": price}
     else:
         comment_err = res.comment if res else str(mt5.last_error())
@@ -496,6 +506,65 @@ def execute_close_order(cmd: dict) -> dict:
         comment_err = res.comment if res else str(mt5.last_error())
         print(f"  ❌ [KAPATMA HATASI]: {comment_err}")
         return {"success": False, "error": comment_err}
+
+
+def execute_close_partial(cmd: dict) -> dict:
+    """Açık MT5 pozisyonunun belirtilen hacmini kısmen kapatır (Kısmi Kâr Al)."""
+    ticket = int(cmd.get("ticket", 0))
+    volume = float(cmd.get("volume", 0.0))
+    positions = mt5.positions_get(ticket=ticket)
+    if not positions:
+        return {"success": False, "error": f"Pozisyon #{ticket} bulunamadı veya kapalı"}
+
+    pos = positions[0]
+    symbol = pos.symbol
+    s_info = mt5.symbol_info(symbol)
+    min_vol = float(s_info.volume_min) if s_info and s_info.volume_min > 0 else 0.01
+    step_vol = float(s_info.volume_step) if s_info and s_info.volume_step > 0 else 0.01
+
+    if volume < min_vol or volume >= float(pos.volume):
+        return {"success": False, "error": f"Kısmi hacim geçersiz: {volume} (min {min_vol}, pozisyon {pos.volume})"}
+    if step_vol > 0:
+        steps = round((volume - min_vol) / step_vol)
+        volume = round(min_vol + (steps * step_vol), 2)
+        if volume < min_vol or volume >= float(pos.volume):
+            return {"success": False, "error": f"Kısmi hacim lot adımına uymuyor: {volume} (step {step_vol})"}
+
+    order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+    filling = mt5.ORDER_FILLING_IOC
+    if s_info and (s_info.filling_mode & 2):
+        filling = mt5.ORDER_FILLING_IOC
+    elif s_info and (s_info.filling_mode & 1):
+        filling = mt5.ORDER_FILLING_FOK
+    else:
+        filling = mt5.ORDER_FILLING_RETURN
+
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        return {"success": False, "error": f"Canlı fiyat alınamadı: {symbol}"}
+    price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask
+
+    req = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": volume,
+        "type": order_type,
+        "position": ticket,
+        "price": price,
+        "deviation": 25,
+        "magic": 825482,
+        "comment": "Scalper Partial",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling,
+    }
+
+    res = mt5.order_send(req)
+    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        print(f"  💰 [KISMİ KAPATMA]: Bilet #{ticket} | {symbol} {volume} lot kapatıldı @ {price}")
+        return {"success": True, "ticket": ticket, "volume": volume}
+    comment_err = res.comment if res else str(mt5.last_error())
+    print(f"  ❌ [KISMİ KAPATMA HATASI]: {comment_err}")
+    return {"success": False, "error": comment_err}
 
 
 def execute_modify_sltp(cmd: dict) -> dict:
@@ -557,6 +626,7 @@ def execute_close_all(cmd: dict) -> dict:
 
 
 POSITION_PROTECTION_MAP: Dict[int, str] = {}  # ticket -> "BREAKEVEN" | "TRAILING"
+PARTIAL_TP_MAP: Dict[int, Dict[str, Any]] = {}  # ticket -> {"target_pips": float, "done": bool}
 CURRENT_SETTINGS: Dict[str, float] = {
     "breakeven_pips": 14.0,
     "trailing_stop_pips": 20.0,
@@ -579,6 +649,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
     for old_t in list(POSITION_PROTECTION_MAP.keys()):
         if old_t not in active_tickets:
             POSITION_PROTECTION_MAP.pop(old_t, None)
+    for old_t in list(PARTIAL_TP_MAP.keys()):
+        if old_t not in active_tickets:
+            PARTIAL_TP_MAP.pop(old_t, None)
 
     for p in positions:
         ticket = p.ticket
@@ -603,6 +676,33 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
             pnl_pips = (cur_p - entry_p) / pip_size
         else:
             pnl_pips = (entry_p - cur_p) / pip_size
+
+        # 0. KISMİ KÂR ALMA (Partial TP): İlk kâr hedefinde pozisyonun yarısı
+        # kapatılır; kalan pozisyon için SL başabaş üstü net kâra çekilir.
+        partial_cfg = PARTIAL_TP_MAP.get(ticket)
+        if partial_cfg and not partial_cfg.get("done") and bool(CURRENT_SETTINGS.get("partial_tp_enabled", True)):
+            target_pips = float(partial_cfg.get("target_pips", 0.0) or 0.0)
+            if target_pips > 0 and pnl_pips >= target_pips:
+                partial_cfg["done"] = True
+                half = round(float(p.volume) / 2.0, 2)
+                vol_min = float(s_info.volume_min) if s_info.volume_min > 0 else 0.01
+                closed_half = False
+                if vol_min <= half < float(p.volume):
+                    cres = execute_close_partial({"ticket": ticket, "volume": half})
+                    closed_half = bool(cres.get("success"))
+                remaining_vol = max(vol_min, round(float(p.volume) - half, 2)) if closed_half else float(p.volume)
+                lock_dpp = max(0.0001, remaining_vol * spec["pip_val"])
+                lock_pips = max(0.5, round(1.0 / lock_dpp, 1))
+                if direction == "BUY":
+                    lock_sl = round(entry_p + (lock_pips * pip_size), digits)
+                    if lock_sl > cur_sl and lock_sl < cur_p:
+                        mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": ticket, "symbol": sym, "sl": lock_sl, "tp": cur_tp})
+                        print(f"  🛡️ [KISMİ TP KİLİDİ]: Bilet #{ticket} ({sym}) SL {lock_sl} (başabaş üstü net kâr)")
+                else:
+                    lock_sl = round(entry_p - (lock_pips * pip_size), digits)
+                    if (cur_sl == 0.0 or lock_sl < cur_sl) and lock_sl > cur_p:
+                        mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": ticket, "symbol": sym, "sl": lock_sl, "tp": cur_tp})
+                        print(f"  🛡️ [KISMİ TP KİLİDİ]: Bilet #{ticket} ({sym}) SL {lock_sl} (başabaş üstü net kâr)")
 
         target_sl = None
         cur_profit = getattr(p, "profit", 0.0)
@@ -953,6 +1053,8 @@ def main():
                     res = execute_market_order(cmd)
                 elif action == "CLOSE_ORDER":
                     res = execute_close_order(cmd)
+                elif action == "CLOSE_PARTIAL":
+                    res = execute_close_partial(cmd)
                 elif action == "CLOSE_ALL":
                     res = execute_close_all(cmd)
                 elif action == "MODIFY_SLTP":
