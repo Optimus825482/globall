@@ -149,10 +149,10 @@ def resolve_mt5_symbol(symbol: str) -> str:
 
 def get_symbol_trading_specs(
     symbol: str,
-    base_sl: float = 8.0,
-    base_tp: float = 20.0,
-    base_be: float = 10.0,
-    base_trail: float = 16.0,
+    base_sl: float = 12.0,
+    base_tp: float = 15.0,
+    base_be: float = 8.0,
+    base_trail: float = 10.0,
     atr_pips: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
@@ -162,17 +162,17 @@ def get_symbol_trading_specs(
     Özellikle Ons Altın (XAUUSD) için:
     - MT5 ve uluslararası piyasalarda 1 pip = 0.10 USD (10 point / 10 cent) kabul edilir.
     - Altın'ın yüksek oynaklığı ($4,200 seviyesinde dakikalık mumlar $2 - $5 hareket eder)
-      nedeniyle 3.0x taban volatilite tamponu (min 36 pip / $3.60 USD) ve dinamik ATR tamponu uygulanır.
-    - Erken başabaş (breakeven) stop kilitlenmesini engellemek için altın BE eşiği en az 25 pip ($2.50) olmalıdır.
+      nedeniyle 2.5x taban volatilite tamponu (min 30 pip / $3.00 USD) ve dinamik ATR tamponu uygulanır.
+    - Erken başabaş (breakeven) stop kilitlenmesini engellemek için altın BE eşiği en az 20 pip ($2.00) olmalıdır.
     - Standart Forex paritelerinde de erken boğulmayı önlemek için BE eşiği en az 10.0 pip olmalıdır.
     """
     s = str(symbol).upper().replace("/", "").strip()
     clean_sym = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
-    base_be_floored = max(14.0, base_be)
+    base_be_floored = max(10.0, base_be)
 
     if "XAU" in clean_sym or "GOLD" in clean_sym:
         pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
-        mult = 3.0               # 3.0x volatilite nefes alma çarpanı
+        mult = 2.5               # 2.5x volatilite nefes alma çarpanı
         digits = 2
         pip_val = 10.0           # 1 lot (100 oz) * 0.10 USD = $10.0
         base_sl_pips = round(base_sl * mult, 1)
@@ -183,9 +183,9 @@ def get_symbol_trading_specs(
         else:
             eff_sl_pips = base_sl_pips
 
-        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.83, 1))
-        eff_be_pips = max(25.0, round(eff_sl_pips * 0.7, 1))
-        eff_trail_pips = max(40.0, round(eff_sl_pips * 1.2, 1))
+        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 2.0, 1))
+        eff_be_pips = max(20.0, round(eff_sl_pips * 0.65, 1))
+        eff_trail_pips = max(30.0, round(eff_sl_pips * 1.0, 1))
 
     elif "XAG" in clean_sym or "SILVER" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD
@@ -371,7 +371,14 @@ def execute_market_order(cmd: dict) -> dict:
             time.sleep(0.3)
 
     # Aynı sembolde aynı yönde maksimum 3 pozisyon ve Kârdaki Pozisyona Ekleme denetimi
-    active_now = (mt5.positions_get(symbol=symbol) or []) + (mt5.positions_get(symbol=raw_symbol) or [])
+    _raw_active = (mt5.positions_get(symbol=symbol) or []) + (mt5.positions_get(symbol=raw_symbol) or [])
+    # Ticket bazlı tekrar eleme (symbol == raw_symbol olduğunda çift sayımı engeller)
+    _seen = set()
+    active_now = []
+    for _p in _raw_active:
+        if _p.ticket not in _seen:
+            _seen.add(_p.ticket)
+            active_now.append(_p)
     same_dir_positions = [pos for pos in active_now if ("BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL") == direction]
     same_dir_count = len(same_dir_positions)
     if same_dir_count >= 3:
@@ -551,13 +558,13 @@ def execute_close_all(cmd: dict) -> dict:
 
 POSITION_PROTECTION_MAP: Dict[int, str] = {}  # ticket -> "BREAKEVEN" | "TRAILING"
 CURRENT_SETTINGS: Dict[str, float] = {
-    "breakeven_pips": 14.0,
-    "trailing_stop_pips": 20.0,
+    "breakeven_pips": 10.0,
+    "trailing_stop_pips": 12.0,
     "sl_pips": 12.0,
-    "tp_pips": 26.0,
+    "tp_pips": 15.0,
     "max_forex_lot": 0.05,
     "max_gold_lot": 0.02,
-    "gold_cooldown_sec": 60.0,
+    "gold_cooldown_sec": 120.0,
 }
 
 
@@ -606,7 +613,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
 
         # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
         # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
-        min_headroom_pips = 6.0 if ("XAU" in sym or "GOLD" in sym) else (35.0 if "BTC" in sym else 2.5)
+        min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
 
         # 1. BREAKEVEN (Başabaş / Net $1.00 USD Kâr Kilidi)
         # Herhangi bir işlem net $1.00 USD kâr seviyesini nefes payıyla aştığında VEYA eff_be_pips aşıldığında
@@ -615,7 +622,8 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
 
         if (is_dollar_be or is_pip_be):
             # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-            locked_pips = max(pips_for_1usd, round(pnl_pips * 0.5, 1))
+            # %40 kâr kilitleme — kalan %60 koşu mesafesi olarak bırakılır
+            locked_pips = max(pips_for_1usd, round(pnl_pips * 0.40, 1))
             if direction == "BUY":
                 be_sl = round(entry_p + (locked_pips * pip_size), digits)
                 if cur_sl < be_sl and be_sl < cur_p:

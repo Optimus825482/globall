@@ -316,10 +316,10 @@ def get_usd_bias(symbol: str, direction: str) -> str:
 
 def get_symbol_trading_specs(
     symbol: str,
-    base_sl: float = 8.0,
-    base_tp: float = 20.0,
-    base_be: float = 10.0,
-    base_trail: float = 16.0,
+    base_sl: float = 12.0,
+    base_tp: float = 15.0,
+    base_be: float = 8.0,
+    base_trail: float = 10.0,
     atr_pips: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
@@ -339,11 +339,11 @@ def get_symbol_trading_specs(
 
     if "XAU" in clean_sym or "GOLD" in clean_sym:
         pip_size = 0.10          # 1 pip = 0.10 USD (10 cent / 10 point)
-        mult = 3.0               # 3.0x taban volatilite nefes alma çarpanı
+        mult = 2.5               # 2.5x taban volatilite nefes alma çarpanı (3.0'dan düşürüldü - daha sıkı SL)
         digits = 2
         pip_val = 10.0           # 1 lot (100 oz) * 0.10 USD = $10.0
-        base_sl_pips = round(base_sl * mult, 1)  # 12.0 * 3.0 = 36.0 pips ($3.60)
-        base_tp_pips = round(base_tp * mult, 1)  # 22.0 * 3.0 = 66.0 pips ($6.60)
+        base_sl_pips = round(base_sl * mult, 1)  # 12.0 * 2.5 = 30.0 pips ($3.00)
+        base_tp_pips = round(base_tp * mult, 1)  # 15.0 * 2.5 = 37.5 pips ($3.75)
 
         # Dinamik ATR volatilite tamponu: ATR genişlediğinde SL ve TP dinamik genişletilir
         if atr_pips is not None and atr_pips > 0:
@@ -351,9 +351,9 @@ def get_symbol_trading_specs(
         else:
             eff_sl_pips = base_sl_pips
 
-        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.83, 1))
-        eff_be_pips = max(25.0, round(eff_sl_pips * 0.7, 1))
-        eff_trail_pips = max(40.0, round(eff_sl_pips * 1.2, 1))
+        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 2.0, 1))
+        eff_be_pips = max(20.0, round(eff_sl_pips * 0.65, 1))
+        eff_trail_pips = max(30.0, round(eff_sl_pips * 1.0, 1))
 
     elif "XAG" in clean_sym or "SILVER" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD
@@ -551,7 +551,7 @@ def _compute_technical_indicators(
     first_open = float(opens[0]) if opens else float(c[0])
     change_pct = round(((last_price - first_open) / first_open) * 100.0, 2) if first_open > 0 else 0.0
 
-    # 6. Multi-Timeframe Scoring & Trend Synthesis
+    # 6. Multi-Timeframe Scoring & Trend Synthesis (OPTIMIZED)
     bullish_pts = 0
     bearish_pts = 0
 
@@ -561,8 +561,8 @@ def _compute_technical_indicators(
     elif htf_trend == "BEARISH":
         bearish_pts += 30
     else:
-        bullish_pts += 10
-        bearish_pts += 10
+        bullish_pts += 8
+        bearish_pts += 8
 
     # (b) LTF 5M EMA Alignment (25 Pts)
     if last_price > ema9 > ema21 > ema50:
@@ -570,9 +570,17 @@ def _compute_technical_indicators(
     elif last_price < ema9 < ema21 < ema50:
         bearish_pts += 25
     elif ema9 > ema21:
-        bullish_pts += 15
+        bullish_pts += 12
     elif ema9 < ema21:
-        bearish_pts += 15
+        bearish_pts += 12
+
+    # (b2) EMA Slope Momentum Bonus (10 Pts) - Trend hızlanıyor mu?
+    if len(ema9_series) >= 3:
+        ema9_slope = float(ema9_series[-1]) - float(ema9_series[-3])
+        if ema9_slope > 0 and htf_trend == "BULLISH":
+            bullish_pts += 10
+        elif ema9_slope < 0 and htf_trend == "BEARISH":
+            bearish_pts += 10
 
     # (c) RSI Pullback & Momentum (25 Pts)
     # Healthy pullback zone (sweet spot for scalper entry without chasing extremes)
@@ -582,22 +590,28 @@ def _compute_technical_indicators(
         elif htf_trend == "BEARISH":
             bearish_pts += 25
         else:
-            bullish_pts += 12
-            bearish_pts += 12
+            bullish_pts += 10
+            bearish_pts += 10
     elif 30.0 <= rsi < 40.0:
         # Oversold bounce opportunity
-        bullish_pts += 20
+        bullish_pts += 18
     elif 60.0 < rsi <= 70.0:
         # Overbought pullback opportunity
-        bearish_pts += 20
-    elif rsi > 72.0:
-        # Chasing extreme high - penalize bullish
-        bullish_pts -= 15
-        bearish_pts += 15
-    elif rsi < 28.0:
-        # Chasing extreme low - penalize bearish
-        bearish_pts -= 15
-        bullish_pts += 15
+        bearish_pts += 18
+    elif rsi > 75.0:
+        # Extreme high - strong penalty
+        bullish_pts -= 20
+        bearish_pts += 12
+    elif rsi < 25.0:
+        # Extreme low - strong penalty
+        bearish_pts -= 20
+        bullish_pts += 12
+
+    # (c2) RSI-Trend Alignment Bonus (8 Pts)
+    if htf_trend == "BULLISH" and 45.0 <= rsi <= 65.0:
+        bullish_pts += 8
+    elif htf_trend == "BEARISH" and 35.0 <= rsi <= 55.0:
+        bearish_pts += 8
 
     # (d) MACD Histogram Momentum (20 Pts)
     if hist > 0:
@@ -612,18 +626,18 @@ def _compute_technical_indicators(
     if (htf_trend == "BULLISH" or htf_trend == "NEUTRAL") and ltf_bullish and bullish_pts >= bearish_pts:
         trend = "BULLISH"
         action = "BUY" if rsi <= 78.0 else "HOLD"
-        score = round(min(96.0, max(60.0, 50.0 + (bullish_pts * 0.46))), 1)
+        score = round(min(96.0, max(60.0, 50.0 + (bullish_pts * 0.42))), 1)
         macd_verdict = f"AL (MTF Boğa Uyumu | 15M: {htf_trend} + 5M Momentum)"
     elif (htf_trend == "BEARISH" or htf_trend == "NEUTRAL") and ltf_bearish and bearish_pts >= bullish_pts:
         trend = "BEARISH"
         action = "SELL" if rsi >= 22.0 else "HOLD"
-        score = round(min(96.0, max(60.0, 50.0 + (bearish_pts * 0.46))), 1)
+        score = round(min(96.0, max(60.0, 50.0 + (bearish_pts * 0.42))), 1)
         macd_verdict = f"SAT (MTF Ayı Uyumu | 15M: {htf_trend} + 5M Momentum)"
     else:
         # Choppy, conflicting timeframes, or indecisive market
         trend = "NEUTRAL"
         action = "HOLD"
-        score = round(max(50.0, min(58.0, 50.0 + abs(bullish_pts - bearish_pts) * 0.1)), 1)
+        score = round(max(48.0, min(55.0, 48.0 + abs(bullish_pts - bearish_pts) * 0.08)), 1)
         macd_verdict = f"NÖTR (MTF Uyumsuzluğu | 15M: {htf_trend}, 5M: {'Boğa' if ltf_bullish else 'Ayı'} - Beklemede)"
 
     return {
@@ -958,23 +972,23 @@ class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
-    max_open_positions: int = Field(6, ge=1, le=20, description="Aynı anda maksimum açık işlem")
-    max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
-    min_score: float = Field(70.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru")
-    tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
-    sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
-    breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
+    max_open_positions: int = Field(8, ge=1, le=20, description="Aynı anda maksimum açık işlem")
+    max_positions_per_symbol: int = Field(2, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
+    min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (Optimizasyon: 75)")
+    tp_pips: float = Field(15.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Erişilebilir TP)")
+    sl_pips: float = Field(12.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Gürültü korumalı SL)")
+    breakeven_pips: float = Field(10.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi (Erken kâr kilidi)")
     breakeven_usd: float = Field(1.0, ge=0.5, le=10.0, description="Başabaş kilit tetikleme net kârı ($)")
-    trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
+    trailing_stop_pips: float = Field(12.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip - Sıkı takip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
-    max_spread_pips: float = Field(3.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip)")
+    max_spread_pips: float = Field(2.5, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip - Sıkılaştırıldı)")
     max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
     max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) ve Kripto lot tavanı (Sert tavan: 0.02)")
-    gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
-    usd_correlation_guard: bool = Field(False, description="USD yönlü kümelenmeyi engelleyen kalkan (Varsayılan: False - Tüm pariteler bağımsız çalışır)")
+    gold_cooldown_sec: float = Field(120.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (120 sn - Artırıldı)")
+    usd_correlation_guard: bool = Field(True, description="USD yönlü kümelenmeyi engelleyen kalkan (Artık varsayılan AÇIK)")
     allowed_symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
-        description="İşleme izin verilen pariteler",
+        default=["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "NAS100", "US30", "XAUUSD"],
+        description="İşleme izin verilen pariteler (USDCHF ve ETHUSD çıkarıldı - düşük performans)",
     )
 
 
@@ -1227,13 +1241,14 @@ async def _forex_auto_paper_loop():
 
                     # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
                     # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
-                    min_headroom_pips = 6.0 if ("XAU" in sym or "GOLD" in sym) else (35.0 if "BTC" in sym else 2.5)
+                    min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
                     is_dollar_be = (pos.get("pnl_usd", 0.0) >= (1.0 + (min_headroom_pips * dollar_per_pip))) or (pnl_pips >= (pips_for_1usd + min_headroom_pips))
                     is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
 
                     if (is_dollar_be or is_pip_be) and not pos.get("breakeven_activated"):
                         # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-                        locked_pips = max(pips_for_1usd, round(pnl_pips * 0.5, 1))
+                        # %40 kâr kilitleme — kalan %60 koşu mesafesi olarak bırakılır
+                        locked_pips = max(pips_for_1usd, round(pnl_pips * 0.40, 1))
                         if direction == "BUY":
                             cand_be = round(entry_p + (locked_pips * pip_size), digits)
                             if cand_be > pos["sl_price"] and cand_be < cur_p:
@@ -1556,23 +1571,21 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # 6. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
+                # 6. Skor Eşiği (Ons Altın ve Emtialar için min 82.0, Kripto için min 80.0 yüksek teyit)
                 is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
-                req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
+                is_crypto = ("BTC" in sym or "ETH" in sym)
+                if is_commodity:
+                    req_score = 82.0
+                elif is_crypto:
+                    req_score = 80.0
+                else:
+                    req_score = _AUTO_SETTINGS.min_score
                 if cand["score"] < req_score:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
                         _log_auto_decision(
                             "SCAN",
                             f"[{cand['display']}] Tarandı: Skor yetersiz ({cand['score']:.1f} < {req_score:.0f} eşik) | Yön: {cand['action']} | Spread: {cand['spread_pips']:.1f}p | Beklemede.",
-                            symbol=sym,
-                        )
-                    continue
-                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
-                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
-                        _log_auto_decision(
-                            "SCAN",
-                            f"[{cand['display']}] Tarandı: Skor yetersiz ({cand['score']:.1f} < {_AUTO_SETTINGS.min_score:.0f} eşik) | Yön: {cand['action']} | Spread: {cand['spread_pips']:.1f}p | Beklemede.",
                             symbol=sym,
                         )
                     continue
