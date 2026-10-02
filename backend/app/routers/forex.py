@@ -1219,12 +1219,19 @@ async def _forex_auto_paper_loop():
                     eff_trail_pips = spec["trail_pips"]
 
                     # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
-                    # Herhangi bir işlem net $1.00 dolar kâra geçtiğinde VEYA eff_be_pips aşıldığında kâr kilitlenir
-                    is_dollar_be = pos.get("pnl_usd", 0.0) >= _AUTO_SETTINGS.breakeven_usd
-                    is_pip_be = pnl_pips >= eff_be_pips
+                    # Herhangi bir işlem net $1.00 kâr seviyesine ulaştığında SL tam $1.00 kâr seviyesine kilitlenir
+                    lots = float(pos.get("lots", 0.05))
+                    pip_val = spec["pip_val"]
+                    dollar_per_pip = max(0.0001, lots * pip_val)
+                    pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
+
+                    min_headroom_pips = 1.5 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 0.8)
+                    is_dollar_be = (pos.get("pnl_usd", 0.0) >= (1.0 + (min_headroom_pips * dollar_per_pip))) or (pnl_pips >= (pips_for_1usd + min_headroom_pips))
+                    is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
+
                     if (is_dollar_be or is_pip_be) and not pos.get("breakeven_activated"):
-                        buffer_pips = 3.0 if ("XAU" in sym or "GOLD" in sym) else (10.0 if "BTC" in sym else 1.5)
-                        locked_pips = min(buffer_pips, max(0.5, pnl_pips * 0.4))
+                        # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
+                        locked_pips = max(pips_for_1usd, round(pnl_pips * 0.5, 1))
                         if direction == "BUY":
                             cand_be = round(entry_p + (locked_pips * pip_size), digits)
                             if cand_be > pos["sl_price"] and cand_be < cur_p:
@@ -1239,7 +1246,7 @@ async def _forex_auto_paper_loop():
                         if pos.get("breakeven_activated"):
                             _log_auto_decision(
                                 "PROTECT",
-                                f"{pos['display']} Başabaş (BE) kilitlendi: Net Kâr ${pos['pnl_usd']:+.2f} (+{pnl_pips:.1f} pip). Stop seviyesi {pos['sl_price']} yapıldı.",
+                                f"{pos['display']} Başabaş (BE) kilitlendi: Net Kâr ${pos['pnl_usd']:+.2f} (+{pnl_pips:.1f} pip). Stop seviyesi {pos['sl_price']} yapıldı (Minimum Net $1.00 Kâr Garantisi).",
                                 symbol=sym,
                             )
                             # MT5 açık biletlerinde de Stop Loss'u başabaş seviyesine çek
@@ -1255,7 +1262,7 @@ async def _forex_auto_paper_loop():
                                                 "sl": pos["sl_price"],
                                                 "tp": mpos.get("tp_price", 0.0),
                                             })
-                                            _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {pos['sl_price']} olarak kilitlendi.", symbol=sym)
+                                            _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {pos['sl_price']} olarak kilitlendi (Net $1.00 Kâr).", symbol=sym)
 
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
                     # Sembole ve volatiliteye (ATR) göre trailing mesafesi
@@ -1265,12 +1272,18 @@ async def _forex_auto_paper_loop():
                         updated_trail = False
                         if direction == "BUY":
                             cand_sl = round(cur_p - trail_dist, digits)
+                            # Trailing SL asla 1$ Breakeven seviyesinin altına inmez!
+                            min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
+                            cand_sl = max(cand_sl, min_safe_sl)
                             if cand_sl > pos["sl_price"] and cand_sl > entry_p:
                                 pos["sl_price"] = cand_sl
                                 pos["trailing_activated"] = True
                                 updated_trail = True
                         else:
                             cand_sl = round(cur_p + trail_dist, digits)
+                            # Trailing SL asla 1$ Breakeven seviyesinin üstüne çıkmaz!
+                            min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
+                            cand_sl = min(cand_sl, min_safe_sl)
                             if (pos["sl_price"] == 0 or cand_sl < pos["sl_price"]) and cand_sl < entry_p:
                                 pos["sl_price"] = cand_sl
                                 pos["trailing_activated"] = True

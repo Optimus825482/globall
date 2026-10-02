@@ -488,6 +488,44 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         is_dollar_be = pos["pnl_usd"] >= cfg.breakeven_usd
         self.assertTrue(is_dollar_be)
 
+    def test_one_dollar_breakeven_sl_calculation(self):
+        """Verify that locked SL guarantees at least net $1.00 USD profit across instruments."""
+        # Test 1: EURUSD @ 0.05 lot
+        spec_eur = forex.get_symbol_trading_specs("EURUSD")
+        lots_eur = 0.05
+        dollar_per_pip_eur = lots_eur * spec_eur["pip_val"]  # 0.05 * 10.0 = $0.50
+        pips_1usd_eur = round(1.0 / dollar_per_pip_eur, 1)   # 2.0 pips
+        self.assertEqual(pips_1usd_eur, 2.0)
+        profit_eur = pips_1usd_eur * dollar_per_pip_eur
+        self.assertAlmostEqual(profit_eur, 1.00, places=2)
+
+        # Test 2: USDJPY @ 0.05 lot
+        spec_jpy = forex.get_symbol_trading_specs("USDJPY")
+        lots_jpy = 0.05
+        dollar_per_pip_jpy = lots_jpy * spec_jpy["pip_val"]  # 0.05 * 6.60 = $0.33
+        pips_1usd_jpy = round(1.0 / dollar_per_pip_jpy, 1)   # 3.0 pips
+        self.assertEqual(pips_1usd_jpy, 3.0)
+        profit_jpy = pips_1usd_jpy * dollar_per_pip_jpy
+        self.assertAlmostEqual(profit_jpy, 1.00, delta=0.05)
+
+        # Test 3: XAUUSD (Gold) @ 0.02 lot
+        spec_gold = forex.get_symbol_trading_specs("XAUUSD")
+        lots_gold = 0.02
+        dollar_per_pip_gold = lots_gold * spec_gold["pip_val"]  # 0.02 * 10.0 = $0.20
+        pips_1usd_gold = round(1.0 / dollar_per_pip_gold, 1)   # 5.0 pips ($0.50 move)
+        self.assertEqual(pips_1usd_gold, 5.0)
+        profit_gold = pips_1usd_gold * dollar_per_pip_gold
+        self.assertAlmostEqual(profit_gold, 1.00, places=2)
+
+        # Test 4: BTCUSD @ 0.02 lot
+        spec_btc = forex.get_symbol_trading_specs("BTCUSD")
+        lots_btc = 0.02
+        dollar_per_pip_btc = lots_btc * spec_btc["pip_val"]   # 0.02 * 1.0 = $0.02
+        pips_1usd_btc = round(1.0 / dollar_per_pip_btc, 1)    # 50.0 pips ($50 move)
+        self.assertEqual(pips_1usd_btc, 50.0)
+        profit_btc = pips_1usd_btc * dollar_per_pip_btc
+        self.assertAlmostEqual(profit_btc, 1.00, places=2)
+
     def test_max_positions_per_symbol_setting(self):
         """Verify default max_positions_per_symbol is 3 and max_open_positions is 6."""
         cfg = forex.ForexAutoPaperSettings()

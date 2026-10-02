@@ -591,15 +591,22 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
 
         target_sl = None
         cur_profit = getattr(p, "profit", 0.0)
+        vol = p.volume
+        pip_val = spec["pip_val"]
+        dollar_per_pip = max(0.0001, vol * pip_val)
+        pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
 
-        # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi)
-        # Herhangi bir işlem net $1.00 USD kâra ulaştığında VEYA eff_be_pips aşıldığında
-        is_dollar_be = cur_profit >= 1.0
+        # Piyasa gürültüsü ve broker toleransı için min nefes payı
+        min_headroom_pips = 1.5 if ("XAU" in sym or "GOLD" in sym) else (15.0 if "BTC" in sym else 0.8)
+
+        # 1. BREAKEVEN (Başabaş / Net $1.00 USD Kâr Kilidi)
+        # Herhangi bir işlem net $1.00 USD kâr seviyesini nefes payıyla aştığında VEYA eff_be_pips aşıldığında
+        is_dollar_be = (cur_profit >= (1.0 + (min_headroom_pips * dollar_per_pip))) or (pnl_pips >= (pips_for_1usd + min_headroom_pips))
         is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
 
         if (is_dollar_be or is_pip_be):
-            buffer_pips = 3.0 if ("XAU" in sym or "GOLD" in sym) else (10.0 if "BTC" in sym else 1.5)
-            locked_pips = min(buffer_pips, max(0.5, pnl_pips * 0.4))
+            # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
+            locked_pips = max(pips_for_1usd, round(pnl_pips * 0.5, 1))
             if direction == "BUY":
                 be_sl = round(entry_p + (locked_pips * pip_size), digits)
                 if cur_sl < be_sl and be_sl < cur_p:
@@ -620,6 +627,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
             trail_dist = eff_trail_pips * pip_size
             if direction == "BUY":
                 cand_sl = round(cur_p - trail_dist, digits)
+                # Trailing SL asla 1$ Breakeven seviyesinin altına düşmez!
+                min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
+                cand_sl = max(cand_sl, min_safe_sl)
                 if cand_sl > entry_p:
                     if target_sl is None and cand_sl > cur_sl:
                         target_sl = cand_sl
@@ -629,6 +639,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                         POSITION_PROTECTION_MAP[ticket] = "TRAILING"
             else:
                 cand_sl = round(cur_p + trail_dist, digits)
+                # Trailing SL asla 1$ Breakeven seviyesinin üstüne çıkmaz!
+                min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
+                cand_sl = min(cand_sl, min_safe_sl)
                 if cand_sl < entry_p:
                     if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
                         target_sl = cand_sl
