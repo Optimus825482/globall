@@ -38,11 +38,12 @@ DEFAULT_PASSWORD = os.environ.get("MT5_PASSWORD", "gE&w5OzpUyQmWx")
 DEFAULT_SERVER = os.environ.get("MT5_SERVER", "ICMarketsSC-Demo")
 DEFAULT_API_URL = os.environ.get("SCALPER_API_URL", "https://global.erkanerdem.online")
 
-# Sert Risk Sınırları (Asla aşılamaz)
-HARD_MAX_FOREX_LOT = 0.05
-HARD_MAX_GOLD_LOT = 0.02
+# Sert Risk Sınırları (Broker tavanı)
+HARD_MAX_FOREX_LOT = 50.0
+HARD_MAX_GOLD_LOT = 50.0
 HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 LAST_GOLD_EXIT_TIME = 0.0
+TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 
 
 def print_banner():
@@ -331,20 +332,9 @@ def execute_market_order(cmd: dict) -> dict:
     step_vol = float(s_info.volume_step) if s_info.volume_step > 0 else 0.01
     max_vol = float(s_info.volume_max) if s_info.volume_max > 0 else 50.0
 
-    # SERT LOT TAVANI KORUMASI:
-    # Forex max 0.05 lot, Ons Altın (XAUUSD) & BTC/ETH max 0.02 lot, Endeksler min 0.10 max 0.20 lot, Ham Petrol min 0.50 lot
-    if is_index:
-        lot_ceiling = max(min_vol, 0.20)
-    elif is_oil:
-        lot_ceiling = max(min_vol, 1.0)
-    elif is_gold:
-        configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT))
-        lot_ceiling = min(HARD_MAX_GOLD_LOT, max(min_vol, configured_cap))
-    elif is_crypto:
-        lot_ceiling = min(0.05, max(min_vol, 0.02))
-    else:
-        configured_cap = float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
-        lot_ceiling = min(HARD_MAX_FOREX_LOT, max(min_vol, configured_cap))
+    # Broker ve Yapılandırma Lot Kısıtları (Sunucu dinamik bakiye risk lotunu hesaplar)
+    configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT)) if is_gold else float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
+    lot_ceiling = min(max_vol, max(min_vol, configured_cap))
 
     lots = min(raw_lots, lot_ceiling)
     if lots < min_vol:
@@ -632,8 +622,8 @@ CURRENT_SETTINGS: Dict[str, float] = {
     "trailing_stop_pips": 20.0,
     "sl_pips": 8.0,
     "tp_pips": 20.0,
-    "max_forex_lot": 0.05,
-    "max_gold_lot": 0.02,
+    "max_forex_lot": 10.0,
+    "max_gold_lot": 10.0,
     "gold_cooldown_sec": 60.0,
 }
 
@@ -871,7 +861,7 @@ def sync_with_server(api_base: str):
             "protection_label": prot_label,
             "breakeven_activated": (prot in ("BREAKEVEN", "TRAILING")),
             "trailing_activated": (prot == "TRAILING"),
-            "open_time": datetime.datetime.fromtimestamp(p.time, datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+            "open_time": datetime.datetime.fromtimestamp(p.time, TZ_UTC3).strftime("%H:%M:%S UTC+3"),
         })
 
     # Kapanan işlem geçmişi (Broker zaman dilimi farkını tolere etmek için +2 gün buffer)
@@ -894,8 +884,8 @@ def sync_with_server(api_base: str):
                 break
 
         entry_p = in_deal.price if in_deal else d.price
-        open_time_str = datetime.datetime.fromtimestamp(in_deal.time, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") if in_deal else "-"
-        close_time_str = datetime.datetime.fromtimestamp(d.time, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        open_time_str = datetime.datetime.fromtimestamp(in_deal.time, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3") if in_deal else "-"
+        close_time_str = datetime.datetime.fromtimestamp(d.time, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3")
 
         direction = "BUY" if in_deal and in_deal.type == mt5.DEAL_TYPE_BUY else ("SELL" if d.type == mt5.DEAL_TYPE_BUY else "BUY")
 

@@ -22,6 +22,59 @@ export function toMs(ts: number | string | null | undefined): number {
   return value < 10_000_000_000 ? value * 1000 : value;
 }
 
+/**
+ * Herhangi bir zaman damgasını veya tarih dizesini UTC+3 (Türkiye Saati) olarak biçimlendirir.
+ */
+export function formatUtc3(timeInput: number | string | null | undefined): string {
+  if (!timeInput) return "—";
+  const str = String(timeInput).trim();
+  if (!str || str === "-") return "—";
+
+  if (str.includes("UTC+3")) return str;
+
+  // "HH:MM:SS UTC" biçimi
+  if (/^\d{2}:\d{2}:\d{2}\s*UTC$/i.test(str)) {
+    const parts = str.replace(/\s*UTC/i, "").split(":").map(Number);
+    if (parts.length === 3) {
+      const h = String((parts[0] + 3) % 24).padStart(2, "0");
+      const m = String(parts[1]).padStart(2, "0");
+      const s = String(parts[2]).padStart(2, "0");
+      return `${h}:${m}:${s} UTC+3`;
+    }
+  }
+
+  // "YYYY-MM-DD HH:MM:SS UTC" biçimi
+  if (str.includes("UTC")) {
+    const clean = str.replace(/\s*UTC/i, "").trim();
+    if (clean.includes(" ") || clean.includes("-")) {
+      const d = new Date(clean.replace(" ", "T") + "Z");
+      if (!isNaN(d.getTime())) {
+        const d3 = new Date(d.getTime() + 3 * 3600 * 1000);
+        const y = d3.getUTCFullYear();
+        const m = String(d3.getUTCMonth() + 1).padStart(2, "0");
+        const day = String(d3.getUTCDate()).padStart(2, "0");
+        const h = String(d3.getUTCHours()).padStart(2, "0");
+        const min = String(d3.getUTCMinutes()).padStart(2, "0");
+        const s = String(d3.getUTCSeconds()).padStart(2, "0");
+        return `${y}-${m}-${day} ${h}:${min}:${s} UTC+3`;
+      }
+    }
+  }
+
+  // Sayısal timestamp (ms veya epoch saniye)
+  const n = Number(timeInput);
+  if (!isNaN(n) && n > 0) {
+    const d = new Date(toMs(n));
+    if (!isNaN(d.getTime())) {
+      const dateStr = d.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul", year: "numeric", month: "2-digit", day: "2-digit" });
+      const timeStr = d.toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+      return `${dateStr} ${timeStr} UTC+3`;
+    }
+  }
+
+  return str;
+}
+
 /** tr-TR kısa tarih + saat (tarayıcı yerel dilimi). */
 export function fmtDateTime(ts: number | string | null | undefined): string {
   const ms = toMs(ts);

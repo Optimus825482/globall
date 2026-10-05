@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { formatUtc3 } from "../../lib/format";
 
 interface ClosedTrade {
   id: string;
@@ -108,9 +109,9 @@ export default function ForexReportsPage() {
         "Lot",
         "Radar Skoru",
         "Giriş Fiyatı",
-        "Giriş Zamanı (UTC)",
+        "Giriş Zamanı (UTC+3)",
         "Çıkış Fiyatı",
-        "Çıkış Zamanı (UTC)",
+        "Çıkış Zamanı (UTC+3)",
         "Süre",
         "Çıkış Nedeni",
         "SL Seviyesi",
@@ -133,9 +134,9 @@ export default function ForexReportsPage() {
           t.lots || 0.01,
           t.score || "-",
           t.entry_price || "-",
-          t.open_time || "-",
+          formatUtc3(t.open_time),
           t.exit_price || "-",
-          t.exit_time || "-",
+          formatUtc3(t.exit_time),
           t.duration_human || (t.duration_sec ? `${t.duration_sec} sn` : "-"),
           t.exit_reason_title || t.exit_reason || "IC Markets MT5",
           t.sl_price || "-",
@@ -549,13 +550,13 @@ export default function ForexReportsPage() {
                       {/* Giriş */}
                       <td className="py-3 px-3">
                         <span className="text-white font-bold block">{tr.entry_price ?? "-"}</span>
-                        <span className="text-[10px] text-bunker-muted">{tr.open_time ?? "-"}</span>
+                        <span className="text-[10px] text-bunker-muted">{formatUtc3(tr.open_time)}</span>
                       </td>
 
                       {/* Çıkış */}
                       <td className="py-3 px-3">
                         <span className="text-white font-bold block">{tr.exit_price ?? "-"}</span>
-                        <span className="text-[10px] text-bunker-muted">{tr.exit_time ?? "-"}</span>
+                        <span className="text-[10px] text-bunker-muted">{formatUtc3(tr.exit_time)}</span>
                       </td>
 
                       {/* Süre */}

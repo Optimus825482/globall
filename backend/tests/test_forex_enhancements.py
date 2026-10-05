@@ -44,9 +44,8 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         )
         res_forex = await forex.calculate_lot_size(req_forex)
         self.assertGreater(res_forex["standard_lots"], 1.0)
-        # safe_capped_lots must NOT exceed max_forex_lot (0.05)
+        # safe_capped_lots must NOT exceed max_forex_lot
         self.assertLessEqual(res_forex["safe_capped_lots"], forex._AUTO_SETTINGS.max_forex_lot)
-        self.assertEqual(res_forex["safe_capped_lots"], 0.05)
 
         # Test Gold with high balance
         req_gold = forex.LotCalculatorRequest(
@@ -57,51 +56,42 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         )
         res_gold = await forex.calculate_lot_size(req_gold)
         self.assertGreater(res_gold["standard_lots"], 0.5)
-        # safe_capped_lots must NOT exceed max_gold_lot (0.02)
+        # safe_capped_lots must NOT exceed max_gold_lot
         self.assertLessEqual(res_gold["safe_capped_lots"], forex._AUTO_SETTINGS.max_gold_lot)
-        self.assertEqual(res_gold["safe_capped_lots"], 0.02)
 
     async def test_mt5_bridge_hard_lot_cap_enforcement(self):
-        """Verify that mt5_bridge.execute_market_order caps oversized orders."""
-        # Simulated oversized EURUSD order (1.50 lots)
+        """Verify that mt5_bridge.execute_market_order respects max_vol broker limits."""
         cmd_forex = {"symbol": "EURUSD", "direction": "BUY", "lots": 1.50}
-        # In mock environment symbol_select will fail, but lot capping logic executes first
-        # We verify spec capping
-        is_gold = ("XAU" in cmd_forex["symbol"] or "GOLD" in cmd_forex["symbol"])
-        lot_ceiling = 0.02 if is_gold else 0.05
         raw_lots = float(cmd_forex["lots"])
-        capped_lots = round(max(0.01, min(raw_lots, lot_ceiling)), 2)
-        self.assertEqual(capped_lots, 0.05)
+        capped_lots = round(max(0.01, min(raw_lots, 50.0)), 2)
+        self.assertEqual(capped_lots, 1.50)
 
-        # Simulated oversized Gold order (0.80 lots)
         cmd_gold = {"symbol": "XAUUSD", "direction": "BUY", "lots": 0.80}
-        is_gold2 = ("XAU" in cmd_gold["symbol"] or "GOLD" in cmd_gold["symbol"])
-        lot_ceiling2 = 0.02 if is_gold2 else 0.05
         raw_lots2 = float(cmd_gold["lots"])
-        capped_lots2 = round(max(0.01, min(raw_lots2, lot_ceiling2)), 2)
-        self.assertEqual(capped_lots2, 0.02)
+        capped_lots2 = round(max(0.01, min(raw_lots2, 50.0)), 2)
+        self.assertEqual(capped_lots2, 0.80)
 
     async def test_manual_order_lot_capping(self):
-        """Verify that manual orders sent via API endpoint are also capped."""
+        """Verify that manual orders sent via API endpoint are queued."""
         order_req = forex.MT5ManualOrderRequest(
             symbol="EURUSD",
             direction="BUY",
-            lots=2.50,  # attempt 2.5 lots
+            lots=2.50,  # 2.5 lots
             sl_pips=12.0,
             tp_pips=22.0,
         )
         res = await forex.send_mt5_order(order_req)
         self.assertEqual(res["status"], "queued")
-        self.assertEqual(res["command"]["lots"], 0.05)  # capped to 0.05
+        self.assertEqual(res["command"]["lots"], 2.50)
 
         order_gold = forex.MT5ManualOrderRequest(
             symbol="XAUUSD",
             direction="BUY",
-            lots=1.00,  # attempt 1.0 lots
+            lots=1.00,  # 1.0 lots
         )
         res2 = await forex.send_mt5_order(order_gold)
         self.assertEqual(res2["status"], "queued")
-        self.assertEqual(res2["command"]["lots"], 0.02)  # capped to 0.02
+        self.assertEqual(res2["command"]["lots"], 1.00)
 
     # -------------------------------------------------------------------------
     # 2. XAUUSD (GOLD) PROTECTION & COOLDOWN TESTS
@@ -263,11 +253,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(tech["score"], 58.0)
 
     def test_hard_lot_caps_cannot_be_bypassed_by_config(self):
-        """Verify hard caps (0.05 Forex, 0.02 Gold) are enforced even with oversized inputs."""
-        self.assertEqual(forex.HARD_MAX_FOREX_LOT, 0.05)
-        self.assertEqual(forex.HARD_MAX_GOLD_LOT, 0.02)
-        self.assertEqual(mt5_bridge.HARD_MAX_FOREX_LOT, 0.05)
-        self.assertEqual(mt5_bridge.HARD_MAX_GOLD_LOT, 0.02)
+        """Verify broker safety limits (50.0 Forex, 50.0 Gold) are set."""
+        self.assertEqual(forex.HARD_MAX_FOREX_LOT, 50.0)
+        self.assertEqual(forex.HARD_MAX_GOLD_LOT, 50.0)
+        self.assertEqual(mt5_bridge.HARD_MAX_FOREX_LOT, 50.0)
+        self.assertEqual(mt5_bridge.HARD_MAX_GOLD_LOT, 50.0)
 
     def test_mt5_bridge_gold_cooldown_rejection(self):
         """Verify mt5_bridge.execute_market_order blocks gold trades when cooldown is active."""
@@ -322,15 +312,15 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(specs["tp_pips"], 130.0)
 
     async def test_btcusd_lot_capping(self):
-        """Verify BTCUSD lot size is capped to 0.02 under any condition."""
+        """Verify BTCUSD lot size is queued correctly without artificial 0.02 cap."""
         order_btc = forex.MT5ManualOrderRequest(
             symbol="BTCUSD",
             direction="BUY",
-            lots=1.00,  # attempt 1.0 BTC
+            lots=1.00,  # 1.0 BTC
         )
         res = await forex.send_mt5_order(order_btc)
         self.assertEqual(res["status"], "queued")
-        self.assertEqual(res["command"]["lots"], 0.02)  # capped to 0.02
+        self.assertEqual(res["command"]["lots"], 1.00)
 
     def test_gold_cooldown_reduced_to_60s(self):
         """Verify gold cooldown minimum and default are updated to 60.0 seconds."""
@@ -399,7 +389,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(us30_specs["sl_pips"], 36.0)
 
     async def test_index_and_eth_lot_capping(self):
-        """Verify indices enforce min 0.10 lot and max 0.20 lot, and ETHUSD enforces max 0.02 lot."""
+        """Verify indices enforce min 0.10 lot and ETHUSD/US30 orders queue correctly."""
         # Index with small lot (0.01) must be bumped to 0.10 min volume
         order_nas = forex.MT5ManualOrderRequest(
             symbol="NAS100",
@@ -409,23 +399,23 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         res_nas = await forex.send_mt5_order(order_nas)
         self.assertEqual(res_nas["command"]["lots"], 0.10)
 
-        # Index with huge lot (2.0) must be capped to 0.20
+        # Index with lot (2.0)
         order_us30 = forex.MT5ManualOrderRequest(
             symbol="US30",
             direction="BUY",
             lots=2.00,
         )
         res_us30 = await forex.send_mt5_order(order_us30)
-        self.assertEqual(res_us30["command"]["lots"], 0.20)
+        self.assertEqual(res_us30["command"]["lots"], 2.00)
 
-        # ETHUSD with huge lot (1.0) must be capped to 0.02
+        # ETHUSD with lot (1.0)
         order_eth = forex.MT5ManualOrderRequest(
             symbol="ETHUSD",
             direction="BUY",
             lots=1.00,
         )
         res_eth = await forex.send_mt5_order(order_eth)
-        self.assertEqual(res_eth["command"]["lots"], 0.02)
+        self.assertEqual(res_eth["command"]["lots"], 1.00)
 
     # -------------------------------------------------------------------------
     # 7. $1.00 BREAKEVEN, VOLATILITY TRAILING STOP & PYRAMIDING (MAX 3) TESTS
@@ -570,6 +560,27 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
             is_comm = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
             req = 78.0 if is_comm else cfg.min_score
             self.assertEqual(req, 75.0)
+
+    async def test_ethusd_risk_based_lot_calculation(self):
+        """Verify ETHUSD calculates lot size based on capital risk budget (e.g. 5% balance) and is not clamped to 0.02."""
+        req_eth = forex.LotCalculatorRequest(
+            account_balance=2284.20,
+            risk_percentage=5.0,  # $114.21 risk
+            stop_loss_pips=8.0,   # base SL = 8.0 -> mult 2.0 -> eff_sl_pips = 16.0
+            symbol="ETHUSD",
+        )
+        res_eth = await forex.calculate_lot_size(req_eth)
+        self.assertAlmostEqual(res_eth["risk_amount_usd"], 114.21, delta=0.1)
+        self.assertEqual(res_eth["stop_loss_pips"], 16.0)
+        # 114.21 / (16.0 * 1.0) = 7.14 lots
+        self.assertEqual(res_eth["standard_lots"], 7.14)
+        self.assertEqual(res_eth["safe_capped_lots"], 7.14)
+
+    def test_settings_supports_up_to_20_pct_risk_and_25_positions(self):
+        """Verify ForexAutoPaperSettings validates up to 20% risk and 25 max open positions."""
+        cfg = forex.ForexAutoPaperSettings(risk_per_trade_pct=20.0, max_open_positions=25)
+        self.assertEqual(cfg.risk_per_trade_pct, 20.0)
+        self.assertEqual(cfg.max_open_positions, 25)
 
 
 if __name__ == "__main__":

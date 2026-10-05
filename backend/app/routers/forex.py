@@ -270,11 +270,12 @@ def _get_market_sessions() -> List[Dict[str, Any]]:
 _LAST_LIVE_FETCH_TIME = 0.0
 _LIVE_PRICES_CACHE: Dict[str, float] = {}
 
-# Hard Risk Constants (Strict ceilings enforced under all conditions)
-HARD_MAX_FOREX_LOT = 0.05
-HARD_MAX_GOLD_LOT = 0.02
+# Hard Risk Constants (Broker safety ceilings)
+HARD_MAX_FOREX_LOT = 50.0
+HARD_MAX_GOLD_LOT = 50.0
 HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 HARD_MIN_BREAKEVEN_PIPS = 14.0
+TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 
 # Technical Analysis & Indicator Cache
 _TECHNICAL_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -1447,18 +1448,22 @@ async def calculate_lot_size(req: LotCalculatorRequest):
     mini_lots = round(recommended_lots * 10, 2)
     micro_lots = round(recommended_lots * 100, 2)
 
-    # Sert lot tavanı koruması (asla aşılamaz)
-    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
+    # Lot tavanı ve broker sınırları
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
+    is_crypto = ("BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
     is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
     if is_index:
-        lot_ceiling = 0.20
+        lot_ceiling = 50.0
         safe_lots = round(max(0.10, min(standard_lots, lot_ceiling)), 2)
     elif is_oil:
-        lot_ceiling = 1.0
+        lot_ceiling = 50.0
         safe_lots = round(max(0.50, min(standard_lots, lot_ceiling)), 2)
     elif is_gold:
         lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+        safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
+    elif is_crypto:
+        lot_ceiling = 50.0
         safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
     else:
         lot_ceiling = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
@@ -1485,8 +1490,8 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="İşlem başına sermaye riski (%)")
-    max_open_positions: int = Field(6, ge=1, le=20, description="Aynı anda maksimum açık işlem")
+    risk_per_trade_pct: float = Field(1.0, ge=0.1, le=20.0, description="İşlem başına sermaye riski (%)")
+    max_open_positions: int = Field(6, ge=1, le=25, description="Aynı anda maksimum açık işlem")
     max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
@@ -1496,8 +1501,8 @@ class ForexAutoPaperSettings(BaseModel):
     trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
     max_spread_pips: float = Field(3.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip)")
-    max_forex_lot: float = Field(0.05, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı (Sert tavan: 0.05)")
-    max_gold_lot: float = Field(0.02, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) ve Kripto lot tavanı (Sert tavan: 0.02)")
+    max_forex_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı")
+    max_gold_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
@@ -1582,9 +1587,12 @@ def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None
         if _AUTO_STATE["decision_logs"][0].get("message") == message:
             return
 
+    now_ts = time.time()
+    now_dt = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
     log_item = {
-        "id": f"LOG-{int(time.time() * 1000) % 1000000}",
-        "time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+        "id": f"LOG-{int(now_ts * 1000) % 1000000}",
+        "time": now_dt.strftime("%H:%M:%S UTC+3"),
+        "created_at_ts": now_ts,
         "category": category,
         "symbol": symbol,
         "message": message,
@@ -1642,11 +1650,12 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         human_reason = reason_titles.get(reason, reason)
         bal_after = round(_AUTO_STATE["balance"] + pnl_usd, 2)
 
+        now_dt = datetime.datetime.fromtimestamp(now_time, TZ_UTC3)
         closed_item = {
             **target,
             "exit_price": cur_p,
-            "exit_time": now_utc.strftime("%H:%M:%S UTC"),
-            "exit_time_iso": now_utc.isoformat(),
+            "exit_time": now_dt.strftime("%Y-%m-%d %H:%M:%S UTC+3"),
+            "exit_time_iso": now_dt.isoformat(),
             "closed_at_ts": now_time,
             "duration_sec": dur_sec,
             "duration_human": dur_human,
@@ -2237,18 +2246,22 @@ async def _forex_auto_paper_loop():
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
                 raw_calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
 
-                # SERT LOT TAVANI (Asla aşılamaz: Forex max 0.05 lot, Ons Altın/BTC/ETH max 0.02 lot, Endeksler min 0.10 max 0.20 lot, Petrol min 0.50 max 1.0)
+                # Dinamik Lot & Risk Hesaplama (Modalda belirlenen risk yüzdesine göre)
                 is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
                 is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
-                is_gold_or_crypto = is_gold or ("BTC" in sym or "ETH" in sym)
+                is_crypto = ("BTC" in sym or "ETH" in sym)
+
                 if is_index:
-                    lot_ceiling = 0.20
+                    lot_ceiling = 50.0
                     mt5_lots = max(0.10, min(round(raw_calc_lots * 10) / 10, lot_ceiling))
                 elif is_oil:
-                    lot_ceiling = 1.0
+                    lot_ceiling = 50.0
                     mt5_lots = max(0.50, min(raw_calc_lots, lot_ceiling))
-                elif is_gold_or_crypto:
+                elif is_gold:
                     lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+                    mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
+                elif is_crypto:
+                    lot_ceiling = 50.0
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 else:
                     lot_ceiling = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
@@ -2308,7 +2321,7 @@ async def _forex_auto_paper_loop():
                         "partial_realized_usd": 0.0,
                         "initial_lots": mt5_lots,
                         "opened_at_ts": now_ts,
-                        "open_time": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC"),
+                        "open_time": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%H:%M:%S UTC+3"),
                         "pnl_usd": 0.0,
                         "pnl_pips": 0.0,
                         "pip_size": spec["pip_size"],
@@ -2321,11 +2334,12 @@ async def _forex_auto_paper_loop():
 
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
 
+                actual_risk_usd = round(mt5_lots * sl_pips * pip_val, 2)
                 _log_auto_decision(
                     "ENTRY",
-                    f"⚡ [İŞLEM AÇILDI]: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${risk_usd:.2f} (Skor: {cand['score']:.0f} | Lot Tavanı: {lot_ceiling})",
+                    f"⚡ [İŞLEM AÇILDI]: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f})",
                     symbol=sym,
-                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"], "lot_ceiling": lot_ceiling},
+                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"], "risk_usd": actual_risk_usd},
                 )
 
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
@@ -2847,17 +2861,21 @@ async def get_mt5_bridge_status():
 @router.post("/mt5/order")
 async def send_mt5_order(req: MT5ManualOrderRequest):
     """MT5 köprüsüne yeni bir piyasa emri iletir."""
-    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper() or "BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
+    is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
+    is_crypto = ("BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
     is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
     if is_index:
-        lot_cap = 0.20
+        lot_cap = 50.0
         actual_lots = round(max(0.10, min(req.lots, lot_cap)), 2)
     elif is_oil:
-        lot_cap = 1.0
+        lot_cap = 50.0
         actual_lots = round(max(0.50, min(req.lots, lot_cap)), 2)
     elif is_gold:
         lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+        actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
+    elif is_crypto:
+        lot_cap = 50.0
         actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
     else:
         lot_cap = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)

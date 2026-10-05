@@ -57,4 +57,11 @@ describe("format — Global (USDT) gösterimi", () => {
     expect(fmt.formatMoney(1234.5).slice("$".length))
       .toBe((1234.5).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   });
+
+  it("formatUtc3 converts UTC timestamps to UTC+3", () => {
+    expect(fmt.formatUtc3("21:58:41 UTC")).toBe("00:58:41 UTC+3");
+    expect(fmt.formatUtc3("2026-10-02 23:33:35 UTC")).toBe("2026-10-03 02:33:35 UTC+3");
+    expect(fmt.formatUtc3("12:00:00 UTC+3")).toBe("12:00:00 UTC+3");
+    expect(fmt.formatUtc3(null)).toBe("—");
+  });
 });

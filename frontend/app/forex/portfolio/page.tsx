@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { formatUtc3 } from "../../lib/format";
 
 interface AutoPosition {
   id: string;
@@ -44,6 +45,7 @@ interface ClosedTrade {
 interface DecisionLog {
   id: string;
   time: string;
+  created_at_ts?: number;
   category: "ENTRY" | "EXIT" | "PROTECT" | "GATE" | "SYSTEM" | "SCAN";
   symbol?: string;
   message: string;
@@ -411,7 +413,7 @@ export default function ForexPortfolioPage() {
         "Lot",
         "Giriş Fiyatı",
         "Çıkış Fiyatı",
-        "Kapanış Zamanı (UTC)",
+        "Kapanış Zamanı (UTC+3)",
         "Çıkış Nedeni",
         "Kâr/Zarar (Pip)",
         "Net Getiri (USD)",
@@ -425,7 +427,7 @@ export default function ForexPortfolioPage() {
         t.lots,
         t.entry_price,
         t.exit_price,
-        t.exit_time,
+        formatUtc3(t.exit_time),
         t.exit_reason,
         `${t.pnl_pips >= 0 ? "+" : ""}${t.pnl_pips}`,
         `${t.pnl_usd >= 0 ? "+" : ""}${t.pnl_usd.toFixed(2)}`,
@@ -606,7 +608,7 @@ export default function ForexPortfolioPage() {
                 type="number"
                 step="0.1"
                 min="0.1"
-                max="5.0"
+                max="20.0"
                 value={formSettings.risk_per_trade_pct ?? ""}
                 onChange={(e) =>
                   updateFormField("risk_per_trade_pct", e.target.value === "" ? "" : parseFloat(e.target.value))
@@ -721,12 +723,12 @@ export default function ForexPortfolioPage() {
 
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">
-                Max. Açık İşlem (1-10):
+                Max. Açık İşlem (1-25):
               </label>
               <input
                 type="number"
                 min="1"
-                max="10"
+                max="25"
                 value={formSettings.max_open_positions ?? ""}
                 onChange={(e) =>
                   updateFormField("max_open_positions", e.target.value === "" ? "" : parseInt(e.target.value))
@@ -1147,6 +1149,14 @@ export default function ForexPortfolioPage() {
                 );
               }
 
+              // En son log her zaman en üstte (azalan sıralama)
+              const sorted = [...filtered].sort((a, b) => {
+                const tsA = a.created_at_ts ?? 0;
+                const tsB = b.created_at_ts ?? 0;
+                if (tsA && tsB && tsA !== tsB) return tsB - tsA;
+                return (b.time || "").localeCompare(a.time || "");
+              });
+
               const catColors: Record<string, string> = {
                 SCAN: "border-sky-500/30 bg-sky-500/10 text-sky-200",
                 ENTRY: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -1165,7 +1175,7 @@ export default function ForexPortfolioPage() {
                 SYSTEM: "⚙️",
               };
 
-              return filtered.map((log) => {
+              return sorted.map((log) => {
                 const icon = catIcons[log.category] || "•";
                 return (
                   <div
@@ -1180,7 +1190,7 @@ export default function ForexPortfolioPage() {
                       </span>
                       <span>{log.message}</span>
                     </div>
-                    <span className="text-[10px] opacity-70 whitespace-nowrap">{log.time}</span>
+                    <span className="text-[10px] opacity-70 whitespace-nowrap">{formatUtc3(log.time)}</span>
                   </div>
                 );
               });
@@ -1261,7 +1271,7 @@ export default function ForexPortfolioPage() {
                         </span>
                       </div>
                       <div className="text-[10px] text-bunker-muted mt-0.5">
-                        Giriş: {entryP} → Çıkış: {exitP} ({timeStr})
+                        Giriş: {entryP} → Çıkış: {exitP} ({formatUtc3(timeStr)})
                       </div>
                     </div>
 
