@@ -351,6 +351,33 @@ DXY_STRICT_SYMBOLS = ("USDJPY", "USDCHF")
 # +$116 getirdi; kullanıcı tam muafiyeti tercih etti.)
 DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD")
 
+# Majör FX pariteleri — seans penceresi ve volatilite tabanı kapılarının kapsamı.
+FX_MAJORS_SET = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
+
+
+def major_entry_gate_decision(symbol: str, utc_hour: int, atr_pips: float,
+                              session_filter: bool, session_start: int, session_end: int,
+                              min_atr_pips: float) -> Optional[str]:
+    """Majör FX giriş kapısı kararı (saf fonksiyon — test edilebilir).
+
+    2026-10-06 30g replay A/B kazananları (7Eyl–2Eki, canlı ayar tabanı):
+    - Seans penceresi (7-20 UTC): sistem −$170 → +$257, majör zararı −$896 → −$676
+    - Min ATR 4.0p: üstüne +$199, WR %63 → %68 (kombinasyon: +$455.55, maxDD $210)
+    Asya seansında majörlerde false breakout/chop kaynaklı kayıp yaygın (web araştırması
+    ile destekli); ölü/oyalanmış piyasa girişleri volatilite tabanıyla elenir.
+
+    Majör olmayan semboller için None döner. Majörlerde engel gerekçesi döner:
+    - "major_session": UTC saati pencere dışında.
+    - "major_min_atr": ATR tabanının altında (ölü piyasa).
+    """
+    if symbol not in FX_MAJORS_SET:
+        return None
+    if session_filter and not (session_start <= utc_hour < session_end):
+        return "major_session"
+    if min_atr_pips > 0 and atr_pips < min_atr_pips:
+        return "major_min_atr"
+    return None
+
 
 def get_dxy_regime() -> Optional[Dict[str, Any]]:
     """ABD Dolar Endeksi (DXY / DX-Y.NYB) rejimini döner.
@@ -1524,6 +1551,10 @@ class ForexAutoPaperSettings(BaseModel):
     ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
     ev_max_win_rate: float = Field(45.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (42 → 35 → 45: 2026-10-06 30g replay A/B kararı)")
     ev_loss_risk_mult: float = Field(3.0, ge=0.5, le=20.0, description="Akut kayıp eşiği: pencere zararı işlem-başı risk bütçesinin bu katını aşarsa sembol dinlenir (yumuşatıldı: 2x → 3x)")
+    major_session_filter: bool = Field(True, description="Majör FX seans filtresi: majörler yalnız belirlenen UTC saat penceresinde işlem açılır (Asya seansı chop'u — 30g replay: +$427 iyileşme)")
+    major_session_start_utc: int = Field(7, ge=0, le=23, description="Majör seans penceresi başlangıcı (UTC, dahil) — 07:00 London açık")
+    major_session_end_utc: int = Field(20, ge=1, le=24, description="Majör seans penceresi bitişi (UTC, dahil değil) — 20:00 NY öğleden sonra")
+    major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
@@ -2169,6 +2200,24 @@ async def _forex_auto_paper_loop():
                                 symbol=sym,
                             )
                         continue
+
+                # 5c. Majör FX güçlendirme kapıları (2026-10-06 30g replay A/B kazananları):
+                # seans penceresi (Asya chop'u) + volatilite tabanı (ölü piyasa).
+                gate_reason = major_entry_gate_decision(
+                    sym, current_utc_hour, float(cand.get("atr_pips", 0.0)),
+                    _AUTO_SETTINGS.major_session_filter,
+                    _AUTO_SETTINGS.major_session_start_utc, _AUTO_SETTINGS.major_session_end_utc,
+                    _AUTO_SETTINGS.major_min_atr_pips,
+                )
+                if gate_reason:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_major", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_major"] = now_ts
+                        reason_str = ("Majör Seans Filtresi: UTC saat penceresi dışında (Asya seansı chop riski)."
+                                      if gate_reason == "major_session" else
+                                      f"Majör Volatilite Tabanı: ATR {float(cand.get('atr_pips', 0.0)):.1f}p < "
+                                      f"{_AUTO_SETTINGS.major_min_atr_pips:.1f}p — ölü piyasa.")
+                        _log_auto_decision("GATE", f"[{cand['display']}] {reason_str} İşlem engellendi.", symbol=sym)
+                    continue
 
                 # 6. Spread Filtresi
                 effective_max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips

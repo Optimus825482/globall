@@ -294,6 +294,31 @@ class TestDXYRegimeFilter(unittest.IsolatedAsyncioTestCase):
     def test_no_dxy_data_fails_open(self):
         self.assertIsNone(forex.dxy_entry_veto("USDJPY", "BUY", None))
 
+    def test_major_entry_gate_session(self):
+        # Majör olmayan semboller her zaman serbest
+        self.assertIsNone(forex.major_entry_gate_decision("XAUUSD", 3, 10.0, True, 7, 20, 4.0))
+        # Asya seansında (03:00 UTC) majör engellenir
+        self.assertEqual(forex.major_entry_gate_decision("EURUSD", 3, 10.0, True, 7, 20, 4.0), "major_session")
+        # Pencere içinde (12:00 UTC London/NY) serbest
+        self.assertIsNone(forex.major_entry_gate_decision("EURUSD", 12, 10.0, True, 7, 20, 4.0))
+        # Filtre kapalıysa saat fark etmez
+        self.assertIsNone(forex.major_entry_gate_decision("EURUSD", 3, 10.0, False, 7, 20, 4.0))
+
+    def test_major_entry_gate_min_atr(self):
+        # Ölü piyasa (ATR 3p < 4p tabanı) engellenir
+        self.assertEqual(forex.major_entry_gate_decision("USDCAD", 12, 3.0, True, 7, 20, 4.0), "major_min_atr")
+        # Tabana eşit veya üstü serbest
+        self.assertIsNone(forex.major_entry_gate_decision("USDCAD", 12, 4.0, True, 7, 20, 4.0))
+        # 0 = kapalı
+        self.assertIsNone(forex.major_entry_gate_decision("USDCAD", 12, 1.0, True, 7, 20, 0.0))
+
+    def test_major_gate_settings_defaults(self):
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertTrue(cfg.major_session_filter)
+        self.assertEqual(cfg.major_session_start_utc, 7)
+        self.assertEqual(cfg.major_session_end_utc, 20)
+        self.assertEqual(cfg.major_min_atr_pips, 4.0)
+
     def test_radar_response_contains_dxy_field(self):
         import inspect
         src = inspect.getsource(forex.get_forex_radar)

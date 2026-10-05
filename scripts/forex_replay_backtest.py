@@ -50,7 +50,8 @@ BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0}
 # Gölge defter tutulan kapılar (yeni özellikler)
-SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV")
+SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
+                "SEANS", "VOLATİLİTE", "UZAMA")
 
 # EV kalkanı (canlı motorla aynı; WR 45 = 2026-10-06 30g replay kararı)
 EV_WINDOW_SEC = 24 * 3600
@@ -71,8 +72,14 @@ TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
 # 2026-10-06 varyant mekanikleri (30 günlük replay A/B ile test ediliyor)
 FX_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
 TUN_FX_MIN_SCORE = 0.0      # 0 = majörler için ayrı eşik yok (min_score geçerli)
-TUN_GOLD_DXY_SOFT = False   # True: XAUUSD'de DXY çelişki sert vetosu yerine +skor eşiği
+TUN_GOLD_DXY_SOFT = False   # (Tarihi) XAUUSD DXY yumuşatma — canlı artık tam muaf
 TUN_GOLD_DXY_BUMP = 5.0
+
+# 2026-10-06 araştırma mekanizmaları (majör güçlendirme + volatilite-adaptif trailing)
+TUN_CHANDLIER = 0.0         # >0: trailing = MFE − chandelier×ATR(giriş) (0 = sabit pip trail)
+TUN_MAJOR_HOURS = None      # (başlangıç, biti) UTC saat aralığı — majörler yalnız bu pencerede (None = kapalı)
+TUN_MAJOR_MIN_ATR = 0.0     # majörler minimum ATR(pips) — ölü piyasa filtresi (0 = kapalı)
+TUN_MAJOR_MAX_EXT = 0.0     # majörlerde fiyatın EMA21'den maks. ATR-katı uzaması — kovalamama (0 = kapalı)
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +144,8 @@ class SimPos:
     partial_target_pips: float = 0.0
     partial_realized_usd: float = 0.0
     trail_active: bool = False
+    entry_atr_pips: float = 0.0
+    mfe_pips: float = 0.0
 
 
 class Book:
@@ -193,10 +202,12 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         entry_price=entry, sl_price=sl, tp_price=tp, pip_size=cand["pip_size"],
         pip_val=cand["pip_val"], digits=cand["digits"], opened_bar=idx,
         partial_target_pips=partial_pips, fill_adjust=half_spread,
+        entry_atr_pips=cand.get("atr_pips", 0.0),
     )
 
 
-def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips: float) -> Optional[Tuple[str, float, float]]:
+def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips: float,
+                    chandelier_mult: float = 0.0) -> Optional[Tuple[str, float, float]]:
     """Bir bar'da pozisyonu yönetir. Dönüş: (reason, exit_price, partial_realized) veya None.
 
     Sıra (muhafazakâr): SL önce → BE kilidi → kısmi kâr → trailing → TP.
@@ -219,6 +230,10 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     pnl_extreme_pips = (ext - entry) / pip if direction == "BUY" else (entry - ext) / pip
     pips_for_1usd = max(0.5, round(1.0 / max(0.0001, pos.lots * pos.pip_val), 1))
     headroom = be_headroom_pips(pos.symbol)
+
+    # MFE takibi (girişten beri en iyi fiyat, pip) — chandelier trailing için
+    if pos.mfe_pips < pnl_extreme_pips:
+        pos.mfe_pips = pnl_extreme_pips
 
     # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi)
     if not pos.be_locked:
@@ -257,24 +272,43 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = lock_sl
             pos.be_locked = True
 
-    # (4) Trailing (BE sonrası): bar kapanışının arkasından iz süren stop
-    if pos.be_locked and eff_trail_pips > 0:
-        trail_dist = eff_trail_pips * pip
+    # (4) Trailing (BE sonrası): chandelier (MFE − mult×ATR_giriş) veya sabit pip trail
+    if pos.be_locked:
         pips_1usd_now = max(0.5, round(1.0 / max(0.0001, pos.lots * pos.pip_val), 1))
-        if direction == "BUY":
-            cand = round(c - trail_dist, pos.digits)
-            min_safe = round(entry + pips_1usd_now * pip, pos.digits)
-            cand = max(cand, min_safe)
-            if cand > pos.sl_price and cand > entry:
-                pos.sl_price = cand
-                pos.trail_active = True
-        else:
-            cand = round(c + trail_dist, pos.digits)
-            min_safe = round(entry - pips_1usd_now * pip, pos.digits)
-            cand = min(cand, min_safe)
-            if (pos.sl_price == 0 or cand < pos.sl_price) and cand < entry:
-                pos.sl_price = cand
-                pos.trail_active = True
+        if chandelier_mult > 0 and pos.entry_atr_pips > 0:
+            # Volatilite-adaptif: kâr tepesinden volatilite nefes payı kadar geri ver
+            giveback = chandelier_mult * pos.entry_atr_pips
+            cand_pips = pos.mfe_pips - giveback
+            if direction == "BUY":
+                cand = round(entry + cand_pips * pip, pos.digits)
+                min_safe = round(entry + pips_1usd_now * pip, pos.digits)
+                cand = max(cand, min_safe)
+                if cand > pos.sl_price:
+                    pos.sl_price = cand
+                    pos.trail_active = True
+            else:
+                cand = round(entry - cand_pips * pip, pos.digits)
+                min_safe = round(entry - pips_1usd_now * pip, pos.digits)
+                cand = min(cand, min_safe)
+                if pos.sl_price == 0 or cand < pos.sl_price:
+                    pos.sl_price = cand
+                    pos.trail_active = True
+        elif eff_trail_pips > 0:
+            trail_dist = eff_trail_pips * pip
+            if direction == "BUY":
+                cand = round(c - trail_dist, pos.digits)
+                min_safe = round(entry + pips_1usd_now * pip, pos.digits)
+                cand = max(cand, min_safe)
+                if cand > pos.sl_price and cand > entry:
+                    pos.sl_price = cand
+                    pos.trail_active = True
+            else:
+                cand = round(c + trail_dist, pos.digits)
+                min_safe = round(entry - pips_1usd_now * pip, pos.digits)
+                cand = min(cand, min_safe)
+                if (pos.sl_price == 0 or cand < pos.sl_price) and cand < entry:
+                    pos.sl_price = cand
+                    pos.trail_active = True
 
     # (5) TP
     if direction == "BUY" and h >= pos.tp_price:
@@ -314,7 +348,7 @@ def float_pnl(pos: SimPos, mark: float) -> float:
     return pnl_pips * pos.lots * pos.pip_val
 
 
-def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float):
+def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, chandelier_mult: float = 0.0):
     still = []
     for pos in book.positions:
         bar = by_ts[pos.symbol].get(ts)
@@ -322,7 +356,7 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float):
             still.append(pos)
             continue
         spec = forex.get_symbol_trading_specs(pos.symbol, base_be=BASE_BE_PIPS, base_trail=BASE_TRAIL_PIPS)
-        res = manage_position(pos, bar, spec["trail_pips"], spec["be_pips"])
+        res = manage_position(pos, bar, spec["trail_pips"], spec["be_pips"], chandelier_mult)
         if res and res[0] in ("SL", "BE", "TP"):
             close_position(book, pos, res[0], res[1], closed_ts=ts)
         else:
@@ -398,10 +432,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     dxy_regime = forex.get_dxy_regime()
 
         # 1) Açık pozisyonları yönet (her iki defter + gölge defterler)
+        # Chandelier yalnız NEW ve gölge defterlerde; OLD tarihi sabit pip trail kullanır
+        chand = TUN_CHANDLIER
         for book in books.values():
-            manage_book(book, by_ts, ts)
+            manage_book(book, by_ts, ts, chandelier_mult=(chand if book.name == "NEW" else 0.0))
         for sh in shadow_book.values():
-            manage_book(sh["book"], by_ts, ts)
+            manage_book(sh["book"], by_ts, ts, chandelier_mult=chand)
 
         # Özkaynak örnekleme (NEW): kapanmış kâr + açık pozisyonların işaret fiyatıyla floating PnL
         if idx >= warmup:
@@ -499,6 +535,21 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
                 else:
                     weak_bump = 0.0
+                # 5c. Majör güçlendirme kapıları (2026-10-06 araştırma mekanizmaları, yalnız NEW):
+                # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
+                if vname == "NEW" and sym in FX_MAJORS:
+                    if TUN_MAJOR_HOURS and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
+                        blocked_events.append(("SEANS", cand("SEANS")))
+                        continue
+                    if TUN_MAJOR_MIN_ATR > 0 and atr_pips < TUN_MAJOR_MIN_ATR:
+                        blocked_events.append(("VOLATİLİTE", cand("VOLATİLİTE")))
+                        continue
+                    if TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
+                        ext_atr = ((close_now - float(tech["ema21"])) if action == "BUY"
+                                   else (float(tech["ema21"]) - close_now)) / (atr_pips * pip_size)
+                        if ext_atr > TUN_MAJOR_MAX_EXT:
+                            blocked_events.append(("UZAMA", cand("UZAMA")))
+                            continue
                 if spread_pips > max_spread:
                     continue  # ortak kapı — gölge izlenmez
                 req = base_req + weak_bump
@@ -657,6 +708,7 @@ def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
     global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
+    global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -680,6 +732,10 @@ def main():
     parser.add_argument("--gold-dxy-bump", type=float, default=5.0, help="XAUUSD DXY yumuşatma ekstra skoru")
     parser.add_argument("--ev-window", type=float, default=24.0, help="EV kalkanı bakış penceresi (saat)")
     parser.add_argument("--ev-wr", type=float, default=45.0, help="EV kronik kayıp WR eşiği (%%) — canlı default 45")
+    parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
+    parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
+    parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
+    parser.add_argument("--major-max-ext", type=float, default=0.0, help="Majörlerde EMA21'den maks. ATR-katı uzama — kovalamama (0 = kapalı)")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
@@ -696,12 +752,19 @@ def main():
     TUN_GOLD_DXY_BUMP = args.gold_dxy_bump
     EV_WINDOW_SEC = args.ev_window * 3600.0
     EV_MAX_WIN_RATE = args.ev_wr
+    TUN_CHANDLIER = args.chandelier
+    if args.major_hours:
+        parts = args.major_hours.split("-")
+        TUN_MAJOR_HOURS = (int(parts[0]), int(parts[1]))
+    TUN_MAJOR_MIN_ATR = args.major_min_atr
+    TUN_MAJOR_MAX_EXT = args.major_max_ext
     BLOCKED_HOURS = [int(h) for h in args.hours.split(",") if h.strip().isdigit()]
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
                f"ev_guard={EV_GUARD} ev_win={args.ev_window}h ev_wr={args.ev_wr} fx_min_score={TUN_FX_MIN_SCORE or '-'} "
-               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) hours={BLOCKED_HOURS or 'kapalı'} window={args.window} "
-               f"pencere={args.start or '-'}→{args.end or '-'}")
+               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) chandelier={TUN_CHANDLIER or '-'} "
+               f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "
+               f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
 
