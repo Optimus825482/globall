@@ -344,9 +344,12 @@ def get_usd_bias(symbol: str, direction: str) -> str:
     return "USD_NEUTRAL"
 
 
-# DXY uyum şartı aranan zayıf semboller (geçmiş veride en yüksek kayıp üretenler):
-# Ons Altın, USDJPY ve USDCHF — bu sembollerde dolar rejimi nötr/uyumsuzken giriş ekstra skor ister.
-DXY_STRICT_SYMBOLS = ("XAU", "GOLD", "USDJPY", "USDCHF")
+# DXY uyum şartı aranan zayıf semboller: USDJPY ve USDCHF — nötr rejimde giriş ekstra skor ister.
+DXY_STRICT_SYMBOLS = ("USDJPY", "USDCHF")
+# 2026-10-06 kullanıcı kararı: Ons Altın (XAUUSD) DXY rejim kapsamından TAMAMEN çıkarıldı —
+# ne çelişki vetosu ne strict-neutral ekstra skoru uygulanır. (30g replay: veto yumuşatması
+# +$116 getirdi; kullanıcı tam muafiyeti tercih etti.)
+DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD")
 
 
 def get_dxy_regime() -> Optional[Dict[str, Any]]:
@@ -389,14 +392,19 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     - None: İzin var (DXY verisi yoksa da fail-open olarak izin).
     - "dxy_conflict": Pozisyon DXY rejimiyle ÇELİŞİYOR → giriş veto.
         (USD_LONG isteği + USD_WEAK rejimi, veya USD_SHORT isteği + USD_STRONG rejimi)
-    - "dxy_strict_neutral": Zayıf sembol (XAUUSD/USDJPY/USDCHF) ve rejim nötr →
+    - "dxy_strict_neutral": Zayıf sembol (USDJPY/USDCHF) ve rejim nötr →
         giriş ancak ekstra skor eşiğiyle kabul (req_score + 5).
+
+    XAUUSD/GOLD muafiyetli: DXY rejiminden tamamen bağımsız işlem yapılır
+    (DXY_EXEMPT_SYMBOLS — kullanıcı kararı 2026-10-06).
     """
+    s = str(symbol).upper()
+    if any(w in s for w in DXY_EXEMPT_SYMBOLS):
+        return None
     if not dxy:
         # DXY verisi hiç yoksa kalkan devre dışı (fail-open)
         return None
     if dxy.get("regime", "USD_NEUTRAL") == "USD_NEUTRAL":
-        s = str(symbol).upper()
         if any(w in s for w in DXY_STRICT_SYMBOLS):
             return "dxy_strict_neutral"
         return None
@@ -1514,7 +1522,7 @@ class ForexAutoPaperSettings(BaseModel):
     ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
     ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
-    ev_max_win_rate: float = Field(35.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (yumuşatıldı: 42 → 35)")
+    ev_max_win_rate: float = Field(45.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (42 → 35 → 45: 2026-10-06 30g replay A/B kararı)")
     ev_loss_risk_mult: float = Field(3.0, ge=0.5, le=20.0, description="Akut kayıp eşiği: pencere zararı işlem-başı risk bütçesinin bu katını aşarsa sembol dinlenir (yumuşatıldı: 2x → 3x)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(

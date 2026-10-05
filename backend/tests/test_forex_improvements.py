@@ -273,17 +273,21 @@ class TestDXYRegimeFilter(unittest.IsolatedAsyncioTestCase):
         # EURUSD BUY = USD_SHORT; dolar güçlüyken yanlış taraf
         self.assertEqual(forex.dxy_entry_veto("EURUSD", "BUY", {"regime": "USD_STRONG"}), "dxy_conflict")
 
-    def test_veto_gold_buy_in_strong_dollar(self):
-        # XAUUSD BUY = USD_SHORT (dolar bazlı risk varlığı)
-        self.assertEqual(forex.dxy_entry_veto("XAUUSD", "BUY", {"regime": "USD_STRONG"}), "dxy_conflict")
+    def test_gold_fully_exempt_from_dxy(self):
+        # 2026-10-06 kullanıcı kararı: XAUUSD DXY kapsamından TAMAMEN çıkarıldı —
+        # çelişki rejiminde bile veto yok, nötr rejimde strict-neutral ekstra skoru da yok.
+        self.assertIsNone(forex.dxy_entry_veto("XAUUSD", "BUY", {"regime": "USD_STRONG"}))
+        self.assertIsNone(forex.dxy_entry_veto("XAUUSD", "SELL", {"regime": "USD_WEAK"}))
+        self.assertIsNone(forex.dxy_entry_veto("XAUUSD", "BUY", {"regime": "USD_NEUTRAL"}))
+        self.assertIsNone(forex.dxy_entry_veto("XAUUSD", "BUY", None))
 
     def test_aligned_entries_allowed(self):
         self.assertIsNone(forex.dxy_entry_veto("USDJPY", "BUY", {"regime": "USD_STRONG"}))
         self.assertIsNone(forex.dxy_entry_veto("EURUSD", "BUY", {"regime": "USD_WEAK"}))
 
     def test_strict_symbol_neutral_regime_requests_extra_score(self):
-        self.assertEqual(forex.dxy_entry_veto("XAUUSD", "BUY", {"regime": "USD_NEUTRAL"}), "dxy_strict_neutral")
         self.assertEqual(forex.dxy_entry_veto("USDCHF", "SELL", {"regime": "USD_NEUTRAL"}), "dxy_strict_neutral")
+        self.assertEqual(forex.dxy_entry_veto("USDJPY", "SELL", {"regime": "USD_NEUTRAL"}), "dxy_strict_neutral")
         # Zayıf olmayan sembol nötr rejimde serbest
         self.assertIsNone(forex.dxy_entry_veto("EURUSD", "BUY", {"regime": "USD_NEUTRAL"}))
 
@@ -509,11 +513,11 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.supertrend_filter_enabled)
         # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
         self.assertEqual(list(cfg.blocked_hours_utc), [])
-        # EV kalkanı varsayılanları (yumuşatılmış: 10 işlem, WR<%35, 3x risk akut eşik)
+        # EV kalkanı varsayılanları (WR 45: 2026-10-06 30g replay A/B kararı; 35 → 45)
         self.assertTrue(cfg.ev_guard_enabled)
         self.assertEqual(cfg.ev_window_hours, 24.0)
         self.assertEqual(cfg.ev_min_trades, 10)
-        self.assertEqual(cfg.ev_max_win_rate, 35.0)
+        self.assertEqual(cfg.ev_max_win_rate, 45.0)
         self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
         # allowed_symbols hâlâ tam 12 işlem yapılabilir sembol (DXY hariç)
         self.assertEqual(len(cfg.allowed_symbols), 12)

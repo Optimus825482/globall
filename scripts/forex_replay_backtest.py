@@ -52,10 +52,10 @@ CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index":
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV")
 
-# EV kalkanı (canlı motorla aynı, yumuşatılmış eşikler)
+# EV kalkanı (canlı motorla aynı; WR 45 = 2026-10-06 30g replay kararı)
 EV_WINDOW_SEC = 24 * 3600
 EV_MIN_TRADES = 10
-EV_MAX_WIN_RATE = 35.0
+EV_MAX_WIN_RATE = 45.0
 EV_LOSS_RISK_MULT = 3.0
 EV_GUARD = True
 
@@ -67,6 +67,12 @@ TUN_RR_FLOOR = 1.5
 TUN_HEADROOM_FOREX = 3.5
 TUN_ADX_MIN = 0.0           # 0 = ADX kalkanı kapalı
 TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
+
+# 2026-10-06 varyant mekanikleri (30 günlük replay A/B ile test ediliyor)
+FX_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
+TUN_FX_MIN_SCORE = 0.0      # 0 = majörler için ayrı eşik yok (min_score geçerli)
+TUN_GOLD_DXY_SOFT = False   # True: XAUUSD'de DXY çelişki sert vetosu yerine +skor eşiği
+TUN_GOLD_DXY_BUMP = 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -328,9 +334,15 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float):
 # Replay
 # ---------------------------------------------------------------------------
 def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional[float] = None,
-               entry_end_ts: Optional[float] = None) -> Dict[str, Any]:
+               entry_end_ts: Optional[float] = None, symbol_filter: Optional[set] = None) -> Dict[str, Any]:
+    # Ek metrikler: NEW defteri için bar-bazlı özkaynak örnekleme (maks. düşüş için)
+    eq_ts: List[float] = []
+    eq_new: List[float] = []
+    last_close: Dict[str, float] = {}
     # Yalnızca canlı motorun izin listesindeki semboller (SPX500/XAGUSD/USOIL işlem yapmaz)
     allowed = set(forex.ForexAutoPaperSettings().allowed_symbols)
+    if symbol_filter:
+        allowed &= {s.upper() for s in symbol_filter}
     symbols = [s for s in data if s != "DXY" and s in allowed]
     by_ts = {s: {b[0]: b for b in data[s]} for s in symbols}
     # Birleşim zaman ekseni: her sembol kendi seansında bar üretir; kesişim örneklemi kısaltır
@@ -353,6 +365,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     dxy_list = data.get("DXY") or []
 
     for idx, ts in enumerate(common_ts):
+        # Pencere sonu: o haftanın kapanışıyla dur; kalan pozisyonlar aşağıda
+        # pencere içi son fiyatla kapatılır (hafta-sonu ötesine taşmaz).
+        if entry_end_ts is not None and ts >= entry_end_ts:
+            break
         # Sembol imleçlerini ilerlet: bars[:cursor] bu adımda kullanılabilir veri
         fresh = {}
         for s in symbols:
@@ -361,6 +377,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             while ci < len(bars) and bars[ci][0] <= ts:
                 ci += 1
             cursors[s] = ci
+            if ci > 0:
+                last_close[s] = bars[ci - 1][4]
             fresh[s] = ci > 0 and bars[ci - 1][0] == ts and ci >= 30
 
         if idx < warmup:
@@ -384,6 +402,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             manage_book(book, by_ts, ts)
         for sh in shadow_book.values():
             manage_book(sh["book"], by_ts, ts)
+
+        # Özkaynak örnekleme (NEW): kapanmış kâr + açık pozisyonların işaret fiyatıyla floating PnL
+        if idx >= warmup:
+            eq_ts.append(ts)
+            eq_new.append(books["NEW"].balance + sum(
+                float_pnl(p, last_close.get(p.symbol, p.entry_price)) for p in books["NEW"].positions))
 
         # 2) Korelasyon matrisi (periyodik)
         if idx % CORR_REFRESH_EVERY == 0:
@@ -416,7 +440,13 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             pip_size = item["pip_size"] if item else 0.0001
             spread_pips = CATEGORY_SPREAD_PIPS.get(item["category"] if item else "index", 3.0)
             is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
-            base_req = 78.0 if is_commodity else TUN_MIN_SCORE
+            is_fx_major = sym in FX_MAJORS
+            if is_commodity:
+                base_req = 78.0
+            elif is_fx_major and TUN_FX_MIN_SCORE > 0:
+                base_req = TUN_FX_MIN_SCORE
+            else:
+                base_req = TUN_MIN_SCORE
             max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else 3.0
             close_now = closes[-1]
 
@@ -459,9 +489,14 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 if vname == "NEW":
                     veto = forex.dxy_entry_veto(sym, action, dxy_regime)
                     if veto == "dxy_conflict":
-                        blocked_events.append(("DXY", cand("DXY")))
-                        continue
-                    weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
+                        if TUN_GOLD_DXY_SOFT and ("XAU" in sym or "GOLD" in sym):
+                            # XAUUSD: sert veto yerine ekstra skor eşiği (kategori bazlı yumuşatma)
+                            weak_bump = TUN_GOLD_DXY_BUMP
+                        else:
+                            blocked_events.append(("DXY", cand("DXY")))
+                            continue
+                    else:
+                        weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
                 else:
                     weak_bump = 0.0
                 if spread_pips > max_spread:
@@ -537,11 +572,18 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             print(f"  ... bar {idx}/{len(common_ts)} | OLD: {len(books['OLD'].closed)} işlem ${books['OLD'].balance:+.2f} | "
                   f"NEW: {len(books['NEW'].closed)} işlem ${books['NEW'].balance:+.2f}")
 
-    # 6) Kalan pozisyonları son kapanışlarla kapat
+    # 6) Kalan pozisyonları kapat — pencere tanımlıysa pencere içi son bar fiyatıyla
     for book in list(books.values()) + [sh["book"] for sh in shadow_book.values()]:
         for pos in list(book.positions):
-            last_bar = data[pos.symbol][-1]
-            close_position(book, pos, "EOM", last_bar[4], closed_ts=last_bar[0])
+            bars_sym = data[pos.symbol]
+            last_bar = bars_sym[-1]
+            if entry_end_ts is not None:
+                for b in reversed(bars_sym):
+                    if b[0] < entry_end_ts:
+                        last_bar = b
+                        break
+            reason = "EOM" if entry_end_ts is None else "HAFTA_KAPANIS"
+            close_position(book, pos, reason, last_bar[4], closed_ts=last_bar[0])
         book.positions = []
 
     if orig_dxy is not None:
@@ -550,17 +592,41 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         forex._TECHNICAL_CACHE.pop("DXY", None)
 
     report: Dict[str, Any] = {"days": days, "bars": len(common_ts), "variants": {}, "gate_attribution": {}}
+    if entry_start_ts or entry_end_ts:
+        report["entry_window"] = {
+            "start_ts": entry_start_ts,
+            "end_ts": entry_end_ts,
+            "start": datetime.datetime.fromtimestamp(entry_start_ts, datetime.timezone.utc).isoformat() if entry_start_ts else None,
+            "end": datetime.datetime.fromtimestamp(entry_end_ts, datetime.timezone.utc).isoformat() if entry_end_ts else None,
+        }
     for vname, book in books.items():
         wins = sum(1 for t in book.closed if t["pnl_usd"] >= 0)
         n = len(book.closed)
-        report["variants"][vname] = {
+        daily: Dict[str, float] = {}
+        for t in book.closed:
+            if not t.get("closed_ts"):
+                continue
+            d = datetime.datetime.fromtimestamp(t["closed_ts"], datetime.timezone.utc).strftime("%Y-%m-%d")
+            daily[d] = round(daily.get(d, 0.0) + t["pnl_usd"], 2)
+        var = {
             "trades": n,
             "win_rate": round(100 * wins / n, 1) if n else 0.0,
             "net_pnl_usd": round(book.realized, 2),
             "avg_pnl_usd": round(book.realized / n, 3) if n else 0.0,
             "balance": book.balance,
             "per_symbol": book.per_symbol,
+            "daily_pnl": dict(sorted(daily.items())),
         }
+        if vname == "NEW" and eq_new:
+            peak = eq_new[0]
+            max_dd = 0.0
+            for e in eq_new:
+                peak = max(peak, e)
+                max_dd = max(max_dd, peak - e)
+            var["max_drawdown_usd"] = round(max_dd, 2)
+            var["equity_start"] = round(eq_new[0], 2)
+            var["equity_end"] = round(eq_new[-1], 2)
+        report["variants"][vname] = var
     for gate, sh in shadow_book.items():
         n = len(sh["book"].closed)
         pnl = round(sum(c["pnl_usd"] for c in sh["book"].closed), 2)
@@ -590,12 +656,16 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
     global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
+    global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
     parser.add_argument("--out", default=os.path.join(ROOT, "outputs", "forex_replay_7d_report.json"))
     parser.add_argument("--window", choices=["full", "recent", "prior"], default="full",
                         help="recent: son 7 gün (in-sample) | prior: önceki 7 gün (out-of-sample)")
+    parser.add_argument("--start", default="", help="Giriş penceresi başlangıcı (YYYY-MM-DD, UTC) — window'u geçersiz kılar")
+    parser.add_argument("--end", default="", help="Giriş penceresi sonu, dahil değil (YYYY-MM-DD, UTC)")
+    parser.add_argument("--symbols", default="", help="Virgüllü sembol filtresi (örn: XAUUSD,US30,NAS100) — yalnız bu semboller işlenir")
     parser.add_argument("--min-score", type=float, default=75.0)
     parser.add_argument("--sl-mult", type=float, default=1.1)
     parser.add_argument("--tp-mult", type=float, default=1.4)
@@ -605,6 +675,11 @@ def main():
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
+    parser.add_argument("--fx-min-score", type=float, default=0.0, help="FX majörleri için ayrı skor eşiği (0 = min_score ile aynı)")
+    parser.add_argument("--gold-dxy-soft", action="store_true", help="(Eski) XAUUSD DXY vetosunu +skora indirmek için — canlıda artık XAUUSD tamamen muaf, etki etmez")
+    parser.add_argument("--gold-dxy-bump", type=float, default=5.0, help="XAUUSD DXY yumuşatma ekstra skoru")
+    parser.add_argument("--ev-window", type=float, default=24.0, help="EV kalkanı bakış penceresi (saat)")
+    parser.add_argument("--ev-wr", type=float, default=45.0, help="EV kronik kayıp WR eşiği (%%) — canlı default 45")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
@@ -616,10 +691,17 @@ def main():
     TUN_ADX_MIN = args.adx_min
     TUN_ST_FILTER = args.st_filter
     EV_GUARD = not args.no_ev_guard
+    TUN_FX_MIN_SCORE = args.fx_min_score
+    TUN_GOLD_DXY_SOFT = args.gold_dxy_soft
+    TUN_GOLD_DXY_BUMP = args.gold_dxy_bump
+    EV_WINDOW_SEC = args.ev_window * 3600.0
+    EV_MAX_WIN_RATE = args.ev_wr
     BLOCKED_HOURS = [int(h) for h in args.hours.split(",") if h.strip().isdigit()]
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
-               f"ev_guard={EV_GUARD} hours={BLOCKED_HOURS or 'kapalı'} window={args.window}")
+               f"ev_guard={EV_GUARD} ev_win={args.ev_window}h ev_wr={args.ev_wr} fx_min_score={TUN_FX_MIN_SCORE or '-'} "
+               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) hours={BLOCKED_HOURS or 'kapalı'} window={args.window} "
+               f"pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
 
@@ -639,7 +721,13 @@ def main():
 
     entry_start_ts = None
     entry_end_ts = None
-    if args.window in ("recent", "prior"):
+    if args.start:
+        entry_start_ts = datetime.datetime.strptime(args.start, "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc).timestamp()
+    if args.end:
+        entry_end_ts = datetime.datetime.strptime(args.end, "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc).timestamp()
+    elif args.window in ("recent", "prior"):
         all_last = max(bars[-1][0] for bars in data.values())
         split_ts = all_last - 7 * 86400
         if args.window == "recent":
@@ -648,7 +736,9 @@ def main():
             entry_end_ts = split_ts
 
     t0 = time.time()
-    report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts)
+    sym_filter = {s.strip().upper() for s in args.symbols.split(",") if s.strip()} or None
+    report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts,
+                        symbol_filter=sym_filter)
     report["config"] = cfg_str
     print(f"\n[REPLAY BİTTİ] {time.time() - t0:.1f} sn")
 
@@ -658,6 +748,14 @@ def main():
     for vname, v in report["variants"].items():
         print(f"{vname:8s} {v['trades']:>6d} {v['win_rate']:>7.1f}% {v['net_pnl_usd']:>+10.2f} {v['avg_pnl_usd']:>+13.3f}")
     print("-" * 76)
+    new_v = report["variants"]["NEW"]
+    if new_v.get("max_drawdown_usd") is not None:
+        print(f"NEW Özkaynak: ${new_v['equity_start']:.2f} → ${new_v['equity_end']:.2f} | Maks. Düşüş: ${new_v['max_drawdown_usd']:.2f}")
+    if new_v.get("daily_pnl"):
+        print("\nGÜNLÜK PnL (NEW):")
+        for d, pnl in new_v["daily_pnl"].items():
+            bar = "+" * max(0, int(pnl / 2)) + "-" * max(0, int(-pnl / 2))
+            print(f"  {d}  ${pnl:>+9.2f}  {bar}")
     print("\nKAPI KATKI ANALİZİ (NEW'in engellediklerinin gölge defter sonuçları):")
     print(f"{'KAPI':12s} {'ENGEL':>6s} {'GÖLGE İŞLEM':>11s} {'GÖLGE WR':>9s} {'GÖLGE PnL':>10s}  YORUM")
     print("-" * 76)
