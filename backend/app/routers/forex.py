@@ -1833,7 +1833,7 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
 
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
-    global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME
+    global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME, _LAST_GOLD_EXIT_TIME, _LAST_BLOCKED_HOUR_LOG_TIME
     last_loop_error_log_ts = 0.0
     logger.info("Forex Otonom Scalper Döngüsü Başlatıldı.")
     _AUTO_STATE["last_status"] = "Çalışıyor (Canlı Piyasa Taranıyor)"

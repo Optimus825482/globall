@@ -221,6 +221,19 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Content-Disposition", csv_res.headers)
         self.assertGreater(len(csv_res.body), 0)
 
+    async def test_auto_loop_module_globals_are_not_shadowed(self):
+        """Regresyon (2026-10-06): _forex_auto_paper_loop içindeki flip-reset
+        `_LAST_GOLD_EXIT_TIME = 0.0` ataması, `global` bildiriminde ad yoktuğu için
+        adı fonksiyon-yereli yapıyordu; altın soğuma kapısındaki okuma her taramada
+        UnboundLocalError fırlatıp giriş zincirini sessizce öldürüyordu (panelde
+        yalnız 'tüm şartlar uygun' dönüyordu, hata yoktu). Aynı tuzak
+        _LAST_BLOCKED_HOUR_LOG_TIME için de uykuda yatıyordu. Kod bloğu seviyesinde
+        savunma: her iki ad da module-global olarak erişilmeli."""
+        code = forex._forex_auto_paper_loop.__code__
+        for name in ("_LAST_GOLD_EXIT_TIME", "_LAST_BLOCKED_HOUR_LOG_TIME"):
+            self.assertNotIn(name, code.co_varnames, f"{name} fonksiyon-yereli olmamalı")
+            self.assertIn(name, code.co_names, f"{name} global olarak erişilmeli")
+
 
 if __name__ == "__main__":
     unittest.main()
