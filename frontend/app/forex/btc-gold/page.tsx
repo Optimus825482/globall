@@ -65,6 +65,7 @@ interface AutoSettings {
   trailing_stop_pips: number;
   session_filter: boolean;
   max_spread_pips: number;
+  gold_cooldown_sec?: number;
   allowed_symbols: string[];
 }
 
@@ -469,6 +470,7 @@ export default function BtcGoldForexPage() {
     trailing_stop_pips: 12.0,
     session_filter: false,
     max_spread_pips: 3.0,
+    gold_cooldown_sec: 60.0,
     allowed_symbols: ["XAUUSD", "BTCUSD"],
   });
   const [formSettings, setFormSettings] = useState<AutoSettings>({ ...appliedSettings });
@@ -661,6 +663,7 @@ export default function BtcGoldForexPage() {
         trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 12.0,
         min_score: Number(formSettings.min_score) || 70.0,
         max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
+        gold_cooldown_sec: Math.max(60, Number(formSettings.gold_cooldown_sec) || 60.0),
         max_open_positions: Number(formSettings.max_open_positions) || 3,
         session_filter: Boolean(formSettings.session_filter),
         allowed_symbols: ["XAUUSD", "BTCUSD"], // Yalnızca bu iki sembole kilitli
@@ -1013,6 +1016,25 @@ export default function BtcGoldForexPage() {
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-amber-400"
               />
               <span className="text-[10px] text-bunker-muted">Aynı anda en fazla işlem</span>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-bunker-muted block mb-1">🥇 Altın Soğuma Süresi (sn):</label>
+              <input
+                type="number"
+                min="60"
+                max="900"
+                step="10"
+                value={formSettings.gold_cooldown_sec ?? 60}
+                onChange={(e) =>
+                  setFormSettings({
+                    ...formSettings,
+                    gold_cooldown_sec: e.target.value === "" ? 60 : parseFloat(e.target.value),
+                  })
+                }
+                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-amber-300 font-bold outline-none focus:border-amber-400"
+              />
+              <span className="text-[10px] text-bunker-muted">Kapanıştan sonra bekleme (min 60s, def: 60s)</span>
             </div>
           </div>
 

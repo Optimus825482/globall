@@ -64,6 +64,7 @@ interface AutoSettings {
   trailing_stop_pips: number;
   session_filter: boolean;
   max_spread_pips: number;
+  gold_cooldown_sec?: number;
   allowed_symbols: string[];
 }
 
@@ -173,6 +174,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     trailing_stop_pips: 12.0,
     session_filter: false,
     max_spread_pips: 3.0,
+    gold_cooldown_sec: 60.0,
     allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
   });
 
@@ -188,6 +190,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     trailing_stop_pips: 16.0,
     session_filter: false,
     max_spread_pips: 3.0,
+    gold_cooldown_sec: 60.0,
     allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
   });
 
@@ -368,6 +371,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 16.0,
         min_score: Number(formSettings.min_score) || 70.0,
         max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
+        gold_cooldown_sec: Math.max(60, Number(formSettings.gold_cooldown_sec) || 60.0),
         max_open_positions: Number(formSettings.max_open_positions) || 3,
         session_filter: Boolean(formSettings.session_filter),
         allowed_symbols:
@@ -746,6 +750,24 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
               <span className="text-[10px] text-bunker-muted">Aynı anda açık en fazla pozisyon</span>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-bunker-muted block mb-1">
+                Altın Soğuma Süresi (sn):
+              </label>
+              <input
+                type="number"
+                min="60"
+                max="900"
+                step="10"
+                value={formSettings.gold_cooldown_sec ?? 60}
+                onChange={(e) =>
+                  updateFormField("gold_cooldown_sec", e.target.value === "" ? 60 : parseFloat(e.target.value))
+                }
+                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-amber-300 font-bold outline-none focus:border-blue-400"
+              />
+              <span className="text-[10px] text-bunker-muted">Kapanış sonrası bekleme (min 60s, def: 60s)</span>
             </div>
 
             <div className="flex flex-col justify-center col-span-2">

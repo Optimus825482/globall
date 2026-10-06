@@ -1788,13 +1788,20 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
     if active_count >= _AUTO_SETTINGS.max_open_positions:
         reasons.append("pozisyon limiti dolu")
-    cd_left = _AUTO_SETTINGS.gold_cooldown_sec - (now_ts - _LAST_GOLD_EXIT_TIME)
+    if _LAST_GOLD_EXIT_TIME > now_ts:
+        _LAST_GOLD_EXIT_TIME = now_ts
+    time_since_gold = max(0.0, now_ts - _LAST_GOLD_EXIT_TIME)
+    cd_left = max(0.0, min(_AUTO_SETTINGS.gold_cooldown_sec, _AUTO_SETTINGS.gold_cooldown_sec - time_since_gold))
     if cd_left > 0:
         reasons.append("son kapanıştan sonra soğuma bekleniyor")
     if any(c.get("action") == "OPEN_ORDER" and str(c.get("symbol", "")).upper() == "XAUUSD"
            for c in _MT5_STATE.get("pending_commands", [])):
         reasons.append("gönderilen emrin işlem görmesi bekleniyor")
-    sym_cd_left = _AUTO_SETTINGS.gold_cooldown_sec - (now_ts - _LAST_SYMBOL_ENTRY_TIME.get("XAUUSD", 0.0))
+    last_sym_gold = _LAST_SYMBOL_ENTRY_TIME.get("XAUUSD", 0.0)
+    if last_sym_gold > now_ts:
+        _LAST_SYMBOL_ENTRY_TIME["XAUUSD"] = now_ts
+        last_sym_gold = now_ts
+    sym_cd_left = max(0.0, min(_AUTO_SETTINGS.gold_cooldown_sec, _AUTO_SETTINGS.gold_cooldown_sec - max(0.0, now_ts - last_sym_gold)))
     if sym_cd_left > 0:
         reasons.append("son girişten sonra sembol soğuması bekleniyor")
     if _AUTO_SETTINGS.ev_guard_enabled:
@@ -2222,12 +2229,14 @@ async def _forex_auto_paper_loop():
 
                 is_gold = ("XAU" in sym or "GOLD" in sym)
 
-                # 2. Ons Altın (XAUUSD) Özel Soğuma Koruması (Kapanıştan sonra en az 180 sn bekleme kuralı)
+                # 2. Ons Altın (XAUUSD) Özel Soğuma Koruması (Kapanıştan sonra soğuma bekleme kuralı)
                 if is_gold:
-                    time_since_gold_exit = now_ts - _LAST_GOLD_EXIT_TIME
+                    if _LAST_GOLD_EXIT_TIME > now_ts:
+                        _LAST_GOLD_EXIT_TIME = now_ts
+                    time_since_gold_exit = max(0.0, now_ts - _LAST_GOLD_EXIT_TIME)
                     if time_since_gold_exit < _AUTO_SETTINGS.gold_cooldown_sec:
-                        remaining_cd = int(_AUTO_SETTINGS.gold_cooldown_sec - time_since_gold_exit)
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_gold_cd", 0) > 30.0:
+                        remaining_cd = int(min(_AUTO_SETTINGS.gold_cooldown_sec, max(0.0, _AUTO_SETTINGS.gold_cooldown_sec - time_since_gold_exit)))
+                        if remaining_cd > 0 and (now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_gold_cd", 0) > 30.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_gold_cd"] = now_ts
                             _log_auto_decision(
                                 "GATE",
@@ -2238,7 +2247,12 @@ async def _forex_auto_paper_loop():
 
                 # 3. Sembol Soğuma Süresi
                 sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else 60.0
-                sym_cd_left = sym_cd - (now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0))
+                last_sym_time = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
+                if last_sym_time > now_ts:
+                    _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
+                    last_sym_time = now_ts
+                time_since_sym = max(0.0, now_ts - last_sym_time)
+                sym_cd_left = max(0.0, min(sym_cd, sym_cd - time_since_sym))
                 if sym_cd_left > 0:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_symcd", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_symcd"] = now_ts
