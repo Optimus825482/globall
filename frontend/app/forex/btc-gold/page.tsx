@@ -462,8 +462,8 @@ export default function BtcGoldForexPage() {
   const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 1000.0,
-    risk_per_trade_pct: 1.0,
-    max_open_positions: 3,
+    risk_per_trade_pct: 10.0,
+    max_open_positions: 25,
     min_score: 70.0,
     tp_pips: 25.0,
     sl_pips: 15.0,
@@ -689,7 +689,7 @@ export default function BtcGoldForexPage() {
     try {
       const payload: AutoSettings = {
         ...formSettings,
-        risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 1.0,
+        risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 10.0,
         tp_pips: Number(formSettings.tp_pips) || 25.0,
         sl_pips: Number(formSettings.sl_pips) || 15.0,
         breakeven_pips: Number(formSettings.breakeven_pips) || 8.0,
@@ -698,7 +698,7 @@ export default function BtcGoldForexPage() {
         btc_min_score: Number(formSettings.btc_min_score ?? formSettings.min_score) || 70.0,
         max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
         gold_cooldown_sec: Math.max(60, Number(formSettings.gold_cooldown_sec) || 60.0),
-        max_open_positions: Number(formSettings.max_open_positions) || 3,
+        max_open_positions: Number(formSettings.max_open_positions) || 25,
         session_filter: Boolean(formSettings.session_filter),
         allowed_symbols: ["XAUUSD", "BTCUSD"], // Yalnızca bu iki sembole kilitli
       };
@@ -935,7 +935,7 @@ export default function BtcGoldForexPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">İşlem Başına Risk (%):</label>
+              <label className="text-[11px] text-bunker-muted block mb-1">Pozisyon Hacmi Riski (% Bakiye):</label>
               <input
                 type="number"
                 step="0.1"
@@ -943,7 +943,7 @@ export default function BtcGoldForexPage() {
                 max="20.0"
                 value={formSettings.risk_per_trade_pct ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, risk_per_trade_pct: parseFloat(e.target.value) || 1.0 })
+                  setFormSettings({ ...formSettings, risk_per_trade_pct: parseFloat(e.target.value) || 10.0 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-amber-400"
               />
@@ -1061,10 +1061,10 @@ export default function BtcGoldForexPage() {
               <input
                 type="number"
                 min="1"
-                max="10"
+                max="25"
                 value={formSettings.max_open_positions ?? ""}
                 onChange={(e) =>
-                  setFormSettings({ ...formSettings, max_open_positions: parseInt(e.target.value) || 3 })
+                  setFormSettings({ ...formSettings, max_open_positions: parseInt(e.target.value) || 25 })
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-amber-400"
               />

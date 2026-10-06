@@ -141,9 +141,9 @@ export default function ForexRadarPage() {
         >
           <div className="text-xl mb-1 group-hover:scale-110 transition-transform">🥇</div>
           <div className="font-mono text-sm font-bold text-white group-hover:text-amber-300">
-            BTC + Altın
+            BTC + Altın Odak İzleme
           </div>
-          <div className="text-[11px] text-bunker-muted font-mono">XAUUSD · BTCUSD Konsolu</div>
+          <div className="text-[11px] text-bunker-muted font-mono">Yalnız XAUUSD · BTCUSD</div>
         </Link>
         <Link
           href="/forex/portfolio"
@@ -151,9 +151,9 @@ export default function ForexRadarPage() {
         >
           <div className="text-xl mb-1 group-hover:scale-110 transition-transform">💼</div>
           <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            Otonom Portföy
+            Merkezi Otonom İzleme
           </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Canlı Scalper Takip</div>
+          <div className="text-[11px] text-bunker-muted font-mono">Tüm Semboller · Tek Ayar</div>
         </Link>
         <Link
           href="/forex/reports"

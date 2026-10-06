@@ -1825,8 +1825,8 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(1.0, ge=0.1, le=20.0, description="İşlem başına sermaye riski (%)")
-    max_open_positions: int = Field(6, ge=1, le=25, description="Aynı anda maksimum açık işlem")
+    risk_per_trade_pct: float = Field(10.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye)")
+    max_open_positions: int = Field(25, ge=1, le=25, description="Aynı anda maksimum açık işlem")
     max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")

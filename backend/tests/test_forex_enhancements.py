@@ -477,11 +477,12 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         profit_btc = pips_1usd_btc * dollar_per_pip_btc
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
-    def test_max_positions_per_symbol_setting(self):
-        """Verify default max_positions_per_symbol is 3 and max_open_positions is 6."""
+    def test_default_risk_and_position_limits(self):
+        """Verify default position sizing is 10% balance risk and max_open_positions is 25."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 3)
-        self.assertEqual(cfg.max_open_positions, 6)
+        self.assertEqual(cfg.risk_per_trade_pct, 10.0)
+        self.assertEqual(cfg.max_open_positions, 25)
 
     def test_same_symbol_pyramiding_limit_three(self):
         """Verify that 3 positions in the same direction are allowed, but the 4th is blocked."""

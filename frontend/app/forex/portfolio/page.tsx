@@ -165,8 +165,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 1000.0,
-    risk_per_trade_pct: 1.0,
-    max_open_positions: 3,
+    risk_per_trade_pct: 10.0,
+    max_open_positions: 25,
     min_score: 70.0,
     tp_pips: 25.0,
     sl_pips: 15.0,
@@ -181,8 +181,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [formSettings, setFormSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 1000.0,
-    risk_per_trade_pct: 1.0,
-    max_open_positions: 3,
+    risk_per_trade_pct: 10.0,
+    max_open_positions: 25,
     min_score: 70.0,
     tp_pips: 25.0,
     sl_pips: 15.0,
@@ -364,7 +364,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     try {
       const payload: AutoSettings = {
         ...formSettings,
-        risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 1.0,
+        risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 10.0,
         tp_pips: Number(formSettings.tp_pips) || 25.0,
         sl_pips: Number(formSettings.sl_pips) || 15.0,
         breakeven_pips: Number(formSettings.breakeven_pips) || 10.0,
@@ -372,7 +372,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         min_score: Number(formSettings.min_score) || 70.0,
         max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
         gold_cooldown_sec: Math.max(60, Number(formSettings.gold_cooldown_sec) || 60.0),
-        max_open_positions: Number(formSettings.max_open_positions) || 3,
+        max_open_positions: Number(formSettings.max_open_positions) || 25,
         session_filter: Boolean(formSettings.session_filter),
         allowed_symbols:
           formSettings.allowed_symbols && formSettings.allowed_symbols.length > 0
@@ -616,7 +616,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">
-                İşlem Başına Risk (%):
+                Pozisyon Hacmi Riski (% Bakiye):
               </label>
               <input
                 type="number"
@@ -629,7 +629,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 }
                 className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
               />
-              <span className="text-[10px] text-bunker-muted">Dinamik lot büyüklüğünü belirler</span>
+              <span className="text-[10px] text-bunker-muted">Dinamik lot büyüklüğünü belirler (varsayılan: %10)</span>
             </div>
 
             <div>
