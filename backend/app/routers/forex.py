@@ -347,9 +347,12 @@ def get_usd_bias(symbol: str, direction: str) -> str:
 
 # DXY uyum şartı aranan zayıf semboller: USDJPY ve USDCHF — nötr rejimde giriş ekstra skor ister.
 DXY_STRICT_SYMBOLS = ("USDJPY", "USDCHF")
-# 2026-10-06 kullanıcı kararı: Ons Altın (XAUUSD) ve Kripto (BTCUSD, ETHUSD) DXY rejim kapsamından TAMAMEN çıkarıldı —
-# Kripto ve Altın bağımsız dinamiklere sahip olduğundan DXY çelişki vetosu ve strict-neutral engeli uygulanmaz.
-DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD", "BTC", "ETH")
+# 2026-10-06 kullanıcı kararı: Ons Altın (XAUUSD), Kripto (BTCUSD, ETHUSD) ve ABD Endeksleri
+# (NASDAQ 100 / Dow Jones) DXY rejim kapsamından TAMAMEN çıkarıldı — DXY çelişki vetosu ve
+# strict-neutral engeli uygulanmaz. NOT (dürüst kayıt): 30g replay'de endeks muafiyeti −$153/maxDD +$35
+# ölçüldü (gölge: 495 engel −$150 üretecekti); kullanıcı yine de kaldırma kararı verdi ve yerine
+# NAS100'e özel strateji araştırması istedi. Tek satırla geri alınabilir.
+DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD", "BTC", "ETH", "NAS", "USTEC", "US100", "NDX", "US30", "DJ30", "WS30", "DOW")
 
 # Majör FX pariteleri — seans penceresi ve volatilite tabanı kapılarının kapsamı.
 FX_MAJORS_SET = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
@@ -1552,6 +1555,215 @@ async def get_forex_radar():
         "dxy": get_dxy_regime(),
         "total": len(candidates),
         "updated_at": time.time(),
+    }
+
+
+# ============================================================================
+# BTC-GOLD SAYFASI — ANLIK OTOMATİK YORUM (kural tabanlı, insan-okur Türkçe)
+# Frontend 60 sn'de bir /btc-gold/comment çağırır; gösterge cache'inden
+# 3-5 cümlelik sade bir piyasa yorumu sentezlenir (LLM çağrısı yok → hızlı+ücretsiz).
+# ============================================================================
+
+def _adx_trend_words(adx: float) -> str:
+    if adx >= 40:
+        return "çok güçlü"
+    if adx >= 30:
+        return "güçlü"
+    if adx >= 20:
+        return "belirginleşen"
+    if adx >= 15:
+        return "zayıf"
+    return "çok zayıf (yatay baskı)"
+
+
+def _strength_label(score: float) -> str:
+    if score >= 90:
+        return "ÇOK GÜÇLÜ"
+    if score >= 80:
+        return "GÜÇLÜ"
+    if score >= 70:
+        return "İLIMLI"
+    if score >= 60:
+        return "ZAYIF"
+    return "BELİRSİZ"
+
+
+def _price_position_note(price: float, high: float, low: float) -> str:
+    band = high - low
+    if band <= 0:
+        return ""
+    pos = (price - low) / band
+    if pos >= 0.85:
+        return "fiyat gün içi zirvesine yakın"
+    if pos <= 0.15:
+        return "fiyat gün içi dibine yakın"
+    if pos >= 0.6:
+        return "fiyat gün bandının üst yarısında"
+    if pos <= 0.4:
+        return "fiyat gün bandının alt yarısında"
+    return "fiyat gün bandının ortasında nefes alıyor"
+
+
+def _human_symbol_comment(symbol: str, tick: Dict[str, Any], min_score: float,
+                          dxy_regime: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Tek sembol için 3-5 cümlelik sade Türkçe yorum sentezler.
+
+    Kaynak: teknik göstergeler (RSI/CCI/CMO/ADX/SuperTrend/ATR), motor skoru,
+    giriş eşiği (min_score / btc_min_score), gün içi fiyat bandı ve DXY rejimi.
+    """
+    score = float(tick.get("score", 50.0))
+    trend = str(tick.get("trend", "NEUTRAL"))
+    action = str(tick.get("action", "HOLD"))
+    rsi = float(tick.get("rsi", 50.0))
+    cci = float(tick.get("cci", 0.0))
+    cmo = float(tick.get("cmo", 0.0))
+    adx = float(tick.get("adx", 20.0))
+    st_dir = int(tick.get("supertrend_dir", 0))
+    atr = float(tick.get("atr", 0.0))
+    pip_size = float(tick.get("pip_size", 0.1))
+    atr_pips = atr / pip_size if pip_size > 0 else 0.0
+    price = float(tick.get("ask", 0.0) or tick.get("bid", 0.0))
+    high = float(tick.get("high", 0.0) or price)
+    low = float(tick.get("low", 0.0) or price)
+    vol = str(tick.get("volatility", "NORMAL"))
+
+    yon = "yukarı" if trend == "BULLISH" else ("aşağı" if trend == "BEARISH" else "yatay")
+    adx_w = _adx_trend_words(adx)
+    st_yon = {1: "yukarı", -1: "aşağı", 0: "kararsız"}.get(st_dir, "kararsız")
+
+    sentences: List[str] = []
+
+    # 1) Trend cümlesi
+    if adx >= 25 and trend != "NEUTRAL":
+        sentences.append(f"Trend {adx_w} (ADX {adx:.0f}) ve yönü {yon}; SuperTrend {st_yon} yönünü onaylıyor.")
+    elif trend != "NEUTRAL":
+        sentences.append(
+            f"Trend {yon} yönünde ama gücü henüz zayıf (ADX {adx:.0f}) — teyit gelmeden riskli."
+        )
+    else:
+        sentences.append(f"Trend gücü zayıf (ADX {adx:.0f}) — piyasa yatay sıkışmada, yön arıyor.")
+
+    # 2) Momentum cümlesi (RSI ana; CCI/CMO kısa vade)
+    if rsi >= 70:
+        momentum = f"aşırı alım bölgesinde (RSI {rsi:.1f}) — tepe riski var"
+    elif rsi >= 55:
+        momentum = f"momentum alıcıların elinde (RSI {rsi:.1f})"
+    elif rsi <= 30:
+        momentum = f"aşırı satım bölgesinde (RSI {rsi:.1f}) — dip bölgesi"
+    elif rsi <= 45:
+        momentum = f"momentum satıcıların elinde (RSI {rsi:.1f})"
+    else:
+        momentum = f"momentum nötr (RSI {rsi:.1f})"
+
+    short_neutral = abs(cci) < 30 and abs(cmo) < 5
+    if short_neutral and 45 <= rsi < 70:
+        momentum += f"; ama kısa vadeli göstergeler nötrleşmiş (CCI {cci:.0f}, CMO {cmo:+.1f}) — piyasa nefes alıyor"
+    elif cci >= 100:
+        momentum += f"; CCI {cci:.0f} ile güçlü momentum teyidi var"
+    elif cci <= -100:
+        momentum += f"; CCI {cci:.0f} ile satış baskısı teyitli"
+    sentences.append(f"Momentum tarafında {momentum}.")
+
+    # 3) Fiyat konumu
+    pos_note = _price_position_note(price, high, low)
+    if pos_note:
+        sentences.append(f"{pos_note[0].upper()}{pos_note[1:]} (gün bandı {low:,.0f} – {high:,.0f}).")
+
+    # 4) Karar cümlesi — motor eşiğiyle karşılaştır
+    if action in ("BUY", "SELL") and score >= min_score:
+        marj = score - min_score
+        if short_neutral or vol == "HIGH":
+            risk = "girişte kısa bir bekleme/tolerans bölgesi iyi olur"
+        elif rsi >= 70 or rsi <= 30:
+            risk = "aşırı uç göstergelere karşı lot küçük tutulmalı"
+        else:
+            risk = "sinyal taze, plan doğrultusunda işlem edilebilir"
+        sentences.append(
+            f"{action} sinyali geçerli: skor {score:.1f}, giriş eşiğini {marj:.1f} puan marjla aşıyor — {risk}."
+        )
+    elif action in ("BUY", "SELL"):
+        sentences.append(
+            f"{action} adayı var ama skor {score:.1f}, giriş eşiği {min_score:.0f}'in altında — "
+            "henüz işlem değil, izlenmeye devam."
+        )
+    else:
+        sentences.append(f"Sinyal yok (HOLD): skor {score:.1f}, yön belirsiz — beklemek en doğru hamle.")
+
+    # 5) Bağlam notu — DXY (XAU/BTC muaf ama rejim uyumu bilgi değeri taşır)
+    if dxy_regime:
+        regime = dxy_regime.get("regime", "USD_NEUTRAL")
+        dxy_trend = dxy_regime.get("trend", "NEUTRAL")
+        if regime == "USD_WEAK":
+            uyum = "dolar zayıflığı USD karşıtı bu sembolü destekliyor" if not symbol.startswith("USD") \
+                else "dolar zayıflığı bu sembole baskı yapıyor"
+        elif regime == "USD_STRONG":
+            uyum = "dolar güçleniyor, USD karşıtı semboller için ters rüzgar" if not symbol.startswith("USD") \
+                else "dolar güçleniyor, bu sembolü destekliyor"
+        else:
+            uyum = "dolar sıkışık rejimde, belirleyici değil"
+        sentences.append(f"DXY {regime.replace('USD_', '')} ({dxy_trend}): {uyum}.")
+
+    # 6) Volatilite uyarısı
+    if vol == "HIGH" and atr_pips > 0:
+        sentences.append(f"Volatilite yüksek (ATR {atr_pips:.0f} pip) — stop mesafesi ve lot boyu buna göre planlanmalı.")
+
+    return {
+        "symbol": symbol,
+        "display": tick.get("display", symbol),
+        "action": action,
+        "score": round(score, 1),
+        "strength_label": _strength_label(score),
+        "comment": " ".join(sentences),
+    }
+
+
+@router.get("/btc-gold/comment")
+async def get_btc_gold_auto_comment():
+    """BTC-Gold sayfası için anlık otomatik yorum.
+
+    Frontend 60 sn'de bir çağırır. Her çağrıda güncel gösterge cache'inden
+    insan-okur yorum üretilir; ayrı bir LLM çağrısı yapılmaz.
+    """
+    ticks = await _generate_realistic_ticks()
+    dxy = get_dxy_regime()
+    sessions = _get_market_sessions()
+    active_sessions = [s["name"] for s in sessions if s.get("active")]
+    mt5_ok = bool(_MT5_STATE.get("connected") and (time.time() - _MT5_STATE.get("last_ping", 0.0) < 60.0))
+
+    symbols_out: Dict[str, Any] = {}
+    for sym in ("XAUUSD", "BTCUSD"):
+        tick = ticks.get(sym) or _TECHNICAL_CACHE.get(sym)
+        if not tick:
+            symbols_out[sym] = {
+                "symbol": sym,
+                "display": sym,
+                "action": "HOLD",
+                "score": 0.0,
+                "strength_label": "BELİRSİZ",
+                "comment": "Veri hattı henüz hazır değil — birkaç saniye sonra tekrar denenecek.",
+            }
+            continue
+        min_score = _AUTO_SETTINGS.btc_min_score if sym == "BTCUSD" else _AUTO_SETTINGS.min_score
+        symbols_out[sym] = _human_symbol_comment(sym, tick, float(min_score), dxy)
+
+    # Genel piyasa notu (sayfa üstü tek satır)
+    dxy_note = ""
+    if dxy:
+        regime = dxy.get("regime", "USD_NEUTRAL")
+        if regime == "USD_WEAK":
+            dxy_note = f"Dolar zayıf (DXY {dxy.get('trend', '')}) — altın ve BTC lehine rüzgar."
+        elif regime == "USD_STRONG":
+            dxy_note = f"Dolar güçlü (DXY {dxy.get('trend', '')}) — altın ve BTC için ters rüzgar."
+        else:
+            dxy_note = "Dolar sıkışık — yönlü baskı yok."
+    session_note = f"Aktif seans: {', '.join(active_sessions)}." if active_sessions else "Seanslar arasında geçiş — likidite düşük olabilir."
+    source_note = "Fiyat kaynağı: MT5 canlı köprü." if mt5_ok else "Fiyat kaynağı: Yahoo/Binance veri hattı (MT5 köprüsü kapalı)."
+
+    return {
+        "interval_sec": 60,
+        "generated_at": time.time(),
+        "market_note": " ".join(x for x in (dxy_note, session_note, source_note) if x),
+        "symbols": symbols_out,
     }
 
 

@@ -489,6 +489,22 @@ export default function BtcGoldForexPage() {
   });
   const [quickTradeMsg, setQuickTradeMsg] = useState<string | null>(null);
 
+  // Otomatik Yorum (backend'de üretilen insan-okur analiz — 60 sn'de bir yenilenir)
+  interface SymbolComment {
+    symbol: string;
+    display?: string;
+    action?: string;
+    score?: number;
+    strength_label?: string;
+    comment: string;
+  }
+  const [autoComment, setAutoComment] = useState<{
+    interval_sec?: number;
+    generated_at?: number;
+    market_note?: string;
+    symbols?: Record<string, SymbolComment>;
+  } | null>(null);
+
   // --- VERİ ÇEKME DÖNGÜSÜ ---
   const fetchAllData = async () => {
     // 1. Otonom Durum ve İşlemler
@@ -580,6 +596,22 @@ export default function BtcGoldForexPage() {
   useEffect(() => {
     fetchAllData();
     const interval = setInterval(fetchAllData, 1500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Otomatik yorum: 60 sn'de bir backend'den insan-okur analiz çeker
+  // (gösterge verisi ana döngüyle zaten canlı; yorum metni sakin kalsın diye ayrı yavaş döngü)
+  useEffect(() => {
+    const fetchComment = async () => {
+      try {
+        const res = await apiFetch("/api/forex/btc-gold/comment");
+        if (res) setAutoComment(res);
+      } catch (err) {
+        console.error("Otomatik yorum hatası:", err);
+      }
+    };
+    fetchComment();
+    const interval = setInterval(fetchComment, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1296,6 +1328,14 @@ export default function BtcGoldForexPage() {
           </span>
         </div>
 
+        {/* Ortak Piyasa Notu (DXY + seans + fiyat kaynağı) */}
+        {autoComment?.market_note && (
+          <div className="p-2.5 rounded-xl bg-bunker-950/80 border border-bunker-800 flex items-start gap-2">
+            <span className="text-sm leading-none mt-0.5">🌍</span>
+            <p className="text-[11px] leading-relaxed text-bunker-300">{autoComment.market_note}</p>
+          </div>
+        )}
+
         {/* 2 SÜTUNLU KOKPİT GRİDİ (XAUUSD & BTCUSD) */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {allowedSymbols.map((sym) => {
@@ -1586,6 +1626,43 @@ export default function BtcGoldForexPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* OTOMATİK YORUM — motorun göstergelerinden sentezlenen insan-okur analiz (60 sn'de bir yenilenir) */}
+                {(() => {
+                  const c = autoComment?.symbols?.[sym];
+                  const badgeCls =
+                    c?.action === "BUY"
+                      ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                      : c?.action === "SELL"
+                      ? "bg-rose-500/15 text-rose-300 border-rose-500/40"
+                      : "bg-bunker-800 text-bunker-muted border-bunker-700";
+                  return (
+                    <div className="mx-4 mb-4 p-3 rounded-xl bg-bunker-950/70 border border-bunker-700/60">
+                      <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm leading-none">🤖</span>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-bunker-300">
+                            Otomatik Yorum
+                          </span>
+                          {c?.action && (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${badgeCls}`}>
+                              {c.action}
+                            </span>
+                          )}
+                          {typeof c?.score === "number" && c.score > 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black border border-bunker-700 bg-bunker-900 text-bunker-300">
+                              {c.strength_label} · {c.score}/100
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[9px] text-bunker-muted">60 sn'de bir yenilenir</span>
+                      </div>
+                      <p className="text-[12px] leading-relaxed text-bunker-200 select-text">
+                        {c?.comment || "Yorum hazırlanıyor…"}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

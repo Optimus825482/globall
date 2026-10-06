@@ -57,7 +57,7 @@ REPLAY_SYMBOL_DEFS = {
 }
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
-                "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP")
+                "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS")
 
 # EV kalkanı (canlı motorla aynı; WR 45 = 2026-10-06 30g replay kararı)
 EV_WINDOW_SEC = 24 * 3600
@@ -81,7 +81,11 @@ TUN_FX_MIN_SCORE = 0.0      # 0 = majörler için ayrı eşik yok (min_score ge�
 TUN_GOLD_DXY_SOFT = False   # (Tarihi) XAUUSD DXY yumuşatma — canlı artık tam muaf
 TUN_GOLD_DXY_BUMP = 5.0
 
-# 2026-10-06 araştırma mekanizmaları (majör güçlendirme + volatilite-adaptif trailing)
+# 2026-10-06 NAS100/US30 özel mekanizmalar (web araştırması: seans likiditesi + Zarattini-Aziz açılış sürüşü)
+INDEX_GATED = {"NAS100", "US30", "USTEC", "DJ30", "US100"}
+TUN_INDEX_HOURS = None        # (başlangıç_dk, bitiş_dk) UTC dakika aralığı — endeks girişleri yalnız bu pencerede (None = kapalı)
+TUN_INDEX_OPEN_DRIVE = False  # ABD açılışının ilk 5m mumu yönü 13:35-15:00 arası yön teyidi olarak zorunlu (Zarattini-Aziz 2023)
+
 TUN_CHANDLIER = 0.0         # >0: trailing = MFE − chandelier×ATR(giriş) (0 = sabit pip trail)
 TUN_MAJOR_HOURS = None      # (başlangıç, biti) UTC saat aralığı — majörler yalnız bu pencerede (None = kapalı)
 TUN_MAJOR_MIN_ATR = 0.0     # majörler minimum ATR(pips) — ölü piyasa filtresi (0 = kapalı)
@@ -430,6 +434,252 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
 
 
 # ---------------------------------------------------------------------------
+# NASDAQ mini-motorları (ortalamaya dönüş felsefesi — ana motordan TAMAMEN bağımsız)
+# ---------------------------------------------------------------------------
+# RSI2  : Connors RSI(2) 5m uyarlaması — EMA200(5m) trend filtresiyle dipten alım / tepeden satım,
+#         çıkış RSI(2)'nin eşik dönmesi + sert ATR stopu + gün sonu zorunlu kapanış.
+# FADE  : seans-çapa fade (VWAP'ın hacimsiz kuzeni) — fiyat seans ortalamasından k×ATR sapınca
+#         çapaya doğru ters işlem; hedef çapa (giriş anındaki çapa snapshotı), gün sonu kapanış.
+MR_SYMBOLS = ("NAS100", "US30")
+RSI2_ENABLED = False
+RSI2_ENTRY = 10.0             # long tetiği RSI(2) ≤ bu (short için 100−eşik)
+RSI2_EXIT = 65.0              # long çıkışı RSI(2) ≥ bu (short için 100−eşik)
+RSI2_SL_ATR = 1.5             # sert stop: giriş ± 1.5×ATR(14, 5m)
+FADE_ENABLED = False
+FADE_K_ATR = 2.0              # seans ortalamasından k×ATR sapma → fade
+FADE_SL_ATR = 1.5             # fade sert stopu
+FADE_EARLY_ONLY = False       # yalnız ilk 2 saat (13:30-15:30 UTC) girişleri
+
+
+def _ema_series(vals: List[float], period: int) -> List[float]:
+    k = 2.0 / (period + 1.0)
+    out = [vals[0]]
+    e = vals[0]
+    for v in vals[1:]:
+        e += k * (v - e)
+        out.append(e)
+    return out
+
+
+def _rsi_wilder(closes: List[float], period: int = 2) -> List[Optional[float]]:
+    out: List[Optional[float]] = [None] * len(closes)
+    if len(closes) < period + 1:
+        return out
+    deltas = [closes[i + 1] - closes[i] for i in range(period)]
+    avg_g = sum(max(d, 0.0) for d in deltas) / period
+    avg_l = sum(max(-d, 0.0) for d in deltas) / period
+    for i in range(period, len(closes)):
+        if i > period:
+            d = closes[i] - closes[i - 1]
+            avg_g = (avg_g * (period - 1) + max(d, 0.0)) / period
+            avg_l = (avg_l * (period - 1) + max(-d, 0.0)) / period
+        out[i] = 100.0 if avg_l <= 0 else 100.0 - 100.0 / (1.0 + avg_g / avg_l)
+    return out
+
+
+def _mini_atr_series(bars: List[Tuple], period: int = 14) -> List[float]:
+    trs: List[float] = []
+    prev_c = bars[0][4]
+    for b in bars:
+        trs.append(max(b[2] - b[3], abs(b[2] - prev_c), abs(b[3] - prev_c)))
+        prev_c = b[4]
+    a = sum(trs[:period]) / period
+    out = [a] * period
+    for i in range(period, len(trs)):
+        a = (a * (period - 1) + trs[i]) / period
+        out.append(a)
+    return out
+
+
+def _mini_stats(book: Book, balance_start: float = BALANCE) -> Dict[str, Any]:
+    wins = sum(1 for t in book.closed if t["pnl_usd"] >= 0)
+    n = len(book.closed)
+    per_symbol: Dict[str, Dict[str, float]] = {}
+    by_reason: Dict[str, Dict[str, float]] = {}
+    bal, peak, max_dd = balance_start, balance_start, 0.0
+    for t in book.closed:
+        bal = round(bal + t["pnl_usd"], 2)
+        peak = max(peak, bal)
+        max_dd = max(max_dd, peak - bal)
+        st = per_symbol.setdefault(t["symbol"], {"n": 0, "wins": 0, "pnl": 0.0})
+        st["n"] = int(st["n"]) + 1
+        st["pnl"] = round(st["pnl"] + t["pnl_usd"], 2)
+        if t["pnl_usd"] >= 0:
+            st["wins"] = int(st["wins"]) + 1
+        r = by_reason.setdefault(t["reason"], {"n": 0, "pnl_usd": 0.0})
+        r["n"] = int(r["n"]) + 1
+        r["pnl_usd"] = round(r["pnl_usd"] + t["pnl_usd"], 2)
+    return {
+        "trades": n,
+        "win_rate": round(100 * wins / n, 1) if n else 0.0,
+        "net_pnl_usd": round(book.realized, 2),
+        "avg_pnl_usd": round(book.realized / n, 3) if n else 0.0,
+        "balance": book.balance,
+        "per_symbol": per_symbol,
+        "exit_reasons": by_reason,
+        "max_drawdown_usd": round(max_dd, 2),
+    }
+
+
+def _mini_close(book: Book, sym: str, direction: str, lots: float, entry: float, exit_price: float,
+                reason: str, pip_size: float, pip_val: float, digits: int, ts: float) -> None:
+    pnl_pips = (exit_price - entry) / pip_size if direction == "BUY" else (entry - exit_price) / pip_size
+    pnl_usd = round(pnl_pips * lots * pip_val, 2)
+    st = book.per_symbol.setdefault(sym, {"n": 0, "wins": 0, "pnl": 0.0})
+    st["n"] = int(st["n"]) + 1
+    st["pnl"] = round(st["pnl"] + pnl_usd, 2)
+    if pnl_usd >= 0:
+        st["wins"] = int(st["wins"]) + 1
+    book.realized = round(book.realized + pnl_usd, 2)
+    book.balance = round(book.balance + pnl_usd, 2)
+    book.closed.append({"symbol": sym, "direction": direction, "lots": lots, "pnl_usd": pnl_usd,
+                        "reason": reason, "trail": False, "closed_ts": ts})
+
+
+def run_rsi2_engine(data: Dict[str, List[Tuple]], entry_start_ts: Optional[float],
+                    entry_end_ts: Optional[float]) -> Dict[str, Any]:
+    """Connors RSI(2) mini-motoru (5m): EMA200(5m) trend filtresi + RSI(2) aşırılık girişi,
+    RSI(2) eşik dönüşü çıkışı, sert ATR stopu, gün sonu zorunlu kapanış."""
+    book = Book("RSI2")
+    for sym in MR_SYMBOLS:
+        bars = data.get(sym) or []
+        if len(bars) < 300:
+            continue
+        closes = [b[4] for b in bars]
+        ema = _ema_series(closes, 200)
+        rsi = _rsi_wilder(closes, 2)
+        atr = _mini_atr_series(bars)
+        item = next((i for i in forex.FOREX_SYMBOLS if i["symbol"] == sym), None)
+        pip_size = item["pip_size"] if item else 1.0
+        spec = forex.get_symbol_trading_specs(sym)
+        pip_val, digits = spec["pip_val"], spec["digits"]
+        half_spread = CATEGORY_SPREAD_PIPS.get("index", 3.0) * pip_size / 2.0
+        pos = None
+        cooldown_until = -1
+        for i, b in enumerate(bars):
+            ts, o, h, l, c = b[0], b[1], b[2], b[3], b[4]
+            in_win = (entry_start_ts is None or ts >= entry_start_ts) and (entry_end_ts is None or ts < entry_end_ts)
+            day_mod = int(ts % 86400)
+            nxt = bars[i + 1] if i + 1 < len(bars) else None
+            day_end = nxt is None or int(nxt[0] % 86400) < day_mod
+            if pos is not None:
+                d = pos["dir"]
+                exit_reason = exit_price = None
+                if d == "BUY":
+                    if l <= pos["sl"]:
+                        exit_reason, exit_price = "SL", round(pos["sl"] - half_spread, digits)
+                    elif rsi[i] is not None and rsi[i] >= RSI2_EXIT:
+                        exit_reason, exit_price = "RSI", round(c - half_spread, digits)
+                    elif day_end:
+                        exit_reason, exit_price = "GUNSONU", round(c - half_spread, digits)
+                else:
+                    if h >= pos["sl"]:
+                        exit_reason, exit_price = "SL", round(pos["sl"] + half_spread, digits)
+                    elif rsi[i] is not None and rsi[i] <= 100.0 - RSI2_EXIT:
+                        exit_reason, exit_price = "RSI", round(c + half_spread, digits)
+                    elif day_end:
+                        exit_reason, exit_price = "GUNSONU", round(c + half_spread, digits)
+                if exit_reason:
+                    _mini_close(book, sym, d, pos["lots"], pos["entry"], exit_price, exit_reason,
+                                pip_size, pip_val, digits, ts)
+                    pos = None
+                    cooldown_until = i + 5
+                continue
+            if not in_win or i < 210 or i < cooldown_until or rsi[i] is None or atr[i] <= 0:
+                continue
+            long_sig = c > ema[i] and rsi[i] <= RSI2_ENTRY
+            short_sig = c < ema[i] and rsi[i] >= 100.0 - RSI2_ENTRY
+            if not (long_sig or short_sig):
+                continue
+            d = "BUY" if long_sig else "SELL"
+            entry = round(c + half_spread, digits) if d == "BUY" else round(c - half_spread, digits)
+            sl_dist = RSI2_SL_ATR * atr[i]
+            sl = round(entry - sl_dist, digits) if d == "BUY" else round(entry + sl_dist, digits)
+            lots = size_lots(sym, sl_dist / pip_size, pip_val)
+            if lots <= 0:
+                continue
+            pos = {"dir": d, "entry": entry, "sl": sl, "lots": lots}
+    return _mini_stats(book)
+
+
+def run_fade_engine(data: Dict[str, List[Tuple]], entry_start_ts: Optional[float],
+                    entry_end_ts: Optional[float]) -> Dict[str, Any]:
+    """Seans-çapa fade mini-motoru: fiyat seans ortalamasından k×ATR uzaklaşınca çapaya ters işlem.
+    Hedef: giriş anındaki çapa (limit). Gün sonu zorunlu kapanış."""
+    book = Book("FADE")
+    for sym in MR_SYMBOLS:
+        bars = data.get(sym) or []
+        if len(bars) < 300:
+            continue
+        atr = _mini_atr_series(bars)
+        item = next((i for i in forex.FOREX_SYMBOLS if i["symbol"] == sym), None)
+        pip_size = item["pip_size"] if item else 1.0
+        spec = forex.get_symbol_trading_specs(sym)
+        pip_val, digits = spec["pip_val"], spec["digits"]
+        half_spread = CATEGORY_SPREAD_PIPS.get("index", 3.0) * pip_size / 2.0
+        pos = None
+        cooldown_until = -1
+        anchor_sum, anchor_n = 0.0, 0
+        cur_day = -1
+        for i, b in enumerate(bars):
+            ts, o, h, l, c = b[0], b[1], b[2], b[3], b[4]
+            day = int(ts // 86400)
+            day_mod = int(ts % 86400)
+            if day != cur_day:
+                cur_day = day
+                anchor_sum, anchor_n = 0.0, 0
+            anchor_sum += c
+            anchor_n += 1
+            anchor = anchor_sum / anchor_n
+            in_win = (entry_start_ts is None or ts >= entry_start_ts) and (entry_end_ts is None or ts < entry_end_ts)
+            nxt = bars[i + 1] if i + 1 < len(bars) else None
+            day_end = nxt is None or int(nxt[0] % 86400) < day_mod
+            if pos is not None:
+                d = pos["dir"]
+                exit_reason = exit_price = None
+                if d == "SELL":
+                    if h >= pos["sl"]:
+                        exit_reason, exit_price = "SL", round(pos["sl"] + half_spread, digits)
+                    elif l <= pos["tp"]:
+                        exit_reason, exit_price = "CAPA", round(pos["tp"] + half_spread, digits)
+                    elif day_end:
+                        exit_reason, exit_price = "GUNSONU", round(c + half_spread, digits)
+                else:
+                    if l <= pos["sl"]:
+                        exit_reason, exit_price = "SL", round(pos["sl"] - half_spread, digits)
+                    elif h >= pos["tp"]:
+                        exit_reason, exit_price = "CAPA", round(pos["tp"] - half_spread, digits)
+                    elif day_end:
+                        exit_reason, exit_price = "GUNSONU", round(c - half_spread, digits)
+                if exit_reason:
+                    _mini_close(book, sym, d, pos["lots"], pos["entry"], exit_price, exit_reason,
+                                pip_size, pip_val, digits, ts)
+                    pos = None
+                    cooldown_until = i + 5
+                continue
+            if not in_win or i < 210 or i < cooldown_until or atr[i] <= 0:
+                continue
+            if FADE_EARLY_ONLY and not (48600 <= day_mod < 55800):  # 13:30-15:30 UTC
+                continue
+            dev = c - anchor
+            if dev >= FADE_K_ATR * atr[i]:
+                d = "SELL"
+            elif dev <= -FADE_K_ATR * atr[i]:
+                d = "BUY"
+            else:
+                continue
+            entry = round(c + half_spread, digits) if d == "BUY" else round(c - half_spread, digits)
+            sl_dist = FADE_SL_ATR * atr[i]
+            sl = round(entry - sl_dist, digits) if d == "BUY" else round(entry + sl_dist, digits)
+            tp = round(anchor, digits)
+            lots = size_lots(sym, sl_dist / pip_size, pip_val)
+            if lots <= 0:
+                continue
+            pos = {"dir": d, "entry": entry, "sl": sl, "tp": tp, "lots": lots}
+    return _mini_stats(book)
+
+
+# ---------------------------------------------------------------------------
 # Replay
 # ---------------------------------------------------------------------------
 def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional[float] = None,
@@ -463,6 +713,16 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     closes_cache: Dict[str, List[float]] = {}
     last_entry_bar: Dict[Tuple[str, str], int] = {}
     cursors: Dict[str, int] = {s: 0 for s in symbols}
+
+    # Açılış sürüşü önyargısı: her UTC gününün 13:30 ilk 5m mumunun yönü (Zarattini-Aziz 2023,
+    # QQQ ilk-mum devamı). 48600 sn = 13:30 UTC; mum eksikse (tatil/yarım gün) o gün teyit yok.
+    open_drive_dir: Dict[Tuple[str, int], int] = {}
+    if TUN_INDEX_OPEN_DRIVE:
+        for s in symbols:
+            if s in INDEX_GATED:
+                for b in data[s]:
+                    if b[0] % 86400 == 48600:
+                        open_drive_dir[(s, int(b[0] // 86400))] = 1 if b[4] > b[1] else -1
 
     orig_dxy = forex._TECHNICAL_CACHE.get("DXY")
     dxy_list = data.get("DXY") or []
@@ -668,6 +928,20 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         if vw is not None and ((action == "BUY" and close_now <= vw) or (action == "SELL" and close_now >= vw)):
                             blocked_events.append(("VWAP", cand("VWAP")))
                             continue
+                # 5e. ABD endeks kapıları (yalnız NEW): seans likidite penceresi + açılış sürüşü teyidi
+                if vname == "NEW" and sym in INDEX_GATED:
+                    if TUN_INDEX_HOURS is not None:
+                        dt_min = hour * 60 + datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).minute
+                        if not (TUN_INDEX_HOURS[0] <= dt_min < TUN_INDEX_HOURS[1]):
+                            blocked_events.append(("ISEANS", cand("ISEANS")))
+                            continue
+                    if TUN_INDEX_OPEN_DRIVE:
+                        day_mod = int(ts % 86400)
+                        if 48900 <= day_mod < 54000:  # 13:35-15:00 UTC — açılış penceresi
+                            odir = open_drive_dir.get((sym, int(ts // 86400)))
+                            if odir and ((action == "BUY" and odir < 0) or (action == "SELL" and odir > 0)):
+                                blocked_events.append(("ACILIS", cand("ACILIS")))
+                                continue
                 if spread_pips > max_spread:
                     continue  # ortak kapı — gölge izlenmez
                 req = base_req + weak_bump
@@ -869,6 +1143,8 @@ def main():
     global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
     global TUN_GOLD_VOL_EXITS, TUN_VOL_BE_MULT, TUN_VOL_TRAIL_MULT, TUN_VOL_TRAIL_FLOOR
     global TUN_BE_USD_GOLD, TUN_BE_RATIO_GOLD, TUN_BE_PIP_FIXED_GOLD
+    global TUN_INDEX_HOURS, TUN_INDEX_OPEN_DRIVE
+    global RSI2_ENABLED, RSI2_ENTRY, RSI2_EXIT, FADE_ENABLED, FADE_K_ATR, FADE_EARLY_ONLY
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -912,6 +1188,16 @@ def main():
     parser.add_argument("--be-usd-gold", type=float, default=1.0, help="Altın BE dolar tabanı (garantili kilit $)")
     parser.add_argument("--be-ratio-gold", type=float, default=0.40, help="Altın BE anında kilitlenen kâr oranı")
     parser.add_argument("--be-pip-fixed-gold", type=float, default=0.0, help="Altın BE'yi lot-bağımsız sabit pip'e bağla (0 = kapalı)")
+    parser.add_argument("--dxy-exempt-extra", default="", help="DXY vetosundan muaf tutulacak ek sembol parçaları (virgüllü, test için — canlı DXY_EXEMPT_SYMBOLS'a dokunmaz)")
+    parser.add_argument("--index-hours", default="", help="ABD endeksleri (NAS100/US30) giriş penceresi '1330-2000' UTC dakika (boş = kapalı)")
+    parser.add_argument("--index-open-drive", action="store_true", help="ABD açılış ilk 5m mumu yönü 13:35-15:00 arası yön teyidi zorunlu")
+    parser.add_argument("--mini-only", action="store_true", help="Ana replay'i atla; yalnız mini-motorları koş (hızlı test)")
+    parser.add_argument("--rsi2", action="store_true", help="Connors RSI(2) mini-motorunu koş (NAS100/US30)")
+    parser.add_argument("--rsi2-entry", type=float, default=10.0, help="RSI(2) giriş eşiği (long)")
+    parser.add_argument("--rsi2-exit", type=float, default=65.0, help="RSI(2) çıkış eşiği (long)")
+    parser.add_argument("--fade", action="store_true", help="Seans-çapa fade mini-motorunu koş (NAS100/US30)")
+    parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
+    parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -959,6 +1245,20 @@ def main():
     TUN_BE_USD_GOLD = args.be_usd_gold
     TUN_BE_RATIO_GOLD = args.be_ratio_gold
     TUN_BE_PIP_FIXED_GOLD = args.be_pip_fixed_gold
+    if args.index_hours:
+        _ih = args.index_hours.split("-")
+        # HHMM formatı → dakika: "1330" = 13*60+30 = 810
+        TUN_INDEX_HOURS = (int(_ih[0][:2]) * 60 + int(_ih[0][2:4]), int(_ih[1][:2]) * 60 + int(_ih[1][2:4]))
+    TUN_INDEX_OPEN_DRIVE = args.index_open_drive
+    RSI2_ENABLED = args.rsi2
+    RSI2_ENTRY = args.rsi2_entry
+    RSI2_EXIT = args.rsi2_exit
+    FADE_ENABLED = args.fade
+    FADE_K_ATR = args.fade_k_atr
+    FADE_EARLY_ONLY = args.fade_early_only
+    if args.dxy_exempt_extra:
+        _extra = tuple(w.strip().upper() for w in args.dxy_exempt_extra.split(",") if w.strip())
+        forex.DXY_EXEMPT_SYMBOLS = tuple(forex.DXY_EXEMPT_SYMBOLS) + _extra
     # SuperTrend parametre denemesi: canlı fonksiyonu parametreyle sarmala (canlı kod değişmez)
     if (args.st_period, args.st_mult) != (10, 3.0):
         _orig_st = forex._compute_supertrend
@@ -975,6 +1275,7 @@ def main():
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "
                f"tpMode={TUN_TP_MODE} goldVol={TUN_GOLD_VOL_EXITS}(be={TUN_VOL_BE_MULT} trail={TUN_VOL_TRAIL_MULT}) "
                f"beUSD={TUN_BE_USD_GOLD} beRatio={TUN_BE_RATIO_GOLD} bePipFixed={TUN_BE_PIP_FIXED_GOLD or '-'} "
+               f"idxHours={args.index_hours or '-'} idxOpenDrive={TUN_INDEX_OPEN_DRIVE} "
                f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
@@ -1012,8 +1313,15 @@ def main():
     t0 = time.time()
     sym_filter = {s.strip().upper() for s in args.symbols.split(",") if s.strip()} or None
     add_syms = {s.strip().upper() for s in getattr(args, "add_symbols", "").split(",") if s.strip()} or None
-    report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts,
-                        symbol_filter=sym_filter, add_symbols=add_syms)
+    if args.mini_only:
+        report = {"days": args.days, "variants": {}}
+        if RSI2_ENABLED:
+            report["variants"]["RSI2"] = run_rsi2_engine(data, entry_start_ts, entry_end_ts)
+        if FADE_ENABLED:
+            report["variants"]["FADE"] = run_fade_engine(data, entry_start_ts, entry_end_ts)
+    else:
+        report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts,
+                            symbol_filter=sym_filter, add_symbols=add_syms)
     report["config"] = cfg_str
     print(f"\n[REPLAY BİTTİ] {time.time() - t0:.1f} sn")
 
@@ -1023,7 +1331,23 @@ def main():
     for vname, v in report["variants"].items():
         print(f"{vname:8s} {v['trades']:>6d} {v['win_rate']:>7.1f}% {v['net_pnl_usd']:>+10.2f} {v['avg_pnl_usd']:>+13.3f}")
     print("-" * 76)
-    new_v = report["variants"]["NEW"]
+    new_v = report["variants"].get("NEW")
+    if new_v is None:
+        # Mini-only mod: NEW/OLD karşılaştırması yok — mini varyant ayrıntılarını yaz ve çık
+        for vname, v in report["variants"].items():
+            if v.get("max_drawdown_usd") is not None:
+                print(f"{vname} Maks. Düşüş: ${v['max_drawdown_usd']:.2f}")
+            print(f"\n{vname} çıkış nedenleri:")
+            for r, st in sorted(v.get("exit_reasons", {}).items(), key=lambda kv: -kv[1]["n"]):
+                print(f"  {r:10s} n:{st['n']:>4d} pnl:${st['pnl_usd']:+9.2f}")
+            print(f"\n{vname} sembol bazlı:")
+            for sym, st in sorted(v.get("per_symbol", {}).items(), key=lambda kv: kv[1]["pnl"]):
+                print(f"  {sym:9s} n:{int(st['n']):>4d} win%:{100 * st['wins'] / max(1, st['n']):5.1f} pnl:${st['pnl']:+8.2f}")
+        os.makedirs(os.path.dirname(args.out), exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        print(f"\n[RAPOR] {args.out}")
+        return
     if new_v.get("max_drawdown_usd") is not None:
         print(f"NEW Özkaynak: ${new_v['equity_start']:.2f} → ${new_v['equity_end']:.2f} | Maks. Düşüş: ${new_v['max_drawdown_usd']:.2f}")
     if new_v.get("daily_pnl"):
