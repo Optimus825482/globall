@@ -281,6 +281,7 @@ TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 _TECHNICAL_CACHE: Dict[str, Dict[str, Any]] = {}
 _LAST_TECH_FETCH_TIME = 0.0
 _LAST_GOLD_EXIT_TIME = 0.0
+_LAST_BTC_EXIT_TIME = 0.0
 _LAST_CLOSED_DEAL_IDS: set = set()
 
 # FX korelasyon kalkanı: 5M kapanış önbelleğinden rolling Pearson matrisi
@@ -1745,11 +1746,14 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason},
         )
 
-        # Altın pozisyonu kapandığında 180 saniye soğuma sayacını başlat
+        # Altın veya BTC pozisyonu kapandığında 60 saniye soğuma sayacını başlat
         sym_closed = target.get("symbol", "").upper()
         if "XAU" in sym_closed or "GOLD" in sym_closed:
             global _LAST_GOLD_EXIT_TIME
             _LAST_GOLD_EXIT_TIME = time.time()
+        if "BTC" in sym_closed:
+            global _LAST_BTC_EXIT_TIME
+            _LAST_BTC_EXIT_TIME = time.time()
 
         # MT5 Köprüsü bağlıysa ve otomatik iletim aktifse, MT5'teki açık pozisyonu da otomatik kapat
         if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
@@ -1856,6 +1860,14 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
     if any(c.get("action") == "OPEN_ORDER" and str(c.get("symbol", "")).upper() == "BTCUSD"
            for c in _MT5_STATE.get("pending_commands", [])):
         reasons.append("gönderilen emrin işlem görmesi bekleniyor")
+    global _LAST_BTC_EXIT_TIME
+    if _LAST_BTC_EXIT_TIME > 0:
+        if _LAST_BTC_EXIT_TIME > now_ts:
+            _LAST_BTC_EXIT_TIME = now_ts
+        time_since_btc = max(0.0, now_ts - _LAST_BTC_EXIT_TIME)
+        cd_left = max(0.0, min(60.0, 60.0 - time_since_btc))
+        if cd_left > 0:
+            reasons.append(f"son kapanıştan sonra soğuma bekleniyor ({int(cd_left)} sn)")
     last_sym_btc = _LAST_SYMBOL_ENTRY_TIME.get("BTCUSD", 0.0)
     if last_sym_btc > now_ts:
         _LAST_SYMBOL_ENTRY_TIME["BTCUSD"] = now_ts
@@ -1863,12 +1875,6 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
     sym_cd_left = max(0.0, min(60.0, 60.0 - max(0.0, now_ts - last_sym_btc)))
     if sym_cd_left > 0:
         reasons.append(f"son girişten sonra sembol soğuması bekleniyor ({int(sym_cd_left)} sn)")
-    if _AUTO_SETTINGS.ev_guard_enabled:
-        ev_stats = _collect_symbol_ev("BTCUSD", now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
-        ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
-        ev_floor = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
-        if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades, _AUTO_SETTINGS.ev_max_win_rate, ev_floor):
-            reasons.append("son kayıplar nedeniyle dinleniyor")
     btc_open = [p for p in (list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])))
                 if str(p.get("symbol", "")).upper() == "BTCUSD"]
     if btc_open and active_count < _AUTO_SETTINGS.max_open_positions:
@@ -1894,7 +1900,7 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
 
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
-    global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME, _LAST_GOLD_EXIT_TIME, _LAST_BLOCKED_HOUR_LOG_TIME
+    global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME, _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME, _LAST_BLOCKED_HOUR_LOG_TIME
     last_loop_error_log_ts = 0.0
     logger.info("Forex Otonom Scalper Döngüsü Başlatıldı.")
     _AUTO_STATE["last_status"] = "Çalışıyor (Canlı Piyasa Taranıyor)"
@@ -2322,6 +2328,24 @@ async def _forex_auto_paper_loop():
                             )
                         continue
 
+                # 2b. Bitcoin (BTCUSD) Özel Soğuma Koruması (Kullanıcı kararı: 60 sn)
+                # İlk start verildiğinde veya henüz kapanış olmadığında (<= 0) soğuma kalkanı dikkate alınmaz
+                is_btc = ("BTC" in sym)
+                if is_btc and _LAST_BTC_EXIT_TIME > 0:
+                    if _LAST_BTC_EXIT_TIME > now_ts:
+                        _LAST_BTC_EXIT_TIME = now_ts
+                    time_since_btc_exit = max(0.0, now_ts - _LAST_BTC_EXIT_TIME)
+                    if time_since_btc_exit < 60.0:
+                        remaining_btc_cd = int(min(60.0, max(0.0, 60.0 - time_since_btc_exit)))
+                        if remaining_btc_cd > 0 and (now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_btc_cd", 0) > 20.0):
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_btc_cd"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] Bitcoin Soğuma Kalkanı: Kapanıştan sonra {remaining_btc_cd} sn bekleniyor (min 60 sn kuralı).",
+                                symbol=sym,
+                            )
+                        continue
+
                 # 3. Sembol Soğuma Süresi
                 sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else 60.0
                 last_sym_time = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
@@ -2341,8 +2365,8 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 3b. Sembol EV Kalkanı — son pencerede sermaye yakan semboller dinlenir
-                # (kendini onarır: kayıplar zaman penceresinden yaşlanıp çıkınca kalkan kalkar)
-                if _AUTO_SETTINGS.ev_guard_enabled:
+                # (Kullanıcı kararı: XAUUSD ve BTCUSD özel modda 24 saatlik EV kilidi yerine 60 sn soğuma uygulanır)
+                if _AUTO_SETTINGS.ev_guard_enabled and sym not in ("XAUUSD", "BTCUSD"):
                     ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                     ev_risk_usd = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
                     ev_stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
@@ -2732,7 +2756,7 @@ async def get_forex_auto_paper_status():
 @router.post("/auto-paper/toggle")
 async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
     """Otonom scalper'ı başlatır veya durdurur."""
-    global _AUTO_PAPER_TASK, _LAST_GOLD_EXIT_TIME
+    global _AUTO_PAPER_TASK, _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME
     _AUTO_STATE["enabled"] = req.enabled
     _AUTO_SETTINGS.enabled = req.enabled
     _MT5_STATE["auto_trade"] = req.enabled
@@ -2740,6 +2764,7 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
     if req.enabled:
         # İlk start verildiğinde soğuma kalkanını dikkate almaması için sıfırla
         _LAST_GOLD_EXIT_TIME = 0.0
+        _LAST_BTC_EXIT_TIME = 0.0
         _LAST_SYMBOL_ENTRY_TIME.clear()
         if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
             _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
@@ -3067,6 +3092,11 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
                     if not is_first_sync or (deal_time > 0 and (now_ts - deal_time < _AUTO_SETTINGS.gold_cooldown_sec)):
                         global _LAST_GOLD_EXIT_TIME
                         _LAST_GOLD_EXIT_TIME = now_ts
+                if "BTC" in d_sym:
+                    deal_time = float(d.get("time", 0)) if isinstance(d.get("time"), (int, float)) else 0.0
+                    if not is_first_sync or (deal_time > 0 and (now_ts - deal_time < 60.0)):
+                        global _LAST_BTC_EXIT_TIME
+                        _LAST_BTC_EXIT_TIME = now_ts
 
     # Bekleyen emirleri al ve boşalt
     commands = list(_MT5_STATE["pending_commands"])

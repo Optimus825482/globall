@@ -43,6 +43,7 @@ HARD_MAX_FOREX_LOT = 50.0
 HARD_MAX_GOLD_LOT = 50.0
 HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 LAST_GOLD_EXIT_TIME = 0.0
+LAST_BTC_EXIT_TIME = 0.0
 KNOWN_DEAL_TICKETS: set = set()
 INITIALIZED_DEALS = False
 TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
@@ -303,7 +304,7 @@ def execute_market_order(cmd: dict) -> dict:
     is_oil = ("XTI" in symbol or "XBR" in symbol or "OIL" in symbol or "USOIL" in raw_symbol)
 
     # Ons Altın (XAUUSD) Soğuma Koruması (İlk startta dikkate alınmaz; yalnızca canlı kapanıştan sonra çalışır)
-    global LAST_GOLD_EXIT_TIME
+    global LAST_GOLD_EXIT_TIME, LAST_BTC_EXIT_TIME
     if is_gold and LAST_GOLD_EXIT_TIME > 0:
         cd_sec = float(CURRENT_SETTINGS.get("gold_cooldown_sec", HARD_MIN_GOLD_COOLDOWN_SEC))
         now_t = time.time()
@@ -316,6 +317,19 @@ def execute_market_order(cmd: dict) -> dict:
         elif elapsed < 0:
             # Zaman kayması koruması (broker timezone uyumsuzluğu)
             LAST_GOLD_EXIT_TIME = 0.0
+
+    # Bitcoin (BTCUSD) Soğuma Koruması (İlk startta dikkate alınmaz; canlı kapanış sonrası 60s)
+    if is_crypto and LAST_BTC_EXIT_TIME > 0:
+        cd_sec = 60.0
+        now_t = time.time()
+        elapsed = now_t - LAST_BTC_EXIT_TIME
+        if 0 <= elapsed < cd_sec:
+            rem = min(cd_sec, max(0.0, cd_sec - elapsed))
+            err = f"Bitcoin soğuma kalkanı aktif: {int(rem)} sn kaldı (min 60s)"
+            print(f"  🛑 {err}")
+            return {"success": False, "error": err}
+        elif elapsed < 0:
+            LAST_BTC_EXIT_TIME = 0.0
 
     # Sembolü aktif et ve bilgileri çek
     if not mt5.symbol_select(symbol, True):
@@ -499,6 +513,9 @@ def execute_close_order(cmd: dict) -> dict:
         if "XAU" in symbol or "GOLD" in symbol:
             global LAST_GOLD_EXIT_TIME
             LAST_GOLD_EXIT_TIME = time.time()
+        if "BTC" in symbol:
+            global LAST_BTC_EXIT_TIME
+            LAST_BTC_EXIT_TIME = time.time()
         return {"success": True, "ticket": ticket}
     else:
         comment_err = res.comment if res else str(mt5.last_error())
@@ -947,13 +964,14 @@ def sync_with_server(api_base: str):
             "outcome": "WIN" if d.profit >= 0 else "LOSS",
         })
 
-    # Altın kapanışlarını takip et (İlk startta geçmiş deals kalkanı tetiklemez!)
-    global LAST_GOLD_EXIT_TIME, INITIALIZED_DEALS, KNOWN_DEAL_TICKETS
+    # Altın ve BTC kapanışlarını takip et (İlk startta geçmiş deals kalkanı tetiklemez!)
+    global LAST_GOLD_EXIT_TIME, LAST_BTC_EXIT_TIME, INITIALIZED_DEALS, KNOWN_DEAL_TICKETS
     if not INITIALIZED_DEALS:
         for d in out_deals:
             KNOWN_DEAL_TICKETS.add(d.ticket)
         INITIALIZED_DEALS = True
         LAST_GOLD_EXIT_TIME = 0.0  # İlk start verildiğinde kalkan dikkate alınmaz
+        LAST_BTC_EXIT_TIME = 0.0
     else:
         for d in out_deals:
             if d.ticket not in KNOWN_DEAL_TICKETS:
@@ -962,6 +980,9 @@ def sync_with_server(api_base: str):
                 if "XAU" in d_sym or "GOLD" in d_sym:
                     # Canlı çalışma sırasında yeni bir altın pozisyonu kapandı: yerel zaman damgası
                     LAST_GOLD_EXIT_TIME = time.time()
+                if "BTC" in d_sym:
+                    # Canlı çalışma sırasında yeni bir BTC pozisyonu kapandı: yerel zaman damgası (60s kuralı)
+                    LAST_BTC_EXIT_TIME = time.time()
 
     # MT5 Terminalinden anlık canlı fiyatları topla
     ticks_data = {}
