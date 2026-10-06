@@ -720,8 +720,10 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
 
         if (is_dollar_be or is_pip_be):
             # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-            # %40 kâr kilitleme — kalan %60 koşu mesafesi olarak bırakılır
-            locked_pips = max(pips_for_1usd, round(pnl_pips * 0.40, 1))
+            # Altında kâr kilitleme oranı sunucu ayarından gelir (gold_be_lock_ratio, 0.60 —
+            # 2×30g replay: her pencerede ~+$750, maxDD düşer); diğer semboller %40.
+            be_lock_ratio = float(CURRENT_SETTINGS.get("gold_be_lock_ratio", 0.6)) if ("XAU" in sym or "GOLD" in sym) else 0.40
+            locked_pips = max(pips_for_1usd, round(pnl_pips * be_lock_ratio, 1))
             if direction == "BUY":
                 be_sl = round(entry_p + (locked_pips * pip_size), digits)
                 if cur_sl < be_sl and be_sl < cur_p:

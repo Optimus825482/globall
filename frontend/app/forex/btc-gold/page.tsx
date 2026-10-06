@@ -66,6 +66,7 @@ interface AutoSettings {
   session_filter: boolean;
   max_spread_pips: number;
   gold_cooldown_sec?: number;
+  btc_min_score?: number;
   allowed_symbols: string[];
 }
 
@@ -662,6 +663,7 @@ export default function BtcGoldForexPage() {
         breakeven_pips: Number(formSettings.breakeven_pips) || 8.0,
         trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 12.0,
         min_score: Number(formSettings.min_score) || 70.0,
+        btc_min_score: Number(formSettings.btc_min_score ?? formSettings.min_score) || 70.0,
         max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
         gold_cooldown_sec: Math.max(60, Number(formSettings.gold_cooldown_sec) || 60.0),
         max_open_positions: Number(formSettings.max_open_positions) || 3,
@@ -764,7 +766,11 @@ export default function BtcGoldForexPage() {
   const liveBal = Number(mt5.account?.balance ?? balance ?? 1000.0);
   const liveEq = Number(mt5.account?.equity ?? liveBal);
   const liveMargin = Number(mt5.account?.free_margin ?? liveBal);
-  const totalOpenPnl = (mt5.open_positions || []).reduce((acc, p) => acc + Number(p.pnl_usd ?? 0), 0) + openPnlUsd;
+  const totalOpenPnl = (mt5.open_positions || []).reduce(
+    (acc, p) => acc + Number(p.pnl_usd ?? (p as any).profit ?? 0),
+    0
+  );
+  const totalOpenCount = mt5.open_positions?.length || 0;
 
   return (
     <div className="space-y-6 pb-16 font-mono selection:bg-amber-500/30 selection:text-amber-200">
@@ -973,7 +979,7 @@ export default function BtcGoldForexPage() {
             </div>
 
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Min. Radar Skoru (50-98):</label>
+              <label className="text-[11px] text-bunker-muted block mb-1">🥇 Altın Min. Skor (50-98):</label>
               <input
                 type="number"
                 min="50"
@@ -982,9 +988,24 @@ export default function BtcGoldForexPage() {
                 onChange={(e) =>
                   setFormSettings({ ...formSettings, min_score: parseFloat(e.target.value) || 70.0 })
                 }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-amber-400"
+                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-amber-300 font-bold outline-none focus:border-amber-400"
               />
-              <span className="text-[10px] text-bunker-muted">Yalnızca yüksek teyitli işlemler</span>
+              <span className="text-[10px] text-bunker-muted">XAUUSD teyit eşiği (varsayılan: 70)</span>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-bunker-muted block mb-1">₿ BTC Min. Skor (50-98):</label>
+              <input
+                type="number"
+                min="50"
+                max="98"
+                value={formSettings.btc_min_score ?? formSettings.min_score ?? ""}
+                onChange={(e) =>
+                  setFormSettings({ ...formSettings, btc_min_score: parseFloat(e.target.value) || 70.0 })
+                }
+                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-orange-400 font-bold outline-none focus:border-amber-400"
+              />
+              <span className="text-[10px] text-bunker-muted">BTCUSD teyit eşiği (varsayılan: 70)</span>
             </div>
 
             <div>
@@ -1081,7 +1102,7 @@ export default function BtcGoldForexPage() {
             {totalOpenPnl >= 0 ? "+" : ""}${totalOpenPnl.toFixed(2)}
           </span>
           <span className="text-[9px] text-bunker-muted block mt-0.5">
-            {mt5.open_positions?.length + openPositions.length} açık işlem
+            {totalOpenCount} açık MT5 işlemi
           </span>
         </div>
 
@@ -1128,10 +1149,10 @@ export default function BtcGoldForexPage() {
           <div className="flex items-center gap-2">
             <span className="text-lg">⚡</span>
             <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <span>Açık İşlemler Listesi (XAUUSD &amp; BTCUSD)</span>
+              <span>Açık IC Markets MT5 Pozisyonları ({totalOpenCount})</span>
             </h2>
             <span className="text-[10px] text-amber-400 font-bold px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30">
-              {mt5.open_positions?.length + openPositions.length} Aktif Pozisyon
+              {totalOpenCount} Aktif MT5 Pozisyonu
             </span>
           </div>
 
@@ -1151,12 +1172,12 @@ export default function BtcGoldForexPage() {
           </div>
         </div>
 
-        {mt5.open_positions?.length === 0 && openPositions.length === 0 ? (
+        {mt5.open_positions?.length === 0 ? (
           <div className="p-8 text-center text-bunker-muted text-xs space-y-1">
-            <p className="text-sm font-semibold text-white">Şu an açık bir XAUUSD veya BTCUSD pozisyonu bulunmuyor.</p>
+            <p className="text-sm font-semibold text-white">Şu an açık bir IC Markets MT5 pozisyonu bulunmuyor.</p>
             <p className="text-bunker-muted">
               {autoEnabled
-                ? "Otonom scalper motoru XAUUSD ve BTCUSD sinyallerini denetliyor. Koşullar sağlandığında emir otomatik açılacaktır."
+                ? "Otonom scalper motoru XAUUSD ve BTCUSD sinyallerini denetliyor. Koşullar sağlandığında emir doğrudan MT5 hesabınızda açılacaktır."
                 : "Otonom motor durdurulmuş durumda. Yukarıdan '▶ Otonom Scalper'ı Başlat' butonuna basabilir veya aşağıdaki kokpitten hızlı manuel işlem açabilirsiniz."}
             </p>
           </div>
@@ -1165,7 +1186,7 @@ export default function BtcGoldForexPage() {
             <table className="w-full text-left text-xs">
               <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
                 <tr>
-                  <th className="py-3 px-4">Bilet/ID</th>
+                  <th className="py-3 px-4">Bilet No</th>
                   <th className="py-3 px-3">Sembol</th>
                   <th className="py-3 px-3">Yön</th>
                   <th className="py-3 px-3">Koruma Durumu</th>
@@ -1188,7 +1209,7 @@ export default function BtcGoldForexPage() {
                   return (
                     <tr key={`mt5-${p.ticket}`} className="hover:bg-bunker-800/40 transition-colors">
                       <td className="py-3 px-4 text-[11px] text-cyan-300 font-bold">
-                        #{p.ticket} <span className="text-[9px] text-bunker-muted font-normal">(MT5)</span>
+                        #{p.ticket}
                       </td>
                       <td className="py-3 px-3 font-bold text-white text-sm">
                         <span className="flex items-center gap-1.5">
@@ -1245,81 +1266,6 @@ export default function BtcGoldForexPage() {
                         <button
                           type="button"
                           onClick={() => closeMt5Ticket(p.ticket)}
-                          className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
-                        >
-                          Kapat ✕
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {/* Auto-Paper Pozisyonları (Varsa) */}
-                {openPositions.map((p, pIdx) => {
-                  const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
-                  const isProfit = pnlVal >= 0;
-                  const rawId = String(p.id ?? (p as any).ticket ?? `paper-${pIdx}`);
-                  const displayId = rawId.length > 6 ? rawId.slice(-6) : rawId;
-                  const pnlPips = p.pnl_pips != null && !isNaN(Number(p.pnl_pips)) ? Number(p.pnl_pips) : null;
-
-                  return (
-                    <tr key={`auto-${rawId}-${pIdx}`} className="hover:bg-bunker-800/40 transition-colors">
-                      <td className="py-3 px-4 text-[11px] text-amber-300 font-bold">
-                        #{displayId} <span className="text-[9px] text-bunker-muted font-normal">(Paper)</span>
-                      </td>
-                      <td className="py-3 px-3 font-bold text-white text-sm">
-                        <span className="flex items-center gap-1.5">
-                          <span>{p.symbol === "XAUUSD" ? "🥇" : "₿"}</span>
-                          <span>{p.symbol}</span>
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            p.direction === "BUY"
-                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                              : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                          }`}
-                        >
-                          {p.direction}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 font-sans">
-                        {p.trailing_activated ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300">
-                            🏃 TRAILING
-                          </span>
-                        ) : p.breakeven_activated ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300">
-                            🛡️ BE
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] text-bunker-muted bg-bunker-800">
-                            🛑 Sabit SL
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 font-semibold text-white">{p.lots} Lot</td>
-                      <td className="py-3 px-3 text-bunker-muted">{p.entry_price}</td>
-                      <td className="py-3 px-3 font-bold text-white">{p.current_price}</td>
-                      <td className="py-3 px-3 text-xs">
-                        <span className="text-rose-300">SL: {p.sl_price || "-"}</span> |{" "}
-                        <span className="text-emerald-300">TP: {p.tp_price || "-"}</span>
-                      </td>
-                      <td className={`py-3 px-3 ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-                        <div className="font-bold text-sm">
-                          {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
-                        </div>
-                        {pnlPips !== null && (
-                          <div className="text-[10px]">
-                            {pnlPips >= 0 ? "+" : ""}{pnlPips.toFixed(1)} p
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => closeAutoPosition(rawId)}
                           className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
                         >
                           Kapat ✕

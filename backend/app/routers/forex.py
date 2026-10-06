@@ -346,10 +346,9 @@ def get_usd_bias(symbol: str, direction: str) -> str:
 
 # DXY uyum şartı aranan zayıf semboller: USDJPY ve USDCHF — nötr rejimde giriş ekstra skor ister.
 DXY_STRICT_SYMBOLS = ("USDJPY", "USDCHF")
-# 2026-10-06 kullanıcı kararı: Ons Altın (XAUUSD) DXY rejim kapsamından TAMAMEN çıkarıldı —
-# ne çelişki vetosu ne strict-neutral ekstra skoru uygulanır. (30g replay: veto yumuşatması
-# +$116 getirdi; kullanıcı tam muafiyeti tercih etti.)
-DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD")
+# 2026-10-06 kullanıcı kararı: Ons Altın (XAUUSD) ve Kripto (BTCUSD, ETHUSD) DXY rejim kapsamından TAMAMEN çıkarıldı —
+# Kripto ve Altın bağımsız dinamiklere sahip olduğundan DXY çelişki vetosu ve strict-neutral engeli uygulanmaz.
+DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD", "BTC", "ETH")
 
 # Majör FX pariteleri — seans penceresi ve volatilite tabanı kapılarının kapsamı.
 FX_MAJORS_SET = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
@@ -1549,6 +1548,7 @@ class ForexAutoPaperSettings(BaseModel):
     sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
     breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
     breakeven_usd: float = Field(1.0, ge=0.5, le=10.0, description="Başabaş kilit tetikleme net kârı ($)")
+    gold_be_lock_ratio: float = Field(0.6, ge=0.1, le=1.0, description="Altın (XAUUSD) BE kâr kilitleme oranı — BE anındaki kârın bu oranındaki mesafe kilitlenir (2026-10-06 2×30g replay: %40→%60 her pencerede ~+$750, maxDD düşer)")
     trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
     max_spread_pips: float = Field(3.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip)")
@@ -1572,7 +1572,7 @@ class ForexAutoPaperSettings(BaseModel):
     major_session_end_utc: int = Field(20, ge=1, le=24, description="Majör seans penceresi bitişi (UTC, dahil değil) — 20:00 NY öğleden sonra")
     major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
     crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
-    btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; churn'u keser — süpürme: 76 noktası en iyi, işlem düşüşü yalnız %11.5, BTC −$30→+$78)")
+    btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; süpürme: 76 noktası)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["XAUUSD", "BTCUSD"],
@@ -1840,6 +1840,58 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     return "✅ temel şartlar uygun — giriş değerlendiriliyor"
 
 
+def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
+    """BTC/USD tarama özeti — insan-okur tek temiz cümle.
+
+    Yalnızca RAPORLAMA amaçlıdır: giriş döngüsündeki kapı zincirini özetler.
+    Sembol soğuması, spread, skor ve açık pozisyon durumunu özetler.
+    """
+    action = str(btc_tick.get("action", "HOLD"))
+    if action not in ("BUY", "SELL"):
+        return "yön teyidi oluşmadı — gözlemde"
+    reasons: List[str] = []
+    active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
+    if active_count >= _AUTO_SETTINGS.max_open_positions:
+        reasons.append("pozisyon limiti dolu")
+    if any(c.get("action") == "OPEN_ORDER" and str(c.get("symbol", "")).upper() == "BTCUSD"
+           for c in _MT5_STATE.get("pending_commands", [])):
+        reasons.append("gönderilen emrin işlem görmesi bekleniyor")
+    last_sym_btc = _LAST_SYMBOL_ENTRY_TIME.get("BTCUSD", 0.0)
+    if last_sym_btc > now_ts:
+        _LAST_SYMBOL_ENTRY_TIME["BTCUSD"] = now_ts
+        last_sym_btc = now_ts
+    sym_cd_left = max(0.0, min(60.0, 60.0 - max(0.0, now_ts - last_sym_btc)))
+    if sym_cd_left > 0:
+        reasons.append(f"son girişten sonra sembol soğuması bekleniyor ({int(sym_cd_left)} sn)")
+    if _AUTO_SETTINGS.ev_guard_enabled:
+        ev_stats = _collect_symbol_ev("BTCUSD", now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
+        ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
+        ev_floor = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
+        if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades, _AUTO_SETTINGS.ev_max_win_rate, ev_floor):
+            reasons.append("son kayıplar nedeniyle dinleniyor")
+    btc_open = [p for p in (list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])))
+                if str(p.get("symbol", "")).upper() == "BTCUSD"]
+    if btc_open and active_count < _AUTO_SETTINGS.max_open_positions:
+        reasons.append("zaten açık pozisyon var")
+    spread = float(btc_tick.get("spread_pips", 12.0))
+    eff_spread_limit = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10)
+    if spread > eff_spread_limit:
+        reasons.append(f"spread geniş ({spread:.1f}p > {eff_spread_limit:.0f}p)")
+    score = float(btc_tick.get("score", 0.0))
+    req_score = min(_AUTO_SETTINGS.min_score, _AUTO_SETTINGS.btc_min_score) if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
+    if score < req_score:
+        reasons.append(f"sinyal skoru yetersiz ({score:.0f} < {req_score:.0f})")
+    if _AUTO_SETTINGS.adx_filter_enabled and float(btc_tick.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
+        reasons.append(f"trend gücü zayıf (ADX {float(btc_tick.get('adx', 0.0)):.0f})")
+    st = int(btc_tick.get("supertrend_dir", 0))
+    if _AUTO_SETTINGS.supertrend_filter_enabled and ((action == "BUY" and st < 0) or (action == "SELL" and st > 0)):
+        reasons.append("grafik yönü sinyalle ters")
+    if reasons:
+        return "işlem bekliyor: " + " + ".join(reasons[:2])
+    return "✅ temel şartlar uygun — giriş değerlendiriliyor"
+
+
+
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
     global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME, _LAST_GOLD_EXIT_TIME, _LAST_BLOCKED_HOUR_LOG_TIME
@@ -1925,8 +1977,10 @@ async def _forex_auto_paper_loop():
 
                     if (is_dollar_be or is_pip_be) and not pos.get("breakeven_activated"):
                         # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-                        # %40 kâr kilitleme — kalan %60 koşu mesafesi olarak bırakılır
-                        locked_pips = max(pips_for_1usd, round(pnl_pips * 0.40, 1))
+                        # Altında kâr kilitleme oranı ayarlanabilir (gold_be_lock_ratio, canlı 0.60 —
+                        # 2×30g replay: her pencerede ~+$750, maxDD düşer); diğer semboller %40.
+                        be_lock_ratio = _AUTO_SETTINGS.gold_be_lock_ratio if ("XAU" in sym or "GOLD" in sym) else 0.40
+                        locked_pips = max(pips_for_1usd, round(pnl_pips * be_lock_ratio, 1))
                         if direction == "BUY":
                             cand_be = round(entry_p + (locked_pips * pip_size), digits)
                             if cand_be > pos["sl_price"] and cand_be < cur_p:
@@ -2088,6 +2142,26 @@ async def _forex_auto_paper_loop():
                         )
                     _log_auto_decision("SCAN", gold_msg, symbol="XAUUSD")
 
+                # BTC/USD tarama özeti: her taramada BTC durumu da Altın gibi detaylı stream'e düşer
+                btc_tick = ticks.get("BTCUSD")
+                if btc_tick:
+                    if btc_tick.get("macd_verdict") == "NÖTR (Veri Bekleniyor)":
+                        btc_msg = "🔍 [BTC/USD] Piyasa verisi alınamıyor — sinyal üretilemiyor"
+                    else:
+                        btc_action = str(btc_tick.get("action", "HOLD"))
+                        btc_signal = (
+                            f"Sinyal: {btc_action} (skor {btc_tick.get('score', 0.0):.0f})"
+                            if btc_action in ("BUY", "SELL") else "Sinyal: yok"
+                        )
+                        tech_btc = _TECHNICAL_CACHE.get("BTCUSD") or {}
+                        btc_st = "BOĞA" if int(btc_tick.get("supertrend_dir", 0)) > 0 else "AYI"
+                        btc_msg = (
+                            f"🔍 [BTC/USD] {btc_tick.get('bid', 0.0):.1f}$ | {btc_signal} | "
+                            f"HTF: {tech_btc.get('htf_trend', '-')} | SuperTrend: {btc_st} | "
+                            f"Durum: {_btc_scan_note(btc_tick, now_ts)}"
+                        )
+                    _log_auto_decision("SCAN", btc_msg, symbol="BTCUSD")
+
             # Veri hattı görünürlüğü: mum verisi alınamayan semboller HOLD'da sessizce kalır.
             # Sessiz arıza olmasın — panelde sembol başına 5 dk'da bir görünür yapılır.
             for t_item in ticks.values():
@@ -2134,7 +2208,7 @@ async def _forex_auto_paper_loop():
                     if opposite_dirs:
                         # (b) ZIT yönlü pozisyon varsa (örn: BUY açıkken SELL sinyali geldiyse veya tersi):
                         # Ve sinyal yeterince güçlüyse (skor >= min_score ve spread uygunsa)
-                        effective_spread_limit = 20.0 if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
+                        effective_spread_limit = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
                         if cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score and cand.get("spread_pips", 99.0) <= effective_spread_limit:
                             old_dir_str = "/".join(opposite_dirs)
                             _log_auto_decision(
@@ -2354,7 +2428,7 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 6. Spread Filtresi
-                effective_max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
+                effective_max_spread = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
                 if cand["spread_pips"] > effective_max_spread:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
@@ -2368,9 +2442,9 @@ async def _forex_auto_paper_loop():
                 # 7. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
                 # DXY nötr rejimdeki zayıf semboller (XAUUSD/USDJPY/USDCHF) +5.0 ekstra skor ister.
                 is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
-                if sym == "BTCUSD" and _AUTO_SETTINGS.btc_min_score > 0:
-                    # BTC özel eşik: düşük kaliteli churn'u keser (2026-10-06 replay: BTC −$30→+$58)
-                    req_score = _AUTO_SETTINGS.btc_min_score
+                if sym == "BTCUSD":
+                    # Paneldeki min_score ile btc_min_score uyumlu çalışır
+                    req_score = min(_AUTO_SETTINGS.min_score, _AUTO_SETTINGS.btc_min_score) if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
                 else:
                     req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
                 req_score += weak_symbol_score_bump
@@ -3014,6 +3088,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "gold_cooldown_sec": _AUTO_SETTINGS.gold_cooldown_sec,
             "atr_exit_enabled": _AUTO_SETTINGS.atr_exit_enabled,
             "partial_tp_enabled": _AUTO_SETTINGS.partial_tp_enabled,
+            "gold_be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio,
             "dxy_filter_enabled": _AUTO_SETTINGS.dxy_filter_enabled,
             "correlation_guard": _AUTO_SETTINGS.correlation_guard,
         },

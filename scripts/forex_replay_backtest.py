@@ -104,6 +104,12 @@ TUN_TP_MODE = "tp"          # "tp" | "no_tp_on_trail" (trailing aktiflenince TP 
 TUN_GOLD_VOL_EXITS = False
 TUN_VOL_BE_MULT = 0.8       # BE tetik tabanı: be_mult × giriş-ATR (pip) — $1 dolar kuralı yine alt sınır
 TUN_VOL_TRAIL_MULT = 1.5    # trailing mesafesi: trail_mult × giriş-ATR (pip)
+TUN_VOL_TRAIL_FLOOR = 40.0  # trail alt sınırı (pip) — 15 gibi düşük değer oransal-sıkı modu açar
+
+# 2026-10-06 dolar-kuralı BE kilidi düzeltme testleri (XAUUSD'ye özel):
+TUN_BE_USD_GOLD = 1.0       # BE dolar tabanı — garantili kilit hedefi ($)
+TUN_BE_RATIO_GOLD = 0.60    # altın BE anında kilitlenen kâr oranı (2026-10-06 canlı kararı: 0.40→0.60)
+TUN_BE_PIP_FIXED_GOLD = 0.0 # >0: BE tetiği+tabanı lot-bağımsız sabit pip (örn. 10) — hacimden arındırma
 
 
 # ---------------------------------------------------------------------------
@@ -263,16 +269,26 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     pips_for_1usd = max(0.5, round(1.0 / max(0.0001, pos.lots * pos.pip_val), 1))
     headroom = be_headroom_pips(pos.symbol)
 
+    # Dolar-kuralı BE parametreleri (XAUUSD özel testleri; diğer semboller canlıyla aynı)
+    is_gold_pos = "XAU" in pos.symbol.upper() or "GOLD" in pos.symbol.upper()
+    if is_gold_pos and TUN_BE_PIP_FIXED_GOLD > 0:
+        pips_be = TUN_BE_PIP_FIXED_GOLD          # lot-bağımsız sabit pip tetiği
+    elif is_gold_pos:
+        pips_be = max(0.5, round(TUN_BE_USD_GOLD / max(0.0001, pos.lots * pos.pip_val), 1))
+    else:
+        pips_be = pips_for_1usd
+    lock_ratio = TUN_BE_RATIO_GOLD if is_gold_pos else 0.40
+
     # MFE takibi (girişten beri en iyi fiyat, pip) — chandelier trailing için
     if pos.mfe_pips < pnl_extreme_pips:
         pos.mfe_pips = pnl_extreme_pips
 
     # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi)
     if not pos.be_locked:
-        is_dollar_be = pnl_extreme_pips >= (pips_for_1usd + headroom)
+        is_dollar_be = pnl_extreme_pips >= (pips_be + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
         if (is_dollar_be or is_pip_be) and pnl_extreme_pips >= min_be_pips:
-            locked = max(pips_for_1usd, round(pnl_extreme_pips * 0.40, 1))
+            locked = max(pips_be, round(pnl_extreme_pips * lock_ratio, 1))
             if direction == "BUY":
                 cand = round(entry + locked * pip, pos.digits)
                 if cand > pos.sl_price and cand < ext:
@@ -403,7 +419,7 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
         if TUN_GOLD_VOL_EXITS and ("XAU" in pos.symbol.upper() or "GOLD" in pos.symbol.upper()) and pos.entry_atr_pips > 0:
             # Volatilite-adaptif (giriş ATR'ine göre, işlem başına sabit):
             # trailing mesafesi ve BE tetik tabanı o işlemin volatilitesine ölçeklenir.
-            eff_trail = max(eff_trail, TUN_VOL_TRAIL_MULT * pos.entry_atr_pips)
+            eff_trail = max(TUN_VOL_TRAIL_FLOOR, TUN_VOL_TRAIL_MULT * pos.entry_atr_pips)
             min_be = TUN_VOL_BE_MULT * pos.entry_atr_pips
         res = manage_position(pos, bar, eff_trail, spec["be_pips"], chandelier_mult, tp_mode, min_be)
         if res and res[0] in ("SL", "BE", "TP"):
@@ -851,7 +867,8 @@ def main():
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
     global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
-    global TUN_GOLD_VOL_EXITS, TUN_VOL_BE_MULT, TUN_VOL_TRAIL_MULT
+    global TUN_GOLD_VOL_EXITS, TUN_VOL_BE_MULT, TUN_VOL_TRAIL_MULT, TUN_VOL_TRAIL_FLOOR
+    global TUN_BE_USD_GOLD, TUN_BE_RATIO_GOLD, TUN_BE_PIP_FIXED_GOLD
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -891,6 +908,10 @@ def main():
     parser.add_argument("--gold-vol-exits", action="store_true", help="Altında BE tetiği ve trailing mesafesi giriş-ATR'ine göre ölçeklenir")
     parser.add_argument("--vol-be-mult", type=float, default=0.8, help="BE tetik tabanı çarpanı (× giriş-ATR, pip)")
     parser.add_argument("--vol-trail-mult", type=float, default=1.5, help="Trailing mesafe çarpanı (× giriş-ATR, pip)")
+    parser.add_argument("--vol-trail-floor", type=float, default=40.0, help="Trailing alt sınırı (pip); düşük değer oransal-sıkı moda izin verir")
+    parser.add_argument("--be-usd-gold", type=float, default=1.0, help="Altın BE dolar tabanı (garantili kilit $)")
+    parser.add_argument("--be-ratio-gold", type=float, default=0.40, help="Altın BE anında kilitlenen kâr oranı")
+    parser.add_argument("--be-pip-fixed-gold", type=float, default=0.0, help="Altın BE'yi lot-bağımsız sabit pip'e bağla (0 = kapalı)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -934,6 +955,10 @@ def main():
     TUN_GOLD_VOL_EXITS = args.gold_vol_exits
     TUN_VOL_BE_MULT = args.vol_be_mult
     TUN_VOL_TRAIL_MULT = args.vol_trail_mult
+    TUN_VOL_TRAIL_FLOOR = args.vol_trail_floor
+    TUN_BE_USD_GOLD = args.be_usd_gold
+    TUN_BE_RATIO_GOLD = args.be_ratio_gold
+    TUN_BE_PIP_FIXED_GOLD = args.be_pip_fixed_gold
     # SuperTrend parametre denemesi: canlı fonksiyonu parametreyle sarmala (canlı kod değişmez)
     if (args.st_period, args.st_mult) != (10, 3.0):
         _orig_st = forex._compute_supertrend
@@ -949,6 +974,7 @@ def main():
                f"btcVWAP={TUN_BTC_VWAP} cryptoSL={TUN_CRYPTO_SL_MULT or '-'} btcScore={TUN_BTC_MIN_SCORE or '-'} "
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "
                f"tpMode={TUN_TP_MODE} goldVol={TUN_GOLD_VOL_EXITS}(be={TUN_VOL_BE_MULT} trail={TUN_VOL_TRAIL_MULT}) "
+               f"beUSD={TUN_BE_USD_GOLD} beRatio={TUN_BE_RATIO_GOLD} bePipFixed={TUN_BE_PIP_FIXED_GOLD or '-'} "
                f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
