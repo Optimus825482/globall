@@ -134,7 +134,17 @@ export default function ForexRadarPage() {
       </div>
 
       {/* HIZLI ERİŞİM KARTLARI */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+        <Link
+          href="/forex/btc-gold"
+          className="p-3.5 rounded-xl bg-bunker-900/80 border border-amber-500/40 hover:border-amber-400 transition-all group"
+        >
+          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">🥇</div>
+          <div className="font-mono text-sm font-bold text-white group-hover:text-amber-300">
+            BTC + Altın
+          </div>
+          <div className="text-[11px] text-bunker-muted font-mono">XAUUSD · BTCUSD Konsolu</div>
+        </Link>
         <Link
           href="/forex/portfolio"
           className="p-3.5 rounded-xl bg-bunker-900/80 border border-blue-500/30 hover:border-blue-400 transition-all group"

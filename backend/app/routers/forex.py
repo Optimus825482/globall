@@ -1559,8 +1559,8 @@ class ForexAutoPaperSettings(BaseModel):
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
     partial_tp_enabled: bool = Field(True, description="Kısmi kâr alma: ilk hedefte %50 pozisyon kapatılır, SL başabaş kârına çekilir")
-    adx_filter_enabled: bool = Field(True, description="ADX trend gücü kalkanı: ADX eşiğin altındayken (çalkantılı piyasa) trend girişi yapılmaz")
-    adx_min: float = Field(28.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (0 = kalkan kapalı; 28.0 in-sample + out-of-sample replay A/B ile seçildi)")
+    adx_filter_enabled: bool = Field(False, description="ADX trend gücü kalkanı (2026-10-06 30g replay: tüm eğri tarandı, KAPALI en iyi — +$3.935/maxDD $189; seans+minATR+EV kapıları chop kontrolünü devraldı. Panelden tekrar açılabilir)")
+    adx_min: float = Field(28.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (yalnız adx_filter_enabled=True iken etkin)")
     supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
     ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
@@ -1573,8 +1573,8 @@ class ForexAutoPaperSettings(BaseModel):
     major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD", "USOIL"],
-        description="İşleme izin verilen pariteler (USOIL: 2026-10-06 30g replay +$1.076/WR %80.9 ile eklendi)",
+        default=["XAUUSD", "BTCUSD"],
+        description="İşleme izin verilen pariteler (2026-10-06 kullanıcı kararı: yalnız Ons Altın + BTC izlenir ve işlem açılır; diğerleri panelden eklenebilir)",
     )
 
 

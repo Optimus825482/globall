@@ -532,9 +532,9 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.correlation_guard)
         self.assertTrue(cfg.atr_exit_enabled)
         self.assertTrue(cfg.partial_tp_enabled)
-        self.assertTrue(cfg.adx_filter_enabled)
-        # 28.0: in-sample ve out-of-sample replay A/B'de pozitif veren eşik
-        self.assertEqual(cfg.adx_min, 28.0)
+        # ADX kalkanı KAPALI (2026-10-06 30g replay eğri taraması: KAPALI en iyi —
+        # seans+minATR+EV kapıları chop kontrolünü devraldı)
+        self.assertFalse(cfg.adx_filter_enabled)
         self.assertTrue(cfg.supertrend_filter_enabled)
         # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
         self.assertEqual(list(cfg.blocked_hours_utc), [])
@@ -544,9 +544,10 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.ev_min_trades, 10)
         self.assertEqual(cfg.ev_max_win_rate, 45.0)
         self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
-        # allowed_symbols: 13 işlem yapılabilir sembol (DXY hariç; USOIL 2026-10-06'da eklendi)
-        self.assertEqual(len(cfg.allowed_symbols), 13)
-        self.assertIn("USOIL", cfg.allowed_symbols)
+        # allowed_symbols: yalnız 2 sembol (2026-10-06 kullanıcı kararı — XAUUSD + BTCUSD)
+        self.assertEqual(len(cfg.allowed_symbols), 2)
+        self.assertIn("XAUUSD", cfg.allowed_symbols)
+        self.assertIn("BTCUSD", cfg.allowed_symbols)
         self.assertNotIn("DXY", cfg.allowed_symbols)
 
 

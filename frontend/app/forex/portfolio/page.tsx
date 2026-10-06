@@ -112,7 +112,10 @@ interface MT5State {
   pending_commands_count: number;
 }
 
-export default function ForexPortfolioPage() {
+export default function ForexPortfolioPage({ symbols, title }: { symbols?: string[]; title?: string } = {}) {
+  // symbols verilirse bu sayfa YALNIZ bu sembolleri gösterir (aynı konsol, daraltılmış görünüm).
+  // İşlem izni backend'deki allowed_symbols ile yönetilir — bu filtre yalnızca görünümdür.
+  const symFilter: Set<string> | null = symbols ? new Set(symbols.map((s) => s.toUpperCase())) : null;
   // IC Markets MT5 Canlı Köprü Durumu
   const [mt5, setMt5] = useState<MT5State>({
     connected: false,
@@ -193,8 +196,8 @@ export default function ForexPortfolioPage() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
 
-  // Manuel İşlem Formu
-  const [manualSym, setManualSym] = useState("EURUSD");
+  // Manuel İşlem Formu (symbols verilirse varsayılan ilk izinli sembol olur)
+  const [manualSym, setManualSym] = useState(symbols && symbols.length ? symbols[0] : "EURUSD");
   const [manualLots, setManualLots] = useState(0.5);
   const [manualSlPips, setManualSlPips] = useState(15);
   const [manualTpPips, setManualTpPips] = useState(25);
@@ -215,9 +218,16 @@ export default function ForexPortfolioPage() {
         setWins(res.wins ?? 0);
         setLosses(res.losses ?? 0);
         setWinRate(res.win_rate ?? 0.0);
-        setOpenPositions(res.open_positions || []);
-        setClosedTrades(res.closed_trades || []);
-        setDecisionLogs(res.decision_logs || []);
+        setOpenPositions((res.open_positions || []).filter(
+          (p: AutoPosition) => !symFilter || symFilter.has(String(p.symbol).toUpperCase())
+        ));
+        setClosedTrades((res.closed_trades || []).filter(
+          (t: ClosedTrade) => !symFilter || symFilter.has(String(t.symbol).toUpperCase())
+        ));
+        // Sembolsüz global mesajlar (SCAN özeti, SYSTEM) kalır; filtre dışı sembollü satırlar gizlenir
+        setDecisionLogs((res.decision_logs || []).filter(
+          (l: DecisionLog) => !symFilter || !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
+        ));
         setSessions(res.sessions || []);
         if (res.settings) {
           setAppliedSettings(res.settings);
@@ -500,7 +510,7 @@ export default function ForexPortfolioPage() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-white tracking-tight">
-                IC MARKETS METATRADER 5 · OTONOM SCALPER
+                {title || "IC MARKETS METATRADER 5 · OTONOM SCALPER"}
               </h1>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${

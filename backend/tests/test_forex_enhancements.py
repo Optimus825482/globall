@@ -353,19 +353,19 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["status"], "queued")
         self.assertEqual(res["command"]["lots"], 0.50)
 
-    def test_target_thirteen_symbols_configuration(self):
-        """Verify the 13 configured instruments are set in allowed_symbols (USOIL: 2026-10-06 eklendi)."""
-        expected_13 = [
-            "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
-            "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD", "USOIL"
-        ]
+    def test_target_two_symbols_configuration(self):
+        """Verify the configured instruments are set in allowed_symbols (2026-10-06: yalnız XAUUSD + BTCUSD)."""
+        expected_2 = ["XAUUSD", "BTCUSD"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 13)
-        for s in expected_13:
+        self.assertEqual(len(cfg.allowed_symbols), 2)
+        for s in expected_2:
             self.assertIn(s, cfg.allowed_symbols)
-
-        # Check MT5 Bridge check_syms list contains these 13
-        for s in expected_13:
+        # Sadece bu ikisi — diğer semboller izin listesinden çıkarıldı
+        for s in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
+                  "ETHUSD", "NAS100", "US30", "USOIL"):
+            self.assertNotIn(s, cfg.allowed_symbols)
+        # Check MT5 Bridge check_syms list contains these 2
+        for s in expected_2:
             self.assertIn(s, forex.YAHOO_SYMBOL_MAP)
 
     def test_nas100_and_us30_specs_and_alias(self):
