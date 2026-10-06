@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import urllib3
 
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 
 # REST Base URL & çoklu host fallback havuzu (Binance Global Standartları)
 REST_BASES = (
@@ -308,6 +309,7 @@ async def trading_symbols(quote_asset: str = ""):
         str(item["symbol"]).upper()
         for item in payload.get("symbols", [])
         if item.get("status") == "TRADING" and item.get("quoteAsset") == quote_asset.upper()
+        and is_binance_tr_symbol(str(item["symbol"]))
     })
 
 
@@ -455,7 +457,7 @@ async def top_gainers(symbol_count: int = 20, *, quote_asset: str = "",
     candidates = []
     for row in rows:
         symbol = str(row.get("symbol") or "").upper()
-        if not symbol.endswith(suffix) or symbol not in trading:
+        if not symbol.endswith(suffix) or symbol not in trading or not is_binance_tr_symbol(symbol):
             continue
         try:
             change = float(row.get("priceChangePercent") or 0)
@@ -485,7 +487,7 @@ async def active_movers_pool(symbol_count: int = 15, *, quote_asset: str = "",
 
     for row in rows:
         symbol = str(row.get("symbol") or "").upper()
-        if not symbol.endswith(suffix) or symbol not in trading:
+        if not symbol.endswith(suffix) or symbol not in trading or not is_binance_tr_symbol(symbol):
             continue
         try:
             last_p = float(row.get("lastPrice") or 0)

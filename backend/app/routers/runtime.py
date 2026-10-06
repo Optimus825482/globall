@@ -11,6 +11,7 @@ from app.state import market, analyzer, apply_symbol_universe, extend_stream_uni
 from app.api_common import _start_background, _fresh_public_price
 from app.circuit_breaker import breaker as strategy_breaker
 from app.binance_tr_public import klines as fetch_klines, historical_klines, trading_symbols, ticker_24h, top_gainers
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app.ws_runtime import ws_manager
 from app import alerting
 from app import memory_service
@@ -436,7 +437,7 @@ async def refresh_top_gainer_symbols():
         ranked = []
         for item in all_tickers or []:
             symbol = str(item.get("symbol", "")).replace("_", "").upper()
-            if symbol not in known_try:
+            if symbol not in known_try or not is_binance_tr_symbol(symbol):
                 continue
             try:
                 change = float(item.get("priceChangePercent", 0) or 0)
@@ -445,8 +446,8 @@ async def refresh_top_gainer_symbols():
                 continue
             ranked.append({"symbol": symbol, "change_pct": change, "quote_volume": volume})
         ranked.sort(key=lambda row: (row["change_pct"], row["quote_volume"]), reverse=True)
-        selected = [row["symbol"] for row in ranked[:config.TOP_GAINERS_LIMIT]]
-        active = list(dict.fromkeys(selected + sorted(open_symbols)))
+        selected = [row["symbol"] for row in ranked[:config.TOP_GAINERS_LIMIT] if is_binance_tr_symbol(row["symbol"])]
+        active = list(dict.fromkeys(selected + [s for s in sorted(open_symbols) if is_binance_tr_symbol(s)]))
         previous_active = set(str(symbol).upper() for symbol in market.symbols)
     if not active:
         raise RuntimeError(f"Binance top-gainer {config.QUOTE_ASSET} listesi boş döndü")

@@ -29,6 +29,7 @@ import numpy as np
 from fastapi import APIRouter, Request
 
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database
 from app.api_common import _background_tasks, _start_background
 from app.state import market, analyzer
@@ -372,10 +373,10 @@ async def _active_symbols(force: bool = False) -> list[str]:
         open_syms |= {str(t.get("symbol") or "").upper() for t in (auto_open or [])}
     except Exception as exc:
         logger.debug("macd_monitor açık auto-paper pozisyonları okunamadı: %s", exc)
-    symbols = sorted(active | open_syms)
+    symbols = [s for s in sorted(active | open_syms) if is_binance_tr_symbol(s)]
     if not symbols:
         tracked = [str(s).upper() for s in (getattr(config, "SYMBOLS", None) or [])]
-        symbols = sorted(set(tracked))
+        symbols = [s for s in sorted(set(tracked)) if is_binance_tr_symbol(s)]
     _active_symbols_cache["value"] = list(symbols)
     _active_symbols_cache["at"] = now
     return list(symbols)

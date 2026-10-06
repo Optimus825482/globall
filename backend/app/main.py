@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 logger = logging.getLogger("scalper.main")
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol, refresh_binance_tr_symbols
 from app.market_intelligence import (estimate_local_regime, execution_quality,
                                      symbol_safety, trade_economics,
                                      microstructure_snapshot, symbol_outcome_profile,
@@ -1038,9 +1039,11 @@ async def startup_services():
             for key, attr in CONFIG_FIELDS.items():
                 if key in persisted: setattr(config, attr, persisted[key])
             if persisted.get("symbols"):
-                config.SYMBOLS = list(persisted["symbols"])
+                config.SYMBOLS = [s for s in persisted["symbols"] if is_binance_tr_symbol(s)]
         except Exception as exc:
             print(f"[Config] Kalıcı ayarlar yüklenemedi: {exc}")
+    _start_background(refresh_binance_tr_symbols, "binance-tr-symbols-refresh", single_pass=True)
+    config.SYMBOLS = [s for s in (config.SYMBOLS or []) if is_binance_tr_symbol(s)]
     # G-19: market.timeframes/evren, analyzer.load_state() ve
     # bootstrap_symbol_activity()'ten ÖNCE atanır. Eskiden bu atama ikisinden
     # sonra geliyordu; DB'den yüklenen runtime_config (timeframes/symbols) ile
@@ -1836,6 +1839,8 @@ async def _gainers_radar_uncached(execute: bool = False):
         gainer_candidates = []
         for item in all_tickers:
             symbol = str(item.get("symbol", "")).upper()
+            if not is_binance_tr_symbol(symbol):
+                continue
             change = float(item.get("priceChangePercent", 0) or 0)
             quote_volume = float(item.get("quoteVolume", 0) or 0)
             if symbol in known_try and 3 <= change <= 18 and quote_volume >= config.MIN_24H_QUOTE_VOLUME_TRY:
@@ -1846,10 +1851,12 @@ async def _gainers_radar_uncached(execute: bool = False):
         # onaylı `PUT /api/config` (UI'daki "Listeye Ekle") veya admin onaylı
         # `refresh_top_gainer_symbols` ile yapılır.
         auto_added = [symbol for _, _, symbol in sorted(gainer_candidates, reverse=True)[:10]
-                      if symbol not in config.SYMBOLS]
+                      if symbol not in config.SYMBOLS and is_binance_tr_symbol(symbol)]
     except Exception as exc:
         print(f"[Radar] gainer tarama hatası: {exc}")
     for symbol in config.SYMBOLS:
+        if not is_binance_tr_symbol(symbol):
+            continue
         bars = market.get_ut_kline(symbol, "5m")
         closes, volumes = bars.get("closes", []), bars.get("volumes", [])
         if len(closes) < 25 or len(volumes) < 25:
@@ -2105,10 +2112,11 @@ async def _apply_config_update(payload: dict, request: Request = None):
         # the scan universe, never retained as an untradeable hidden symbol.
         if invalid:
             symbols = [symbol for symbol in symbols if symbol in allowed]
+        symbols = [symbol for symbol in symbols if is_binance_tr_symbol(symbol)]
         if not symbols:
             if invalid:
-                raise ValueError(f"{config.EXCHANGE_LABEL}'de işlemde olan {config.QUOTE_ASSET} sembolü kalmadı: {', '.join(invalid)}")
-            raise ValueError("En az bir aktif sembol seçilmelidir")
+                raise ValueError(f"{config.EXCHANGE_LABEL}'de işlemde olan ve Binance TR'de listeli {config.QUOTE_ASSET} sembolü kalmadı: {', '.join(invalid)}")
+            raise ValueError("En az bir aktif Binance TR sembolü seçilmelidir")
         payload["symbols"] = symbols
         # DENETİM 3.4 #41: `config.SYMBOLS = symbols` + `market.symbols = ...`
         # çift ataması yerine TEK kapı. İki kaynağın ayrışması, evrenin

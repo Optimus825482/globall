@@ -24,6 +24,7 @@ import math
 from fastapi import APIRouter, HTTPException, Request
 
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database, security
 from app.api_common import log_user_action, _background_tasks, _start_background
 # R3-06: likidite + korelasyon küme kapıları (velocity-auto ile aynı kaynak)
@@ -212,6 +213,9 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
         symbol = str(notification.get("symbol") or "").upper()
         if not symbol:
             return None
+        if not is_binance_tr_symbol(symbol):
+            logger.info("auto_paper %s: sembol Binance TR'de listeli değil — açılmadı", symbol)
+            return _blocked(symbol, "symbol_not_on_binance_tr", price=0.0)
 
         score = float(notification.get("score") or 0)
         min_score = float(settings.get("min_score", config.AUTO_PAPER_MIN_SCORE_DEFAULT))

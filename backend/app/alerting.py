@@ -6,6 +6,7 @@ import os
 import time
 
 from app import database
+from app.binance_tr_symbols import is_binance_tr_symbol
 
 logger = logging.getLogger("scalper.alerting")
 
@@ -67,6 +68,11 @@ def _rule_value(rule, market, ticker):
 
 
 async def deliver_web_push(message, *, title=None, url=None, tag=None, extra=None, usernames=None):
+    if extra and isinstance(extra, dict) and extra.get("symbol"):
+        sym = str(extra.get("symbol") or "").upper()
+        src = str(extra.get("source") or "").lower()
+        if src != "forex" and not is_binance_tr_symbol(sym):
+            return {"ok": False, "skipped": True, "reason": "symbol_not_on_binance_tr"}
     try:
         if extra and isinstance(extra, dict) and extra.get("symbol") and not extra.get("skip_tr_bridge"):
             from app.tr_bridge import queue_signal_to_tr
@@ -188,6 +194,9 @@ async def _evaluate_single_rule(market, rule, now, on_paper_trigger):
     events = []
     if rule.get("expires_at") and now >= float(rule["expires_at"]):
         await database.update_alert_rule(rule["id"], {"enabled": 0}); return events
+    sym = str(rule.get("symbol") or "").upper()
+    if sym and not is_binance_tr_symbol(sym):
+        return events
     ticker = market.get_ticker(rule["symbol"])
     if not ticker or not ticker.get("last_price"): return events
     value = _rule_value(rule, market, ticker)

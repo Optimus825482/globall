@@ -45,6 +45,7 @@ import time
 from collections import deque
 
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 
 # --- Eşikler ---------------------------------------------------------------
 # config.py'YE DOKUNULMADI: kanonik tanımlar başka ajan tarafından config'e
@@ -115,6 +116,8 @@ def _ingest_row(row, suffix: str) -> None:
         raise TypeError("miniTicker satırı dict değil")
     symbol = str(row.get("s") or "").upper()
     if not symbol or not symbol.endswith(suffix):
+        return
+    if not is_binance_tr_symbol(symbol):
         return
     price = float(row.get("c") or 0)
     quote_volume = float(row.get("q") or 0)
@@ -238,6 +241,8 @@ def top_candidates(limit: int = 10) -> list[dict]:
         denominator = max(median, VOLUME_MEDIAN_FLOOR)
         burst = volume_1m / denominator if denominator > 0 else 0.0
         if return_pct < min_return or burst < min_burst:
+            continue
+        if not is_binance_tr_symbol(symbol):
             continue
         results.append({
             "symbol": symbol,

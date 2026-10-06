@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Request
 
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database
 from app.state import market, analyzer
 from app.api_common import _start_background, _fresh_public_price, _background_tasks
@@ -461,7 +462,7 @@ async def detect_velocity_candidates(args: dict | None = None, *, horizon_minute
 
     def _add(sym: str, source: str) -> None:
         sym = str(sym).upper()
-        if sym and sym not in _pool_set:
+        if sym and sym not in _pool_set and is_binance_tr_symbol(sym):
             pool.append(sym)
             _pool_set.add(sym)
             pool_source[sym] = source
@@ -518,6 +519,8 @@ async def detect_velocity_candidates(args: dict | None = None, *, horizon_minute
     sem = asyncio.Semaphore(6)
 
     async def scan_one(symbol: str) -> dict | None:
+        if not is_binance_tr_symbol(symbol):
+            return None
         async with sem:
             try:
                 rows = await _fetch_cached(symbol, "1m", 60)

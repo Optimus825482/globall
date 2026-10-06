@@ -20,6 +20,7 @@ from app import macd_mtf
 from app.routers.velocity import (detect_velocity_candidates, upside_rank_score,
                                   _journal_touch_rates)
 from app.alerting import deliver_web_push
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app.ws_runtime import ws_manager
 from contextlib import asynccontextmanager
 
@@ -780,14 +781,9 @@ async def _radar_unified_enabled() -> bool:
 
 
 async def _send_push(notif: dict) -> bool:
-    """Tek bildirimi web push ile gönder; gerçek başarı durumunu döndür.
-
-    NOT: ek alanlar `.get()` ile okunur — bu yardımcı artık İKİ zarf şeklini
-    taşır: radar bildirimi (skor/hedef/ufuk dolu) ve ertelenmiş ALARM push'u
-    (`alerting.deliver_alert_push`; yalnız mesaj+başlık+url+tag taşır).
-    Abonelik okuması `notif["..."]` ile yapılsaydı alarm zarfı KeyError verip
-    sessizce gönderilemezdi.
-    """
+    """Tek bildirimi web push ile gönder; gerçek başarı durumunu döndür."""
+    if not is_binance_tr_symbol(notif.get("symbol")):
+        return False
     try:
         result = await deliver_web_push(
             notif["message"],
@@ -1221,14 +1217,11 @@ async def _record_history(entries):
 
 
 async def _notify(candidates_list, settings) -> list:
-    """Eşikleri geçen adaylar için bildirim üret ve web push gönder.
-
-    Aynı sembol için sonuçlanmamış (BEKLİYOR) bildirim varsa yeni bildirim
-    oluşturulmaz; mevcut bildirim güncellenir (hedef, skor, fiyat).
-    Sadece önceki bildirim sonuçlanmışsa (TAMAMEN/BASARISIZ) veya ufuk süresi
-    dolmuşsa yeni bildirim oluşturulur.
-    """
+    """Eşikleri geçen adaylar için bildirim üret ve web push gönder."""
     if not settings.get("enabled", True):
+        return []
+    candidates_list = [c for c in (candidates_list or []) if is_binance_tr_symbol(c.get("symbol"))]
+    if not candidates_list:
         return []
     # TEK EŞİK (2026-09-26, #8): `min_raw` artık `eff_min_score`'nin ters
     # haritasıdır, yani ikisi AYNI kapıdır. İkisini birden uygulamak iki
@@ -1491,6 +1484,7 @@ async def _deliver_scan_notifications(notified: list) -> None:
     tetiklenmesin diye spam koruması); WS yayını ise B3 ile TÜM bildirimleri
     (yeni + güncelleme) kapsar.
     """
+    notified = [n for n in (notified or []) if is_binance_tr_symbol(n.get("symbol"))]
     if not notified:
         return
     new_notifs = [n for n in notified if not n.get("updated")]
@@ -1735,7 +1729,7 @@ async def _unified_fast_notify_impl(symbol: str, kind: str, score: float) -> dic
     if not unified_signals.enabled() or not await _radar_unified_enabled():
         return None
     sym = str(symbol or "").upper()
-    if not sym:
+    if not sym or not is_binance_tr_symbol(sym):
         return None
     # Aynı sembolde zaten birleşik bildirim VAR (hızlı-yol cooldown) → sessiz.
     now_mono = time.monotonic()
@@ -2056,6 +2050,7 @@ async def _rising_deliver(notified: list) -> None:
 
     MUTLAKA state kilidi DIŞINDA çağrılır (push ağ I/O'su + auto_paper DB işi).
     """
+    notified = [n for n in (notified or []) if is_binance_tr_symbol(n.get("symbol"))]
     if not notified:
         return
     quiet = bool((notified[0] or {}).get("quiet_hours"))
@@ -2251,7 +2246,7 @@ async def _run_rising_scan() -> dict:
     notified: list = []
     for candidate in candidates:
         symbol = str(candidate.get("symbol") or "").upper()
-        if not symbol:
+        if not symbol or not is_binance_tr_symbol(symbol):
             continue
         # DİNAMİK HEDEF (2026-09-17): yükseliş sinyalleri de sembol hedef öğrenme
         # durumundan geçer. `panel_score=False`: sinyal skoru `strength × 10` ile
@@ -2599,21 +2594,15 @@ async def _run_scan() -> dict:
         _monitoring_state["warm"] = []
         raise
 
-    candidates5 = scan5.get("candidates", [])
-    candidates15 = scan15.get("candidates", [])
-    watchlist5 = scan5.get("watchlist", [])
-    watchlist15 = scan15.get("watchlist", [])
+    candidates5 = [c for c in scan5.get("candidates", []) if is_binance_tr_symbol(c.get("symbol"))]
+    candidates15 = [c for c in scan15.get("candidates", []) if is_binance_tr_symbol(c.get("symbol"))]
+    watchlist5 = [w for w in scan5.get("watchlist", []) if is_binance_tr_symbol(w.get("symbol"))]
+    watchlist15 = [w for w in scan15.get("watchlist", []) if is_binance_tr_symbol(w.get("symbol"))]
 
-    # Warm listesi toplama (2026-09-26): velocity taraması dönüşünde artık
-    # "warm" (eşik altı ama yakın) adayları da var. İki profilin warm havuzu
-    # birleştirilir, frontend sözleşmesindeki ALANLARLA (isimler birebir)
-    # yeniden kurulur, warm_proximity'e göre azalan sıralanır ve ilk 12'si
-    # state'e taşınır. Aday sözlüğünde olmayan alanlar `.get()` ile alınır
-    # (None kalabilir). Detect çağrısı patlamadıysa her tur tazelenir.
     merged_warm: list[dict] = []
     for _profile_tag, _scan in (("5m", scan5), ("15m", scan15)):
         for _w in (_scan.get("warm") or []):
-            if not isinstance(_w, dict):
+            if not isinstance(_w, dict) or not is_binance_tr_symbol(_w.get("symbol")):
                 continue
             merged_warm.append({
                 "symbol": _w.get("symbol"),

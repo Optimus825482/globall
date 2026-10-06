@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app import security
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database
 from app.state import market, analyzer
 from app.api_common import (_start_background, _fresh_public_price, _main_pg_pool, _llm_guard_block_reason)
@@ -1561,7 +1562,7 @@ async def scan_market_snapshots(args: dict | None = None):
     requested_symbols = list(dict.fromkeys(str(s).replace("_", "").upper() for s in requested if str(s).strip()))[:100]
     db_positions = await database.load_positions()
     open_symbols = set(db_positions) | set(analyzer.positions)
-    symbols = [symbol for symbol in requested_symbols if symbol not in open_symbols]
+    symbols = [symbol for symbol in requested_symbols if symbol not in open_symbols and is_binance_tr_symbol(symbol)]
     # Fast scan uses the hot market cache and only the decision timeframes.
     # deep_analyze_symbol remains the multi-timeframe path for finalists.
     timeframes = [str(tf) for tf in (args.get("timeframes") or ["5m", "15m", "1h"]) if str(tf) in {"1m","3m","5m","15m","30m","1h","4h","1d"}]

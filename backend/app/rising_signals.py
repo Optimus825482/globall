@@ -23,6 +23,7 @@ import logging
 import time
 
 from app.config import config
+from app.binance_tr_symbols import is_binance_tr_symbol
 from app.routers import macd_monitor as _macd
 
 logger = logging.getLogger("scalper.rising")
@@ -435,6 +436,8 @@ def detect_rising_candidates(now: float | None = None) -> list[dict]:
     universe = snapshot.get("universe") or list(symbols)
     out: list[dict] = []
     for symbol in universe:
+        if not is_binance_tr_symbol(symbol):
+            continue
         row = symbols.get(symbol) or {}
         if not row:
             continue

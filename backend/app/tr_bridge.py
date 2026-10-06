@@ -19,6 +19,7 @@ from urllib3.util import Timeout
 
 from app.config import config, base_asset_of
 from app import database
+from app.binance_tr_symbols import is_binance_tr_symbol
 
 logger = logging.getLogger("scalper.tr_bridge")
 
@@ -165,6 +166,8 @@ async def send_signal_to_tr(
     Guaranteed not to raise exceptions; returns delivery result dictionary.
     """
     now = time.time()
+    if not is_binance_tr_symbol(symbol):
+        return {"ok": False, "skipped": True, "reason": "symbol_not_on_binance_tr"}
     cfg = await get_bridge_config()
 
     if not cfg["enabled"] and not force:
@@ -305,6 +308,8 @@ def queue_signal_to_tr(
 
     Safe to call from anywhere (sync or async); will never delay caller.
     """
+    if not is_binance_tr_symbol(symbol):
+        return None
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

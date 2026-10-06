@@ -40,6 +40,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Iterable
 
+from app.binance_tr_symbols import is_binance_tr_symbol
+
 # Birleşik zarf tek tag şeması kullanır → tarayıcı push'u aynı sembol için
 # birbirini EZER (aynı tag), uygulama-içi liste tek satır gösterir.
 RADAR_TAG_PREFIX = "radar"
@@ -84,7 +86,7 @@ def normalize_velocity_candidate(raw: dict) -> dict | None:
     if not isinstance(raw, dict):
         return None
     symbol = str(raw.get("symbol") or "").replace("_", "").strip().upper()
-    if not symbol:
+    if not symbol or not is_binance_tr_symbol(symbol):
         return None
     score = _num(raw.get("score"), _num(raw.get("velocity_score")))
     raw_score = _num(raw.get("raw_score"), _num(raw.get("velocity_score")))
@@ -114,7 +116,7 @@ def normalize_rising_evidence(raw: dict) -> dict | None:
     if not isinstance(raw, dict):
         return None
     symbol = str(raw.get("symbol") or "").replace("_", "").strip().upper()
-    if not symbol:
+    if not symbol or not is_binance_tr_symbol(symbol):
         return None
     score = _num(raw.get("score"))
     if score is None:
