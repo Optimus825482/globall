@@ -219,108 +219,175 @@ export default function ForexRadarPage() {
             <p>Forex pariteleri taranıyor…</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left font-mono text-xs">
-              <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px] tracking-wider">
-                <tr>
-                  <th className="py-3 px-4">Parite / Varlık</th>
-                  <th className="py-3 px-3">Yön</th>
-                  <th className="py-3 px-3">Alış (Bid)</th>
-                  <th className="py-3 px-3">Satış (Ask)</th>
-                  <th className="py-3 px-3">Spread</th>
-                  <th className="py-3 px-3">Hedef (TP)</th>
-                  <th className="py-3 px-3">Zarar Durdur (SL)</th>
-                  <th className="py-3 px-3">R/R</th>
-                  <th className="py-3 px-3">Skor</th>
-                  <th className="py-3 px-4 text-right">Grafik</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-bunker-800/60">
-                {candidates.map((c) => {
-                  const isBuy = c.action === "BUY";
-                  return (
-                    <tr
-                      key={c.symbol}
-                      className="hover:bg-bunker-800/40 transition-colors group"
-                    >
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">
-                            {c.display}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
-                            {c.category}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-bunker-muted truncate max-w-[140px]">
-                          {c.name}
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-3">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
-                            isBuy
-                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                              : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                          }`}
-                        >
-                          {isBuy ? "▲ AL (BUY)" : "▼ SAT (SELL)"}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-3 font-semibold text-white">
-                        {c.bid}
-                      </td>
-
-                      <td className="py-3.5 px-3 font-semibold text-white">
-                        {c.ask}
-                      </td>
-
-                      <td className="py-3.5 px-3 text-cyan-400 font-bold">
-                        {c.spread_pips} pips
-                      </td>
-
-                      <td className="py-3.5 px-3 text-emerald-400 font-bold">
-                        +{c.pip_target} p
-                      </td>
-
-                      <td className="py-3.5 px-3 text-rose-400 font-bold">
-                        -{c.stop_loss_pips} p
-                      </td>
-
-                      <td className="py-3.5 px-3 text-bunker-muted font-bold">
-                        {c.risk_reward}
-                      </td>
-
-                      <td className="py-3.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-12 bg-bunker-800 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-blue-400 h-full rounded-full"
-                              style={{ width: `${Math.min(100, c.score)}%` }}
-                            />
+          <>
+            {/* Masaüstü Tablo Görünümü */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs">
+                <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px] tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Parite / Varlık</th>
+                    <th className="py-3 px-3">Yön</th>
+                    <th className="py-3 px-3">Alış (Bid)</th>
+                    <th className="py-3 px-3">Satış (Ask)</th>
+                    <th className="py-3 px-3">Spread</th>
+                    <th className="py-3 px-3">Hedef (TP)</th>
+                    <th className="py-3 px-3">Zarar Durdur (SL)</th>
+                    <th className="py-3 px-3">R/R</th>
+                    <th className="py-3 px-3">Skor</th>
+                    <th className="py-3 px-4 text-right">Grafik</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-bunker-800/60">
+                  {candidates.map((c) => {
+                    const isBuy = c.action === "BUY";
+                    return (
+                      <tr
+                        key={c.symbol}
+                        className="hover:bg-bunker-800/40 transition-colors group"
+                      >
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">
+                              {c.display}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
+                              {c.category}
+                            </span>
                           </div>
-                          <span className="font-bold text-blue-300">
-                            {c.score.toFixed(1)}p
-                          </span>
-                        </div>
-                      </td>
+                          <div className="text-[10px] text-bunker-muted truncate max-w-[140px]">
+                            {c.name}
+                          </div>
+                        </td>
 
-                      <td className="py-3.5 px-4 text-right">
-                        <Link
-                          href={`/forex/charts?symbol=${c.symbol}`}
-                          className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/20 transition-all font-bold text-[11px]"
-                        >
-                          Grafik ↗
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <td className="py-3.5 px-3">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                              isBuy
+                                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                            }`}
+                          >
+                            {isBuy ? "▲ AL (BUY)" : "▼ SAT (SELL)"}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-3 font-semibold text-white">
+                          {c.bid}
+                        </td>
+
+                        <td className="py-3.5 px-3 font-semibold text-white">
+                          {c.ask}
+                        </td>
+
+                        <td className="py-3.5 px-3 text-cyan-400 font-bold">
+                          {c.spread_pips} pips
+                        </td>
+
+                        <td className="py-3.5 px-3 text-emerald-400 font-bold">
+                          +{c.pip_target} p
+                        </td>
+
+                        <td className="py-3.5 px-3 text-rose-400 font-bold">
+                          -{c.stop_loss_pips} p
+                        </td>
+
+                        <td className="py-3.5 px-3 text-bunker-muted font-bold">
+                          {c.risk_reward}
+                        </td>
+
+                        <td className="py-3.5 px-3">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-12 bg-bunker-800 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-blue-400 h-full rounded-full"
+                                style={{ width: `${Math.min(100, c.score)}%` }}
+                              />
+                            </div>
+                            <span className="font-bold text-blue-300">
+                              {c.score.toFixed(1)}p
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right">
+                          <Link
+                            href={`/forex/charts?symbol=${c.symbol}`}
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/20 transition-all font-bold text-[11px]"
+                          >
+                            Grafik ↗
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobil Kart Görünümü */}
+            <div className="md:hidden space-y-3 p-3 font-mono">
+              {candidates.map((c) => {
+                const isBuy = c.action === "BUY";
+                return (
+                  <div
+                    key={c.symbol}
+                    className="p-3.5 rounded-2xl border border-bunker-800 bg-bunker-900/90 shadow-md space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-base">{c.display}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
+                          {c.category}
+                        </span>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                          isBuy
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                        }`}
+                      >
+                        {isBuy ? "▲ AL (BUY)" : "▼ SAT (SELL)"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs p-2 rounded-xl bg-bunker-950/70 border border-bunker-800/80">
+                      <div>
+                        <span className="text-[10px] text-bunker-muted block">Alış (Bid)</span>
+                        <span className="text-white font-bold">{c.bid}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-bunker-muted block">Satış (Ask)</span>
+                        <span className="text-white font-bold">{c.ask}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-bunker-muted block">Hedef (TP)</span>
+                        <span className="text-emerald-400 font-bold">+{c.pip_target} p</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-bunker-muted block">Stop (SL)</span>
+                        <span className="text-rose-400 font-bold">-{c.stop_loss_pips} p</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
+                      <div className="flex items-center gap-2">
+                        <span className="text-cyan-400 font-bold">{c.spread_pips} pips</span>
+                        <span className="text-bunker-700">|</span>
+                        <span className="text-yellow-400 font-bold">Skor {c.score.toFixed(0)}</span>
+                      </div>
+                      <Link
+                        href={`/forex/charts?symbol=${c.tv_symbol || c.symbol}`}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold text-xs hover:bg-blue-600/40 transition-colors touch-target"
+                      >
+                        Grafik ↗
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 

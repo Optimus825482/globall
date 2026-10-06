@@ -628,7 +628,7 @@ function SettingsPageInner() {
       )}
 
       {cfg && (
-        <nav className="flex flex-wrap gap-2 border-b border-bunker-800 pb-2" aria-label="Ayar sekmeleri">
+        <nav className="flex gap-2 border-b border-bunker-800 pb-2 overflow-x-auto scrollbar-none md:flex-wrap" aria-label="Ayar sekmeleri">
           {([
             ["profile", "Profil", "👤"],
             ["bridge", "TR Köprüsü", "🌉"],
@@ -642,7 +642,7 @@ function SettingsPageInner() {
             ["llm", "LLM / Provider", "🤖"],
             ["chat", "Chat Ayarları", "✦"],
           ] as const).map(([key, label, icon]) => (
-            <button key={key} onClick={() => selectTab(key)} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs transition-colors touch-target ${activeTab === key ? "border-neon-green/60 bg-neon-green/15 text-neon-green font-bold shadow-sm" : "border-bunker-700 bg-bunker-900 text-bunker-muted hover:text-white"}`}>
+            <button key={key} onClick={() => selectTab(key)} className={`shrink-0 px-3.5 py-2 rounded-xl border font-mono text-xs transition-all touch-target active:scale-95 whitespace-nowrap ${activeTab === key ? "border-cyan-400/60 bg-cyan-950/40 text-cyan-300 font-bold shadow-[0_0_8px_rgba(0,240,255,0.2)]" : "border-bunker-800 bg-bunker-900/80 text-bunker-muted hover:text-white"}`}>
               {icon} {label}
             </button>
           ))}

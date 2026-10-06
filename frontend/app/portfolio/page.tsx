@@ -508,48 +508,111 @@ export default function PortfolioPage() {
               </p>
             </div>
           ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Sembol</th>
-                    <th className="text-right">Giriş</th>
-                    <th className="text-right">Güncel</th>
-                    <th className="text-right">Hedef (TP)</th>
-                    <th className="text-right">Stop (SL)</th>
-                    <th className="text-right">K/Z</th>
-                    <th className="text-right">%</th>
-                    <th className="text-right">Süre</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {apTrades.map((t) => {
-                    const entry = Number(t.entry_price || 0);
-                    // H-02: ticker gelmediyse güncel fiyat `null`'dur; entry'ye
-                    // düşürmek sahte "başabaş" (yeşil +0,00%) üretirdi.
-                    const current = Number(t.current_price) > 0 ? Number(t.current_price) : null;
-                    // H-01: net (gidiş-dönüş komisyonu düşülmüş) — backend ile aynı.
-                    const pnl = netOpenPnlTry(t.entry_price, t.current_price, t.quantity);
-                    const pnlPct = netOpenPnlPct(t.entry_price, t.current_price, t.quantity);
-                    const held = t.entry_time ? Math.floor((Date.now() / 1000 - Number(t.entry_time)) / 60) : null;
-                    const tpDist = entry > 0 && current != null && t.take_profit
-                      ? (((Number(t.take_profit) - current) / entry) * 100) : null;
-                    return (
-                      <tr key={t.id}>
-                        <td><SymbolLink symbol={t.symbol} className="font-bold text-white hover:text-neon-green" /></td>
-                        <td className="font-mono text-xs text-right tabular-nums">{formatPrice(entry)}</td>
-                        <td className={`font-mono text-xs text-right tabular-nums ${tpDist !== null && tpDist <= 0 ? "text-neon-green font-bold" : ""}`}>{current == null ? "—" : formatPrice(current)}</td>
-                        <td className={`font-mono text-xs text-right tabular-nums ${t.take_profit ? "text-neon-green" : "text-bunker-muted"}`}>{t.take_profit ? formatPrice(Number(t.take_profit)) : "—"}</td>
-                        <td className={`font-mono text-xs text-right tabular-nums ${t.stop_loss ? "text-neon-red" : "text-bunker-muted"}`}>{t.stop_loss ? formatPrice(Number(t.stop_loss)) : "—"}</td>
-                        <td className={`font-mono text-xs text-right tabular-nums ${tone(pnl)}`}>{signedMoney(pnl)}</td>
-                        <td className={`font-mono text-xs text-right tabular-nums ${tone(pnlPct)}`}>{pctText(pnlPct)}</td>
-                        <td className="font-mono text-xs text-right tabular-nums text-bunker-muted">{held != null ? `${held} dk` : "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Masaüstü Tablo Görünümü */}
+              <div className="hidden md:block table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Sembol</th>
+                      <th className="text-right">Giriş</th>
+                      <th className="text-right">Güncel</th>
+                      <th className="text-right">Hedef (TP)</th>
+                      <th className="text-right">Stop (SL)</th>
+                      <th className="text-right">K/Z</th>
+                      <th className="text-right">%</th>
+                      <th className="text-right">Süre</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {apTrades.map((t) => {
+                      const entry = Number(t.entry_price || 0);
+                      const current = Number(t.current_price) > 0 ? Number(t.current_price) : null;
+                      const pnl = netOpenPnlTry(t.entry_price, t.current_price, t.quantity);
+                      const pnlPct = netOpenPnlPct(t.entry_price, t.current_price, t.quantity);
+                      const held = t.entry_time ? Math.floor((Date.now() / 1000 - Number(t.entry_time)) / 60) : null;
+                      const tpDist = entry > 0 && current != null && t.take_profit
+                        ? (((Number(t.take_profit) - current) / entry) * 100) : null;
+                      return (
+                        <tr key={t.id}>
+                          <td><SymbolLink symbol={t.symbol} className="font-bold text-white hover:text-neon-green" /></td>
+                          <td className="font-mono text-xs text-right tabular-nums">{formatPrice(entry)}</td>
+                          <td className={`font-mono text-xs text-right tabular-nums ${tpDist !== null && tpDist <= 0 ? "text-neon-green font-bold" : ""}`}>{current == null ? "—" : formatPrice(current)}</td>
+                          <td className={`font-mono text-xs text-right tabular-nums ${t.take_profit ? "text-neon-green" : "text-bunker-muted"}`}>{t.take_profit ? formatPrice(Number(t.take_profit)) : "—"}</td>
+                          <td className={`font-mono text-xs text-right tabular-nums ${t.stop_loss ? "text-neon-red" : "text-bunker-muted"}`}>{t.stop_loss ? formatPrice(Number(t.stop_loss)) : "—"}</td>
+                          <td className={`font-mono text-xs text-right tabular-nums ${tone(pnl)}`}>{signedMoney(pnl)}</td>
+                          <td className={`font-mono text-xs text-right tabular-nums ${tone(pnlPct)}`}>{pctText(pnlPct)}</td>
+                          <td className="font-mono text-xs text-right tabular-nums text-bunker-muted">{held != null ? `${held} dk` : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobil Kart Görünümü */}
+              <div className="md:hidden space-y-2.5">
+                {apTrades.map((t) => {
+                  const entry = Number(t.entry_price || 0);
+                  const current = Number(t.current_price) > 0 ? Number(t.current_price) : null;
+                  const pnl = netOpenPnlTry(t.entry_price, t.current_price, t.quantity);
+                  const pnlPct = netOpenPnlPct(t.entry_price, t.current_price, t.quantity);
+                  const held = t.entry_time ? Math.floor((Date.now() / 1000 - Number(t.entry_time)) / 60) : null;
+                  return (
+                    <div
+                      key={t.id}
+                      className="p-3 rounded-xl border border-bunker-800 bg-bunker-900/90 shadow-md font-mono text-xs space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <SymbolLink symbol={t.symbol} className="font-bold text-white hover:text-cyan-300 text-sm" />
+                        <div className="flex items-center gap-1.5">
+                          {held != null && (
+                            <span className="text-[10px] text-bunker-muted">{held} dk</span>
+                          )}
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                            OTONOM
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-bunker-950/70 border border-bunker-800/80">
+                        <div>
+                          <span className="text-[10px] text-bunker-muted block">Net Getiri</span>
+                          <span className={`text-sm font-bold ${tone(pnl)}`}>
+                            {signedMoney(pnl)}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-bunker-muted block">Yüzde</span>
+                          <span className={`text-sm font-bold ${tone(pnlPct)}`}>
+                            {pctText(pnlPct)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-bunker-800/60">
+                        <div>
+                          <span className="text-bunker-muted">Giriş: </span>
+                          <span className="text-white font-bold">{formatPrice(entry)}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-bunker-muted">Güncel: </span>
+                          <span className="text-white font-bold">{current == null ? "—" : formatPrice(current)}</span>
+                        </div>
+                        <div>
+                          <span className="text-emerald-400">TP: </span>
+                          <span className="text-slate-200">{t.take_profit ? formatPrice(Number(t.take_profit)) : "—"}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-rose-400">SL: </span>
+                          <span className="text-slate-200">{t.stop_loss ? formatPrice(Number(t.stop_loss)) : "—"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
 
@@ -595,40 +658,86 @@ export default function PortfolioPage() {
             Ana hesapta açık pozisyon yok.
           </div>
         ) : (
-          <div className="table-scroll mt-3">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Sembol</th>
-                  <th>Strateji</th>
-                  <th className="text-right">Giriş</th>
-                  <th className="text-right">Güncel</th>
-                  <th className="text-right">K/Z</th>
-                  <th className="text-right">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayMain.map((p) => {
-                  // Görüntü tek kanonik esastan (net, gidiş-dönüş komisyonlu)
-                  // üretilir — yukarıdaki `openMainPnl` toplamı ile aynı kaynak.
-                  // Backend `p.pnl_try` yalnız giriş bacağını düşer; burada
-                  // satırlar toplamla tutarlı olsun diye kanonik helper kullanılır.
-                  const pnl = netOpenPnlTry(p.entry, p.current, p.quantity);
-                  const pnlPct = netOpenPnlPct(p.entry, p.current, p.quantity);
-                  return (
-                    <tr key={p.symbol}>
-                      <td><SymbolLink symbol={p.symbol} className="font-bold text-white hover:text-neon-green" /></td>
-                      <td className="text-xs">{STRATEGY_LABEL[p.strategy || ""] || p.strategy || "—"}</td>
-                      <td className="font-mono text-xs text-right tabular-nums">{formatPrice(Number(p.entry || 0))}</td>
-                      <td className="font-mono text-xs text-right tabular-nums">{p.current == null ? "—" : formatPrice(p.current)}</td>
-                      <td className={`font-mono text-xs text-right tabular-nums ${tone(pnl)}`}>{signedMoney(pnl)}</td>
-                      <td className={`font-mono text-xs text-right tabular-nums ${tone(pnlPct)}`}>{pctText(pnlPct)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Masaüstü Tablo Görünümü */}
+            <div className="hidden md:block table-scroll mt-3">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Sembol</th>
+                    <th>Strateji</th>
+                    <th className="text-right">Giriş</th>
+                    <th className="text-right">Güncel</th>
+                    <th className="text-right">K/Z</th>
+                    <th className="text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayMain.map((p) => {
+                    const pnl = netOpenPnlTry(p.entry, p.current, p.quantity);
+                    const pnlPct = netOpenPnlPct(p.entry, p.current, p.quantity);
+                    return (
+                      <tr key={p.symbol}>
+                        <td><SymbolLink symbol={p.symbol} className="font-bold text-white hover:text-neon-green" /></td>
+                        <td className="text-xs">{STRATEGY_LABEL[p.strategy || ""] || p.strategy || "—"}</td>
+                        <td className="font-mono text-xs text-right tabular-nums">{formatPrice(Number(p.entry || 0))}</td>
+                        <td className="font-mono text-xs text-right tabular-nums">{p.current == null ? "—" : formatPrice(p.current)}</td>
+                        <td className={`font-mono text-xs text-right tabular-nums ${tone(pnl)}`}>{signedMoney(pnl)}</td>
+                        <td className={`font-mono text-xs text-right tabular-nums ${tone(pnlPct)}`}>{pctText(pnlPct)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobil Kart Görünümü */}
+            <div className="md:hidden space-y-2 mt-3">
+              {displayMain.map((p) => {
+                const pnl = netOpenPnlTry(p.entry, p.current, p.quantity);
+                const pnlPct = netOpenPnlPct(p.entry, p.current, p.quantity);
+                return (
+                  <div
+                    key={p.symbol}
+                    className="p-3 rounded-xl border border-bunker-800 bg-bunker-900/90 shadow-md font-mono text-xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <SymbolLink symbol={p.symbol} className="font-bold text-white hover:text-cyan-300 text-sm" />
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">
+                        {STRATEGY_LABEL[p.strategy || ""] || p.strategy || "MANUEL"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-bunker-950/70 border border-bunker-800/80">
+                      <div>
+                        <span className="text-[10px] text-bunker-muted block">Net Getiri</span>
+                        <span className={`text-sm font-bold ${tone(pnl)}`}>
+                          {signedMoney(pnl)}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-bunker-muted block">Yüzde</span>
+                        <span className={`text-sm font-bold ${tone(pnlPct)}`}>
+                          {pctText(pnlPct)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
+                      <div>
+                        <span className="text-bunker-muted">Giriş: </span>
+                        <span className="text-white font-bold">{formatPrice(Number(p.entry || 0))}</span>
+                      </div>
+                      <div>
+                        <span className="text-bunker-muted">Güncel: </span>
+                        <span className="text-white font-bold">{p.current == null ? "—" : formatPrice(p.current)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </section>
 

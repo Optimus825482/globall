@@ -15,6 +15,8 @@ import { visibleGroups } from "../lib/menu";
 import { useExchange } from "../lib/exchange";
 import { useMarketMode } from "../lib/marketMode";
 
+import { usePwa } from "../lib/pwa";
+
 const formatNotificationDate = (value: unknown) => {
     const numeric = Number(value);
     const date = Number.isFinite(numeric) ? new Date(toMs(numeric)) : new Date(String(value || ""));
@@ -24,6 +26,7 @@ const formatNotificationDate = (value: unknown) => {
 export default function Sidebar() {
     const pathname = usePathname();
     const { username, role, logout } = useAuth();
+    const { isInstallable, isInstalled, openInstallDialog } = usePwa();
     const isAdmin = role === "admin";
     const canViewMacd = canViewMacdMonitor(role, username);
     const exchange = useExchange();
@@ -36,8 +39,6 @@ export default function Sidebar() {
     // Grup açık/kapalı durumu. undefined = varsayılan (ana açık, diğerleri kapalı).
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
     const [busyLogout, setBusyLogout] = useState(false);
-    const [installEvent, setInstallEvent] = useState<any>(null);
-    const [installed, setInstalled] = useState(false);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unread, setUnread] = useState(0);
     const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -51,30 +52,6 @@ export default function Sidebar() {
         setUnread((count) => count + 1);
     }, []);
     useLiveMessages(onLiveMessage);
-    useEffect(() => {
-        if ("serviceWorker" in navigator) {
-            if (process.env.NODE_ENV === "production") {
-                // PUSH-RESILIENCE (2026-09-16): SW'ye VAPID public key'i SORGU ile
-                // geçir. Service worker bundle'ı `process.env` göremez; abonelik
-                // döndüğünde (`pushsubscriptionchange`) yeniden abone olmak için
-                // anahtara ihtiyaç duyar. Anahtar, abonelik kadar uzun olmayan
-                // base64url olduğundan sorgu parametresi güvenli.
-                const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
-                navigator.serviceWorker.register(
-                    `/sw.js?v=${process.env.NEXT_PUBLIC_BUILD_ID || "dev"}${vapid ? `&vapid=${encodeURIComponent(vapid)}` : ""}`,
-                ).catch(() => undefined);
-            }
-            else navigator.serviceWorker.getRegistrations().then((registrations) => registrations.forEach((registration) => registration.unregister()));
-        }
-        const handler = (event: Event) => { event.preventDefault(); setInstallEvent(event); };
-        window.addEventListener("beforeinstallprompt", handler);
-        const installedHandler = () => setInstalled(true);
-        window.addEventListener("appinstalled", installedHandler);
-        return () => {
-            window.removeEventListener("beforeinstallprompt", handler);
-            window.removeEventListener("appinstalled", installedHandler);
-        };
-    }, []);
     useEffect(() => setOpen(false), [pathname]);
     useEffect(() => {
         if (!open) return;
@@ -119,16 +96,9 @@ export default function Sidebar() {
         macroRegime?.market_stress_level === "BEAR_REGIME" ||
         (macroRegime && macroRegime.is_btc_above_ema200 === false)
     );
-    const isStandalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as any)?.standalone === true);
-    const install = async () => {
-        if (!installEvent) return;
-        await installEvent.prompt();
-        setInstallEvent(null);
-    };
 
     return (
         <>
-            <Button className="mobile-menu-button" onClick={() => setOpen(true)} aria-label="Menüyü aç">☰</Button>
             {open && <button className="mobile-menu-backdrop" onClick={() => setOpen(false)} aria-label="Menüyü kapat" />}
         <aside className={`app-sidebar w-64 max-w-[85vw] md:w-56 shrink-0 border-r border-bunker-800 bg-bunker-900/95 flex flex-col h-screen sticky top-0 ${open ? "is-open" : ""}`}>
             <div className="p-4 sm:p-5 border-b border-bunker-800">
@@ -357,13 +327,13 @@ export default function Sidebar() {
                         </div>
                     )}
 
-                    {installEvent && (
+                    {isInstallable && !isInstalled && (
                         <button
                             type="button"
-                            onClick={install}
-                            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg border border-cyan-400/40 bg-cyan-950/40 text-cyan-300 font-mono text-[10px] font-bold tracking-wide hover:bg-cyan-900/50 hover:border-cyan-400 transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)]"
+                            onClick={openInstallDialog}
+                            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg border border-cyan-400/40 bg-cyan-950/40 text-cyan-300 font-mono text-[10px] font-bold tracking-wide hover:bg-cyan-900/50 hover:border-cyan-400 transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95 touch-target"
                         >
-                            <span>⬇</span> UYGULAMAYI YÜKLE
+                            <span>📲</span> UYGULAMAYI YÜKLE
                         </button>
                     )}
 

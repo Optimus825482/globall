@@ -316,9 +316,9 @@ export default function TechnicalChartsPage() {
 
     const gridLayoutClass = useMemo(() => {
         if (maximizedId !== null || layout === "single") return "grid-cols-1 grid-rows-1";
-        if (layout === "split2_h")  return "grid-cols-1 md:grid-cols-2 grid-rows-1";
-        if (layout === "split2_v")  return "grid-cols-1 grid-rows-2";
-        return "grid-cols-1 md:grid-cols-2 grid-rows-2";
+        if (layout === "split2_h")  return "grid-cols-1 md:grid-cols-2 md:grid-rows-1";
+        if (layout === "split2_v")  return "grid-cols-1 md:grid-rows-2";
+        return "grid-cols-1 md:grid-cols-2 md:grid-rows-2";
     }, [maximizedId, layout]);
 
     // Hangi indikatörler en az 1 slotta aktif? (global panel toggle state'i için)
@@ -338,7 +338,7 @@ export default function TechnicalChartsPage() {
                 className={`flex flex-col bg-bunker-950 ${
                     isPageFullscreen
                         ? "fixed inset-0 z-[9998] overflow-hidden"
-                        : "h-[calc(100vh-4rem)]"
+                        : "md:h-[calc(100vh-4rem)] min-h-[calc(100vh-4rem)] overflow-y-auto"
                 }`}
             >
                 {/* ── Komut Çubuğu ─────────────────────────────────────────────── */}

@@ -1,18 +1,72 @@
 {
-  "name": "SCALPER GLOBAL AGENT",
-  "short_name": "SCALPER GLOBAL",
-  "description": "Binance Global public-data paper scalping terminal",
+  "name": "SCALPER GLOBAL · Profesyonel İşlem Terminali",
+  "short_name": "SCALPER",
+  "description": "Binance Global & Forex gerçek zamanlı piyasa analizi, radar, grafikler ve otonom scalping PWA terminali",
   "start_url": "/",
-  "display": "standalone",
-  "orientation": "portrait-primary",
   "scope": "/",
+  "id": "scalper-global-terminal",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
   "background_color": "#070b14",
   "theme_color": "#070b14",
   "lang": "tr",
+  "dir": "ltr",
+  "categories": ["finance", "productivity", "utilities"],
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/icons/Android/Icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/Android/Icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/Android/Icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/Android/Icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/Android/Icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/Android/Icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Radar & Hız Avcısı",
+      "short_name": "Radar",
+      "description": "Canlı fırsat ve hız avcısı radarı",
+      "url": "/monitoring",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Sanal Portföy",
+      "short_name": "Portföy",
+      "description": "Açık pozisyonlar ve sanal bakiye",
+      "url": "/portfolio",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Forex Terminali",
+      "short_name": "Forex",
+      "description": "Altın, BTC ve Majör pariteler",
+      "url": "/forex/btc-gold",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Canlı Grafik",
+      "short_name": "Grafik",
+      "description": "Teknik mum grafikleri",
+      "url": "/charts",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
   ]
 }

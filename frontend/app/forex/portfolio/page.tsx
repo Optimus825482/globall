@@ -998,122 +998,220 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
-                <tr>
-                  <th className="py-3 px-4">Bilet</th>
-                  <th className="py-3 px-3">Parite</th>
-                  <th className="py-3 px-3">Yön</th>
-                  <th className="py-3 px-3">Koruma / Rozet</th>
-                  <th className="py-3 px-3">Lot</th>
-                  <th className="py-3 px-3">Giriş Fiyatı</th>
-                  <th className="py-3 px-3">Güncel Fiyat</th>
-                  <th className="py-3 px-3">SL / TP Seviyeleri</th>
-                  <th className="py-3 px-3">Kâr ($ / Pip)</th>
-                  <th className="py-3 px-4 text-right">Aksiyon</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-bunker-800/60">
-                {mt5.open_positions.map((p) => {
-                  const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
-                  const isProfit = pnlVal >= 0;
-                  const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
-                  const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
+          <>
+            {/* Masaüstü Tablo Görünümü */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4">Bilet</th>
+                    <th className="py-3 px-3">Parite</th>
+                    <th className="py-3 px-3">Yön</th>
+                    <th className="py-3 px-3">Koruma / Rozet</th>
+                    <th className="py-3 px-3">Lot</th>
+                    <th className="py-3 px-3">Giriş Fiyatı</th>
+                    <th className="py-3 px-3">Güncel Fiyat</th>
+                    <th className="py-3 px-3">SL / TP Seviyeleri</th>
+                    <th className="py-3 px-3">Kâr ($ / Pip)</th>
+                    <th className="py-3 px-4 text-right">Aksiyon</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-bunker-800/60">
+                  {mt5.open_positions.map((p) => {
+                    const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
+                    const isProfit = pnlVal >= 0;
+                    const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
+                    const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
 
-                  return (
-                    <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
-                      <td className="py-3 px-4 font-mono text-[11px] text-cyan-300 font-bold">#{p.ticket}</td>
-                      <td className="py-3 px-3 font-bold text-white text-sm">{p.symbol}</td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            p.direction === "BUY"
-                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                              : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                          }`}
-                        >
-                          {p.direction}
+                    return (
+                      <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
+                        <td className="py-3 px-4 font-mono text-[11px] text-cyan-300 font-bold">#{p.ticket}</td>
+                        <td className="py-3 px-3 font-bold text-white text-sm">{p.symbol}</td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              p.direction === "BUY"
+                                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                            }`}
+                          >
+                            {p.direction}
+                          </span>
+                        </td>
+
+                        {/* DİNAMİK ROZET (TRAILING / BREAKEVEN / SABİT SL) */}
+                        <td className="py-3 px-3">
+                          {isTrailing ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500/25 via-orange-500/30 to-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse tracking-wide">
+                              <span className="text-xs">🏃</span>
+                              <span>TRAILING STOP</span>
+                            </span>
+                          ) : isBE ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(6,182,212,0.25)] tracking-wide">
+                              <span className="text-xs">🛡️</span>
+                              <span>BAŞABAŞ (BE)</span>
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-400/20 text-cyan-200 font-normal">SIFIR RİSK</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-bunker-800 text-bunker-muted border border-bunker-700/60">
+                              <span>🛑 Sabit SL</span>
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3 font-semibold text-white">{p.lots} Lot</td>
+                        <td className="py-3 px-3 font-mono text-bunker-muted">{p.entry_price}</td>
+                        <td className="py-3 px-3 font-bold font-mono text-white">{p.current_price}</td>
+
+                        {/* SL / TP SEVİYELERİ (KORUMA VURGULARIYLA) */}
+                        <td className="py-3 px-3 font-mono text-xs">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              {isTrailing ? (
+                                <span className="text-amber-300 font-bold flex items-center gap-1">
+                                  <span>SL: {p.sl_price || "-"}</span>
+                                  <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-amber-500/20 border border-amber-500/30 text-amber-200">
+                                    🏃 Takipte
+                                  </span>
+                                </span>
+                              ) : isBE ? (
+                                <span className="text-cyan-300 font-bold flex items-center gap-1">
+                                  <span>SL: {p.sl_price || "-"}</span>
+                                  <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-200">
+                                    🛡️ BE Kilitli
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-rose-300">SL: {p.sl_price || "-"}</span>
+                              )}
+                            </div>
+                            <span className="text-emerald-300">TP: {p.tp_price || "-"}</span>
+                          </div>
+                        </td>
+
+                        {/* KÂR ($ / PİP) */}
+                        <td className={`py-3 px-3 font-mono ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+                          <div className="font-bold text-sm">
+                            {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
+                          </div>
+                          {p.pnl_pips != null && (
+                            <div className={`text-[10px] font-semibold ${Number(p.pnl_pips) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                              {Number(p.pnl_pips) >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)} p
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => closeMt5Ticket(p.ticket)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
+                          >
+                            Kapat ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobil Kart Görünümü */}
+            <div className="md:hidden space-y-3 p-3">
+              {mt5.open_positions.map((p) => {
+                const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
+                const isProfit = pnlVal >= 0;
+                const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
+                const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
+
+                return (
+                  <div
+                    key={p.ticket}
+                    className="p-3.5 rounded-2xl border border-bunker-800 bg-bunker-900/90 shadow-lg font-mono text-xs space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">{p.symbol}</span>
+                        <span className="text-[10px] font-mono text-cyan-300">#{p.ticket}</span>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          p.direction === "BUY"
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                        }`}
+                      >
+                        {p.direction} · {p.lots} Lot
+                      </span>
+                    </div>
+
+                    {/* Koruma Durumu Rozeti */}
+                    <div>
+                      {isTrailing ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                          🏃 TRAILING STOP
                         </span>
-                      </td>
+                      ) : isBE ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                          🛡️ BAŞABAŞ KİLİTLİ
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-bunker-muted">🛑 Sabit Stop</span>
+                      )}
+                    </div>
 
-                      {/* DİNAMİK ROZET (TRAILING / BREAKEVEN / SABİT SL) */}
-                      <td className="py-3 px-3">
-                        {isTrailing ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500/25 via-orange-500/30 to-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse tracking-wide">
-                            <span className="text-xs">🏃</span>
-                            <span>TRAILING STOP</span>
-                          </span>
-                        ) : isBE ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(6,182,212,0.25)] tracking-wide">
-                            <span className="text-xs">🛡️</span>
-                            <span>BAŞABAŞ (BE)</span>
-                            <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-400/20 text-cyan-200 font-normal">SIFIR RİSK</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-bunker-800 text-bunker-muted border border-bunker-700/60">
-                            <span>🛑 Sabit SL</span>
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3 px-3 font-semibold text-white">{p.lots} Lot</td>
-                      <td className="py-3 px-3 font-mono text-bunker-muted">{p.entry_price}</td>
-                      <td className="py-3 px-3 font-bold font-mono text-white">{p.current_price}</td>
-
-                      {/* SL / TP SEVİYELERİ (KORUMA VURGULARIYLA) */}
-                      <td className="py-3 px-3 font-mono text-xs">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5">
-                            {isTrailing ? (
-                              <span className="text-amber-300 font-bold flex items-center gap-1">
-                                <span>SL: {p.sl_price || "-"}</span>
-                                <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-amber-500/20 border border-amber-500/30 text-amber-200">
-                                  🏃 Takipte
-                                </span>
-                              </span>
-                            ) : isBE ? (
-                              <span className="text-cyan-300 font-bold flex items-center gap-1">
-                                <span>SL: {p.sl_price || "-"}</span>
-                                <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-200">
-                                  🛡️ BE Kilitli
-                                </span>
-                              </span>
-                            ) : (
-                              <span className="text-rose-300">SL: {p.sl_price || "-"}</span>
-                            )}
-                          </div>
-                          <span className="text-emerald-300">TP: {p.tp_price || "-"}</span>
-                        </div>
-                      </td>
-
-                      {/* KÂR ($ / PİP) */}
-                      <td className={`py-3 px-3 font-mono ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-                        <div className="font-bold text-sm">
+                    {/* Kâr / Zarar */}
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-bunker-950/70 border border-bunker-800/80">
+                      <div>
+                        <span className="text-[10px] text-bunker-muted block">Anlık Getiri</span>
+                        <span className={`text-base font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
                           {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
-                        </div>
-                        {p.pnl_pips != null && (
-                          <div className={`text-[10px] font-semibold ${Number(p.pnl_pips) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        </span>
+                      </div>
+                      {p.pnl_pips != null && (
+                        <div className="text-right">
+                          <span className="text-[10px] text-bunker-muted block">Pip Değeri</span>
+                          <span className={`text-sm font-bold ${Number(p.pnl_pips) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                             {Number(p.pnl_pips) >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)} p
-                          </div>
-                        )}
-                      </td>
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => closeMt5Ticket(p.ticket)}
-                          className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
-                        >
-                          Kapat ✕
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    {/* Fiyatlar ve Seviyeler */}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-bunker-800/60">
+                      <div>
+                        <span className="text-bunker-muted">Giriş: </span>
+                        <span className="text-white font-bold">{p.entry_price}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-bunker-muted">Güncel: </span>
+                        <span className="text-white font-bold">{p.current_price}</span>
+                      </div>
+                      <div>
+                        <span className="text-rose-300">SL: </span>
+                        <span className="text-slate-200">{p.sl_price || "-"}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-emerald-300">TP: </span>
+                        <span className="text-slate-200">{p.tp_price || "-"}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => closeMt5Ticket(p.ticket)}
+                      className="w-full py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 font-bold text-xs transition-colors touch-target active:scale-95 flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      <span>🛑</span>
+                      <span>Pozisyonu Kapat</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
