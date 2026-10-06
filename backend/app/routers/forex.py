@@ -1781,6 +1781,7 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     Sembol soğuması ve bekleyen emir dahil bilinen kapıları özetler; emir
     kuyruğa alınana kadar "işlem açılıyor" demez.
     """
+    global _LAST_GOLD_EXIT_TIME
     action = str(gold_tick.get("action", "HOLD"))
     if action not in ("BUY", "SELL"):
         return "yön teyidi oluşmadı — gözlemde"
@@ -1788,12 +1789,13 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
     if active_count >= _AUTO_SETTINGS.max_open_positions:
         reasons.append("pozisyon limiti dolu")
-    if _LAST_GOLD_EXIT_TIME > now_ts:
-        _LAST_GOLD_EXIT_TIME = now_ts
-    time_since_gold = max(0.0, now_ts - _LAST_GOLD_EXIT_TIME)
-    cd_left = max(0.0, min(_AUTO_SETTINGS.gold_cooldown_sec, _AUTO_SETTINGS.gold_cooldown_sec - time_since_gold))
-    if cd_left > 0:
-        reasons.append("son kapanıştan sonra soğuma bekleniyor")
+    if _LAST_GOLD_EXIT_TIME > 0:
+        if _LAST_GOLD_EXIT_TIME > now_ts:
+            _LAST_GOLD_EXIT_TIME = now_ts
+        time_since_gold = max(0.0, now_ts - _LAST_GOLD_EXIT_TIME)
+        cd_left = max(0.0, min(_AUTO_SETTINGS.gold_cooldown_sec, _AUTO_SETTINGS.gold_cooldown_sec - time_since_gold))
+        if cd_left > 0:
+            reasons.append(f"son kapanıştan sonra soğuma bekleniyor ({int(cd_left)} sn)")
     if any(c.get("action") == "OPEN_ORDER" and str(c.get("symbol", "")).upper() == "XAUUSD"
            for c in _MT5_STATE.get("pending_commands", [])):
         reasons.append("gönderilen emrin işlem görmesi bekleniyor")
@@ -2229,8 +2231,9 @@ async def _forex_auto_paper_loop():
 
                 is_gold = ("XAU" in sym or "GOLD" in sym)
 
-                # 2. Ons Altın (XAUUSD) Özel Soğuma Koruması (Kapanıştan sonra soğuma bekleme kuralı)
-                if is_gold:
+                # 2. Ons Altın (XAUUSD) Özel Soğuma Koruması
+                # İlk start verildiğinde veya henüz kapanış olmadığında (<= 0) soğuma kalkanı dikkate alınmaz
+                if is_gold and _LAST_GOLD_EXIT_TIME > 0:
                     if _LAST_GOLD_EXIT_TIME > now_ts:
                         _LAST_GOLD_EXIT_TIME = now_ts
                     time_since_gold_exit = max(0.0, now_ts - _LAST_GOLD_EXIT_TIME)
@@ -2655,15 +2658,18 @@ async def get_forex_auto_paper_status():
 @router.post("/auto-paper/toggle")
 async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
     """Otonom scalper'ı başlatır veya durdurur."""
-    global _AUTO_PAPER_TASK
+    global _AUTO_PAPER_TASK, _LAST_GOLD_EXIT_TIME
     _AUTO_STATE["enabled"] = req.enabled
     _AUTO_SETTINGS.enabled = req.enabled
     _MT5_STATE["auto_trade"] = req.enabled
 
     if req.enabled:
+        # İlk start verildiğinde soğuma kalkanını dikkate almaması için sıfırla
+        _LAST_GOLD_EXIT_TIME = 0.0
+        _LAST_SYMBOL_ENTRY_TIME.clear()
         if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
             _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
-            _log_auto_decision("SYSTEM", "IC Markets MT5 Otonom Scalper kullanıcı tarafından ETKİNLEŞTİRİLDİ.")
+            _log_auto_decision("SYSTEM", "IC Markets MT5 Otonom Scalper kullanıcı tarafından ETKİNLEŞTİRİLDİ (Soğuma kalkanı temizlendi, hazır).")
     else:
         if _AUTO_PAPER_TASK and not _AUTO_PAPER_TASK.done():
             _AUTO_PAPER_TASK.cancel()

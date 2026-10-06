@@ -43,6 +43,8 @@ HARD_MAX_FOREX_LOT = 50.0
 HARD_MAX_GOLD_LOT = 50.0
 HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 LAST_GOLD_EXIT_TIME = 0.0
+KNOWN_DEAL_TICKETS: set = set()
+INITIALIZED_DEALS = False
 TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 
 
@@ -300,14 +302,20 @@ def execute_market_order(cmd: dict) -> dict:
     is_index = ("USTEC" in symbol or "NAS100" in symbol or "US30" in symbol or "US100" in symbol or "DJ30" in symbol or "SPX" in symbol)
     is_oil = ("XTI" in symbol or "XBR" in symbol or "OIL" in symbol or "USOIL" in raw_symbol)
 
-    # Ons Altın (XAUUSD) Soğuma Koruması (Kapanıştan sonra en az 180 sn bekleme kuralı)
-    if is_gold:
+    # Ons Altın (XAUUSD) Soğuma Koruması (İlk startta dikkate alınmaz; yalnızca canlı kapanıştan sonra çalışır)
+    global LAST_GOLD_EXIT_TIME
+    if is_gold and LAST_GOLD_EXIT_TIME > 0:
         cd_sec = float(CURRENT_SETTINGS.get("gold_cooldown_sec", HARD_MIN_GOLD_COOLDOWN_SEC))
-        elapsed = time.time() - LAST_GOLD_EXIT_TIME
-        if elapsed < cd_sec:
-            err = f"Ons Altın soğuma kalkanı aktif: {int(cd_sec - elapsed)} sn kaldı (min {cd_sec:.0f}s)"
+        now_t = time.time()
+        elapsed = now_t - LAST_GOLD_EXIT_TIME
+        if 0 <= elapsed < cd_sec:
+            rem = min(cd_sec, max(0.0, cd_sec - elapsed))
+            err = f"Ons Altın soğuma kalkanı aktif: {int(rem)} sn kaldı (min {cd_sec:.0f}s)"
             print(f"  🛑 {err}")
             return {"success": False, "error": err}
+        elif elapsed < 0:
+            # Zaman kayması koruması (broker timezone uyumsuzluğu)
+            LAST_GOLD_EXIT_TIME = 0.0
 
     # Sembolü aktif et ve bilgileri çek
     if not mt5.symbol_select(symbol, True):
@@ -937,13 +945,21 @@ def sync_with_server(api_base: str):
             "outcome": "WIN" if d.profit >= 0 else "LOSS",
         })
 
-    # Altın kapanışlarını takip et (Soğuma kalkanı için son kapanış zamanı)
-    for d in out_deals[-15:]:
-        d_sym = str(d.symbol).upper()
-        if "XAU" in d_sym or "GOLD" in d_sym:
-            global LAST_GOLD_EXIT_TIME
-            if float(d.time) > LAST_GOLD_EXIT_TIME:
-                LAST_GOLD_EXIT_TIME = float(d.time)
+    # Altın kapanışlarını takip et (İlk startta geçmiş deals kalkanı tetiklemez!)
+    global LAST_GOLD_EXIT_TIME, INITIALIZED_DEALS, KNOWN_DEAL_TICKETS
+    if not INITIALIZED_DEALS:
+        for d in out_deals:
+            KNOWN_DEAL_TICKETS.add(d.ticket)
+        INITIALIZED_DEALS = True
+        LAST_GOLD_EXIT_TIME = 0.0  # İlk start verildiğinde kalkan dikkate alınmaz
+    else:
+        for d in out_deals:
+            if d.ticket not in KNOWN_DEAL_TICKETS:
+                KNOWN_DEAL_TICKETS.add(d.ticket)
+                d_sym = str(d.symbol).upper()
+                if "XAU" in d_sym or "GOLD" in d_sym:
+                    # Canlı çalışma sırasında yeni bir altın pozisyonu kapandı: yerel zaman damgası
+                    LAST_GOLD_EXIT_TIME = time.time()
 
     # MT5 Terminalinden anlık canlı fiyatları topla
     ticks_data = {}
