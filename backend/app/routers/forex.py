@@ -1778,6 +1778,8 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     """XAU/USD tarama özeti — insan-okur tek cümle.
 
     Yalnızca RAPORLAMA amaçlıdır: giriş döngüsündeki kapı zincirini etkilemez.
+    Sembol soğuması ve bekleyen emir dahil bilinen kapıları özetler; emir
+    kuyruğa alınana kadar "işlem açılıyor" demez.
     """
     action = str(gold_tick.get("action", "HOLD"))
     if action not in ("BUY", "SELL"):
@@ -1789,6 +1791,12 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     cd_left = _AUTO_SETTINGS.gold_cooldown_sec - (now_ts - _LAST_GOLD_EXIT_TIME)
     if cd_left > 0:
         reasons.append("son kapanıştan sonra soğuma bekleniyor")
+    if any(c.get("action") == "OPEN_ORDER" and str(c.get("symbol", "")).upper() == "XAUUSD"
+           for c in _MT5_STATE.get("pending_commands", [])):
+        reasons.append("gönderilen emrin işlem görmesi bekleniyor")
+    sym_cd_left = _AUTO_SETTINGS.gold_cooldown_sec - (now_ts - _LAST_SYMBOL_ENTRY_TIME.get("XAUUSD", 0.0))
+    if sym_cd_left > 0:
+        reasons.append("son girişten sonra sembol soğuması bekleniyor")
     if _AUTO_SETTINGS.ev_guard_enabled:
         ev_stats = _collect_symbol_ev("XAUUSD", now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
         ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
@@ -1820,12 +1828,13 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
         reasons.append("grafik yönü sinyalle ters")
     if reasons:
         return "işlem bekliyor: " + " + ".join(reasons[:2])
-    return "✅ tüm şartlar uygun — işlem açılıyor"
+    return "✅ temel şartlar uygun — giriş değerlendiriliyor"
 
 
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
     global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME
+    last_loop_error_log_ts = 0.0
     logger.info("Forex Otonom Scalper Döngüsü Başlatıldı.")
     _AUTO_STATE["last_status"] = "Çalışıyor (Canlı Piyasa Taranıyor)"
 
@@ -2229,7 +2238,15 @@ async def _forex_auto_paper_loop():
 
                 # 3. Sembol Soğuma Süresi
                 sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else 60.0
-                if now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0) < sym_cd:
+                sym_cd_left = sym_cd - (now_ts - _LAST_SYMBOL_ENTRY_TIME.get(sym, 0))
+                if sym_cd_left > 0:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_symcd", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_symcd"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}] Sembol Soğuma Kalkanı: Son girişten sonra {int(sym_cd_left)} sn bekleniyor (min {sym_cd:.0f} sn kuralı).",
+                            symbol=sym,
+                        )
                     continue
 
                 # 3b. Sembol EV Kalkanı — son pencerede sermaye yakan semboller dinlenir
@@ -2518,6 +2535,15 @@ async def _forex_auto_paper_loop():
             break
         except Exception as exc:
             logger.error("Forex otonom döngü hatası: %s", exc)
+            # Çökmeyi panel karar akışına da taşı — sunucu konsolu tek başına
+            # sessiz arıza gizler (2026-10-06 XAU sessiz giriş sorunu dersi).
+            err_ts = time.time()
+            if err_ts - last_loop_error_log_ts > 60.0:
+                last_loop_error_log_ts = err_ts
+                _log_auto_decision(
+                    "SYSTEM",
+                    f"⚠️ Tarama döngüsünde beklenmeyen hata: {exc} — 3 sn içinde yeniden deneniyor.",
+                )
             await asyncio.sleep(3.0)
 
     _AUTO_STATE["last_status"] = "Durduruldu"
