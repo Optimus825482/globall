@@ -544,8 +544,9 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.ev_min_trades, 10)
         self.assertEqual(cfg.ev_max_win_rate, 45.0)
         self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
-        # allowed_symbols hâlâ tam 12 işlem yapılabilir sembol (DXY hariç)
-        self.assertEqual(len(cfg.allowed_symbols), 12)
+        # allowed_symbols: 13 işlem yapılabilir sembol (DXY hariç; USOIL 2026-10-06'da eklendi)
+        self.assertEqual(len(cfg.allowed_symbols), 13)
+        self.assertIn("USOIL", cfg.allowed_symbols)
         self.assertNotIn("DXY", cfg.allowed_symbols)
 
 

@@ -1492,7 +1492,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
         lot_ceiling = 50.0
         safe_lots = round(max(0.10, min(standard_lots, lot_ceiling)), 2)
     elif is_oil:
-        lot_ceiling = 50.0
+        lot_ceiling = 1.0
         safe_lots = round(max(0.50, min(standard_lots, lot_ceiling)), 2)
     elif is_gold:
         lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
@@ -1557,8 +1557,8 @@ class ForexAutoPaperSettings(BaseModel):
     major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
-        description="İşleme izin verilen pariteler",
+        default=["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD", "USOIL"],
+        description="İşleme izin verilen pariteler (USOIL: 2026-10-06 30g replay +$1.076/WR %80.9 ile eklendi)",
     )
 
 
@@ -2312,7 +2312,9 @@ async def _forex_auto_paper_loop():
                     lot_ceiling = 50.0
                     mt5_lots = max(0.10, min(round(raw_calc_lots * 10) / 10, lot_ceiling))
                 elif is_oil:
-                    lot_ceiling = 50.0
+                    # Petrol: replay'de doğrulanan muhafazakâr profil (0.50–1.0 lot; 2026-10-06).
+                    # 50.0 tavan, replay'de test edilmeyen 50x risk alirdi — asla geri yükseltme!
+                    lot_ceiling = 1.0
                     mt5_lots = max(0.50, min(raw_calc_lots, lot_ceiling))
                 elif is_gold:
                     lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
@@ -2926,7 +2928,7 @@ async def send_mt5_order(req: MT5ManualOrderRequest):
         lot_cap = 50.0
         actual_lots = round(max(0.10, min(req.lots, lot_cap)), 2)
     elif is_oil:
-        lot_cap = 50.0
+        lot_cap = 1.0
         actual_lots = round(max(0.50, min(req.lots, lot_cap)), 2)
     elif is_gold:
         lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)

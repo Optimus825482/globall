@@ -48,7 +48,13 @@ SHADOW_MAX_CONCURRENT = 60
 BASE_BE_PIPS = 14.0         # canlı ayar varsayılanları (Motorla aynı)
 BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
-CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0}
+CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
+# Replay-local sembol tanımları: canlı FOREX_SYMBOLS'ta olmayan test adayları (JPY kross'ları)
+REPLAY_SYMBOL_DEFS = {
+    "GBPJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+    "EURJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+    "AUDJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+}
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
                 "SEANS", "VOLATİLİTE", "UZAMA")
@@ -80,6 +86,7 @@ TUN_CHANDLIER = 0.0         # >0: trailing = MFE − chandelier×ATR(giriş) (0 
 TUN_MAJOR_HOURS = None      # (başlangıç, biti) UTC saat aralığı — majörler yalnız bu pencerede (None = kapalı)
 TUN_MAJOR_MIN_ATR = 0.0     # majörler minimum ATR(pips) — ölü piyasa filtresi (0 = kapalı)
 TUN_MAJOR_MAX_EXT = 0.0     # majörlerde fiyatın EMA21'den maks. ATR-katı uzaması — kovalamama (0 = kapalı)
+GATED_EXTRAS: set = set()   # --gate-extras: majör kapılarına (seans+minATR) tabi tutulacak ek adaylar
 
 
 # ---------------------------------------------------------------------------
@@ -368,15 +375,19 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
 # Replay
 # ---------------------------------------------------------------------------
 def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional[float] = None,
-               entry_end_ts: Optional[float] = None, symbol_filter: Optional[set] = None) -> Dict[str, Any]:
+               entry_end_ts: Optional[float] = None, symbol_filter: Optional[set] = None,
+               add_symbols: Optional[set] = None) -> Dict[str, Any]:
     # Ek metrikler: NEW defteri için bar-bazlı özkaynak örnekleme (maks. düşüş için)
     eq_ts: List[float] = []
     eq_new: List[float] = []
     last_close: Dict[str, float] = {}
-    # Yalnızca canlı motorun izin listesindeki semboller (SPX500/XAGUSD/USOIL işlem yapmaz)
+    # Yalnızca canlı motorun izin listesindeki semboller (SPX500/XAGUSD/USOIL işlem yapmaz);
+    # --add-symbols ile test adayları eklenebilir (canlı allowed_symbols'a dokunmaz)
     allowed = set(forex.ForexAutoPaperSettings().allowed_symbols)
     if symbol_filter:
         allowed &= {s.upper() for s in symbol_filter}
+    if add_symbols:
+        allowed |= {s.upper() for s in add_symbols}
     symbols = [s for s in data if s != "DXY" and s in allowed]
     by_ts = {s: {b[0]: b for b in data[s]} for s in symbols}
     # Birleşim zaman ekseni: her sembol kendi seansında bar üretir; kesişim örneklemi kısaltır
@@ -473,6 +484,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             lows = [b[3] for b in window]
             opens = [b[1] for b in window]
             item = next((i for i in forex.FOREX_SYMBOLS if i["symbol"] == sym), None)
+            item = item or REPLAY_SYMBOL_DEFS.get(sym)
             pip_size = item["pip_size"] if item else 0.0001
             spread_pips = CATEGORY_SPREAD_PIPS.get(item["category"] if item else "index", 3.0)
             is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
@@ -537,7 +549,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     weak_bump = 0.0
                 # 5c. Majör güçlendirme kapıları (2026-10-06 araştırma mekanizmaları, yalnız NEW):
                 # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
-                if vname == "NEW" and sym in FX_MAJORS:
+                # --gate-extras ile eklenen aday semboller de aynı kapılara tabi tutulabilir.
+                if vname == "NEW" and (sym in FX_MAJORS or sym in GATED_EXTRAS):
                     if TUN_MAJOR_HOURS and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
                         blocked_events.append(("SEANS", cand("SEANS")))
                         continue
@@ -708,7 +721,7 @@ def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
     global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
-    global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT
+    global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -718,6 +731,8 @@ def main():
     parser.add_argument("--start", default="", help="Giriş penceresi başlangıcı (YYYY-MM-DD, UTC) — window'u geçersiz kılar")
     parser.add_argument("--end", default="", help="Giriş penceresi sonu, dahil değil (YYYY-MM-DD, UTC)")
     parser.add_argument("--symbols", default="", help="Virgüllü sembol filtresi (örn: XAUUSD,US30,NAS100) — yalnız bu semboller işlenir")
+    parser.add_argument("--add-symbols", default="", help="Virgüllü ek aday semboller (örn: XAGUSD,USOIL,GBPJPY) — izin listesine EKLENİR (test-only)")
+    parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
     parser.add_argument("--min-score", type=float, default=75.0)
     parser.add_argument("--sl-mult", type=float, default=1.1)
     parser.add_argument("--tp-mult", type=float, default=1.4)
@@ -758,6 +773,7 @@ def main():
         TUN_MAJOR_HOURS = (int(parts[0]), int(parts[1]))
     TUN_MAJOR_MIN_ATR = args.major_min_atr
     TUN_MAJOR_MAX_EXT = args.major_max_ext
+    GATED_EXTRAS = {s.strip().upper() for s in args.gate_extras.split(",") if s.strip()}
     BLOCKED_HOURS = [int(h) for h in args.hours.split(",") if h.strip().isdigit()]
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
@@ -800,8 +816,9 @@ def main():
 
     t0 = time.time()
     sym_filter = {s.strip().upper() for s in args.symbols.split(",") if s.strip()} or None
+    add_syms = {s.strip().upper() for s in getattr(args, "add_symbols", "").split(",") if s.strip()} or None
     report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts,
-                        symbol_filter=sym_filter)
+                        symbol_filter=sym_filter, add_symbols=add_syms)
     report["config"] = cfg_str
     print(f"\n[REPLAY BİTTİ] {time.time() - t0:.1f} sn")
 
