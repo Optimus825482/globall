@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
-import { formatUtc3 } from "../../lib/format";
+import { formatUtc3, localDateInput } from "../../lib/format";
 
 interface ClosedTrade {
   id: string;
@@ -51,10 +51,40 @@ interface ReportKPI {
   open_pnl_usd: number;
 }
 
+/** KPI kartlarının hangi sembol + dönem dilimini özetlediği (backend `kpi_scope`). */
+interface KpiScope {
+  symbol: string;
+  period: string;
+  date_from?: string | null;
+  date_to?: string | null;
+  archived_total: number;
+}
+
+/**
+ * Dönem filtresi ön ayarları. `days` yalnız etiketin altındaki açıklama için;
+ * gerçek pencere hesabı backend'de yapılır (tek kaynak, tarayıcı saati ile
+ * sunucu saati ayrışmasın diye). `custom` seçildiğinde iki tarih girişi açılır.
+ */
+const PERIOD_PRESETS: { key: string; label: string; hint: string }[] = [
+  { key: "all", label: "🌐 Tüm Zamanlar", hint: "Tüm arşiv" },
+  { key: "today", label: "🟢 Bugün", hint: "00:00'dan beri (UTC+3)" },
+  { key: "yesterday", label: "🟡 Dün", hint: "Dün 00:00–24:00 (UTC+3)" },
+  { key: "last12h", label: "⏱️ Son 12 Saat", hint: "Şu andan geriye 12 saat" },
+  { key: "this_week", label: "📅 Bu Hafta", hint: "Pazartesi'den beri (UTC+3)" },
+  { key: "this_month", label: "🗓️ Bu Ay", hint: "Ayın 1'inden beri (UTC+3)" },
+  { key: "custom", label: "🎯 Tarih Aralığı", hint: "Başlangıç–bitiş (bitiş dahil)" },
+];
+
+/** Backend dönem anahtarı → kart başlığında gösterilecek kısa etiket. */
+const PERIOD_LABELS: Record<string, string> = Object.fromEntries(
+  PERIOD_PRESETS.map((p) => [p.key, p.label.replace(/^\S+\s/, "")]),
+);
+
 export default function ForexReportsPage() {
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<any[]>([]);
   const [kpi, setKpi] = useState<ReportKPI | null>(null);
+  const [kpiScope, setKpiScope] = useState<KpiScope | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -65,6 +95,15 @@ export default function ForexReportsPage() {
   const [selectedReason, setSelectedReason] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  // Dönem filtresi (KPI kartları dahil tüm raporu kapsar)
+  const [period, setPeriod] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const isCustomPeriod = period === "custom";
+  // Özel aralıkta iki tarih de girilene kadar istek atılmaz; eksik aralıkla
+  // sorgu tüm arşivi döndürüp kartları sessizce yanıltırdı.
+  const customRangeReady = !isCustomPeriod || (!!dateFrom && !!dateTo);
+
   const fetchReport = async () => {
     try {
       const qParams = new URLSearchParams();
@@ -72,12 +111,18 @@ export default function ForexReportsPage() {
       if (selectedOutcome !== "ALL") qParams.append("outcome", selectedOutcome);
       if (selectedReason !== "ALL") qParams.append("reason", selectedReason);
       if (searchQuery.trim()) qParams.append("search", searchQuery.trim());
+      qParams.append("period", period);
+      if (isCustomPeriod) {
+        if (dateFrom) qParams.append("date_from", dateFrom);
+        if (dateTo) qParams.append("date_to", dateTo);
+      }
 
       const url = `/api/forex/auto-paper/trades?${qParams.toString()}`;
       const res = await apiFetch(url);
       if (res) {
         setTrades(res.trades || []);
         setKpi(res.kpi || null);
+        setKpiScope(res.kpi_scope || null);
         setOpenPositions(res.open_positions || []);
       }
     } catch (err) {
@@ -88,14 +133,27 @@ export default function ForexReportsPage() {
   };
 
   useEffect(() => {
-    fetchReport();
-  }, [selectedSymbol, selectedOutcome, selectedReason, searchQuery]);
+    if (customRangeReady) fetchReport();
+  }, [selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, dateFrom, dateTo]);
 
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !customRangeReady) return;
     const interval = setInterval(fetchReport, 3000);
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, searchQuery]);
+  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, dateFrom, dateTo]);
+
+  // Dönem değişiminde özel aralığa geçilirse makul bir varsayılan doldur
+  // (boş tarih kutularıyla kullanıcıyı bekletmemek için).
+  useEffect(() => {
+    if (isCustomPeriod && !dateFrom && !dateTo) {
+      const today = localDateInput();
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 6);
+      const offsetMs = weekAgo.getTimezoneOffset() * 60_000;
+      setDateFrom(new Date(weekAgo.getTime() - offsetMs).toISOString().slice(0, 10));
+      setDateTo(today);
+    }
+  }, [isCustomPeriod]);
 
   // Client-Side CSV İndirme
   const downloadCsv = () => {
@@ -250,7 +308,33 @@ export default function ForexReportsPage() {
 
       {/* KPI PERFORMANS METRİKLERİ KARTLARI */}
       {kpi && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <>
+          {/* Kartların kapsamı: hangi sembol + dönem özetlendiği. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="font-bold text-bunker-muted uppercase tracking-wider">
+                KPI Kapsamı:
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-400/30 font-bold">
+                {availableSymbols.find((s) => s.key === selectedSymbol)?.label || selectedSymbol}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-bold">
+                {isCustomPeriod && customRangeReady
+                  ? `${dateFrom} → ${dateTo}`
+                  : PERIOD_LABELS[period] || period}
+              </span>
+              <span className="text-bunker-muted">
+                {kpi.total_trades} işlem özetlendi
+                {kpiScope && kpiScope.archived_total !== kpi.total_trades
+                  ? ` · arşivde ${kpiScope.archived_total} kayıt var`
+                  : ""}
+              </span>
+            </div>
+            <span className="text-[10px] text-bunker-muted italic">
+              Sonuç / çıkış tipi / arama filtreleri yalnız tabloyu süzer, bu kartları etkilemez.
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Toplam İşlem */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
             <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Toplam İşlem</span>
@@ -328,7 +412,8 @@ export default function ForexReportsPage() {
               Equity: ${kpi.equity.toFixed(2)}
             </span>
           </div>
-        </div>
+          </div>
+        </>
       )}
 
       {/* AÇIK İŞLEMLER BİLGİLENDİRME BANTI (Varsa) */}
@@ -362,6 +447,66 @@ export default function ForexReportsPage() {
           </div>
         </div>
       )}
+
+      {/* DÖNEM FİLTRESİ — sabit dilimler + tarih aralığı */}
+      <div className="p-4 rounded-2xl bg-bunker-900/70 border border-bunker-800 space-y-3 shadow-lg">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-bunker-muted font-semibold uppercase tracking-wider mr-1">
+            📆 Dönem:
+          </span>
+          {PERIOD_PRESETS.map((item) => {
+            const active = period === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                title={item.hint}
+                onClick={() => setPeriod(item.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono border transition-all ${
+                  active
+                    ? "bg-blue-500/20 text-blue-300 border-blue-400/50 shadow-sm"
+                    : "bg-bunker-950 text-bunker-muted border-bunker-800 hover:text-white hover:border-bunker-700"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {isCustomPeriod && (
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-bunker-800 text-xs">
+            <label className="flex items-center gap-2">
+              <span className="text-[11px] text-bunker-muted font-semibold">Başlangıç:</span>
+              <input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-mono outline-none focus:border-blue-400 transition-colors"
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-[11px] text-bunker-muted font-semibold">Bitiş:</span>
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-mono outline-none focus:border-blue-400 transition-colors"
+              />
+            </label>
+            {!customRangeReady && (
+              <span className="text-[11px] text-amber-300 font-semibold">
+                ⚠️ Aralığın uygulanması için iki tarihi de seçin.
+              </span>
+            )}
+            <span className="text-[11px] text-bunker-muted">
+              Saatler UTC+3; bitiş günü <strong className="text-white">dahil</strong>.
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* FİLTRELEME & ARAMA ÇUBUĞU */}
       <div className="p-4 rounded-2xl bg-bunker-900/70 border border-bunker-800 space-y-3 shadow-lg">
@@ -435,8 +580,8 @@ export default function ForexReportsPage() {
         </div>
 
         {/* Hızlı Filtre Temizle */}
-        {(selectedSymbol !== "ALL" || selectedOutcome !== "ALL" || selectedReason !== "ALL" || searchQuery) && (
-          <div className="flex items-center gap-2 pt-1 border-t border-bunker-800 text-[11px]">
+        {(selectedSymbol !== "ALL" || selectedOutcome !== "ALL" || selectedReason !== "ALL" || searchQuery || period !== "all") && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-bunker-800 text-[11px]">
             <span className="text-bunker-muted">Aktif filtreler uygulanıyor ({trades.length} işlem listelendi)</span>
             <button
               type="button"
@@ -445,6 +590,9 @@ export default function ForexReportsPage() {
                 setSelectedOutcome("ALL");
                 setSelectedReason("ALL");
                 setSearchQuery("");
+                setPeriod("all");
+                setDateFrom("");
+                setDateTo("");
               }}
               className="text-blue-400 hover:underline font-bold"
             >

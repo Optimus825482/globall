@@ -1501,18 +1501,157 @@ async def get_forex_tickers(category: Optional[str] = None):
     }
 
 
+def _evaluate_signal_gate(
+    sym: str,
+    cand: Dict[str, Any],
+    current_utc_hour: int,
+    dxy_regime: Optional[Dict[str, Any]],
+    has_open_position: bool = False,
+) -> Dict[str, Any]:
+    """Bir radar adayının otonom giriş kapılarından geçip geçmediğini değerlendirir.
+
+    Amaç: panelde "algoritma güçlü sinyal buluyor mu?" sorusunun cevabı, otonom
+    motorun GERÇEK giriş kararıyla aynı olsun. Ayrı bir eşik koymak paneli
+    yalancı yapardı — kullanıcı "AL" görüp motordan işlem beklerken motor sessiz
+    kalırdı. Bu yüzden kapı sırası `_forex_auto_paper_loop` ile birebir aynıdır.
+
+    Sıra önemlidir: ilk düşen kapı `blocked_by` olur ve `primary_blocker` ile
+    kullanıcıya "neden işlem yok" tek cümleyle söylenir.
+
+    DİKKAT: Burada durum DEĞİŞTİRİLMEZ (soğuma sayacı güncellenmez, log
+    basılmaz) — uç nokta salt okunur kalmalı; aksi halde panel her 3 saniyede
+    bir soğuma kalkanını yeniden başlatıp motoru kilitleyebilirdi.
+    """
+    reasons: List[str] = []
+
+    if sym not in _AUTO_SETTINGS.allowed_symbols:
+        reasons.append("allowed")
+
+    direction = cand.get("action", "")
+    if direction not in ("BUY", "SELL"):
+        reasons.append("direction")
+
+    if _AUTO_SETTINGS.dxy_filter_enabled:
+        veto = dxy_entry_veto(sym, direction, dxy_regime)
+        if veto == "dxy_conflict":
+            reasons.append("dxy")
+
+    gate = major_entry_gate_decision(
+        sym, current_utc_hour, float(cand.get("atr_pips", 0.0)),
+        _AUTO_SETTINGS.major_session_filter,
+        _AUTO_SETTINGS.major_session_start_utc, _AUTO_SETTINGS.major_session_end_utc,
+        _AUTO_SETTINGS.major_min_atr_pips,
+    )
+    if gate:
+        reasons.append(gate)
+
+    effective_max_spread = (
+        max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym)
+        else _AUTO_SETTINGS.max_spread_pips
+    )
+    if cand.get("spread_pips", 99.0) > effective_max_spread:
+        reasons.append("spread")
+
+    is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
+    if sym == "BTCUSD":
+        req_score = _AUTO_SETTINGS.btc_min_score if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
+    else:
+        req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
+    # DXY nötr rejimde zayıf semboller (altın/JPY/CHF) +5.0 ekstra puan ister.
+    if _AUTO_SETTINGS.dxy_filter_enabled and dxy_entry_veto(sym, direction, dxy_regime) == "dxy_strict_neutral":
+        req_score += 5.0
+    if cand.get("score", 0.0) < req_score:
+        reasons.append("score")
+
+    if _AUTO_SETTINGS.adx_filter_enabled and float(cand.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
+        reasons.append("adx")
+
+    st_dir = int(cand.get("supertrend_dir", 0))
+    if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0:
+        if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
+            reasons.append("supertrend")
+
+    if _AUTO_SETTINGS.correlation_guard:
+        bias = get_usd_bias(sym, direction)
+        if bias != "USD_NEUTRAL":
+            corr_positions = [
+                (str(p.get("symbol", "")).upper(), get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY")))
+                for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
+            ]
+            ok, _why = _FX_CORR.cluster_check(sym, bias, corr_positions)
+            if not ok:
+                reasons.append("correlation")
+
+    if has_open_position:
+        reasons.append("open_position")
+
+    ready = len(reasons) == 0
+    gate_passed = not any(r in reasons for r in ("allowed", "direction", "score", "spread", "dxy", "major_session", "major_min_atr", "adx", "supertrend", "correlation"))
+
+    return {
+        "signal_ready": ready,
+        "gate_passed": gate_passed,
+        "blocked_by": reasons,
+        "primary_blocker": reasons[0] if reasons else None,
+        "required_score": round(req_score, 1),
+    }
+
+
+# Kapı kodu → kullanıcıya gösterilecek tek cümlelik Türkçe gerekçe.
+# Panelde "neden sinyal yok" sorusunun cevabı; jargonsuz ve eylem odaklı.
+_GATE_LABELS: Dict[str, str] = {
+    "allowed": "Sembol otonom motorun izin listesinde değil",
+    "direction": "Yön belirsiz (ne AL ne SAT)",
+    "score": "Radar skoru giriş eşiğinin altında",
+    "spread": "Spread limitin üzerinde",
+    "dxy": "Dolar endeksi (DXY) rejimiyle çelişiyor",
+    "major_session": "Majör seans penceresi dışında (Asya chop'u)",
+    "major_min_atr": "Volatilite tabanının altında (ölü piyasa)",
+    "adx": "Trend gücü zayıf (ADX kalkanı)",
+    "supertrend": "SuperTrend yönüyle çelişiyor",
+    "correlation": "Korelasyon kalkanı: aynı yönde yoğunlaşma",
+    "open_position": "Bu sembolde zaten açık pozisyon var",
+}
+
+
 @router.get("/radar")
 async def get_forex_radar():
-    """Return high-probability forex momentum and breakout opportunities based on real indicators."""
-    ticks = await _generate_realistic_ticks()
-    candidates = []
+    """Forex radar taraması: gerçek göstergelerle güçlü işlem sinyalleri.
 
+    İki katmanlı sonuç döner:
+      - `signals`   → tüm kapıları geçen, motorun gerçekten işlem açacağı
+                      adaylar ("güçlü sinyal"). Bu liste boşsa piyasada şu an
+                      giriş kalitesinde fırsat yok demektir.
+      - `candidates` → tüm tarama (skora göre sıralı), her biri hangi kapıda
+                      takıldığı bilgisiyle. Panel bunu "izleme" olarak gösterir.
+
+    Kritik ayrım: `score` yönlü bir güç puanıdır ve HOLD durumunda da 50-58
+    bandında döner. Bu yüzden "güçlü" etiketi skora değil, kapıların geçilmesine
+    bağlanır — aksi halde yönsüz piyasada 20 sembol "güçlü sinyal" gibi listelenir.
+    """
+    ticks = await _generate_realistic_ticks()
+    dxy_regime = get_dxy_regime()
+    current_utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
+
+    # Açık pozisyonu olan semboller (MT5 + paper + bekleyen emirler) — motorun
+    # anti-duplicate kapısıyla aynı kaynak.
+    active_syms = {str(p.get("symbol", "")).upper() for p in _MT5_STATE.get("open_positions", [])}
+    active_syms |= {str(p.get("symbol", "")).upper() for p in _AUTO_STATE.get("open_positions", [])}
+    active_syms |= {
+        str(c.get("symbol", "")).upper()
+        for c in _MT5_STATE.get("pending_commands", [])
+        if c.get("action") == "OPEN_ORDER"
+    }
+
+    candidates = []
     for sym, t in ticks.items():
+        sym_u = sym.upper()
         score = t.get("score", 45.0)
         trend = t.get("trend", "NEUTRAL")
         action = t.get("action", "BUY" if trend == "BULLISH" else ("SELL" if trend == "BEARISH" else "HOLD"))
         spread = t.get("spread_pips", 1.5)
         atr_pips = round(t.get("atr", 0.001) / t["pip_size"], 1) if t.get("pip_size", 0) > 0 else 15.0
+        st_dir = int(t.get("supertrend_dir", 0))
 
         spec = get_symbol_trading_specs(
             sym,
@@ -1521,7 +1660,7 @@ async def get_forex_radar():
             atr_pips=atr_pips,
         )
 
-        candidates.append({
+        base = {
             "symbol": sym,
             "display": t["display"],
             "name": t["name"],
@@ -1538,24 +1677,83 @@ async def get_forex_radar():
             "cmo": t.get("cmo", 0.0),
             "cci": t.get("cci", 0.0),
             "adx": t.get("adx", 25.0),
-            "supertrend_dir": t.get("supertrend_dir", 0),
+            "supertrend_dir": st_dir,
+            "htf_trend": t.get("htf_trend", "NEUTRAL"),
             "pip_target": spec["tp_pips"],
             "stop_loss_pips": spec["sl_pips"],
             "risk_reward": f"1:{round(spec['tp_pips'] / spec['sl_pips'], 2)}" if spec["sl_pips"] > 0 else "1:1.83",
             "atr_pips": atr_pips,
             "tv_symbol": t["tv_symbol"],
-        })
+        }
 
-    # Sort by score descending
-    candidates.sort(key=lambda x: x["score"], reverse=True)
+        gate = _evaluate_signal_gate(
+            sym_u, base, current_utc_hour, dxy_regime,
+            has_open_position=sym_u in active_syms,
+        )
+        base.update(gate)
+        base["blocker_text"] = _GATE_LABELS.get(gate["primary_blocker"] or "", "")
+        # Sinyal gücü kademesi: panelin "GÜÇLÜ / İZLE / BEKLE" rozetini besler.
+        if gate["signal_ready"]:
+            base["tier"] = "STRONG"
+        elif gate["gate_passed"]:
+            # Tüm kalite kapıları geçildi, engel yalnızca zaten açık pozisyon.
+            base["tier"] = "ACTIVE"
+        elif action in ("BUY", "SELL") and not any(
+            r in gate["blocked_by"] for r in ("direction", "allowed", "score")
+        ):
+            base["tier"] = "WATCH"
+        else:
+            base["tier"] = "WAIT"
+
+        candidates.append(base)
+
+    # Sıralama: güçlü sinyaller önce, sonra skor. Panelin ilk gördüğü satır
+    # her zaman en yüksek kaliteli aday olur.
+    tier_rank = {"STRONG": 0, "ACTIVE": 1, "WATCH": 2, "WAIT": 3}
+    candidates.sort(key=lambda x: (tier_rank.get(x["tier"], 9), -x["score"]))
+
+    signals = [c for c in candidates if c["tier"] == "STRONG"]
 
     return {
         "candidates": candidates,
+        # `signals` = motora göre şu an işlem açılabilecek adaylar (radarın özü).
+        "signals": signals,
+        "session_note": _radar_scan_note(candidates, current_utc_hour),
         "sessions": _get_market_sessions(),
-        "dxy": get_dxy_regime(),
+        "dxy": dxy_regime,
+        "thresholds": {
+            "min_score": _AUTO_SETTINGS.min_score,
+            "btc_min_score": _AUTO_SETTINGS.btc_min_score,
+            "commodity_min_score": 78.0,
+            "max_spread_pips": _AUTO_SETTINGS.max_spread_pips,
+            "adx_filter_enabled": _AUTO_SETTINGS.adx_filter_enabled,
+            "adx_min": _AUTO_SETTINGS.adx_min,
+            "supertrend_filter_enabled": _AUTO_SETTINGS.supertrend_filter_enabled,
+            "major_session_filter": _AUTO_SETTINGS.major_session_filter,
+            "major_session_utc": f"{_AUTO_SETTINGS.major_session_start_utc:02d}:00–{_AUTO_SETTINGS.major_session_end_utc:02d}:00 UTC",
+            "major_min_atr_pips": _AUTO_SETTINGS.major_min_atr_pips,
+        },
         "total": len(candidates),
         "updated_at": time.time(),
     }
+
+
+def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
+    """Tarama durumunu tek cümleyle özetler — panelde canlı durum satırı."""
+    if not candidates:
+        return "Tarama başladı: mum verisi bekleniyor."
+    strong = [c for c in candidates if c["tier"] == "STRONG"]
+    if strong:
+        names = ", ".join(c["display"] for c in strong[:3])
+        extra = f" (+{len(strong) - 3} daha)" if len(strong) > 3 else ""
+        return f"{len(strong)} güçlü sinyal: {names}{extra}"
+    # Sinyal yoksa en yaygın engel nedeni kullanıcıya söylenir.
+    counts: Dict[str, int] = {}
+    for c in candidates:
+        key = c.get("primary_blocker") or "ready"
+        counts[key] = counts.get(key, 0) + 1
+    top = max(counts.items(), key=lambda kv: kv[1])
+    return f"Şu an giriş kalitesinde sinyal yok — en yaygın engel: {_GATE_LABELS.get(top[0], top[0])} ({top[1]} sembol)."
 
 
 # ============================================================================
@@ -3148,21 +3346,149 @@ async def reset_forex_auto_paper():
     return {"status": "reset", "balance": bal}
 
 
+# Rapor sayfasının dönem ön ayarları. "all" sınırsızdır; "custom" iki tarih ister.
+_FOREX_REPORT_PERIODS = ("all", "today", "yesterday", "last12h", "this_week", "this_month", "custom")
+
+
+def _parse_deal_ts(value: Any) -> Optional[float]:
+    """Kapanmış bir işlemin zaman damgasını epoch saniyeye çevirir.
+
+    Kaynaklar karışık biçim gönderir ve üçü de gerçek veridir:
+      - `closed_at_ts`       → epoch saniye/ms (paper defteri)
+      - `exit_time_iso`      → "2026-10-06T14:33:12+03:00" (paper defteri)
+      - `exit_time`          → "2026-10-06 14:33:12 UTC+3" (MT5 köprüsü)
+    Eski `_collect_symbol_ev` yalnız ikinci biçimi okuyor ve "UTC+3" damgasını
+    UTC sanıyordu (3 saatlik kayma). Burada damga adı okunur; damgasız değer
+    UTC kabul edilir. Çözülemeyen değer `None` döner — çağıran onu penceresi
+    belli bir dönemde DIŞARIDA bırakır (uydurma zaman üretmek yerine).
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        num = float(value)
+        if num <= 0:
+            return None
+        return num / 1000.0 if num > 10_000_000_000 else num
+    text = str(value).strip()
+    if not text or text == "-":
+        return None
+    try:
+        if text.endswith("UTC+3"):
+            dt = datetime.datetime.strptime(text[:-5].strip(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ_UTC3)
+            return dt.timestamp()
+        if text.endswith("UTC"):
+            dt = datetime.datetime.strptime(text[:-3].strip(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+            return dt.timestamp()
+        dt = datetime.datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+def _deal_ts(deal: Dict[str, Any]) -> Optional[float]:
+    """İşlem kaydının kapanış zamanı: `closed_at_ts` → `exit_time_iso` → `exit_time`."""
+    ts = _parse_deal_ts(deal.get("closed_at_ts"))
+    if ts is not None:
+        return ts
+    return _parse_deal_ts(deal.get("exit_time_iso") or deal.get("exit_time"))
+
+
+def _resolve_report_window(
+    period: str,
+    date_from: Optional[str],
+    date_to: Optional[str],
+    now_ts: float,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Dönem adını (başlangıç, bitiş) epoch penceresine çevirir; sınırsız uç `None`.
+
+    Tüm sınırlar UTC+3 (Türkiye) gününe göredir — raporda gösterilen saatlerle
+    aynı takvim. `this_week` haftanın ilk günü PAZARTESİ kabul eder (TR kuralı).
+    """
+    if period not in _FOREX_REPORT_PERIODS:
+        period = "all"
+    now3 = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
+    midnight = now3.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if period == "all":
+        return None, None
+    if period == "today":
+        return midnight.timestamp(), None
+    if period == "yesterday":
+        return (midnight - datetime.timedelta(days=1)).timestamp(), midnight.timestamp()
+    if period == "last12h":
+        return now_ts - 12 * 3600, None
+    if period == "this_week":
+        return (midnight - datetime.timedelta(days=midnight.weekday())).timestamp(), None
+    if period == "this_month":
+        return midnight.replace(day=1).timestamp(), None
+
+    # custom: verilen tarihler UTC+3 gün sınırlarına genişletilir (bitiş DAHİL).
+    start_ts = None
+    end_ts = None
+    if date_from:
+        try:
+            d = datetime.datetime.strptime(str(date_from).strip()[:10], "%Y-%m-%d").replace(tzinfo=TZ_UTC3)
+            start_ts = d.timestamp()
+        except Exception:
+            start_ts = None
+    if date_to:
+        try:
+            d = datetime.datetime.strptime(str(date_to).strip()[:10], "%Y-%m-%d").replace(tzinfo=TZ_UTC3)
+            end_ts = d.timestamp() + 86400.0 - 0.001
+        except Exception:
+            end_ts = None
+    return start_ts, end_ts
+
+
+def _deal_in_window(ts: Optional[float], start_ts: Optional[float], end_ts: Optional[float]) -> bool:
+    """Pencere içi testi. Zamanı çözülemeyen işlem sınırlı pencerede DIŞARIDA kalır."""
+    if start_ts is None and end_ts is None:
+        return True
+    if ts is None:
+        return False
+    if start_ts is not None and ts < start_ts:
+        return False
+    if end_ts is not None and ts > end_ts:
+        return False
+    return True
+
+
 @router.get("/auto-paper/trades")
 async def get_forex_trades_report(
     symbol: Optional[str] = None,
     outcome: Optional[str] = None,
     reason: Optional[str] = None,
     search: Optional[str] = None,
+    period: str = "all",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     limit: int = 500,
 ):
-    """Forex Otonom Scalper ayrıntılı işlem raporları, filtreleme ve performans analitiği."""
+    """Forex Otonom Scalper ayrıntılı işlem raporları, filtreleme ve performans analitiği.
+
+    KPI kartları **sembol + dönem** kapsamına bağlıdır: panelde "EUR/USD" ve
+    "Bugün" seçiliyken kazanma oranı tüm arşivin değil, o dilimin oranıdır.
+    `outcome` / `reason` / `search` yalnız TABLOYU süzer; KPI'ya girmez —
+    yoksa "Sadece Kaybedenler" seçildiğinde kazanma oranı tanım gereği %0
+    görünür ve kart anlamsızlaşırdı. Bu ayrım yanıtta `kpi_scope` ile bildirilir.
+    """
     # MT5 Deals önceliklidir; yoksa auto_state geçmişi kullanılır
     all_closed = list(_MT5_STATE.get("closed_deals", [])) or list(_AUTO_STATE.get("closed_trades", []))
-    filtered = all_closed
 
+    now_ts = time.time()
+    start_ts, end_ts = _resolve_report_window(period, date_from, date_to, now_ts)
+    period_active = start_ts is not None or end_ts is not None
+
+    # --- KPI kapsamı: sembol + dönem (tablo filtreleri hariç) ---
+    kpi_scope = all_closed
     if symbol and symbol != "ALL":
-        filtered = [t for t in filtered if t.get("symbol") == symbol or t.get("display") == symbol]
+        kpi_scope = [t for t in kpi_scope if t.get("symbol") == symbol or t.get("display") == symbol]
+    if period_active:
+        kpi_scope = [t for t in kpi_scope if _deal_in_window(_deal_ts(t), start_ts, end_ts)]
+
+    filtered = kpi_scope
 
     if outcome and outcome != "ALL":
         outcome_upper = str(outcome).upper()
@@ -3182,10 +3508,10 @@ async def get_forex_trades_report(
             or s_low in str(t.get("exit_reason", "")).lower()
         ]
 
-    # Performans Analitiği (Tüm Kapanan İşlemler Üzerinden)
-    total_trades = len(all_closed)
-    wins = [t for t in all_closed if float(t.get("pnl_usd", t.get("profit", 0.0))) >= 0]
-    losses = [t for t in all_closed if float(t.get("pnl_usd", t.get("profit", 0.0))) < 0]
+    # Performans Analitiği (Sembol + Dönem kapsamı; tablo filtreleri hariç)
+    total_trades = len(kpi_scope)
+    wins = [t for t in kpi_scope if float(t.get("pnl_usd", t.get("profit", 0.0))) >= 0]
+    losses = [t for t in kpi_scope if float(t.get("pnl_usd", t.get("profit", 0.0))) < 0]
 
     win_count = len(wins)
     loss_count = len(losses)
@@ -3201,9 +3527,9 @@ async def get_forex_trades_report(
     else:
         profit_factor = 0.0
 
-    total_pnl_usd = round(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in all_closed), 2)
-    total_pnl_pips = round(sum(float(t.get("pnl_pips", 0.0)) for t in all_closed), 1)
-    total_lots = round(sum(float(t.get("lots", 0.0)) for t in all_closed), 2)
+    total_pnl_usd = round(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in kpi_scope), 2)
+    total_pnl_pips = round(sum(float(t.get("pnl_pips", 0.0)) for t in kpi_scope), 1)
+    total_lots = round(sum(float(t.get("lots", 0.0)) for t in kpi_scope), 2)
 
     avg_trade_usd = round(total_pnl_usd / total_trades, 2) if total_trades > 0 else 0.0
     avg_win_usd = round(gross_profit / win_count, 2) if win_count > 0 else 0.0
@@ -3212,8 +3538,14 @@ async def get_forex_trades_report(
     max_win_usd = max([float(t.get("pnl_usd", t.get("profit", 0.0))) for t in wins], default=0.0)
     max_loss_usd = min([float(t.get("pnl_usd", t.get("profit", 0.0))) for t in losses], default=0.0)
 
-    # Açık Pozisyonlar (MT5 veya Auto)
+    # Açık Pozisyonlar (MT5 veya Auto) — sembol filtresi burada da geçerlidir,
+    # yoksa "EUR/USD" seçiliyken altın pozisyonunun yüzen K/Z'si karta sızardı.
     open_positions = list(_MT5_STATE.get("open_positions", [])) or list(_AUTO_STATE.get("open_positions", []))
+    if symbol and symbol != "ALL":
+        open_positions = [
+            p for p in open_positions
+            if p.get("symbol") == symbol or p.get("display") == symbol
+        ]
     open_pnl_usd = round(sum(float(p.get("pnl_usd", p.get("profit", 0.0))) for p in open_positions), 2)
     acc_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"]))
     acc_eq = float(_MT5_STATE.get("account", {}).get("equity", round(acc_bal + open_pnl_usd, 2)))
@@ -3239,6 +3571,18 @@ async def get_forex_trades_report(
             "equity": acc_eq,
             "open_positions_count": len(open_positions),
             "open_pnl_usd": open_pnl_usd,
+        },
+        # KPI'nın neyi kapsadığını arayüz söyler: kartların altındaki
+        # "Sembol: X · Dönem: Y" satırı buradan beslenir, böylece kullanıcı
+        # kazananların filtresinin KPI'ya girmediğini görsel olarak da görür.
+        "kpi_scope": {
+            "symbol": symbol or "ALL",
+            "period": period if period in _FOREX_REPORT_PERIODS else "all",
+            "date_from": date_from,
+            "date_to": date_to,
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "archived_total": len(all_closed),
         },
         "trades": filtered[:limit],
         "total_filtered": len(filtered),

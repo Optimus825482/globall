@@ -221,6 +221,116 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Content-Disposition", csv_res.headers)
         self.assertGreater(len(csv_res.body), 0)
 
+    async def test_report_period_scopes_kpi_to_symbol_and_window(self):
+        """KPI kartları seçilen sembol + döneme göre daralmalı.
+
+        Regresyon: uç nokta KPI'yı `all_closed` üzerinden hesaplıyordu, yani
+        panelde "EUR/USD / Bugün" seçiliyken kazanma oranı tüm arşivin oranıydı.
+        """
+        import datetime as _dt
+
+        now = _dt.datetime.now(_dt.timezone.utc)
+        today_iso = now.astimezone(forex.TZ_UTC3).strftime("%Y-%m-%d")
+
+        def _deal(symbol, pnl, when_iso):
+            return {
+                "id": f"FX-{symbol}-{pnl}", "symbol": symbol, "display": symbol,
+                "direction": "BUY", "lots": 0.1, "pnl_usd": pnl, "pnl_pips": pnl,
+                "exit_time_iso": when_iso, "outcome": "WIN" if pnl >= 0 else "LOSS",
+            }
+
+        fresh = now.isoformat()
+        old = (now - _dt.timedelta(days=40)).isoformat()
+        sample = [
+            _deal("EURUSD", 100.0, fresh),
+            _deal("EURUSD", -50.0, old),      # pencere dışı: KPI'ya GİRMEMELİ
+            _deal("XAUUSD", 900.0, fresh),    # sembol dışı: KPI'ya GİRMEMELİ
+        ]
+        # Bu sınıftaki testler global state'i paylaşır (kapanış testleri kayıt
+        # bırakır); sayım iddiaları için arşivi önce boşaltıp sonra geri koy.
+        async with forex._AUTO_PAPER_LOCK:
+            prev_closed = list(forex._AUTO_STATE["closed_trades"])
+            forex._AUTO_STATE["closed_trades"] = list(sample)
+        try:
+            rep = await forex.get_forex_trades_report(
+                symbol="EURUSD", period="today", date_from=None, date_to=None)
+            kpi = rep["kpi"]
+            self.assertEqual(kpi["total_trades"], 1)
+            self.assertEqual(kpi["wins"], 1)
+            self.assertEqual(kpi["win_rate"], 100.0)
+            self.assertEqual(kpi["total_pnl_usd"], 100.0)
+            self.assertEqual(rep["kpi_scope"]["archived_total"], 3)
+            self.assertEqual(rep["kpi_scope"]["period"], "today")
+
+            # Tüm zamanlar + tüm semboller → arşivin tamamı
+            rep_all = await forex.get_forex_trades_report(period="all")
+            self.assertEqual(rep_all["kpi"]["total_trades"], 3)
+
+            # Tablo filtresi KPI'yı bozmamalı: "sadece kaybedenler"de WR %100 kalır
+            rep_lo = await forex.get_forex_trades_report(
+                symbol="EURUSD", period="today", outcome="LOSS")
+            self.assertEqual(rep_lo["kpi"]["win_rate"], 100.0)
+            self.assertEqual(len(rep_lo["trades"]), 0)
+        finally:
+            async with forex._AUTO_PAPER_LOCK:
+                forex._AUTO_STATE["closed_trades"] = prev_closed
+
+    def test_resolve_report_window_boundaries(self):
+        """Dönem sınırları UTC+3 takvimine ve pazartesi-başlangıçlı haftaya göre."""
+        import datetime as _dt
+
+        # 2026-10-07 Çarşamba 15:00 UTC+3 = 12:00 UTC
+        now = _dt.datetime(2026, 10, 7, 12, 0, 0, tzinfo=_dt.timezone.utc).timestamp()
+        midnight3 = _dt.datetime(2026, 10, 7, 0, 0, 0, tzinfo=forex.TZ_UTC3).timestamp()
+
+        start, end = forex._resolve_report_window("today", None, None, now)
+        self.assertEqual(start, midnight3)
+        self.assertIsNone(end)
+
+        start, end = forex._resolve_report_window("yesterday", None, None, now)
+        self.assertEqual(end, midnight3)
+        self.assertEqual(start, midnight3 - 86400.0)
+
+        start, end = forex._resolve_report_window("last12h", None, None, now)
+        self.assertEqual(start, now - 12 * 3600)
+
+        # Haftanın ilk günü PAZARTESİ (7 Ekim Çarşamba → 5 Ekim Pazartesi)
+        start, _ = forex._resolve_report_window("this_week", None, None, now)
+        self.assertEqual(start, _dt.datetime(2026, 10, 5, 0, 0, 0, tzinfo=forex.TZ_UTC3).timestamp())
+
+        start, _ = forex._resolve_report_window("this_month", None, None, now)
+        self.assertEqual(start, _dt.datetime(2026, 10, 1, 0, 0, 0, tzinfo=forex.TZ_UTC3).timestamp())
+
+        # Bitiş günü DAHİL: 7 Ekim 23:59:59.999 UTC+3 hâlâ pencerede
+        start, end = forex._resolve_report_window("custom", "2026-10-01", "2026-10-07", now)
+        self.assertLess(end, _dt.datetime(2026, 10, 8, 0, 0, 0, tzinfo=forex.TZ_UTC3).timestamp())
+        self.assertGreater(end, _dt.datetime(2026, 10, 7, 23, 0, 0, tzinfo=forex.TZ_UTC3).timestamp())
+
+        # Bilinmeyen dönem → sınırsız (istek düşmez, tüm arşiv)
+        self.assertEqual(forex._resolve_report_window("saçma", None, None, now), (None, None))
+
+    def test_parse_deal_ts_reads_utc3_and_never_invents_time(self):
+        """MT5 köprüsü 'UTC+3' damgası gönderir; UTC sanılırsa 3 saat kayardı."""
+        import datetime as _dt
+
+        ts = forex._parse_deal_ts("2026-10-07 15:30:00 UTC+3")
+        self.assertEqual(ts, _dt.datetime(2026, 10, 7, 15, 30, 0, tzinfo=forex.TZ_UTC3).timestamp())
+        ts_utc = forex._parse_deal_ts("2026-10-07 12:30:00 UTC")
+        self.assertEqual(ts_utc, ts)
+
+        # epoch saniye ve ms
+        self.assertEqual(forex._parse_deal_ts(1_700_000_000), 1_700_000_000.0)
+        self.assertEqual(forex._parse_deal_ts(1_700_000_000_000), 1_700_000_000.0)
+        # Çözülemeyen değer uydurulmaz
+        for bad in (None, "", "-", "dün", 0):
+            self.assertIsNone(forex._parse_deal_ts(bad))
+
+    def test_deal_in_window_excludes_unparseable_in_bounded_window(self):
+        self.assertTrue(forex._deal_in_window(None, None, None))
+        self.assertFalse(forex._deal_in_window(None, 100.0, None))
+        self.assertTrue(forex._deal_in_window(150.0, 100.0, 200.0))
+        self.assertFalse(forex._deal_in_window(250.0, 100.0, 200.0))
+
     async def test_auto_loop_module_globals_are_not_shadowed(self):
         """Regresyon (2026-10-06): _forex_auto_paper_loop içindeki flip-reset
         `_LAST_GOLD_EXIT_TIME = 0.0` ataması, `global` bildiriminde ad yoktuğu için
