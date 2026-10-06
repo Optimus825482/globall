@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { formatUtc3 } from "../../lib/format";
+import AutoSettingsPanel, { type AutoSettings } from "../components/AutoSettingsPanel";
 
 interface AutoPosition {
   id: string;
@@ -50,22 +51,6 @@ interface DecisionLog {
   symbol?: string;
   message: string;
   metadata?: any;
-}
-
-interface AutoSettings {
-  enabled: boolean;
-  balance: number;
-  risk_per_trade_pct: number;
-  max_open_positions: number;
-  min_score: number;
-  tp_pips: number;
-  sl_pips: number;
-  breakeven_pips: number;
-  trailing_stop_pips: number;
-  session_filter: boolean;
-  max_spread_pips: number;
-  gold_cooldown_sec?: number;
-  allowed_symbols: string[];
 }
 
 interface MT5State {
@@ -161,7 +146,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [sessions, setSessions] = useState<any[]>([]);
   const [logFilter, setLogFilter] = useState<string>("ALL");
 
-  // Ayarlar & Düzenleme
+  // Ayarlar — ortak AutoSettingsPanel (/forex/btc-gold ile aynı tek form)
   const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 1000.0,
@@ -178,25 +163,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
   });
 
-  const [formSettings, setFormSettings] = useState<AutoSettings>({
-    enabled: false,
-    balance: 1000.0,
-    risk_per_trade_pct: 10.0,
-    max_open_positions: 25,
-    min_score: 70.0,
-    tp_pips: 25.0,
-    sl_pips: 15.0,
-    breakeven_pips: 10.0,
-    trailing_stop_pips: 16.0,
-    session_filter: false,
-    max_spread_pips: 3.0,
-    gold_cooldown_sec: 60.0,
-    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
-  });
-
   const [showSettings, setShowSettings] = useState(false);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
 
   // Manuel İşlem Formu (symbols verilirse varsayılan ilk izinli sembol olur)
@@ -330,75 +297,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       }
     } catch (err) {
       console.error("Toggle hatası:", err);
-    }
-  };
-
-  // Ayarları Düzenleme Modalını Aç
-  const handleOpenSettings = () => {
-    if (!showSettings) {
-      setFormSettings({ ...appliedSettings });
-      setSaveSuccessMsg(null);
-    }
-    setShowSettings(!showSettings);
-  };
-
-  const updateFormField = (key: keyof AutoSettings, val: any) => {
-    setFormSettings((prev) => ({ ...prev, [key]: val }));
-  };
-
-  const toggleSymbol = (sym: string) => {
-    setFormSettings((prev) => {
-      const exists = prev.allowed_symbols.includes(sym);
-      const next = exists
-        ? prev.allowed_symbols.filter((s) => s !== sym)
-        : [...prev.allowed_symbols, sym];
-      return { ...prev, allowed_symbols: next.length > 0 ? next : [sym] };
-    });
-  };
-
-  // Ayarları Kaydet
-  const saveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingSettings(true);
-    setSaveSuccessMsg(null);
-    try {
-      const payload: AutoSettings = {
-        ...formSettings,
-        risk_per_trade_pct: Number(formSettings.risk_per_trade_pct) || 10.0,
-        tp_pips: Number(formSettings.tp_pips) || 25.0,
-        sl_pips: Number(formSettings.sl_pips) || 15.0,
-        breakeven_pips: Number(formSettings.breakeven_pips) || 10.0,
-        trailing_stop_pips: Number(formSettings.trailing_stop_pips) || 16.0,
-        min_score: Number(formSettings.min_score) || 70.0,
-        max_spread_pips: Number(formSettings.max_spread_pips) || 3.0,
-        gold_cooldown_sec: Math.max(60, Number(formSettings.gold_cooldown_sec) || 60.0),
-        max_open_positions: Number(formSettings.max_open_positions) || 25,
-        session_filter: Boolean(formSettings.session_filter),
-        allowed_symbols:
-          formSettings.allowed_symbols && formSettings.allowed_symbols.length > 0
-            ? formSettings.allowed_symbols
-            : ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
-      };
-
-      const res = await apiFetch("/api/forex/auto-paper/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res && res.status === "ok") {
-        setAppliedSettings(res.settings);
-        setFormSettings(res.settings);
-        setSaveSuccessMsg("✓ Parametreler başarıyla güncellendi ve kaydedildi!");
-        setTimeout(() => {
-          setShowSettings(false);
-          setSaveSuccessMsg(null);
-        }, 1200);
-      }
-    } catch (err) {
-      console.error("Ayarları kaydetme hatası:", err);
-      alert("Parametre kaydedilirken bir hata oluştu.");
-    } finally {
-      setIsSavingSettings(false);
     }
   };
 
@@ -559,7 +457,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
           <button
             type="button"
-            onClick={handleOpenSettings}
+            onClick={() => setShowSettings(!showSettings)}
             className="px-3.5 py-2 rounded-xl bg-bunker-900 border border-bunker-700 text-white hover:border-blue-400 transition-all text-xs font-bold flex items-center gap-1.5"
           >
             <span>⚙️ Parametreler</span>
@@ -585,295 +483,14 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         </div>
       </div>
 
-      {/* PARAMETRE AYARLARI PANELİ (Açılır/Kapanır) */}
-      {showSettings && (
-        <form
-          onSubmit={saveSettings}
-          className="p-5 rounded-2xl bg-bunker-900/95 border border-blue-500/40 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
-        >
-          <div className="flex items-center justify-between border-b border-bunker-800 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-blue-400 font-bold">⚙️</span>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                Otonom Scalping Risk & Çıkış Parametreleri
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowSettings(false)}
-              className="text-xs text-bunker-muted hover:text-white"
-            >
-              ✕ Kapat
-            </button>
-          </div>
-
-          {saveSuccessMsg && (
-            <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-pulse">
-              <span>{saveSuccessMsg}</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Pozisyon Hacmi Riski (% Bakiye):
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="20.0"
-                value={formSettings.risk_per_trade_pct ?? ""}
-                onChange={(e) =>
-                  updateFormField("risk_per_trade_pct", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Dinamik lot büyüklüğünü belirler (varsayılan: %10)</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Kâr Al (TP Pips):
-              </label>
-              <input
-                type="number"
-                min="5"
-                max="100"
-                value={formSettings.tp_pips ?? ""}
-                onChange={(e) =>
-                  updateFormField("tp_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-emerald-400 font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Hedeflenen scalp kârı</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Zarar Durdur (SL Pips):
-              </label>
-              <input
-                type="number"
-                min="5"
-                max="50"
-                value={formSettings.sl_pips ?? ""}
-                onChange={(e) =>
-                  updateFormField("sl_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-rose-400 font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Maksimum kayıp mesafesi</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Başabaş Kilit (BE Pips):
-              </label>
-              <input
-                type="number"
-                min="2"
-                max="30"
-                value={formSettings.breakeven_pips ?? ""}
-                onChange={(e) =>
-                  updateFormField("breakeven_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-cyan-300 font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">+8 pips kârda stop girişe çekilir</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                İz Süren Stop (Trailing Pips):
-              </label>
-              <input
-                type="number"
-                min="4"
-                max="40"
-                value={formSettings.trailing_stop_pips ?? ""}
-                onChange={(e) =>
-                  updateFormField("trailing_stop_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-yellow-300 font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Trend uzarsa kârı adım adım korur</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Min. Radar Skoru (50-98):
-              </label>
-              <input
-                type="number"
-                min="50"
-                max="98"
-                value={formSettings.min_score ?? ""}
-                onChange={(e) =>
-                  updateFormField("min_score", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Yalnızca yüksek teyitli işlemler</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Max. İzin Verilen Spread:
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.5"
-                max="10.0"
-                value={formSettings.max_spread_pips ?? ""}
-                onChange={(e) =>
-                  updateFormField("max_spread_pips", e.target.value === "" ? "" : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Spread yüksekse işlem açılmaz</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Max. Açık İşlem (1-25):
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="25"
-                value={formSettings.max_open_positions ?? ""}
-                onChange={(e) =>
-                  updateFormField("max_open_positions", e.target.value === "" ? "" : parseInt(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Aynı anda açık en fazla pozisyon</span>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">
-                Altın Soğuma Süresi (sn):
-              </label>
-              <input
-                type="number"
-                min="60"
-                max="900"
-                step="10"
-                value={formSettings.gold_cooldown_sec ?? 60}
-                onChange={(e) =>
-                  updateFormField("gold_cooldown_sec", e.target.value === "" ? 60 : parseFloat(e.target.value))
-                }
-                className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-amber-300 font-bold outline-none focus:border-blue-400"
-              />
-              <span className="text-[10px] text-bunker-muted">Kapanış sonrası bekleme (min 60s, def: 60s)</span>
-            </div>
-
-            <div className="flex flex-col justify-center col-span-2">
-              <label className="text-[11px] text-bunker-muted block mb-2">
-                Hafta Sonu Kalkanı:
-              </label>
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formSettings.session_filter}
-                  onChange={(e) =>
-                    updateFormField("session_filter", e.target.checked)
-                  }
-                  className="rounded bg-bunker-950 border-bunker-700 text-blue-500 focus:ring-0 w-4 h-4"
-                />
-                <span className="text-white text-xs font-semibold">
-                  Sadece Piyasa Açıkken İşlem Yap
-                </span>
-              </label>
-              <span className="text-[10px] text-emerald-400 mt-1 font-bold">
-                ✓ Asya (Tokyo & Sydney) seansı dahil tüm seanslarda işlem serbest
-              </span>
-            </div>
-
-            {/* İZİN VERİLEN PARİTELER VE EMTİALAR */}
-            <div className="col-span-2 md:col-span-4 pt-3 border-t border-bunker-800">
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-[11px] text-bunker-muted font-bold">
-                  İşlem Yapılacak Pariteler ({formSettings.allowed_symbols?.length || 0} Seçili):
-                </label>
-                <div className="flex gap-2 text-[10px]">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateFormField("allowed_symbols", [
-                        "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"
-                      ])
-                    }
-                    className="text-blue-400 hover:underline"
-                  >
-                    Tümünü Seç (12 Enstrüman)
-                  </button>
-                  <span className="text-bunker-700">|</span>
-                  <button
-                    type="button"
-                    onClick={() => updateFormField("allowed_symbols", ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"])}
-                    className="text-bunker-muted hover:underline"
-                  >
-                    Sadece 7 Majör
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { sym: "EURUSD", label: "EUR/USD" },
-                  { sym: "GBPUSD", label: "GBP/USD" },
-                  { sym: "USDJPY", label: "USD/JPY" },
-                  { sym: "USDCHF", label: "USD/CHF" },
-                  { sym: "AUDUSD", label: "AUD/USD" },
-                  { sym: "USDCAD", label: "USD/CAD" },
-                  { sym: "NZDUSD", label: "NZD/USD" },
-                  { sym: "BTCUSD", label: "Bitcoin (BTC)" },
-                  { sym: "ETHUSD", label: "Ethereum (ETH)" },
-                  { sym: "NAS100", label: "Nasdaq 100 (USTEC)" },
-                  { sym: "US30", label: "Dow Jones (US30)" },
-                  { sym: "XAUUSD", label: "Ons Altın (XAU)" },
-                ].map((item) => {
-                  const active = formSettings.allowed_symbols?.includes(item.sym);
-                  return (
-                    <button
-                      key={item.sym}
-                      type="button"
-                      onClick={() => toggleSymbol(item.sym)}
-                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all border ${
-                        active
-                          ? "bg-blue-600/30 text-blue-300 border-blue-400/50 shadow-sm"
-                          : "bg-bunker-950/70 text-bunker-muted border-bunker-800 hover:border-bunker-700 hover:text-white"
-                      }`}
-                    >
-                      {active ? "✓ " : "+ "}
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-bunker-800">
-            <button
-              type="button"
-              onClick={() => setShowSettings(false)}
-              className="px-3 py-1.5 rounded-lg bg-bunker-800 text-bunker-muted hover:text-white text-xs"
-            >
-              Vazgeç
-            </button>
-            <button
-              type="submit"
-              disabled={isSavingSettings}
-              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
-            >
-              {isSavingSettings ? "Kaydediliyor…" : "Kaydet ve Uygula"}
-            </button>
-          </div>
-        </form>
-      )}
+      {/* PARAMETRE AYARLARI PANELİ (Ortak bileşen — /forex/btc-gold ile aynı tek form) */}
+      <AutoSettingsPanel
+        show={showSettings}
+        onClose={() => setShowSettings(false)}
+        appliedSettings={appliedSettings}
+        onSaved={setAppliedSettings}
+        accent="blue"
+      />
 
       {/* Rehber / Yardım Paneli */}
       {showMt5Guide && (
