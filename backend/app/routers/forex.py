@@ -1772,6 +1772,59 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         return closed_item
 
 
+def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
+    """XAU/USD tarama izi notu — her radar taramasında altının tam durumunu açıklar.
+
+    Yalnızca RAPORLAMA amaçlıdır: giriş döngüsündeki kapı zincirini etkilemez.
+    "Altın neden işlem açmıyor?" sorusunun kalıcı cevabıdır; veri yokluğu dahil
+    her durumda bir hüküm üretir.
+    """
+    if gold_tick.get("macd_verdict") == "NÖTR (Veri Bekleniyor)":
+        return "❌ VERİ YOK — Yahoo mum verisi alınamıyor, sinyal üretilemiyor"
+    action = str(gold_tick.get("action", "HOLD"))
+    if action not in ("BUY", "SELL"):
+        return "⏸ sinyal yok (HOLD) — trend/momentum teyidi oluşmadı"
+    reasons: List[str] = []
+    active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
+    if active_count >= _AUTO_SETTINGS.max_open_positions:
+        reasons.append(f"portföy dolu ({active_count}/{_AUTO_SETTINGS.max_open_positions})")
+    cd_left = _AUTO_SETTINGS.gold_cooldown_sec - (now_ts - _LAST_GOLD_EXIT_TIME)
+    if cd_left > 0:
+        reasons.append(f"kapanış soğuması {int(cd_left)}s")
+    if _AUTO_SETTINGS.ev_guard_enabled:
+        ev_stats = _collect_symbol_ev("XAUUSD", now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
+        ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
+        ev_floor = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
+        if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades, _AUTO_SETTINGS.ev_max_win_rate, ev_floor):
+            reasons.append(f"EV kalkanı (son {ev_stats['n']} işlem WR %{ev_stats['win_rate']:.0f} net ${ev_stats['net']:+.2f})")
+    bias = get_usd_bias("XAUUSD", action)
+    if _AUTO_SETTINGS.correlation_guard and bias != "USD_NEUTRAL":
+        corr_positions = [
+            (str(p.get("symbol", "")).upper(), get_usd_bias(str(p.get("symbol", "")), str(p.get("direction", "BUY"))))
+            for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
+        ]
+        corr_ok, corr_reason = _FX_CORR.cluster_check("XAUUSD", bias, corr_positions)
+        if not corr_ok:
+            reasons.append(f"korelasyon ({corr_reason})")
+    gold_open = [p for p in (list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])))
+                 if str(p.get("symbol", "")).upper() == "XAUUSD"]
+    if gold_open and active_count < _AUTO_SETTINGS.max_open_positions:
+        reasons.append(f"{len(gold_open)} açık XAU pozisyonu (ekleme piramit şartlı)")
+    spread = float(gold_tick.get("spread_pips", 2.5))
+    if spread > _AUTO_SETTINGS.max_spread_pips:
+        reasons.append(f"spread {spread:.1f}p > {_AUTO_SETTINGS.max_spread_pips:.0f}p")
+    if float(gold_tick.get("score", 0.0)) < 78.0:
+        reasons.append(f"skor {float(gold_tick.get('score', 0.0)):.0f} < 78")
+    if _AUTO_SETTINGS.adx_filter_enabled and float(gold_tick.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
+        reasons.append(f"ADX {float(gold_tick.get('adx', 0.0)):.0f} < {_AUTO_SETTINGS.adx_min:.0f}")
+    st = int(gold_tick.get("supertrend_dir", 0))
+    if _AUTO_SETTINGS.supertrend_filter_enabled and ((action == "BUY" and st < 0) or (action == "SELL" and st > 0)):
+        reasons.append("SuperTrend ters")
+    if reasons:
+        return "⛔ engel: " + "; ".join(reasons)
+    return "✅ GEÇERLİ SİNYAL — kapılar temiz, giriş emri üretiliyor"
+
+
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
     global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME
@@ -1999,6 +2052,20 @@ async def _forex_auto_paper_loop():
                     "SCAN",
                     f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
                 )
+                # XAU/USD tarama izi: her taramada altının tam durumu stream'e düşer
+                # (sessiz arıza olmasın — altının neden işlem açmadığı her taramada görünür)
+                gold_tick = ticks.get("XAUUSD")
+                if gold_tick:
+                    tech_gold = _TECHNICAL_CACHE.get("XAUUSD") or {}
+                    dxy_reg = get_dxy_regime() or {}
+                    _log_auto_decision(
+                        "SCAN",
+                        (f"🔍 [XAU/USD] Tarama: {gold_tick.get('bid', 0.0):.2f}/{gold_tick.get('ask', 0.0):.2f} | "
+                         f"Skor {gold_tick.get('score', 0.0):.1f} {gold_tick.get('action', 'HOLD')} | HTF {tech_gold.get('htf_trend', '-')} | "
+                         f"ADX {gold_tick.get('adx', 0.0):.0f} | ST {'BOĞA' if int(gold_tick.get('supertrend_dir', 0)) > 0 else 'AYI'} | "
+                         f"DXY {dxy_reg.get('regime', '-')} (muaf) → {_gold_scan_note(gold_tick, now_ts)}"),
+                        symbol="XAUUSD",
+                    )
 
             # Veri hattı görünürlüğü: mum verisi alınamayan semboller HOLD'da sessizce kalır.
             # Sessiz arıza olmasın — panelde sembol başına 5 dk'da bir görünür yapılır.
