@@ -329,6 +329,127 @@ class TestDXYRegimeFilter(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"dxy"', src)
 
 
+class TestRadarSignalGate(unittest.TestCase):
+    """Radar "güçlü sinyal" kapısı — otonom motorun gerçek giriş kararıyla aynı olmalı.
+
+    Regresyon: radar eskiden yalnız skor döndürüyordu ve skor HOLD'da da 50-58
+    bandında gezindiği için yönsüz piyasada 15 sembol "sinyal" gibi listeleniyordu.
+    """
+
+    def _cand(self, **over):
+        base = {
+            "symbol": "EURUSD", "display": "EUR/USD", "action": "BUY",
+            "score": 90.0, "spread_pips": 1.2, "adx": 30.0, "supertrend_dir": 1,
+            "atr_pips": 10.0,
+        }
+        base.update(over)
+        return base
+
+    def _gate(self, sym="EURUSD", hour=12, cand=None, **kw):
+        # Saat 12 UTC → majör seans penceresi (7-20) içinde.
+        # DXY None → rejim filtresi devre dışı kalır (canlı ağ çağrısı yok).
+        return forex._evaluate_signal_gate(
+            sym, cand or self._cand(), hour, None, **kw)
+
+    def test_all_gates_open_is_signal_ready(self):
+        res = self._gate()
+        # Korrelasyon kalkanı açık pozisyon listesi boşken geçer.
+        self.assertTrue(res["signal_ready"], res["blocked_by"])
+        self.assertEqual(res["blocked_by"], [])
+        self.assertIsNone(res["primary_blocker"])
+
+    def test_hold_is_not_a_signal(self):
+        """Yönsüz piyasada skor yüksek olsa bile sinyal SAYILMAZ."""
+        res = self._gate(cand=self._cand(action="HOLD", score=58.0))
+        self.assertFalse(res["signal_ready"])
+        self.assertIn("direction", res["blocked_by"])
+
+    def test_score_below_threshold_blocks(self):
+        res = self._gate(cand=self._cand(score=70.0))
+        self.assertFalse(res["signal_ready"])
+        self.assertIn("score", res["blocked_by"])
+        self.assertEqual(res["required_score"], 75.0)
+
+    def test_commodity_requires_higher_score(self):
+        """Altın/emtia 78 eşiği ister; 75 alan forex paritesi geçemez."""
+        res = self._gate(sym="XAUUSD", cand=self._cand(score=76.0, spread_pips=2.5))
+        self.assertIn("score", res["blocked_by"])
+        self.assertEqual(res["required_score"], 78.0)
+
+    def test_major_session_closed_is_market_blocker(self):
+        """Asya seansı (03:00 UTC) majörde piyasa engeli — "ayar" değil."""
+        res = self._gate(hour=3)
+        self.assertFalse(res["gate_passed"])
+        self.assertIn("major_session", res["market_blockers"])
+
+    def test_atr_floor_is_market_blocker(self):
+        res = self._gate(cand=self._cand(atr_pips=1.5))
+        self.assertIn("major_min_atr", res["market_blockers"])
+
+    def test_supertrend_conflict_blocks(self):
+        res = self._gate(cand=self._cand(action="BUY", supertrend_dir=-1))
+        self.assertIn("supertrend", res["blocked_by"])
+
+    def test_open_position_is_not_a_market_blocker(self):
+        """Açık pozisyon piyasa kalitesini bozmaz: kullanıcı "ayar" ile karıştırmasın."""
+        res = self._gate(has_open_position=True)
+        self.assertIn("open_position", res["blocked_by"])
+        self.assertEqual(res["market_blockers"], [])
+        self.assertTrue(res["gate_passed"])
+        self.assertFalse(res["signal_ready"])
+
+    def test_market_blockers_come_before_position_state(self):
+        """Sıralama: gerçek piyasa engeli, "zaten pozisyonum var"ın önüne geçer."""
+        res = self._gate(cand=self._cand(atr_pips=1.0), has_open_position=True)
+        self.assertEqual(res["primary_blocker"], "major_min_atr")
+
+    def test_commodity_uses_higher_threshold_than_btc(self):
+        self.assertEqual(self._gate(sym="XAUUSD")["required_score"], 78.0)
+        self.assertEqual(self._gate(sym="USOIL")["required_score"], 78.0)
+        self.assertEqual(self._gate(sym="EURUSD")["required_score"], 75.0)
+
+    def test_gate_has_no_allowed_symbols_gate(self):
+        """`allowed_symbols` (XAUUSD+BTCUSD) yalnız BTC+Altın izleme sayfasının
+        kısıtıdır; genel forex radarını elemEMELİ.
+
+        Regresyon: bu kapı eklendiğinde 15 sembolün 13'ü "izin listesinde
+        değil" diye düşüyor ve radar işe yaramaz hale geliyordu.
+        """
+        res = self._gate(sym="EURUSD")
+        self.assertNotIn("allowed", res["blocked_by"])
+        self.assertTrue(res["signal_ready"], res["blocked_by"])
+        self.assertNotIn("allowed", forex._GATE_LABELS)
+
+
+class TestRadarScanNote(unittest.TestCase):
+    """Tarama durum cümlesi: kullanıcıya sinyal var/yok ve nedenini söyler."""
+
+    def _c(self, tier, blocker=None, display="EUR/USD"):
+        return {"tier": tier, "display": display, "primary_blocker": blocker}
+
+    def test_reports_strong_signals_with_names(self):
+        note = forex._radar_scan_note(
+            [self._c("STRONG", display="BTC/USD"), self._c("STRONG", display="WTI Oil"),
+             self._c("WAIT", "direction")], 12)
+        self.assertIn("2 güçlü sinyal", note)
+        self.assertIn("BTC/USD", note)
+
+    def test_strong_list_truncates_after_three(self):
+        note = forex._radar_scan_note(
+            [self._c("STRONG", display=f"S{i}") for i in range(5)], 12)
+        self.assertIn("+2 daha", note)
+
+    def test_no_signal_names_dominant_blocker(self):
+        note = forex._radar_scan_note(
+            [self._c("WAIT", "direction"), self._c("WAIT", "direction"),
+             self._c("WATCH", "major_session")], 3)
+        self.assertIn("en yaygın engel", note)
+        self.assertIn("Yön belirsiz", note)
+
+    def test_empty_scan_says_data_pending(self):
+        self.assertIn("verisi bekleniyor", forex._radar_scan_note([], 12))
+
+
 class TestATRExitEngine(unittest.IsolatedAsyncioTestCase):
     """ATR bazlı dinamik TP/SL çıkış motoru."""
 

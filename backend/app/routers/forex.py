@@ -1524,9 +1524,10 @@ def _evaluate_signal_gate(
     """
     reasons: List[str] = []
 
-    if sym not in _AUTO_SETTINGS.allowed_symbols:
-        reasons.append("allowed")
-
+    # NOT: `_AUTO_SETTINGS.allowed_symbols` (varsayılan: XAUUSD + BTCUSD) burada
+    # KAPIDIR — o kısıt yalnızca özel BTC+Altın izleme sayfasına aittir. Genel
+    # forex radarı tüm majörleri/emtiaları tarar; aksi halde panel 15 sembolü
+    # listeler ama 13'ünü "izin yok" diye eler ve radar işe yaramaz hale gelirdi.
     direction = cand.get("action", "")
     if direction not in ("BUY", "SELL"):
         reasons.append("direction")
@@ -1586,13 +1587,20 @@ def _evaluate_signal_gate(
         reasons.append("open_position")
 
     ready = len(reasons) == 0
-    gate_passed = not any(r in reasons for r in ("allowed", "direction", "score", "spread", "dxy", "major_session", "major_min_atr", "adx", "supertrend", "correlation"))
+    market_blockers = [r for r in reasons if r in _MARKET_BLOCKERS]
+
+    # Sıralama: piyasa kalitesi engelleri ÖNCE. Aksi halde "izin listesinde
+    # değil" gibi bir panel ayarı, "ölü piyasa / zayıf trend" gibi gerçek
+    # piyasa gerekçesini maskeler ve kullanıcı sembolü ekleyince sinyal
+    # geleceğini sanar (oysa EUR/USD skor 96 ama ATR tabanının altında).
+    reasons_sorted = market_blockers + [r for r in reasons if r not in _MARKET_BLOCKERS]
 
     return {
         "signal_ready": ready,
-        "gate_passed": gate_passed,
-        "blocked_by": reasons,
-        "primary_blocker": reasons[0] if reasons else None,
+        "gate_passed": not market_blockers,
+        "market_blockers": market_blockers,
+        "blocked_by": reasons_sorted,
+        "primary_blocker": reasons_sorted[0] if reasons_sorted else None,
         "required_score": round(req_score, 1),
     }
 
@@ -1600,7 +1608,6 @@ def _evaluate_signal_gate(
 # Kapı kodu → kullanıcıya gösterilecek tek cümlelik Türkçe gerekçe.
 # Panelde "neden sinyal yok" sorusunun cevabı; jargonsuz ve eylem odaklı.
 _GATE_LABELS: Dict[str, str] = {
-    "allowed": "Sembol otonom motorun izin listesinde değil",
     "direction": "Yön belirsiz (ne AL ne SAT)",
     "score": "Radar skoru giriş eşiğinin altında",
     "spread": "Spread limitin üzerinde",
@@ -1612,6 +1619,14 @@ _GATE_LABELS: Dict[str, str] = {
     "correlation": "Korelasyon kalkanı: aynı yönde yoğunlaşma",
     "open_position": "Bu sembolde zaten açık pozisyon var",
 }
+# Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
+# mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
+# sanmasın, "bu parite şu an giriş kalitesinde değil" ile "zaten pozisyonum
+# var"ı ayırt edebilsin.
+_MARKET_BLOCKERS = frozenset({
+    "direction", "score", "spread", "adx", "supertrend",
+    "dxy", "major_session", "major_min_atr", "correlation",
+})
 
 
 @router.get("/radar")
@@ -1692,15 +1707,15 @@ async def get_forex_radar():
         )
         base.update(gate)
         base["blocker_text"] = _GATE_LABELS.get(gate["primary_blocker"] or "", "")
-        # Sinyal gücü kademesi: panelin "GÜÇLÜ / İZLE / BEKLE" rozetini besler.
+        # Sinyal gücü kademesi. Kademe piyasa kalitesini (gate_passed) ve
+        # kullanıcının yapabileceği eylemi ayrı gösterir — panelde rozet bu.
         if gate["signal_ready"]:
-            base["tier"] = "STRONG"
+            base["tier"] = "STRONG"          # motor şu an işlem açabilir
         elif gate["gate_passed"]:
-            # Tüm kalite kapıları geçildi, engel yalnızca zaten açık pozisyon.
+            # Piyasa onaylı; engel yalnızca mevcut açık pozisyon.
             base["tier"] = "ACTIVE"
-        elif action in ("BUY", "SELL") and not any(
-            r in gate["blocked_by"] for r in ("direction", "allowed", "score")
-        ):
+        elif all(r in ("major_session", "major_min_atr") for r in gate["blocked_by"]) and action in ("BUY", "SELL"):
+            # Kalite kapıları temiz; yalnızca zamanlama (seans/volatilite) kapalı.
             base["tier"] = "WATCH"
         else:
             base["tier"] = "WAIT"
@@ -1718,7 +1733,7 @@ async def get_forex_radar():
         "candidates": candidates,
         # `signals` = motora göre şu an işlem açılabilecek adaylar (radarın özü).
         "signals": signals,
-        "session_note": _radar_scan_note(candidates, current_utc_hour),
+        "scan_note": _radar_scan_note(candidates, current_utc_hour),
         "sessions": _get_market_sessions(),
         "dxy": dxy_regime,
         "thresholds": {
@@ -1739,21 +1754,30 @@ async def get_forex_radar():
 
 
 def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
-    """Tarama durumunu tek cümleyle özetler — panelde canlı durum satırı."""
+    """Tarama durumunu tek cümleyle özetler — panelde canlı durum satırı.
+
+    Sinyal YOKKEN en sık nedeni söyler; "piyasa kötü" ile "ayarın kapalı"yı
+    ayırır ki kullanıcı ne yapacağını bilsin (sembolü aç ya da bekle).
+    """
     if not candidates:
         return "Tarama başladı: mum verisi bekleniyor."
+
     strong = [c for c in candidates if c["tier"] == "STRONG"]
     if strong:
         names = ", ".join(c["display"] for c in strong[:3])
         extra = f" (+{len(strong) - 3} daha)" if len(strong) > 3 else ""
         return f"{len(strong)} güçlü sinyal: {names}{extra}"
-    # Sinyal yoksa en yaygın engel nedeni kullanıcıya söylenir.
+
     counts: Dict[str, int] = {}
     for c in candidates:
         key = c.get("primary_blocker") or "ready"
         counts[key] = counts.get(key, 0) + 1
-    top = max(counts.items(), key=lambda kv: kv[1])
-    return f"Şu an giriş kalitesinde sinyal yok — en yaygın engel: {_GATE_LABELS.get(top[0], top[0])} ({top[1]} sembol)."
+    top_key, top_n = max(counts.items(), key=lambda kv: kv[1])
+
+    return (
+        f"Şu an giriş kalitesinde sinyal yok — en yaygın engel: "
+        f"{_GATE_LABELS.get(top_key, top_key)} ({top_n} sembol)."
+    )
 
 
 # ============================================================================
