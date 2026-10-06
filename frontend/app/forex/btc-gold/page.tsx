@@ -1180,13 +1180,17 @@ export default function BtcGoldForexPage() {
                 })}
 
                 {/* Auto-Paper Pozisyonları (Varsa) */}
-                {openPositions.map((p) => {
-                  const pnlVal = Number(p.pnl_usd || 0);
+                {openPositions.map((p, pIdx) => {
+                  const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
                   const isProfit = pnlVal >= 0;
+                  const rawId = String(p.id ?? (p as any).ticket ?? `paper-${pIdx}`);
+                  const displayId = rawId.length > 6 ? rawId.slice(-6) : rawId;
+                  const pnlPips = p.pnl_pips != null && !isNaN(Number(p.pnl_pips)) ? Number(p.pnl_pips) : null;
+
                   return (
-                    <tr key={`auto-${p.id}`} className="hover:bg-bunker-800/40 transition-colors">
+                    <tr key={`auto-${rawId}-${pIdx}`} className="hover:bg-bunker-800/40 transition-colors">
                       <td className="py-3 px-4 text-[11px] text-amber-300 font-bold">
-                        {p.id.slice(-6)} <span className="text-[9px] text-bunker-muted font-normal">(Paper)</span>
+                        #{displayId} <span className="text-[9px] text-bunker-muted font-normal">(Paper)</span>
                       </td>
                       <td className="py-3 px-3 font-bold text-white text-sm">
                         <span className="flex items-center gap-1.5">
@@ -1231,14 +1235,16 @@ export default function BtcGoldForexPage() {
                         <div className="font-bold text-sm">
                           {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
                         </div>
-                        <div className="text-[10px]">
-                          {p.pnl_pips >= 0 ? "+" : ""}{p.pnl_pips.toFixed(1)} p
-                        </div>
+                        {pnlPips !== null && (
+                          <div className="text-[10px]">
+                            {pnlPips >= 0 ? "+" : ""}{pnlPips.toFixed(1)} p
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button
                           type="button"
-                          onClick={() => closeAutoPosition(p.id)}
+                          onClick={() => closeAutoPosition(rawId)}
                           className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
                         >
                           Kapat ✕
