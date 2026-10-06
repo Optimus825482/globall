@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 FNG_URL = "https://api.alternative.me/fng/"
 FNG_CACHE_TTL = 900.0  # 15 dakika (Günde 1 kez güncellenir)
 BTC_CACHE_TTL = 30.0   # 30 saniye BTC pusulası tazeleme
+BTC_1H_TTL = 300.0     # 5 dakika 1H EMA200 tazeleme
 
 _FNG_CACHE: tuple[float, dict] | None = None
 _BTC_COMPASS_CACHE: tuple[float, dict] | None = None
+_BTC_1H_EMA_CACHE: tuple[float, dict] | None = None
 
 
 def _fetch_fng_sync(timeout: float = 3.5) -> dict | None:
@@ -57,8 +59,8 @@ async def get_fear_and_greed() -> dict:
 
 
 async def get_btc_compass() -> dict:
-    """Bitcoin'in anlık kısa vadeli yönünü ve piyasa stres seviyesini ölçer."""
-    global _BTC_COMPASS_CACHE
+    """Bitcoin'in anlık kısa vadeli yönünü, piyasa stres seviyesini ve 1H EMA200 rejimini ölçer."""
+    global _BTC_COMPASS_CACHE, _BTC_1H_EMA_CACHE
     now = time.time()
     if _BTC_COMPASS_CACHE and (now - _BTC_COMPASS_CACHE[0]) < BTC_CACHE_TTL:
         return _BTC_COMPASS_CACHE[1]
@@ -71,9 +73,7 @@ async def get_btc_compass() -> dict:
     btc_fetch_error = False
 
     # BTC referans sembolü oyaladığımız borsanın quote'süne göre (TR→BTCTRY,
-    # Global→BTCUSDT). Sabit "BTCTRY" Global'da yok → k5 boş gelir ve
-    # `btc_fetch_error` ile fail-closed'a düşülür, yani panik koruması sessizce
-    # TÜM zamanlar kapalı kalırdı.
+    # Global→BTCUSDT).
     btc_symbol = f"BTC{config.QUOTE_ASSET}"
 
     try:
@@ -98,25 +98,43 @@ async def get_btc_compass() -> dict:
             else:
                 btc_trend_state = "SIDEWAYS"
         else:
-            # Veri gelmedi: bilinmeyen durum — fail-closed notu için işaretle.
             btc_fetch_error = True
     except Exception as exc:
         logger.debug("BTC pusula hesabı hatası: %s", exc)
         btc_fetch_error = True
+
+    # 1H BTC EMA200 Makro Rejim Kalkanı (5 dk TTL)
+    btc_1h_data: dict = {"btc_1h_close": None, "btc_1h_ema200": None, "is_btc_above_ema200": True}
+    if _BTC_1H_EMA_CACHE and (now - _BTC_1H_EMA_CACHE[0]) < BTC_1H_TTL:
+        btc_1h_data = _BTC_1H_EMA_CACHE[1]
+    else:
+        try:
+            k1h = await fetch_klines(btc_symbol, "1h", 210)
+            if k1h and len(k1h) >= 200:
+                closes_1h = [float(b[4]) for b in k1h]
+                from app.technical_analysis import _ema
+                ema200_val = _ema(closes_1h, 200)
+                c_last = closes_1h[-1]
+                btc_1h_data = {
+                    "btc_1h_close": round(c_last, 2),
+                    "btc_1h_ema200": round(ema200_val, 2) if ema200_val else None,
+                    "is_btc_above_ema200": bool(c_last > ema200_val) if ema200_val else True,
+                }
+                _BTC_1H_EMA_CACHE = (now, btc_1h_data)
+        except Exception as exc:
+            logger.debug("BTC 1H EMA200 hesabı hatası: %s", exc)
 
     result = {
         "btc_symbol": btc_symbol,
         "btc_5m_change_pct": btc_5m_ret,
         "btc_15m_change_pct": btc_15m_ret,
         "btc_trend_state": btc_trend_state,
-        # ANAHTAR UYUŞMAZLIĞI DÜZELTMESİ (2026-09-26 denetimi, bölüm 2.3):
-        # cache yalnızca `is_panic_dump` taşıyordu, `master_surge.py:541` ise
-        # `is_btc_panic` okuyordu → cache dolu olsa bile BTC panik kapısı
-        # TETİKLENMEZDİ. Artık TEK kanonik anahtar `is_btc_panic`; eski ad
-        # geriye dönük uyum için aynen yazılır (okuyan başka modül varsa
-        # bozulmaz) ama okuma tarafı kanonik anahtara hizalanır.
         "is_btc_panic": is_panic,
         "is_panic_dump": is_panic,
+        "btc_1h_close": btc_1h_data.get("btc_1h_close"),
+        "btc_1h_ema200": btc_1h_data.get("btc_1h_ema200"),
+        "is_btc_above_ema200": btc_1h_data.get("is_btc_above_ema200", True),
+        "is_macro_bull_regime": btc_1h_data.get("is_btc_above_ema200", True) and not is_panic,
         "fetch_error": btc_fetch_error,
         "updated_at": now,
     }
@@ -146,13 +164,20 @@ async def get_macro_sentiment() -> dict:
 
     score = fng.get("score", 50)
     classification = fng.get("classification", "Neutral")
-    is_panic = btc.get("is_panic_dump", False)
+    is_panic = btc.get("is_btc_panic", False)
+    is_above_ema200 = btc.get("is_btc_above_ema200", True)
+    btc_ema200_val = btc.get("btc_1h_ema200")
 
-    # Piyasa Stres Seviyesi
+    # Piyasa Stres Seviyesi & Makro Rejim Kalkanı
     if is_panic or score <= 20:
         stress_level = "HIGH_RISK"
-        allow_new_longs = not is_panic  # BTC şelale düşüşündeyse yeni alım kapatılır
-        desc = "Piyasa yüksek stres veya panik satış altında. Bitcoin ani düşüşte; yeni altcoin alımları yüksek risk taşır."
+        allow_new_longs = False  # BTC panik düşüşündeyse alım kapalı
+        desc = "Piyasa yüksek stres veya panik satış altında. Bitcoin ani düşüşte; yeni altcoin alımları durduruldu."
+    elif not is_above_ema200:
+        stress_level = "BEAR_REGIME"
+        allow_new_longs = False  # BTC 1H EMA200 altındayken agresif breakout longları engellenir
+        ema_str = f"({btc_ema200_val:.1f})" if btc_ema200_val else ""
+        desc = f"Bitcoin 1H EMA200 {ema_str} altında (Ayı Rejimi). Rejim kalkanı aktif; sermaye koruması devrede."
     elif score >= 75:
         stress_level = "OVERHEATED"
         allow_new_longs = True
@@ -160,7 +185,7 @@ async def get_macro_sentiment() -> dict:
     else:
         stress_level = "HEALTHY"
         allow_new_longs = True
-        desc = f"Genel piyasa dengeli ({classification} - Skor {score}). Bitcoin yatay/destekleyici."
+        desc = f"Genel piyasa dengeli ({classification} - Skor {score}). Bitcoin 1H EMA200 üzerinde ve destekleyici."
 
     return {
         "fear_and_greed_score": score,
@@ -168,6 +193,10 @@ async def get_macro_sentiment() -> dict:
         "btc_trend_state": btc.get("btc_trend_state", "SIDEWAYS"),
         "btc_15m_change_pct": btc.get("btc_15m_change_pct", 0.0),
         "is_btc_panic": is_panic,
+        "is_btc_above_ema200": is_above_ema200,
+        "btc_1h_ema200": btc_ema200_val,
+        "is_macro_bull_regime": is_above_ema200 and not is_panic,
+        "regime_shield_active": not is_above_ema200 or is_panic,
         "market_stress_level": stress_level,
         "allow_new_longs": allow_new_longs,
         "summary": desc,
@@ -182,13 +211,28 @@ def get_cached_macro_sentiment() -> dict | None:
         return None
 
     fng_val = _FNG_CACHE[1] if (_FNG_CACHE and (now - _FNG_CACHE[0]) < FNG_CACHE_TTL) else {"score": 50, "classification": "Neutral"}
-    btc_val = _BTC_COMPASS_CACHE[1] if (_BTC_COMPASS_CACHE and (now - _BTC_COMPASS_CACHE[0]) < BTC_CACHE_TTL) else {"btc_trend_state": "SIDEWAYS", "btc_15m_change_pct": 0.0, "is_btc_panic": False, "is_panic_dump": False}
+    btc_val = _BTC_COMPASS_CACHE[1] if (_BTC_COMPASS_CACHE and (now - _BTC_COMPASS_CACHE[0]) < BTC_CACHE_TTL) else {
+        "btc_trend_state": "SIDEWAYS", "btc_15m_change_pct": 0.0, "is_btc_panic": False, "is_panic_dump": False, "is_btc_above_ema200": True
+    }
 
     score = fng_val.get("score", 50)
     classification = fng_val.get("classification", "Neutral")
-    # Kanonik anahtar `is_btc_panic`; eski `is_panic_dump` yalnız geriye dönük
-    # uyum için okunur (2026-09-26 anahtar uyuşmazlığı düzeltmesi).
     is_panic = bool(btc_val.get("is_btc_panic", btc_val.get("is_panic_dump", False)))
+    is_above_ema200 = bool(btc_val.get("is_btc_above_ema200", True))
+    btc_ema200_val = btc_val.get("btc_1h_ema200")
+
+    if is_panic or score <= 20:
+        stress_level = "HIGH_RISK"
+        allow_new_longs = False
+    elif not is_above_ema200:
+        stress_level = "BEAR_REGIME"
+        allow_new_longs = False
+    elif score >= 75:
+        stress_level = "OVERHEATED"
+        allow_new_longs = True
+    else:
+        stress_level = "HEALTHY"
+        allow_new_longs = True
 
     return {
         "fear_and_greed_score": score,
@@ -196,8 +240,12 @@ def get_cached_macro_sentiment() -> dict | None:
         "btc_trend_state": btc_val.get("btc_trend_state", "SIDEWAYS"),
         "btc_15m_change_pct": btc_val.get("btc_15m_change_pct", 0.0),
         "is_btc_panic": is_panic,
-        "market_stress_level": "HIGH_RISK" if (is_panic or score <= 20) else ("OVERHEATED" if score >= 75 else "HEALTHY"),
-        "allow_new_longs": not is_panic,
+        "is_btc_above_ema200": is_above_ema200,
+        "btc_1h_ema200": btc_ema200_val,
+        "is_macro_bull_regime": is_above_ema200 and not is_panic,
+        "regime_shield_active": not is_above_ema200 or is_panic,
+        "market_stress_level": stress_level,
+        "allow_new_longs": allow_new_longs,
         "summary": "Makro önbellek özeti",
         "updated_at": now,
     }

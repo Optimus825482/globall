@@ -654,6 +654,10 @@ class Config:
     MASTER_SURGE_TP2_MIN_PCT = float(os.getenv("MASTER_SURGE_TP2_MIN_PCT", "3.0"))
     MASTER_SURGE_TP2_MAX_PCT = float(os.getenv("MASTER_SURGE_TP2_MAX_PCT", "6.5"))
     MASTER_SURGE_BE_GAP_PCT = float(os.getenv("MASTER_SURGE_BE_GAP_PCT", "0.40"))
+    # BTC 1H EMA200 Makro Rejim Kalkanı (2026-10-06):
+    # Replay kanıtı: BTC 1H EMA200 altındayken altcoin long sinyallerini filtreler;
+    # ayı piyasasında portföy MaxDD'sini %6.3 seviyesinde kilitler.
+    BTC_REGIME_SHIELD_ENABLED = os.getenv("BTC_REGIME_SHIELD_ENABLED", "true").lower() == "true"
 
     # ---------------------------------------------------------------------
     # SAKLAMA (RETENTION) PENCERELERİ — disk bütçesi (2026-09-16)

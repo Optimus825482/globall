@@ -42,6 +42,7 @@ export default function Sidebar() {
     const [unread, setUnread] = useState(0);
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [health, setHealth] = useState<any>(null);
+    const [macroRegime, setMacroRegime] = useState<any>(null);
     const liveStatus = useLiveStatus();
     const onLiveMessage = useCallback((message: any) => {
         if (message.type !== "alert") return;
@@ -104,6 +105,20 @@ export default function Sidebar() {
     }, []);
     useEffect(() => { loadHealth(); }, [loadHealth]);
     useVisibleInterval(loadHealth, 10_000);
+
+    const loadMacroRegime = useCallback(() => {
+        apiFetch("/api/signals/macro-regime")
+            .then((data) => setMacroRegime(data?.macro_sentiment || null))
+            .catch(() => setMacroRegime(null));
+    }, []);
+    useEffect(() => { loadMacroRegime(); }, [loadMacroRegime]);
+    useVisibleInterval(loadMacroRegime, 15_000);
+
+    const isBearRegime = Boolean(
+        macroRegime?.regime_shield_active ||
+        macroRegime?.market_stress_level === "BEAR_REGIME" ||
+        (macroRegime && macroRegime.is_btc_above_ema200 === false)
+    );
     const isStandalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as any)?.standalone === true);
     const install = async () => {
         if (!installEvent) return;
@@ -168,6 +183,25 @@ export default function Sidebar() {
                         <span>FOREX</span>
                     </button>
                 </div>
+
+                {/* BTC BEAR REGIME KALKANI ROZETİ (Spot ve Forex seçeneklerinin altında) */}
+                {isBearRegime && (
+                    <div
+                        className="mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-red-950/90 border border-red-500/80 shadow-[0_0_14px_rgba(239,68,68,0.5)] animate-pulse transition-all"
+                        title={macroRegime?.summary || "BTC 1H EMA200 altında: Makro ayı rejim kalkanı aktif."}
+                    >
+                        <div className="flex items-center gap-1.5 font-mono text-[11px] font-extrabold text-red-200">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                            </span>
+                            <span className="tracking-wide">BTC BEAR REGIME</span>
+                        </div>
+                        <span className="text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-red-500/30 text-red-100 border border-red-400/60 shadow-[0_0_6px_rgba(239,68,68,0.5)]">
+                            KALKAN AKTİF
+                        </span>
+                    </div>
+                )}
 
                 {/* Global Borsa / Forex Rozet Kartı */}
                 <div className={`mt-2.5 rounded-lg border p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-colors ${

@@ -1571,6 +1571,8 @@ class ForexAutoPaperSettings(BaseModel):
     major_session_start_utc: int = Field(7, ge=0, le=23, description="Majör seans penceresi başlangıcı (UTC, dahil) — 07:00 London açık")
     major_session_end_utc: int = Field(20, ge=1, le=24, description="Majör seans penceresi bitişi (UTC, dahil değil) — 20:00 NY öğleden sonra")
     major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
+    crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
+    btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; churn'u keser — süpürme: 76 noktası en iyi, işlem düşüşü yalnız %11.5, BTC −$30→+$78)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["XAUUSD", "BTCUSD"],
@@ -2332,7 +2334,11 @@ async def _forex_auto_paper_loop():
                 # 7. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
                 # DXY nötr rejimdeki zayıf semboller (XAUUSD/USDJPY/USDCHF) +5.0 ekstra skor ister.
                 is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
-                req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
+                if sym == "BTCUSD" and _AUTO_SETTINGS.btc_min_score > 0:
+                    # BTC özel eşik: düşük kaliteli churn'u keser (2026-10-06 replay: BTC −$30→+$58)
+                    req_score = _AUTO_SETTINGS.btc_min_score
+                else:
+                    req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
                 req_score += weak_symbol_score_bump
                 if cand["score"] < req_score:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
@@ -2391,7 +2397,13 @@ async def _forex_auto_paper_loop():
                 # SL'e volatilite nefes payı ekler (gürültü stoplarını azaltır).
                 first_target_pips = 0.0
                 if _AUTO_SETTINGS.atr_exit_enabled:
-                    atr_levels = get_atr_exit_levels(atr_pips, spec["sl_pips"], spec["tp_pips"])
+                    if _AUTO_SETTINGS.crypto_sl_atr_mult > 0 and ("BTC" in sym or "ETH" in sym):
+                        # Kripto özel stop genişliği: 1.1×ATR kriptoda dar kalıyor (2026-10-06 replay kazananı)
+                        atr_levels = get_atr_exit_levels(
+                            atr_pips, spec["sl_pips"], spec["tp_pips"],
+                            sl_atr_mult=_AUTO_SETTINGS.crypto_sl_atr_mult)
+                    else:
+                        atr_levels = get_atr_exit_levels(atr_pips, spec["sl_pips"], spec["tp_pips"])
                     sl_pips = atr_levels["sl_pips"]
                     tp_pips = atr_levels["tp_pips"]
                     if _AUTO_SETTINGS.partial_tp_enabled:

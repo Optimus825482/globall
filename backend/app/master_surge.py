@@ -572,16 +572,16 @@ def evaluate_master_surge(
                 "raw_composite_before_bias": raw_composite_index,
             }
 
-    # BTC Makro Panik Kapısı (BTC Compass Gate)
-    # Muafiyet listesi bu deployment'ın BORSASINA göre kurulur: TR örneğinde
-    # yalnız `BTCTRY`, Global'da yalnız `BTCUSDT` BTC'nin kendisidir. İki
-    # sembolü birden listelemek, diğer borsadaki (bu örnekte hiç işlem
-    # edilmeyen) çifti yanlışlıkla muaf tutardı — sessiz bir gevşeklik.
+    # BTC Makro Panik ve Rejim Kapısı (BTC Compass & Regime Shield)
     btc_ref = f"BTC{config.QUOTE_ASSET}"
     btc_panic_blocked = False
+    btc_regime_blocked = False
     if macro_sentiment and isinstance(macro_sentiment, dict):
         if macro_sentiment.get("is_btc_panic") and sym != btc_ref:
             btc_panic_blocked = True
+        if getattr(config, "BTC_REGIME_SHIELD_ENABLED", True):
+            if not macro_sentiment.get("is_btc_above_ema200", True) and sym != btc_ref:
+                btc_regime_blocked = True
 
     # ATR bilgisi
     atr_pct = None
@@ -601,11 +601,6 @@ def evaluate_master_surge(
     require_4way = bool(getattr(config, "MASTER_SURGE_REQUIRE_4WAY", True))
     passed = (composite_index >= min_score) and (not require_4way or confluence_4way)
     block_reason = None
-    # NOT (2026-09-26 denetimi, bölüm 2.2): `passed` daha önce burada hesaplanıp
-    # HİÇBİR tüketiciye bağlanmıyordu. Aşağıda `gate` alanı üretilir; tüketici
-    # (`monitoring._notify` / `_unified_fast_notify_impl`) `master_surge.passed`
-    # ve `block_reason` alanlarına bakar. Skor/4'lü teyit kapısı da blok nedeni
-    # olarak yazılır — yoksa "kapı çalışmıyor" ayrımı gözlenemez.
     gate_reason = None
     if not passed:
         if not require_4way or not confluence_4way:
@@ -613,10 +608,13 @@ def evaluate_master_surge(
         else:
             gate_reason = "COMPOSITE_BELOW_MIN"
 
-    # Koruma filtreleri: BTC panik şelalesi veya aşırı şişkin long tasfiye riski
+    # Koruma filtreleri: BTC panik şelalesi, 1H EMA200 ayı kalkanı veya aşırı şişkin long tasfiye riski
     if btc_panic_blocked and sym != btc_ref:
         passed = False
         block_reason = "BTC_PANIC_DOWNTREND"
+    elif btc_regime_blocked and sym != btc_ref:
+        passed = False
+        block_reason = "BTC_BEAR_REGIME_SHIELD"
     elif applied_derivatives and applied_derivatives.get("funding_state") == "EXTREME_LONG":
         passed = False
         block_reason = "CROWDED_LONG_LIQUIDATION_RISK"

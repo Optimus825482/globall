@@ -57,7 +57,7 @@ REPLAY_SYMBOL_DEFS = {
 }
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
-                "SEANS", "VOLATİLİTE", "UZAMA")
+                "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP")
 
 # EV kalkanı (canlı motorla aynı; WR 45 = 2026-10-06 30g replay kararı)
 EV_WINDOW_SEC = 24 * 3600
@@ -87,6 +87,13 @@ TUN_MAJOR_HOURS = None      # (başlangıç, biti) UTC saat aralığı — majö
 TUN_MAJOR_MIN_ATR = 0.0     # majörler minimum ATR(pips) — ölü piyasa filtresi (0 = kapalı)
 TUN_MAJOR_MAX_EXT = 0.0     # majörlerde fiyatın EMA21'den maks. ATR-katı uzaması — kovalamama (0 = kapalı)
 GATED_EXTRAS: set = set()   # --gate-extras: majör kapılarına (seans+minATR) tabi tutulacak ek adaylar
+
+# 2026-10-06 altın/BTC geliştirme testleri
+TUN_GOLD_SESSION = False    # altın için de seans penceresi (majör kapısıyla aynı 7-20 UTC)
+TUN_BTC_EMA200 = False      # BTC girişlerine EMA200(1h) yapısal rejim kapısı (BUY>EMA, SELL<EMA)
+TUN_BTC_VWAP = False        # BTC girişlerine günlük VWAP kapısı (BUY>VWAP, SELL<VWAP; hacim gerektirir)
+TUN_CRYPTO_SL_MULT = 0.0    # kripto kategorisi özel SL ATR çarpanı (0 = global sl_mult)
+TUN_BTC_MIN_SCORE = 0.0     # BTC özel skor eşiği (0 = global min_score)
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +416,37 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     orig_dxy = forex._TECHNICAL_CACHE.get("DXY")
     dxy_list = data.get("DXY") or []
 
+    # BTC EMA200(1h) rejim serisi: 5m barlar saatlik kapanışlara indirgenir, EMA200 saat
+    # kapanışları üzerinden hesaplanır; 5m bar SAATİN İÇİNDEYKEN bir önceki TAMAMLANMIŞ
+    # saatin EMA'sı kullanılır (look-ahead yok).
+    btc_ema200_by_hour: Dict[int, float] = {}
+    if TUN_BTC_EMA200 and "BTCUSD" in data:
+        hourly: Dict[int, float] = {}
+        for b in data["BTCUSD"]:
+            hourly[int(b[0] // 3600)] = b[4]
+        ema = None
+        for hk in sorted(hourly):
+            c_h = hourly[hk]
+            ema = c_h if ema is None else ema + (2.0 / 201.0) * (c_h - ema)
+            btc_ema200_by_hour[hk] = ema
+
+    # BTC günlük VWAP: UTC günü başından itibaren kümülatif Σ(tp×v)/Σv (tp=(h+l+c)/3)
+    btc_vwap_by_ts: Dict[float, float] = {}
+    if TUN_BTC_VWAP and "BTCUSD" in data:
+        vols = _load_btc_volume_map()
+        cum_qv = cum_v = 0.0
+        cur_day: Optional[int] = None
+        for b in data["BTCUSD"]:
+            day = int(b[0] // 86400)
+            if day != cur_day:
+                cur_day, cum_qv, cum_v = day, 0.0, 0.0
+            tp = (b[2] + b[3] + b[4]) / 3.0
+            v = float(vols.get(b[0], 0.0) or 0.0)
+            cum_qv += tp * v
+            cum_v += v
+            if cum_v > 0:
+                btc_vwap_by_ts[b[0]] = cum_qv / cum_v
+
     for idx, ts in enumerate(common_ts):
         # Pencere sonu: o haftanın kapanışıyla dur; kalan pozisyonlar aşağıda
         # pencere içi son fiyatla kapatılır (hafta-sonu ötesine taşmaz).
@@ -489,7 +527,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             spread_pips = CATEGORY_SPREAD_PIPS.get(item["category"] if item else "index", 3.0)
             is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
             is_fx_major = sym in FX_MAJORS
-            if is_commodity:
+            if sym == "BTCUSD" and TUN_BTC_MIN_SCORE > 0:
+                base_req = TUN_BTC_MIN_SCORE
+            elif is_commodity:
                 base_req = 78.0
             elif is_fx_major and TUN_FX_MIN_SCORE > 0:
                 base_req = TUN_FX_MIN_SCORE
@@ -549,8 +589,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     weak_bump = 0.0
                 # 5c. Majör güçlendirme kapıları (2026-10-06 araştırma mekanizmaları, yalnız NEW):
                 # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
-                # --gate-extras ile eklenen aday semboller de aynı kapılara tabi tutulabilir.
-                if vname == "NEW" and (sym in FX_MAJORS or sym in GATED_EXTRAS):
+                # --gate-extras ile eklenen adaylar, --gold-session ile altın da kapsanır.
+                _gate_syms = sym in FX_MAJORS or sym in GATED_EXTRAS or (TUN_GOLD_SESSION and ("XAU" in sym or "GOLD" in sym))
+                if vname == "NEW" and _gate_syms:
                     if TUN_MAJOR_HOURS and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
                         blocked_events.append(("SEANS", cand("SEANS")))
                         continue
@@ -562,6 +603,18 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                    else (float(tech["ema21"]) - close_now)) / (atr_pips * pip_size)
                         if ext_atr > TUN_MAJOR_MAX_EXT:
                             blocked_events.append(("UZAMA", cand("UZAMA")))
+                            continue
+                # 5d. BTC rejim kapıları (yalnız NEW): yapısal EMA200(1h) ve günlük VWAP yön hizası
+                if vname == "NEW" and sym == "BTCUSD":
+                    if TUN_BTC_EMA200:
+                        ema_val = btc_ema200_by_hour.get(int(ts // 3600) - 1)
+                        if ema_val is not None and ((action == "BUY" and close_now <= ema_val) or (action == "SELL" and close_now >= ema_val)):
+                            blocked_events.append(("REJIM", cand("REJIM")))
+                            continue
+                    if TUN_BTC_VWAP:
+                        vw = btc_vwap_by_ts.get(ts)
+                        if vw is not None and ((action == "BUY" and close_now <= vw) or (action == "SELL" and close_now >= vw)):
+                            blocked_events.append(("VWAP", cand("VWAP")))
                             continue
                 if spread_pips > max_spread:
                     continue  # ortak kapı — gölge izlenmez
@@ -602,9 +655,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     break
                 spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
                 if vname == "NEW":
+                    sl_mult_eff = TUN_SL_ATR_MULT
+                    if TUN_CRYPTO_SL_MULT > 0 and ("BTC" in cand_d["symbol"] or "ETH" in cand_d["symbol"]):
+                        sl_mult_eff = TUN_CRYPTO_SL_MULT
                     levels = forex.get_atr_exit_levels(
                         cand_d["atr_pips"], spec["sl_pips"], spec["tp_pips"],
-                        sl_atr_mult=TUN_SL_ATR_MULT, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
+                        sl_atr_mult=sl_mult_eff, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
                     sl_pips, tp_pips = levels["sl_pips"], levels["tp_pips"]
                     partial = levels["first_target_pips"]
                 else:
@@ -704,6 +760,35 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     return report
 
 
+def fetch_btc_volume_map(days: int = 32) -> Dict[float, float]:
+    """Yahoo BTC-USD 5m hacim serisi (ts -> volume) — VWAP kapısı için; disk önbellekli."""
+    cache = os.path.join(ROOT, "outputs", f"btc_volume_{days}d.json")
+    if os.path.exists(cache):
+        with open(cache, encoding="utf-8") as f:
+            return {float(k): float(v) for k, v in json.load(f).items()}
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?interval=5m&range={days}d"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        d = json.loads(resp.read().decode("utf-8"))
+    res = d["chart"]["result"][0]
+    q = res["indicators"]["quote"][0]
+    ts = res.get("timestamp", [])
+    vol = q.get("volume", [])
+    out = {float(ts[i]): float(vol[i]) for i in range(min(len(ts), len(vol))) if vol[i] is not None}
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    with open(cache, "w", encoding="utf-8") as f:
+        json.dump(out, f)
+    return out
+
+
+def _load_btc_volume_map() -> Dict[float, float]:
+    try:
+        return fetch_btc_volume_map(32)
+    except Exception as exc:
+        print(f"[UYARI] BTC hacim verisi alınamadı — VWAP kapısı etksiz: {exc}")
+        return {}
+
+
 def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
     lo, hi = 0, len(bars) - 1
     if not bars or bars[0][0] > ts:
@@ -722,6 +807,7 @@ def main():
     global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
+    global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -747,6 +833,13 @@ def main():
     parser.add_argument("--gold-dxy-bump", type=float, default=5.0, help="XAUUSD DXY yumuşatma ekstra skoru")
     parser.add_argument("--ev-window", type=float, default=24.0, help="EV kalkanı bakış penceresi (saat)")
     parser.add_argument("--ev-wr", type=float, default=45.0, help="EV kronik kayıp WR eşiği (%%) — canlı default 45")
+    parser.add_argument("--st-period", type=int, default=10, help="SuperTrend period (canlı default 10)")
+    parser.add_argument("--st-mult", type=float, default=3.0, help="SuperTrend ATR çarpanı (canlı default 3.0)")
+    parser.add_argument("--gold-session", action="store_true", help="Altın için de majör seans penceresini uygula (7-20 UTC)")
+    parser.add_argument("--btc-ema200", action="store_true", help="BTC girişlerine EMA200(1h) rejim kapısı")
+    parser.add_argument("--btc-vwap", action="store_true", help="BTC girişlerine günlük VWAP kapısı (hacim verisi çeker)")
+    parser.add_argument("--crypto-sl-mult", type=float, default=0.0, help="Kripto özel SL ATR çarpanı (0 = global)")
+    parser.add_argument("--btc-min-score", type=float, default=0.0, help="BTC özel skor eşiği (0 = global min_score)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -774,11 +867,24 @@ def main():
     TUN_MAJOR_MIN_ATR = args.major_min_atr
     TUN_MAJOR_MAX_EXT = args.major_max_ext
     GATED_EXTRAS = {s.strip().upper() for s in args.gate_extras.split(",") if s.strip()}
+    TUN_GOLD_SESSION = args.gold_session
+    TUN_BTC_EMA200 = args.btc_ema200
+    TUN_BTC_VWAP = args.btc_vwap
+    TUN_CRYPTO_SL_MULT = args.crypto_sl_mult
+    TUN_BTC_MIN_SCORE = args.btc_min_score
+    # SuperTrend parametre denemesi: canlı fonksiyonu parametreyle sarmala (canlı kod değişmez)
+    if (args.st_period, args.st_mult) != (10, 3.0):
+        _orig_st = forex._compute_supertrend
+        def _st_patched(h, l, c, period=10, mult=3.0, _o=_orig_st, _p=args.st_period, _m=args.st_mult):
+            return _o(h, l, c, _p, _m)
+        forex._compute_supertrend = _st_patched
     BLOCKED_HOURS = [int(h) for h in args.hours.split(",") if h.strip().isdigit()]
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
                f"ev_guard={EV_GUARD} ev_win={args.ev_window}h ev_wr={args.ev_wr} fx_min_score={TUN_FX_MIN_SCORE or '-'} "
                f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) chandelier={TUN_CHANDLIER or '-'} "
+               f"stP={args.st_period} stM={args.st_mult} goldSession={TUN_GOLD_SESSION} btcEMA200={TUN_BTC_EMA200} "
+               f"btcVWAP={TUN_BTC_VWAP} cryptoSL={TUN_CRYPTO_SL_MULT or '-'} btcScore={TUN_BTC_MIN_SCORE or '-'} "
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "
                f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:

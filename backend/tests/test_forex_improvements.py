@@ -318,6 +318,10 @@ class TestDXYRegimeFilter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.major_session_start_utc, 7)
         self.assertEqual(cfg.major_session_end_utc, 20)
         self.assertEqual(cfg.major_min_atr_pips, 4.0)
+        # 2026-10-06 B3 kazananı: kripto özel stop + BTC özel skor (süpürme: 76 en iyi nokta —
+        # işlem düşüşü yalnız %11.5, BTC −$30→+$78, net +$2.018; 78'de hem az işlem hem az kâr)
+        self.assertEqual(cfg.crypto_sl_atr_mult, 1.5)
+        self.assertEqual(cfg.btc_min_score, 76.0)
 
     def test_radar_response_contains_dxy_field(self):
         import inspect
