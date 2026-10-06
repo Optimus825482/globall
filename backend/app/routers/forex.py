@@ -1188,23 +1188,36 @@ def _compute_technical_indicators(
     }
 
 
+_LAST_FETCH_FAIL_LOG: Dict[str, float] = {}
+
+
 def _sync_fetch_candles_for_symbol(fx_sym: str, yf_sym: str) -> Optional[Dict[str, Any]]:
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=2d"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            result = data["chart"]["result"][0]
-            quote = result["indicators"]["quote"][0]
-            opens = [o for o in quote.get("open", []) if o is not None]
-            highs = [h for h in quote.get("high", []) if h is not None]
-            lows = [l for l in quote.get("low", []) if l is not None]
-            closes = [c for c in quote.get("close", []) if c is not None]
-            if len(closes) >= 15:
-                _CLOSES_CACHE[fx_sym] = closes[-250:]
-                return _compute_technical_indicators(closes, highs, lows, opens, fx_sym)
-    except Exception:
-        pass
+    """Yahoo 5m mum verisi çeker. query1 başarısızsa query2 host'u denenir (datacenter IP'lerde
+    futures uçları (GC=F) FX uçlarından yavaş/instabil — tek host + kısa timeout sembolü sessizce
+    öldürüyordu: altın günlerce HOLD'da kaldı, log bile yazmıyordu)."""
+    last_err: Optional[Exception] = None
+    for host in ("query1", "query2"):
+        url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=2d"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                result = data["chart"]["result"][0]
+                quote = result["indicators"]["quote"][0]
+                opens = [o for o in quote.get("open", []) if o is not None]
+                highs = [h for h in quote.get("high", []) if h is not None]
+                lows = [l for l in quote.get("low", []) if l is not None]
+                closes = [c for c in quote.get("close", []) if c is not None]
+                if len(closes) >= 15:
+                    _CLOSES_CACHE[fx_sym] = closes[-250:]
+                    return _compute_technical_indicators(closes, highs, lows, opens, fx_sym)
+        except Exception as exc:
+            last_err = exc
+            continue
+    now = time.time()
+    if now - _LAST_FETCH_FAIL_LOG.get(fx_sym, 0.0) > 300.0:
+        _LAST_FETCH_FAIL_LOG[fx_sym] = now
+        logger.warning("Yahoo veri hattı hatası: %s (%s) — %s", fx_sym, yf_sym, last_err)
     return None
 
 
@@ -1215,7 +1228,10 @@ def _sync_fetch_all_technical_data() -> Dict[str, Dict[str, Any]]:
             executor.submit(_sync_fetch_candles_for_symbol, fx, yf): fx
             for fx, yf in YAHOO_SYMBOL_MAP.items()
         }
-        for fut in concurrent.futures.as_completed(future_map, timeout=6.0):
+        # Sürüm notu: as_completed(timeout=6.0) kullanılıyordu — yavaş bir sembol (GC=F)
+        # zaman aşımını yakıp kalan sembollerin taze verisini de kaybettiriyordu.
+        # Her fetch kendi urlopen timeout'uyla sınırlı olduğundan dış sınır gereksiz.
+        for fut in concurrent.futures.as_completed(future_map):
             fx = future_map[fut]
             try:
                 tech = fut.result()
@@ -1577,6 +1593,7 @@ _LAST_SESSION_BLOCK_LOG_TIME = 0.0
 _LAST_BLOCKED_HOUR_LOG_TIME = 0.0
 _LAST_SCAN_PULSE_TIME = 0.0
 _LAST_CANDIDATE_LOG_TIME: Dict[str, float] = {}
+_LAST_DATA_GAP_LOG: Dict[str, float] = {}
 _LAST_SYMBOL_ENTRY_TIME: Dict[str, float] = {}
 
 _AUTO_SETTINGS = ForexAutoPaperSettings()
@@ -1982,6 +1999,19 @@ async def _forex_auto_paper_loop():
                     "SCAN",
                     f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
                 )
+
+            # Veri hattı görünürlüğü: mum verisi alınamayan semboller HOLD'da sessizce kalır.
+            # Sessiz arıza olmasın — panelde sembol başına 5 dk'da bir görünür yapılır.
+            for t_item in ticks.values():
+                sym_item = t_item.get("symbol", "").upper()
+                if sym_item in _AUTO_SETTINGS.allowed_symbols and t_item.get("macd_verdict") == "NÖTR (Veri Bekleniyor)":
+                    if now_ts - _LAST_DATA_GAP_LOG.get(sym_item, 0.0) > 300.0:
+                        _LAST_DATA_GAP_LOG[sym_item] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"📡 [{t_item['display']}] Veri Hattı: Yahoo mum verisi alınamıyor — bu sembol sinyal üretemiyor (veri gelince otomatik devam eder).",
+                            symbol=sym_item,
+                        )
 
             mt5_active_syms = {p.get("symbol", "").upper() for p in _MT5_STATE.get("open_positions", [])}
             auto_active_syms = {p.get("symbol", "").upper() for p in _AUTO_STATE.get("open_positions", [])}
