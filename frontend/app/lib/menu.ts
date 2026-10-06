@@ -84,6 +84,7 @@ export const FOREX_MENU_GROUPS: MenuGroup[] = [
     id: "forex_ana",
     label: "Forex & Emtia",
     items: [
+      { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
       { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex TradingView ekranı" },
       { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği" },
