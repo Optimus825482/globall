@@ -164,7 +164,7 @@ interface RadarCandidate {
   tv_symbol: string;
 }
 
-// --- GAUGE BİLEŞENİ (YARIM DAİRE SVG İBRELİ GÖSTERGE) ---
+// --- GAUGE BİLEŞENİ (YARIM DAİRE PROFESYONEL TRİGONOMETRİK KADRAN) ---
 function SemiCircleGauge({
   value,
   min = 0,
@@ -172,117 +172,170 @@ function SemiCircleGauge({
   label,
   unit = "",
   zones = [
-    { from: 0, to: 40, color: "#ef4444" },
-    { from: 40, to: 65, color: "#eab308" },
-    { from: 65, to: 100, color: "#10b981" },
+    { from: 0, to: 40, color: "#ef4444", label: "Ayı / Düşük" },
+    { from: 40, to: 65, color: "#eab308", label: "Nötr" },
+    { from: 65, to: 100, color: "#10b981", label: "Boğa / Güçlü" },
   ],
   statusText,
-  size = 140,
 }: {
   value: number;
   min?: number;
   max?: number;
   label: string;
   unit?: string;
-  zones?: Array<{ from: number; to: number; color: string }>;
+  zones?: Array<{ from: number; to: number; color: string; label?: string }>;
   statusText?: string;
-  size?: number;
 }) {
-  const clamped = Math.max(min, Math.min(max, value || 0));
+  const safeVal = typeof value === "number" && !isNaN(value) ? value : min;
+  const clamped = Math.max(min, Math.min(max, safeVal));
   const pct = (clamped - min) / (max - min || 1);
-  // Açı: -180 dereceden 0 dereceye (yarım daire)
-  const angle = -180 + pct * 180;
 
   // Aktif renk belirleme
   const currentZone = zones.find((z) => clamped >= z.from && clamped <= z.to) || zones[zones.length - 1];
   const activeColor = currentZone?.color || "#10b981";
 
-  // SVG parametreleri
-  const radius = 52;
-  const strokeWidth = 10;
-  const cx = 70;
-  const cy = 68;
-  const circumference = Math.PI * radius; // Yarım daire ark uzunluğu
+  // Kadran Boyutları
+  const cx = 100;
+  const cy = 82;
+  const radius = 64;
+  const strokeWidth = 8;
+  const circumference = Math.PI * radius; // 201.06
   const strokeDashoffset = circumference * (1 - pct);
 
+  // Saf Trigonometri ile İbre Koordinatları (CSS transform-origin hatalarını %100 önler)
+  // pct = 0 -> Sol (180°), pct = 0.5 -> Tepe (90°), pct = 1 -> Sağ (0°)
+  const needleLength = 50;
+  const tipX = cx - Math.cos(pct * Math.PI) * needleLength;
+  const tipY = cy - Math.sin(pct * Math.PI) * needleLength;
+
+  // İbrenin taban genişliği (İnce şık üçgen ibre)
+  const baseWidth = 3.5;
+  const perpX = -Math.sin(pct * Math.PI) * baseWidth;
+  const perpY = Math.cos(pct * Math.PI) * baseWidth;
+
+  // Ark üzerindeki parlayan nokta (Glow indicator pin)
+  const arcPinX = cx - Math.cos(pct * Math.PI) * radius;
+  const arcPinY = cy - Math.sin(pct * Math.PI) * radius;
+
+  // Kadran üzerindeki referans tikleri (0%, 25%, 50%, 75%, 100%)
+  const ticks = [0, 0.25, 0.5, 0.75, 1.0].map((t) => {
+    const tX1 = cx - Math.cos(t * Math.PI) * (radius - 8);
+    const tY1 = cy - Math.sin(t * Math.PI) * (radius - 8);
+    const tX2 = cx - Math.cos(t * Math.PI) * (radius + 2);
+    const tY2 = cy - Math.sin(t * Math.PI) * (radius + 2);
+    return { x1: tX1, y1: tY1, x2: tX2, y2: tY2, t };
+  });
+
   return (
-    <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-bunker-950/70 border border-bunker-800/80 shadow-inner group hover:border-bunker-700 transition-all">
-      <div className="text-[10px] font-bold tracking-wider uppercase text-bunker-muted mb-1 flex items-center gap-1">
-        <span>{label}</span>
+    <div className="flex flex-col items-center justify-between p-3.5 rounded-2xl bg-gradient-to-b from-bunker-900/90 to-bunker-950/90 border border-bunker-800/90 hover:border-bunker-700 shadow-xl transition-all h-full">
+      {/* Kadran Başlığı */}
+      <div className="text-[11px] font-black tracking-wider uppercase text-bunker-muted mb-1 text-center">
+        {label}
       </div>
 
-      <div className="relative" style={{ width: size, height: size * 0.62 }}>
-        <svg viewBox="0 0 140 85" className="w-full h-full overflow-visible">
+      {/* SVG Kadran Görünümü */}
+      <div className="w-full flex justify-center py-1">
+        <svg viewBox="0 0 200 95" className="w-full max-w-[170px] h-[85px] overflow-visible">
           <defs>
-            <linearGradient id={`gauge-grad-${label}`} x1="0%" y1="0%" x2="100%" y2="0%">
+            <filter id={`glow-pin-${label.replace(/\s+/g, "")}`} x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={activeColor} floodOpacity="0.8" />
+            </filter>
+            <linearGradient id={`grad-arc-${label.replace(/\s+/g, "")}`} x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#ef4444" />
               <stop offset="50%" stopColor="#eab308" />
               <stop offset="100%" stopColor="#10b981" />
             </linearGradient>
-            <filter id="glow-gauge" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={activeColor} floodOpacity="0.4" />
-            </filter>
           </defs>
 
-          {/* Arka plan Yarım Daire Arkı */}
+          {/* Kadran Tik Çizgileri */}
+          {ticks.map((tk, idx) => (
+            <line
+              key={idx}
+              x1={tk.x1}
+              y1={tk.y1}
+              x2={tk.x2}
+              y2={tk.y2}
+              stroke="#334155"
+              strokeWidth={idx === 2 ? 2 : 1.2}
+              strokeLinecap="round"
+            />
+          ))}
+
+          {/* Arka Plan Yay Arkı (Koyu Taban) */}
           <path
-            d="M 18,68 A 52,52 0 0,1 122,68"
+            d={`M ${cx - radius},${cy} A ${radius},${radius} 0 0,1 ${cx + radius},${cy}`}
             fill="none"
             stroke="#1e293b"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
 
-          {/* Değer Yay Arkı */}
+          {/* Değer Yay Arkı (Renkli İlerleme) */}
           <path
-            d="M 18,68 A 52,52 0 0,1 122,68"
+            d={`M ${cx - radius},${cy} A ${radius},${radius} 0 0,1 ${cx + radius},${cy}`}
             fill="none"
             stroke={activeColor}
             strokeWidth={strokeWidth}
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
-            filter="url(#glow-gauge)"
-            className="transition-all duration-700 ease-out"
+            className="transition-all duration-500 ease-out"
           />
 
-          {/* İbre İğnesi (Needle) */}
-          <g
-            transform={`rotate(${angle + 90}, ${cx}, ${cy})`}
-            className="transition-transform duration-700 ease-out origin-[70px_68px]"
-          >
-            <line x1={cx} y1={cy} x2={cx} y2={cy - 44} stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
-            <circle cx={cx} cy={cy - 44} r="2" fill={activeColor} />
-          </g>
+          {/* Ark Üzerindeki Parlayan Nokta (Pin) */}
+          <circle
+            cx={arcPinX}
+            cy={arcPinY}
+            r={5}
+            fill="#ffffff"
+            stroke={activeColor}
+            strokeWidth={2}
+            filter={`url(#glow-pin-${label.replace(/\s+/g, "")})`}
+            className="transition-all duration-500 ease-out"
+          />
 
-          {/* Merkez Noktası */}
-          <circle cx={cx} cy={cy} r="5" fill="#ffffff" />
-          <circle cx={cx} cy={cy} r="3" fill="#0f172a" />
+          {/* Üçgen İbre (Needle - Trigonometrik Poligon) */}
+          <path
+            d={`M ${cx - perpX},${cy - perpY} L ${tipX},${tipY} L ${cx + perpX},${cy + perpY} Z`}
+            fill="#ffffff"
+            className="transition-all duration-500 ease-out drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]"
+          />
+
+          {/* Merkez Pivot Göbeği */}
+          <circle cx={cx} cy={cy} r={6.5} fill="#0f172a" stroke="#ffffff" strokeWidth={1.5} />
+          <circle cx={cx} cy={cy} r={3} fill={activeColor} />
+
+          {/* Min & Max Küçük Skala Etiketleri */}
+          <text x={cx - radius - 2} y={cy + 11} fill="#64748b" fontSize="8" fontWeight="bold" textAnchor="middle">
+            {min}
+          </text>
+          <text x={cx + radius + 2} y={cy + 11} fill="#64748b" fontSize="8" fontWeight="bold" textAnchor="middle">
+            {max}
+          </text>
         </svg>
-
-        {/* Gösterge Altındaki Sayısal Değer */}
-        <div className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-center text-center">
-          <div className="flex items-baseline justify-center gap-0.5">
-            <span className="text-base font-black font-mono tracking-tight text-white drop-shadow">
-              {typeof clamped === "number" ? clamped.toFixed(1) : clamped}
-            </span>
-            {unit && <span className="text-[10px] text-bunker-muted font-bold">{unit}</span>}
-          </div>
-        </div>
       </div>
 
-      {statusText && (
+      {/* Rakam ve Durum Rozeti (SVG DIŞINDA, İBREDEN BAĞIMSIZ VE TERTEMİZ) */}
+      <div className="flex flex-col items-center justify-center mt-1 w-full">
+        <div className="flex items-baseline justify-center gap-0.5">
+          <span className="text-xl font-black font-mono tracking-tight text-white drop-shadow-md">
+            {clamped.toFixed(1)}
+          </span>
+          {unit && <span className="text-[10px] text-bunker-muted font-bold font-mono">{unit}</span>}
+        </div>
+
+        {/* Durum Rozeti */}
         <span
-          className="mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold border transition-colors shadow-sm"
+          className="mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border tracking-wider transition-colors shadow-sm"
           style={{
-            backgroundColor: `${activeColor}15`,
-            borderColor: `${activeColor}40`,
+            backgroundColor: `${activeColor}20`,
+            borderColor: `${activeColor}50`,
             color: activeColor,
           }}
         >
-          {statusText}
+          {statusText || currentZone?.label || "Aktif"}
         </span>
-      )}
+      </div>
     </div>
   );
 }

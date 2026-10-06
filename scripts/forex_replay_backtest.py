@@ -95,6 +95,9 @@ TUN_BTC_VWAP = False        # BTC girişlerine günlük VWAP kapısı (BUY>VWAP,
 TUN_CRYPTO_SL_MULT = 0.0    # kripto kategorisi özel SL ATR çarpanı (0 = global sl_mult)
 TUN_BTC_MIN_SCORE = 0.0     # BTC özel skor eşiği (0 = global min_score)
 
+# 2026-10-06 "kazananı koştur" testi (kullanıcı sorusu: trailing devreye girince sabit TP kalksa?)
+TUN_TP_MODE = "tp"          # "tp" | "no_tp_on_trail" (trailing aktiflenince TP çekilir) | "no_tp" (TP hiç yok)
+
 
 # ---------------------------------------------------------------------------
 # Veri çekme
@@ -221,16 +224,21 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
 
 
 def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips: float,
-                    chandelier_mult: float = 0.0) -> Optional[Tuple[str, float, float]]:
+                    chandelier_mult: float = 0.0, tp_mode: str = "tp") -> Optional[Tuple[str, float, float]]:
     """Bir bar'da pozisyonu yönetir. Dönüş: (reason, exit_price, partial_realized) veya None.
 
     Sıra (muhafazakâr): SL önce → BE kilidi → kısmi kâr → trailing → TP.
     Kısmi kâr gerçekleşmesi pozisyona yazılır; balance'a close_position'da eklenir.
+    tp_mode: "no_tp_on_trail" → trailing aktiflenince TP emri çekilir (kazananı koştur);
+             "no_tp" → TP hiç yok. Aktifleşen barın kendisinde TP hâlâ geçerlidir
+             (canlıda TP broker tarafında bekleyen emirdir; MODIFY_SLTP ancak sonraki
+             tick'te etkili olur — muhafazakâr model: bar-başı trail bayrağına bakılır).
     """
     ts, o, h, l, c = bar
     pip = pos.pip_size
     direction = pos.direction
     entry = pos.entry_price
+    trail_pre = pos.trail_active  # bar-başı değer — TP silahı bu bar için buna bakar
 
     # (1) SL önce (muhafazakâr) — çıkışta spread maliyeti uygulanır
     if direction == "BUY" and l <= pos.sl_price:
@@ -324,11 +332,20 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = cand
                     pos.trail_active = True
 
-    # (5) TP
-    if direction == "BUY" and h >= pos.tp_price:
-        return ("TP", round(pos.tp_price - pos.fill_adjust, pos.digits), 0.0)
-    if direction == "SELL" and l <= pos.tp_price:
-        return ("TP", round(pos.tp_price + pos.fill_adjust, pos.digits), 0.0)
+    # (5) TP — tp_mode'a göre silahlanır (bkz. docstring)
+    if tp_mode == "no_tp" or (tp_mode == "no_tp_crypto" and ("BTC" in pos.symbol.upper() or "ETH" in pos.symbol.upper())):
+        tp_armed = False
+    elif tp_mode == "no_tp_on_trail":
+        tp_armed = not trail_pre          # muhafazakâr: aktifleşen barda TP hâlâ geçerli
+    elif tp_mode == "no_tp_on_trail_live":
+        tp_armed = not pos.trail_active   # canlıya yakın: aktifleşen barda da TP çekilir
+    else:
+        tp_armed = True
+    if tp_armed:
+        if direction == "BUY" and h >= pos.tp_price:
+            return ("TP", round(pos.tp_price - pos.fill_adjust, pos.digits), 0.0)
+        if direction == "SELL" and l <= pos.tp_price:
+            return ("TP", round(pos.tp_price + pos.fill_adjust, pos.digits), 0.0)
     return None
 
 
@@ -362,7 +379,8 @@ def float_pnl(pos: SimPos, mark: float) -> float:
     return pnl_pips * pos.lots * pos.pip_val
 
 
-def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, chandelier_mult: float = 0.0):
+def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, chandelier_mult: float = 0.0,
+                tp_mode: str = "tp"):
     still = []
     for pos in book.positions:
         bar = by_ts[pos.symbol].get(ts)
@@ -370,7 +388,7 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
             still.append(pos)
             continue
         spec = forex.get_symbol_trading_specs(pos.symbol, base_be=BASE_BE_PIPS, base_trail=BASE_TRAIL_PIPS)
-        res = manage_position(pos, bar, spec["trail_pips"], spec["be_pips"], chandelier_mult)
+        res = manage_position(pos, bar, spec["trail_pips"], spec["be_pips"], chandelier_mult, tp_mode)
         if res and res[0] in ("SL", "BE", "TP"):
             close_position(book, pos, res[0], res[1], closed_ts=ts)
         else:
@@ -484,7 +502,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         # Chandelier yalnız NEW ve gölge defterlerde; OLD tarihi sabit pip trail kullanır
         chand = TUN_CHANDLIER
         for book in books.values():
-            manage_book(book, by_ts, ts, chandelier_mult=(chand if book.name == "NEW" else 0.0))
+            manage_book(book, by_ts, ts, chandelier_mult=(chand if book.name == "NEW" else 0.0),
+                        tp_mode=(TUN_TP_MODE if book.name == "NEW" else "tp"))
         for sh in shadow_book.values():
             manage_book(sh["book"], by_ts, ts, chandelier_mult=chand)
 
@@ -737,6 +756,13 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             "per_symbol": book.per_symbol,
             "daily_pnl": dict(sorted(daily.items())),
         }
+        by_reason: Dict[str, Dict[str, float]] = {}
+        for t in book.closed:
+            r = "TRAIL" if t.get("trail") else str(t["reason"])
+            st_r = by_reason.setdefault(r, {"n": 0, "pnl_usd": 0.0})
+            st_r["n"] = int(st_r["n"]) + 1
+            st_r["pnl_usd"] = round(st_r["pnl_usd"] + t["pnl_usd"], 2)
+        var["exit_reasons"] = by_reason
         if vname == "NEW" and eq_new:
             peak = eq_new[0]
             max_dd = 0.0
@@ -807,7 +833,7 @@ def main():
     global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
-    global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE
+    global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
@@ -840,6 +866,10 @@ def main():
     parser.add_argument("--btc-vwap", action="store_true", help="BTC girişlerine günlük VWAP kapısı (hacim verisi çeker)")
     parser.add_argument("--crypto-sl-mult", type=float, default=0.0, help="Kripto özel SL ATR çarpanı (0 = global)")
     parser.add_argument("--btc-min-score", type=float, default=0.0, help="BTC özel skor eşiği (0 = global min_score)")
+    parser.add_argument("--no-tp-on-trail", action="store_true", help="Trailing aktiflenince sabit TP emri çekilir — muhafazakâr model (aktifleşen barda TP geçerli)")
+    parser.add_argument("--no-tp-on-trail-live", action="store_true", help="Trailing aktiflenince TP çekilir — canlıya yakın model (aktifleşen barda da geçersiz; MODIFY_SLTP saniyeler içinde etkili olur)")
+    parser.add_argument("--no-tp-crypto", action="store_true", help="TP yalnız BTC/ETH'de kapalı")
+    parser.add_argument("--no-tp", action="store_true", help="Sabit TP tamamen kapalı (aşırı uç kontrolü)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -872,6 +902,14 @@ def main():
     TUN_BTC_VWAP = args.btc_vwap
     TUN_CRYPTO_SL_MULT = args.crypto_sl_mult
     TUN_BTC_MIN_SCORE = args.btc_min_score
+    if args.no_tp:
+        TUN_TP_MODE = "no_tp"
+    elif args.no_tp_crypto:
+        TUN_TP_MODE = "no_tp_crypto"
+    elif args.no_tp_on_trail_live:
+        TUN_TP_MODE = "no_tp_on_trail_live"
+    elif args.no_tp_on_trail:
+        TUN_TP_MODE = "no_tp_on_trail"
     # SuperTrend parametre denemesi: canlı fonksiyonu parametreyle sarmala (canlı kod değişmez)
     if (args.st_period, args.st_mult) != (10, 3.0):
         _orig_st = forex._compute_supertrend
@@ -886,6 +924,7 @@ def main():
                f"stP={args.st_period} stM={args.st_mult} goldSession={TUN_GOLD_SESSION} btcEMA200={TUN_BTC_EMA200} "
                f"btcVWAP={TUN_BTC_VWAP} cryptoSL={TUN_CRYPTO_SL_MULT or '-'} btcScore={TUN_BTC_MIN_SCORE or '-'} "
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "
+               f"tpMode={TUN_TP_MODE} "
                f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
