@@ -20,7 +20,7 @@ import math
 import random
 import time
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -722,6 +722,74 @@ def get_atr_exit_levels(
     }
 
 
+def calculate_breakeven_target(
+    pnl_pips: float,
+    pnl_usd: float,
+    lots: float,
+    pip_val: float,
+    pip_size: float,
+    digits: int,
+    direction: str,
+    entry_price: float,
+    current_price: float,
+    current_sl: float,
+    sl_pips: float,
+    atr_pips: float,
+    eff_be_pips: float,
+    is_gold: bool = False,
+    is_crypto: bool = False,
+    gold_be_lock_ratio: float = 0.60,
+    be_r_mult: float = 0.40,
+    be_atr_mult: float = 0.50,
+) -> Optional[float]:
+    """Volatilite (ATR) ve Risk (R) tabanlı başabaş (Breakeven) hedefi hesaplar.
+    
+    Tetiklenme kuralı:
+      Kâr en az min_be_pips (ör. 0.4*SL veya 0.5*ATR veya eff_be_pips) seviyesine
+      ulaşmalı ve net $1.00 minimum güvencesini sağlamalıdır.
+      Böylece hesap bakiyesine göre erken boğulma (0.06R stop) engellenir.
+    
+    Kilitlenme kuralı:
+      SL seviyesi giriş fiyatının ötesine taşınır (kârın lock_ratio kadarı veya min $1).
+    """
+    if pnl_pips <= 0:
+        return None
+
+    dollar_per_pip = max(0.0001, lots * pip_val)
+    pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
+    headroom = 4.0 if is_gold else (25.0 if is_crypto else 3.5)
+
+    # Volatilite & Risk tabanlı tetik eşiği
+    r_trigger = sl_pips * be_r_mult if sl_pips > 0 else 0.0
+    atr_trigger = atr_pips * be_atr_mult if atr_pips > 0 else 0.0
+    
+    # En az dolar güvencesi + R/ATR tetik tabanı
+    min_trigger_pips = max(
+        pips_for_1usd + headroom,
+        r_trigger,
+        atr_trigger,
+        eff_be_pips if eff_be_pips > 0 else 0.0
+    )
+
+    if pnl_pips < min_trigger_pips:
+        return None
+
+    # Kilitlenecek pips: kârın belirli oranı, ama en az $1 kâr güvencesi
+    lock_ratio = gold_be_lock_ratio if is_gold else 0.40
+    locked_pips = max(pips_for_1usd, round(pnl_pips * lock_ratio, 1))
+
+    if direction == "BUY":
+        cand_be = round(entry_price + (locked_pips * pip_size), digits)
+        if cand_be > current_sl and cand_be < current_price:
+            return cand_be
+    else:
+        cand_be = round(entry_price - (locked_pips * pip_size), digits)
+        if (current_sl == 0.0 or cand_be < current_sl) and cand_be > current_price:
+            return cand_be
+
+    return None
+
+
 def apply_partial_take_profit(pos: Dict[str, Any], pnl_pips: float, pip_usd_val: float) -> Optional[float]:
     """Kısmi kâr alma (saf fonksiyon — test edilebilir).
 
@@ -1284,8 +1352,12 @@ async def _refresh_live_rates_if_needed():
             fresh_tech = await asyncio.to_thread(_sync_fetch_all_technical_data)
             if fresh_tech:
                 _TECHNICAL_CACHE.update(fresh_tech)
+                mt5_connected = _MT5_STATE.get("connected") and (now - _MT5_STATE.get("last_ping", 0.0) < 60.0)
                 for sym, tech in fresh_tech.items():
-                    _LIVE_PRICES_CACHE[sym] = tech["price"]
+                    # MT5 köprüsü bağlı ve canlı broker kotasyonları akıyorsa,
+                    # Yahoo vadeli (GC=F vb.) fiyatı broker spot fiyatının üzerine yazılmamalıdır.
+                    if not (mt5_connected and sym in _LIVE_PRICES_CACHE):
+                        _LIVE_PRICES_CACHE[sym] = tech["price"]
             # Korelasyon matrisi yalnızca bayatladığında yenilenir (varsayılan 30 dk)
             _FX_CORR.maybe_refresh(_CLOSES_CACHE)
         except Exception:
@@ -1758,22 +1830,24 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         # MT5 Köprüsü bağlıysa ve otomatik iletim aktifse, MT5'teki açık pozisyonu da otomatik kapat
         if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
             sym_target = target["symbol"].upper()
+            target_ticket = target.get("mt5_ticket")
             for mpos in list(_MT5_STATE.get("open_positions", [])):
-                if mpos.get("symbol", "").upper() == sym_target:
-                    t_id = mpos.get("ticket")
-                    if t_id:
-                        already_closing = any(c.get("ticket") == t_id for c in _MT5_STATE.get("pending_commands", []))
-                        if not already_closing:
-                            _MT5_STATE["pending_commands"].append({
-                                "id": f"CMD-CLOSE-{t_id}",
-                                "action": "CLOSE_ORDER",
-                                "ticket": t_id,
-                            })
-                            _log_auto_decision(
-                                "EXIT",
-                                f"🛑 [MT5 Senkron Kapatma]: {target['display']} Bilet #{t_id} kapatma emri iletildi ({human_reason})",
-                                symbol=target["symbol"],
-                            )
+                t_id = mpos.get("ticket")
+                # Eğer belirli bir MT5 biletine bağlıysa sadece onu kapat, değilse sembol eşleşeni
+                should_close = (target_ticket and t_id == target_ticket) or (not target_ticket and mpos.get("symbol", "").upper() == sym_target)
+                if should_close and t_id:
+                    already_closing = any(c.get("ticket") == t_id for c in _MT5_STATE.get("pending_commands", []))
+                    if not already_closing:
+                        _MT5_STATE["pending_commands"].append({
+                            "id": f"CMD-CLOSE-{t_id}",
+                            "action": "CLOSE_ORDER",
+                            "ticket": t_id,
+                        })
+                        _log_auto_decision(
+                            "EXIT",
+                            f"🛑 [MT5 Senkron Kapatma]: {target['display']} Bilet #{t_id} kapatma emri iletildi ({human_reason})",
+                            symbol=target["symbol"],
+                        )
 
         return closed_item
 
@@ -1884,7 +1958,7 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
     if spread > eff_spread_limit:
         reasons.append(f"spread geniş ({spread:.1f}p > {eff_spread_limit:.0f}p)")
     score = float(btc_tick.get("score", 0.0))
-    req_score = min(_AUTO_SETTINGS.min_score, _AUTO_SETTINGS.btc_min_score) if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
+    req_score = _AUTO_SETTINGS.btc_min_score if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
     if score < req_score:
         reasons.append(f"sinyal skoru yetersiz ({score:.0f} < {req_score:.0f})")
     if _AUTO_SETTINGS.adx_filter_enabled and float(btc_tick.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
@@ -1968,56 +2042,57 @@ async def _forex_auto_paper_loop():
                                 metadata={"partial_usd": realized_partial, "remaining_lots": pos["lots"]},
                             )
 
-                    # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ
-                    # Herhangi bir işlem net $1.00 kâr seviyesine ulaştığında SL tam $1.00 kâr seviyesine kilitlenir
+                    # (a) BAŞABAŞ (BREAKEVEN) DENETİMİ (Volatilite ve R Tabanlı Dinamik Eşik)
                     lots = float(pos.get("lots", 0.05))
                     pip_val = spec["pip_val"]
                     dollar_per_pip = max(0.0001, lots * pip_val)
                     pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
 
-                    # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
-                    # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
-                    min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
-                    is_dollar_be = (pos.get("pnl_usd", 0.0) >= (1.0 + (min_headroom_pips * dollar_per_pip))) or (pnl_pips >= (pips_for_1usd + min_headroom_pips))
-                    is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
-
-                    if (is_dollar_be or is_pip_be) and not pos.get("breakeven_activated"):
-                        # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-                        # Altında kâr kilitleme oranı ayarlanabilir (gold_be_lock_ratio, canlı 0.60 —
-                        # 2×30g replay: her pencerede ~+$750, maxDD düşer); diğer semboller %40.
-                        be_lock_ratio = _AUTO_SETTINGS.gold_be_lock_ratio if ("XAU" in sym or "GOLD" in sym) else 0.40
-                        locked_pips = max(pips_for_1usd, round(pnl_pips * be_lock_ratio, 1))
-                        if direction == "BUY":
-                            cand_be = round(entry_p + (locked_pips * pip_size), digits)
-                            if cand_be > pos["sl_price"] and cand_be < cur_p:
-                                pos["sl_price"] = cand_be
-                                pos["breakeven_activated"] = True
-                        else:
-                            cand_be = round(entry_p - (locked_pips * pip_size), digits)
-                            if (pos["sl_price"] == 0 or cand_be < pos["sl_price"]) and cand_be > cur_p:
-                                pos["sl_price"] = cand_be
-                                pos["breakeven_activated"] = True
-
-                        if pos.get("breakeven_activated"):
+                    if not pos.get("breakeven_activated"):
+                        is_gold_pos = ("XAU" in sym or "GOLD" in sym)
+                        is_crypto_pos = ("BTC" in sym)
+                        cand_be = calculate_breakeven_target(
+                            pnl_pips=pnl_pips,
+                            pnl_usd=pos.get("pnl_usd", 0.0),
+                            lots=lots,
+                            pip_val=pip_val,
+                            pip_size=pip_size,
+                            digits=digits,
+                            direction=direction,
+                            entry_price=entry_p,
+                            current_price=cur_p,
+                            current_sl=pos.get("sl_price", 0.0),
+                            sl_pips=spec.get("sl_pips", _AUTO_SETTINGS.sl_pips),
+                            atr_pips=atr_pips,
+                            eff_be_pips=eff_be_pips,
+                            is_gold=is_gold_pos,
+                            is_crypto=is_crypto_pos,
+                            gold_be_lock_ratio=_AUTO_SETTINGS.gold_be_lock_ratio,
+                        )
+                        if cand_be is not None:
+                            pos["sl_price"] = cand_be
+                            pos["breakeven_activated"] = True
                             _log_auto_decision(
                                 "PROTECT",
-                                f"{pos['display']} Başabaş (BE) kilitlendi: Net Kâr ${pos['pnl_usd']:+.2f} (+{pnl_pips:.1f} pip). Stop seviyesi {pos['sl_price']} yapıldı (Minimum Net $1.00 Kâr Garantisi).",
+                                f"{pos['display']} Başabaş (BE) kilitlendi: Net Kâr ${pos['pnl_usd']:+.2f} (+{pnl_pips:.1f} pip). Stop seviyesi {pos['sl_price']} yapıldı (Dinamik Risk/Volatilite Koruması).",
                                 symbol=sym,
                             )
                             # MT5 açık biletlerinde de Stop Loss'u başabaş seviyesine çek
                             if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                                mt5_pos_id = pos.get("mt5_ticket")
                                 for mpos in _MT5_STATE.get("open_positions", []):
-                                    if mpos.get("symbol", "").upper() == sym.upper():
-                                        t_id = mpos.get("ticket")
-                                        if t_id:
+                                    m_t = mpos.get("ticket")
+                                    # Belirli bir bilete bağlıysa sadece onu, değilse sembol eşleşeni güncelle
+                                    if (mt5_pos_id and m_t == mt5_pos_id) or (not mt5_pos_id and mpos.get("symbol", "").upper() == sym.upper()):
+                                        if m_t:
                                             _MT5_STATE["pending_commands"].append({
-                                                "id": f"CMD-MODIFY-{t_id}-BE",
+                                                "id": f"CMD-MODIFY-{m_t}-BE",
                                                 "action": "MODIFY_SLTP",
-                                                "ticket": t_id,
+                                                "ticket": m_t,
                                                 "sl": pos["sl_price"],
                                                 "tp": mpos.get("tp_price", 0.0),
                                             })
-                                            _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{t_id} Başabaş Stopu {pos['sl_price']} olarak kilitlendi (Net $1.00 Kâr).", symbol=sym)
+                                            _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{m_t} Başabaş Stopu {pos['sl_price']} olarak kilitlendi.", symbol=sym)
 
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
                     # Sembole ve volatiliteye (ATR) göre trailing mesafesi
@@ -2467,8 +2542,8 @@ async def _forex_auto_paper_loop():
                 # DXY nötr rejimdeki zayıf semboller (XAUUSD/USDJPY/USDCHF) +5.0 ekstra skor ister.
                 is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
                 if sym == "BTCUSD":
-                    # Paneldeki min_score ile btc_min_score uyumlu çalışır
-                    req_score = min(_AUTO_SETTINGS.min_score, _AUTO_SETTINGS.btc_min_score) if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
+                    # Paneldeki btc_min_score ayarı varsa doğrudan BTC'ye özel eşik olarak çalışır
+                    req_score = _AUTO_SETTINGS.btc_min_score if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
                 else:
                     req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
                 req_score += weak_symbol_score_bump

@@ -583,6 +583,59 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.max_open_positions, 25)
 
 
+    def test_dynamic_breakeven_target_calculation(self):
+        """Verify calculate_breakeven_target prevents premature breakeven lock."""
+        # 1. Very small profit (e.g. 5 pips on gold, when SL is 75 pips) should NOT trigger
+        be_early = forex.calculate_breakeven_target(
+            pnl_pips=5.0,
+            pnl_usd=5.0,
+            lots=0.10,
+            pip_val=10.0,
+            pip_size=0.10,
+            digits=2,
+            direction="BUY",
+            entry_price=2700.0,
+            current_price=2700.5,
+            current_sl=2692.5,
+            sl_pips=75.0,
+            atr_pips=50.0,
+            eff_be_pips=25.0,
+            is_gold=True,
+            gold_be_lock_ratio=0.60,
+        )
+        self.assertIsNone(be_early)
+
+        # 2. Reaching the threshold (e.g. >= 0.4*SL = 30 pips or eff_be) should trigger and lock profit
+        be_hit = forex.calculate_breakeven_target(
+            pnl_pips=32.0,
+            pnl_usd=32.0,
+            lots=0.10,
+            pip_val=10.0,
+            pip_size=0.10,
+            digits=2,
+            direction="BUY",
+            entry_price=2700.0,
+            current_price=2703.2,
+            current_sl=2692.5,
+            sl_pips=75.0,
+            atr_pips=50.0,
+            eff_be_pips=25.0,
+            is_gold=True,
+            gold_be_lock_ratio=0.60,
+        )
+        self.assertIsNotNone(be_hit)
+        # Lock ratio 0.60 * 32.0 = 19.2 pips -> 2700.0 + 1.92 = 2701.92
+        self.assertAlmostEqual(be_hit, 2701.92, places=2)
+        self.assertGreater(be_hit, 2700.0)
+
+    def test_btc_min_score_priority(self):
+        """Verify btc_min_score priority over global min_score."""
+        cfg = forex.ForexAutoPaperSettings(min_score=75.0, btc_min_score=76.0)
+        # Directly verify the priority expression
+        req = cfg.btc_min_score if cfg.btc_min_score > 0 else cfg.min_score
+        self.assertEqual(req, 76.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

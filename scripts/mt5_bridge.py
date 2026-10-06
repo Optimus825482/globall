@@ -730,16 +730,20 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
         min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
 
-        # 1. BREAKEVEN (Başabaş / Net $1.00 USD Kâr Kilidi)
-        # Herhangi bir işlem net $1.00 USD kâr seviyesini nefes payıyla aştığında VEYA eff_be_pips aşıldığında
-        is_dollar_be = (cur_profit >= (1.0 + (min_headroom_pips * dollar_per_pip))) or (pnl_pips >= (pips_for_1usd + min_headroom_pips))
-        is_pip_be = (eff_be_pips > 0 and pnl_pips >= eff_be_pips)
+        # 1. BREAKEVEN (Başabaş / Volatilite ve R Tabanlı Net Kâr Kilidi)
+        # Erken boğulmayı engeller: En az min_trigger_pips (0.4*SL veya 0.5*ATR veya eff_be_pips veya $1 güvencesi)
+        is_gold_sym = ("XAU" in sym or "GOLD" in sym)
+        is_crypto_sym = ("BTC" in sym)
+        sl_nominal_pips = spec.get("sl_pips", 15.0)
+        atr_nominal_pips = (eff_trail_pips / 1.2) if eff_trail_pips > 0 else 15.0
 
-        if (is_dollar_be or is_pip_be):
+        r_trigger = sl_nominal_pips * 0.40
+        atr_trigger = atr_nominal_pips * 0.50
+        min_trigger_pips = max(pips_for_1usd + min_headroom_pips, r_trigger, atr_trigger, eff_be_pips if eff_be_pips > 0 else 0.0)
+
+        if pnl_pips >= min_trigger_pips:
             # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-            # Altında kâr kilitleme oranı sunucu ayarından gelir (gold_be_lock_ratio, 0.60 —
-            # 2×30g replay: her pencerede ~+$750, maxDD düşer); diğer semboller %40.
-            be_lock_ratio = float(CURRENT_SETTINGS.get("gold_be_lock_ratio", 0.6)) if ("XAU" in sym or "GOLD" in sym) else 0.40
+            be_lock_ratio = float(CURRENT_SETTINGS.get("gold_be_lock_ratio", 0.6)) if is_gold_sym else 0.40
             locked_pips = max(pips_for_1usd, round(pnl_pips * be_lock_ratio, 1))
             if direction == "BUY":
                 be_sl = round(entry_p + (locked_pips * pip_size), digits)
