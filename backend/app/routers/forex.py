@@ -1857,6 +1857,7 @@ class ForexAutoPaperSettings(BaseModel):
     major_session_end_utc: int = Field(20, ge=1, le=24, description="Majör seans penceresi bitişi (UTC, dahil değil) — 20:00 NY öğleden sonra")
     major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
     crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
+    crypto_tp_enabled: bool = Field(False, description="Kriptoda sabit TP emri (False = kapalı; 2026-10-06 30g replay: TP kapalıyken BTC −$55.70→−$18.02, kazanç trailing/BE ile koşturulur)")
     btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; süpürme: 76 noktası)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
@@ -2345,10 +2346,10 @@ async def _forex_auto_paper_loop():
                                             "tp": mpos.get("tp_price", 0.0),
                                         })
 
-                    # (c) KÂR AL (TAKE PROFIT) KONTROLÜ
-                    if direction == "BUY" and cur_p >= pos["tp_price"]:
+                    # (c) KÂR AL (TAKE PROFIT) KONTROLÜ — tp_price=0 (TP'siz mod, örn. kripto) asla tetiklenmez
+                    if pos["tp_price"] > 0 and direction == "BUY" and cur_p >= pos["tp_price"]:
                         positions_to_close.append((pos["id"], "TP_HIT", cur_p))
-                    elif direction == "SELL" and cur_p <= pos["tp_price"]:
+                    elif pos["tp_price"] > 0 and direction == "SELL" and cur_p <= pos["tp_price"]:
                         positions_to_close.append((pos["id"], "TP_HIT", cur_p))
 
                     # (d) ZARAR DURDUR (STOP LOSS) KONTROLÜ
@@ -2836,6 +2837,10 @@ async def _forex_auto_paper_loop():
                 is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
                 is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
                 is_crypto = ("BTC" in sym or "ETH" in sym)
+                if is_crypto and not _AUTO_SETTINGS.crypto_tp_enabled:
+                    # Kriptoda sabit TP kapalı (2026-10-06 30g replay kazananı: BTC −$55.70→−$18.02):
+                    # kazanç BE kilidi + trailing ile koşturulur, TP emri kurulmaz.
+                    tp_pips = 0.0
 
                 if is_index:
                     lot_ceiling = 50.0
@@ -2876,6 +2881,14 @@ async def _forex_auto_paper_loop():
                 # IC Markets MT5 bağlıysa doğrudan MT5 emir kuyruğuna ekle
                 if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
                     cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
+                    # Çıkış planı: köprünün dynamic-exits spec'iyle BİREBİR değerler (ATR'siz,
+                    # base_sl=8 default — 2 pencere replay kazananı A davranışı). Değerler pozisyon
+                    # bazlı cmd ile taşınır → köprü kendi spec kopyasından ikinci kez hesaplamaz
+                    # (çift-kaynak drift kapanır); ileride BE/Trail'i canlıdan değiştirmek tek satır.
+                    spec_exits = get_symbol_trading_specs(
+                        sym, base_sl=8.0,
+                        base_be=_AUTO_SETTINGS.breakeven_pips,
+                        base_trail=_AUTO_SETTINGS.trailing_stop_pips)
                     _MT5_STATE["pending_commands"].append({
                         "id": cmd_id,
                         "action": "OPEN_ORDER",
@@ -2884,6 +2897,11 @@ async def _forex_auto_paper_loop():
                         "lots": mt5_lots,
                         "sl_pips": sl_pips,
                         "tp_pips": tp_pips,
+                        # Pozisyon bazlı çıkış planı: köprü BE/Trail'i motorun gönderdiği değerlerle
+                        # yönetsin (köprünün kendi spec kopyası ikinci kez hesap yapmaz)
+                        "be_pips": spec_exits["be_pips"],
+                        "trail_pips": spec_exits["trail_pips"],
+                        "be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio if is_gold else 0.40,
                         "partial_pips": first_target_pips,
                         "comment": f"Scalper MT5 {cand['score']:.0f}",
                     })

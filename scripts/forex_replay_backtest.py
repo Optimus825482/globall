@@ -74,6 +74,10 @@ TUN_RR_FLOOR = 1.5
 TUN_HEADROOM_FOREX = 3.5
 TUN_ADX_MIN = 0.0           # 0 = ADX kalkanı kapalı
 TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
+# 2026-10-06 köprü hizalama simülasyonu: --spec-atr ile spec BE/Trail'i işlem-bazlı giriş ATR'siyle
+# hesaplanır (= motorun cmd ile köprüye gönderdiği ATR'li değerler; canlıda artık cmd ile taşınıyor).
+# Kapalıyken replay ATR'siz spec kullanır (= köprünün ESKİ davranışı) → A/B bu ayrışmayı ölçer.
+TUN_SPEC_ATR = False
 
 # 2026-10-06 varyant mekanikleri (30 günlük replay A/B ile test ediliyor)
 FX_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
@@ -417,7 +421,9 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
         if bar is None:
             still.append(pos)
             continue
-        spec = forex.get_symbol_trading_specs(pos.symbol, base_be=BASE_BE_PIPS, base_trail=BASE_TRAIL_PIPS)
+        spec = forex.get_symbol_trading_specs(
+            pos.symbol, base_be=BASE_BE_PIPS, base_trail=BASE_TRAIL_PIPS,
+            atr_pips=(pos.entry_atr_pips if (TUN_SPEC_ATR and pos.entry_atr_pips > 0) else None))
         eff_trail = spec["trail_pips"]
         min_be = 0.0
         if TUN_GOLD_VOL_EXITS and ("XAU" in pos.symbol.upper() or "GOLD" in pos.symbol.upper()) and pos.entry_atr_pips > 0:
@@ -1199,6 +1205,7 @@ def main():
     parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
     parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
+    parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
     parser.add_argument("--major-max-ext", type=float, default=0.0, help="Majörlerde EMA21'den maks. ATR-katı uzama — kovalamama (0 = kapalı)")
@@ -1212,6 +1219,8 @@ def main():
     TUN_HEADROOM_FOREX = args.headroom
     TUN_ADX_MIN = args.adx_min
     TUN_ST_FILTER = args.st_filter
+    global TUN_SPEC_ATR
+    TUN_SPEC_ATR = args.spec_atr
     EV_GUARD = not args.no_ev_guard
     TUN_FX_MIN_SCORE = args.fx_min_score
     TUN_GOLD_DXY_SOFT = args.gold_dxy_soft

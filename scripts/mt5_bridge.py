@@ -462,6 +462,23 @@ def execute_market_order(cmd: dict) -> dict:
                     PARTIAL_TP_MAP[p.ticket] = {"target_pips": partial_pips, "done": False}
                     print(f"  💰 [KISMİ TP PLANI]: Bilet #{p.ticket} ilk kâr hedefi +{partial_pips:.1f}p")
                     break
+        # Pozisyon bazlı BE/Trail çıkış planı (server: be_pips/trail_pips/be_lock_ratio — ATR'li).
+        # Yoksa dynamic exits mevcut ATR'siz spec fallback'ine düşer (eski davranış korunur).
+        cmd_be = float(cmd.get("be_pips", 0.0) or 0.0)
+        cmd_trail = float(cmd.get("trail_pips", 0.0) or 0.0)
+        if cmd_be > 0 or cmd_trail > 0:
+            time.sleep(0.1)
+            for p in (mt5.positions_get(symbol=symbol) or []):
+                p_dir = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+                if p_dir == direction and abs(float(p.volume) - lots) < 1e-6 and p.ticket not in POSITION_EXITS:
+                    POSITION_EXITS[p.ticket] = {
+                        "be_pips": cmd_be,
+                        "trail_pips": cmd_trail,
+                        "be_lock_ratio": float(cmd.get("be_lock_ratio", 0.0) or 0.0),
+                        "sl_pips": float(cmd.get("sl_pips", 0.0) or 0.0),
+                    }
+                    print(f"  🎯 [ÇIKIŞ PLANI]: Bilet #{p.ticket} BE {cmd_be:.1f}p / Trail {cmd_trail:.1f}p (motor cmd)")
+                    break
         return {"success": True, "ticket": res.order, "price": price}
     else:
         comment_err = res.comment if res else str(mt5.last_error())
@@ -642,6 +659,10 @@ def execute_close_all(cmd: dict) -> dict:
 
 POSITION_PROTECTION_MAP: Dict[int, str] = {}  # ticket -> "BREAKEVEN" | "TRAILING"
 PARTIAL_TP_MAP: Dict[int, Dict[str, Any]] = {}  # ticket -> {"target_pips": float, "done": bool}
+# ticket -> pozisyon bazlı çıkış parametreleri (server cmd'den; ATR'li motor değerleri).
+# Köprü artık BE/Trail'i kendi ATR'siz spec'inden DEĞİL, işlemi açan motorun değerlerinden yönetir —
+# spec çift kopyası (backend köprü ayrışması) kaynaklı erken-kar kesme/trailing sıkı-kilit düzeltmesi.
+POSITION_EXITS: Dict[int, Dict[str, float]] = {}
 CURRENT_SETTINGS: Dict[str, float] = {
     "breakeven_pips": 14.0,
     "trailing_stop_pips": 20.0,
@@ -667,6 +688,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
     for old_t in list(PARTIAL_TP_MAP.keys()):
         if old_t not in active_tickets:
             PARTIAL_TP_MAP.pop(old_t, None)
+    for old_t in list(POSITION_EXITS.keys()):
+        if old_t not in active_tickets:
+            POSITION_EXITS.pop(old_t, None)
 
     for p in positions:
         ticket = p.ticket
@@ -680,6 +704,14 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         pip_size = spec["pip_size"]
         eff_be_pips = spec["be_pips"]
         eff_trail_pips = spec["trail_pips"]
+
+        # Pozisyon bazlı çıkış planı (motor cmd'siyle açılan işlem) — spec fallback'i ezer
+        pos_exits = POSITION_EXITS.get(ticket)
+        if pos_exits:
+            if float(pos_exits.get("be_pips", 0.0)) > 0:
+                eff_be_pips = float(pos_exits["be_pips"])
+            if float(pos_exits.get("trail_pips", 0.0)) > 0:
+                eff_trail_pips = float(pos_exits["trail_pips"])
 
         direction = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
         entry_p = p.price_open
@@ -734,7 +766,8 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # Erken boğulmayı engeller: En az min_trigger_pips (0.4*SL veya 0.5*ATR veya eff_be_pips veya $1 güvencesi)
         is_gold_sym = ("XAU" in sym or "GOLD" in sym)
         is_crypto_sym = ("BTC" in sym)
-        sl_nominal_pips = spec.get("sl_pips", 15.0)
+        # Gerçek işlem SL'i (cmd'den) — ATR'siz spec SL'i değil; BE tetik R-hesabı bunu kullanmalı
+        sl_nominal_pips = float(pos_exits["sl_pips"]) if (pos_exits and float(pos_exits.get("sl_pips", 0.0)) > 0) else spec.get("sl_pips", 15.0)
         atr_nominal_pips = (eff_trail_pips / 1.2) if eff_trail_pips > 0 else 15.0
 
         r_trigger = sl_nominal_pips * 0.40
@@ -744,6 +777,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         if pnl_pips >= min_trigger_pips:
             # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
             be_lock_ratio = float(CURRENT_SETTINGS.get("gold_be_lock_ratio", 0.6)) if is_gold_sym else 0.40
+            # Pozisyonun motor cmd'siyle gelen kilit oranı (varsa) ayarı ezer — backend/köprü tutarlılığı
+            if pos_exits and 0 < float(pos_exits.get("be_lock_ratio", 0.0)) < 1:
+                be_lock_ratio = float(pos_exits["be_lock_ratio"])
             locked_pips = max(pips_for_1usd, round(pnl_pips * be_lock_ratio, 1))
             if direction == "BUY":
                 be_sl = round(entry_p + (locked_pips * pip_size), digits)
