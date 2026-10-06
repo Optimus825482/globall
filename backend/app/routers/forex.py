@@ -1773,56 +1773,52 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
 
 
 def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
-    """XAU/USD tarama izi notu — her radar taramasında altının tam durumunu açıklar.
+    """XAU/USD tarama özeti — insan-okur tek cümle.
 
     Yalnızca RAPORLAMA amaçlıdır: giriş döngüsündeki kapı zincirini etkilemez.
-    "Altın neden işlem açmıyor?" sorusunun kalıcı cevabıdır; veri yokluğu dahil
-    her durumda bir hüküm üretir.
     """
-    if gold_tick.get("macd_verdict") == "NÖTR (Veri Bekleniyor)":
-        return "❌ VERİ YOK — Yahoo mum verisi alınamıyor, sinyal üretilemiyor"
     action = str(gold_tick.get("action", "HOLD"))
     if action not in ("BUY", "SELL"):
-        return "⏸ sinyal yok (HOLD) — trend/momentum teyidi oluşmadı"
+        return "yön teyidi oluşmadı — gözlemde"
     reasons: List[str] = []
     active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
     if active_count >= _AUTO_SETTINGS.max_open_positions:
-        reasons.append(f"portföy dolu ({active_count}/{_AUTO_SETTINGS.max_open_positions})")
+        reasons.append("pozisyon limiti dolu")
     cd_left = _AUTO_SETTINGS.gold_cooldown_sec - (now_ts - _LAST_GOLD_EXIT_TIME)
     if cd_left > 0:
-        reasons.append(f"kapanış soğuması {int(cd_left)}s")
+        reasons.append("son kapanıştan sonra soğuma bekleniyor")
     if _AUTO_SETTINGS.ev_guard_enabled:
         ev_stats = _collect_symbol_ev("XAUUSD", now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
         ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
         ev_floor = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
         if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades, _AUTO_SETTINGS.ev_max_win_rate, ev_floor):
-            reasons.append(f"EV kalkanı (son {ev_stats['n']} işlem WR %{ev_stats['win_rate']:.0f} net ${ev_stats['net']:+.2f})")
+            reasons.append("son kayıplar nedeniyle dinleniyor")
     bias = get_usd_bias("XAUUSD", action)
     if _AUTO_SETTINGS.correlation_guard and bias != "USD_NEUTRAL":
         corr_positions = [
             (str(p.get("symbol", "")).upper(), get_usd_bias(str(p.get("symbol", "")), str(p.get("direction", "BUY"))))
             for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
         ]
-        corr_ok, corr_reason = _FX_CORR.cluster_check("XAUUSD", bias, corr_positions)
+        corr_ok, _corr_reason = _FX_CORR.cluster_check("XAUUSD", bias, corr_positions)
         if not corr_ok:
-            reasons.append(f"korelasyon ({corr_reason})")
+            reasons.append("benzer pozisyon nedeniyle korelasyon bekliyor")
     gold_open = [p for p in (list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])))
                  if str(p.get("symbol", "")).upper() == "XAUUSD"]
     if gold_open and active_count < _AUTO_SETTINGS.max_open_positions:
-        reasons.append(f"{len(gold_open)} açık XAU pozisyonu (ekleme piramit şartlı)")
+        reasons.append("zaten açık pozisyon var")
     spread = float(gold_tick.get("spread_pips", 2.5))
     if spread > _AUTO_SETTINGS.max_spread_pips:
-        reasons.append(f"spread {spread:.1f}p > {_AUTO_SETTINGS.max_spread_pips:.0f}p")
+        reasons.append(f"spread çok geniş ({spread:.1f} pip)")
     if float(gold_tick.get("score", 0.0)) < 78.0:
-        reasons.append(f"skor {float(gold_tick.get('score', 0.0)):.0f} < 78")
+        reasons.append(f"sinyal skoru yetersiz ({float(gold_tick.get('score', 0.0)):.0f})")
     if _AUTO_SETTINGS.adx_filter_enabled and float(gold_tick.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
-        reasons.append(f"ADX {float(gold_tick.get('adx', 0.0)):.0f} < {_AUTO_SETTINGS.adx_min:.0f}")
+        reasons.append(f"trend gücü zayıf (ADX {float(gold_tick.get('adx', 0.0)):.0f})")
     st = int(gold_tick.get("supertrend_dir", 0))
     if _AUTO_SETTINGS.supertrend_filter_enabled and ((action == "BUY" and st < 0) or (action == "SELL" and st > 0)):
-        reasons.append("SuperTrend ters")
+        reasons.append("grafik yönü sinyalle ters")
     if reasons:
-        return "⛔ engel: " + "; ".join(reasons)
-    return "✅ GEÇERLİ SİNYAL — kapılar temiz, giriş emri üretiliyor"
+        return "işlem bekliyor: " + " + ".join(reasons[:2])
+    return "✅ tüm şartlar uygun — işlem açılıyor"
 
 
 async def _forex_auto_paper_loop():
@@ -2052,20 +2048,25 @@ async def _forex_auto_paper_loop():
                     "SCAN",
                     f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
                 )
-                # XAU/USD tarama izi: her taramada altının tam durumu stream'e düşer
-                # (sessiz arıza olmasın — altının neden işlem açmadığı her taramada görünür)
+                # XAU/USD tarama özeti: her taramada altının durumu tek temiz cümleyle stream'e düşer
                 gold_tick = ticks.get("XAUUSD")
                 if gold_tick:
-                    tech_gold = _TECHNICAL_CACHE.get("XAUUSD") or {}
-                    dxy_reg = get_dxy_regime() or {}
-                    _log_auto_decision(
-                        "SCAN",
-                        (f"🔍 [XAU/USD] Tarama: {gold_tick.get('bid', 0.0):.2f}/{gold_tick.get('ask', 0.0):.2f} | "
-                         f"Skor {gold_tick.get('score', 0.0):.1f} {gold_tick.get('action', 'HOLD')} | HTF {tech_gold.get('htf_trend', '-')} | "
-                         f"ADX {gold_tick.get('adx', 0.0):.0f} | ST {'BOĞA' if int(gold_tick.get('supertrend_dir', 0)) > 0 else 'AYI'} | "
-                         f"DXY {dxy_reg.get('regime', '-')} (muaf) → {_gold_scan_note(gold_tick, now_ts)}"),
-                        symbol="XAUUSD",
-                    )
+                    if gold_tick.get("macd_verdict") == "NÖTR (Veri Bekleniyor)":
+                        gold_msg = "🔍 [XAU/USD] Piyasa verisi alınamıyor — sinyal üretilemiyor"
+                    else:
+                        gold_action = str(gold_tick.get("action", "HOLD"))
+                        gold_signal = (
+                            f"Sinyal: {gold_action} (skor {gold_tick.get('score', 0.0):.0f})"
+                            if gold_action in ("BUY", "SELL") else "Sinyal: yok"
+                        )
+                        tech_gold = _TECHNICAL_CACHE.get("XAUUSD") or {}
+                        gold_st = "BOĞA" if int(gold_tick.get("supertrend_dir", 0)) > 0 else "AYI"
+                        gold_msg = (
+                            f"🔍 [XAU/USD] {gold_tick.get('bid', 0.0):.2f}$ | {gold_signal} | "
+                            f"HTF: {tech_gold.get('htf_trend', '-')} | SuperTrend: {gold_st} | "
+                            f"Durum: {_gold_scan_note(gold_tick, now_ts)}"
+                        )
+                    _log_auto_decision("SCAN", gold_msg, symbol="XAUUSD")
 
             # Veri hattı görünürlüğü: mum verisi alınamayan semboller HOLD'da sessizce kalır.
             # Sessiz arıza olmasın — panelde sembol başına 5 dk'da bir görünür yapılır.
