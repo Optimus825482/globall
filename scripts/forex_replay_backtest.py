@@ -119,6 +119,23 @@ TUN_BE_USD_GOLD = 1.0       # BE dolar tabanı — garantili kilit hedefi ($)
 TUN_BE_RATIO_GOLD = 0.60    # altın BE anında kilitlenen kâr oranı (2026-10-06 canlı kararı: 0.40→0.60)
 TUN_BE_PIP_FIXED_GOLD = 0.0 # >0: BE tetiği+tabanı lot-bağımsız sabit pip (örn. 10) — hacimden arındırma
 
+# 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
+# Zarardaki işlemde fiyat, giriş-SL mesafesinin TUN_DCA_DIST_FRAC oranına gelince
+# TUN_DCA_LOT_MULT× lot katman açılır (ops. S/R+Fibo seviye onayıyla). Katman sonrası
+# bireysel TP silahsızlaşır; sepet bar-kapanış toplam P/L'siyle yönetilir:
+#   ≥ TP_USD → BASKET_TP (hepsi kapanır) | ≤ -SL_USD → BASKET_SL (hepsi kapanır)
+#   ≥ BUFFER_USD → sepet BE kilidi; armed iken ≤ 0.2×BUFFER → BASKET_BE (zararsız çıkış)
+TUN_DCA = False
+TUN_DCA_DIST_FRAC = 0.5     # katman tetiği: giriş-SL mesafesinin bu oranında (0.5 = yarı)
+TUN_DCA_LOT_MULT = 2.0      # katman lotu = ilk pozisyon lotu × bu çarpan
+TUN_DCA_TP_USD = 4.0        # sepet TP hedefi ($)
+TUN_DCA_SL_USD = 10.0       # sepet SL limiti ($)
+TUN_DCA_BUFFER_USD = 1.0    # sepet BE kilidi tamponu ($)
+TUN_DCA_LEVEL_CHECK = False # katman tetiğinde S/R+Fibo seviye onayı
+TUN_DCA_LEVEL_TOL_ATR = 0.25  # seviye onayı toleransı (× ATR, fiyat cinsi)
+TUN_DCA_MAX_LAYERS = 1      # pozisyon başına en fazla katman sayısı (lead hariç)
+TUN_DCA_DIST_STEP = 0.0     # her katmanda tetiğin derinleşmesi (× sl0; tetikler frac, frac+step, frac+2×step...)
+
 
 # ---------------------------------------------------------------------------
 # Veri çekme
@@ -184,6 +201,9 @@ class SimPos:
     trail_active: bool = False
     entry_atr_pips: float = 0.0
     mfe_pips: float = 0.0
+    layer: int = 0              # 0 = ilk pozisyon, 1.. = DCA katmanı
+    dca_group: bool = False     # sepet yönetimi altında (TP/BE/trail bireysel çalışmaz)
+    basket_armed: bool = False  # lead'te: sepet P/L tamponu geçti (BE kilidi arm)
 
 
 class Book:
@@ -246,7 +266,7 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
 
 def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips: float,
                     chandelier_mult: float = 0.0, tp_mode: str = "tp",
-                    min_be_pips: float = 0.0) -> Optional[Tuple[str, float, float]]:
+                    min_be_pips: float = 0.0, dca_mode: bool = False) -> Optional[Tuple[str, float, float]]:
     """Bir bar'da pozisyonu yönetir. Dönüş: (reason, exit_price, partial_realized) veya None.
 
     Sıra (muhafazakâr): SL önce → BE kilidi → kısmi kâr → trailing → TP.
@@ -257,6 +277,8 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
              tick'te etkili olur — muhafazakâr model: bar-başı trail bayrağına bakılır).
     min_be_pips: BE kilidinin EN ERKEN tetiklenme tabanı (pip) — volatilite-adaptif BE
              için kullanılır (0 = kapalı; $1 dolar kuralı yine kendi eşikte çalışır).
+    dca_mode: pozisyon DCA sepet yönetiminde (manage_dca_groups) — bireysel BE/kısmi/
+             trail/TP atlanır, yalnız SL çalışır; sepet eşikleri grup yöneticisinde.
     """
     ts, o, h, l, c = bar
     pip = pos.pip_size
@@ -291,8 +313,8 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     if pos.mfe_pips < pnl_extreme_pips:
         pos.mfe_pips = pnl_extreme_pips
 
-    # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi)
-    if not pos.be_locked:
+    # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi) — sepet üyesinde atlanır
+    if not pos.be_locked and not dca_mode:
         is_dollar_be = pnl_extreme_pips >= (pips_be + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
         if (is_dollar_be or is_pip_be) and pnl_extreme_pips >= min_be_pips:
@@ -308,8 +330,8 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = cand
                     pos.be_locked = True
 
-    # (3) Kısmi kâr (yalnızca NEW — OLD'da partial_target_pips=0)
-    if pos.partial_target_pips > 0 and not pos.partial_taken and pnl_extreme_pips >= pos.partial_target_pips:
+    # (3) Kısmi kâr (yalnızca NEW — OLD'da partial_target_pips=0) — sepet üyesinde atlanır
+    if pos.partial_target_pips > 0 and not pos.partial_taken and not dca_mode and pnl_extreme_pips >= pos.partial_target_pips:
         pos.partial_taken = True
         close_lots = round(pos.lots / 2.0, 2)
         if 0.01 <= close_lots < pos.lots:
@@ -328,8 +350,8 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = lock_sl
             pos.be_locked = True
 
-    # (4) Trailing (BE sonrası): chandelier (MFE − mult×ATR_giriş) veya sabit pip trail
-    if pos.be_locked:
+    # (4) Trailing (BE sonrası): chandelier (MFE − mult×ATR_giriş) veya sabit pip trail — sepet üyesinde atlanır
+    if pos.be_locked and not dca_mode:
         pips_1usd_now = max(0.5, round(1.0 / max(0.0001, pos.lots * pos.pip_val), 1))
         if chandelier_mult > 0 and pos.entry_atr_pips > 0:
             # Volatilite-adaptif: kâr tepesinden volatilite nefes payı kadar geri ver
@@ -366,8 +388,10 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = cand
                     pos.trail_active = True
 
-    # (5) TP — tp_mode'a göre silahlanır (bkz. docstring)
-    if tp_mode == "no_tp" or (tp_mode == "no_tp_crypto" and ("BTC" in pos.symbol.upper() or "ETH" in pos.symbol.upper())):
+    # (5) TP — tp_mode'a göre silahlanır (bkz. docstring); sepet üyesinde TP manage_dca_groups'a aittir
+    if dca_mode:
+        tp_armed = False
+    elif tp_mode == "no_tp" or (tp_mode == "no_tp_crypto" and ("BTC" in pos.symbol.upper() or "ETH" in pos.symbol.upper())):
         tp_armed = False
     elif tp_mode == "no_tp_on_trail":
         tp_armed = not trail_pre          # muhafazakâr: aktifleşen barda TP hâlâ geçerli
@@ -413,6 +437,116 @@ def float_pnl(pos: SimPos, mark: float) -> float:
     return pnl_pips * pos.lots * pos.pip_val
 
 
+def _dca_level_ok(window: List[Tuple], trigger: float, atr_price: float, direction: str) -> bool:
+    """Seviye onayı (kullanıcı önerisi): katman tetiğinin TUN_DCA_LEVEL_TOL_ATR×ATR komşuluğunda
+    swing low/high veya Fibo 38.2/50/61.8 retrace seviyesi var mı? (son 96 bar ~8 saat pencere)"""
+    tol = TUN_DCA_LEVEL_TOL_ATR * atr_price
+    highs = [b[2] for b in window]
+    lows = [b[3] for b in window]
+    hi, lo = max(highs), min(lows)
+    levels: List[float] = []
+    if direction == "BUY":
+        levels = [lo] + [lo + (hi - lo) * f for f in (0.382, 0.5, 0.618)]
+        for i in range(2, len(window) - 2):
+            if lows[i] <= min(lows[i - 2], lows[i - 1], lows[i + 1], lows[i + 2]):
+                levels.append(lows[i])
+    else:
+        levels = [hi] + [hi - (hi - lo) * f for f in (0.382, 0.5, 0.618)]
+        for i in range(2, len(window) - 2):
+            if highs[i] >= max(highs[i - 2], highs[i - 1], highs[i + 1], highs[i + 2]):
+                levels.append(highs[i])
+    return min(abs(trigger - lv) for lv in levels) <= tol
+
+
+def manage_dca_groups(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float,
+                      data: Dict[str, List[Tuple]], cursors: Dict[str, int], idx: int) -> None:
+    """Kademeli alım + sepet kapatma (DCA) — yalnız TUN_DCA açıkken NEW kitabında çalışır.
+
+    Kullanıcı önerisi (2026-10-06): zarardaki işlemde fiyat, giriş-SL mesafesinin
+    TUN_DCA_DIST_FRAC oranına gelince TUN_DCA_LOT_MULT× lot katman açılır; katman sonrası
+    bireysel TP silahsızlaşır ve sepet bar-kapanış toplam P/L'siyle yönetilir:
+      tot ≥ TP_USD        → BASKET_TP (tüm üyeler kapanır)
+      tot ≤ -SL_USD       → BASKET_SL (tüm üyeler kapanır)
+      tot ≥ BUFFER_USD    → sepet BE kilidi arm edilir
+      armed iken tot ≤ 0.2×BUFFER → BASKET_BE (zararsız çıkış — BE kilidinin sepet karşılığı)
+    Katman tetiği intra-bar (low/high), sepet eşikleri bar kapanışı — muhafazakâr model.
+    """
+    groups: Dict[Tuple[str, str], List[SimPos]] = {}
+    for pos in book.positions:
+        groups.setdefault((pos.symbol, pos.direction), []).append(pos)
+    for (sym, direction), members in groups.items():
+        lead = next((p for p in members if p.layer == 0), None)
+        if lead is None:
+            continue
+        bar = by_ts[sym].get(ts)
+        if bar is None:
+            continue
+        c = bar[4]
+        mark = c
+
+        def _exit_price(p: SimPos) -> float:
+            return (mark - p.fill_adjust) if p.direction == "BUY" else (mark + p.fill_adjust)
+
+        if len(members) > 1:
+            tot_pnl = sum(float_pnl(p, _exit_price(p)) for p in members)
+            closed = False
+            if tot_pnl >= TUN_DCA_TP_USD:
+                reason = "BASKET_TP"
+            elif tot_pnl <= -TUN_DCA_SL_USD:
+                reason = "BASKET_SL"
+            elif not lead.basket_armed and tot_pnl >= TUN_DCA_BUFFER_USD:
+                lead.basket_armed = True
+                reason = None
+            elif lead.basket_armed and tot_pnl <= 0.2 * TUN_DCA_BUFFER_USD:
+                reason = "BASKET_BE"
+            else:
+                reason = None
+            if reason:
+                dead = {id(p) for p in members}
+                for p in members:
+                    close_position(book, p, reason, _exit_price(p), closed_ts=ts)
+                book.positions = [p for p in book.positions if id(p) not in dead]
+                closed = True
+            if closed:
+                continue
+
+        # --- katman tetiği: BE kilitlenmemiş lead, katman hakkı kaldıysa ---
+        # Tetik mesafesi katman sırasıyla derinleşir: frac, frac+step, frac+2×step...
+        # (0.5/0.2 → %50, %70, %90 — hepsi SL'in içinde; SL ~1.0'da)
+        layers_open = sum(1 for p in members if p.layer > 0)
+        if layers_open >= TUN_DCA_MAX_LAYERS or lead.be_locked:
+            continue
+        sl0 = abs(lead.entry_price - lead.sl_price)
+        if sl0 <= 0:
+            continue
+        dist_n = TUN_DCA_DIST_FRAC + layers_open * TUN_DCA_DIST_STEP
+        if direction == "BUY":
+            trigger = lead.entry_price - dist_n * sl0
+            hit = bar[3] <= trigger
+        else:
+            trigger = lead.entry_price + dist_n * sl0
+            hit = bar[2] >= trigger
+        if not hit:
+            continue
+        if TUN_DCA_LEVEL_CHECK:
+            window = data[sym][max(0, cursors[sym] - 96):cursors[sym]]
+            atr_price = lead.entry_atr_pips * lead.pip_size
+            if len(window) < 30 or atr_price <= 0 or not _dca_level_ok(window, trigger, atr_price, direction):
+                continue
+        lots = round(lead.lots * TUN_DCA_LOT_MULT, 2)
+        if lots <= 0:
+            continue
+        entry = round(c + lead.fill_adjust, lead.digits) if direction == "BUY" else round(c - lead.fill_adjust, lead.digits)
+        sl = lead.sl_price  # ortak SL: fiyat lead'in SL'ine değince tüm grup aynı barda birlikte kapanır
+        book.positions.append(SimPos(
+            symbol=sym, direction=direction, lots=lots, entry_price=entry, sl_price=sl,
+            tp_price=0.0, pip_size=lead.pip_size, pip_val=lead.pip_val, digits=lead.digits,
+            opened_bar=idx, fill_adjust=lead.fill_adjust, entry_atr_pips=lead.entry_atr_pips,
+            layer=layers_open + 1, dca_group=True,
+        ))
+        lead.dca_group = True
+
+
 def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, chandelier_mult: float = 0.0,
                 tp_mode: str = "tp"):
     still = []
@@ -431,7 +565,8 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
             # trailing mesafesi ve BE tetik tabanı o işlemin volatilitesine ölçeklenir.
             eff_trail = max(TUN_VOL_TRAIL_FLOOR, TUN_VOL_TRAIL_MULT * pos.entry_atr_pips)
             min_be = TUN_VOL_BE_MULT * pos.entry_atr_pips
-        res = manage_position(pos, bar, eff_trail, spec["be_pips"], chandelier_mult, tp_mode, min_be)
+        res = manage_position(pos, bar, eff_trail, spec["be_pips"], chandelier_mult, tp_mode, min_be,
+                              dca_mode=pos.dca_group)
         if res and res[0] in ("SL", "BE", "TP"):
             close_position(book, pos, res[0], res[1], closed_ts=ts)
         else:
@@ -799,8 +934,11 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
 
         # 1) Açık pozisyonları yönet (her iki defter + gölge defterler)
         # Chandelier yalnız NEW ve gölge defterlerde; OLD tarihi sabit pip trail kullanır
+        # DCA kitabı: katman tetiği + sepet eşikleri, bireysel yönetimden ÖNCE (bar kapanışı)
         chand = TUN_CHANDLIER
         for book in books.values():
+            if TUN_DCA and book.name == "NEW":
+                manage_dca_groups(book, by_ts, ts, data, cursors, idx)
             manage_book(book, by_ts, ts, chandelier_mult=(chand if book.name == "NEW" else 0.0),
                         tp_mode=(TUN_TP_MODE if book.name == "NEW" else "tp"))
         for sh in shadow_book.values():
@@ -972,6 +1110,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 if len(same_dir) >= MAX_PER_SYMBOL_DIR:
                     continue
                 if same_dir:
+                    if TUN_DCA and vname == "NEW":
+                        continue  # DCA: aynı yönde ek işlem yalnız katman mekanizmasından (kâr şartlı pyramid kapalı)
                     dir_pnl = sum(p.partial_realized_usd + float_pnl(p, close_now) for p in same_dir)
                     if dir_pnl < PYRAMID_MIN_PROFIT_USD:
                         continue
@@ -1150,6 +1290,9 @@ def main():
     global TUN_GOLD_VOL_EXITS, TUN_VOL_BE_MULT, TUN_VOL_TRAIL_MULT, TUN_VOL_TRAIL_FLOOR
     global TUN_BE_USD_GOLD, TUN_BE_RATIO_GOLD, TUN_BE_PIP_FIXED_GOLD
     global TUN_INDEX_HOURS, TUN_INDEX_OPEN_DRIVE
+    global TUN_DCA, TUN_DCA_DIST_FRAC, TUN_DCA_LOT_MULT, TUN_DCA_TP_USD, TUN_DCA_SL_USD
+    global TUN_DCA_BUFFER_USD, TUN_DCA_LEVEL_CHECK, TUN_DCA_LEVEL_TOL_ATR
+    global TUN_DCA_MAX_LAYERS, TUN_DCA_DIST_STEP
     global RSI2_ENABLED, RSI2_ENTRY, RSI2_EXIT, FADE_ENABLED, FADE_K_ATR, FADE_EARLY_ONLY
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
@@ -1194,6 +1337,16 @@ def main():
     parser.add_argument("--be-usd-gold", type=float, default=1.0, help="Altın BE dolar tabanı (garantili kilit $)")
     parser.add_argument("--be-ratio-gold", type=float, default=0.40, help="Altın BE anında kilitlenen kâr oranı")
     parser.add_argument("--be-pip-fixed-gold", type=float, default=0.0, help="Altın BE'yi lot-bağımsız sabit pip'e bağla (0 = kapalı)")
+    parser.add_argument("--dca", action="store_true", help="Kademeli alım + sepet kapatma: zarardaki işlemde dist-frac mesafede lot-mult katmanı; sepet TP/SL/BE eşikleri")
+    parser.add_argument("--dca-dist-frac", type=float, default=0.5, help="Katman tetiği: giriş-SL mesafesinin bu oranında (0.5 = yarı)")
+    parser.add_argument("--dca-lot-mult", type=float, default=2.0, help="Katman lotu = ilk pozisyon lotu × çarpan")
+    parser.add_argument("--dca-tp-usd", type=float, default=4.0, help="Sepet TP: toplam kâr ≥ bu ($) → hepsi kapanır")
+    parser.add_argument("--dca-sl-usd", type=float, default=10.0, help="Sepet SL: toplam zarar ≤ -bu ($) → hepsi kapanır")
+    parser.add_argument("--dca-buffer-usd", type=float, default=1.0, help="Sepet BE kilidi tamponu ($)")
+    parser.add_argument("--dca-level-check", action="store_true", help="Katman tetiğinde S/R+Fibo seviye onayı (±tol×ATR komşuluk)")
+    parser.add_argument("--dca-level-tol-atr", type=float, default=0.25, help="Seviye onayı toleransı (× ATR)")
+    parser.add_argument("--dca-max-layers", type=int, default=1, help="Pozisyon başına en fazla katman (3 = lead + 3 katman)")
+    parser.add_argument("--dca-dist-step", type=float, default=0.0, help="Katman tetiği derinleşme adımı (× sl0; tetikler frac, frac+step, ...)")
     parser.add_argument("--dxy-exempt-extra", default="", help="DXY vetosundan muaf tutulacak ek sembol parçaları (virgüllü, test için — canlı DXY_EXEMPT_SYMBOLS'a dokunmaz)")
     parser.add_argument("--index-hours", default="", help="ABD endeksleri (NAS100/US30) giriş penceresi '1330-2000' UTC dakika (boş = kapalı)")
     parser.add_argument("--index-open-drive", action="store_true", help="ABD açılış ilk 5m mumu yönü 13:35-15:00 arası yön teyidi zorunlu")
@@ -1254,6 +1407,16 @@ def main():
     TUN_BE_USD_GOLD = args.be_usd_gold
     TUN_BE_RATIO_GOLD = args.be_ratio_gold
     TUN_BE_PIP_FIXED_GOLD = args.be_pip_fixed_gold
+    TUN_DCA = args.dca
+    TUN_DCA_DIST_FRAC = args.dca_dist_frac
+    TUN_DCA_LOT_MULT = args.dca_lot_mult
+    TUN_DCA_TP_USD = args.dca_tp_usd
+    TUN_DCA_SL_USD = args.dca_sl_usd
+    TUN_DCA_BUFFER_USD = args.dca_buffer_usd
+    TUN_DCA_LEVEL_CHECK = args.dca_level_check
+    TUN_DCA_LEVEL_TOL_ATR = args.dca_level_tol_atr
+    TUN_DCA_MAX_LAYERS = args.dca_max_layers
+    TUN_DCA_DIST_STEP = args.dca_dist_step
     if args.index_hours:
         _ih = args.index_hours.split("-")
         # HHMM formatı → dakika: "1330" = 13*60+30 = 810
@@ -1285,6 +1448,8 @@ def main():
                f"tpMode={TUN_TP_MODE} goldVol={TUN_GOLD_VOL_EXITS}(be={TUN_VOL_BE_MULT} trail={TUN_VOL_TRAIL_MULT}) "
                f"beUSD={TUN_BE_USD_GOLD} beRatio={TUN_BE_RATIO_GOLD} bePipFixed={TUN_BE_PIP_FIXED_GOLD or '-'} "
                f"idxHours={args.index_hours or '-'} idxOpenDrive={TUN_INDEX_OPEN_DRIVE} "
+               f"dca={TUN_DCA}(dist={TUN_DCA_DIST_FRAC}+{TUN_DCA_DIST_STEP} lot={TUN_DCA_LOT_MULT} katman={TUN_DCA_MAX_LAYERS} tp={TUN_DCA_TP_USD} "
+               f"sl={TUN_DCA_SL_USD} buf={TUN_DCA_BUFFER_USD} lvl={TUN_DCA_LEVEL_CHECK}/{TUN_DCA_LEVEL_TOL_ATR}) "
                f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
