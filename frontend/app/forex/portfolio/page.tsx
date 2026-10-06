@@ -514,7 +514,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-white tracking-tight">
-                {title || "IC MARKETS METATRADER 5 · OTONOM SCALPER"}
+                {title || "IC MARKETS MT5 · MERKEZİ OTONOM İZLEME"}
               </h1>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${
@@ -538,7 +538,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               </span>
             </div>
             <p className="text-xs text-bunker-muted mt-1">
-              Hesap: <span className="text-cyan-300 font-bold">{mt5.account?.login || 53077151}</span> ({mt5.account?.server || "ICMarketsSC-Demo"}) · Sahip: <span className="text-white font-bold">{mt5.account?.name || "ERKAN ERDEM"}</span> · M1 / M5 Çoklu Zaman Dilimi & Dinamik SL
+              Tüm sembollerin merkezi otonom izleme konsolu · Hesap: <span className="text-cyan-300 font-bold">{mt5.account?.login || 53077151}</span> ({mt5.account?.server || "ICMarketsSC-Demo"}) · Sahip: <span className="text-white font-bold">{mt5.account?.name || "ERKAN ERDEM"}</span> · M1 / M5 Çoklu Zaman Dilimi & Dinamik SL
             </p>
           </div>
         </div>

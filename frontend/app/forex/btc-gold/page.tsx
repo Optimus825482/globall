@@ -818,7 +818,7 @@ export default function BtcGoldForexPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
                 <span>XAUUSD &amp; BTCUSD</span>
-                <span className="text-amber-400 font-bold text-sm">· ÖZEL KOMUTA KOKPİTİ</span>
+                <span className="text-amber-400 font-bold text-sm">· ODAKLI İZLEME KOKPİTİ</span>
               </h1>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${

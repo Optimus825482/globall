@@ -40,7 +40,7 @@ export default function ForexRadarPage() {
 
   // Quick Lot Calculator state
   const [calcBalance, setCalcBalance] = useState<number>(10000);
-  const [calcRiskPct, setCalcRiskPct] = useState<number>(1.0);
+  const [calcRiskPct, setCalcRiskPct] = useState<number>(10.0);
   const [calcSlPips, setCalcSlPips] = useState<number>(20);
   const [calcSymbol, setCalcSymbol] = useState<string>("EURUSD");
   const [calcResult, setCalcResult] = useState<any>(null);
@@ -418,7 +418,7 @@ export default function ForexRadarPage() {
 
           <div>
             <label className="block text-[11px] font-mono text-bunker-muted mb-1">
-              İşlem Başına Risk (%):
+              Pozisyon Hacmi Riski (% Bakiye):
             </label>
             <input
               type="number"

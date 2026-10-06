@@ -483,6 +483,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.max_positions_per_symbol, 3)
         self.assertEqual(cfg.risk_per_trade_pct, 10.0)
         self.assertEqual(cfg.max_open_positions, 25)
+        self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
     def test_same_symbol_pyramiding_limit_three(self):
         """Verify that 3 positions in the same direction are allowed, but the 4th is blocked."""

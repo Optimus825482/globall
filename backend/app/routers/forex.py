@@ -1463,7 +1463,7 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
 
 class LotCalculatorRequest(BaseModel):
     account_balance: float = Field(10000.0, ge=1.0, description="Account balance in USD")
-    risk_percentage: float = Field(1.0, ge=0.1, le=10.0, description="Risk per trade in percentage")
+    risk_percentage: float = Field(10.0, ge=0.1, le=10.0, description="Pozisyon hacmi risk bütçesi (% bakiye)")
     stop_loss_pips: float = Field(25.0, ge=1.0, description="Stop loss distance in pips")
     symbol: str = Field("EURUSD", description="Forex pair")
 
