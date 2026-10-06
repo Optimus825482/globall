@@ -147,18 +147,6 @@ FOREX_SYMBOLS = [
         "tv_symbol": "OANDA:XAGUSD",
         "default_price": 33.850,
     },
-    {
-        "symbol": "USOIL",
-        "display": "WTI Oil",
-        "name": "Crude Oil (WTI)",
-        "category": "commodity",
-        "base": "OIL",
-        "quote": "USD",
-        "pip_size": 0.01,
-        "digits": 2,
-        "tv_symbol": "TVC:USOIL",
-        "default_price": 71.40,
-    },
     # Indices
     {
         "symbol": "SPX500",
@@ -208,6 +196,29 @@ FOREX_SYMBOLS = [
         "digits": 2,
         "tv_symbol": "BINANCE:BTCUSDT",
         "default_price": 66500.0,
+    },
+]
+
+# 2026-10-07 kullanıcı kararı: ETH/USD ve WTI Oil (USOIL) forex evreninden
+# ÇIKARILDI — radar, grafikler, teknik grafikler ve raporlar sembol listesinde
+# artık görünmez, veri hattı bunları çekmez.
+# Spec kayıtları SİLİNMEDİ, buraya taşındı: geçmiş işlemlerin PnL/pip
+# gösterimi ve açık pozisyonların kapanışı bozulmasın. Bu liste HİÇBİR tarama
+# döngüsünde okunmaz (yalnızca kayıt/geri dönüş amaçlı); mevcut kayıtlara
+# dokunulmadı — açık pozisyon varsa normal SL/TP kurallarıyla kendiliğinden
+# kapanır. Geri almak için ilgili blok `FOREX_SYMBOLS` içine geri taşınır.
+_RETIRED_FOREX_SYMBOLS = [
+    {
+        "symbol": "USOIL",
+        "display": "WTI Oil",
+        "name": "Crude Oil (WTI)",
+        "category": "commodity",
+        "base": "OIL",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 2,
+        "tv_symbol": "TVC:USOIL",
+        "default_price": 71.40,
     },
     {
         "symbol": "ETHUSD",
@@ -316,12 +327,12 @@ YAHOO_SYMBOL_MAP = {
     "NZDUSD": "NZDUSD=X",
     "XAUUSD": "GC=F",
     "XAGUSD": "SI=F",
-    "USOIL": "CL=F",
+    # USOIL (CL=F) ve ETHUSD (ETH-USD) 2026-10-07'de kaldırıldı — bkz.
+    # _RETIRED_FOREX_SYMBOLS. Bu harita veri hattının çektiği evrendir.
     "SPX500": "^GSPC",
     "NAS100": "^NDX",
     "US30": "^DJI",
     "BTCUSD": "BTC-USD",
-    "ETHUSD": "ETH-USD",
     # ABD Dolar Endeksi (DXY) — işlem yapılmaz, yalnızca rejim filtresi için çekilir
     "DXY": "DX-Y.NYB",
 }
@@ -331,8 +342,12 @@ def get_usd_bias(symbol: str, direction: str) -> str:
     """Determine if an order has USD_LONG, USD_SHORT, or USD_NEUTRAL exposure.
     Resilient to broker suffixes (.raw, .ecn, +, -, #) and non-standard commodity tickers.
     - Pairs with USD as Base (USDJPY, USDCAD, USDCHF): BUY -> USD_LONG, SELL -> USD_SHORT
-    - Pairs with USD as Quote (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD, XAGUSD, USOIL, SPX500, NAS100, US30, USTEC, BTCUSD, ETHUSD):
+    - Pairs with USD as Quote (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD, XAGUSD, SPX500, NAS100, US30, USTEC, BTCUSD):
       BUY -> USD_SHORT, SELL -> USD_LONG
+
+    Emekliye ayrılan semboller (USOIL/ETHUSD, bkz. _RETIRED_FOREX_SYMBOLS)
+    burada KALIR: arşivdeki eski pozisyonların kapanışı ve korelasyon kalkanı
+    hâlâ onların USD yönünü bilmek zorunda.
     """
     s = str(symbol).upper().replace("/", "").strip()
     clean_sym = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
@@ -632,6 +647,8 @@ def get_symbol_trading_specs(
         eff_be_pips = max(40.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
+    # ETHUSD emekliye ayrıldı ama spec dalı KALIR: arşivdeki ETH kayıtları
+    # yeniden hesaplanırken pip_val/digits buradan okunur (bkz. _RETIRED_FOREX_SYMBOLS).
     elif "ETH" in clean_sym:
         pip_size = 1.0           # 1 pip = $1.00
         mult = 2.0

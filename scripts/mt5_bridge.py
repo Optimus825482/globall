@@ -1026,7 +1026,8 @@ def sync_with_server(api_base: str):
 
     # MT5 Terminalinden anlık canlı fiyatları topla
     ticks_data = {}
-    check_syms = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"]
+    # ETHUSD 2026-10-07'de forex evreninden çıkarıldı — burada da kotasyon istenmez.
+    check_syms = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "NAS100", "US30", "XAUUSD"]
     for s_check in check_syms:
         res_sym = resolve_mt5_symbol(s_check)
         t = mt5.symbol_info_tick(res_sym)

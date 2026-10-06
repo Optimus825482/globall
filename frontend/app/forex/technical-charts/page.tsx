@@ -18,7 +18,6 @@ const AVAILABLE_FX = [
   { symbol: "FX:AUDUSD", name: "AUD/USD" },
   { symbol: "FX:USDCAD", name: "USD/CAD" },
   { symbol: "FX:USDCHF", name: "USD/CHF" },
-  { symbol: "TVC:USOIL", name: "WTI Petrol" },
   { symbol: "FOREXCOM:SPXUSD", name: "S&P 500" },
   { symbol: "FOREXCOM:NSXUSD", name: "Nasdaq 100" },
 ];

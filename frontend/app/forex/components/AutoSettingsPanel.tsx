@@ -39,7 +39,8 @@ const ALL_SYMBOLS = [
   { sym: "USDCAD", label: "USD/CAD" },
   { sym: "NZDUSD", label: "NZD/USD" },
   { sym: "BTCUSD", label: "Bitcoin (BTC)" },
-  { sym: "ETHUSD", label: "Ethereum (ETH)" },
+  // ETH/USD ve WTI Oil 2026-10-07'de forex evreninden çıkarıldı (kullanıcı
+  // kararı) — bu listeden kaldırıldılar ki tekrar açılamasınlar.
   { sym: "NAS100", label: "Nasdaq 100 (USTEC)" },
   { sym: "US30", label: "Dow Jones (US30)" },
   { sym: "XAUUSD", label: "Ons Altın (XAU)" },

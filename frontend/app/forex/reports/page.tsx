@@ -241,7 +241,6 @@ export default function ForexReportsPage() {
     { key: "USDCHF", label: "USD/CHF" },
     { key: "NZDUSD", label: "NZD/USD" },
     { key: "XAGUSD", label: "Gümüş (XAG)" },
-    { key: "USOIL", label: "Ham Petrol" },
   ];
 
   return (

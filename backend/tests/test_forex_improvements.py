@@ -429,7 +429,7 @@ class TestRadarScanNote(unittest.TestCase):
 
     def test_reports_strong_signals_with_names(self):
         note = forex._radar_scan_note(
-            [self._c("STRONG", display="BTC/USD"), self._c("STRONG", display="WTI Oil"),
+            [self._c("STRONG", display="BTC/USD"), self._c("STRONG", display="XAU/USD"),
              self._c("WAIT", "direction")], 12)
         self.assertIn("2 güçlü sinyal", note)
         self.assertIn("BTC/USD", note)

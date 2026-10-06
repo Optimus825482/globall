@@ -160,7 +160,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     session_filter: false,
     max_spread_pips: 3.0,
     gold_cooldown_sec: 60.0,
-    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "ETHUSD", "NAS100", "US30", "XAUUSD"],
+    // ETH/USD ve WTI Oil 2026-10-07'de evrenden çıkarıldı (kullanıcı kararı).
+    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "NAS100", "US30", "XAUUSD"],
   });
 
   const [showSettings, setShowSettings] = useState(false);

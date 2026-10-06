@@ -13,7 +13,6 @@ const PAIRS = [
   { symbol: "USDCAD", tv: "FX:USDCAD", name: "USD/CAD", cat: "major" },
   { symbol: "USDCHF", tv: "FX:USDCHF", name: "USD/CHF", cat: "major" },
   { symbol: "NZDUSD", tv: "FX:NZDUSD", name: "NZD/USD", cat: "major" },
-  { symbol: "USOIL", tv: "TVC:USOIL", name: "WTI Ham Petrol", cat: "commodity" },
   { symbol: "SPX500", tv: "FOREXCOM:SPXUSD", name: "S&P 500", cat: "index" },
 ];
 

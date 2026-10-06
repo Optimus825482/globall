@@ -368,6 +368,34 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         for s in expected_2:
             self.assertIn(s, forex.YAHOO_SYMBOL_MAP)
 
+    def test_retired_symbols_are_out_of_universe_but_specs_kept(self):
+        """ETHUSD ve USOIL 2026-10-07'de forex evreninden çıkarıldı.
+
+        Kullanıcı kararı: tüm forex modülünden kaldır, ama geçmiş kayıtlara
+        DOKUNMA. Bu iki şart aynı anda ancak şöyle sağlanır — semboller tarama
+        evreninden (FOREX_SYMBOLS) ve veri hattından (YAHOO_SYMBOL_MAP) çıkar,
+        buna karşılık pip/lot spec'leri `get_symbol_trading_specs` içinde
+        KALIR; aksi halde arşivdeki ETH/petrol işlemlerinin pip_val ve digits
+        bilgisi kaybolur ve PnL yeniden hesabı sessizce bozulurdu.
+        """
+        universe = [s["symbol"] for s in forex.FOREX_SYMBOLS]
+        retired = [s["symbol"] for s in forex._RETIRED_FOREX_SYMBOLS]
+        self.assertEqual(sorted(retired), ["ETHUSD", "USOIL"])
+
+        for sym in retired:
+            self.assertNotIn(sym, universe, f"{sym} tarama evreninde olmamalı")
+            self.assertNotIn(sym, forex.YAHOO_SYMBOL_MAP, f"{sym} için veri çekilmemeli")
+            # Specler korunuyor — arşiv PnL hesabı buna bağlı
+            specs = forex.get_symbol_trading_specs(sym, base_sl=8.0, base_tp=20.0)
+            self.assertGreater(specs["pip_val"], 0.0, f"{sym} spec korunmalı")
+
+        # Radar/emir uçları artık bu sembolleri görmemeli
+        self.assertNotIn("USOIL", universe)
+        self.assertNotIn("ETHUSD", universe)
+        # XAUUSD + BTCUSD (özel izleme sayfasının evreni) hâlâ yerinde
+        for keep in ("XAUUSD", "BTCUSD", "EURUSD", "NAS100", "US30", "XAGUSD"):
+            self.assertIn(keep, universe)
+
     def test_nas100_and_us30_specs_and_alias(self):
         """Verify Nasdaq (NAS100/USTEC) and Dow Jones (US30) trading specs and MT5 alias resolution."""
         # Check alias
