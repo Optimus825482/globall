@@ -667,5 +667,29 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.max_open_positions, 99)
 
 
+    def test_no_strong_signal_bypass_regression(self):
+        """Regresyon (2026-10-07): başka bir oturumda eklenen 'Güçlü Sinyal Önceliği'
+        bypass'ları kalibrasyon kanıtlarını tersine çeviriyordu — (1) allowed_symbols
+        kapsamını skor >= 75 için atlatmak, (2) majör seans kapısını JPY/güçlü sinyaller
+        için devre dışı bırakmak, (3) mode_exclusive süzgecini kaldırmak. 30g replay:
+        28/28 FX çifti klasik sinyalle negatif, Asya girişlerinin gölge defteri −$5.939
+        → bu kapıların bypass'ı KALICI olarak yasak."""
+        src_path = forex.__file__
+        src = pathlib.Path(src_path).read_text(encoding="utf-8")
+        self.assertNotIn("GÜÇLÜ SİNYAL ÖNCELİĞİ", src, "güçlü-sinyal önceliği bypass'ı geri eklenmiş")
+        self.assertNotIn("allowed_symbols and not is_strong", src, "kapsam bypass'ı geri eklenmiş")
+        self.assertNotIn("if not is_strong and \"JPY\" not in sym", src, "JPY seans muafiyeti geri eklenmiş")
+        # mode_exclusive süzgeci yerinde olmalı (klasik sinyal JPY kroslarında kapalı)
+        self.assertIn("_mode_excl", src)
+        # majör kapısı koşulsuz çağrılmalı (radar kapısında bypass yok)
+        gate_idx = src.find("gate = major_entry_gate_decision")
+        self.assertGreater(gate_idx, 0)
+        pre = src[max(0, gate_idx - 400):gate_idx]
+        self.assertNotIn("is_strong", pre, "radar majör kapısında güçlü-sinyal muafiyeti var")
+        # donchian modu hâlâ yerinde
+        self.assertIn("donchian_adx_entry", src)
+        self.assertIn("entry_source", src)
+
+
 if __name__ == "__main__":
     unittest.main()

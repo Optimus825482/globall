@@ -2549,20 +2549,16 @@ class ForexAutoPaperSettings(BaseModel):
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default_factory=lambda: [
-            "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
-            "USDCAD", "NZDUSD", "GBPJPY", "EURJPY", "XAUUSD",
-            "NAS100", "US30", "BTCUSD"
-        ],
-        description="İşleme izin verilen pariteler — algoritmanın onayladığı tüm aktif majör, kros, emtia ve endeksler",
+        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
+        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam: XAU+BTC klasik, GBPJPY/EURJPY donchian modu; 28/28 FX çifti klasik sinyalle 30g replay'de negatif — majör/kros genişlemesi panelden yapılmaz, replay kanıtı ister)",
     )
     mode_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
         description="Donchian+ADX giriş modunun AKTİF olduğu semboller",
     )
     mode_exclusive: List[str] = Field(
-        default_factory=list,
-        description="YALNIZ donchian_adx moduyla işlem açılan semboller (boş = güçlü radar sinyalleri tüm çiftlerde işlem açabilir)",
+        default_factory=lambda: ["GBPJPY", "EURJPY"],
+        description="YALNIZ donchian_adx moduyla işlem açılan semboller (klasik skor sinyali bu çiftlerde replay'de kanıtlanmış negatif beklentiye sahip — kapalı kalır)",
     )
 
 
@@ -3361,8 +3357,9 @@ async def _forex_auto_paper_loop():
 
             for cand in candidates:
                 sym = cand["symbol"].upper()
-                is_strong = (cand.get("tier") == "STRONG") or (float(cand.get("score", 0.0)) >= 75.0)
-                if sym not in _AUTO_SETTINGS.allowed_symbols and not is_strong:
+                # Kapsam kapısı kesindir: güçlü sinyal bile allowed_symbols dışına işlem açamaz
+                # (2026-10-07 kalibrasyonu: 28/28 FX çifti klasik sinyalle negatif — bypass yok).
+                if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
 
                 # Seri-SL Soğuması: sembol ardışık tam-SL kayıplarından sonra kısa süre
@@ -3621,15 +3618,14 @@ async def _forex_auto_paper_loop():
                             )
                         continue
 
-                # 5c. Majör FX güçlendirme kapıları (Güçlü sinyaller ve JPY pariteleri hariç)
-                gate_reason = None
-                if not is_strong and "JPY" not in sym:
-                    gate_reason = major_entry_gate_decision(
-                        sym, current_utc_hour, float(cand.get("atr_pips", 0.0)),
-                        _AUTO_SETTINGS.major_session_filter,
-                        _AUTO_SETTINGS.major_session_start_utc, _AUTO_SETTINGS.major_session_end_utc,
-                        _AUTO_SETTINGS.major_min_atr_pips,
-                    )
+                # 5c. Majör FX güçlendirme kapıları (seans penceresi + volatilite tabanı;
+                # 2026-10-07 doğrulama: filtre kâr ediyor — Asya girişlerinin gölge defteri −$5.939)
+                gate_reason = major_entry_gate_decision(
+                    sym, current_utc_hour, float(cand.get("atr_pips", 0.0)),
+                    _AUTO_SETTINGS.major_session_filter,
+                    _AUTO_SETTINGS.major_session_start_utc, _AUTO_SETTINGS.major_session_end_utc,
+                    _AUTO_SETTINGS.major_min_atr_pips,
+                )
                 if gate_reason:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_major", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_major"] = now_ts
