@@ -450,16 +450,29 @@ export default function ForexNativeChart({
 
     const handleResize = () => {
       if (chartContainerRef.current && chartApiRef.current) {
-        chartApiRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: chartContainerRef.current.clientHeight,
-        });
+        const w = chartContainerRef.current.clientWidth;
+        const h = chartContainerRef.current.clientHeight;
+        if (w > 0 && h > 0) {
+          chartApiRef.current.applyOptions({
+            width: w,
+            height: h,
+          });
+        }
       }
     };
     window.addEventListener("resize", handleResize);
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && chartContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(chartContainerRef.current);
+    }
+
     return () => {
       window.removeEventListener("resize", handleResize);
+      if (resizeObserver) resizeObserver.disconnect();
       chart.remove();
       chartApiRef.current = null;
       candleSeriesRef.current = null;
