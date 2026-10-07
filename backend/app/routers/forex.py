@@ -124,6 +124,31 @@ FOREX_SYMBOLS = [
         "tv_symbol": "FX:NZDUSD",
         "default_price": 0.59750,
     },
+    # JPY krosçarları (2026-10-07 giriş-kalibrasyonu: GBPJPY/EURJPY donchian_adx moduyla canlıya alındı)
+    {
+        "symbol": "GBPJPY",
+        "display": "GBP/JPY",
+        "name": "British Pound / Japanese Yen",
+        "category": "cross",
+        "base": "GBP",
+        "quote": "JPY",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "FX:GBPJPY",
+        "default_price": 199.850,
+    },
+    {
+        "symbol": "EURJPY",
+        "display": "EUR/JPY",
+        "name": "Euro / Japanese Yen",
+        "category": "cross",
+        "base": "EUR",
+        "quote": "JPY",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "FX:EURJPY",
+        "default_price": 168.420,
+    },
     # Commodities / Precious Metals
     {
         "symbol": "XAUUSD",
@@ -371,6 +396,9 @@ YAHOO_SYMBOL_MAP = {
     "XAGUSD": "SI=F",
     # USOIL (CL=F), ETHUSD (ETH-USD) ve SPX500 (^GSPC) 2026-10-07'de kaldırıldı
     # — bkz. _RETIRED_FOREX_SYMBOLS. Bu harita veri hattının çektiği evrendir.
+    # JPY krosçarları (donchian_adx giriş modu sembolleri — 2026-10-07)
+    "GBPJPY": "GBPJPY=X",
+    "EURJPY": "EURJPY=X",
     "NAS100": "^NDX",
     "US30": "^DJI",
     "BTCUSD": "BTC-USD",
@@ -600,6 +628,35 @@ def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -
     if streak >= limit:
         return 0, True
     return streak, False
+
+
+def donchian_adx_entry(prev_close: Optional[float], prev_mid: Optional[float], close: float,
+                       mid: float, adx: float, adx_min: float, day: int, day_counts: Dict[str, int],
+                       max_per_day: int, hour_utc: int, is_jpy: bool) -> Optional[str]:
+    """Donchian(20) orta-hat çaprazı giriş kararı (saf fonksiyon — replay ile aynı kural).
+
+    Kural (2026-10-07 kalibrasyon kazananı): önceki değerlendirme orta hattın bir tarafında
+    iken şu an fiyat orta hattı LEHTE keserse ve ADX ≥ eşikse giriş. Gün içi yön başına
+    max_per_day limiti; seans: JPY çiftleri 00-16 UTC, diğerleri 07-16 UTC.
+    Döner: "BUY" / "SELL" / None.
+    """
+    if prev_close is None or not prev_mid or prev_mid <= 0 or mid <= 0 or close <= 0:
+        return None
+    if adx < adx_min:
+        return None
+    if is_jpy:
+        if not (0 <= hour_utc < 16):
+            return None
+    else:
+        if not (7 <= hour_utc < 16):
+            return None
+    if day_counts.get("BUY", 0) >= max_per_day and day_counts.get("SELL", 0) >= max_per_day:
+        return None
+    if prev_close <= prev_mid and close > mid:
+        return "BUY" if day_counts.get("BUY", 0) < max_per_day else None
+    if prev_close >= prev_mid and close < mid:
+        return "SELL" if day_counts.get("SELL", 0) < max_per_day else None
+    return None
 
 
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
@@ -1377,6 +1434,9 @@ def _compute_technical_indicators(
         "adx": round(adx_val, 1),
         "supertrend_dir": int(st_dir),
         "atr": atr,
+        # Donchian(20) orta hat + önceki barın orta hattı (donchian_adx giriş modu — 2026-10-07)
+        "donch_mid": round((max(highs[-20:]) + min(lows[-20:])) / 2.0, 6) if len(highs) >= 20 else None,
+        "donch_mid_prev": round((max(highs[-21:-1]) + min(lows[-21:-1])) / 2.0, 6) if len(highs) >= 21 else None,
         "trend": trend,
         "action": action,
         "score": score,
@@ -2208,7 +2268,7 @@ class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(10.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye)")
-    max_open_positions: int = Field(25, ge=1, le=25, description="Aynı anda maksimum açık işlem")
+    max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
@@ -2247,8 +2307,16 @@ class ForexAutoPaperSettings(BaseModel):
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default=["XAUUSD", "BTCUSD"],
-        description="İşleme izin verilen pariteler (2026-10-06 kullanıcı kararı: yalnız Ons Altın + BTC izlenir ve işlem açılır; diğerleri panelden eklenebilir)",
+        default=["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
+        description="İşleme izin verilen pariteler (2026-10-07: GBPJPY/EURJPY donchian_adx moduyla eklendi; diğerleri panelden eklenebilir)",
+    )
+    mode_symbols: List[str] = Field(
+        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
+        description="Donchian+ADX giriş modunun AKTİF olduğu semboller (klasik motor bu sembollerde de çalışmaya devam eder — çift akış)",
+    )
+    mode_exclusive: List[str] = Field(
+        default_factory=lambda: ["GBPJPY", "EURJPY"],
+        description="YALNIZ donchian_adx moduyla işlem açılan semboller (klasik skor sinyali bu çiftlerde replay'de kanıtlanmış negatif beklentiye sahip — kapalı)",
     )
 
 
@@ -2297,6 +2365,8 @@ _MT5_STATE: Dict[str, Any] = {
 # atama yok, bu yüzden `global` bildirimi gerekmez; bkz. globals-shadow regresyon testi)
 _SYMBOL_LOSS_STREAK: Dict[str, int] = {}
 _SYMBOL_LOSS_COOLDOWN_UNTIL: Dict[str, float] = {}
+# Donchian+ADX mod durumu (yalnız dict mutasyonu — global bildirimi gerekmez)
+_DONCHIAN_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -2420,6 +2490,7 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             "TRAILING_HIT": "📈 İz Süren (Trailing)",
             "MANUAL": "✋ Manuel Kapatma",
             "REVERSAL_FLIP": "🔄 Trend Dönüşü (Flip Reversal)",
+            "SEANS16": "🕒 Seans Kapanışı (16:00 UTC)",
         }
         human_reason = reason_titles.get(reason, reason)
         # Bakiye YALNIZ kalan bacakla ilerler: kısmi kâr döngüde kredilenmişti,
@@ -2847,6 +2918,12 @@ async def _forex_auto_paper_loop():
                     elif direction == "SELL" and cur_p >= pos["sl_price"]:
                         reason = "BE_HIT" if pos["breakeven_activated"] and pos["pnl_pips"] >= 0 else "SL_HIT"
                         positions_to_close.append((pos["id"], reason, cur_p))
+                    # (e) Donchian modu seans-flat (araştırma: NY öğleden sonrası negatif;
+                    #     XAU/BTC muaf — onlarda mod ek akış olarak 24h çalışır)
+                    elif (sym in {s.upper() for s in (_AUTO_SETTINGS.mode_symbols or [])}
+                          and "XAU" not in sym and "BTC" not in sym
+                          and datetime.datetime.now(datetime.timezone.utc).hour == 16):
+                        positions_to_close.append((pos["id"], "SEANS16", cur_p))
 
             # Pozisyonları kapat
             for pid, rsn, p_exit in positions_to_close:
@@ -2894,6 +2971,58 @@ async def _forex_auto_paper_loop():
             radar_res = await get_forex_radar()
             candidates = radar_res.get("candidates", [])
             dxy_regime = radar_res.get("dxy")
+
+            # Donchian+ADX giriş modu (2026-10-07 kalibrasyonu): mode_symbols için radar
+            # adayına EK aday üretir; mode_exclusive sembollerin klasik adayları düşürülür.
+            _mode_syms = {s.upper() for s in (_AUTO_SETTINGS.mode_symbols or [])}
+            _mode_excl = {s.upper() for s in (_AUTO_SETTINGS.mode_exclusive or [])}
+            if _mode_excl:
+                candidates = [c for c in candidates if str(c.get("symbol", "")).upper() not in _mode_excl]
+            if _mode_syms:
+                for _m_sym in _mode_syms:
+                    _m_t = ticks.get(_m_sym)
+                    _m_tech = _TECHNICAL_CACHE.get(_m_sym) or {}
+                    if not _m_t or not _m_tech or _m_tech.get("donch_mid") is None:
+                        continue
+                    _m_price = (_m_t.get("bid", 0.0) + _m_t.get("ask", 0.0)) / 2.0 or _m_tech.get("price", 0.0)
+                    _m_pip_size = _m_tech.get("pip_size") or next((i["pip_size"] for i in FOREX_SYMBOLS if i["symbol"] == _m_sym), 0.0001)
+                    if _m_price <= 0 or _m_pip_size <= 0:
+                        continue
+                    _m_now = datetime.datetime.now(datetime.timezone.utc)
+                    _m_day = _m_now.toordinal()
+                    _m_st = _DONCHIAN_STATE.setdefault(_m_sym, {"prev_close": None, "prev_mid": None, "day": _m_day, "counts": {}})
+                    if _m_st["day"] != _m_day:
+                        _m_st["day"] = _m_day
+                        _m_st["counts"] = {}
+                    _m_action = donchian_adx_entry(
+                        prev_close=_m_st["prev_close"], prev_mid=_m_st["prev_mid"],
+                        close=_m_price, mid=float(_m_tech["donch_mid"]),
+                        adx=float(_m_tech.get("adx", 25.0)), adx_min=18.0,
+                        day=_m_day, day_counts=_m_st["counts"], max_per_day=2,
+                        hour_utc=_m_now.hour, is_jpy=("JPY" in _m_sym.upper()),
+                    )
+                    _m_st["prev_close"] = _m_price
+                    _m_st["prev_mid"] = float(_m_tech["donch_mid"])
+                    if _m_action:
+                        _m_st["counts"][_m_action] = _m_st["counts"].get(_m_action, 0) + 1
+                        _m_atr = float(_m_tech.get("atr", 0.0))
+                        _m_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _m_sym), None)
+                        candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _m_sym] + [{
+                            "symbol": _m_sym,
+                            "display": _m_item["display"] if _m_item else _m_sym,
+                            "action": _m_action,
+                            "score": 200.0,
+                            "spread_pips": _LIVE_SPREAD_PIPS.get(_m_sym, 2.0),
+                            "atr_pips": round(_m_atr / _m_pip_size, 1) if _m_pip_size > 0 else 15.0,
+                            "adx": float(_m_tech.get("adx", 25.0)),
+                            "supertrend_dir": int(_m_tech.get("supertrend_dir", 0)),
+                            "entry_source": "donchian",
+                        }]
+                        _log_auto_decision(
+                            "SCAN",
+                            f"🎯 [{_m_item['display'] if _m_item else _m_sym}] Donchian kırılımı: {_m_action} adayı (ADX {_m_tech.get('adx', 0):.0f}) — değerlendiriliyor.",
+                            symbol=_m_sym,
+                        )
 
             # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
@@ -3330,6 +3459,11 @@ async def _forex_auto_paper_loop():
                     tp_pips = atr_levels["tp_pips"]
                     if _AUTO_SETTINGS.partial_tp_enabled:
                         first_target_pips = atr_levels["first_target_pips"]
+                if str(cand.get("entry_source", "")) == "donchian" and atr_pips > 0:
+                    # Donchian modu çıkışları (replay ile birebir): SL 2×ATR, TP 4×ATR, kısmi kâr yok
+                    sl_pips = round(2.0 * atr_pips, 1)
+                    tp_pips = round(4.0 * atr_pips, 1)
+                    first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)

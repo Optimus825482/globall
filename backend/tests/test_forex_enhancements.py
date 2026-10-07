@@ -354,18 +354,18 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["command"]["lots"], 0.50)
 
     def test_target_two_symbols_configuration(self):
-        """Verify the configured instruments are set in allowed_symbols (2026-10-06: yalnız XAUUSD + BTCUSD)."""
-        expected_2 = ["XAUUSD", "BTCUSD"]
+        """Verify the configured instruments are set in allowed_symbols (2026-10-07: XAU+BTC + GBPJPY/EURJPY donchian modu)."""
+        expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 2)
-        for s in expected_2:
+        self.assertEqual(len(cfg.allowed_symbols), 4)
+        for s in expected:
             self.assertIn(s, cfg.allowed_symbols)
         # Sadece bu ikisi — diğer semboller izin listesinden çıkarıldı
         for s in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
                   "ETHUSD", "NAS100", "US30", "USOIL"):
             self.assertNotIn(s, cfg.allowed_symbols)
-        # Check MT5 Bridge check_syms list contains these 2
-        for s in expected_2:
+        # Check MT5 Bridge check_syms list contains these 4
+        for s in expected:
             self.assertIn(s, forex.YAHOO_SYMBOL_MAP)
 
     def test_retired_symbols_are_out_of_universe_but_specs_kept(self):
@@ -511,11 +511,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
     def test_default_risk_and_position_limits(self):
-        """Verify default position sizing is 10% balance risk and max_open_positions is 25."""
+        """Verify default position sizing is 10% balance risk and max_open_positions is 99 (2026-10-07 slot rekabeti kaldırıldı)."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 3)
         self.assertEqual(cfg.risk_per_trade_pct, 10.0)
-        self.assertEqual(cfg.max_open_positions, 25)
+        self.assertEqual(cfg.max_open_positions, 99)
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
     def test_same_symbol_pyramiding_limit_three(self):
@@ -611,11 +611,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res_eth["standard_lots"], 7.14)
         self.assertEqual(res_eth["safe_capped_lots"], 7.14)
 
-    def test_settings_supports_up_to_20_pct_risk_and_25_positions(self):
-        """Verify ForexAutoPaperSettings validates up to 20% risk and 25 max open positions."""
-        cfg = forex.ForexAutoPaperSettings(risk_per_trade_pct=20.0, max_open_positions=25)
+    def test_settings_supports_up_to_20_pct_risk_and_99_positions(self):
+        """Verify ForexAutoPaperSettings validates up to 20% risk and 99 max open positions (2026-10-07)."""
+        cfg = forex.ForexAutoPaperSettings(risk_per_trade_pct=20.0, max_open_positions=99)
         self.assertEqual(cfg.risk_per_trade_pct, 20.0)
-        self.assertEqual(cfg.max_open_positions, 25)
+        self.assertEqual(cfg.max_open_positions, 99)
 
 
     def test_dynamic_breakeven_target_calculation(self):

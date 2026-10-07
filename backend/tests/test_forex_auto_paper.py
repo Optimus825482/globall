@@ -635,5 +635,37 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._SYMBOL_LOSS_STREAK.clear()
 
 
+    def test_donchian_adx_entry_rules(self):
+        """Donchian+ADX canlı giriş kararı (replay kazananı ile aynı kural)."""
+        f = forex.donchian_adx_entry
+        # Orta hat yukarı kesilince BUY (prev_close orta hattın ALTINDAYKEN kesişim; ADX yeterli, seans içi)
+        self.assertEqual(f(1.0990, 1.0995, 1.1010, 1.0997, 25.0, 18.0, 738000, {}, 2, 10, False), "BUY")
+        # Orta hat aşağı kesilince SELL (prev_close orta hattın ÜSTÜNDAYKEN kesişim)
+        self.assertEqual(f(1.1010, 1.1005, 1.0990, 1.1003, 25.0, 18.0, 738000, {}, 2, 10, False), "SELL")
+        # ADX zayıf → yok
+        self.assertIsNone(f(1.1000, 1.0995, 1.1010, 1.0997, 12.0, 18.0, 738000, {}, 2, 10, False))
+        # İlk değerlendirme (prev_close None) → yok
+        self.assertIsNone(f(None, None, 1.1010, 1.0997, 25.0, 18.0, 738000, {}, 2, 10, False))
+        # Gün içi limit: BUY 2 kez kullanıldıysa BUY gelmez, SELL hâlâ açılabilir
+        counts = {"BUY": 2}
+        # BUY limiti dolu → yukarı kesişim olsa da None; SELL limiti boş → SELL döner
+        self.assertIsNone(f(1.0990, 1.0995, 1.1010, 1.0997, 25.0, 18.0, 738000, counts, 2, 10, False))
+        self.assertEqual(f(1.1010, 1.1005, 1.0990, 1.1003, 25.0, 18.0, 738000, counts, 2, 10, False), "SELL")
+        # Seans: JPY 16:00 sonrası yok; non-JPY 07:00 öncesi yok
+        self.assertIsNone(f(1.1000, 1.0995, 1.1010, 1.0997, 25.0, 18.0, 738000, {}, 2, 17, True))
+        self.assertIsNone(f(1.1000, 1.0995, 1.1010, 1.0997, 25.0, 18.0, 738000, {}, 2, 5, False))
+
+    async def test_mode_settings_defaults(self):
+        """Canlı taşima ayarlari: mode sembolleri, exclusive liste ve 99 slot."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertIn("GBPJPY", cfg.allowed_symbols)
+        self.assertIn("EURJPY", cfg.allowed_symbols)
+        self.assertIn("XAUUSD", cfg.mode_symbols)
+        self.assertIn("GBPJPY", cfg.mode_symbols)
+        self.assertIn("GBPJPY", cfg.mode_exclusive)
+        self.assertNotIn("XAUUSD", cfg.mode_exclusive)
+        self.assertEqual(cfg.max_open_positions, 99)
+
+
 if __name__ == "__main__":
     unittest.main()
