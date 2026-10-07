@@ -86,7 +86,8 @@ export const FOREX_MENU_GROUPS: MenuGroup[] = [
     items: [
       { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
-      { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex TradingView ekranı" },
+      { href: "/forex/islemler", label: "Canlı İşlemler", icon: "⚡", desc: "Açık ve kapanan Forex pozisyonları, anlık PnL ve başarı oranı" },
+      { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex ekranı" },
       { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği" },
       { href: "/forex/calendar", label: "Ekonomik Takvim", icon: "📅", desc: "Canlı makroekonomik veriler ve haberler" },
       { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı demo hesap yönetimi" },
