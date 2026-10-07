@@ -36,7 +36,11 @@ export default function Sidebar() {
     const [health, setHealth] = useState<any>(null);
     const liveStatus = useLiveStatus();
     const onLiveMessage = useCallback((message: any) => {
-        if (message.type !== "alert") return;
+        if (message.type !== "alert" && message.type !== "forex_alert") return;
+        const sym = String(message.data?.symbol || "").toUpperCase();
+        if (sym && !sym.includes("USD") && !sym.includes("EUR") && !sym.includes("XAU") && !sym.includes("GBP") && !sym.includes("JPY")) {
+            return; // Kripto spot alarmlarını yut
+        }
         const item = { ...(message.data || {}), id: message.data?.id || `${Date.now()}`, triggered_at: message.data?.triggered_at || Date.now() / 1000 };
         setNotifications((current) => [item, ...current.filter((entry) => entry.id !== item.id)].slice(0, 30));
         setUnread((count) => count + 1);
@@ -63,7 +67,13 @@ export default function Sidebar() {
     }, []);
     useEffect(() => {
         const load = () => apiFetch("/api/alerts")
-            .then((data) => setNotifications((data.events || []).slice(0, 30)))
+            .then((data) => {
+                const list = (data.events || []).filter((e: any) => {
+                    const s = String(e.symbol || "").toUpperCase();
+                    return !s || s.includes("USD") || s.includes("EUR") || s.includes("XAU") || s.includes("GBP") || s.includes("JPY");
+                });
+                setNotifications(list.slice(0, 30));
+            })
             .catch(() => undefined);
         load();
     }, []);
@@ -258,14 +268,14 @@ export default function Sidebar() {
                     )}
 
                     <Link
-                        href="/system-health"
+                        href="/settings?tab=health"
                         onClick={() => setOpen(false)}
                         className={`group flex items-center justify-between p-2 rounded-xl border transition-all ${
-                            pathname === "/system-health"
+                            pathname === "/settings"
                                 ? "border-cyan-400/60 bg-cyan-950/40 shadow-[0_0_12px_rgba(0,240,255,0.2)]"
                                 : "border-bunker-800 bg-bunker-950/40 hover:border-cyan-500/30 hover:bg-bunker-900/60"
                         }`}
-                        title="Detaylı sistem sağlığını görüntüle"
+                        title="Ayarlar > Sistem Sağlığını görüntüle"
                     >
                         <div className="flex items-center gap-2 min-w-0">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${

@@ -4,8 +4,8 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
-import RadarAlertModal from "./RadarAlertModal";
 import BottomNav from "./BottomNav";
+import ForexRadarModal from "../forex/components/ForexRadarModal";
 import { reconcilePushSubscription } from "../lib/push";
 import { useExchangeProvider } from "../lib/exchange";
 
@@ -52,6 +52,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="w-full px-2 sm:px-4 lg:px-6 py-2.5 sm:py-4 max-w-[1700px] mx-auto">
             {children}
           </div>
+          <ForexRadarModal />
         </main>
       </ExchangeContext.Provider>
     );
@@ -65,7 +66,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="content-shell">{children}</div>
         </main>
         <BottomNav />
-        <RadarAlertModal />
+        <ForexRadarModal />
       </div>
     </ExchangeContext.Provider>
   );

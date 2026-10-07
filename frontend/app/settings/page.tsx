@@ -1,45 +1,42 @@
 "use client";
 // ============================================================================
-// AYARLAR — 2026-10-07: Global uygulaması YALNIZCA Forex & Emtia sunar.
+// AYARLAR — 2026-10-07: BİRLEŞTİRİLMİŞ TEK AYARLAR KONSOLU
 //
-// Spot piyasa yüzeyi (semboller / radar / bildirim kuralları / strateji
-// parametreleri / otonom paper / MACD-Sıçrama ayarları) ve spot trading
-// parametreleri bu sayfadan KALDIRILDI. Forex'in tek parametre ekranı
-// `/forex/ayarlar` sayfasıdır.
-//
-// Burada kalanlar piyasa-bağımsız yüzeylerdir:
-//   • Profil      → kullanıcı hesabı
-//   • Uygulama    → altyapı eylemleri (DB yedeği, push testi)
-//   • LLM/Provider→ chat motoru sağlayıcı-model-uzmanlık yönetimi
-//   • Chat        → chat araç/yetki ve ses ayarları
-// Spot konfigürasyon düzenleme (GET/PUT /api/config) de kaldırıldı: düzenlenecek
-// spot parametresi kalmadığı için "KAYDET" düğmesi sessizce yanıltıcı olurdu.
+// 1. Forex & Otonom Scalper ayarları (`/forex/ayarlar` ile birleştirildi)
+// 2. Sistem Sağlığı sekmesi (sidebar'dan buraya sekme olarak taşındı)
+// 3. TR Köprüsü ve spot parçaları tamamen kaldırıldı
+// 4. Uygulama, LLM/Provider, Chat ve Profil yönetimi
 // ============================================================================
 
 import { useEffect, useState } from "react";
-import { API_BASE, apiRequest } from "../lib/api";
+import { API_BASE, apiRequest, apiFetch } from "../lib/api";
 import LlmManagement from "./LlmManagement";
 import ChatSettingsPanel from "./ChatSettingsPanel";
 import RequireAdmin from "../components/RequireAdmin";
 import { useAuth } from "../lib/auth";
-// 2026-09-27: Profil Ayarlar'a sekme taşındı. `ProfileContent` headless
-// bileşendir (kendi page-shell'i yok) — settings kapsayıcısına girer.
 import { ProfileContent } from "../profile/page";
-// 2026-09-28: TR Köprüsü sekmesi. Global tarama artık v4 İÇİNDE yerel olarak
-// çalışacak şekilde taşınıyor; köprü o iş bitene kadar canlı sinyal yoludur ve
-// operatörün onu kapatabilmesi gerekir. Taşıma tamamlanınca bu sekme kaldırılır.
-import BridgeSettingsPanel from "./BridgeSettingsPanel";
+import SystemHealthTab from "./SystemHealthTab";
+import AutoSettingsPanel, { type AutoSettings } from "../forex/components/AutoSettingsPanel";
 
-type SettingsTab = "app" | "llm" | "chat" | "bridge" | "profile";
+type SettingsTab = "forex" | "health" | "app" | "llm" | "chat" | "profile";
 
-const VALID_TABS: SettingsTab[] = ["app", "llm", "chat", "bridge", "profile"];
+const VALID_TABS: SettingsTab[] = ["forex", "health", "app", "llm", "chat", "profile"];
+
+interface CleanSlateResult {
+  archived_count: number;
+  reset_at: string;
+  kept_paper_count?: number;
+  note: string;
+}
+
+const noopClose = () => {};
 
 export default function SettingsPage() {
   return <RequireAdmin><SettingsPageInner /></RequireAdmin>;
 }
 
 function SettingsPageInner() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("app");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("forex");
   const [error, setError] = useState<string | null>(null);
   const [backingUp, setBackingUp] = useState(false);
   const [backupDone, setBackupDone] = useState(false);
@@ -51,9 +48,15 @@ function SettingsPageInner() {
   const [repairingMemory, setRepairingMemory] = useState(false);
   const { role } = useAuth();
   const isAdmin = role === "admin";
-  // TEST BİLDİRİMİ (2026-09-16): push zincirini tek tuşla sına. Bildirim
-  // gelmediğinde NEREDE koptuğunu (VAPID yok / abone yok / teslim edilemedi)
-  // backend `detail` alanında söyler.
+
+  // Forex Scalper Ayarları Durumu
+  const [appliedForexSettings, setAppliedForexSettings] = useState<AutoSettings | null>(null);
+  const [forexLoadError, setForexLoadError] = useState<string | null>(null);
+  const [isResettingGuards, setIsResettingGuards] = useState(false);
+  const [resetResult, setResetResult] = useState<CleanSlateResult | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  // Push Testi Durumu
   const [testingPush, setTestingPush] = useState(false);
   const [pushTestResult, setPushTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -71,6 +74,7 @@ function SettingsPageInner() {
     }
   };
 
+  // LLM Config Yükleme
   useEffect(() => {
     apiRequest(`${API_BASE}/api/llm/config`)
       .then((r) => {
@@ -81,10 +85,62 @@ function SettingsPageInner() {
       .catch(() => setError("LLM yapılandırması alınamadı (HTTP hatası)"));
   }, []);
 
-  // TEST BİLDİRİMİ (2026-09-16): Ayarlar > Uygulama Ayarları'ndaki buton.
-  // Backend'e "tüm aboneliklere test push'u gönder" der ve sonucu (veya zincirin
-  // hangi katmanında koptuğunu) gösterir. Böylece kullanıcı push'un çalışıp
-  // çalışmadığını gerçek bir bildirimle doğrular; "sessizce ölü" hâl kalmaz.
+  // Forex Auto Settings Yükleme
+  useEffect(() => {
+    let cancelled = false;
+    const fetchSettings = async () => {
+      try {
+        const res = await apiFetch("/api/forex/auto-paper/status");
+        if (!cancelled && res?.settings) {
+          const s = { ...res.settings };
+          if (!s.allowed_symbols || s.allowed_symbols.length === 0) {
+            s.allowed_symbols = [
+              "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
+              "USDCAD", "NZDUSD", "GBPJPY", "EURJPY", "BTCUSD",
+              "NAS100", "US30", "XAUUSD"
+            ];
+          }
+          setAppliedForexSettings(s);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Forex ayarları yüklenemedi:", err);
+          setForexLoadError("Forex motor ayarları yüklenemedi — backend bağlantısını kontrol edin.");
+        }
+      }
+    };
+    fetchSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCleanSlate = async () => {
+    if (
+      !confirm(
+        "🧹 Temiz Sayfa: kesim öncesindeki TÜM kapalı işlemler arşive alınacak; EV kalkanı ve seri-SL sayaçları sıfırlanacak, rapor/KPI/CSV sıfırdan sayacak. Bakiyeye dokunulmaz. Devam edilsin mi?"
+      )
+    )
+      return;
+    setIsResettingGuards(true);
+    setResetError(null);
+    setResetResult(null);
+    try {
+      const res = await apiFetch("/api/forex/auto-paper/reset-symbol-guards", { method: "POST" });
+      setResetResult({
+        archived_count: Number(res?.archived_count ?? 0),
+        reset_at: String(res?.reset_at ?? "-"),
+        kept_paper_count: res?.kept_paper_count != null ? Number(res.kept_paper_count) : undefined,
+        note: String(res?.note ?? ""),
+      });
+    } catch (err) {
+      console.error("Temiz sayfa hatası:", err);
+      setResetError(err instanceof Error ? err.message : "Temiz sayfa işlemi başarısız oldu.");
+    } finally {
+      setIsResettingGuards(false);
+    }
+  };
+
   const sendTestPush = async () => {
     setTestingPush(true);
     setPushTestResult(null);
@@ -188,8 +244,6 @@ function SettingsPageInner() {
   };
 
   const saveLlmProvider = async () => {
-    // API key'i gönder; state'teki değer immutable güncellenir (React state'ini
-    // doğrudan mutate etmek render'ı tetiklemez ve Strict Mode'da iz sürülemez).
     const apiKeyToSend = llmForm.api_key;
     await llmRequest(
       `${API_BASE}/api/llm/providers`,
@@ -204,7 +258,6 @@ function SettingsPageInner() {
       },
       "Provider kaydedildi",
     );
-    // Başarısız olsa da key'i bellekte tutmamak için state'i sıfırla
     setLlmForm(prev => ({ ...prev, api_key: "" }));
   };
 
@@ -215,7 +268,7 @@ function SettingsPageInner() {
           <h1 className="font-mono text-xl font-bold tracking-tight">
             <span className="text-neon-green">AYARLAR</span>
           </h1>
-          <p className="eyebrow mt-1">Hesap, asistan ve altyapı ayarları</p>
+          <p className="eyebrow mt-1">Forex parametreleri, sistem sağlığı, hesap ve altyapı yönetimi</p>
         </div>
       </header>
 
@@ -227,79 +280,258 @@ function SettingsPageInner() {
 
       <nav className="flex gap-2 border-b border-bunker-800 pb-2 overflow-x-auto scrollbar-none md:flex-wrap" aria-label="Ayar sekmeleri">
         {([
+          ["forex", "Forex & Scalper", "⚡"],
+          ["health", "Sistem Sağlığı", "🩺"],
           ["app", "Uygulama Ayarları", "⚙️"],
           ["profile", "Profil", "👤"],
           ["llm", "LLM / Provider", "🤖"],
           ["chat", "Chat Ayarları", "✦"],
-          ["bridge", "TR Köprüsü", "🌉"],
         ] as const).map(([key, label, icon]) => (
-          <button key={key} onClick={() => selectTab(key)} className={`shrink-0 px-3.5 py-2 rounded-xl border font-mono text-xs transition-all touch-target active:scale-95 whitespace-nowrap ${activeTab === key ? "border-cyan-400/60 bg-cyan-950/40 text-cyan-300 font-bold shadow-[0_0_8px_rgba(0,240,255,0.2)]" : "border-bunker-800 bg-bunker-900/80 text-bunker-muted hover:text-white"}`}>
+          <button
+            key={key}
+            onClick={() => selectTab(key)}
+            className={`shrink-0 px-3.5 py-2 rounded-xl border font-mono text-xs transition-all touch-target active:scale-95 whitespace-nowrap ${
+              activeTab === key
+                ? "border-cyan-400/60 bg-cyan-950/40 text-cyan-300 font-bold shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+                : "border-bunker-800 bg-bunker-900/80 text-bunker-muted hover:text-white"
+            }`}
+          >
             {icon} {label}
           </button>
         ))}
       </nav>
 
       <>
-        {/* 2026-09-27: Profil sekmesi — headless ProfileContent gömülür. */}
+        {/* SEKME 1: FOREX & SCALPER AYARLARI */}
+        <div className={`space-y-6 ${activeTab !== "forex" ? "hidden" : ""}`}>
+          <div className="p-4 rounded-xl bg-gradient-to-r from-blue-950/40 via-bunker-900/90 to-cyan-950/30 border border-blue-500/40 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-xl shadow-[0_0_12px_rgba(59,130,246,0.3)]">
+              ⚡
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white tracking-tight">Otonom Forex Scalper Motor Ayarları</h2>
+              <p className="text-xs text-bunker-muted mt-0.5">
+                Risk, kâr al / zarar durdur, dinamik lot ve sembol kalkanı parametreleri anında motora uygulanır.
+              </p>
+            </div>
+          </div>
+
+          {forexLoadError && (
+            <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold">
+              {forexLoadError}
+            </div>
+          )}
+          {!appliedForexSettings && !forexLoadError && (
+            <div className="p-8 text-center text-bunker-muted text-xs animate-pulse rounded-2xl bg-bunker-900/70 border border-bunker-800 font-mono">
+              Motor ayarları yükleniyor…
+            </div>
+          )}
+          {appliedForexSettings && (
+            <AutoSettingsPanel
+              show={true}
+              onClose={noopClose}
+              appliedSettings={appliedForexSettings}
+              onSaved={setAppliedForexSettings}
+              accent="blue"
+            />
+          )}
+
+          {/* TEMİZ SAYFA (reset-symbol-guards) */}
+          <div className="p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl space-y-3 font-mono">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🧹</span>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Temiz Sayfa (Sembol Kalkanlarını Sıfırla)
+                  </h3>
+                </div>
+                <p className="text-[11px] text-bunker-muted mt-1.5 leading-relaxed">
+                  Kesim öncesindeki tüm kapalı işlemler arşive alınır; EV kalkanı ve seri-SL sayaçları sıfırlanır,
+                  rapor/KPI/CSV sıfırdan saymaya başlar. Bakiyeye dokunulmaz.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCleanSlate}
+                disabled={isResettingGuards}
+                className="shrink-0 px-4 py-2 rounded-xl bg-bunker-950 border border-bunker-700 text-white hover:border-amber-400 transition-all text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <span>{isResettingGuards ? "⏳ Temizleniyor…" : "🧹 Temiz Sayfa"}</span>
+              </button>
+            </div>
+
+            {resetResult && (
+              <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs space-y-1">
+                <div className="font-bold">✓ Temiz sayfa tamamlandı — {resetResult.reset_at}</div>
+                <div>
+                  Arşive alınan işlem: <span className="font-bold">{resetResult.archived_count}</span>
+                  {resetResult.kept_paper_count != null && (
+                    <>
+                      {" · "}Raporda kalan: <span className="font-bold">{resetResult.kept_paper_count}</span>
+                    </>
+                  )}
+                </div>
+                {resetResult.note && (
+                  <div className="text-[11px] text-bunker-300 leading-relaxed">{resetResult.note}</div>
+                )}
+              </div>
+            )}
+
+            {resetError && (
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold">
+                {resetError}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* SEKME 2: SİSTEM SAĞLIĞI */}
+        <div className={`${activeTab !== "health" ? "hidden" : ""}`}>
+          <SystemHealthTab />
+        </div>
+
+        {/* SEKME 3: PROFİL */}
         <div className={`${activeTab !== "profile" ? "hidden" : ""}`}>
           <ProfileContent />
         </div>
 
+        {/* SEKME 4: CHAT AYARLARI */}
         <div className={`${activeTab !== "chat" ? "hidden" : ""}`}>
           <ChatSettingsPanel />
         </div>
 
-        {/* 2026-09-28: TR Köprüsü sekmesi (Lead-Lag haberleşme ve canlı sinyal akışı) */}
-        <div className={`${activeTab !== "bridge" ? "hidden" : ""}`}>
-          <BridgeSettingsPanel />
-        </div>
-
+        {/* SEKME 5: LLM / PROVIDER */}
         <div className={`space-y-4 ${activeTab !== "llm" ? "hidden" : ""}`}>
-          <div className="card bg-bunker-950"><p className="eyebrow mb-3">LLM PROVIDER EKLE</p><p className="text-xs text-bunker-muted mb-3">Yalnızca teknik yorum üretir; emir veya pozisyon kararı vermez.</p><div className="grid md:grid-cols-2 gap-3"><input placeholder="Provider adı" value={llmForm.name} onChange={e => setLlmForm({...llmForm,name:e.target.value})} className="input" /><input placeholder="Base URL (https://.../v1)" value={llmForm.base_url} onChange={e => setLlmForm({...llmForm,base_url:e.target.value})} className="input" /><input type="password" placeholder="API key" value={llmForm.api_key} onChange={e => setLlmForm({...llmForm,api_key:e.target.value})} className="input" /><button onClick={saveLlmProvider} disabled={!llm.encryption_configured || !llmForm.name.trim() || !llmForm.base_url.trim() || !llmForm.api_key.trim()} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs disabled:opacity-40 disabled:cursor-not-allowed">PROVIDER KAYDET</button></div><p className={`text-xs mt-3 ${llm.encryption_configured ? "text-bunker-muted" : "text-yellow-300"}`}>Şifreleme anahtarı: {llm.encryption_configured ? "hazır" : "sunucuda LLM_ENCRYPTION_KEY eksik; Provider kaydı için backend ortamına eklenmeli"}</p></div>
-          <div className="card bg-bunker-950"><p className="eyebrow mb-3">MODEL / UZMANLIK</p><div className="grid md:grid-cols-2 gap-3"><select value={llmForm.provider_id} onChange={e => setLlmForm({...llmForm,provider_id:e.target.value})} className="input"><option value="">Provider seç</option>{(llm.providers ?? []).map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select><input placeholder="Model adı" value={llmForm.model} onChange={e => setLlmForm({...llmForm,model:e.target.value})} className="input" /><select value={llmForm.model_type} onChange={e => setLlmForm({...llmForm,model_type:e.target.value})} className="input"><option value="chat">Chat modeli</option><option value="embedding">Embedding modeli</option></select>{llmForm.model_type === "embedding" && <input type="number" min="1" placeholder="Embedding dimension" value={llmForm.dimensions} onChange={e => setLlmForm({...llmForm,dimensions:e.target.value})} className="input" />}<button onClick={() => llmRequest(`${API_BASE}/api/llm/models`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider_id:Number(llmForm.provider_id),name:llmForm.model,model_type:llmForm.model_type,dimensions:llmForm.dimensions ? Number(llmForm.dimensions) : undefined})}, "Model kaydedildi")} className="px-3 py-2 border border-sky-400/40 text-sky-300 rounded-lg font-mono text-xs">MODEL EKLE</button>{llmForm.model_type === "embedding" && <button onClick={async () => { const r=await apiRequest(`${API_BASE}/api/llm/embedding/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"embedding bağlantı testi"})}); const b=await r.json(); const m=b.status === "ok" ? `Embedding başarılı · ${b.dimensions} dimension` : (b.error || "Embedding testi başarısız"); setLlmMessage(m); window.alert(m); }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">EMBEDDING TEST ET</button>}<input placeholder="Uzmanlık adı" value={llmForm.skill} onChange={e => setLlmForm({...llmForm,skill:e.target.value})} className="input" /><textarea placeholder="Uzmanlık talimatları" value={llmForm.instructions} onChange={e => setLlmForm({...llmForm,instructions:e.target.value})} className="input min-h-24" /><button onClick={() => llmRequest(`${API_BASE}/api/llm/skills`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:llmForm.skill,instructions:llmForm.instructions})}, "Uzmanlık kaydedildi")} className="px-3 py-2 border border-sky-400/40 text-sky-300 rounded-lg font-mono text-xs">UZMANLIK EKLE</button></div>{llmMessage && <p className="text-xs text-neon-green mt-3">{llmMessage}</p>}</div>
-          <div className="card bg-bunker-950 flex flex-wrap gap-3"><select value={llm.active_model_id || ""} onChange={async e => { const id=Number(e.target.value); await llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,model_id:id})}, "LLM aktif edildi"); }} className="input"><option value="">Aktif model seç</option>{(llm.models ?? []).map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}</select><button onClick={() => llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,model_id:llm.active_model_id})}, "LLM aktif edildi")} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs">LLM AKTİF</button><button onClick={async () => { setLlmMessage("TEST EDİLİYOR..."); try { const r=await apiRequest(`${API_BASE}/api/llm/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const body=await r.json(); const message=body.status === "ok" ? "Bağlantı başarılı" : (body.error || body.status || "Test başarısız"); setLlmMessage(message); window.alert(message); } catch { setLlmMessage("LLM test bağlantısı kurulamadı"); window.alert("LLM test bağlantısı kurulamadı"); } }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">TEST ET</button></div>
-          <div className="card border-purple-400/30 bg-purple-400/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"><div><p className="eyebrow text-purple-300">MEVCUT KAYITLARI VECTORLEŞTİR</p><p className="text-xs text-bunker-muted mt-2">Kapanmış işlemler ve sinyaller aktif embedding modeliyle pgvector memory tablosuna aktarılır.</p></div><div className="flex flex-wrap gap-2"><button onClick={backfillEmbeddings} disabled={backfilling} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs ${backfillDone ? "border-neon-green/60 text-neon-green" : "border-purple-400/50 text-purple-300"}`}>{backfilling ? "KUYRUĞA ALINIYOR..." : backfillDone ? "✓ KUYRUĞA ALINDI" : "EMBEDDING BACKFILL BAŞLAT"}</button><button onClick={repairHistoricalMemory} disabled={repairingMemory} className="shrink-0 px-4 py-2 rounded-lg border border-yellow-400/50 text-yellow-300 font-mono text-xs">{repairingMemory ? "ONARILIYOR..." : "TARİHSEL SNAPSHOT ONAR"}</button></div></div>
-          <div className="card border-yellow-400/30 bg-yellow-400/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><p className="eyebrow text-yellow-300">LLM PAPER İŞLEM YETKİSİ</p><p className="text-xs text-bunker-muted mt-2">Açıkken LLM yalnızca sanal portföyde kontrollü LONG pozisyonu açabilir. Gerçek emir API&apos;si kullanılmaz.</p></div><div className="flex gap-2"><button onClick={async()=>{const enabled=!llm.paper_trade_enabled;await llmRequest(`${API_BASE}/api/llm/paper-trading`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})},enabled?"Paper işlem yetkisi açıldı":"Paper işlem yetkisi kapatıldı");await reloadLlm()}} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs ${llm.paper_trade_enabled?"border-neon-green/60 text-neon-green":"border-bunker-700 text-bunker-muted"}`}>{llm.paper_trade_enabled?"AÇIK · KAPAT":"KAPALI · AÇ"}</button><button disabled={!llm.paper_trade_enabled} onClick={async()=>{const enabled=!llm.auto_paper_enabled;await llmRequest(`${API_BASE}/api/llm/auto-paper-trading`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})},enabled?"Kapanış sonrası otomatik yenileme açıldı":"Otomatik yenileme kapatıldı");await reloadLlm()}} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs ${llm.auto_paper_enabled?"border-yellow-300/60 text-yellow-300":"border-bunker-700 text-bunker-muted"}`}>{llm.auto_paper_enabled?"KAPANIŞ SONRASI · KAPAT":"KAPANIŞ SONRASI · AÇ"}</button></div></div>
+          <div className="card bg-bunker-950">
+            <p className="eyebrow mb-3">LLM PROVIDER EKLE</p>
+            <p className="text-xs text-bunker-muted mb-3">Yalnızca teknik yorum üretir; emir veya pozisyon kararı vermez.</p>
+            <div className="grid md:grid-cols-2 gap-3">
+              <input placeholder="Provider adı" value={llmForm.name} onChange={e => setLlmForm({...llmForm,name:e.target.value})} className="input" />
+              <input placeholder="Base URL (https://.../v1)" value={llmForm.base_url} onChange={e => setLlmForm({...llmForm,base_url:e.target.value})} className="input" />
+              <input type="password" placeholder="API key" value={llmForm.api_key} onChange={e => setLlmForm({...llmForm,api_key:e.target.value})} className="input" />
+              <button onClick={saveLlmProvider} disabled={!llm.encryption_configured || !llmForm.name.trim() || !llmForm.base_url.trim() || !llmForm.api_key.trim()} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs disabled:opacity-40 disabled:cursor-not-allowed">
+                PROVIDER KAYDET
+              </button>
+            </div>
+            <p className={`text-xs mt-3 ${llm.encryption_configured ? "text-bunker-muted" : "text-yellow-300"}`}>
+              Şifreleme anahtarı: {llm.encryption_configured ? "hazır" : "sunucuda LLM_ENCRYPTION_KEY eksik; Provider kaydı için backend ortamına eklenmeli"}
+            </p>
+          </div>
+
+          <div className="card bg-bunker-950">
+            <p className="eyebrow mb-3">MODEL / UZMANLIK</p>
+            <div className="grid md:grid-cols-2 gap-3">
+              <select value={llmForm.provider_id} onChange={e => setLlmForm({...llmForm,provider_id:e.target.value})} className="input">
+                <option value="">Provider seç</option>
+                {(llm.providers ?? []).map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <input placeholder="Model adı" value={llmForm.model} onChange={e => setLlmForm({...llmForm,model:e.target.value})} className="input" />
+              <select value={llmForm.model_type} onChange={e => setLlmForm({...llmForm,model_type:e.target.value})} className="input">
+                <option value="chat">Chat modeli</option>
+                <option value="embedding">Embedding modeli</option>
+              </select>
+              {llmForm.model_type === "embedding" && (
+                <input type="number" min="1" placeholder="Embedding dimension" value={llmForm.dimensions} onChange={e => setLlmForm({...llmForm,dimensions:e.target.value})} className="input" />
+              )}
+              <button onClick={() => llmRequest(`${API_BASE}/api/llm/models`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider_id:Number(llmForm.provider_id),name:llmForm.model,model_type:llmForm.model_type,dimensions:llmForm.dimensions ? Number(llmForm.dimensions) : undefined})}, "Model kaydedildi")} className="px-3 py-2 border border-sky-400/40 text-sky-300 rounded-lg font-mono text-xs">
+                MODEL EKLE
+              </button>
+              {llmForm.model_type === "embedding" && (
+                <button onClick={async () => { const r=await apiRequest(`${API_BASE}/api/llm/embedding/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"embedding bağlantı testi"})}); const b=await r.json(); const m=b.status === "ok" ? `Embedding başarılı · ${b.dimensions} dimension` : (b.error || "Embedding testi başarısız"); setLlmMessage(m); window.alert(m); }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">
+                  EMBEDDING TEST ET
+                </button>
+              )}
+              <input placeholder="Uzmanlık adı" value={llmForm.skill} onChange={e => setLlmForm({...llmForm,skill:e.target.value})} className="input" />
+              <textarea placeholder="Uzmanlık talimatları" value={llmForm.instructions} onChange={e => setLlmForm({...llmForm,instructions:e.target.value})} className="input min-h-24" />
+              <button onClick={() => llmRequest(`${API_BASE}/api/llm/skills`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:llmForm.skill,instructions:llmForm.instructions})}, "Uzmanlık kaydedildi")} className="px-3 py-2 border border-sky-400/40 text-sky-300 rounded-lg font-mono text-xs">
+                UZMANLIK EKLE
+              </button>
+            </div>
+            {llmMessage && <p className="text-xs text-neon-green mt-3">{llmMessage}</p>}
+          </div>
+
+          <div className="card bg-bunker-950 flex flex-wrap gap-3">
+            <select value={llm.active_model_id || ""} onChange={async e => { const id=Number(e.target.value); await llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,model_id:id})}, "LLM aktif edildi"); }} className="input">
+              <option value="">Aktif model seç</option>
+              {(llm.models ?? []).map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <button onClick={() => llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,model_id:llm.active_model_id})}, "LLM aktif edildi")} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs">
+              LLM AKTİF
+            </button>
+            <button onClick={async () => { setLlmMessage("TEST EDİLİYOR..."); try { const r=await apiRequest(`${API_BASE}/api/llm/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const body=await r.json(); const message=body.status === "ok" ? "Bağlantı başarılı" : (body.error || body.status || "Test başarısız"); setLlmMessage(message); window.alert(message); } catch { setLlmMessage("LLM test bağlantısı kurulamadı"); window.alert("LLM test bağlantısı kurulamadı"); } }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">
+              TEST ET
+            </button>
+          </div>
+
+          <div className="card border-purple-400/30 bg-purple-400/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <p className="eyebrow text-purple-300">MEVCUT KAYITLARI VECTORLEŞTİR</p>
+              <p className="text-xs text-bunker-muted mt-2">Kapanmış işlemler ve sinyaller aktif embedding modeliyle pgvector memory tablosuna aktarılır.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={backfillEmbeddings} disabled={backfilling} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs ${backfillDone ? "border-neon-green/60 text-neon-green" : "border-purple-400/50 text-purple-300"}`}>
+                {backfilling ? "KUYRUĞA ALINIYOR..." : backfillDone ? "✓ KUYRUĞA ALINDI" : "EMBEDDING BACKFILL BAŞLAT"}
+              </button>
+              <button onClick={repairHistoricalMemory} disabled={repairingMemory} className="shrink-0 px-4 py-2 rounded-lg border border-yellow-400/50 text-yellow-300 font-mono text-xs">
+                {repairingMemory ? "ONARILIYOR..." : "TARİHSEL SNAPSHOT ONAR"}
+              </button>
+            </div>
+          </div>
+
+          <div className="card border-yellow-400/30 bg-yellow-400/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="eyebrow text-yellow-300">LLM PAPER İŞLEM YETKİSİ</p>
+              <p className="text-xs text-bunker-muted mt-2">Açıkken LLM yalnızca sanal portföyde kontrollü LONG pozisyonu açabilir. Gerçek emir API&apos;si kullanılmaz.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={async()=>{const enabled=!llm.paper_trade_enabled;await llmRequest(`${API_BASE}/api/llm/paper-trading`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})},enabled?"Paper işlem yetkisi açıldı":"Paper işlem yetkisi kapatıldı");await reloadLlm()}} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs ${llm.paper_trade_enabled?"border-neon-green/60 text-neon-green":"border-bunker-700 text-bunker-muted"}`}>
+                {llm.paper_trade_enabled?"AÇIK · KAPAT":"KAPALI · AÇ"}
+              </button>
+              <button disabled={!llm.paper_trade_enabled} onClick={async()=>{const enabled=!llm.auto_paper_enabled;await llmRequest(`${API_BASE}/api/llm/auto-paper-trading`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})},enabled?"Kapanış sonrası otomatik yenileme açıldı":"Otomatik yenileme kapatıldı");await reloadLlm()}} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs ${llm.auto_paper_enabled?"border-yellow-300/60 text-yellow-300":"border-bunker-700 text-bunker-muted"}`}>
+                {llm.auto_paper_enabled?"KAPANIŞ SONRASI · KAPAT":"KAPANIŞ SONRASI · AÇ"}
+              </button>
+            </div>
+          </div>
           <LlmManagement llm={llm} reload={reloadLlm} />
         </div>
 
-        <div className={`card border-neon-green/30 bg-neon-green/5 ${activeTab !== "app" ? "hidden" : ""}`}>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="eyebrow text-neon-green">VERİTABANI YEDEĞİ</p>
-              <p className="font-mono text-sm text-white mt-2">Canlı veritabanının tutarlı kopyasını indir</p>
-              <p className="text-xs text-bunker-muted mt-1">PostgreSQL custom-format .dump yedeği alınır. İşlemler, sinyaller ve açık pozisyonlar dahil edilir.</p>
+        {/* SEKME 6: UYGULAMA AYARLARI */}
+        <div className={`space-y-4 ${activeTab !== "app" ? "hidden" : ""}`}>
+          <div className="card border-neon-green/30 bg-neon-green/5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="eyebrow text-neon-green">VERİTABANI YEDEĞİ</p>
+                <p className="font-mono text-sm text-white mt-2">Canlı veritabanının tutarlı kopyasını indir</p>
+                <p className="text-xs text-bunker-muted mt-1">PostgreSQL custom-format .dump yedeği alınır. İşlemler, sinyaller ve açık pozisyonlar dahil edilir.</p>
+              </div>
+              <button onClick={downloadBackup} disabled={backingUp} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs transition-colors ${backupDone ? "border-neon-green/60 bg-neon-green/20 text-neon-green" : "border-neon-green/50 bg-neon-green/10 text-neon-green hover:bg-neon-green/20"}`}>
+                {backingUp ? "YEDEKLENİYOR..." : backupDone ? "✓ YEDEK İNDİRİLDİ" : "VERİTABANI YEDEĞİ AL"}
+              </button>
             </div>
-            <button onClick={downloadBackup} disabled={backingUp} className={`shrink-0 px-4 py-2 rounded-lg border font-mono text-xs transition-colors ${backupDone ? "border-neon-green/60 bg-neon-green/20 text-neon-green" : "border-neon-green/50 bg-neon-green/10 text-neon-green hover:bg-neon-green/20"}`}>
-              {backingUp ? "YEDEKLENİYOR..." : backupDone ? "✓ YEDEK İNDİRİLDİ" : "VERİTABANI YEDEĞİ AL"}
-            </button>
           </div>
-        </div>
 
-        {/* TEST BİLDİRİMİ (2026-09-16): push zincirini UÇTAN UCA kanıtlar.
-            Bildirim gelmiyorsa backend kopan katmanı `detail` alanında söyler
-            (VAPID yok / kayıtlı abone yok / teslim edilemedi) — kullanıcı
-            "push çalışmıyor" demek yerine NEDENİNİ görür. */}
-        <div className={`card border-sky-400/30 bg-sky-400/5 ${activeTab !== "app" ? "hidden" : ""}`}>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="eyebrow text-sky-300">BİLDİRİM TESTİ</p>
-              <p className="text-xs text-bunker-muted mt-1">Tüm kayıtlı cihazlara bir test bildirimi gönderir. Ses, başlık ve tıklama davranışını doğrular. Bildirim gelmezse önce tarayıcı bildirim iznini ve Rahatsız Etme modunu kontrol edin.</p>
+          <div className="card border-sky-400/30 bg-sky-400/5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="eyebrow text-sky-300">BİLDİRİM TESTİ</p>
+                <p className="text-xs text-bunker-muted mt-1">Tüm kayıtlı cihazlara bir test bildirimi gönderir. Ses, başlık ve tıklama davranışını doğrular. Bildirim gelmezse önce tarayıcı bildirim iznini ve Rahatsız Etme modunu kontrol edin.</p>
+              </div>
+              <button
+                type="button"
+                onClick={sendTestPush}
+                disabled={testingPush || !isAdmin}
+                className="shrink-0 px-4 py-2 rounded-lg border border-sky-400/50 text-sky-300 font-mono text-xs hover:bg-sky-400/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {testingPush ? "GÖNDERİLİYOR…" : "TEST BİLDİRİMİ GÖNDER"}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={sendTestPush}
-              disabled={testingPush || !isAdmin}
-              className="shrink-0 px-4 py-2 rounded-lg border border-sky-400/50 text-sky-300 font-mono text-xs hover:bg-sky-400/10 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {testingPush ? "GÖNDERİLİYOR…" : "TEST BİLDİRİMİ GÖNDER"}
-            </button>
+            {pushTestResult && (
+              <p className={`mt-3 font-mono text-xs ${pushTestResult.ok ? "text-neon-green" : "text-neon-red"}`}>
+                {pushTestResult.text}
+              </p>
+            )}
           </div>
-          {pushTestResult && (
-            <p className={`mt-3 font-mono text-xs ${pushTestResult.ok ? "text-neon-green" : "text-neon-red"}`}>
-              {pushTestResult.text}
-            </p>
-          )}
         </div>
       </>
     </div>

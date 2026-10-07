@@ -1164,24 +1164,16 @@ async def startup_services():
     await asyncio.sleep(0.05)
     _start_background(ws_broadcast_loop, "ws-broadcast")
     await asyncio.sleep(0.05)
-    _start_background(alert_loop, "alert-engine")
-    await asyncio.sleep(0.05)
-    _start_background(monitoring_start_loop, "monitoring-start")
-    await asyncio.sleep(0.05)
-    # Yükseliş sinyali kanıt doldurma: Raporlar > YÜKSELİŞ EĞİLİMİ Sonuç sütunu
-    # bu döngü olmadan sonsuza dek BEKLİYOR kalıyordu (kolonlar vardı, dolduran yok).
-    _start_background(rising_evidence_loop, "rising-evidence")
-    await asyncio.sleep(0.05)
+    # 2026-10-07: Forex-Only Mod — Binance kripto spot radar ve alert döngüleri devre dışı.
+    # _start_background(alert_loop, "alert-engine")
+    # _start_background(monitoring_start_loop, "monitoring-start")
+    # _start_background(rising_evidence_loop, "rising-evidence")
     _start_background(auto_paper_start_loop, "auto-paper-start")
-    await asyncio.sleep(0.05)
-    _start_background(macd_monitor_start_loop, "macd-monitor")
+    # _start_background(macd_monitor_start_loop, "macd-monitor")
 
 async def monitoring_start_loop():
-    """Monitoring tarama döngüsünü arka planda başlat (idempotent wrapper)."""
-    try:
-        monitoring.start_monitoring_loop()
-    except Exception as exc:
-        print(f"[Monitoring] döngü başlatılamadı: {exc}", flush=True)
+    """Forex-only modda Binance kripto radar döngüsü devre dışıdır."""
+    pass
 
 async def auto_paper_start_loop():
     """Otonom paper trade yönetim döngüsünü arka planda başlat."""

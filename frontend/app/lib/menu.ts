@@ -1,16 +1,17 @@
 // Menü tanımı — TEK kaynak. `Sidebar` (masaüstü) ve `BottomNav` (mobil)
 // aynı listeyi okur; iki yüzey birbirinden ayrışamaz.
 //
-// 2026-10-07: SPOT PİYASA MENÜSÜ KALDIRILDI. Bu uygulama artık YALNIZCA
-// Forex & Emtia sunar; kripto spot sayfaları (Radar, MTF, Grafik, Binance
-// terminali, Sanal Portföy, Raporlar…) silindi. Menüde tek bir piyasa
-// vardır, dolayısıyla piyasa-modu anahtarı da (spot/forex) yoktur.
-//
-// GRUP KURALLARI (niyet kodun kendisinde):
-// - `adminOnly`  : yalnız admin (Ayarlar)
-//
-// Erişim AÇMAK erişim vermek DEĞİLDİR: `RequireAdmin` gibi sayfa-içi
-// korumalar ayrıdır ve bu dosya yalnız menüde görünürlüğü yönetir.
+// 2026-10-07: FOREX-ONLY BİRLEŞİK MENÜ
+// Kullanıcı istekleri doğrultusunda sıralama:
+// 1. Ana Sayfa (Uygulama girişi: Günlük Forex işlemleri başarısı & kârlılığı)
+// 2. Forex Portföy
+// 3. BTC + Altın
+// 4. Forex Radar
+// 5. Grafik
+// 6. Teknik Grafik
+// 7. Forex Chat
+// 8. Raporlar
+// 9. Ayarlar (Forex Scalper ayarları, Sistem Sağlığı, Uygulama vb. tek yerde birleştirildi)
 
 export type MenuItem = {
   href: string;
@@ -35,38 +36,27 @@ export const MENU_GROUPS: MenuGroup[] = [
     id: "forex_ana",
     label: "Forex & Emtia",
     items: [
+      { href: "/", label: "Ana Sayfa", icon: "🏠", desc: "Günün Forex işlem karnesi, başarı oranı ve kârlılık özeti" },
+      { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı hesap yönetimi" },
       { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
-      { href: "/forex/islemler", label: "Canlı İşlemler", icon: "⚡", desc: "Açık ve kapanan Forex pozisyonları, anlık PnL ve başarı oranı" },
-      { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex ekranı" },
       { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği" },
-      { href: "/forex/calendar", label: "Ekonomik Takvim", icon: "📅", desc: "Canlı makroekonomik veriler ve haberler" },
-      { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı demo hesap yönetimi" },
-      { href: "/forex/ayarlar", label: "Ayarlar", icon: "⚙️", desc: "Otonom scalping risk, çıkış ve sembol parametreleri" },
+      { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex ekranı" },
       { href: "/chat", label: "Forex Chat", icon: "💬", desc: "Makroekonomi ve FX uzman AI asistanı" },
-    ],
-  },
-  {
-    id: "diger",
-    label: "Diğer",
-    collapseWhenEmpty: true,
-    items: [
-      { href: "/system-health", label: "Sistem Sağlığı", icon: "🩺", desc: "Detaylı sistem sağlığı" },
-      { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Sistem konfigürasyonu", adminOnly: true },
+      { href: "/forex/reports", label: "Raporlar", icon: "📋", desc: "Detaylı işlem geçmişi ve analiz raporları", alsoActive: ["/forex/islemler"] },
+      { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Forex motor parametreleri, sistem sağlığı ve konfigürasyon", adminOnly: true, alsoActive: ["/forex/ayarlar", "/system-health"] },
     ],
   },
 ];
 
 /**
- * Mobil alt navigasyon — en sık kullanılan 4 iş + menü düğmesi.
- * Masaüstü menüsünün kısaltması değil, AYRI bir yüzeydir: mobilde 4 öğe
- * sığar, 20 öğe sığmaz.
+ * Mobil alt navigasyon — en sık kullanılan 4 iş.
  */
 export const BOTTOM_NAV_ITEMS: MenuItem[] = [
+  { href: "/", label: "Ana Sayfa", icon: "🏠", desc: "" },
   { href: "/forex/portfolio", label: "Portföy", icon: "💼", desc: "" },
-  { href: "/forex", label: "Forex Radar", icon: "📡", desc: "" },
+  { href: "/forex", label: "Radar", icon: "📡", desc: "" },
   { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "" },
-  { href: "/forex/calendar", label: "Takvim", icon: "📅", desc: "" },
 ];
 
 export type Visibility = {

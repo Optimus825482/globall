@@ -219,6 +219,20 @@ export default function ForexIslemlerPage() {
     };
   }, [openPositions]);
 
+  // Açık Pozisyonlar: Aynı semboller alt alta gelecek şekilde sembole göre sıralı liste
+  const sortedOpenPositions = useMemo(() => {
+    return [...openPositions].sort((a, b) => {
+      const symA = (a.symbol || a.display || "").toUpperCase();
+      const symB = (b.symbol || b.display || "").toUpperCase();
+      if (symA !== symB) {
+        return symA.localeCompare(symB);
+      }
+      const timeA = a.open_time ? new Date(a.open_time).getTime() : 0;
+      const timeB = b.open_time ? new Date(b.open_time).getTime() : 0;
+      return timeB - timeA;
+    });
+  }, [openPositions]);
+
   // Günün İşlem Açılan Sembollerinin Başarı ve Kârlılık Performansı (Yan Yana 3 Kart)
   const symbolPerformanceList = useMemo<SymbolDailyPerf[]>(() => {
     const map = new Map<string, SymbolDailyPerf>();
@@ -607,7 +621,7 @@ export default function ForexIslemlerPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-bunker-800/60">
-                  {openPositions.map((p) => {
+                  {sortedOpenPositions.map((p) => {
                     const isBuy = p.direction === "BUY";
                     const isProfitable = Number(p.pnl_usd ?? 0) >= 0;
                     return (
@@ -681,7 +695,7 @@ export default function ForexIslemlerPage() {
 
             {/* Mobil Kart Görünümü */}
             <div className="md:hidden space-y-3 p-3">
-              {openPositions.map((p) => {
+              {sortedOpenPositions.map((p) => {
                 const isBuy = p.direction === "BUY";
                 const isProfitable = Number(p.pnl_usd ?? 0) >= 0;
                 return (

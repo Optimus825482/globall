@@ -1,12 +1,9 @@
 // Menü görünürlük kuralları — 2026-10-07 (FOREX-ONLY yeniden yapılandırma)
 //
-// Uygulama artık YALNIZCA Forex & Emtia sunar; kripto spot menüsü, piyasa-modu
-// anahtarı ve borsa-bazlı görünürlük (`trOnly`/`globalOnly`/`isGlobal`) kaldırıldı.
-// Bu kilit üç sınıf hatayı önler:
-//
-// 1. ERİŞİLEMEZLİK. Her Forex sayfasının bir menü linki olmalı.
-// 2. ÖLÜ LİNK. Silinen spot sayfaların href'i menüde KALMAMALI (404'e giderdi).
-// 3. YANLIŞ YÜZEY. Mobil alt navigasyon yalnızca var olan Forex rotalarına gider.
+// 1. Ana sayfa (`/`) artık Günlük Forex İşlem Performansı konsoludur ve menünün en üstündedir.
+// 2. Forex Portföy, BTC + Altın, Forex Radar, Grafik, Teknik Grafik, Forex Chat, Raporlar sıralıdır.
+// 3. Ayarlar birleştirilmiş tek sayfadır (`/settings`), Sistem Sağlığı sekme olarak içine alınmıştır.
+// 4. Silinen spot sayfaların href'i menüde bulunmaz.
 
 import { describe, it, expect } from "vitest";
 import { MENU_GROUPS, BOTTOM_NAV_ITEMS, isItemVisible, visibleGroups, type Visibility } from "./menu";
@@ -30,27 +27,26 @@ describe("menu — kapsam", () => {
     }
   });
 
-  it("2026-10-07: TÜM menü öğeleri Forex rotalarına gider (tek piyasa)", () => {
-    // Uygulama forex-only olduğu için menüdeki her href `/forex`, `/chat`,
-    // `/settings` ya da `/system-health` olmalı. Bir spot rotası sızarsa
-    // (ör. /monitoring) kullanıcı 404'e gider — bu test onu yakalar.
-    const ALLOWED = ["/forex", "/chat", "/settings", "/system-health"];
+  it("2026-10-07: TÜM menü öğeleri geçerli rotalara gider (tek piyasa Forex + Ana Sayfa)", () => {
+    const ALLOWED = ["/", "/forex", "/chat", "/settings"];
     for (const href of hrefs) {
       expect(ALLOWED.some((p) => href === p || href.startsWith(p + "/"))).toBe(true);
     }
   });
 
   it("2026-10-07: SİLİNMİŞ spot sayfalar menüde KALMAZ", () => {
-    // Spot UI + sayfa dosyaları kaldırıldı; menüde kalsalardı bağlantı 404'e
-    // giderdi — sessiz bozulmanın en sinir bozucu türü.
     for (const dead of [
-      "/", "/monitoring", "/mtf-scanner", "/technical-charts", "/charts",
-      "/binance-tr", "/portfolio", "/reports", "/alerts", "/risk",
+      "/monitoring", "/mtf-scanner", "/binance-tr", "/alerts", "/risk",
       "/macd-monitor", "/symbol-analysis", "/database", "/memory", "/admin",
       "/users", "/profile",
     ]) {
       expect(hrefs).not.toContain(dead);
     }
+  });
+
+  it("Ana Sayfa (/) menünün en üstündedir", () => {
+    expect(MENU_GROUPS[0].items[0].href).toBe("/");
+    expect(MENU_GROUPS[0].items[0].label).toBe("Ana Sayfa");
   });
 });
 
@@ -68,35 +64,29 @@ describe("menu — rol görünürlüğü", () => {
     expect(groups.flatMap((g) => g.items).length).toBeGreaterThan(3);
   });
 
-  it("normal kullanıcıda 'diger' grubu Sistem Sağlığı ile kalır", () => {
-    const groups = visibleGroups(USER);
-    const diger = groups.find((g) => g.id === "diger");
-    expect(diger).toBeDefined();
-    expect(diger!.items.map((i) => i.href)).toContain("/system-health");
-    // Ayarlar adminOnly → normal kullanıcıya görünmez.
-    expect(diger!.items.map((i) => i.href)).not.toContain("/settings");
-  });
-
-  it("Forex & Emtia grubu tüm forex sayfalarını listeler", () => {
+  it("kullanıcı istediği sıralamada Forex sayfalarını listeler", () => {
     const groups = visibleGroups(ADMIN);
     const forex = groups.find((g) => g.id === "forex_ana");
     expect(forex).toBeDefined();
     const items = forex!.items.map((i) => i.href);
-    for (const href of ["/forex", "/forex/btc-gold", "/forex/islemler", "/forex/charts", "/forex/calendar", "/forex/portfolio", "/forex/ayarlar"]) {
-      expect(items).toContain(href);
-    }
+    const expectedOrder = [
+      "/",
+      "/forex/portfolio",
+      "/forex/btc-gold",
+      "/forex",
+      "/forex/charts",
+      "/forex/technical-charts",
+      "/chat",
+      "/forex/reports",
+      "/settings",
+    ];
+    expect(items).toEqual(expectedOrder);
   });
 });
 
 describe("menu — mobil alt navigasyon", () => {
   it("4 öğe + menü düğmesi mobilde sığar", () => {
     expect(BOTTOM_NAV_ITEMS.length).toBe(4);
-  });
-
-  it("alt navigasyon yalnız Forex rotalarına gider", () => {
-    for (const item of BOTTOM_NAV_ITEMS) {
-      expect(item.href.startsWith("/forex")).toBe(true);
-    }
   });
 
   it("alt navigasyon öğeleri menüde de var", () => {

@@ -50,10 +50,10 @@ const ALL_SYMBOLS = [
   { sym: "XAUUSD", label: "Ons Altın (XAU)" },
 ];
 
+const ALL_SYMBOL_KEYS = ALL_SYMBOLS.map((s) => s.sym);
+
 const MAJORS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"];
 // Odak seti: XAU + BTC + JPY krosları (donchian modu sembolleri).
-// Panel boş allowed_symbols ile kaydetmeye çalışırsa ve "Yalnız Odak"
-// hızlı seçimi bu seti uygular — JPY krosları buradan düşmez.
 const FOCUS_SYMBOLS = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"];
 
 interface AutoSettingsPanelProps {
@@ -71,7 +71,16 @@ export default function AutoSettingsPanel({
   onSaved,
   accent = "blue",
 }: AutoSettingsPanelProps) {
-  const [form, setForm] = useState<AutoSettings>({ ...appliedSettings });
+  // Varsayılan olarak tüm sembollerin seçili gelmesini garantile
+  const resolveSymbols = (syms?: string[]) => {
+    if (!syms || syms.length === 0) return ALL_SYMBOL_KEYS;
+    return syms;
+  };
+
+  const [form, setForm] = useState<AutoSettings>(() => ({
+    ...appliedSettings,
+    allowed_symbols: resolveSymbols(appliedSettings?.allowed_symbols),
+  }));
   const [isSaving, setIsSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
@@ -79,7 +88,10 @@ export default function AutoSettingsPanel({
   // açıkken gelen yoklamalar kullanıcının yarım bıraktığı düzenlemeyi ezmesin.
   useEffect(() => {
     if (show) {
-      setForm({ ...appliedSettings });
+      setForm({
+        ...appliedSettings,
+        allowed_symbols: resolveSymbols(appliedSettings?.allowed_symbols),
+      });
       setSaveMsg(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -158,7 +170,7 @@ export default function AutoSettingsPanel({
             ? form.allowed_symbols
             : appliedSettings.allowed_symbols?.length
             ? appliedSettings.allowed_symbols
-            : FOCUS_SYMBOLS,
+            : ALL_SYMBOL_KEYS,
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {
@@ -375,10 +387,10 @@ export default function AutoSettingsPanel({
             <div className="flex gap-2 text-[10px]">
               <button
                 type="button"
-                onClick={() => setField("allowed_symbols", ALL_SYMBOLS.map((s) => s.sym))}
-                className={`${acc.icon} hover:underline`}
+                onClick={() => setField("allowed_symbols", ALL_SYMBOL_KEYS)}
+                className={`${acc.icon} hover:underline font-bold`}
               >
-                Tümünü Seç (14 Enstrüman)
+                Tümünü Seç ({ALL_SYMBOL_KEYS.length} Enstrüman)
               </button>
               <span className="text-bunker-700">|</span>
               <button
