@@ -3004,6 +3004,27 @@ async def _forex_auto_paper_loop():
                     )
                     _m_st["prev_close"] = _m_price
                     _m_st["prev_mid"] = float(_m_tech["donch_mid"])
+                    # Görünürlük: mod ne beklediğini 30 dk'da bir insan-okur cümleyle söyler;
+                    # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
+                    _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                    if _m_not_allowed or now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 1800.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
+                        _m_disp = _m_item["display"] if _m_item else _m_sym
+                        _m_side = "üstünde" if _m_price > float(_m_tech["donch_mid"]) else "altında"
+                        if _m_not_allowed:
+                            _log_auto_decision(
+                                "SCAN",
+                                f"⚠️ [{_m_disp}] Donchian modu aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                symbol=_m_sym,
+                            )
+                        else:
+                            _m_adx_txt = f"ADX {float(_m_tech.get('adx', 0)):.0f}"
+                            _m_wait = ("fiyat orta hattın üstüne dönüp yeniden kırılınca SAT" if _m_price <= float(_m_tech["donch_mid"]) else "fiyat orta hattın altına sarkıp yeniden kırılınca AL")
+                            _log_auto_decision(
+                                "SCAN",
+                                f"🎯 [{_m_disp}] Donchian modu bekliyor: fiyat orta hattın {_m_side} ({_m_price:.3f} / orta {float(_m_tech['donch_mid']):.3f}), {_m_adx_txt} → {_m_wait}. Klasik sinyaller bu çiftte yok sayılır.",
+                                symbol=_m_sym,
+                            )
                     if _m_action:
                         _m_st["counts"][_m_action] = _m_st["counts"].get(_m_action, 0) + 1
                         _m_atr = float(_m_tech.get("atr", 0.0))
