@@ -305,11 +305,16 @@ _LAST_TECH_FETCH_TIME = 0.0
 # Yahoo kesintisi tek başına tetiklemez, gerçek veri kesilmesi tetikler.
 _TECH_STALE_SEC = 180.0
 
-# ATR yumuşatma yöntemi (#15). False = son 14 TR'nin düz ortalaması (mevcut canlı
-# davranış). True = Wilder yumuşatması (RSI ile tutarlı). Varsayılan KAPALI: ATR
-# tabanlı SL/TP mesafelerini ve `major_min_atr` kapısını değiştirdiği için
-# açmadan önce replay A/B ölçümü şart. Replay anahtarı: `--wilder-atr`.
-ATR_USE_WILDER = False
+# ATR yumuşatma yöntemi (#15). True = Wilder yumuşatması (RSI ile tutarlı;
+# CANLI VARSAYILAN). False = son 14 TR'nin düz ortalaması (eski davranış).
+# ATR tabanlı SL/TP mesafelerini ve `major_min_atr` kapısını değiştirir.
+# 2026-10-07 A/B (32g, 2026-09-07→10-03, tek değişken): net kâr ≈ aynı
+# (+$45) ama maxDD $183 → $125 (-%32), zararlı gün 7 → 5, günlük Sharpe
+# 0.76 → 0.85. OOS (09-20→10-03) aynı yönü doğruladı: $880 → $975,
+# DD $183 → $113. Kullanıcı kararı: canlıda Wilder açık.
+# Replay'de A/B için: `--wilder-atr` (True) / bayraksız (script bunu False'a
+# çeker, bkz. forex_replay_backtest.py --wilder-atr dalı).
+ATR_USE_WILDER = True
 _LAST_GOLD_EXIT_TIME = 0.0
 _LAST_BTC_EXIT_TIME = 0.0
 _LAST_CLOSED_DEAL_IDS: set = set()
@@ -1167,10 +1172,11 @@ def _compute_technical_indicators(
     hist = float(macd_line[-1] - signal_line[-1])
 
     # 5. ATR 14
-    # Varsayılan: son 14 gerçek aralığın DÜZ ortalaması (mevcut davranış — korunur).
-    # `ATR_USE_WILDER=True` iken Wilder yumuşatması (RSI ile aynı yöntem) kullanılır;
-    # A/B replay ölçümü için anahtar (bkz. #15). Varsayılan kapalı: canlı davranış
-    # değişmez, ta ki replay sonucuna göre karar verilene kadar.
+    # Varsayılan (ATR_USE_WILDER=True): Wilder yumuşatması — ilk 14 TR'nin
+    # ortalaması tohum, sonra `avg = (avg*13 + tr)/14` (RSI ile aynı yöntem).
+    # ATR_USE_WILDER=False: son 14 gerçek aralığın DÜZ ortalaması (eski davranış,
+    # replay'de `--plain-atr` ile ölçülür). 2026-10-07 A/B: Wilder net kârı aynı
+    # tutarken maxDD'yi %32 düşürdü → canlıda açık (bkz. #15).
     if len(h) >= 15:
         tr = np.maximum(h[1:] - l[1:], np.maximum(abs(h[1:] - c[:-1]), abs(l[1:] - c[:-1])))
         if ATR_USE_WILDER and len(tr) >= 14:

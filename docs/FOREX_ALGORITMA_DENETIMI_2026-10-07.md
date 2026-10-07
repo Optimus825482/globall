@@ -464,7 +464,8 @@ kilidi) uygulanır; #15 ve #16 önce A/B ile ölçülür.**
 Veri: `outputs/forex_replay_data_32d_2026-10-06.json`, pencere **2026-09-07 →
 2026-10-03**, taban knob'lar `min_score=75 sl_mult=1.1 tp_mult=1.4 rr_floor=1.5
 headroom=3.5 st=True ev_guard=True(24h/45%) majorHours=7-20 majorMinAtr=4.0`.
-Kollar **tek değişken** farkıyla koşuldu (`--wilder-atr`, `--adx-min`).
+Kollar **tek değişken** farkıyla koşuldu (`--plain-atr` vs varsayılan Wilder,
+`--adx-min`).
 
 **#15 — ATR: düz 14-ortalama (mevcut) vs Wilder**
 
@@ -486,8 +487,12 @@ gün sayısı azalıyor. Ortalama işlem kârı çok az düşüyor ($0.552→$0.
 yani kazanç "daha çok işlem" değil, **daha iyi SL/TP mesafesinden** geliyor.
 Ek olarak ATR tabanlı `major_min_atr` kapısı standart ATR'ye hizalanır.
 
-⚠️ Kodda `ATR_USE_WILDER = False` (mevcut davranış korunur) — **canlıya almak
-için bu sabitin `True` yapılması gerekir**; replay `--wilder-atr` ile ölçülür.
+✅ **Uygulandı (2026-10-07, kullanıcı kararı):** `ATR_USE_WILDER = True` —
+canlı varsayılan artık Wilder. Replay harness'ı da canlıyı yansıtacak şekilde
+güncellendi: varsayılan Wilder, eski davranış `--plain-atr` ile ölçülür
+(`--wilder-atr` geriye dönük uyumluluk için duruyor). Doğrulama: `--plain-atr`
+kolu eski ölçümle birebir aynı sonucu verdi (3326 işlem / %71.9 WR /
+$1836.93 / maxDD $183.25) — yani A/B karşılaştırma yolu bozulmadı.
 
 **#16 — ADX kalkanı eşik taraması**
 

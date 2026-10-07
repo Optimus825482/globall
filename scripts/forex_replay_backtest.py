@@ -1321,7 +1321,8 @@ def main():
     parser.add_argument("--ev-wr", type=float, default=45.0, help="EV kronik kayıp WR eşiği (%%) — canlı default 45")
     parser.add_argument("--st-period", type=int, default=10, help="SuperTrend period (canlı default 10)")
     parser.add_argument("--st-mult", type=float, default=3.0, help="SuperTrend ATR çarpanı (canlı default 3.0)")
-    parser.add_argument("--wilder-atr", action="store_true", help="#15 A/B: ATR'yi Wilder yumuşatmasıyla hesapla (varsayılan kapalı = düz 14 ortalama)")
+    parser.add_argument("--wilder-atr", action="store_true", help="#15: ATR'yi Wilder yumuşatmasıyla hesapla (ARTIK VARSAYILAN; geriye dönük uyumluluk için duruyor)")
+    parser.add_argument("--plain-atr", action="store_true", help="#15 A/B kolu: eski düz 14-ortalama ATR davranışına dön")
     parser.add_argument("--gold-session", action="store_true", help="Altın için de majör seans penceresini uygula (7-20 UTC)")
     parser.add_argument("--btc-ema200", action="store_true", help="BTC girişlerine EMA200(1h) rejim kapısı")
     parser.add_argument("--btc-vwap", action="store_true", help="BTC girişlerine günlük VWAP kapısı (hacim verisi çeker)")
@@ -1432,10 +1433,17 @@ def main():
     if args.dxy_exempt_extra:
         _extra = tuple(w.strip().upper() for w in args.dxy_exempt_extra.split(",") if w.strip())
         forex.DXY_EXEMPT_SYMBOLS = tuple(forex.DXY_EXEMPT_SYMBOLS) + _extra
-    # #15 ATR yumuşatma A/B: Wilder denemesi (varsayılan kapalı → canlı davranış aynı).
-    if args.wilder_atr:
+    # #15 ATR yumuşatma. Canlı varsayılan artık WILDER (2026-10-07 kullanıcı
+    # kararı, A/B aşağıda); replay de aynı tabanı kullanır ki ölçüm canlıyı
+    # yansıtsın. `--plain-atr` eski düz-ortalama davranışına döndürür (A/B'nin
+    # diğer kolu). `--wilder-atr` geriye dönük uyumluluk için kabul edilir
+    # (artık varsayılanla aynı; eski komut satırları bozulmasın).
+    if args.plain_atr:
+        forex.ATR_USE_WILDER = False
+        print("[KONFIG] ATR yumuşatma = DÜZ 14-ORTALAMA (#15 A/B kolu, eski davranış)")
+    else:
         forex.ATR_USE_WILDER = True
-        print("[KONFIG] ATR yumuşatma = WILDER (deneysel, #15)")
+        print("[KONFIG] ATR yumuşatma = WILDER (#15, canlı varsayılan)")
     # SuperTrend parametre denemesi: canlı fonksiyonu parametreyle sarmala (canlı kod değişmez)
     if (args.st_period, args.st_mult) != (10, 3.0):
         _orig_st = forex._compute_supertrend
