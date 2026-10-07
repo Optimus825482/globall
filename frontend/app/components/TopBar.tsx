@@ -2,43 +2,30 @@
 
 import { usePathname } from "next/navigation";
 import { useExchange } from "../lib/exchange";
-import { useMarketMode } from "../lib/marketMode";
 import { usePwa } from "../lib/pwa";
 
+// 2026-10-07: Yalnız var olan rotaların başlıkları tutulur. Silinen spot
+// sayfalarının girdileri burada kalsaydı ölü referans olurdu.
 const labels: Record<string, string> = {
   "/": "Canlı Terminal",
-  "/portfolio": "Sanal Portföy",
-  "/monitoring": "Radar & Hız Avcısı",
-  "/charts": "Grafik",
-  "/technical-charts": "Teknik Grafik (4'lü Ekran)",
-  "/binance-tr": "Binance Canlı İşlem",
-  "/reports": "Raporlar",
   "/settings": "Ayarlar",
-  "/admin": "Yönetim Merkezi",
   "/profile": "Kullanıcı Profili",
-  "/database": "Veritabanı",
-  "/audit-logs": "Olay Kayıtları",
-  "/macd-monitor": "MACD Monitör",
-  "/users": "Kullanıcı Yönetimi",
   "/chat": "Chat Merkezi",
   "/system-health": "Sistem Sağlığı",
   "/forex": "Forex Radar",
   "/forex/btc-gold": "BTC + Altın Konsolu",
+  "/forex/islemler": "Forex İşlemler",
   "/forex/portfolio": "Forex Portföy",
   "/forex/charts": "Forex Grafik",
   "/forex/technical-charts": "Forex 4'lü Grafik",
   "/forex/reports": "Forex Raporlar",
   "/forex/calendar": "Ekonomik Takvim",
-  "/mtf-scanner": "MTF Tarama",
-  "/alerts": "Alarmlar",
-  "/memory": "LLM Hafızası",
-  "/risk": "Risk Yönetimi",
+  "/forex/ayarlar": "Forex Ayarları",
 };
 
 export default function TopBar() {
   const pathname = usePathname();
   const exchange = useExchange();
-  const { marketMode, setMarketMode } = useMarketMode();
   const { isInstallable, isInstalled, openInstallDialog } = usePwa();
 
   const raw =
@@ -46,9 +33,7 @@ export default function TopBar() {
     Object.entries(labels).find(([path]) => path !== "/" && pathname.startsWith(path))?.[1] ||
     "SCALPER GLOBAL AGENT";
 
-  const currentTitle = raw.startsWith("Binance TR Canlı İşlem")
-    ? `${exchange.loading ? "Binance" : exchange.label} Canlı İşlem`
-    : raw;
+  const currentTitle = raw;
 
   const handleOpenMobileMenu = () => {
     if (typeof window !== "undefined") {
@@ -80,10 +65,10 @@ export default function TopBar() {
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-mono text-[9px] font-bold tracking-wider bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.25)]">
-                🌐 GLOBAL
+                💱 FOREX
               </span>
               <p className="topbar-kicker text-cyan-400/80 font-mono hidden sm:block">
-                BINANCE GLOBAL · $ · PAPER TRADING
+                FOREX &amp; EMTİA · DEMO / LIVE
               </p>
             </div>
             <p className="topbar-title truncate text-sm sm:text-base font-bold text-white font-mono">
@@ -107,50 +92,21 @@ export default function TopBar() {
             </button>
           )}
 
-          {/* Piyasa Modu Hızlı Değiştirici (Spot / Forex) */}
-          <div className="flex items-center p-0.5 rounded-lg bg-bunker-900 border border-bunker-800">
-            <button
-              type="button"
-              onClick={() => setMarketMode("spot")}
-              className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold transition-all ${
-                marketMode === "spot"
-                  ? "bg-amber-500/25 text-yellow-400 border border-yellow-500/40 shadow-[0_0_6px_rgba(234,179,8,0.2)]"
-                  : "text-bunker-muted hover:text-white"
-              }`}
-              title="Kripto Spot Modu"
-            >
-              🟡 SPOT
-            </button>
-            <button
-              type="button"
-              onClick={() => setMarketMode("forex")}
-              className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold transition-all ${
-                marketMode === "forex"
-                  ? "bg-blue-500/25 text-cyan-300 border border-cyan-400/40 shadow-[0_0_6px_rgba(0,240,255,0.2)]"
-                  : "text-bunker-muted hover:text-white"
-              }`}
-              title="Forex & Altın Modu"
-            >
-              💱 FX
-            </button>
-          </div>
+          {/* 2026-10-07: Piyasa modu hızlı değiştirici (SPOT / FX) KALDIRILDI —
+              uygulama yalnızca Forex & Emtia sunar, seçilecek ikinci piyasa yok. */}
 
           {/* Canlı Veri Göstergesi */}
           <div className="hidden md:flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-1 font-mono text-[10px] text-cyan-300 shadow-[inset_0_1px_rgba(255,255,255,0.06)]">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
             <span className="font-semibold tracking-wider">
-              {marketMode === "forex" ? "GLOBAL FOREX" : "BINANCE GLOBAL"}
+              GLOBAL FOREX
             </span>
           </div>
 
           <div className="flex items-center gap-1 font-mono text-[10px] tracking-wider text-slate-300">
             <span className="w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse" />
             <span className="hidden sm:inline">
-              {exchange.error && !exchange.loading
-                ? "BAĞLANTI HATASI"
-                : marketMode === "forex"
-                ? "CANLI PİYASA"
-                : (exchange.loading ? "…" : exchange.label.toUpperCase())}
+              {exchange.error && !exchange.loading ? "BAĞLANTI HATASI" : "CANLI PİYASA"}
             </span>
           </div>
         </div>

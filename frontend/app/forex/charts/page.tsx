@@ -73,7 +73,7 @@ export default function ForexSingleChartPage() {
             }`}
           >
             <span>✨</span>
-            <span>Profesyonel Spot Grafik</span>
+            <span>Profesyonel Grafik Motoru</span>
           </button>
           <button
             type="button"

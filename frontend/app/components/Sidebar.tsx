@@ -9,11 +9,8 @@ import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import SymbolLink from "./SymbolLink";
 import { useAuth } from "../lib/auth";
-import { canViewMacdMonitor } from "../lib/macdAccess";
 import { ML_PROB_CLASS, ML_PROB_TITLE, formatMlProbability } from "../lib/mlProbability";
 import { visibleGroups } from "../lib/menu";
-import { useExchange } from "../lib/exchange";
-import { useMarketMode } from "../lib/marketMode";
 
 import { usePwa } from "../lib/pwa";
 
@@ -28,13 +25,7 @@ export default function Sidebar() {
     const { username, role, logout } = useAuth();
     const { isInstallable, isInstalled, openInstallDialog } = usePwa();
     const isAdmin = role === "admin";
-    const canViewMacd = canViewMacdMonitor(role, username);
-    const exchange = useExchange();
-    const { marketMode, setMarketMode } = useMarketMode();
-    // Menü borsaya göre değişir: `/binance-tr` private API'ye bağlıdır ve
-    // Global örneğinde (api.binance.com) hiç çalışmaz.
-    const isGlobal = exchange.exchange === "binance_global";
-    const groups = visibleGroups({ isAdmin, canViewMacd, isGlobal }, marketMode);
+    const groups = visibleGroups({ isAdmin });
     const [open, setOpen] = useState(false);
     // Grup açık/kapalı durumu. undefined = varsayılan (ana açık, diğerleri kapalı).
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -43,7 +34,6 @@ export default function Sidebar() {
     const [unread, setUnread] = useState(0);
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [health, setHealth] = useState<any>(null);
-    const [macroRegime, setMacroRegime] = useState<any>(null);
     const liveStatus = useLiveStatus();
     const onLiveMessage = useCallback((message: any) => {
         if (message.type !== "alert") return;
@@ -83,20 +73,6 @@ export default function Sidebar() {
     useEffect(() => { loadHealth(); }, [loadHealth]);
     useVisibleInterval(loadHealth, 10_000);
 
-    const loadMacroRegime = useCallback(() => {
-        apiFetch("/api/signals/macro-regime")
-            .then((data) => setMacroRegime(data?.macro_sentiment || null))
-            .catch(() => setMacroRegime(null));
-    }, []);
-    useEffect(() => { loadMacroRegime(); }, [loadMacroRegime]);
-    useVisibleInterval(loadMacroRegime, 15_000);
-
-    const isBearRegime = Boolean(
-        macroRegime?.regime_shield_active ||
-        macroRegime?.market_stress_level === "BEAR_REGIME" ||
-        (macroRegime && macroRegime.is_btc_above_ema200 === false)
-    );
-
     return (
         <>
             {open && <button className="mobile-menu-backdrop" onClick={() => setOpen(false)} aria-label="Menüyü kapat" />}
@@ -126,78 +102,29 @@ export default function Sidebar() {
                         ✕
                     </button>
                 </div>
-                {/* PİYASA MODU SEÇİCİ (SPOT / FOREX) */}
-                <div className="mt-3 grid grid-cols-2 p-1 rounded-xl bg-bunker-950/90 border border-bunker-700/80 shadow-inner">
-                    <button
-                        type="button"
-                        onClick={() => setMarketMode("spot")}
-                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all ${
-                            marketMode === "spot"
-                                ? "bg-gradient-to-r from-amber-500/25 to-yellow-600/25 text-yellow-400 border border-yellow-500/40 shadow-[0_0_10px_rgba(234,179,8,0.2)]"
-                                : "text-bunker-muted hover:text-white"
-                        }`}
-                    >
-                        <span>🟡</span>
-                        <span>SPOT</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setMarketMode("forex")}
-                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all ${
-                            marketMode === "forex"
-                                ? "bg-gradient-to-r from-blue-500/25 to-cyan-600/25 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(0,240,255,0.25)]"
-                                : "text-bunker-muted hover:text-white"
-                        }`}
-                    >
-                        <span>💱</span>
-                        <span>FOREX</span>
-                    </button>
-                </div>
+                {/* PİYASA MODU SEÇİCİ (SPOT / FOREX) ve BTC BEAR REGIME ROZETİ
+                    KALDIRILDI (2026-10-07): uygulama artık YALNIZCA Forex &
+                    Emtia sunar; spot sayfalar silindiği için (a) piyasa-modu
+                    anahtarı ve (b) yalnız spot sayfalardaki BTC rejim kalkanını
+                    anlatan rozet yoktur. */}
 
-                {/* BTC BEAR REGIME KALKANI ROZETİ (Spot ve Forex seçeneklerinin altında) */}
-                {isBearRegime && (
-                    <div
-                        className="mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-red-950/90 border border-red-500/80 shadow-[0_0_14px_rgba(239,68,68,0.5)] animate-pulse transition-all"
-                        title={macroRegime?.summary || "BTC 1H EMA200 altında: Makro ayı rejim kalkanı aktif."}
-                    >
-                        <div className="flex items-center gap-1.5 font-mono text-[11px] font-extrabold text-red-200">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                            </span>
-                            <span className="tracking-wide">BTC BEAR REGIME</span>
-                        </div>
-                        <span className="text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-red-500/30 text-red-100 border border-red-400/60 shadow-[0_0_6px_rgba(239,68,68,0.5)]">
-                            KALKAN AKTİF
-                        </span>
-                    </div>
-                )}
-
-                {/* Global Borsa / Forex Rozet Kartı */}
-                <div className={`mt-2.5 rounded-lg border p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-colors ${
-                    marketMode === "forex"
-                        ? "border-blue-500/40 bg-gradient-to-r from-blue-950/70 via-slate-900/70 to-indigo-950/60"
-                        : "border-cyan-500/30 bg-gradient-to-r from-cyan-950/60 via-slate-900/60 to-blue-950/50"
-                }`}>
+                {/* Global Borsa / Forex Rozet Kartı — tek piyasa (Forex). */}
+                <div className="mt-2.5 rounded-lg border p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-colors border-blue-500/40 bg-gradient-to-r from-blue-950/70 via-slate-900/70 to-indigo-950/60">
                     <div className="flex items-center justify-between font-mono">
                         <span className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
-                            <span className={`w-2 h-2 rounded-full animate-pulse ${marketMode === "forex" ? "bg-blue-400 shadow-[0_0_8px_#38bdf8]" : "bg-cyan-400 shadow-[0_0_8px_#00f0ff]"}`} />
-                            {marketMode === "forex" ? "GLOBAL FOREX" : (exchange.loading ? "Borsa belirleniyor…" : exchange.label.toUpperCase())}
+                            <span className="w-2 h-2 rounded-full animate-pulse bg-blue-400 shadow-[0_0_8px_#38bdf8]" />
+                            GLOBAL FOREX
                         </span>
-                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold border ${
-                            marketMode === "forex"
-                                ? "bg-blue-500/20 text-blue-200 border-blue-400/40 shadow-[0_0_8px_rgba(59,130,246,0.2)]"
-                                : "bg-cyan-400/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]"
-                        }`}>
-                            {marketMode === "forex" ? "FX" : "$"}
+                        <span className="rounded px-2 py-0.5 text-[10px] font-bold border bg-blue-500/20 text-blue-200 border-blue-400/40 shadow-[0_0_8px_rgba(59,130,246,0.2)]">
+                            FX
                         </span>
                     </div>
                     <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono border-t border-bunker-700/60 pt-1.5">
-                        <span className={marketMode === "forex" ? "text-blue-300/80" : "text-cyan-400/70"}>
-                            {marketMode === "forex" ? "PARİTE & EMTİA" : "PİYASA: GLOBAL SPOT"}
+                        <span className="text-blue-300/80">
+                            PARİTE &amp; EMTİA
                         </span>
-                        <span className={marketMode === "forex" ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
-                            {marketMode === "forex" ? "DEMO / LIVE" : "PAPER TRADING"}
+                        <span className="text-emerald-400 font-bold">
+                            DEMO / LIVE
                         </span>
                     </div>
                 </div>
@@ -215,10 +142,10 @@ export default function Sidebar() {
             <nav className="flex-1 overflow-y-auto p-3 space-y-3" aria-label="Ana gezinme">
                 {groups.map((group) => {
                     if (!group.items.length) return null;
-                    // 2026-09-27: `ana` grubu DÜZ liste (grup başlığı yok —
-                    // kullanıcı "gruplamayı kaldır" istedi). `diger` grubu
+                    // 2026-09-27: `forex_ana` grubu DÜZ liste (grup başlığı yok
+                    // — kullanıcı "gruplamayı kaldır" istedi). `diger` grubu
                     // açık/kapalı chevron'lu; varsayılan kapalı.
-                    const isFlat = group.id === "ana";
+                    const isFlat = group.id === "forex_ana";
                     const open = openGroups[group.id] ?? isFlat;
                     return (
                         <div key={group.id} className="space-y-1">
@@ -241,14 +168,7 @@ export default function Sidebar() {
                             {(open || isFlat) && group.items.map((m) => {
                                 const active = pathname === m.href
                                     || (m.alsoActive || []).includes(pathname);
-                                // Terminal etiketi çalışan borsaya göre değişir:
-                                // TR örneğinde "Binance TR", Global'da
-                                // "Binance Global". Borsa henüz okunmadıysa
-                                // jenerik "Binance" kalır — yanlış borsa adı
-                                // göstermektense bunu söylemek yeğdir.
-                                const label = m.exchangeLabel
-                                    ? (exchange.loading ? m.label : exchange.label)
-                                    : m.label;
+                                const label = m.label;
                                 return (
                                     <Link
                                         key={m.href}
@@ -372,7 +292,7 @@ export default function Sidebar() {
                             <span className="w-1 h-1 rounded-full bg-cyan-400/50" />
                             v{typeof window !== "undefined" ? (document.documentElement.dataset.buildId || process.env.NEXT_PUBLIC_BUILD_ID || "dev") : (process.env.NEXT_PUBLIC_BUILD_ID || "dev")}
                         </span>
-                        <span className="text-[8px] text-cyan-500/60 font-semibold tracking-wider">GLOBAL SPOT</span>
+                        <span className="text-[8px] text-cyan-500/60 font-semibold tracking-wider">GLOBAL FOREX</span>
                     </div>
                 </div>
             </nav>

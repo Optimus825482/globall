@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useLiveMessages } from "../lib/liveSocket";
 import { fmtDateTime, formatPrice, withQuotePrice } from "../lib/format";
 import SymbolLink from "./SymbolLink";
@@ -221,9 +220,8 @@ export default function RadarAlertModal() {
                 {item.triggered_at ? fmtDateTime(item.triggered_at) : ""}
               </p>
               <div className="flex gap-2">
-                {item.symbol && (
-                  <Link href={`/charts?symbol=${item.symbol}`} onClick={close} className="ui-button ui-button-secondary touch-target flex items-center justify-center">GRAFİĞE GİT</Link>
-                )}
+                {/* 2026-10-07: "GRAFİĞE GİT" kaldırıldı — uygulama FOREX-only ve
+                    bildirimler kripto sembolü taşır; hedeflediği `/charts` artık yok. */}
                 <button type="button" onClick={close} className="ui-button ui-button-primary touch-target">ANLAŞILDI</button>
               </div>
             </div>

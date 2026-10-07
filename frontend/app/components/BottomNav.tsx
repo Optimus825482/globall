@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BOTTOM_NAV_ITEMS, FOREX_BOTTOM_NAV_ITEMS } from "../lib/menu";
-import { useMarketMode } from "../lib/marketMode";
+import { BOTTOM_NAV_ITEMS } from "../lib/menu";
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const { marketMode } = useMarketMode();
-  const navItems = marketMode === "forex" ? FOREX_BOTTOM_NAV_ITEMS : BOTTOM_NAV_ITEMS;
+  // 2026-10-07: Uygulama yalnızca Forex sunar — piyasa-modu anahtarı kaldırıldı.
+  const navItems = BOTTOM_NAV_ITEMS;
 
   const handleOpenMenu = () => {
     if (typeof window !== "undefined") {

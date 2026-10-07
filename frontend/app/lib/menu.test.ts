@@ -1,23 +1,18 @@
-// Menü görünürlük kuralları — 2026-09-26
+// Menü görünürlük kuralları — 2026-10-07 (FOREX-ONLY yeniden yapılandırma)
 //
-// Bu kilitler iki sınıf hatayı:
+// Uygulama artık YALNIZCA Forex & Emtia sunar; kripto spot menüsü, piyasa-modu
+// anahtarı ve borsa-bazlı görünürlük (`trOnly`/`globalOnly`/`isGlobal`) kaldırıldı.
+// Bu kilit üç sınıf hatayı önler:
 //
-// 1. ERİŞİLEMEZLİK. Menü düz bir listeydi ve 25 sayfanın 10'u görünüyordu.
-//    Kalan sayfalar çalışıyordu ama link verilmediği için kullanıcı URL'yi
-//    bilmeden ulaşamıyordu. Burada "her sayfa ya menüde ya admin altında
-//    erişilebilir" kuralı kilitlenir.
-//
-// 2. YANLIŞ BORSA. `/binance-tr` private API'ye (`api.binance.me`) bağlıdır;
-//    Global örneğinde `api.binance.com` gerekir. İki örnek ayrı DB kullandığı
-//    için Global'ın menüsünde TR terminali hem yanlış borsada hem de
-//    yanlış veritabanında çalışırdı.
+// 1. ERİŞİLEMEZLİK. Her Forex sayfasının bir menü linki olmalı.
+// 2. ÖLÜ LİNK. Silinen spot sayfaların href'i menüde KALMAMALI (404'e giderdi).
+// 3. YANLIŞ YÜZEY. Mobil alt navigasyon yalnızca var olan Forex rotalarına gider.
 
 import { describe, it, expect } from "vitest";
 import { MENU_GROUPS, BOTTOM_NAV_ITEMS, isItemVisible, visibleGroups, type Visibility } from "./menu";
 
-const ADMIN: Visibility = { isAdmin: true, canViewMacd: true, isGlobal: false };
-const USER: Visibility = { isAdmin: false, canViewMacd: false, isGlobal: false };
-const MACD_VIEWER: Visibility = { isAdmin: false, canViewMacd: true, isGlobal: false };
+const ADMIN: Visibility = { isAdmin: true };
+const USER: Visibility = { isAdmin: false };
 
 const allItems = MENU_GROUPS.flatMap((g) => g.items);
 const hrefs = allItems.map((i) => i.href);
@@ -35,58 +30,24 @@ describe("menu — kapsam", () => {
     }
   });
 
-  it("2026-09-26: menüden linki olmayan sayfa KALMAMIŞ olmalı", () => {
-    // Bu liste, menüye eklenmeden önce HİÇBİR navigasyon yüzeyinden
-    // erişilemeyen sayfalardı. Yeni bir sayfa eklenirse ya buraya ya da
-    // menüye girmek zorunda — sessizce erişilemez kalmak yasak.
-    //
-    // 2026-09-27: `/history` ve `/reports/forecasts` LİSTEDEN ÇIKARILDI.
-    // `db8591d` (Tur A temizlik) bu iki sayfayı SİLDİ; tahmin raporu
-    // `reports/page.tsx` içine sekme olarak taşındı. Menüde kalsalar
-    // 404'e bağlantı verirdi — uygulama çalışırken yanlış yere götürür,
-    // sessiz bozulmanın en ucuz görünen ama en sinir bozan türü.
-    //
-    // 2026-09-27: `/risk`, `/alerts`, `/memory`, `/trade-repair` de
-    // LİSTEDEN ÇIKARILDI — menü yeniden yapılandırması: risk/alarm/
-    // hafıza Yönetim Merkezi'ne sekme taşındı (/admin?tab=…), Trade
-    // Repair sayfası silindi. Artık bu routeların menü linki OLMAMALI
-    // (aşağıdaki "SİLİNMİŞ / TAŞINMIŞ" testinin kapsamında).
-    //
-    // 2026-09-27: `/symbol-analysis` de LİSTEDEN ÇIKARILDI — kullanıcı
-    // isteği: menüden kalktı, Grafik sayfasındaki 🔬 ANALİZ butonunun
-    // açtığı modala taşındı (charts/page.tsx iframe).
-    //
-    // 2026-09-27: `/admin` (Yönetim Merkezi) ve `/profile` de menüden
-    // ÇIKARILDI — Yönetim Merkezi Raporlar'a, Profil Ayarlar'a sekme
-    // oldu. Menüde linkleri yok; routelar CANLI kalır.
-    const ORPHANS: string[] = [];
-    for (const route of ORPHANS) {
-      expect(hrefs).toContain(route);
+  it("2026-10-07: TÜM menü öğeleri Forex rotalarına gider (tek piyasa)", () => {
+    // Uygulama forex-only olduğu için menüdeki her href `/forex`, `/chat`,
+    // `/settings` ya da `/system-health` olmalı. Bir spot rotası sızarsa
+    // (ör. /monitoring) kullanıcı 404'e gider — bu test onu yakalar.
+    const ALLOWED = ["/forex", "/chat", "/settings", "/system-health"];
+    for (const href of hrefs) {
+      expect(ALLOWED.some((p) => href === p || href.startsWith(p + "/"))).toBe(true);
     }
   });
 
-  it("öksüz kopyalar menüye GİRMEZ", () => {
-    // `/gainer-radar` yalnız `redirect("/")` yapan ölü bir alias'tır —
-    // menüde yeri yoktur, tıklamak boş yere bir yönlendirme yapar.
-    expect(hrefs).not.toContain("/gainer-radar");
-  });
-
-  it("2026-09-27: SİLİNMİŞ sayfalar menüde KALMAZ (db8591d temizliği)", () => {
-    // `db8591d` bu dosyaları sildi. Menüde kalırlarsa bağlantı 404'e gider.
-    // Test, menü ile dosya sistemini birbirine bağlayan tek yerde — yeni bir
-    // sayfa silinirse ya da menüye eklenirse burada görünür.
-    //
-    // 2026-09-27 menü yeniden yapılandırması — TAŞINAN / SİLİNEN routelar:
-    //   `/risk`, `/alerts`, `/memory` → Yönetim Merkezi sekmeleri
-    //   (/admin?tab=risk|alerts|memory). Ana menüde ayrı link istemniyor;
-    //   `/trade-repair` → sayfa silindi (İşlem Onarımı);
-    //   `/symbol-analysis` → Grafik sayfasındaki 🔬 ANALİZ modalına taşındı
-    //   (menü linki yok, modaldan ulaşılır). Menüde kalırlarsa ana
-    //   navigasyonda gereksiz/404'lük girdi olur.
+  it("2026-10-07: SİLİNMİŞ spot sayfalar menüde KALMAZ", () => {
+    // Spot UI + sayfa dosyaları kaldırıldı; menüde kalsalardı bağlantı 404'e
+    // giderdi — sessiz bozulmanın en sinir bozucu türü.
     for (const dead of [
-      "/history", "/reports/forecasts", "/gainer-radar",
-      "/risk", "/alerts", "/memory", "/trade-repair",
-      "/symbol-analysis",
+      "/", "/monitoring", "/mtf-scanner", "/technical-charts", "/charts",
+      "/binance-tr", "/portfolio", "/reports", "/alerts", "/risk",
+      "/macd-monitor", "/symbol-analysis", "/database", "/memory", "/admin",
+      "/users", "/profile",
     ]) {
       expect(hrefs).not.toContain(dead);
     }
@@ -101,55 +62,29 @@ describe("menu — rol görünürlüğü", () => {
     }
   });
 
-  it("2026-09-27: Yönetim Merkezi menüden çıktı (Raporlar sekmesi)", () => {
-    // `/admin` artık menüde YOK — Url'den canlı kalır ama Sidebar'dan
-    // link verilmez; Raporlar'ın "Yönetim" sekmesiyle ulaşılır.
-    // Aynı şekilde `/profile` de Ayarlar sekmesine taşındı.
-    expect(hrefs).not.toContain("/admin");
-    expect(hrefs).not.toContain("/profile");
-  });
-
   it("normal kullanıcı menüyü boş görmez", () => {
     const groups = visibleGroups(USER);
     expect(groups.length).toBeGreaterThan(0);
-    expect(groups.flatMap((g) => g.items).length).toBeGreaterThan(5);
+    expect(groups.flatMap((g) => g.items).length).toBeGreaterThan(3);
   });
 
-  it("normal kullanıcıda Diğer grubu görünür öğelerle kalır", () => {
-    // 2026-09-27: `yonetim` grubu kaldırıldı; yerine `diger`.
-    // `diger` öğeleri (Canlı Terminal, Sistem Sağlığı) role-gate DEĞİL —
-    // normal kullanıcı da görür. `collapseWhenEmpty` yalnız hiç öğe
-    // kalmadığında başlığı gizler.
+  it("normal kullanıcıda 'diger' grubu Sistem Sağlığı ile kalır", () => {
     const groups = visibleGroups(USER);
     const diger = groups.find((g) => g.id === "diger");
     expect(diger).toBeDefined();
-    expect(diger!.items.map((i) => i.href)).toContain("/");
     expect(diger!.items.map((i) => i.href)).toContain("/system-health");
-  });
-});
-
-describe("menu — borsa görünürlüğü", () => {
-  const globalVis: Visibility = { ...ADMIN, isGlobal: true };
-
-  it("özel terminal İKİ borsada da görünür", () => {
-    // 2026-09-27: `/binance-tr` Global'da da açılır — Global için ayrı bir
-    // özel terminal eklendi. Önceden `trOnly: true` idi ve Global
-    // kullanıcısının menüde hiçbir özel terminali yoktu.
-    const item = allItems.find((i) => i.href === "/binance-tr")!;
-    expect(item.trOnly).toBeUndefined();
-    expect(isItemVisible(item, globalVis)).toBe(true);
-    expect(isItemVisible(item, ADMIN)).toBe(true);
+    // Ayarlar adminOnly → normal kullanıcıya görünmez.
+    expect(diger!.items.map((i) => i.href)).not.toContain("/settings");
   });
 
-  it("terminal etiketi çalışan borsanın adını taşır (sabit metin yok)", () => {
-    // Sabit "Binance TR" yazısı Global kullanıcısına yanlış borsayı gösterirdi.
-    const item = allItems.find((i) => i.href === "/binance-tr")!;
-    expect(item.exchangeLabel).toBe(true);
-  });
-
-  it("TR örneğinde Global'a özel hiçbir öğe görünmez", () => {
-    const flat = visibleGroups(ADMIN).flatMap((g) => g.items);
-    expect(flat.filter((i) => i.globalOnly)).toEqual([]);
+  it("Forex & Emtia grubu tüm forex sayfalarını listeler", () => {
+    const groups = visibleGroups(ADMIN);
+    const forex = groups.find((g) => g.id === "forex_ana");
+    expect(forex).toBeDefined();
+    const items = forex!.items.map((i) => i.href);
+    for (const href of ["/forex", "/forex/btc-gold", "/forex/islemler", "/forex/charts", "/forex/calendar", "/forex/portfolio", "/forex/ayarlar"]) {
+      expect(items).toContain(href);
+    }
   });
 });
 
@@ -158,16 +93,9 @@ describe("menu — mobil alt navigasyon", () => {
     expect(BOTTOM_NAV_ITEMS.length).toBe(4);
   });
 
-  it("alt navigasyon private API'ye bağlı sayfaya gitmez", () => {
-    // 2026-09-26: alt navigasyon mobilde 4. öğe olarak `/binance-tr`
-    // gösteriyordu. 2026-09-27'de terminal iki borsada da çalışır hâle
-    // geldiği için bu kural HER iki borsada da geçerli: alt navigasyon
-    // private yüzeye bağlı sayfaya gitmez, oraya menüden gidilir.
-    const flat = BOTTOM_NAV_ITEMS.map((i) => i.href);
-    expect(flat).not.toContain("/binance-tr");
+  it("alt navigasyon yalnız Forex rotalarına gider", () => {
     for (const item of BOTTOM_NAV_ITEMS) {
-      expect(item.trOnly).toBeUndefined();
-      expect(item.globalOnly).toBeUndefined();
+      expect(item.href.startsWith("/forex")).toBe(true);
     }
   });
 

@@ -138,7 +138,7 @@ export default function ForexRadarPage() {
   const [calcSymbol, setCalcSymbol] = useState<string>("EURUSD");
   const [calcResult, setCalcResult] = useState<any>(null);
 
-  // Profesyonel Grafik Modalı (Spot tarzı Lightweight Charts)
+  // Profesyonel Grafik Modalı (Lightweight Charts)
   const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidate | null>(null);
 
   const fetchRadar = async () => {
@@ -936,7 +936,7 @@ export default function ForexRadarPage() {
         )}
       </div>
 
-      {/* PROFESYONEL FOREX GRAFİK MODALI (Spot Tarzı Lightweight Charts) */}
+      {/* PROFESYONEL FOREX GRAFİK MODALI (Lightweight Charts) */}
       {chartModalCandidate && (
         <ForexChartModal
           candidate={chartModalCandidate}

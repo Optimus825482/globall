@@ -147,11 +147,11 @@ export default function ForexTechnicalChartsPage() {
                 FOREX ÇOKLU TEKNİK GRAFİK EKRANI
               </h1>
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                {chartEngine === "native" ? "⚡ SPOT NATIVE LIGHTWEIGHT" : "🌐 TRADINGVIEW"}
+                {chartEngine === "native" ? "⚡ YERLİ MOTOR (LIGHTWEIGHT)" : "🌐 TRADINGVIEW"}
               </span>
             </div>
             <p className="text-[11px] text-bunker-muted mt-0.5">
-              Spot motoruyla anlık mumlar; varsayılan Bollinger Bands + MACD alt paneli
+              Yerli motorla anlık mumlar; varsayılan Bollinger Bands + MACD alt paneli
             </p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function ForexTechnicalChartsPage() {
               }`}
             >
               <span>✨</span>
-              <span>Spot Grafik (Önerilen)</span>
+              <span>Yerli Grafik (Önerilen)</span>
             </button>
             <button
               type="button"

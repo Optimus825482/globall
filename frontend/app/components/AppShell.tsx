@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
@@ -8,25 +8,17 @@ import RadarAlertModal from "./RadarAlertModal";
 import BottomNav from "./BottomNav";
 import { reconcilePushSubscription } from "../lib/push";
 import { useExchangeProvider } from "../lib/exchange";
-import { MarketModeProvider } from "../lib/marketMode";
 
 const CURRENT_BUILD = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [embeddedAnalysis, setEmbeddedAnalysis] = useState(false);
-
-  useEffect(() => {
-    if (pathname === "/symbol-analysis") {
-      setEmbeddedAnalysis(new URLSearchParams(window.location.search).get("embedded") === "1");
-    } else {
-      setEmbeddedAnalysis(false);
-    }
-  }, [pathname]);
-  // Borsa kimliği backend'den TEK kez okunur ve tüm ağaca dağıtılır
-  // (menü, para birimi rozeti, sembol türetme). `NEXT_PUBLIC_*` build-time
-  // sabittir; build ile backend arasında uyuşmazlık olursa bu değer onu
-  // GÖSTERİR — uygulama sağlıklı görünüp yanlış borsada çalışmaz.
+  // 2026-10-07: `/symbol-analysis` (spot sembol analizi) sayfası kaldırıldı;
+  // onun `?embedded=1` gömme modu da ölü kaldı. Borsa kimliği backend'den TEK
+  // kez okunur ve tüm ağaca dağıtılır (menü, para birimi rozeti, sembol
+  // türetme). `NEXT_PUBLIC_*` build-time sabittir; build ile backend arasında
+  // uyuşmazlık olursa bu değer onu GÖSTERİR — uygulama sağlıklı görünüp yanlış
+  // borsada çalışmaz.
   const { info: exchange, ExchangeContext } = useExchangeProvider();
 
   // PUSH-RESILIENCE (2026-09-16): açılışta aboneliği SESSİZCE uzlaştır.
@@ -53,36 +45,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const isForexIslemler = pathname === "/forex/islemler" || pathname?.startsWith("/forex/islemler/");
 
-  if (embeddedAnalysis) {
-    return <main className="min-h-screen overflow-y-auto"><div className="content-shell">{children}</div></main>;
-  }
-
   if (isForexIslemler) {
     return (
       <ExchangeContext.Provider value={exchange}>
-        <MarketModeProvider>
-          <main className="min-h-screen w-full overflow-y-auto">
-            <div className="w-full px-2 sm:px-4 lg:px-6 py-2.5 sm:py-4 max-w-[1700px] mx-auto">
-              {children}
-            </div>
-          </main>
-        </MarketModeProvider>
+        <main className="min-h-screen w-full overflow-y-auto">
+          <div className="w-full px-2 sm:px-4 lg:px-6 py-2.5 sm:py-4 max-w-[1700px] mx-auto">
+            {children}
+          </div>
+        </main>
       </ExchangeContext.Provider>
     );
   }
   return (
     <ExchangeContext.Provider value={exchange}>
-      <MarketModeProvider>
-        <div className="flex min-h-screen">
-          <div data-sidebar><Sidebar /></div>
-          <main className="flex-1 min-w-0 min-h-screen overflow-y-auto">
-            <div data-topbar><TopBar /></div>
-            <div className="content-shell">{children}</div>
-          </main>
-          <BottomNav />
-          <RadarAlertModal />
-        </div>
-      </MarketModeProvider>
+      <div className="flex min-h-screen">
+        <div data-sidebar><Sidebar /></div>
+        <main className="flex-1 min-w-0 min-h-screen overflow-y-auto">
+          <div data-topbar><TopBar /></div>
+          <div className="content-shell">{children}</div>
+        </main>
+        <BottomNav />
+        <RadarAlertModal />
+      </div>
     </ExchangeContext.Provider>
   );
 }

@@ -4,8 +4,6 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { API_BASE, apiRequest } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useExchange } from "../lib/exchange";
-import { useUiMode } from "../lib/ui-mode";
 import { fmtDate as fmtDateOnly } from "../lib/format";
 
 type Notice = { kind: "ok" | "err"; text: string } | null;
@@ -15,8 +13,6 @@ type Notice = { kind: "ok" | "err"; text: string } | null;
 // ve `settings/page.tsx` aynı bileşeni kendi sekmesinde gömer.
 export function ProfileContent() {
   const { username, role } = useAuth();
-  const exchange = useExchange();
-  const [uiMode, toggleUiMode] = useUiMode();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -160,39 +156,16 @@ export function ProfileContent() {
         </section>
       </div>
 
-      {/* Hızlı erişim */}
+      {/* Hızlı erişim — 2026-10-07: uygulama FOREX-only olduğu için bağlantılar
+          Forex sayfalarına yönlendirildi (spot rotaları kaldırıldı). */}
       <section className="card mt-4">
         <p className="eyebrow text-neon-green">HIZLI ERİŞİM</p>
         <div className="mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          <Link href="/portfolio" className="ui-button ui-button-secondary justify-center text-center touch-target">💼 Sanal Portföy</Link>
-          <Link href="/monitoring" className="ui-button ui-button-secondary justify-center text-center touch-target">📡 Radar</Link>
-          <Link href="/charts" className="ui-button ui-button-secondary justify-center text-center touch-target">📈 Grafik</Link>
-          <Link href="/binance-tr" className="ui-button ui-button-secondary justify-center text-center touch-target">🏛️ {exchange.loading ? "Binance" : exchange.label}</Link>
-          <Link href="/reports" className="ui-button ui-button-secondary justify-center text-center touch-target">📋 Raporlar</Link>
-        </div>
-      </section>
-
-      {/* Kullanıcı tercihleri */}
-      <section className="card mt-4">
-        <p className="eyebrow text-neon-green">KULLANICI TERCİHLERİ</p>
-        <div className="mt-4 space-y-4">
-          <label className="flex items-center justify-between rounded-lg border border-bunker-700 bg-bunker-900/50 p-3">
-            <div>
-              <p className="font-mono text-sm font-bold text-white">Arayüz Modu</p>
-              <p className="font-mono text-[11px] text-bunker-muted">Basit modda temel metrikler gösterilir, gelişmiş modda tüm kontroller</p>
-            </div>
-            <select
-              value={uiMode}
-              onChange={(e) => {
-                const target = e.target.value as "simple" | "advanced";
-                if (target !== uiMode) toggleUiMode();
-              }}
-              className="rounded border border-bunker-700 bg-bunker-950 px-3 py-2 font-mono text-sm text-white"
-            >
-              <option value="simple">🔵 Basit</option>
-              <option value="advanced">⚙ Gelişmiş</option>
-            </select>
-          </label>
+          <Link href="/forex" className="ui-button ui-button-secondary justify-center text-center touch-target">📡 Forex Radar</Link>
+          <Link href="/forex/portfolio" className="ui-button ui-button-secondary justify-center text-center touch-target">💼 Forex Portföy</Link>
+          <Link href="/forex/charts" className="ui-button ui-button-secondary justify-center text-center touch-target">📈 Forex Grafik</Link>
+          <Link href="/forex/calendar" className="ui-button ui-button-secondary justify-center text-center touch-target">🗓️ Ekonomik Takvim</Link>
+          <Link href="/forex/reports" className="ui-button ui-button-secondary justify-center text-center touch-target">📋 Forex Raporlar</Link>
         </div>
       </section>
     </>

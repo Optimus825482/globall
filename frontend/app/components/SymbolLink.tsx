@@ -1,5 +1,8 @@
-import Link from "next/link";
-
+// 2026-10-07: Global uygulaması FOREX-only oldu; `/charts` (kripto mum grafiği)
+// sayfası kaldırıldı. Bu bileşen eskiden sembole tıklanınca o sayfayı açardı ve
+// şimdi 404'e giderdi. Sembol artık düz metin olarak gösterilir — çağıranların
+// tümü (bildirim listesi, alarm paneli, chat önerileri) yalnızca etiket
+// istiyordu; gezinti beklentisi yoktu.
 type SymbolLinkProps = {
   symbol?: string | null;
   className?: string;
@@ -7,19 +10,8 @@ type SymbolLinkProps = {
   newTab?: boolean;
 };
 
-export default function SymbolLink({ symbol, className = "font-mono text-white hover:text-neon-green", timeframe = "5m", newTab = false }: SymbolLinkProps) {
+export default function SymbolLink({ symbol, className = "font-mono text-white" }: SymbolLinkProps) {
   const value = String(symbol || "").replace(/_/g, "").toUpperCase();
   if (!value) return null;
-  return (
-    <Link
-      href={`/charts?symbol=${encodeURIComponent(value)}&timeframe=${encodeURIComponent(timeframe)}`}
-      target={newTab ? "_blank" : undefined}
-      rel={newTab ? "noreferrer" : undefined}
-      className={`inline-flex cursor-pointer items-center ${className}`}
-      title={`${value} ${timeframe.toUpperCase()} grafiğini aç`}
-      aria-label={`${value} ${timeframe.toUpperCase()} grafiğini aç`}
-    >
-      {value}
-    </Link>
-  );
+  return <span className={className}>{value}</span>;
 }
