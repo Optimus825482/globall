@@ -1723,6 +1723,50 @@ _KLINES_CACHE_TTL = 4.0  # 4 sn in-memory kline önbellek (Yahoo hızlandırıc�
 _KLINE_BASIS_SHIFT_REL = 0.0015   # %0.15 — bunun üstü baz farkı → tüm seriyi kaydır
 _KLINE_MAX_TICK_REL = 0.15        # %15 — bunun üstü bad tick → hiç uygulama
 
+# MT5 (broker) mum önbelleği: köprü, panelin BAKTIĞI (sembol, periyot) çiftleri
+# için broker'ın gerçek OHLC'sini push eder. Anahtar `"SYMBOL|interval"`.
+# Bu kaynak kullanılırsa geçmiş + canlı AYNI broker kotasyonudur → vadeli/spot
+# baz farkı SIFIR olur (bkz. _KLINE_BASIS_SHIFT_REL, XAUUSD GC=F sorunu).
+_MT5_CANDLES_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+_MT5_CANDLES_TTL = 30.0  # Köprü ~1.5 sn'de bir push eder; 30 sn bayat toleransı
+# Panelin son bakılan forex (sembol, periyot) çiftleri: köprüye "ne çekeceğini"
+# söylemek için. TTL dolan çiftler düşer (bant genişliği korunur).
+_FOREX_VIEWED: Dict[Tuple[str, str], float] = {}
+_FOREX_VIEWED_TTL = 120.0
+_MT5_WATCH_MAX = 12  # Köprüye tek turda istenebilecek azami çift
+
+
+def _note_forex_viewed(symbol: str, interval: str) -> None:
+    """Panel bu (sembol, periyot) mumlarını istedi → köprüye izletilecekler listesine ekle."""
+    sym = str(symbol or "").replace("/", "").replace("_", "").replace("-", "").strip().upper()
+    if not sym or not interval:
+        return
+    _FOREX_VIEWED[(sym, interval)] = time.time()
+
+
+def _get_forex_watch() -> List[Dict[str, str]]:
+    """Son `_FOREX_VIEWED_TTL` içinde bakılan çiftler (bayat olanlar budanır)."""
+    now = time.time()
+    out: List[Dict[str, str]] = []
+    for (sym, tf), ts in list(_FOREX_VIEWED.items()):
+        if now - ts > _FOREX_VIEWED_TTL:
+            _FOREX_VIEWED.pop((sym, tf), None)
+            continue
+        out.append({"symbol": sym, "interval": tf})
+    return out[:_MT5_WATCH_MAX]
+
+
+def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[List[Dict[str, Any]]]:
+    """Köprüden taze gelen broker mumlarını döndür (yoksa/bayatsa `None`)."""
+    entry = _MT5_CANDLES_CACHE.get(f"{clean_sym}|{interval}")
+    if not entry:
+        return None
+    ts, bars = entry
+    if not bars or (time.time() - ts) > _MT5_CANDLES_TTL:
+        return None
+    return bars[-limit:]
+
+
 
 def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
     clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
@@ -1752,6 +1796,15 @@ def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> 
         cached_ts, cached_bars = _KLINES_CACHE[cache_key]
         if now - cached_ts < _KLINES_CACHE_TTL and cached_bars:
             return cached_bars[-limit:]
+
+    # 1) MT5 (BROKER) KAYNAĞI — ÖNCELİKLİ (2026-10-07, kullanıcı isteği):
+    # Köprü, panelin baktığı çiftler için broker'ın GERÇEK XAUUSD/EURUSD mumlarını
+    # push eder. Bu kaynak hem geçmiş hem canlı olduğu için vadeli↔spot baz farkı
+    # SIFIR olur (aşağıdaki basis-shift bloğuna hiç gerek kalmaz) ve grafik, işlem
+    # gören fiyatla birebir aynı olur. Köprü yoksa/bayatsa Yahoo'ya düşülür.
+    mt5_bars = _fetch_mt5_candles(clean_sym, interval, limit)
+    if mt5_bars:
+        return mt5_bars
 
     interval_map = {
         "1m": ("1m", "2d"),
@@ -1873,6 +1926,14 @@ async def get_forex_klines(
     limit: int = Query(250, ge=10, le=1000, description="Max candle count"),
 ):
     """Return historical and live candlestick data for Lightweight Charts."""
+    # Görüntüleme takibi: köprüye "bu çifti brokertan çek" demek için ve WS canlı
+    # yayınına almak için. `_note_forex_viewed` bayat çiftleri TTL ile budar.
+    _note_forex_viewed(symbol, interval)
+    try:
+        from app.ws_live_candles import note_viewed as _ws_note_viewed
+        _ws_note_viewed(symbol, interval)
+    except Exception:
+        pass
     loop = asyncio.get_running_loop()
     bars = await loop.run_in_executor(None, _fetch_forex_klines, symbol, interval, limit)
     clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
@@ -4603,6 +4664,8 @@ class MT5SyncRequest(BaseModel):
     positions: List[Dict[str, Any]] = Field(default_factory=list)
     deals: List[Dict[str, Any]] = Field(default_factory=list)
     ticks: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+    # Köprünün broker'dan çektiği mumlar: { "XAUUSD|5m": [ {time,open,high,low,close}, ... ] }
+    candles: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     version: str = "1.0.0"
 
 
@@ -4633,6 +4696,35 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
     if req.account:
         _MT5_STATE["account"].update(req.account)
     _MT5_STATE["open_positions"] = req.positions
+
+    # Broker mumlarını önbelleğe al (panel grafiği bu veriyi Yahoo yerine kullanır →
+    # geçmiş + canlı AYNI broker kotasyonu, baz farkı yok). Anahtar "SYMBOL|interval".
+    if req.candles:
+        now_c = time.time()
+        for ckey, cbar_list in req.candles.items():
+            key_up = str(ckey).upper().replace("/", "").replace("_", "").replace("-", "").strip()
+            # Beklenen biçim "XAUUSD|5m"; köprü sembolü zaten normalize eder.
+            if "|" not in key_up:
+                continue
+            parts = key_up.split("|", 1)
+            sym_part = parts[0].replace(" ", "")
+            tf_part = parts[1].strip()
+            if not sym_part or not tf_part:
+                continue
+            clean: List[Dict[str, Any]] = []
+            for b in (cbar_list or []):
+                try:
+                    t = int(b.get("time", 0))
+                    o = float(b.get("open", 0.0)); h = float(b.get("high", 0.0))
+                    l = float(b.get("low", 0.0)); c = float(b.get("close", 0.0))
+                except (TypeError, ValueError):
+                    continue
+                if t <= 0 or not all(math.isfinite(v) for v in (o, h, l, c)) or c <= 0:
+                    continue
+                clean.append({"time": t, "open": o, "high": h, "low": l, "close": c, "volume": 0.0})
+            if clean:
+                clean.sort(key=lambda x: x["time"])
+                _MT5_CANDLES_CACHE[f"{sym_part}|{tf_part}"] = (now_c, clean)
 
     # MT5 canlı tick fiyatlarını entegre et
     if req.ticks:
@@ -4681,6 +4773,9 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
         "server_time": now_ts,
         "auto_trade": _MT5_STATE["auto_trade"],
         "commands": commands,
+        # Köprüye "panelde bakılan mumları broker'dan çek ve bir sonraki turda
+        # `candles` olarak gönder" talimatı (bayat çiftler TTL ile düşer).
+        "candle_watch": _get_forex_watch(),
         "settings": {
             "breakeven_pips": _AUTO_SETTINGS.breakeven_pips,
             "trailing_stop_pips": _AUTO_SETTINGS.trailing_stop_pips,

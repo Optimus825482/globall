@@ -8,6 +8,7 @@ otonom scalper sinyallerini gerçek MT5 Demo hesabında milisaniyeler içinde ic
 from __future__ import annotations
 
 import argparse
+import calendar
 import datetime
 import json
 import os
@@ -47,6 +48,111 @@ LAST_BTC_EXIT_TIME = 0.0
 KNOWN_DEAL_TICKETS: set = set()
 INITIALIZED_DEALS = False
 TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
+
+# ── Broker mum push'u (2026-10-07) ───────────────────────────────────────────
+# Panel grafiği Yahoo (GC=F vadeli) yerine BROKER'ın kendi mumlarını kullansın:
+# köprü, backend'in `candle_watch` listesindeki (sembol, periyot) çiftleri
+# MT5'ten `copy_rates_from_pos` ile çeker ve sync payload'ında `candles` olarak
+# gönderir. Böylece geçmiş + canlı AYNI broker kotasyonudur (vadeli/spot baz
+# farkı sıfır) ve grafik işlem gören fiyatla birebir olur.
+CANDLE_WATCH: list = []                # backend'den gelen son izleme listesi
+_SERVER_UTC_OFFSET: "int | None" = None  # MT5 sunucu saati ↔ UTC farkı (sn)
+CANDLE_BARS = 300                      # çift başına çekilecek mum sayısı
+# Mum push'unu seyrelt: her senkronda ~200 KB göndermek gereksizdi. 3 turda bir
+# (≈4,5 sn) gönderilir; TTL 30 sn olduğundan backend'de bayatlama olmaz.
+_CANDLE_PUSH_EVERY = 3
+_CANDLE_TICK = 0
+
+MT5_TIMEFRAMES = {
+    "1m": mt5.TIMEFRAME_M1,
+    "5m": mt5.TIMEFRAME_M5,
+    "15m": mt5.TIMEFRAME_M15,
+    "30m": mt5.TIMEFRAME_M30,
+    "1h": mt5.TIMEFRAME_H1,
+    "4h": mt5.TIMEFRAME_H4,
+    "1d": mt5.TIMEFRAME_D1,
+}
+
+
+def _get_server_utc_offset() -> int:
+    """MT5 mum zamanları BROKER sunucu saatindedir (genelde UTC+2/+3). UTC'ye
+    çevirmek için farkı taze bir tick'ten türetir (30 dk'ya yuvarlanır).
+
+    Neden gerekli: frontend kapanış sayacı `mum zamanı + periyot` ile duvar
+    saatini karşılaştırır; zamanlar UTC olmazsa sayaç saatlerce kayardı.
+    """
+    global _SERVER_UTC_OFFSET
+    if _SERVER_UTC_OFFSET is not None:
+        return _SERVER_UTC_OFFSET
+    for probe in ("EURUSD", "XAUUSD", "GBPUSD"):
+        try:
+            sym = resolve_mt5_symbol(probe)
+            t = mt5.symbol_info_tick(sym)
+        except Exception:
+            t = None
+        if t and t.time:
+            server_now = int(t.time)
+            utc_now = calendar.timegm(time.gmtime())
+            # Taze tick değilse (piyasa kapalı vb.) bu probu atla
+            if abs(server_now - utc_now) > 36 * 3600:
+                continue
+            # 30 dk'lık kuantalamaya yuvarla (saniye gürültüsünü at)
+            off = int(round((server_now - utc_now) / 1800.0) * 1800)
+            _SERVER_UTC_OFFSET = off
+            return off
+    return 0
+
+
+def _next_watch_candles() -> dict:
+    """`fetch_watch_candles`'i seyreltilmiş olarak çağır (her `_CANDLE_PUSH_EVERY` turda bir)."""
+    global _CANDLE_TICK
+    _CANDLE_TICK += 1
+    if _CANDLE_TICK % _CANDLE_PUSH_EVERY != 0:
+        return {}
+    return fetch_watch_candles()
+
+
+def fetch_watch_candles() -> dict:
+    """`CANDLE_WATCH` listesindeki çiftler için broker mumlarını döndür.
+
+    Dönüş: { "XAUUSD|5m": [ {time,open,high,low,close}, ... ] }  (time = UTC saniye)
+    """
+    out: dict = {}
+    if not CANDLE_WATCH:
+        return out
+    offset = _get_server_utc_offset()
+    for item in CANDLE_WATCH:
+        try:
+            sym_req = str(item.get("symbol", "")).upper()
+            tf_key = str(item.get("interval", ""))
+            tf = MT5_TIMEFRAMES.get(tf_key)
+            if not tf or not sym_req:
+                continue
+            res_sym = resolve_mt5_symbol(sym_req)
+            # Market Watch'a ekle: seçili değilse copy_rates boş dönebilir
+            try:
+                mt5.symbol_select(res_sym, True)
+            except Exception:
+                pass
+            rates = mt5.copy_rates_from_pos(res_sym, tf, 0, CANDLE_BARS)
+            if rates is None or len(rates) == 0:
+                continue
+            bars = []
+            for r in rates:
+                # r["time"] broker sunucu saatinde (epoch sanılır) → UTC'ye indir
+                t_utc = int(r["time"]) - offset
+                bars.append({
+                    "time": t_utc,
+                    "open": float(r["open"]),
+                    "high": float(r["high"]),
+                    "low": float(r["low"]),
+                    "close": float(r["close"]),
+                })
+            if bars:
+                out[f"{sym_req}|{tf_key}"] = bars
+        except Exception as e:
+            print(f"  ⚠️ [MUM ÇEKME UYARISI] {item}: {e}")
+    return out
 
 
 def print_banner():
@@ -1044,7 +1150,8 @@ def sync_with_server(api_base: str):
         "positions": positions,
         "deals": deals,
         "ticks": ticks_data,
-        "version": "1.0.0",
+        "candles": _next_watch_candles(),
+        "version": "1.0.1",
     }
 
     req_url = f"{api_base.rstrip('/')}/api/forex/mt5/sync"
@@ -1058,6 +1165,11 @@ def sync_with_server(api_base: str):
     try:
         with urllib.request.urlopen(req, timeout=7.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+            # Backend "panelde şu mumlar bakılıyor" der → sonraki senkronda broker'dan çekilir
+            watch = data.get("candle_watch")
+            if isinstance(watch, list):
+                CANDLE_WATCH.clear()
+                CANDLE_WATCH.extend(watch)
             return True, data.get("commands", []), data.get("settings", {}), None
     except urllib.error.HTTPError as he:
         return False, [], {}, f"HTTP {he.code}: {he.reason}"
