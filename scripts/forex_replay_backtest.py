@@ -57,7 +57,8 @@ REPLAY_SYMBOL_DEFS = {
 }
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
-                "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS")
+                "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS",
+                "HTF", "IRAD", "YAS")
 
 # EV kalkanı (canlı motorla aynı; WR 45 = 2026-10-06 30g replay kararı)
 EV_WINDOW_SEC = 24 * 3600
@@ -130,6 +131,13 @@ ST_EXIT_PERIOD = 10         # çıkış SuperTrend'i parametreleri (canlı sinya
 ST_EXIT_MULT = 3.0
 TUN_EXT_GATE_XG = False     # XAU/BTC pyramid girişlerinde de EMA21 uzama kapısı (kovalamayı engelle)
 TUN_ST_FLIP_TIGHTEN = 0.0   # >0: ST flip'te kapatmak yerine trailing'i bu pip'e sıkılaştır (kâr > 0 iken)
+
+# 2026-10-07 "trend bitti" dedektörleri (giriş tarafı — kullanıcı: "trendin sona erdiğini erken
+# algılayabilir miyiz?"). Çıkış tarafı chandelier ile çözüldü; buradaki hedef ölü trende YENİ
+# giriş açılmasını önlemek (kayıp kümeleri tepedeki piramit yığılmalarından geliyordu).
+TUN_HTF_ALIGN = False       # 15M SuperTrend yönüyle ters giriş yok (5M sıçraması HTF karşıysa = sayaç-trend giriş)
+TUN_DIV_GATE = 0.0          # >0: RSI(14) uyumsuzluk eşiği — fiyat yeni zirve/dip, RSI teyit etmiyorsa giriş yok
+TUN_PYR_AGE_MAX = 0         # >0: 5M SuperTrend yaşı bu barı aşınca AYNI yönde piramit (2./3. pozisyon) yok; ilk giriş serbest
 
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
 # Zarardaki işlemde fiyat, giriş-SL mesafesinin TUN_DCA_DIST_FRAC oranına gelince
@@ -681,6 +689,71 @@ def _st_dir_series(bars: List[Tuple], period: int = 10, mult: float = 3.0) -> Li
     return out
 
 
+def _htf_st_map(bars: List[Tuple], period: int = 10, mult: float = 3.0) -> Dict[int, int]:
+    """15M kova (ts//900) SuperTrend yönü → her 15M kova anahtarı için son TAMAMLANMIŞ
+    kovanın yönü (look-ahead yok: kova k'nin içindeyken k henüz tamamlanmamıştır;
+    yanıt = k'dan küçük en büyük anahtarlı kovanın yönü)."""
+    by_bucket: Dict[int, List[float]] = {}
+    for b in bars:
+        k = int(b[0] // 900)
+        bk = by_bucket.get(k)
+        if bk is None:
+            by_bucket[k] = [b[1], b[2], b[3], b[4]]
+        else:
+            bk[1] = max(bk[1], b[2])
+            bk[2] = min(bk[2], b[3])
+            bk[3] = b[4]
+    keys = sorted(by_bucket)
+    st_bars = [(k * 900.0, by_bucket[k][0], by_bucket[k][1], by_bucket[k][2], by_bucket[k][3]) for k in keys]
+    dirs = _st_dir_series(st_bars, period, mult)
+    out: Dict[int, int] = {}
+    last_dir = 0
+    for i, k in enumerate(keys):
+        out[k] = last_dir
+        last_dir = dirs[i]
+    return out
+
+
+def _st_age_map(bars: List[Tuple], period: int = 10, mult: float = 3.0) -> Dict[float, Tuple[int, int]]:
+    """5M SuperTrend yönü ve yaşı (flip'ten beri geçen bar) — ts → (yön, yaş)."""
+    dirs = _st_dir_series(bars, period, mult)
+    out: Dict[float, Tuple[int, int]] = {}
+    age = 0
+    prev = 0
+    for i, d in enumerate(dirs):
+        if d == 0:
+            age = 0
+        elif d != prev:
+            age, prev = 1, d
+        else:
+            age += 1
+        out[bars[i][0]] = (d, age)
+    return out
+
+
+def _rsi_div_map(bars: List[Tuple], lookback: int = 12, thresh: float = 5.0) -> Dict[float, int]:
+    """RSI(14) uyumsuzluk haritası: fiyat lookback penceresinin zirvesini YENİLERKEN RSI
+    teyit etmiyorsa +1 (boğa tükenmesi → BUY'a karşı), dibi yenilerken −1 (ayı tükenmesi →
+    SELL'e karşı). Tükenmemiş barlar haritada yer almaz."""
+    closes = [b[4] for b in bars]
+    rsi = _rsi_wilder(closes, 14)
+    out: Dict[float, int] = {}
+    n = len(bars)
+    for i in range(lookback + 1, n):
+        r_now = rsi[i]
+        if r_now is None:
+            continue
+        w = closes[i - lookback:i]
+        j_hi = i - lookback + max(range(lookback), key=lambda t: w[t])
+        if closes[i] > closes[j_hi] and rsi[j_hi] is not None and (rsi[j_hi] - r_now) >= thresh:
+            out[bars[i][0]] = 1
+            continue
+        j_lo = i - lookback + min(range(lookback), key=lambda t: w[t])
+        if closes[i] < closes[j_lo] and rsi[j_lo] is not None and (r_now - rsi[j_lo]) >= thresh:
+            out[bars[i][0]] = -1
+    return out
+
+
 def _st_ema_against(pos, bar: Tuple, exit_maps: Optional[Dict[str, Any]]) -> bool:
     """Pozisyona karşı momentum döndü mü? (SuperTrend yönü veya EMA9/21 çaprazı)"""
     if not exit_maps:
@@ -1040,6 +1113,20 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 exit_maps["ema9"][s] = _ema_series(closes_s, 9)
                 exit_maps["ema21"][s] = _ema_series(closes_s, 21)
 
+    # "Trend bitti" dedektör haritaları (giriş kapıları): HTF 15M ST yönü, 5M ST yaşı, RSI uyumsuzluk
+    htf_maps: Dict[str, Dict[int, int]] = {}
+    st_age_maps: Dict[str, Dict[float, Tuple[int, int]]] = {}
+    div_maps: Dict[str, Dict[float, int]] = {}
+    if TUN_HTF_ALIGN:
+        for s in symbols:
+            htf_maps[s] = _htf_st_map(data[s], ST_EXIT_PERIOD, ST_EXIT_MULT)
+    if TUN_PYR_AGE_MAX > 0:
+        for s in symbols:
+            st_age_maps[s] = _st_age_map(data[s], ST_EXIT_PERIOD, ST_EXIT_MULT)
+    if TUN_DIV_GATE > 0:
+        for s in symbols:
+            div_maps[s] = _rsi_div_map(data[s], 12, TUN_DIV_GATE)
+
     for idx, ts in enumerate(common_ts):
         # Pencere sonu: o haftanın kapanışıyla dur; kalan pozisyonlar aşağıda
         # pencere içi son fiyatla kapatılır (hafta-sonu ötesine taşmaz).
@@ -1242,6 +1329,19 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
                         blocked_events.append(("SUPERTREND", cand("SUPERTREND")))
                         continue
+                # "Trend bitti" dedektör kapıları (yalnız NEW):
+                # HTF  — 15M SuperTrend yönü tersse 5M sıçraması sayaç-trend girişidir
+                if vname == "NEW" and TUN_HTF_ALIGN:
+                    d15 = htf_maps.get(sym, {}).get(int(ts // 900), 0)
+                    if d15 != 0 and ((action == "BUY" and d15 < 0) or (action == "SELL" and d15 > 0)):
+                        blocked_events.append(("HTF", cand("HTF")))
+                        continue
+                # IRAD — fiyat zirve/dibi yenilerken RSI teyit etmiyorsa (uyumsuzluk = tükenme)
+                if vname == "NEW" and TUN_DIV_GATE > 0:
+                    div = div_maps.get(sym, {}).get(ts, 0)
+                    if (action == "BUY" and div == 1) or (action == "SELL" and div == -1):
+                        blocked_events.append(("IRAD", cand("IRAD")))
+                        continue
                 bias = forex.get_usd_bias(sym, action)
                 if vname == "NEW" and bias != "USD_NEUTRAL":
                     pos_biases = [(p.symbol, forex.get_usd_bias(p.symbol, p.direction)) for p in book.positions]
@@ -1253,6 +1353,13 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 if len(same_dir) >= MAX_PER_SYMBOL_DIR:
                     continue
                 if same_dir:
+                    # YAS — trend yaşlandıysa (5M ST flip'ten beri N bar geçtiyse) aynı yöne
+                    # piramit yok; ilk giriş serbest. (Kayıp kümeleri tepedeki yığılmalardandı.)
+                    if vname == "NEW" and TUN_PYR_AGE_MAX > 0:
+                        d5, age5 = st_age_maps.get(sym, {}).get(ts, (0, 0))
+                        if d5 != 0 and d5 == (1 if action == "BUY" else -1) and age5 > TUN_PYR_AGE_MAX:
+                            blocked_events.append(("YAS", cand("YAS")))
+                            continue
                     if TUN_DCA and vname == "NEW":
                         continue  # DCA: aynı yönde ek işlem yalnız katman mekanizmasından (kâr şartlı pyramid kapalı)
                     dir_pnl = sum(p.partial_realized_usd + float_pnl(p, close_now) for p in same_dir)
@@ -1510,6 +1617,9 @@ def main():
     parser.add_argument("--ema-flip-exit", action="store_true", help="EMA9/EMA21 çaprazı pozisyona karşı + kapanış EMA21 ötesinde → kapat")
     parser.add_argument("--ext-gate-xg", action="store_true", help="XAU/BTC girişlerinde de EMA21 uzama kapısı (--major-max-ext ile eşik) — trend tepesinde yığılmayı önler")
     parser.add_argument("--st-flip-tighten", type=float, default=0.0, help="ST flip'te kapatma; kâr varsa stopu bu pip mesafeye sıkılaştır (0 = kapalı; MOMFLIP-close ile birlikte kullanma)")
+    parser.add_argument("--htf-align", action="store_true", help="15M SuperTrend yönü tersse yeni giriş yok (sayaç-trend 5M sıçramalarını ele)")
+    parser.add_argument("--div-gate", type=float, default=0.0, help="RSI(14) uyumsuzluk eşiği (0 = kapalı; ~4-6): fiyat zirve/dip yenilerken RSI teyit etmiyorsa giriş yok")
+    parser.add_argument("--pyr-age-max", type=int, default=0, help="5M ST yaşı bu barı aşınca aynı yönde piramit yok (0 = kapalı; 24 bar = 2 saat)")
     parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -1569,6 +1679,10 @@ def main():
     TUN_EXT_GATE_XG = args.ext_gate_xg
     global TUN_ST_FLIP_TIGHTEN
     TUN_ST_FLIP_TIGHTEN = args.st_flip_tighten
+    global TUN_HTF_ALIGN, TUN_DIV_GATE, TUN_PYR_AGE_MAX
+    TUN_HTF_ALIGN = args.htf_align
+    TUN_DIV_GATE = args.div_gate
+    TUN_PYR_AGE_MAX = args.pyr_age_max
     TUN_DCA = args.dca
     TUN_DCA_DIST_FRAC = args.dca_dist_frac
     TUN_DCA_LOT_MULT = args.dca_lot_mult
@@ -1621,6 +1735,7 @@ def main():
                f"tpMode={TUN_TP_MODE} goldVol={TUN_GOLD_VOL_EXITS}(be={TUN_VOL_BE_MULT} trail={TUN_VOL_TRAIL_MULT}) "
                f"beUSD={TUN_BE_USD_GOLD} beRatio={TUN_BE_RATIO_GOLD} bePipFixed={TUN_BE_PIP_FIXED_GOLD or '-'} "
                f"momflip={TUN_ST_FLIP_EXIT}(minPnl={TUN_ST_FLIP_MIN_PNL or '-'} stP={ST_EXIT_PERIOD}/{ST_EXIT_MULT}) emaFlip={TUN_EMA_FLIP_EXIT} "
+               f"htfAlign={TUN_HTF_ALIGN} divGate={TUN_DIV_GATE or '-'} pyrAge={TUN_PYR_AGE_MAX or '-'} "
                f"idxHours={args.index_hours or '-'} idxOpenDrive={TUN_INDEX_OPEN_DRIVE} "
                f"dca={TUN_DCA}(dist={TUN_DCA_DIST_FRAC}+{TUN_DCA_DIST_STEP} lot={TUN_DCA_LOT_MULT} katman={TUN_DCA_MAX_LAYERS} tp={TUN_DCA_TP_USD} "
                f"sl={TUN_DCA_SL_USD} buf={TUN_DCA_BUFFER_USD} lvl={TUN_DCA_LEVEL_CHECK}/{TUN_DCA_LEVEL_TOL_ATR}) "
