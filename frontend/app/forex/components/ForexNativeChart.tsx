@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   createChart,
   CandlestickSeries,
   LineSeries,
+  HistogramSeries,
   IChartApi,
   ISeriesApi,
   IPriceLine,
@@ -50,7 +52,9 @@ export interface ForexNativeChartProps {
   htfTrend?: string;
   macdVerdict?: string;
   riskReward?: string;
+  separatePageHref?: string;
   onOpenLotCalculator?: (symbol: string, slPips: number) => void;
+  onClose?: () => void;
   className?: string;
 }
 
@@ -91,6 +95,10 @@ function getSymbolPrecision(symbol: string = ""): number {
   return 5;
 }
 
+// -------------------------------------------------------------
+// İNDİKATÖR MATEMATİĞİ
+// -------------------------------------------------------------
+
 function calculateBollingerBands(candles: CandleBar[], period = 20, stdDevMultiplier = 2) {
   const upper: { time: UTCTimestamp; value: number }[] = [];
   const middle: { time: UTCTimestamp; value: number }[] = [];
@@ -115,6 +123,22 @@ function calculateBollingerBands(candles: CandleBar[], period = 20, stdDevMultip
   return { upper, middle, lower };
 }
 
+function calculateSMA(candles: CandleBar[], period: number) {
+  if (candles.length < period) return [];
+  const result: { time: UTCTimestamp; value: number }[] = [];
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    sum += candles[i].close;
+  }
+  result.push({ time: candles[period - 1].time, value: sum / period });
+
+  for (let i = period; i < candles.length; i++) {
+    sum += candles[i].close - candles[i - period].close;
+    result.push({ time: candles[i].time, value: sum / period });
+  }
+  return result;
+}
+
 function calculateEMA(candles: CandleBar[], period: number) {
   if (candles.length < period) return [];
   const k = 2 / (period + 1);
@@ -132,6 +156,77 @@ function calculateEMA(candles: CandleBar[], period: number) {
     result.push({ time: candles[i].time, value: curEma });
     prevEma = curEma;
   }
+  return result;
+}
+
+interface MacdBar {
+  time: UTCTimestamp;
+  macd: number;
+  signal: number;
+  hist: number;
+  color: string;
+}
+
+function calculateMACD(candles: CandleBar[], fast = 12, slow = 26, signal = 9): MacdBar[] {
+  if (candles.length < slow + signal) return [];
+
+  const emaFast = calculateEMA(candles, fast);
+  const emaSlow = calculateEMA(candles, slow);
+
+  const fastMap = new Map<number, number>();
+  for (const p of emaFast) fastMap.set(p.time, p.value);
+
+  const macdPoints: { time: UTCTimestamp; value: number }[] = [];
+  for (const p of emaSlow) {
+    const fVal = fastMap.get(p.time);
+    if (fVal !== undefined) {
+      macdPoints.push({ time: p.time, value: fVal - p.value });
+    }
+  }
+
+  if (macdPoints.length < signal) return [];
+
+  const kSig = 2 / (signal + 1);
+  let sumSig = 0;
+  for (let i = 0; i < signal; i++) {
+    sumSig += macdPoints[i].value;
+  }
+  let prevSig = sumSig / signal;
+
+  const result: MacdBar[] = [];
+  const firstMacd = macdPoints[signal - 1].value;
+  const firstHist = firstMacd - prevSig;
+  result.push({
+    time: macdPoints[signal - 1].time,
+    macd: firstMacd,
+    signal: prevSig,
+    hist: firstHist,
+    color: firstHist >= 0 ? "#10b981" : "#f43f5e",
+  });
+
+  for (let i = signal; i < macdPoints.length; i++) {
+    const curVal = macdPoints[i].value;
+    const curSig = (curVal - prevSig) * kSig + prevSig;
+    prevSig = curSig;
+    const curHist = curVal - curSig;
+    const prevHist = result[result.length - 1].hist;
+
+    let color = "#10b981";
+    if (curHist >= 0) {
+      color = curHist >= prevHist ? "#10b981" : "rgba(16, 185, 129, 0.55)";
+    } else {
+      color = curHist <= prevHist ? "#f43f5e" : "rgba(244, 63, 94, 0.55)";
+    }
+
+    result.push({
+      time: macdPoints[i].time,
+      macd: curVal,
+      signal: curSig,
+      hist: curHist,
+      color,
+    });
+  }
+
   return result;
 }
 
@@ -169,6 +264,10 @@ function calculateRSI(candles: CandleBar[], period = 14) {
   return result;
 }
 
+// -------------------------------------------------------------
+// BİLEŞEN
+// -------------------------------------------------------------
+
 export default function ForexNativeChart({
   symbol,
   displayName,
@@ -184,7 +283,9 @@ export default function ForexNativeChart({
   htfTrend,
   macdVerdict,
   riskReward,
+  separatePageHref,
   onOpenLotCalculator,
+  onClose,
   className = "",
 }: ForexNativeChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
@@ -192,13 +293,14 @@ export default function ForexNativeChart({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Gösterge Aç/Kapat Durumları
+  // Göstergeler (Kullanıcı talebi: BB, MACD ve SMA 7/30/99 varsayılan açık)
   const [showBB, setShowBB] = useState(true);
-  const [showSupertrend, setShowSupertrend] = useState(true);
-  const [showEma, setShowEma] = useState(true);
+  const [showSma, setShowSma] = useState(true);
+  const [showMacd, setShowMacd] = useState(true);
+  const [showSupertrend, setShowSupertrend] = useState(false);
   const [showTargets, setShowTargets] = useState(true);
 
-  // Canlı Tick ve Geri Sayım
+  // Canlı Veriler & İndikatör Okumaları
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveBid, setLiveBid] = useState<number | null>(null);
   const [liveAsk, setLiveAsk] = useState<number | null>(null);
@@ -207,20 +309,39 @@ export default function ForexNativeChart({
   const [countdown, setCountdown] = useState<number>(0);
   const [latestRsi, setLatestRsi] = useState<number | null>(null);
 
+  // Canlı İndikatör Değerleri (Header için)
+  const [liveSma7, setLiveSma7] = useState<number | null>(null);
+  const [liveSma30, setLiveSma30] = useState<number | null>(null);
+  const [liveSma99, setLiveSma99] = useState<number | null>(null);
+  const [liveMacdHist, setLiveMacdHist] = useState<number | null>(null);
+
+  // Geçmişe kaydırma durumu (Kullanıcı sola çektiğinde beliren Canlı Fiyata Dön düğmesi)
+  const [isScrolledBack, setIsScrolledBack] = useState(false);
+
   // DOM & Grafik Referansları
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
+  // BB Serileri (Pane 0)
   const upperBbRef = useRef<ISeriesApi<"Line"> | null>(null);
   const middleBbRef = useRef<ISeriesApi<"Line"> | null>(null);
   const lowerBbRef = useRef<ISeriesApi<"Line"> | null>(null);
 
-  const supertrendSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema9SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema21SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // SMA Serileri (Pane 0: 7, 30, 99)
+  const sma7SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const sma30SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const sma99SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
+  // SuperTrend Serisi (Pane 0)
+  const supertrendSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+
+  // MACD Serileri (Pane 1)
+  const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
+
+  // TP/SL Çizgileri
   const tpPriceLineRef = useRef<IPriceLine | null>(null);
   const slPriceLineRef = useRef<IPriceLine | null>(null);
   const entryPriceLineRef = useRef<IPriceLine | null>(null);
@@ -228,6 +349,36 @@ export default function ForexNativeChart({
   const lastCandleRef = useRef<CandleBar | null>(null);
   const timeframeRef = useRef<Timeframe>(timeframe);
   timeframeRef.current = timeframe;
+
+  // GÖRÜNÜM KİLİDİ: fitContent() YALNIZCA sembol veya periyot değiştiğinde 1 kez çağrılır!
+  // Periyodik sessiz pollinglerde fitContent() ÇAĞRILMAZ, böylece kullanıcının sola çektiği mumlar sağa yapışmaz!
+  const fittedForRef = useRef<string>("");
+
+  // Pane Yüksekliklerini Güncelle
+  const updatePaneLayout = useCallback(() => {
+    if (!chartApiRef.current || !chartContainerRef.current) return;
+    const chart = chartApiRef.current;
+    const w = chartContainerRef.current.clientWidth;
+    const h = chartContainerRef.current.clientHeight || 520;
+    if (w <= 0 || h <= 0) return;
+
+    chart.applyOptions({ width: w, height: h });
+
+    const panes = chart.panes();
+    if (panes.length >= 2) {
+      if (showMacd) {
+        const macdH = Math.max(80, Math.min(135, Math.round(h * 0.26)));
+        const mainH = Math.max(160, h - macdH);
+        panes[0]?.setHeight(mainH);
+        panes[1]?.setHeight(macdH);
+      } else {
+        panes[0]?.setHeight(h);
+        panes[1]?.setHeight(0);
+      }
+    } else if (panes.length === 1) {
+      panes[0]?.setHeight(h);
+    }
+  }, [showMacd]);
 
   // Mum Verisi Yükleme
   const loadKlines = useCallback(async (tf: Timeframe, silent = false) => {
@@ -272,7 +423,7 @@ export default function ForexNativeChart({
     loadKlines(timeframe);
   }, [timeframe, loadKlines]);
 
-  // Canlı veri polling (her 4 saniyede bir sessiz tazeleme)
+  // Canlı veri polling (her 4 saniyede bir sessiz tazeleme — görünümü sıfırlamaz!)
   useEffect(() => {
     const timer = setInterval(() => {
       if (!document.hidden) {
@@ -347,7 +498,7 @@ export default function ForexNativeChart({
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: chartContainerRef.current.clientHeight || 500,
+      height: chartContainerRef.current.clientHeight || 520,
       layout: {
         background: { color: "#080c14" },
         textColor: "#94a3b8",
@@ -366,15 +517,21 @@ export default function ForexNativeChart({
         timeVisible: true,
         secondsVisible: false,
         borderColor: "#1e293b",
+        // shiftVisibleRangeOnNewBar: false -> Kullanıcı mumları sola çekip incelerken yeni tick geldiğinde sağa sıçramayı engeller!
+        shiftVisibleRangeOnNewBar: false,
+        rightOffset: 6,
+        barSpacing: 9,
+        minBarSpacing: 1.5,
       },
       rightPriceScale: {
         borderColor: "#1e293b",
-        scaleMargins: { top: 0.12, bottom: 0.12 },
+        scaleMargins: { top: 0.10, bottom: 0.10 },
       },
     });
 
     chartApiRef.current = chart;
 
+    // --- PANE 0: MUM GRAFİĞİ ---
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#10b981",
       downColor: "#f43f5e",
@@ -386,79 +543,125 @@ export default function ForexNativeChart({
         precision,
         minMove,
       },
-    });
+    }, 0);
     candleSeriesRef.current = candleSeries;
 
+    // --- PANE 0: BOLLINGER BANDS (20, 2) ---
     const upperBb = chart.addSeries(LineSeries, {
-      color: "rgba(56, 189, 248, 0.75)",
+      color: "rgba(56, 189, 248, 0.85)",
       lineWidth: 1,
       title: "BB Üst",
       priceLineVisible: false,
       lastValueVisible: false,
-    });
+    }, 0);
     const middleBb = chart.addSeries(LineSeries, {
-      color: "rgba(245, 158, 11, 0.75)",
+      color: "rgba(245, 158, 11, 0.85)",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       title: "BB Orta",
       priceLineVisible: false,
       lastValueVisible: false,
-    });
+    }, 0);
     const lowerBb = chart.addSeries(LineSeries, {
-      color: "rgba(56, 189, 248, 0.75)",
+      color: "rgba(56, 189, 248, 0.85)",
       lineWidth: 1,
       title: "BB Alt",
       priceLineVisible: false,
       lastValueVisible: false,
-    });
+    }, 0);
     upperBbRef.current = upperBb;
     middleBbRef.current = middleBb;
     lowerBbRef.current = lowerBb;
 
+    // --- PANE 0: 3'LÜ SIMPLE MOVING AVERAGES (SMA 7, 30, 99) ---
+    const sma7 = chart.addSeries(LineSeries, {
+      color: "#38bdf8", // Sky Blue
+      lineWidth: 2,
+      title: "SMA 7",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    }, 0);
+    const sma30 = chart.addSeries(LineSeries, {
+      color: "#a855f7", // Mor
+      lineWidth: 2,
+      title: "SMA 30",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    }, 0);
+    const sma99 = chart.addSeries(LineSeries, {
+      color: "#f97316", // Turuncu
+      lineWidth: 2,
+      title: "SMA 99",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    }, 0);
+    sma7SeriesRef.current = sma7;
+    sma30SeriesRef.current = sma30;
+    sma99SeriesRef.current = sma99;
+
+    // --- PANE 0: SUPERTREND ---
     const supertrendSeries = chart.addSeries(LineSeries, {
       lineWidth: 2,
       title: "SuperTrend",
       priceLineVisible: false,
       lastValueVisible: true,
-    });
+    }, 0);
     supertrendSeriesRef.current = supertrendSeries;
 
-    const ema9 = chart.addSeries(LineSeries, {
-      color: "#3b82f6",
-      lineWidth: 1,
-      title: "EMA 9",
+    // --- PANE 1: MACD ALT PANE (12, 26, 9) ---
+    const macdHist = chart.addSeries(HistogramSeries, {
+      color: "#10b981",
+      base: 0,
+      title: "Histogram",
       priceLineVisible: false,
       lastValueVisible: false,
-    });
-    const ema21 = chart.addSeries(LineSeries, {
-      color: "#a855f7",
-      lineWidth: 1,
-      title: "EMA 21",
+    }, 1);
+    const macdLine = chart.addSeries(LineSeries, {
+      color: "#38bdf8",
+      lineWidth: 2,
+      title: "MACD (12,26)",
       priceLineVisible: false,
       lastValueVisible: false,
-    });
-    const ema50 = chart.addSeries(LineSeries, {
-      color: "#f97316",
-      lineWidth: 1,
-      title: "EMA 50",
+    }, 1);
+    const macdSignal = chart.addSeries(LineSeries, {
+      color: "#f59e0b",
+      lineWidth: 2,
+      title: "Sinyal (9)",
       priceLineVisible: false,
       lastValueVisible: false,
-    });
-    ema9SeriesRef.current = ema9;
-    ema21SeriesRef.current = ema21;
-    ema50SeriesRef.current = ema50;
+    }, 1);
 
-    const handleResize = () => {
-      if (chartContainerRef.current && chartApiRef.current) {
-        const w = chartContainerRef.current.clientWidth;
-        const h = chartContainerRef.current.clientHeight;
-        if (w > 0 && h > 0) {
-          chartApiRef.current.applyOptions({
-            width: w,
-            height: h,
-          });
-        }
+    macdHistRef.current = macdHist;
+    macdLineRef.current = macdLine;
+    macdSignalRef.current = macdSignal;
+
+    // MACD Pane 1 Fiyat Ekseni ve Sıfır Çizgisi
+    chart.priceScale("right", 1).applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.15, bottom: 0.15 },
+    });
+
+    macdHist.createPriceLine({
+      price: 0,
+      color: "rgba(148, 163, 184, 0.45)",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      axisLabelVisible: false,
+      title: "0",
+    });
+
+    // Kullanıcı sola kaydırdığında "Canlı Fiyat" düğmesini göster
+    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!range) return;
+      const count = lastCandleRef.current ? 100 : 0;
+      if (range.to != null && count > 0) {
+        setIsScrolledBack(range.to < count - 3);
       }
+    });
+
+    // Yeniden Boyutlandırma
+    const handleResize = () => {
+      updatePaneLayout();
     };
     window.addEventListener("resize", handleResize);
 
@@ -470,6 +673,9 @@ export default function ForexNativeChart({
       resizeObserver.observe(chartContainerRef.current);
     }
 
+    // İlk pane yüksekliklerini uygula
+    setTimeout(updatePaneLayout, 50);
+
     return () => {
       window.removeEventListener("resize", handleResize);
       if (resizeObserver) resizeObserver.disconnect();
@@ -477,7 +683,15 @@ export default function ForexNativeChart({
       chartApiRef.current = null;
       candleSeriesRef.current = null;
     };
-  }, [symbol]);
+  }, [symbol, updatePaneLayout]);
+
+  // Pane boyutlarını `showMacd` değişiminde senkronize et
+  useEffect(() => {
+    updatePaneLayout();
+    if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: showMacd });
+    if (macdLineRef.current) macdLineRef.current.applyOptions({ visible: showMacd });
+    if (macdSignalRef.current) macdSignalRef.current.applyOptions({ visible: showMacd });
+  }, [showMacd, updatePaneLayout]);
 
   // Mum Verilerini ve Göstergeleri Grafiğe Bas
   useEffect(() => {
@@ -485,11 +699,20 @@ export default function ForexNativeChart({
 
     try {
       candleSeriesRef.current.setData(candles as any);
-      chartApiRef.current?.timeScale().fitContent();
+
+      // GÖRÜNÜM KİLİDİ: Yalnızca sembol veya periyot değişince sığdır!
+      // Sessiz arka plan güncellemelerinde fitContent() çalışmaz, böylece sola çekilen görünüm korunur.
+      const viewKey = `${symbol}|${timeframe}`;
+      if (fittedForRef.current !== viewKey) {
+        fittedForRef.current = viewKey;
+        chartApiRef.current?.timeScale().fitContent();
+        setIsScrolledBack(false);
+      }
     } catch (e) {
       console.warn("Mum verisi basılırken uyarı:", e);
     }
 
+    // --- 1. BOLLINGER BANDS (20, 2) ---
     if (showBB && upperBbRef.current && middleBbRef.current && lowerBbRef.current) {
       const { upper, middle, lower } = calculateBollingerBands(candles, 20, 2);
       if (upper.length > 0) {
@@ -506,6 +729,53 @@ export default function ForexNativeChart({
       lowerBbRef.current?.applyOptions({ visible: false });
     }
 
+    // --- 2. 3'LÜ SIMPLE MOVING AVERAGES (7, 30, 99) ---
+    if (showSma && sma7SeriesRef.current && sma30SeriesRef.current && sma99SeriesRef.current) {
+      const s7 = calculateSMA(candles, 7);
+      const s30 = calculateSMA(candles, 30);
+      const s99 = calculateSMA(candles, 99);
+
+      if (s7.length > 0) {
+        sma7SeriesRef.current.setData(s7 as any);
+        setLiveSma7(s7[s7.length - 1].value);
+      }
+      if (s30.length > 0) {
+        sma30SeriesRef.current.setData(s30 as any);
+        setLiveSma30(s30[s30.length - 1].value);
+      }
+      if (s99.length > 0) {
+        sma99SeriesRef.current.setData(s99 as any);
+        setLiveSma99(s99[s99.length - 1].value);
+      }
+
+      sma7SeriesRef.current.applyOptions({ visible: true });
+      sma30SeriesRef.current.applyOptions({ visible: true });
+      sma99SeriesRef.current.applyOptions({ visible: true });
+    } else if (sma7SeriesRef.current) {
+      sma7SeriesRef.current.applyOptions({ visible: false });
+      sma30SeriesRef.current?.applyOptions({ visible: false });
+      sma99SeriesRef.current?.applyOptions({ visible: false });
+    }
+
+    // --- 3. MACD ALT PANE (12, 26, 9) ---
+    if (showMacd && macdHistRef.current && macdLineRef.current && macdSignalRef.current) {
+      const macdBars = calculateMACD(candles, 12, 26, 9);
+      if (macdBars.length > 0) {
+        macdHistRef.current.setData(macdBars.map((m) => ({ time: m.time, value: m.hist, color: m.color })) as any);
+        macdLineRef.current.setData(macdBars.map((m) => ({ time: m.time, value: m.macd })) as any);
+        macdSignalRef.current.setData(macdBars.map((m) => ({ time: m.time, value: m.signal })) as any);
+        setLiveMacdHist(macdBars[macdBars.length - 1].hist);
+      }
+      macdHistRef.current.applyOptions({ visible: true });
+      macdLineRef.current.applyOptions({ visible: true });
+      macdSignalRef.current.applyOptions({ visible: true });
+    } else if (macdHistRef.current) {
+      macdHistRef.current.applyOptions({ visible: false });
+      macdLineRef.current?.applyOptions({ visible: false });
+      macdSignalRef.current?.applyOptions({ visible: false });
+    }
+
+    // --- 4. SUPERTREND ---
     if (showSupertrend && supertrendSeriesRef.current && candles.length > 10) {
       try {
         const res = SUPERTREND_ENTRY.calculate(candles, { period: 10, multiplier: 3 });
@@ -525,23 +795,7 @@ export default function ForexNativeChart({
     } else if (supertrendSeriesRef.current) {
       supertrendSeriesRef.current.applyOptions({ visible: false });
     }
-
-    if (showEma && ema9SeriesRef.current && ema21SeriesRef.current && ema50SeriesRef.current) {
-      const e9 = calculateEMA(candles, 9);
-      const e21 = calculateEMA(candles, 21);
-      const e50 = calculateEMA(candles, 50);
-      if (e9.length > 0) ema9SeriesRef.current.setData(e9 as any);
-      if (e21.length > 0) ema21SeriesRef.current.setData(e21 as any);
-      if (e50.length > 0) ema50SeriesRef.current.setData(e50 as any);
-      ema9SeriesRef.current.applyOptions({ visible: true });
-      ema21SeriesRef.current.applyOptions({ visible: true });
-      ema50SeriesRef.current.applyOptions({ visible: true });
-    } else if (ema9SeriesRef.current) {
-      ema9SeriesRef.current.applyOptions({ visible: false });
-      ema21SeriesRef.current?.applyOptions({ visible: false });
-      ema50SeriesRef.current?.applyOptions({ visible: false });
-    }
-  }, [candles, showBB, showSupertrend, showEma]);
+  }, [candles, showBB, showSma, showMacd, showSupertrend, symbol, timeframe]);
 
   // Hedef ve Stop Çizgileri
   useEffect(() => {
@@ -669,7 +923,7 @@ export default function ForexNativeChart({
           </div>
         </div>
 
-        {/* Aksiyonlar (Lot hesapla vb.) */}
+        {/* Aksiyonlar (Lot hesapla, Ayrı Sayfa, Kapat) */}
         <div className="flex items-center gap-2">
           {onOpenLotCalculator && (
             <button
@@ -678,6 +932,27 @@ export default function ForexNativeChart({
               className="px-2.5 py-1 rounded-lg bg-blue-500/15 border border-blue-400/30 text-blue-300 text-xs font-bold hover:bg-blue-500/25 transition-all"
             >
               🧮 Lot Hesapla
+            </button>
+          )}
+          {separatePageHref && (
+            <Link
+              href={separatePageHref}
+              target="_blank"
+              className="px-2.5 py-1 rounded-lg bg-bunker-800 border border-bunker-700 text-bunker-300 text-xs font-bold hover:text-white hover:border-bunker-600 transition-all hidden sm:inline-flex items-center gap-1"
+              title="Ayrı Sayfada Aç"
+            >
+              <span>Ayrı Sayfa</span>
+              <span>↗</span>
+            </Link>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg bg-bunker-800 text-bunker-300 hover:text-white hover:bg-rose-900/60 transition-colors flex items-center justify-center font-bold text-base"
+              title="Kapat"
+            >
+              ✕
             </button>
           )}
         </div>
@@ -703,48 +978,74 @@ export default function ForexNativeChart({
           ))}
         </div>
 
+        {/* İndikatör Butonları */}
         <div className="flex items-center gap-1.5 overflow-x-auto">
+          {/* Bollinger Bands (Default Açık) */}
           <button
             type="button"
             onClick={() => setShowBB(!showBB)}
             className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
               showBB
-                ? "bg-cyan-500/20 text-cyan-300 border-cyan-400/40"
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-400/50 shadow-[0_0_6px_rgba(6,182,212,0.3)]"
                 : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
             }`}
+            title="Bollinger Bands (20, 2)"
           >
-            BB
+            BB (20,2)
           </button>
+
+          {/* 3'lü Simple Moving Averages (Default Açık) */}
+          <button
+            type="button"
+            onClick={() => setShowSma(!showSma)}
+            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
+              showSma
+                ? "bg-purple-500/20 text-purple-300 border-purple-400/50 shadow-[0_0_6px_rgba(168,85,247,0.3)]"
+                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
+            }`}
+            title="3'lü Basit Hareketli Ortalamalar (SMA 7, 30, 99)"
+          >
+            SMA 7/30/99
+          </button>
+
+          {/* MACD Alt Pane (Default Açık) */}
+          <button
+            type="button"
+            onClick={() => setShowMacd(!showMacd)}
+            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
+              showMacd
+                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/50 shadow-[0_0_6px_rgba(16,185,129,0.3)]"
+                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
+            }`}
+            title="MACD Alt Gösterge Penceresi (12, 26, 9)"
+          >
+            MACD (12,26,9)
+          </button>
+
+          {/* SuperTrend */}
           <button
             type="button"
             onClick={() => setShowSupertrend(!showSupertrend)}
             className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
               showSupertrend
-                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
+                ? "bg-amber-500/20 text-amber-300 border-amber-400/50"
                 : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
             }`}
+            title="SuperTrend (10, 3)"
           >
             SuperTrend
           </button>
-          <button
-            type="button"
-            onClick={() => setShowEma(!showEma)}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
-              showEma
-                ? "bg-purple-500/20 text-purple-300 border-purple-400/40"
-                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
-            }`}
-          >
-            EMA 9/21/50
-          </button>
+
+          {/* TP / SL Çizgileri */}
           <button
             type="button"
             onClick={() => setShowTargets(!showTargets)}
             className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
               showTargets
-                ? "bg-amber-500/20 text-amber-300 border-amber-400/40"
+                ? "bg-blue-500/20 text-blue-300 border-blue-400/40"
                 : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
             }`}
+            title="Hedef ve Stop Çizgileri"
           >
             TP/SL
           </button>
@@ -752,7 +1053,7 @@ export default function ForexNativeChart({
 
         <div className="flex items-center gap-3 text-xs">
           {latestRsi !== null && (
-            <span className="text-bunker-muted">
+            <span className="text-bunker-muted hidden md:inline">
               RSI: <strong className={latestRsi > 70 ? "text-rose-400" : latestRsi < 30 ? "text-emerald-400" : "text-white"}>{latestRsi}</strong>
             </span>
           )}
@@ -764,6 +1065,38 @@ export default function ForexNativeChart({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* İNDİKATÖR CANLI LEJANTI */}
+      <div className="px-3 py-1 bg-bunker-950/95 border-b border-bunker-900 text-[11px] flex flex-wrap items-center gap-x-4 gap-y-0.5 text-bunker-muted shrink-0">
+        {showSma && (
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-0.5 bg-[#38bdf8] rounded" />
+              <span className="text-[#38bdf8]">SMA 7:</span>
+              <strong className="text-white font-bold">{formatPriceBySymbol(liveSma7, symbol)}</strong>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-0.5 bg-[#a855f7] rounded" />
+              <span className="text-[#a855f7]">SMA 30:</span>
+              <strong className="text-white font-bold">{formatPriceBySymbol(liveSma30, symbol)}</strong>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-0.5 bg-[#f97316] rounded" />
+              <span className="text-[#f97316]">SMA 99:</span>
+              <strong className="text-white font-bold">{formatPriceBySymbol(liveSma99, symbol)}</strong>
+            </span>
+          </div>
+        )}
+
+        {showMacd && (
+          <div className="flex items-center gap-2 border-l border-bunker-800 pl-3">
+            <span className="text-cyan-400 font-bold">MACD (12,26,9):</span>
+            <span className={`font-bold tabular-nums ${liveMacdHist != null && liveMacdHist >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+              {liveMacdHist != null ? (liveMacdHist >= 0 ? `+${liveMacdHist.toFixed(5)}` : liveMacdHist.toFixed(5)) : "—"}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* GRAFİK TUVALİ */}
@@ -787,6 +1120,21 @@ export default function ForexNativeChart({
               Tekrar Dene
             </button>
           </div>
+        )}
+
+        {/* Kullanıcı mumları sola çekip incelediğinde sağa dönmesi için hızlı buton */}
+        {isScrolledBack && (
+          <button
+            type="button"
+            onClick={() => {
+              chartApiRef.current?.timeScale().scrollToRealTime();
+              setIsScrolledBack(false);
+            }}
+            className="absolute bottom-4 right-16 z-20 flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-bold shadow-lg border border-blue-400 backdrop-blur transition-all animate-in fade-in"
+            title="Canlı fiyata dön"
+          >
+            <span>⏭ Canlı Fiyat</span>
+          </button>
         )}
 
         <div ref={chartContainerRef} className="w-full h-full" />

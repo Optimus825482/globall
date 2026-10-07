@@ -53,6 +53,22 @@ interface KPIStats {
   open_pnl_usd: number;
 }
 
+interface SymbolDailyPerf {
+  symbol: string;
+  display: string;
+  category?: string;
+  totalTrades: number;
+  closedTrades: number;
+  openTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  realizedPnlUsd: number;
+  openPnlUsd: number;
+  netPnlUsd: number;
+  totalPips: number;
+}
+
 function formatPrice(v?: number | null, symbol: string = ""): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return "—";
   const s = symbol.toUpperCase();
@@ -79,7 +95,6 @@ function formatClockTime(timeStr?: string): string {
     if (!isNaN(d.getTime())) {
       return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
-    // "2026-10-07 14:22:10" formatı
     if (timeStr.includes(" ")) {
       return timeStr.split(" ")[1] || timeStr;
     }
@@ -90,7 +105,7 @@ function formatClockTime(timeStr?: string): string {
 }
 
 export default function ForexIslemlerPage() {
-  // Tema Durumu: Kullanıcı isteği doğrultusunda varsayılan "Açık Mod" (Light Mode), ancak Koyu Mod da seçilebilir
+  // Tema Durumu: Varsayılan "Açık Mod" (Light Mode), Koyu Mod seçilebilir
   const [isLightMode, setIsLightMode] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -111,13 +126,10 @@ export default function ForexIslemlerPage() {
     open_pnl_usd: 0,
   });
 
-  // Kapanan İşlemler Filtresi
+  // Kapanan İşlemler Filtresi & Sayfalama (Pagination: 20 per page)
   const [filterOutcome, setFilterOutcome] = useState<"ALL" | "WIN" | "LOSS">("ALL");
-
-  // Kapatma Onay Modalı
-  const [closingTarget, setClosingTarget] = useState<OpenPosition | null>(null);
-  const [isClosing, setIsClosing] = useState<boolean>(false);
-  const [actionMessage, setActionMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const PAGE_SIZE = 20;
 
   // Tema Tercihini Yerel Hafızadan Yükle
   useEffect(() => {
@@ -145,8 +157,7 @@ export default function ForexIslemlerPage() {
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setRefreshing(true);
     try {
-      // 1. İşlem Raporları & Pozisyonlar
-      const reportRes = await apiFetch("/api/forex/auto-paper/trades?period=today&limit=200");
+      const reportRes = await apiFetch("/api/forex/auto-paper/trades?period=today&limit=250");
       if (reportRes) {
         if (Array.isArray(reportRes.open_positions)) {
           setOpenPositions(reportRes.open_positions);
@@ -162,14 +173,13 @@ export default function ForexIslemlerPage() {
         }
       }
 
-      // 2. Canlı Durum & Bakiye
       const statusRes = await apiFetch("/api/forex/auto-paper/status");
       if (statusRes) {
         setKpi((prev) => ({
           ...prev,
           balance: statusRes.balance ?? prev.balance,
           equity: statusRes.equity ?? prev.equity,
-          daily_pnl: statusRes.daily_pnl ?? prev.total_pnl_usd,
+          total_pnl_usd: statusRes.daily_pnl ?? prev.total_pnl_usd,
         }));
       }
 
@@ -184,7 +194,6 @@ export default function ForexIslemlerPage() {
 
   useEffect(() => {
     fetchData(false);
-    // Her 3 saniyede bir otomatik dinamik yenileme
     const timer = setInterval(() => {
       if (!document.hidden) {
         fetchData(true);
@@ -192,33 +201,6 @@ export default function ForexIslemlerPage() {
     }, 3000);
     return () => clearInterval(timer);
   }, [fetchData]);
-
-  // Manuel Pozisyon Kapatma
-  const handleConfirmClose = async () => {
-    if (!closingTarget) return;
-    setIsClosing(true);
-    try {
-      await apiFetch("/api/forex/auto-paper/close-position", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: closingTarget.id }),
-      });
-      setActionMessage({
-        type: "success",
-        text: `✅ ${closingTarget.display || closingTarget.symbol} pozisyonu başarıyla kapatıldı.`,
-      });
-      setClosingTarget(null);
-      fetchData(false);
-      setTimeout(() => setActionMessage(null), 4000);
-    } catch (err: any) {
-      setActionMessage({
-        type: "error",
-        text: `❌ Pozisyon kapatılırken hata oluştu: ${err?.message || "Sunucu yanıt vermedi"}`,
-      });
-    } finally {
-      setIsClosing(false);
-    }
-  };
 
   // Dinamik Açık PnL Toplamları
   const openSummary = useMemo(() => {
@@ -235,6 +217,78 @@ export default function ForexIslemlerPage() {
     };
   }, [openPositions]);
 
+  // Günün İşlem Açılan Sembollerinin Başarı ve Kârlılık Performansı (Yan Yana 3 Kart)
+  const symbolPerformanceList = useMemo<SymbolDailyPerf[]>(() => {
+    const map = new Map<string, SymbolDailyPerf>();
+
+    const getOrCreate = (sym: string, display?: string, cat?: string) => {
+      if (!map.has(sym)) {
+        map.set(sym, {
+          symbol: sym,
+          display: display || sym,
+          category: cat,
+          totalTrades: 0,
+          closedTrades: 0,
+          openTrades: 0,
+          wins: 0,
+          losses: 0,
+          winRate: 0,
+          realizedPnlUsd: 0,
+          openPnlUsd: 0,
+          netPnlUsd: 0,
+          totalPips: 0,
+        });
+      }
+      return map.get(sym)!;
+    };
+
+    // 1. Kapanan işlemler
+    for (const t of closedTrades) {
+      const item = getOrCreate(t.symbol, t.display);
+      item.totalTrades += 1;
+      item.closedTrades += 1;
+      const pnl = Number(t.pnl_usd ?? 0);
+      const pips = Number(t.pnl_pips ?? 0);
+      item.realizedPnlUsd += pnl;
+      item.totalPips += pips;
+      if (pnl > 0 || t.outcome === "WIN") {
+        item.wins += 1;
+      } else if (pnl < 0 || t.outcome === "LOSS") {
+        item.losses += 1;
+      }
+    }
+
+    // 2. Açık pozisyonlar
+    for (const p of openPositions) {
+      const item = getOrCreate(p.symbol, p.display, p.category);
+      item.totalTrades += 1;
+      item.openTrades += 1;
+      const pnl = Number(p.pnl_usd ?? 0);
+      const pips = Number(p.pnl_pips ?? 0);
+      item.openPnlUsd += pnl;
+      item.totalPips += pips;
+    }
+
+    // 3. Oranları hesapla
+    const list = Array.from(map.values()).map((item) => {
+      const winRate =
+        item.closedTrades > 0
+          ? (item.wins / item.closedTrades) * 100
+          : item.openPnlUsd >= 0
+          ? 100
+          : 0;
+      const netPnlUsd = item.realizedPnlUsd + item.openPnlUsd;
+      return {
+        ...item,
+        winRate,
+        netPnlUsd,
+      };
+    });
+
+    // En çok kâr getiren sembolden düşüğe doğru sırala
+    return list.sort((a, b) => b.netPnlUsd - a.netPnlUsd);
+  }, [closedTrades, openPositions]);
+
   // Filtrelenmiş Kapanan İşlemler
   const filteredClosedTrades = useMemo(() => {
     return closedTrades.filter((t) => {
@@ -245,6 +299,18 @@ export default function ForexIslemlerPage() {
       return true;
     });
   }, [closedTrades, filterOutcome]);
+
+  // Sayfalama (20'şerli gösterim)
+  const totalPages = Math.max(1, Math.ceil(filteredClosedTrades.length / PAGE_SIZE));
+  const paginatedClosedTrades = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    return filteredClosedTrades.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredClosedTrades, currentPage]);
+
+  const handleFilterChange = (filter: "ALL" | "WIN" | "LOSS") => {
+    setFilterOutcome(filter);
+    setCurrentPage(1);
+  };
 
   // Dinamik Tema Stilleri
   const theme = useMemo(() => {
@@ -262,6 +328,8 @@ export default function ForexIslemlerPage() {
         accentBorder: "border-slate-200",
         profitBg: "bg-emerald-50 text-emerald-700 border-emerald-300 font-bold",
         lossBg: "bg-rose-50 text-rose-700 border-rose-300 font-bold",
+        pageActive: "bg-blue-600 text-white border-blue-600",
+        pageInactive: "bg-white text-slate-700 border-slate-300 hover:bg-slate-50",
       };
     }
     return {
@@ -277,6 +345,8 @@ export default function ForexIslemlerPage() {
       accentBorder: "border-bunker-800",
       profitBg: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-bold",
       lossBg: "bg-rose-500/15 text-rose-400 border-rose-500/30 font-bold",
+      pageActive: "bg-blue-600 text-white border-blue-500",
+      pageInactive: "bg-bunker-800 text-bunker-300 border-bunker-700 hover:bg-bunker-750",
     };
   }, [isLightMode]);
 
@@ -300,14 +370,13 @@ export default function ForexIslemlerPage() {
               </span>
             </div>
             <p className={`text-xs mt-0.5 ${theme.textSecondary}`}>
-              Açık ve Kapanan Forex İşlemleri · Anlık Dinamik K/Z (PnL) &amp; Günlük Başarı
+              Açık ve Kapanan Forex İşlemleri · Anlık Dinamik K/Z (PnL) &amp; Sembol Bazlı Başarı
             </p>
           </div>
         </div>
 
         {/* Sağ Kontroller: Açık/Koyu Mod Butonu & Manuel Yenileme */}
         <div className="flex items-center gap-2 text-xs">
-          {/* TEMA SEÇİCİ TOGGLE */}
           <button
             type="button"
             onClick={toggleTheme}
@@ -322,7 +391,6 @@ export default function ForexIslemlerPage() {
             <span>{isLightMode ? "Açık Mod" : "Koyu Mod"}</span>
           </button>
 
-          {/* YENİLEME BUTONU */}
           <button
             type="button"
             onClick={() => fetchData(false)}
@@ -344,19 +412,6 @@ export default function ForexIslemlerPage() {
           )}
         </div>
       </div>
-
-      {/* BİLDİRİM MESAJI */}
-      {actionMessage && (
-        <div
-          className={`p-3 rounded-xl border text-xs font-bold transition-all ${
-            actionMessage.type === "success"
-              ? "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-500/40 dark:text-emerald-300"
-              : "bg-rose-50 border-rose-300 text-rose-800 dark:bg-rose-950/40 dark:border-rose-500/40 dark:text-rose-300"
-          }`}
-        >
-          {actionMessage.text}
-        </div>
-      )}
 
       {/* 2. EN ÜST DASHBOARD & GÜNLÜK BAŞARI KARTLARI (4'LÜ GRID) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -422,25 +477,25 @@ export default function ForexIslemlerPage() {
           </div>
         </div>
 
-        {/* KART 3: ANLIK HESAP BAKİYESİ */}
+        {/* KART 3: ÖZKAYNAK & HESAP BAKİYESİ (Kullanıcı İsteği: Büyük Olan Özkaynak) */}
         <div className={`p-4 rounded-2xl border ${theme.kpiCard}`}>
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
-              Hesap Bakiyesi
+              Özkaynak (Equity)
             </span>
             <span className="text-lg">🏛️</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black">
-              ${kpi.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400">
+              ${kpi.equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-2.5 flex items-center justify-between text-xs">
             <span className={`text-[11px] ${theme.textSecondary}`}>
-              Özkaynak (Equity):
+              Hesap Bakiyesi:
             </span>
-            <span className="font-bold text-blue-600 dark:text-blue-400 text-xs">
-              ${kpi.equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+              ${kpi.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
@@ -485,7 +540,7 @@ export default function ForexIslemlerPage() {
 
       </div>
 
-      {/* 3. AÇIK OLAN FOREX İŞLEMLERİ TABLOSU / KARTLARI */}
+      {/* 3. AÇIK OLAN FOREX İŞLEMLERİ (KULLANICI İSTEĞİ: KAPAT BUTONU KALDIRILDI) */}
       <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -546,8 +601,7 @@ export default function ForexIslemlerPage() {
                     <th className="py-3 px-3">Giriş Fiyatı</th>
                     <th className="py-3 px-3">Güncel Fiyat</th>
                     <th className="py-3 px-4">Anlık Kâr / Zarar (PnL)</th>
-                    <th className="py-3 px-3">Hedef / Stop</th>
-                    <th className="py-3 px-4 text-right">İşlem</th>
+                    <th className="py-3 px-4 text-right">Hedef / Stop</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-bunker-800/60">
@@ -574,6 +628,7 @@ export default function ForexIslemlerPage() {
                           )}
                         </td>
 
+                        {/* İşlem Tipi: BUY / SELL */}
                         <td className="py-3.5 px-3">
                           <span
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
@@ -582,7 +637,7 @@ export default function ForexIslemlerPage() {
                                 : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
                             }`}
                           >
-                            {isBuy ? "▲ AL" : "▼ SAT"}
+                            {isBuy ? "▲ BUY" : "▼ SELL"}
                           </span>
                         </td>
 
@@ -611,19 +666,9 @@ export default function ForexIslemlerPage() {
                           </div>
                         </td>
 
-                        <td className="py-3.5 px-3 whitespace-nowrap text-[11px]">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap text-[11px]">
                           <div>TP: <strong className="text-emerald-600 dark:text-emerald-400">{formatPrice(p.tp_price, p.symbol)}</strong></div>
                           <div>SL: <strong className="text-rose-600 dark:text-rose-400">{formatPrice(p.sl_price, p.symbol)}</strong></div>
-                        </td>
-
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setClosingTarget(p)}
-                            className="px-3 py-1.5 rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 font-bold hover:bg-rose-500/25 transition-all text-xs"
-                          >
-                            ✕ Kapat
-                          </button>
                         </td>
                       </tr>
                     );
@@ -632,7 +677,7 @@ export default function ForexIslemlerPage() {
               </table>
             </div>
 
-            {/* Mobil Kart Görünümü (Tamamen Mobil Onaylı) */}
+            {/* Mobil Kart Görünümü */}
             <div className="md:hidden space-y-3 p-3">
               {openPositions.map((p) => {
                 const isBuy = p.direction === "BUY";
@@ -656,7 +701,7 @@ export default function ForexIslemlerPage() {
                               : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
                           }`}
                         >
-                          {isBuy ? "▲ AL" : "▼ SAT"}
+                          {isBuy ? "▲ BUY" : "▼ SELL"}
                         </span>
                       </div>
                       <span className="font-bold text-sm">
@@ -683,14 +728,10 @@ export default function ForexIslemlerPage() {
                       >
                         {isProfitable ? "+" : ""}${Number(p.pnl_usd).toFixed(2)} ({p.pnl_pips >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)}p)
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setClosingTarget(p)}
-                        className="px-3.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 font-bold text-xs"
-                      >
-                        ✕ Kapat
-                      </button>
+                      <div className="text-right text-[11px] leading-tight">
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold block">TP {formatPrice(p.tp_price, p.symbol)}</span>
+                        <span className="text-rose-600 dark:text-rose-400 font-bold block">SL {formatPrice(p.sl_price, p.symbol)}</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -700,13 +741,124 @@ export default function ForexIslemlerPage() {
         )}
       </div>
 
-      {/* 4. KAPANAN FOREX İŞLEMLERİ TABLOSU / GEÇMİŞ */}
+      {/* 4. GÜNÜN İŞLEM AÇILAN SEMBOLLERİ (YAN YANA 3 KART DÜZENİ) */}
+      <div className={`p-4 rounded-2xl border space-y-3 ${theme.cardBg}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🏆</span>
+            <div>
+              <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
+                Günün İşlem Gören Sembolleri &amp; Başarı Oranları
+              </h2>
+              <p className={`text-[11px] ${theme.textSecondary}`}>
+                Bugün işlem yapılan paritelerin tekil başarı yüzdeleri ve net kârlılık durumları
+              </p>
+            </div>
+          </div>
+          <span className={`px-2 py-0.5 rounded text-xs font-bold ${theme.badgeBg}`}>
+            {symbolPerformanceList.length} Aktif Sembol
+          </span>
+        </div>
+
+        {symbolPerformanceList.length === 0 ? (
+          <div className="p-6 text-center text-xs">
+            <p className={theme.textSecondary}>Bugün henüz herhangi bir sembolde işlem kaydı bulunmamaktadır.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {symbolPerformanceList.map((item) => {
+              const isNetProfitable = item.netPnlUsd >= 0;
+              const winRateColor =
+                item.winRate >= 60
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : item.winRate >= 45
+                  ? "text-amber-500"
+                  : "text-rose-600 dark:text-rose-400";
+
+              return (
+                <div
+                  key={item.symbol}
+                  className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all hover:shadow-md ${
+                    isLightMode ? "bg-slate-50 border-slate-200 hover:border-blue-300" : "bg-bunker-950/70 border-bunker-800 hover:border-blue-500/40"
+                  }`}
+                >
+                  {/* Başlık ve Kategori */}
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-bunker-800/80">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm tracking-wide">
+                        {item.display || item.symbol}
+                      </span>
+                      {item.category && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-bunker-800 text-slate-600 dark:text-bunker-muted font-bold uppercase">
+                          {item.category}
+                        </span>
+                      )}
+                    </div>
+                    {item.openTrades > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-400/30">
+                        {item.openTrades} Açık
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Başarı Yüzdesi & Kârlılık */}
+                  <div className="grid grid-cols-2 gap-2 py-2.5">
+                    <div>
+                      <span className={`text-[10px] block font-bold ${theme.textSecondary}`}>
+                        BAŞARI ORANI
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className={`text-xl font-black ${winRateColor}`}>
+                          %{item.winRate.toFixed(1)}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] block mt-0.5 ${theme.textSecondary}`}>
+                        {item.wins}K / {item.losses}Z ({item.totalTrades} İşlem)
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-[10px] block font-bold ${theme.textSecondary}`}>
+                        NET KÂRLILIK
+                      </span>
+                      <div className="flex items-baseline justify-end gap-1 mt-0.5">
+                        <span
+                          className={`text-xl font-black ${
+                            isNetProfitable ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                          }`}
+                        >
+                          {isNetProfitable ? "+" : ""}${item.netPnlUsd.toFixed(2)}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-bold block mt-0.5 ${isNetProfitable ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                        {item.totalPips >= 0 ? "+" : ""}{item.totalPips.toFixed(1)} pip
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* İlerleme Çubuğu */}
+                  <div className="w-full bg-slate-200 dark:bg-bunker-800 h-1.5 rounded-full overflow-hidden mt-1">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        item.winRate >= 50 ? "bg-emerald-500" : "bg-rose-500"
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, item.winRate))}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 5. KAPANAN FOREX İŞLEMLERİ TABLOSU (DATA TABLE & PAGINATION 20'ŞERLİ) */}
       <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-lg">📋</span>
             <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
-              Kapanan Forex İşlemleri ({filteredClosedTrades.length}/{closedTrades.length})
+              Kapanan Forex İşlemleri ({filteredClosedTrades.length} İşlem)
             </h2>
           </div>
 
@@ -714,7 +866,7 @@ export default function ForexIslemlerPage() {
           <div className="flex items-center gap-1.5 text-xs">
             <button
               type="button"
-              onClick={() => setFilterOutcome("ALL")}
+              onClick={() => handleFilterChange("ALL")}
               className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
                 filterOutcome === "ALL"
                   ? "bg-blue-600 text-white border-blue-600"
@@ -725,7 +877,7 @@ export default function ForexIslemlerPage() {
             </button>
             <button
               type="button"
-              onClick={() => setFilterOutcome("WIN")}
+              onClick={() => handleFilterChange("WIN")}
               className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
                 filterOutcome === "WIN"
                   ? "bg-emerald-600 text-white border-emerald-600"
@@ -736,7 +888,7 @@ export default function ForexIslemlerPage() {
             </button>
             <button
               type="button"
-              onClick={() => setFilterOutcome("LOSS")}
+              onClick={() => handleFilterChange("LOSS")}
               className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
                 filterOutcome === "LOSS"
                   ? "bg-rose-600 text-white border-rose-600"
@@ -778,7 +930,7 @@ export default function ForexIslemlerPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-bunker-800/60">
-                  {filteredClosedTrades.map((t) => {
+                  {paginatedClosedTrades.map((t) => {
                     const isBuy = t.direction === "BUY";
                     const isProfitable = Number(t.pnl_usd ?? 0) >= 0;
                     return (
@@ -795,7 +947,7 @@ export default function ForexIslemlerPage() {
                                 : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
                             }`}
                           >
-                            {isBuy ? "▲ AL" : "▼ SAT"}
+                            {isBuy ? "▲ BUY" : "▼ SELL"}
                           </span>
                         </td>
 
@@ -841,9 +993,9 @@ export default function ForexIslemlerPage() {
               </table>
             </div>
 
-            {/* Mobil Kart Görünümü (Tamamen Mobil Onaylı) */}
+            {/* Mobil Kart Görünümü */}
             <div className="md:hidden space-y-2.5 p-3">
-              {filteredClosedTrades.map((t) => {
+              {paginatedClosedTrades.map((t) => {
                 const isBuy = t.direction === "BUY";
                 const isProfitable = Number(t.pnl_usd ?? 0) >= 0;
                 return (
@@ -861,7 +1013,7 @@ export default function ForexIslemlerPage() {
                             isBuy ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                           }`}
                         >
-                          {isBuy ? "AL" : "SAT"}
+                          {isBuy ? "BUY" : "SELL"}
                         </span>
                         <span className={`text-[11px] ${theme.textSecondary}`}>{t.lots.toFixed(2)}L</span>
                       </div>
@@ -886,67 +1038,76 @@ export default function ForexIslemlerPage() {
                 );
               })}
             </div>
+
+            {/* SAYFALAMA (PAGINATION) BARI */}
+            {totalPages > 1 && (
+              <div className="p-3.5 border-t flex flex-wrap items-center justify-between gap-3 text-xs">
+                <span className={theme.textSecondary}>
+                  {filteredClosedTrades.length} işlemden{" "}
+                  <strong>{(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filteredClosedTrades.length)}</strong>{" "}
+                  arası gösteriliyor (Sayfa {currentPage} / {totalPages})
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
+                  >
+                    « İlk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
+                  >
+                    ‹ Önceki
+                  </button>
+
+                  {/* Sayfa Butonları */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, idx, arr) => (
+                      <React.Fragment key={p}>
+                        {idx > 0 && arr[idx - 1] !== p - 1 && (
+                          <span className={`px-1 ${theme.textSecondary}`}>…</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage(p)}
+                          className={`w-7 h-7 rounded-lg border font-bold transition-all ${
+                            currentPage === p ? theme.pageActive : theme.pageInactive
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      </React.Fragment>
+                    ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
+                  >
+                    Sonraki ›
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
+                  >
+                    Son »
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
-
-      {/* 5. POZİSYON KAPATMA ONAY MODALI */}
-      {closingTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div
-            className={`w-full max-w-sm rounded-2xl border p-5 space-y-4 shadow-2xl ${
-              isLightMode ? "bg-white border-slate-300 text-slate-900" : "bg-bunker-900 border-bunker-700 text-white"
-            }`}
-          >
-            <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-bunker-800">
-              <h3 className="font-bold text-sm">Pozisyon Kapatma Onayı</h3>
-              <button
-                type="button"
-                onClick={() => setClosingTarget(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-white font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <p>Aşağıdaki açık forex pozisyonunu anlık piyasa fiyatından kapatmak üzeresiniz:</p>
-              <div
-                className={`p-3 rounded-xl border space-y-1 font-bold ${
-                  isLightMode ? "bg-slate-50 border-slate-200" : "bg-bunker-950 border-bunker-800"
-                }`}
-              >
-                <div>Sembol: <span className="text-blue-500">{closingTarget.display || closingTarget.symbol}</span></div>
-                <div>Yön: <span>{closingTarget.direction === "BUY" ? "▲ AL (BUY)" : "▼ SAT (SELL)"}</span></div>
-                <div>Lot: <span>{closingTarget.lots} Lot</span></div>
-                <div>Anlık K/Z: <span className={closingTarget.pnl_usd >= 0 ? "text-emerald-500" : "text-rose-500"}>
-                  {closingTarget.pnl_usd >= 0 ? "+" : ""}${Number(closingTarget.pnl_usd).toFixed(2)}
-                </span></div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setClosingTarget(null)}
-                disabled={isClosing}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-bunker-700 text-xs font-bold hover:bg-slate-100 dark:hover:bg-bunker-800 transition-colors"
-              >
-                Vazgeç
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmClose}
-                disabled={isClosing}
-                className="px-4 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-500 transition-colors shadow-sm flex items-center gap-1.5"
-              >
-                {isClosing && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                <span>Evet, Kapat</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
