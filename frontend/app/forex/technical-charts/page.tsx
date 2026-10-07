@@ -151,7 +151,7 @@ export default function ForexTechnicalChartsPage() {
               </span>
             </div>
             <p className="text-[11px] text-bunker-muted mt-0.5">
-              Spot motoruyla anlık mumlar, Bollinger, SuperTrend ve EMA analizleri
+              Spot motoruyla anlık mumlar; varsayılan Bollinger Bands + MACD alt paneli
             </p>
           </div>
         </div>

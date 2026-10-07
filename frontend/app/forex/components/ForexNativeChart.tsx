@@ -9,7 +9,6 @@ import {
   HistogramSeries,
   IChartApi,
   ISeriesApi,
-  IPriceLine,
   UTCTimestamp,
   LineStyle,
 } from "lightweight-charts";
@@ -293,12 +292,11 @@ export default function ForexNativeChart({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Göstergeler (Kullanıcı talebi: BB, MACD ve SMA 7/30/99 varsayılan açık)
+  // Göstergeler (Kullanıcı talebi: varsayılan yalnız Bollinger Bands + alt pane MACD açık)
   const [showBB, setShowBB] = useState(true);
-  const [showSma, setShowSma] = useState(true);
+  const [showSma, setShowSma] = useState(false);
   const [showMacd, setShowMacd] = useState(true);
   const [showSupertrend, setShowSupertrend] = useState(false);
-  const [showTargets, setShowTargets] = useState(true);
 
   // Canlı Veriler & İndikatör Okumaları
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -340,11 +338,6 @@ export default function ForexNativeChart({
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
-
-  // TP/SL Çizgileri
-  const tpPriceLineRef = useRef<IPriceLine | null>(null);
-  const slPriceLineRef = useRef<IPriceLine | null>(null);
-  const entryPriceLineRef = useRef<IPriceLine | null>(null);
 
   const lastCandleRef = useRef<CandleBar | null>(null);
   const timeframeRef = useRef<Timeframe>(timeframe);
@@ -827,81 +820,6 @@ export default function ForexNativeChart({
     }
   }, [candles, showBB, showSma, showMacd, showSupertrend, symbol, timeframe]);
 
-  // Hedef ve Stop Çizgileri
-  useEffect(() => {
-    if (!candleSeriesRef.current) return;
-    const series = candleSeriesRef.current;
-
-    if (tpPriceLineRef.current) {
-      try { series.removePriceLine(tpPriceLineRef.current); } catch {}
-      tpPriceLineRef.current = null;
-    }
-    if (slPriceLineRef.current) {
-      try { series.removePriceLine(slPriceLineRef.current); } catch {}
-      slPriceLineRef.current = null;
-    }
-    if (entryPriceLineRef.current) {
-      try { series.removePriceLine(entryPriceLineRef.current); } catch {}
-      entryPriceLineRef.current = null;
-    }
-
-    if (!showTargets) return;
-
-    const basePrice = livePrice || (candles.length > 0 ? candles[candles.length - 1].close : null);
-    if (!basePrice) return;
-
-    const isBuy = action === "BUY";
-    const pipMultiplier = symbol.includes("JPY")
-      ? 0.01
-      : symbol.includes("XAU") || symbol.includes("GOLD")
-      ? 0.1
-      : 0.0001;
-
-    let calculatedTp = 0;
-    let calculatedSl = 0;
-    if (pipTarget && pipTarget > 0) {
-      calculatedTp = isBuy
-        ? basePrice + pipTarget * pipMultiplier
-        : basePrice - pipTarget * pipMultiplier;
-    }
-    if (stopLossPips && stopLossPips > 0) {
-      calculatedSl = isBuy
-        ? basePrice - stopLossPips * pipMultiplier
-        : basePrice + stopLossPips * pipMultiplier;
-    }
-
-    entryPriceLineRef.current = series.createPriceLine({
-      price: basePrice,
-      color: "#38bdf8",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true,
-      title: `GİRİŞ / FİYAT ${formatPriceBySymbol(basePrice, symbol)}`,
-    });
-
-    if (calculatedTp > 0) {
-      tpPriceLineRef.current = series.createPriceLine({
-        price: calculatedTp,
-        color: "#10b981",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-        title: `HEDEF TP (+${pipTarget}p)`,
-      });
-    }
-
-    if (calculatedSl > 0) {
-      slPriceLineRef.current = series.createPriceLine({
-        price: calculatedSl,
-        color: "#f43f5e",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-        title: `STOP SL (-${stopLossPips}p)`,
-      });
-    }
-  }, [showTargets, livePrice, candles, pipTarget, stopLossPips, action, symbol]);
-
   return (
     <div className={`flex flex-col h-full w-full bg-bunker-950 font-mono select-none ${className}`}>
       {/* ÜST BİLGİ & KONTROL ÇUBUĞU */}
@@ -1065,20 +983,6 @@ export default function ForexNativeChart({
           >
             SuperTrend
           </button>
-
-          {/* TP / SL Çizgileri */}
-          <button
-            type="button"
-            onClick={() => setShowTargets(!showTargets)}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
-              showTargets
-                ? "bg-blue-500/20 text-blue-300 border-blue-400/40"
-                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
-            }`}
-            title="Hedef ve Stop Çizgileri"
-          >
-            TP/SL
-          </button>
         </div>
 
         <div className="flex items-center gap-3 text-xs">
@@ -1171,19 +1075,9 @@ export default function ForexNativeChart({
       </div>
 
       {/* ALT BİLGİ ŞERİDİ */}
-      {(pipTarget != null || stopLossPips != null || score != null || adx != null) && (
+      {(score != null || adx != null || atrPips != null || htfTrend) && (
         <div className="p-2.5 bg-bunker-900/90 border-t border-bunker-800 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {pipTarget != null && (
-              <span className="text-bunker-muted">
-                Hedef TP: <strong className="text-emerald-400">+{pipTarget}p</strong>
-              </span>
-            )}
-            {stopLossPips != null && (
-              <span className="text-bunker-muted">
-                Stop SL: <strong className="text-rose-400">-{stopLossPips}p</strong>
-              </span>
-            )}
             {riskReward && (
               <span className="text-bunker-muted">
                 R/R: <strong className="text-white">{riskReward}</strong>
