@@ -2166,6 +2166,7 @@ async def get_forex_radar():
             has_open_position=sym_u in active_syms,
         )
         base.update(gate)
+        base["has_open_position"] = bool(sym_u in active_syms)
         base["blocker_text"] = _GATE_LABELS.get(gate["primary_blocker"] or "", "")
         # Sinyal gücü kademesi. Kademe piyasa kalitesini (gate_passed) ve
         # kullanıcının yapabileceği eylemi ayrı gösterir — panelde rozet bu.
@@ -2187,12 +2188,13 @@ async def get_forex_radar():
     tier_rank = {"STRONG": 0, "ACTIVE": 1, "WATCH": 2, "WAIT": 3}
     candidates.sort(key=lambda x: (tier_rank.get(x["tier"], 9), -x["score"]))
 
-    signals = [c for c in candidates if c["tier"] == "STRONG"]
+    signals = [c for c in candidates if c["tier"] == "STRONG" and not c.get("has_open_position")]
 
     return {
         "candidates": candidates,
         # `signals` = motora göre şu an işlem açılabilecek adaylar (radarın özü).
         "signals": signals,
+        "active_symbols": list(active_syms),
         "scan_note": _radar_scan_note(candidates, current_utc_hour),
         "sessions": _get_market_sessions(),
         "dxy": dxy_regime,

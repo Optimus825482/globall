@@ -17,6 +17,12 @@ import { useAuth } from "../lib/auth";
 import { ProfileContent } from "../profile/page";
 import SystemHealthTab from "./SystemHealthTab";
 import AutoSettingsPanel, { type AutoSettings } from "../forex/components/AutoSettingsPanel";
+import {
+  getInAppNotificationSettings,
+  saveInAppNotificationSettings,
+  triggerTestInAppNotification,
+  type InAppNotificationSettings,
+} from "../lib/notificationSettings";
 
 type SettingsTab = "forex" | "health" | "app" | "llm" | "chat" | "profile";
 
@@ -59,6 +65,20 @@ function SettingsPageInner() {
   // Push Testi Durumu
   const [testingPush, setTestingPush] = useState(false);
   const [pushTestResult, setPushTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Uygulama İçi Bildirim (Radar Modal) Ayarları
+  const [inAppNotif, setInAppNotif] = useState<InAppNotificationSettings>(() =>
+    getInAppNotificationSettings()
+  );
+  const [notifSavedToast, setNotifSavedToast] = useState(false);
+
+  const updateInAppNotif = (partial: Partial<InAppNotificationSettings>) => {
+    const next = { ...inAppNotif, ...partial };
+    setInAppNotif(next);
+    saveInAppNotificationSettings(next);
+    setNotifSavedToast(true);
+    setTimeout(() => setNotifSavedToast(false), 2000);
+  };
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab") as SettingsTab | null;
@@ -316,6 +336,42 @@ function SettingsPageInner() {
             </div>
           </div>
 
+          {/* UYGULAMA İÇİ BİLDİRİM HIZLI KONTROLÜ */}
+          <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">{inAppNotif.enabled ? "🔔" : "🔕"}</span>
+              <div>
+                <span className="font-bold text-white">Uygulama İçi Radar Bildirimleri: </span>
+                <span className={inAppNotif.enabled ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                  {inAppNotif.enabled ? "AÇIK (Radar popupları aktif)" : "KAPALI (Popuplar susturuldu)"}
+                </span>
+                <span className="text-[11px] text-bunker-muted block mt-0.5">
+                  {inAppNotif.soundEnabled ? "Ses: Açık" : "Ses: Kapalı"} · Otomatik Kapanma: {inAppNotif.autoCloseSec > 0 ? `${inAppNotif.autoCloseSec} sn` : "Manuel"}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => updateInAppNotif({ enabled: !inAppNotif.enabled })}
+                className={`px-3.5 py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all shadow-sm ${
+                  inAppNotif.enabled
+                    ? "bg-rose-950/60 border border-rose-500/40 text-rose-300 hover:bg-rose-900/60"
+                    : "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60"
+                }`}
+              >
+                {inAppNotif.enabled ? "🔕 Bildirimleri Kapat" : "🔔 Bildirimleri Aç"}
+              </button>
+              <button
+                type="button"
+                onClick={() => selectTab("app")}
+                className="px-3 py-1.5 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 font-mono text-[11px]"
+              >
+                ⚙️ Ses &amp; Süre
+              </button>
+            </div>
+          </div>
+
           {forexLoadError && (
             <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold">
               {forexLoadError}
@@ -498,6 +554,112 @@ function SettingsPageInner() {
 
         {/* SEKME 6: UYGULAMA AYARLARI */}
         <div className={`space-y-4 ${activeTab !== "app" ? "hidden" : ""}`}>
+          {/* UYGULAMA İÇİ BİLDİRİMLER (RADAR & SİNYAL POPUPLARI) */}
+          <div className="card border-cyan-400/40 bg-cyan-950/20 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="eyebrow text-cyan-300">UYGULAMA İÇİ BİLDİRİMLER</p>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      inAppNotif.enabled
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                    }`}
+                  >
+                    {inAppNotif.enabled ? "AÇIK" : "KAPALI"}
+                  </span>
+                </div>
+                <h3 className="font-mono text-sm font-bold text-white mt-1">
+                  Forex Radar Güçlü Sinyal Popupları
+                </h3>
+                <p className="text-xs text-bunker-muted mt-1 max-w-xl">
+                  Forex radarı güçlü bir işlem fırsatı (BUY/SELL, Tier: STRONG veya Skor ≥ 75) yakaladığında ekranın ortasında açılan anlık bildirim penceresi.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => triggerTestInAppNotification()}
+                  disabled={!inAppNotif.enabled}
+                  className="px-3 py-2 rounded-lg border border-cyan-500/40 text-cyan-300 font-mono text-xs hover:bg-cyan-500/10 disabled:opacity-40 transition-colors"
+                >
+                  🔔 Örnek Bildirimi Gör
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateInAppNotif({ enabled: !inAppNotif.enabled })}
+                  className={`px-4 py-2 rounded-lg font-mono text-xs font-bold transition-all shadow-md ${
+                    inAppNotif.enabled
+                      ? "bg-rose-600 hover:bg-rose-500 text-white"
+                      : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  }`}
+                >
+                  {inAppNotif.enabled ? "BİLDİRİMLERİ KAPAT" : "BİLDİRİMLERİ AÇ"}
+                </button>
+              </div>
+            </div>
+
+            {/* Ek Detay Ayarları: Ses & Süre */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-bunker-800 text-xs">
+              {/* Ses Toggle */}
+              <div className="p-3 rounded-xl bg-bunker-900/70 border border-bunker-800 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>{inAppNotif.soundEnabled ? "🔊" : "🔇"}</span>
+                    <span>Radar Uyarı Sesi</span>
+                  </div>
+                  <p className="text-[11px] text-bunker-muted mt-0.5">
+                    Güçlü sinyal yakalandığında çift tonlu ses çal
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateInAppNotif({ soundEnabled: !inAppNotif.soundEnabled })}
+                  disabled={!inAppNotif.enabled}
+                  className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-colors disabled:opacity-40 ${
+                    inAppNotif.soundEnabled
+                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                      : "border-bunker-700 bg-bunker-950 text-bunker-muted"
+                  }`}
+                >
+                  {inAppNotif.soundEnabled ? "SES AÇIK" : "SESSİZ"}
+                </button>
+              </div>
+
+              {/* Otomatik Kapanma Süresi */}
+              <div className="p-3 rounded-xl bg-bunker-900/70 border border-bunker-800 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>⏱️</span>
+                    <span>Otomatik Kapanma Süresi</span>
+                  </div>
+                  <p className="text-[11px] text-bunker-muted mt-0.5">
+                    Ekranda açık kalma süresi
+                  </p>
+                </div>
+                <select
+                  value={inAppNotif.autoCloseSec}
+                  onChange={(e) => updateInAppNotif({ autoCloseSec: Number(e.target.value) })}
+                  disabled={!inAppNotif.enabled}
+                  className="bg-bunker-950 border border-bunker-700 text-white rounded-lg px-2.5 py-1 font-mono text-xs outline-none focus:border-cyan-400 disabled:opacity-40"
+                >
+                  <option value={10}>10 Saniye</option>
+                  <option value={20}>20 Saniye (Önerilen)</option>
+                  <option value={30}>30 Saniye</option>
+                  <option value={0}>Manuel (Kapatana Kadar)</option>
+                </select>
+              </div>
+            </div>
+
+            {notifSavedToast && (
+              <p className="text-xs font-bold text-emerald-400 animate-pulse">
+                ✓ Uygulama içi bildirim ayarı anında uygulandı.
+              </p>
+            )}
+          </div>
+
           <div className="card border-neon-green/30 bg-neon-green/5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>

@@ -9,6 +9,10 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import {
+  getInAppNotificationSettings,
+  InAppNotificationSettings,
+} from "../../lib/notificationSettings";
 
 interface RadarCandidate {
   symbol: string;
@@ -26,6 +30,7 @@ interface RadarCandidate {
   adx?: number;
   supertrend_dir?: number;
   rsi?: number;
+  has_open_position?: boolean;
 }
 
 export function playRadarSound() {
@@ -52,19 +57,82 @@ export function playRadarSound() {
 
 export default function ForexRadarModal() {
   const [activeSignal, setActiveSignal] = useState<RadarCandidate | null>(null);
+  const [notifSettings, setNotifSettings] = useState<InAppNotificationSettings>(() =>
+    getInAppNotificationSettings()
+  );
   const seenSignalsRef = useRef<Map<string, number>>(new Map());
 
+  // Ayar değişikliklerini ve test tetikleyicisini dinle
+  useEffect(() => {
+    const handleSettingsChanged = (e: any) => {
+      if (e?.detail) {
+        setNotifSettings(e.detail);
+      } else {
+        setNotifSettings(getInAppNotificationSettings());
+      }
+    };
+
+    const handleTestModal = () => {
+      // Örnek test sinyali aç
+      const sampleSignal: RadarCandidate = {
+        symbol: "XAUUSD",
+        display: "XAU/USD",
+        name: "Ons Altın (XAU)",
+        action: "BUY",
+        score: 88.5,
+        tier: "STRONG",
+        price: 2685.40,
+        spread_pips: 0.2,
+        tp_pips: 25.0,
+        sl_pips: 8.0,
+        rr_ratio: 3.12,
+        adx: 38.4,
+        rsi: 54.2,
+      };
+      setActiveSignal(sampleSignal);
+      const current = getInAppNotificationSettings();
+      if (current.soundEnabled) {
+        playRadarSound();
+      }
+    };
+
+    window.addEventListener("scalper_in_app_settings_changed", handleSettingsChanged);
+    window.addEventListener("scalper_test_radar_modal", handleTestModal);
+    return () => {
+      window.removeEventListener("scalper_in_app_settings_changed", handleSettingsChanged);
+      window.removeEventListener("scalper_test_radar_modal", handleTestModal);
+    };
+  }, []);
+
   const checkRadarSignals = useCallback(async () => {
+    // Uygulama içi bildirimler ayardan kapalıysa popup gösterme
+    const current = getInAppNotificationSettings();
+    if (!current.enabled) return;
+
     try {
       const res = await apiFetch("/api/forex/radar");
       if (!res?.candidates || !Array.isArray(res.candidates)) return;
 
+      const activeSymbolsSet = new Set<string>(
+        (res.active_symbols || []).map((s: string) => String(s).toUpperCase())
+      );
+
       const now = Date.now();
-      // Yalnızca güçlü (STRONG veya skor >= 75) BUY/SELL sinyallerini filtrele
+      // Yalnızca güçlü (STRONG veya skor >= 75) BUY/SELL sinyallerini filtrele.
+      // KRİTİK KURAL (2026-10-07): İşlem açılmış olan sembol için (has_open_position,
+      // active_symbols içinde olan veya tier === 'ACTIVE') YENİDEN RADAR BİLDİRİMİ GÖNDERİLMEZ!
       const strongOnes: RadarCandidate[] = res.candidates.filter(
-        (c: RadarCandidate) =>
-          (c.tier === "STRONG" || c.score >= 75.0) &&
-          (c.action === "BUY" || c.action === "SELL")
+        (c: RadarCandidate) => {
+          const symU = String(c.symbol || "").toUpperCase();
+          const hasOpenPos = Boolean(c.has_open_position) || activeSymbolsSet.has(symU) || c.tier === "ACTIVE";
+          if (hasOpenPos) {
+            return false; // İşlem açılmış sembolü doğrudan ele
+          }
+          return (
+            (c.tier === "STRONG" || c.score >= 75.0) &&
+            (c.action === "BUY" || c.action === "SELL")
+          );
+        }
       );
 
       for (const cand of strongOnes) {
@@ -75,22 +143,55 @@ export default function ForexRadarModal() {
         if (now - lastSeen > 120_000) {
           seenSignalsRef.current.set(key, now);
           setActiveSignal(cand);
-          playRadarSound();
+          if (current.soundEnabled) {
+            playRadarSound();
+          }
           break; // Tek seferde bir bildirim göster
         }
       }
     } catch {}
   }, []);
 
+  // Açık olan bildirimdeki sembole işlem açıldıysa bildirimi kendiliğinden hemen kapat
   useEffect(() => {
-    // 4 saniyede bir radarı tara
+    if (!activeSignal) return;
+    const pollActiveStatus = async () => {
+      try {
+        const statusRes = await apiFetch("/api/forex/auto-paper/status");
+        if (statusRes?.open_positions && Array.isArray(statusRes.open_positions)) {
+          const isNowOpen = statusRes.open_positions.some(
+            (p: any) => String(p.symbol || "").toUpperCase() === activeSignal.symbol.toUpperCase()
+          );
+          if (isNowOpen) {
+            setActiveSignal(null);
+          }
+        }
+      } catch {}
+    };
+    const timer = setInterval(pollActiveStatus, 2000);
+    return () => clearInterval(timer);
+  }, [activeSignal]);
+
+  // Otomatik kapanma sayacı (autoCloseSec)
+  useEffect(() => {
+    if (!activeSignal || notifSettings.autoCloseSec <= 0) return;
+    const timer = setTimeout(() => {
+      setActiveSignal(null);
+    }, notifSettings.autoCloseSec * 1000);
+    return () => clearTimeout(timer);
+  }, [activeSignal, notifSettings.autoCloseSec]);
+
+  useEffect(() => {
+    // 4 saniyede bir radarı tara (yalnızca bildirimler açıkken)
+    if (!notifSettings.enabled) return;
+
     const interval = setInterval(() => {
       if (!document.hidden && !activeSignal) {
         checkRadarSignals();
       }
     }, 4000);
     return () => clearInterval(interval);
-  }, [checkRadarSignals, activeSignal]);
+  }, [checkRadarSignals, activeSignal, notifSettings.enabled]);
 
   if (!activeSignal) return null;
 
@@ -248,6 +349,22 @@ export default function ForexRadarModal() {
           >
             Kapat
           </button>
+        </div>
+
+        {/* Ayarlar linki & otomatik kapanma bilgisi */}
+        <div className="flex items-center justify-between text-[10px] text-bunker-400 pt-1">
+          <span>
+            {notifSettings.autoCloseSec > 0
+              ? `⏱️ ${notifSettings.autoCloseSec} sn sonra otomatik kapanır`
+              : "📌 Manuel kapatana kadar açık kalır"}
+          </span>
+          <Link
+            href="/settings?tab=app"
+            onClick={() => setActiveSignal(null)}
+            className="text-bunker-muted hover:text-cyan-300 underline flex items-center gap-1 transition-colors"
+          >
+            ⚙️ Bildirimleri Yönet / Kapat
+          </Link>
         </div>
       </div>
     </div>
