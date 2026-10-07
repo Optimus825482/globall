@@ -49,12 +49,41 @@ BASE_BE_PIPS = 14.0         # canlı ayar varsayılanları (Motorla aynı)
 BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
+# Gerçek spread profili (--spread-profile ile yüklenir): {SYMBOL: avg_pips}; boşsa kategori spread'i kullanılır
+SPREAD_PROFILE: Dict[str, float] = {}
 # Replay-local sembol tanımları: canlı FOREX_SYMBOLS'ta olmayan test adayları (JPY kross'ları)
 REPLAY_SYMBOL_DEFS = {
     "GBPJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
     "EURJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
     "AUDJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+    # 2026-10-07 kapsam-genişletme testi: likit krosçar (kullanıcı: "daha fazla forex çifti")
+    "CADJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+    "CHFJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+    "NZDJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
+    "EURGBP": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "EURCHF": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "EURAUD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "EURCAD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "EURNZD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "GBPCHF": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "GBPAUD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "GBPCAD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "GBPNZD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "AUDNZD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "AUDCAD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "AUDCHF": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "NZDCAD": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "NZDCHF": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
+    "CADCHF": {"pip_size": 0.0001, "digits": 5, "category": "cross"},
 }
+
+# Krosçarların Yahoo sembolleri (fetch_all ek olarak çeker; canlı YAHOO_SYMBOL_MAP'e dokunmaz)
+REPLAY_EXTRA_YF = {sym: f"{sym}=X" for sym in REPLAY_SYMBOL_DEFS}
+
+# pip_val override'ı: spec fonksiyonu JPY'siz krosçarlar için sabit 10.0 kullanır; gerçek
+# değer = 10 × quote-para-biriminin USD değeri (EURGBP: 10×GBPUSD, JPY kross: 1000/USDJPY).
+# main() veriyi yükledikten sonra pencere ortalamalarıyla doldurulur ve spec sarılır.
+REPLAY_PIP_VAL_OVERRIDE: Dict[str, float] = {}
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
                 "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS",
@@ -166,6 +195,150 @@ TUN_PYR_AGE_MAX = 0         # >0: 5M SuperTrend yaşı bu barı aşınca AYNI y�
 TUN_LOSS_STREAK = 0         # 0 = kapalı; N = N ardışık tam-SL kaybında tetikle
 TUN_LOSS_STREAK_CD = 300.0  # tetiklenince sembolün yeni giriş penceresi (saniye)
 
+# 2026-10-07 giriş-kalibrasyonu projesi: alternatif giriş algoritmaları (--entry-mode).
+# Mod kendi tetik şartını üretir; kapılar (EV/spread/korelasyon/seans) ve çıkış motoru
+# klasikle BİREBİR aynıdır — adil karşılaştırma. OLD defteri hep klasik kalır (referans).
+TUN_ENTRY_MODE = "classic"      # classic | london_breakout | pullback | donchian_adx
+TUN_LB_BOX_END_H = 7            # Asya kutusu: 00:00 → 07:00 UTC
+TUN_LB_ENTRY_END_H = 11         # tetik penceresi: 07:00 → 11:00 UTC
+TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
+TUN_LB_TP_R = 1.5               # TP = SL × bu R katı
+TUN_LB_MIN_BOX_ATR = 0.0        # kutu yüksekliği < bu×ATR ise gün skip (0 = kapalı)
+LB_STATE: Dict[Tuple[str, int, str], bool] = {}  # (sembol, gün, yön) → bugün tetiklendi
+# pullback modu (araştırma ADAY 1): HTF trend + ADX rejim + EMA21'e geri çekilme + dönüş mumu
+TUN_PB_ADX_MIN = 20.0
+TUN_PB_TOUCH_ATR = 0.25
+TUN_PB_MAX_PER_DAY = 2
+# donchian_adx modu (araştırma ADAY 3+4 hibrit): Donchian-mid çaprazı + ADX + 2×ATR SL / 4×ATR TP
+TUN_DA_ADX_MIN = 18.0
+TUN_DA_DONCH = 20
+TUN_DA_SL_ATR = 2.0
+TUN_DA_TP_ATR = 4.0
+TUN_MODE_FLAT16 = False         # 16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma ADAY 5)
+MODE_DAY_STATE: Dict[Tuple[str, int, str], int] = {}  # (sembol, gün, yön) → gün içi giriş sayısı
+MODE_SYMBOLS: set = set()       # boş = mod tüm sembollerde; dolu = yalnız bu sembollerde
+
+
+def _mode_session_ok(sym: str, hour: int) -> bool:
+    """Araştırma ADAY 5 seans penceresi: FX 07:00-16:00 UTC; JPY çiftleri 00:00-16:00."""
+    if "JPY" in sym.upper():
+        return 0 <= hour < 16
+    return 7 <= hour < 16
+
+
+def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
+                          tech: Dict[str, Any], pip_size: float) -> Optional[Dict[str, Any]]:
+    """Alternatif giriş modu üreticisi (classic dışı modlar). None = aday yok.
+
+    london_breakout: Asya kutusu (00:00→TUN_LB_BOX_END_H UTC) high/low;
+    tetik penceresi içinde close kutu dışına taşarsa yönünde tek giriş/gün.
+    SL = kutu yüksekliği × frac, TP = SL × R. Kutu-ATR filtresi opsiyonel.
+    """
+    hour = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).hour
+
+    if TUN_ENTRY_MODE == "london_breakout":
+        if hour < TUN_LB_BOX_END_H or hour >= TUN_LB_ENTRY_END_H:
+            return None
+        day = int(ts // 86400)
+        window = bars[max(0, ci - 300):ci]
+        box = [b for b in window
+               if int(b[0] // 86400) == day and int((b[0] % 86400) // 3600) < TUN_LB_BOX_END_H]
+        if len(box) < 10:
+            return None
+        box_hi = max(b[2] for b in box)
+        box_lo = min(b[3] for b in box)
+        box_h = box_hi - box_lo
+        atr_price = float(tech.get("atr") or 0.0)
+        if TUN_LB_MIN_BOX_ATR > 0 and atr_price > 0 and box_h < TUN_LB_MIN_BOX_ATR * atr_price:
+            return None
+        c = bars[ci - 1][4]
+        if c > box_hi:
+            action = "BUY"
+        elif c < box_lo:
+            action = "SELL"
+        else:
+            return None
+        key = (sym, day, action)
+        if LB_STATE.get(key):
+            return None
+        LB_STATE[key] = True
+        if box_h <= 0 or pip_size <= 0:
+            return None
+        sl_pips = (box_h * TUN_LB_SL_BOX_FRAC) / pip_size
+        return {"action": action, "exits": {"sl_pips": round(sl_pips, 1), "tp_pips": round(sl_pips * TUN_LB_TP_R, 1)}}
+
+    if TUN_ENTRY_MODE == "pullback":
+        if not _mode_session_ok(sym, hour):
+            return None
+        adx = float(tech.get("adx") or 0.0)
+        if adx < TUN_PB_ADX_MIN:
+            return None
+        htf = str(tech.get("htf_trend") or "")
+        atr_price = float(tech.get("atr") or 0.0)
+        ema21 = float(tech.get("ema21") or 0.0)
+        if atr_price <= 0 or ema21 <= 0:
+            return None
+        c = bars[ci - 1][4]
+        o = bars[ci - 1][1]
+        lo8 = min(b[3] for b in bars[max(0, ci - 8):ci])
+        hi8 = max(b[2] for b in bars[max(0, ci - 8):ci])
+        touch = abs(c - ema21) <= TUN_PB_TOUCH_ATR * atr_price
+        if not touch:
+            return None
+        day = int(ts // 86400)
+        if htf == "BULLISH" and c > ema21 and c >= o:
+            action = "BUY"
+        elif htf == "BEARISH" and c < ema21 and c <= o:
+            action = "SELL"
+        else:
+            return None
+        key = (sym, day, action)
+        if MODE_DAY_STATE.get(key, 0) >= TUN_PB_MAX_PER_DAY:
+            return None
+        MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        if action == "BUY":
+            sl_pips = ((c - lo8) / pip_size) + 0.3 * atr_price / pip_size
+        else:
+            sl_pips = ((hi8 - c) / pip_size) + 0.3 * atr_price / pip_size
+        sl_pips = max(0.8 * atr_price / pip_size, min(2.5 * atr_price / pip_size, sl_pips))
+        return {"action": action, "exits": {"sl_pips": round(sl_pips, 1), "tp_pips": round(2.0 * sl_pips, 1)}}
+
+    if TUN_ENTRY_MODE == "donchian_adx":
+        if not _mode_session_ok(sym, hour):
+            return None
+        adx = float(tech.get("adx") or 0.0)
+        if adx < TUN_DA_ADX_MIN:
+            return None
+        n = TUN_DA_DONCH
+        window = bars[max(0, ci - (n + 1)):ci]
+        if len(window) < n:
+            return None
+        hi_n = max(b[2] for b in window[:-1])
+        lo_n = min(b[3] for b in window[:-1])
+        mid = (hi_n + lo_n) / 2.0
+        c = bars[ci - 1][4]
+        prev_c = bars[ci - 2][4]
+        prev_mid = (max(b[2] for b in window[:-2]) + min(b[3] for b in window[:-2])) / 2.0 if len(window) > 2 else mid
+        atr_price = float(tech.get("atr") or 0.0)
+        if atr_price <= 0:
+            return None
+        if prev_c <= prev_mid and c > mid:
+            action = "BUY"
+        elif prev_c >= prev_mid and c < mid:
+            action = "SELL"
+        else:
+            return None
+        day = int(ts // 86400)
+        key = (sym, day, action)
+        if MODE_DAY_STATE.get(key, 0) >= 2:
+            return None
+        MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        sl_pips = TUN_DA_SL_ATR * atr_price / pip_size
+        tp_pips = TUN_DA_TP_ATR * atr_price / pip_size
+        return {"action": action, "exits": {"sl_pips": round(sl_pips, 1), "tp_pips": round(tp_pips, 1)}}
+
+    return None
+
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
 # Zarardaki işlemde fiyat, giriş-SL mesafesinin TUN_DCA_DIST_FRAC oranına gelince
 # TUN_DCA_LOT_MULT× lot katman açılır (ops. S/R+Fibo seviye onayıyla). Katman sonrası
@@ -187,8 +360,11 @@ TUN_DCA_DIST_STEP = 0.0     # her katmanda tetiğin derinleşmesi (× sl0; tetik
 # ---------------------------------------------------------------------------
 # Veri çekme
 # ---------------------------------------------------------------------------
+FETCH_INTERVAL = "5m"       # main() --interval ile override edilir (5m / 15m zaman-dilimi merdiveni)
+
+
 def fetch_candles(yf_sym: str, days: int) -> Optional[List[Tuple]]:
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range={days}d"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval={FETCH_INTERVAL}&range={days}d"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=20) as resp:
@@ -210,8 +386,10 @@ def fetch_candles(yf_sym: str, days: int) -> Optional[List[Tuple]]:
 
 def fetch_all(days: int) -> Dict[str, List[Tuple]]:
     data: Dict[str, List[Tuple]] = {}
+    jobs = dict(forex.YAHOO_SYMBOL_MAP)
+    jobs.update(REPLAY_EXTRA_YF)  # krosçarlar (replay-only)
     with concurrent.futures.ThreadPoolExecutor(max_workers=7) as ex:
-        futs = {ex.submit(fetch_candles, yf, days): fx for fx, yf in forex.YAHOO_SYMBOL_MAP.items()}
+        futs = {ex.submit(fetch_candles, yf, days): fx for fx, yf in jobs.items()}
         for fut in concurrent.futures.as_completed(futs, timeout=180):
             fx = futs[fut]
             try:
@@ -223,6 +401,37 @@ def fetch_all(days: int) -> Dict[str, List[Tuple]]:
             except Exception:
                 pass
     return data
+
+
+def _compute_pip_val_overrides(data: Dict[str, List[Tuple]]) -> Dict[str, float]:
+    """Krosçarlar için pencere-ortalaması pip_val: 1 lot = 100.000 birim; pip değeri
+    quote para birimindedir → USD'ye çevirmek için quote'un USD kuru kullanılır.
+    JPY kross: 1000/USDJPY; diğer kross: 10×(QUOTEUSD ortalaması)."""
+    out: Dict[str, float] = {}
+
+    def _avg(sym: str) -> Optional[float]:
+        bars = data.get(sym)
+        if not bars:
+            return None
+        closes = [b[4] for b in bars]
+        return sum(closes) / len(closes)
+
+    for sym, defn in REPLAY_SYMBOL_DEFS.items():
+        if sym not in data:
+            continue
+        quote = sym[3:6]
+        try:
+            if quote == "JPY":
+                usdjpy = _avg("USDJPY")
+                if usdjpy:
+                    out[sym] = round(1000.0 / usdjpy, 3)
+            elif quote != "USD":
+                q = _avg(f"{quote}USD")
+                if q:
+                    out[sym] = round(10.0 * q, 3)
+        except Exception:
+            continue
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -640,6 +849,14 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
         flip = _momflip_exit(pos, bar, exit_maps)
         if flip is not None:
             close_position(book, pos, flip[0], flip[1], closed_ts=ts)
+        elif (TUN_MODE_FLAT16 and TUN_ENTRY_MODE != "classic"
+              and "XAU" not in pos.symbol.upper() and "BTC" not in pos.symbol.upper()
+              and datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).hour == 16):
+            # Araştırma ADAY 5: NY öğleden sonrası negatif → giriş-modu koşumlarında 16:00 UTC flat
+            c = bar[4]
+            exit_px = (round(c - pos.fill_adjust, pos.digits) if pos.direction == "BUY"
+                       else round(c + pos.fill_adjust, pos.digits))
+            close_position(book, pos, "SEANS16", exit_px, closed_ts=ts)
         else:
             still.append(pos)
     book.positions = still
@@ -1257,6 +1474,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             item = item or REPLAY_SYMBOL_DEFS.get(sym)
             pip_size = item["pip_size"] if item else 0.0001
             spread_pips = CATEGORY_SPREAD_PIPS.get(item["category"] if item else "index", 3.0)
+            if sym in SPREAD_PROFILE:
+                spread_pips = float(SPREAD_PROFILE[sym])  # gerçek spread profili (max_spread kapısı da buna tabi — bilinçli)
             is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
             is_fx_major = sym in FX_MAJORS
             if sym == "BTCUSD" and TUN_BTC_MIN_SCORE > 0:
@@ -1276,10 +1495,25 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                                            include_momentum=(vname == "NEW"))
                 if not tech:
                     continue
-                action = tech.get("action")
-                if action not in ("BUY", "SELL"):
-                    continue
-                score = float(tech["score"])
+                mode_exits: Optional[Dict[str, float]] = None
+                mode_applies = (TUN_ENTRY_MODE != "classic" and vname == "NEW"
+                                and (not MODE_SYMBOLS or sym in MODE_SYMBOLS))
+                if not mode_applies:
+                    action = tech.get("action")
+                    if action not in ("BUY", "SELL"):
+                        continue
+                    score = float(tech["score"])
+                else:
+                    # Alternatif giriş algoritması (giriş-kalibrasyonu projesi): mod kendi
+                    # tetik şartını üretir; kapılar ve çıkış motoru klasikle BİREBİR aynıdır.
+                    # MODE_SYMBOLS verilmişse mod yalnız o sembollere uygulanır (ör. XAU/BTC
+                    # klasik kalsın, yeni mod yalnız denenen çiftlerde).
+                    mode_c = _entry_mode_candidate(sym, ts, bars, ci, tech, pip_size)
+                    if mode_c is None:
+                        continue
+                    action = mode_c["action"]
+                    score = 200.0            # skor kapısını otomatik geç (mod kendi şartıyla süzülür)
+                    mode_exits = mode_c.get("exits")
                 atr_pips = tech["atr"] / pip_size if pip_size > 0 else 15.0
                 spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
 
@@ -1288,6 +1522,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         "symbol": sym, "action": action, "score": score, "price": close_now,
                         "atr_pips": atr_pips, "pip_size": pip_size, "pip_val": spec["pip_val"],
                         "digits": spec["digits"], "spread_pips": spread_pips, "gate": gate_note,
+                        "exits": mode_exits,
                     }
 
                 # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
@@ -1428,14 +1663,19 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     break
                 spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
                 if vname == "NEW":
-                    sl_mult_eff = TUN_SL_ATR_MULT
-                    if TUN_CRYPTO_SL_MULT > 0 and ("BTC" in cand_d["symbol"] or "ETH" in cand_d["symbol"]):
-                        sl_mult_eff = TUN_CRYPTO_SL_MULT
-                    levels = forex.get_atr_exit_levels(
-                        cand_d["atr_pips"], spec["sl_pips"], spec["tp_pips"],
-                        sl_atr_mult=sl_mult_eff, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
-                    sl_pips, tp_pips = levels["sl_pips"], levels["tp_pips"]
-                    partial = levels["first_target_pips"]
+                    mx = cand_d.get("exits")
+                    if mx:
+                        # Giriş-modu çıkışları: modun kendi SL/TP'si (ATR çıkış motoru devre dışı)
+                        sl_pips, tp_pips, partial = mx["sl_pips"], mx["tp_pips"], 0.0
+                    else:
+                        sl_mult_eff = TUN_SL_ATR_MULT
+                        if TUN_CRYPTO_SL_MULT > 0 and ("BTC" in cand_d["symbol"] or "ETH" in cand_d["symbol"]):
+                            sl_mult_eff = TUN_CRYPTO_SL_MULT
+                        levels = forex.get_atr_exit_levels(
+                            cand_d["atr_pips"], spec["sl_pips"], spec["tp_pips"],
+                            sl_atr_mult=sl_mult_eff, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
+                        sl_pips, tp_pips = levels["sl_pips"], levels["tp_pips"]
+                        partial = levels["first_target_pips"]
                 else:
                     sl_pips, tp_pips, partial = spec["sl_pips"], spec["tp_pips"], 0.0
                 pos = open_position(cand_d, sl_pips, tp_pips, partial, idx)
@@ -1495,6 +1735,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     for vname, book in books.items():
         wins = sum(1 for t in book.closed if t["pnl_usd"] >= 0)
         n = len(book.closed)
+        gross_profit = sum(t["pnl_usd"] for t in book.closed if t["pnl_usd"] >= 0)
+        gross_loss = abs(sum(t["pnl_usd"] for t in book.closed if t["pnl_usd"] < 0))
+        pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
         daily: Dict[str, float] = {}
         for t in book.closed:
             if not t.get("closed_ts"):
@@ -1506,6 +1749,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             "win_rate": round(100 * wins / n, 1) if n else 0.0,
             "net_pnl_usd": round(book.realized, 2),
             "avg_pnl_usd": round(book.realized / n, 3) if n else 0.0,
+            "profit_factor": pf,
             "balance": book.balance,
             "per_symbol": book.per_symbol,
             "daily_pnl": dict(sorted(daily.items())),
@@ -1605,6 +1849,20 @@ def main():
     parser.add_argument("--end", default="", help="Giriş penceresi sonu, dahil değil (YYYY-MM-DD, UTC)")
     parser.add_argument("--symbols", default="", help="Virgüllü sembol filtresi (örn: XAUUSD,US30,NAS100) — yalnız bu semboller işlenir")
     parser.add_argument("--add-symbols", default="", help="Virgüllü ek aday semboller (örn: XAGUSD,USOIL,GBPJPY) — izin listesine EKLENİR (test-only)")
+    parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
+    parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
+    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
+    parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
+    parser.add_argument("--lb-entry-end", type=int, default=11, help="London breakout tetik penceresi bitiş saati (UTC)")
+    parser.add_argument("--lb-sl-frac", type=float, default=0.5, help="LB SL = kutu yüksekliği × bu oran")
+    parser.add_argument("--lb-tp-r", type=float, default=1.5, help="LB TP = SL × bu R katı")
+    parser.add_argument("--lb-min-box-atr", type=float, default=0.0, help="Min kutu yüksekliği (×ATR; 0 = kapalı)")
+    parser.add_argument("--pb-adx-min", type=float, default=20.0, help="Pullback modu ADX eşiği")
+    parser.add_argument("--da-adx-min", type=float, default=18.0, help="Donchian+ADX modu ADX eşiği")
+    parser.add_argument("--da-sl-atr", type=float, default=2.0, help="Donchian+ADX modu SL (× ATR)")
+    parser.add_argument("--da-tp-atr", type=float, default=4.0, help="Donchian+ADX modu TP (× ATR)")
+    parser.add_argument("--flat-16", action="store_true", help="16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma: NY öğleden sonrası negatif) — yalnız FX çiftleri")
+    parser.add_argument("--mode-symbols", default="", help="Giriş modunun uygulanacağı semboller (virgüllü; boş = tümüne). Diğer semboller classic motorla kalır — ör. XAU/BTC bozulmadan yalnız denenen çiftlerde mod")
     parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
     parser.add_argument("--min-score", type=float, default=75.0)
     parser.add_argument("--sl-mult", type=float, default=1.1)
@@ -1673,12 +1931,56 @@ def main():
     parser.add_argument("--pyr-age-max", type=int, default=0, help="5M ST yaşı bu barı aşınca aynı yönde piramit yok (0 = kapalı; 24 bar = 2 saat)")
     parser.add_argument("--loss-streak", type=int, default=0, help="N ardışık tam-SL kaybında sembol yeni giriş almaz (0 = kapalı; kullanıcı önerisi: 3)")
     parser.add_argument("--loss-streak-cd", type=float, default=300.0, help="Seri-SL tetiklenince sembol soğuma penceresi (saniye; kullanıcı önerisi: 300)")
+    parser.add_argument("--max-open", type=int, default=0, help="Maksimum açık pozisyon cap'i (0 = varsayılan 6; kullanıcı testi: 99 = slot rekabeti yok)")
     parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
     parser.add_argument("--major-max-ext", type=float, default=0.0, help="Majörlerde EMA21'den maks. ATR-katı uzama — kovalamama (0 = kapalı)")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
+
+    # Spread profili (--spread-profile): {"symbols": {"EURUSD": {"avg_pips": 1.2, ...}, ...}} → {SYM: avg_pips}
+    global SPREAD_PROFILE
+    if args.spread_profile:
+        _sp_path = args.spread_profile if os.path.isabs(args.spread_profile) else os.path.join(ROOT, args.spread_profile)
+        if os.path.exists(_sp_path):
+            try:
+                with open(_sp_path, encoding="utf-8") as _sp_f:
+                    _sp_raw = json.load(_sp_f)
+                _sp_syms = _sp_raw.get("symbols", {}) if isinstance(_sp_raw, dict) else {}
+                for _sp_sym, _sp_def in _sp_syms.items():
+                    if isinstance(_sp_def, dict) and _sp_def.get("avg_pips") is not None:
+                        SPREAD_PROFILE[str(_sp_sym).upper()] = float(_sp_def["avg_pips"])
+                print(f"[KONFIG] Spread profili yüklendi: {args.spread_profile} ({len(SPREAD_PROFILE)} sembol)")
+            except (ValueError, TypeError, OSError) as _sp_err:
+                print(f"[UYARI] Spread profili yüklenemedi ({args.spread_profile}): {_sp_err} — kategori spread'leri kullanılacak")
+        else:
+            print(f"[UYARI] Spread profili bulunamadı: {args.spread_profile} — kategori spread'leri kullanılacak")
+
+    # Zaman-dilimi merdiveni (Aşama 3): --interval 15m ile 15m bar üzerinde replay
+    global FETCH_INTERVAL
+    if args.interval and args.interval != FETCH_INTERVAL:
+        FETCH_INTERVAL = args.interval
+        print(f"[KONFIG] Bar zaman dilimi: {FETCH_INTERVAL}")
+
+    global TUN_ENTRY_MODE, TUN_LB_BOX_END_H, TUN_LB_ENTRY_END_H, TUN_LB_SL_BOX_FRAC, TUN_LB_TP_R, TUN_LB_MIN_BOX_ATR
+    TUN_ENTRY_MODE = args.entry_mode
+    TUN_LB_BOX_END_H = args.lb_box_end
+    TUN_LB_ENTRY_END_H = args.lb_entry_end
+    TUN_LB_SL_BOX_FRAC = args.lb_sl_frac
+    TUN_LB_TP_R = args.lb_tp_r
+    TUN_LB_MIN_BOX_ATR = args.lb_min_box_atr
+    LB_STATE.clear()
+    MODE_DAY_STATE.clear()
+    global TUN_PB_ADX_MIN, TUN_DA_ADX_MIN, TUN_MODE_FLAT16
+    TUN_PB_ADX_MIN = args.pb_adx_min
+    TUN_DA_ADX_MIN = args.da_adx_min
+    TUN_MODE_FLAT16 = args.flat_16
+    global MODE_SYMBOLS
+    MODE_SYMBOLS = {x.strip().upper() for x in args.mode_symbols.split(",") if x.strip()}
+    global TUN_DA_SL_ATR, TUN_DA_TP_ATR
+    TUN_DA_SL_ATR = args.da_sl_atr
+    TUN_DA_TP_ATR = args.da_tp_atr
 
     TUN_MIN_SCORE = args.min_score
     TUN_SL_ATR_MULT = args.sl_mult
@@ -1739,6 +2041,9 @@ def main():
     global TUN_LOSS_STREAK, TUN_LOSS_STREAK_CD
     TUN_LOSS_STREAK = args.loss_streak
     TUN_LOSS_STREAK_CD = args.loss_streak_cd
+    if args.max_open and args.max_open > 0:
+        global MAX_OPEN_POSITIONS
+        MAX_OPEN_POSITIONS = args.max_open
     TUN_DCA = args.dca
     TUN_DCA_DIST_FRAC = args.dca_dist_frac
     TUN_DCA_LOT_MULT = args.dca_lot_mult
@@ -1796,7 +2101,8 @@ def main():
                f"idxHours={args.index_hours or '-'} idxOpenDrive={TUN_INDEX_OPEN_DRIVE} "
                f"dca={TUN_DCA}(dist={TUN_DCA_DIST_FRAC}+{TUN_DCA_DIST_STEP} lot={TUN_DCA_LOT_MULT} katman={TUN_DCA_MAX_LAYERS} tp={TUN_DCA_TP_USD} "
                f"sl={TUN_DCA_SL_USD} buf={TUN_DCA_BUFFER_USD} lvl={TUN_DCA_LEVEL_CHECK}/{TUN_DCA_LEVEL_TOL_ATR}) "
-               f"hours={BLOCKED_HOURS or 'kapalı'} window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
+               f"hours={BLOCKED_HOURS or 'kapalı'} spreadProfile={os.path.basename(args.spread_profile) if args.spread_profile else '-'} "
+               f"window={args.window} pencere={args.start or '-'}→{args.end or '-'}")
     if args.tag:
         print(f"[KONFIG] {cfg_str}")
 
@@ -1813,6 +2119,23 @@ def main():
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump({sym: [list(b) for b in bars] for sym, bars in data.items()}, f)
         print(f"[VERI] Önbelleğe yazıldı: {cache_path} ({len(data)} sembol)")
+
+    # Krosçar pip_val override'ı: pencere ortalaması quote-kurlarıyla spec sarılır
+    global REPLAY_PIP_VAL_OVERRIDE
+    REPLAY_PIP_VAL_OVERRIDE = _compute_pip_val_overrides(data)
+    if REPLAY_PIP_VAL_OVERRIDE:
+        _orig_specs_fn = forex.get_symbol_trading_specs
+
+        def _specs_with_override(sym, **kw):
+            s = dict(_orig_specs_fn(sym, **kw))
+            ov = REPLAY_PIP_VAL_OVERRIDE.get(str(sym).upper())
+            if ov:
+                s["pip_val"] = ov
+            return s
+
+        forex.get_symbol_trading_specs = _specs_with_override
+        ov_str = ", ".join(f"{k}={v}" for k, v in sorted(REPLAY_PIP_VAL_OVERRIDE.items())[:8])
+        print(f"[KONFIG] Kros pip_val override ({len(REPLAY_PIP_VAL_OVERRIDE)} sembol): {ov_str}{' ...' if len(REPLAY_PIP_VAL_OVERRIDE) > 8 else ''}")
 
     entry_start_ts = None
     entry_end_ts = None
