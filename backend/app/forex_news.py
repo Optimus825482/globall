@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import time
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 
@@ -554,6 +555,89 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
 
 
 # ============================================================================
+# TÜRKÇE GÖSTERGE AÇIKLAMALARI VE ÇEVİRİ MOTORU
+# ============================================================================
+
+INDICATOR_DESCRIPTIONS_TR: Dict[str, str] = {
+    "trade balance": "Dış Ticaret Dengesi, bir ülkenin ihraç ettiği mal ve hizmetlerin toplam değeri ile ithal ettiği mal ve hizmetlerin toplam değeri arasındaki net farktır. Pozitif rakam (dış ticaret fazlası), ülkeye net döviz girişi olduğunu gösterir ve yerel para birimini güçlendirir. Negatif rakam (dış ticaret açığı) ise döviz çıkışını artırarak para birimi üzerinde değer kaybı baskısı yaratır.",
+    "balance of trade": "Dış Ticaret Dengesi, bir ülkenin ihraç ettiği mal ve hizmetlerin toplam değeri ile ithal ettiği mal ve hizmetlerin toplam değeri arasındaki net farktır. Pozitif rakam (dış ticaret fazlası), ülkeye net döviz girişi olduğunu gösterir ve yerel para birimini güçlendirir. Negatif rakam (dış ticaret açığı) ise döviz çıkışını artırarak para birimi üzerinde değer kaybı baskısı yaratır.",
+    "current account": "Cari İşlemler Dengesi, bir ülkenin mal, hizmet ve transferler dahil uluslararası net döviz hareketleridir. Fazla verilmesi para birimini doğrudan destekler.",
+    "cpi": "Tüketici Fiyat Endeksi (TÜFE), tüketicilerin satın aldığı temel mal ve hizmet sepetindeki fiyat değişimlerini ölçer. Merkez bankalarının faiz kararlarında en kritik göstergedir. Beklenti üzeri gelen yüksek TÜFE, faizlerin yüksek tutulmasına yol açarak para birimini güçlendirir; Altın ve hisse senetlerinde satış baskısı yaratır.",
+    "tüfe": "Tüketici Fiyat Endeksi (TÜFE), enflasyonun en temel göstergesidir. Yüksek TÜFE sıkı para politikasını ve faiz artırımlarını tetikler; Altın ve riskli varlıkları baskılar.",
+    "ppi": "Üretici Fiyat Endeksi (ÜFE), üreticilerin yurt içinde ürettikleri malların fabrika çıkış fiyatlarındaki değişimi ölçer. Tüketici enflasyonunun (TÜFE) en önemli öncü göstergesidir.",
+    "üfe": "Üretici Fiyat Endeksi (ÜFE), maliyet enflasyonunun tüketici fiyatlarına nasıl yansıyacağını gösteren öncü göstergedir.",
+    "federal funds rate": "Federal Fonlama Faiz Oranı, ABD Merkez Bankası'nın (Fed) politika faizidir. Faizlerin yüksek tutulması Dolar Endeksini (DXY) güçlendirir, Altın ve karşıt pariteleri baskılar. Faiz indirimi ise Altın (XAUUSD) ve paritelerde ralli başlatır.",
+    "fed": "Fed faiz kararları ve FOMC tutanakları küresel piyasalarda en yüksek oynaklığı yaratır. Şahin mesajlar Doları güçlendirir, Altın ve Kriptoyu geri çeker.",
+    "fomc": "FOMC (Federal Açık Piyasa Komitesi) tutanakları, Fed üyelerinin faiz patikasına dair beklentilerini ortaya koyar. Beklenenden şahin tutanaklar Doları destekler.",
+    "non-farm": "ABD Tarım Dışı İstihdam (NFP), tarım sektörü hariç çalışan toplam bordrolu istihdamdaki aylık net değişimi gösterir. Piyasa oynaklığı en yüksek veridir. Güçlü istihdam Doları primlendirir, zayıf istihdam Altını yukarı taşır.",
+    "nfp": "ABD Tarım Dışı İstihdam (NFP), tarım sektörü hariç istihdamdaki değişimi gösterir. Güçlü istihdam Doları güçlendirir; zayıf istihdam resesyon kaygısıyla Altını yukarı fırlatır.",
+    "jobless claims": "Haftalık İşsizlik Başvuruları, ilk defa işsizlik maaşı talebinde bulunan kişi sayısıdır. Düşük başvuru sayısı sıkı ve canlı bir istihdam piyasasını gösterir.",
+    "unemployment": "İşsizlik Oranı, iş gücüne dahil olup iş arayan kişilerin toplam iş gücüne oranını ölçer. Düşük işsizlik ekonomik gücü ve sıkı para politikasını destekler.",
+    "crude oil": "ABD Enerji Enformasyon İdaresi (EIA) ticari ham petrol stoklarındaki haftalık değişimi gösterir. Stoklardaki beklenmedik düşüş arz kısıtı algısıyla petrol (USOIL) fiyatlarını yukarı taşır; stok artışı ise fiyatları gevşetir.",
+    "inventories": "Ticari ham petrol stokları, küresel enerji arz-talep dengesini yansıtır. Stoklardaki düşüş petrole alım getirir.",
+    "pmi": "Satın Alma Yöneticileri Endeksi (PMI), imalat ve hizmet sektörlerindeki yönetici anketlerine dayanan öncü büyüme göstergesidir. 50 seviyesinin üzeri büyümeyi, altı daralmayı ifade eder.",
+    "ism": "ABD ISM İmalat ve Hizmet Endeksleri, ABD ekonomisindeki aktiviteyi ölçen en saygın öncü göstergelerdendir. 50 üzeri değerler ekonomik genişlemeyi doğrular.",
+    "gdp": "Gayri Safi Yurtiçi Hasıla (GSYH), bir ülkenin sınırları içinde üretilen tüm nihai mal ve hizmetlerin parasal değeridir. Ekonominin genel büyüme hızını gösterir.",
+    "retail sales": "Perakende Satışlar, tüketici harcamalarının toplam hacmini ve hanehalkı talebinin gücünü ölçer. Ekonomik büyümenin en önemli itici gücüdür.",
+    "building permits": "İnşaat İzinleri, gelecekteki konut inşaatı faaliyetlerinin öncü göstergesidir. İzinlerin artması konut sektörüne ve genel ekonomiye olan güveni gösterir.",
+}
+
+_TRANSLATION_CACHE: Dict[str, str] = {}
+
+def translate_to_turkish(text: str) -> str:
+    """İngilizce açıklamaları profesyonel Türkçe finansal metne çevirir."""
+    if not text or not text.strip():
+        return ""
+    t_clean = text.strip()
+    if t_clean in _TRANSLATION_CACHE:
+        return _TRANSLATION_CACHE[t_clean]
+
+    tr_chars = sum(1 for c in t_clean if c in "şığüöçŞİĞÜÖÇ")
+    if tr_chars >= 4:
+        _TRANSLATION_CACHE[t_clean] = t_clean
+        return t_clean
+
+    try:
+        url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=tr&dt=t&q=" + urllib.parse.quote(t_clean)
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as r:
+            res = json.loads(r.read().decode("utf-8"))
+            tr_text = "".join(x[0] for x in res[0] if x[0])
+            if tr_text and len(tr_text.strip()) > 5:
+                result = tr_text.strip()
+                _TRANSLATION_CACHE[t_clean] = result
+                return result
+    except Exception as exc:
+        logger.debug("Çeviri servisi hatası: %s", exc)
+
+    return ""
+
+
+def get_turkish_comment(raw_comment: str, orig_title: str, tr_title: str) -> str:
+    """Olay açıklaması için daima temiz ve profesyonel Türkçe metin döner."""
+    t_key = f"{orig_title} {tr_title}".lower()
+
+    # 1. Eğer raw_comment varsa, öncelikle Türkçeye çevir
+    if raw_comment and len(raw_comment.strip()) > 10:
+        translated = translate_to_turkish(raw_comment)
+        if translated:
+            tr_chars = sum(1 for c in translated if c in "şığüöçŞİĞÜÖÇ")
+            # Çeviri başarılı ve Türkçe içeriyorsa dön
+            if tr_chars >= 2 or any(k in translated.lower() for k in ["oran", "faiz", "ve", "ile", "dolar", "fiyat", "endeks"]):
+                return translated
+
+    # 2. Hazır zengin Türkçe gösterge açıklamasına bak
+    for k, v in INDICATOR_DESCRIPTIONS_TR.items():
+        if k in t_key:
+            return v
+
+    return f"{tr_title}, piyasa katılımcıları ve merkez bankaları tarafından yakından takip edilen önemli bir makroekonomik göstergedir."
+
+
+# ============================================================================
 # VERİ ÇEKİCİLER (PROVIDERS)
 # ============================================================================
 
@@ -657,7 +741,7 @@ async def fetch_tradingview_events() -> List[Dict[str, Any]]:
             "previous": previous,
             "actual": actual,
             "status": status,
-            "comment": item.get("comment") or "",
+            "comment": get_turkish_comment(str(item.get("comment") or ""), orig_title, tr_title),
             "affected_symbols": affected_symbols,
             "scenario": scenario,
             "is_passed": is_passed,
@@ -748,6 +832,7 @@ async def fetch_investing_com_events() -> List[Dict[str, Any]]:
                     "previous": previous,
                     "actual": actual,
                     "status": "Açıklandı" if actual != "—" else "Bekleniyor",
+                    "comment": get_turkish_comment(str(ev.get("comment") or ""), orig_title, orig_title),
                     "affected_symbols": affected_symbols,
                     "scenario": scenario,
                 })
@@ -814,6 +899,7 @@ async def fetch_forexfactory_events() -> List[Dict[str, Any]]:
                 "previous": ev.get("previous") or "—",
                 "actual": "—",
                 "status": "Bekleniyor",
+                "comment": get_turkish_comment("", orig_title, tr_title),
                 "affected_symbols": affected_symbols,
                 "scenario": scenario,
             })

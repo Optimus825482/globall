@@ -42,3 +42,16 @@ def test_fallback_news_alias():
     for ev in FALLBACK_EVENTS:
         assert ev["stars"] in [2, 3]
         assert len(ev["affected_symbols"]) > 0
+
+
+def test_turkish_comment_resolution():
+    from app.forex_news import get_turkish_comment
+    # Trade balance
+    c1 = get_turkish_comment("", "Trade Balance", "Almanya Dış Ticaret Dengesi")
+    assert "Dış Ticaret Dengesi" in c1
+    # CPI
+    c2 = get_turkish_comment("", "Consumer Price Index", "TÜFE Enflasyon")
+    assert "Tüketici Fiyat Endeksi" in c2
+    # Generic
+    c3 = get_turkish_comment("", "Some Unknown Event", "Bilinmeyen Gösterge")
+    assert "piyasa katılımcıları" in c3

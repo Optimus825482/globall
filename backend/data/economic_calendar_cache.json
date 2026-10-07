@@ -17,7 +17,7 @@
     "previous": "21.3€",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Germany continued to post significant trade surpluses with key partners in 2024. The surplus with the United States stood at approximately €69.8 billion, reflecting robust demand for German industrial goods, such as motor vehicles and machinery. In contrast, Germany recorded a substantial trade deficit with China—around €66.3 billion—due to high imports of electronics, machinery, and other manufactured products. Overall, the US regained its position as Germany’s largest trading partner, slightly ahead of China, with the Netherlands ranking third.",
+    "comment": "Almanya, 2024 yılında önemli ortaklarıyla önemli ticaret fazlası vermeye devam etti. ABD ile olan fazlalık yaklaşık 69,8 milyar Euro seviyesinde gerçekleşti; bu, motorlu taşıtlar ve makineler gibi Alman endüstriyel mallarına yönelik güçlü talebi yansıtıyor. Buna karşılık Almanya, yüksek elektronik, makine ve diğer imalat ürünleri ithalatı nedeniyle Çin ile önemli bir ticaret açığı (yaklaşık 66,3 milyar Euro) kaydetti. Genel olarak ABD, Çin'in biraz önünde Almanya'nın en büyük ticaret ortağı konumunu yeniden kazanırken, Hollanda üçüncü sırada yer aldı.",
     "affected_symbols": [
       "EURUSD",
       "EURGBP",
@@ -52,7 +52,7 @@
     "previous": "6.4%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Canada, the unemployment rate measures the number of people actively looking for a job as a percentage of the labour force.",
+    "comment": "Kanada'da işsizlik oranı, aktif olarak iş arayan kişilerin sayısını işgücünün yüzdesi olarak ölçer.",
     "affected_symbols": [
       "USDCAD",
       "USOIL"
@@ -86,7 +86,7 @@
     "previous": "48.1",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "The Index of Consumer Expectations focuses on three areas: how consumers view prospects for their own financial situation, how they view prospects for the general economy over the near term, and their view of prospects for the economy over the long term. Each monthly survey contains approximately 50 core questions, each of which tracks a different aspect of consumer attitudes and expectations. The samples for the Surveys of Consumers are statistically designed to be representative of all American households, excluding those in Alaska and Hawaii. Each month, a minimum of 500 interviews are conducted by telephone.",
+    "comment": "Tüketici Beklentileri Endeksi üç alana odaklanıyor: Tüketicilerin kendi finansal durumlarına ilişkin beklentileri nasıl gördükleri, yakın vadede genel ekonomiye ilişkin beklentileri nasıl gördükleri ve uzun vadede ekonomiye ilişkin beklentilere ilişkin görüşleri. Her aylık anket, her biri tüketici tutum ve beklentilerinin farklı bir yönünü izleyen yaklaşık 50 temel soru içermektedir. Tüketici Anketlerinin örnekleri istatistiksel olarak Alaska ve Hawaii'dekiler hariç tüm Amerikan hanelerini temsil edecek şekilde tasarlanmıştır. Her ay telefonla en az 500 görüşme yapılıyor.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -123,7 +123,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Australia, interest rates decisions are taken by the Reserve Bank of Australia's Board. The official interest rate is the cash rate. The cash rate is the rate charged on overnight loans between financial intermediaries, is determined in the money market as a result of the interaction of demand for and supply of overnight funds.",
+    "comment": "Avustralya'da faiz oranı kararları Avustralya Merkez Bankası Yönetim Kurulu tarafından alınır. Resmi faiz oranı nakit oranıdır. Nakit oranı, finansal aracılar arasındaki gecelik krediler üzerinden uygulanan oran olup, gecelik fon talebi ve arzının etkileşimi sonucunda para piyasasında belirlenir.",
     "affected_symbols": [
       "AUDUSD",
       "XAUUSD"
@@ -157,7 +157,7 @@
     "previous": "-8",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "The NAB monthly survey of business confidence is based on a telephone survey of around 600 small, medium and large size non-agricultural companies. The Survey measures the expectations of business conditions for the upcoming month and is a simple average of trading, profitability and employment indices, reported by respondents for their company. The indices are calculated by taking the difference between the percentage of respondents nominating good or very good, or a rise and those nominating poor or very poor, or a fall.",
+    "comment": "NAB'nin aylık iş güveni araştırması, yaklaşık 600 küçük, orta ve büyük ölçekli tarım dışı şirketle yapılan telefon anketine dayanıyor. Anket, gelecek aya ilişkin iş koşullarına ilişkin beklentileri ölçmektedir ve katılımcılar tarafından kendi şirketleri için rapor edilen ticaret, kârlılık ve istihdam endekslerinin basit bir ortalamasıdır. Endeksler, iyi veya çok iyi veya artış olarak aday gösteren katılımcıların yüzdesi ile zayıf veya çok kötü veya düşüş olarak aday gösterenlerin yüzdesi arasındaki fark alınarak hesaplanıyor.",
     "affected_symbols": [
       "AUDUSD",
       "XAUUSD"
@@ -191,7 +191,7 @@
     "previous": "3.98",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United States, Existing Home Sales occur when the mortgages are closed. Mortgage closing usually takes place 30-60 days after the sales contract is closed. It includes single-family homes, condos and co-ops.",
+    "comment": "Amerika Birleşik Devletleri'nde Mevcut Ev Satışları ipotekler kapatıldığında gerçekleşir. İpotek kapanışı genellikle satış sözleşmesinin kapanmasından 30-60 gün sonra gerçekleşir. Müstakil evleri, apartman dairelerini ve kooperatifleri içerir.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -228,7 +228,7 @@
     "previous": "3.4%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United States, unadjusted Consumer Price Index for All Urban Consumers is based on the prices of a market basket of: Food (14% of total weight); Energy (8%); Commodities Less Food & Energy Commodities (21%) and Services Less Energy Services (57%). The last category is divided by: Shelter (32%), Medical Care Services (7%) and Transportation Services (6%).",
+    "comment": "Amerika Birleşik Devletleri'nde, Tüm Kentsel Tüketiciler için düzeltilmemiş Tüketici Fiyat Endeksi, aşağıdaki pazar sepetinin fiyatlarına dayanmaktadır: Gıda (toplam ağırlığın %14'ü); Enerji (%8); Emtialar Daha Az Gıda ve Enerji Emtiaları (%21) ve Hizmetler Daha Az Enerji Hizmetleri (%57). Son kategori ise şu şekilde bölünmüştür: Barınma (%32), Tıbbi Bakım Hizmetleri (%7) ve Ulaşım Hizmetleri (%6).",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -265,7 +265,7 @@
     "previous": "0.3%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "",
+    "comment": "ABD Core Inflation Rate MoM, piyasa katılımcıları ve merkez bankaları tarafından yakından takip edilen önemli bir makroekonomik göstergedir.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -302,7 +302,7 @@
     "previous": "2.4%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United States, the core inflation rate tracks changes in prices that consumers pay for a basket of goods which excludes volatile food and fuel costs.",
+    "comment": "Amerika Birleşik Devletleri'nde çekirdek enflasyon oranı, tüketicilerin değişken gıda ve yakıt maliyetlerini hariç tutan bir ürün sepeti için ödediği fiyatlardaki değişiklikleri izliyor.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -339,7 +339,7 @@
     "previous": "0.4",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Inflation Rate MoM measures month over month change in the price of goods and services.",
+    "comment": "Enflasyon Oranı MoM, mal ve hizmet fiyatlarında aydan aya değişimi ölçer.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -376,7 +376,7 @@
     "previous": "-28%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "The Royal Institution of Chartered Surveyors (RICS) House Price Balance measures the percentage of surveyors reporting a house price rise in their designated area, minus those reporting a fall. A level above 0% indicates more surveyors reported a rise in prices; below indicates more reported a fall.",
+    "comment": "Kraliyet Yeminli Sörveyörler Enstitüsü (RICS) Konut Fiyat Dengesi, belirlenen bölgelerde konut fiyatlarında artış olduğunu bildiren anketörlerin yüzdesinden, düşüş bildirenlerin çıkarılmasıyla ölçülür. %0'ın üzerindeki seviye, daha fazla araştırmacının fiyatlarda artış bildirdiğini gösteriyor; aşağıda daha fazla rapor edilen bir düşüş gösterilmektedir.",
     "affected_symbols": [
       "GBPUSD",
       "EURGBP",
@@ -411,7 +411,7 @@
     "previous": "2989¥",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Current Account is the sum of the balance of trade (exports minus imports of goods and services), net factor income (such as interest and dividends) and net transfer payments (such as foreign aid).",
+    "comment": "Cari Hesap, ticaret dengesinin (ihracat eksi mal ve hizmet ithalatı), net faktör gelirinin (faiz ve temettü gibi) ve net transfer ödemelerinin (dış yardım gibi) toplamıdır.",
     "affected_symbols": [
       "USDJPY",
       "EURJPY",
@@ -446,7 +446,7 @@
     "previous": "-0.8%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In 2024, Germany maintained its strong global export position, driven primarily by its manufacturing sector. Motor vehicles and parts remained the country's top export category, accounting for around 17% of total exports (about €263 billion). Machinery followed with a 14% share, while chemical products contributed 9%. The United States emerged as Germany’s largest export destination, with German firms shipping goods worth €161.4 billion across the Atlantic. France, the Netherlands, Poland and China also ranked among the top destinations, underscoring Germany’s key role in global industrial supply chains.",
+    "comment": "Almanya, 2024 yılında, öncelikle imalat sektörünün öncülüğünde güçlü küresel ihracat konumunu korudu. Motorlu taşıtlar ve parçaları, toplam ihracatın yaklaşık %17'sini (yaklaşık 263 milyar Euro) oluşturarak ülkenin en büyük ihracat kategorisi olmaya devam etti. Bunu yüzde 14'lük payla makineler takip ederken, kimyasal ürünler yüzde 9'luk paya sahip oldu. ABD, Alman firmalarının Atlantik üzerinden 161,4 milyar Euro değerinde mal taşımasıyla Almanya'nın en büyük ihracat noktası haline geldi. Fransa, Hollanda, Polonya ve Çin de Almanya'nın küresel endüstriyel tedarik zincirlerindeki kilit rolünün altını çizerek en önemli destinasyonlar arasında yer aldı.",
     "affected_symbols": [
       "EURUSD",
       "EURGBP",
@@ -481,7 +481,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United States, the authority to set interest rates is divided between the Board of Governors of the Federal Reserve (Board) and the Federal Open Market Committee (FOMC). The Board decides on changes in discount rates after recommendations submitted by one or more of the regional Federal Reserve Banks. The FOMC decides on open market operations, including the desired levels of central bank money or the desired federal funds market rate.",
+    "comment": "Amerika Birleşik Devletleri'nde faiz oranlarını belirleme yetkisi, Federal Rezerv Yönetim Kurulu (Kurul) ve Federal Açık Piyasa Komitesi (FOMC) arasında bölünmüştür. Kurul, indirim oranlarındaki değişikliklere bir veya daha fazla bölgesel Federal Rezerv Bankasının sunduğu tavsiyeler sonrasında karar verir. FOMC, istenen merkez bankası parası seviyeleri veya istenen federal fon piyasa oranı dahil olmak üzere açık piyasa işlemlerine karar verir.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -518,7 +518,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United Kingdom, benchmark interest rate is set by the Monetary Policy Committee (MPC). The Bank of England official interest rate is the repo rate. This repo rate applies to open market operations of the Bank of England with a group of counterparties (banks, building societies, securities firms).",
+    "comment": "Birleşik Krallık'ta gösterge faiz oranı Para Politikası Komitesi (MPC) tarafından belirlenmektedir. İngiltere Merkez Bankası resmi faiz oranı repo oranıdır. Bu repo oranı, Bank of England'ın bir grup karşı tarafla (bankalar, inşaat kooperatifleri, menkul kıymet firmaları) açık piyasa işlemleri için geçerlidir.",
     "affected_symbols": [
       "GBPUSD",
       "EURGBP",
@@ -553,7 +553,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the Euro Area, benchmark interest rate is set by the Governing Council of the European Central Bank. The primary objective of the ECB’s monetary policy is to maintain price stability which is to keep inflation below, but close to 2 percent over the medium term. In times of prolonged low inflation and low interest rates, ECB may also adopt non-standard monetary policy measures, such as asset purchase programmes. The official interest rate is the Main refinancing operations rate.",
+    "comment": "Avro Bölgesi'nde gösterge faiz oranı Avrupa Merkez Bankası Yönetim Konseyi tarafından belirlenmektedir. ECB'nin para politikasının temel amacı, orta vadede enflasyonu yüzde 2'nin altında ancak yüzde 2'ye yakın tutacak şekilde fiyat istikrarını korumaktır. Uzun süreli düşük enflasyon ve düşük faiz oranları zamanlarında ECB, varlık satın alma programları gibi standart dışı para politikası tedbirlerini de benimseyebilir. Resmi faiz oranı Ana yeniden finansman işlemleri oranıdır.",
     "affected_symbols": [
       "EURUSD",
       "EURGBP",
@@ -588,7 +588,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United Kingdom, benchmark interest rate is set by the Monetary Policy Committee (MPC). The Bank of England official interest rate is the repo rate. This repo rate applies to open market operations of the Bank of England with a group of counterparties (banks, building societies, securities firms).",
+    "comment": "Birleşik Krallık'ta gösterge faiz oranı Para Politikası Komitesi (MPC) tarafından belirlenmektedir. İngiltere Merkez Bankası resmi faiz oranı repo oranıdır. Bu repo oranı, Bank of England'ın bir grup karşı tarafla (bankalar, inşaat kooperatifleri, menkul kıymet firmaları) açık piyasa işlemleri için geçerlidir.",
     "affected_symbols": [
       "GBPUSD",
       "EURGBP",
@@ -623,7 +623,7 @@
     "previous": "197",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Initial jobless claims refer to the number of people who have filed for unemployment benefits with their state's unemployment agency for the first time during a specific reporting period, typically on a weekly basis. .",
+    "comment": "İlk işsizlik başvuruları, belirli bir raporlama döneminde, genellikle haftalık bazda, ilk kez eyaletlerinin işsizlik kurumuna işsizlik yardımı başvurusunda bulunan kişilerin sayısını ifade eder. .",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -660,7 +660,7 @@
     "previous": "3.7%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Atlanta Fed GDPNow is a real-time model from the Federal Reserve Bank of Atlanta that provides a “nowcast” of US real GDP growth for the current quarter before the official estimate from the Bureau of Economic Analysis (BEA). The model estimates 13 GDP subcomponents: personal consumption expenditures; private fixed investment; change in private inventories; exports; imports; federal government consumption and investment; and state and local government consumption and investment, with several categories further broken down into underlying components. GDPNow is updated as new economic data are released, typically six or seven times a month, and produces a data-driven estimate with no subjective adjustments. It is not an official forecast of the Atlanta Fed or the Federal Reserve.",
+    "comment": "Atlanta Fed GDPNow, Atlanta Federal Reserve Bank'ın, Ekonomik Analiz Bürosu'nun (BEA) resmi tahmininden önce cari çeyreğe ilişkin ABD reel GSYİH büyümesinin \"şimdiki tahminini\" sağlayan gerçek zamanlı bir modelidir. Model, 13 GSYİH alt bileşenini tahmin ediyor: kişisel tüketim harcamaları; özel sabit yatırım; özel stoklardaki değişim; ihracat; ithalat; federal hükümetin tüketimi ve yatırımı; ve eyalet ve yerel yönetim tüketim ve yatırımları; çeşitli kategoriler ayrıca temel bileşenlere ayrılmıştır. GDPNow, genellikle ayda altı veya yedi kez yeni ekonomik veriler yayınlandıkça güncellenir ve hiçbir öznel ayarlama olmaksızın veriye dayalı bir tahmin üretir. Bu, Atlanta Fed'in veya Federal Rezerv'in resmi bir tahmini değil.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -697,7 +697,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United States, the authority to set interest rates is divided between the Board of Governors of the Federal Reserve (Board) and the Federal Open Market Committee (FOMC). The Board decides on changes in discount rates after recommendations submitted by one or more of the regional Federal Reserve Banks. The FOMC decides on open market operations, including the desired levels of central bank money or the desired federal funds market rate.",
+    "comment": "Amerika Birleşik Devletleri'nde faiz oranlarını belirleme yetkisi, Federal Rezerv Yönetim Kurulu (Kurul) ve Federal Açık Piyasa Komitesi (FOMC) arasında bölünmüştür. Kurul, indirim oranlarındaki değişikliklere bir veya daha fazla bölgesel Federal Rezerv Bankasının sunduğu tavsiyeler sonrasında karar verir. FOMC, istenen merkez bankası parası seviyeleri veya istenen federal fon piyasa oranı dahil olmak üzere açık piyasa işlemlerine karar verir.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -734,7 +734,7 @@
     "previous": "0.5%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Japan, Household Spending MoM refers to the monthly change of consumption expenditures (on food, housing, utilities, furniture, clothing, health, education, transport, communication, leisure activities, etc.) in real terms for two-or-more-person households including agricultural, forestry and fisheries households.",
+    "comment": "Japonya'da Hanehalkı Harcama MoM'si, tarım, ormancılık ve balıkçılık haneleri de dahil olmak üzere iki veya daha fazla kişilik haneler için gerçek anlamda tüketim harcamalarının (gıda, konut, kamu hizmetleri, mobilya, giyim, sağlık, eğitim, ulaşım, iletişim, boş zaman etkinlikleri vb.) aylık değişimini ifade eder.",
     "affected_symbols": [
       "USDJPY",
       "EURJPY",
@@ -769,7 +769,7 @@
     "previous": "-3.6%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Japan, Household Spending YoY refers to the annual change of consumption expenditures (on food, housing, utilities, furniture, clothing, health, education, transport, communication, leisure activities, etc.) in real terms for two-or-more-person households including agricultural, forestry and fisheries households.",
+    "comment": "Japonya'da Hanehalkı Harcamaları YoY, tarım, ormancılık ve balıkçılık haneleri de dahil olmak üzere iki veya daha fazla kişilik haneler için gerçek anlamda tüketim harcamalarındaki (gıda, konut, kamu hizmetleri, mobilya, giyim, sağlık, eğitim, ulaşım, iletişim, boş zaman etkinlikleri vb.) yıllık değişimi ifade eder.",
     "affected_symbols": [
       "USDJPY",
       "EURJPY",
@@ -804,7 +804,7 @@
     "previous": "-33",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Switzerland, the consumer confidence survey is conducted every year, in the months of January, April, July and October. Around 1000 households are questioned for State Secretariat for Economic Affairs regarding their subjective evaluation of the economic situation, financial situation of the household in question, inflation, job security etc. Generally consumer confidence is high when the unemployment rate is low and GDP growth is high. Measures of average consumer confidence can be useful indicators of how much consumers are likely to spend.",
+    "comment": "İsviçre'de tüketici güven araştırması her yıl Ocak, Nisan, Temmuz ve Ekim aylarında yapılıyor. Yaklaşık 1000 hane, Ekonomik İşler Devlet Sekreterliği'ne, ekonomik durum, söz konusu hanenin mali durumu, enflasyon, iş güvencesi vb. konularda subjektif değerlendirmeleri konusunda sorgulanıyor. Genellikle işsizlik oranının düşük ve GSYİH büyümesinin yüksek olduğu durumlarda tüketici güveni yüksektir. Ortalama tüketici güveninin ölçümleri, tüketicilerin muhtemelen ne kadar harcama yapacaklarına ilişkin yararlı göstergeler olabilir.",
     "affected_symbols": [
       "USDCHF",
       "EURCHF"
@@ -838,7 +838,7 @@
     "previous": "-35.9",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Canada, full-time employment consists of persons who usually work 30 hours or more per week at their main or only job.",
+    "comment": "Kanada'da tam zamanlı istihdam, asıl veya tek işlerinde genellikle haftada 30 saat veya daha fazla çalışan kişilerden oluşur.",
     "affected_symbols": [
       "USDCAD",
       "USOIL"
@@ -872,7 +872,7 @@
     "previous": "-41.7",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Canada, employment change refers to the change in the number of persons who work for pay or profit, or perform unpaid family work. Estimates include both full-time and part-time employment.",
+    "comment": "Kanada'da istihdam değişikliği, ücret veya kar amacıyla çalışan veya ücretsiz aile işi yapan kişilerin sayısındaki değişikliği ifade eder. Tahminler hem tam zamanlı hem de yarı zamanlı istihdamı içermektedir.",
     "affected_symbols": [
       "USDCAD",
       "USOIL"
@@ -906,7 +906,7 @@
     "previous": "-5.8",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In Canada, part-time employment consists of persons who usually work less than 30 hours per week at their main or only job.",
+    "comment": "Kanada'da yarı zamanlı istihdam, asıl veya tek işlerinde genellikle haftada 30 saatten az çalışan kişilerden oluşur.",
     "affected_symbols": [
       "USDCAD",
       "USOIL"
@@ -940,7 +940,7 @@
     "previous": "65",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "The labour force participation rates is the number of persons who are employed and unemployed but looking for a job divided by the total working-age population.",
+    "comment": "İşgücüne katılım oranları, çalışan ve işsiz olan ancak iş arayan kişilerin sayısının toplam çalışma çağındaki nüfusa bölünmesiyle elde edilir.",
     "affected_symbols": [
       "USDCAD",
       "USOIL"
@@ -974,7 +974,7 @@
     "previous": "—",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "In the United States, the authority to set interest rates is divided between the Board of Governors of the Federal Reserve (Board) and the Federal Open Market Committee (FOMC). The Board decides on changes in discount rates after recommendations submitted by one or more of the regional Federal Reserve Banks. The FOMC decides on open market operations, including the desired levels of central bank money or the desired federal funds market rate.",
+    "comment": "Amerika Birleşik Devletleri'nde faiz oranlarını belirleme yetkisi, Federal Rezerv Yönetim Kurulu (Kurul) ve Federal Açık Piyasa Komitesi (FOMC) arasında bölünmüştür. Kurul, indirim oranlarındaki değişikliklere bir veya daha fazla bölgesel Federal Rezerv Bankasının sunduğu tavsiyeler sonrasında karar verir. FOMC, istenen merkez bankası parası seviyeleri veya istenen federal fon piyasa oranı dahil olmak üzere açık piyasa işlemlerine karar verir.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -1011,7 +1011,7 @@
     "previous": "-167$",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Federal Government budget balance is the difference between budget receipts (income) and budget outlays (spending).  A budget surplus is expressed as a positive value. A budget deficit is expressed as a negative value.",
+    "comment": "Federal Hükümet bütçe dengesi, bütçe gelirleri (gelir) ile bütçe giderleri (harcamalar) arasındaki farktır.  Bütçe fazlası pozitif bir değer olarak ifade edilir. Bütçe açığı negatif bir değer olarak ifade edilir.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",
@@ -1048,7 +1048,7 @@
     "previous": "0.5",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "The BRC-KPMG Retail Sales Monitor measures changes in the actual value of retail sales from a sample of retailers. The Monitor measures the value of spending and hence does not adjust for price changes. If prices are rising, sales volumes will increase by less than sales values. In times of price deflation, sales volumes will increase by more than sales values. Retailers report the value of their sales and sales in the equivalent week a year ago. These figures are reported both in total and on a ‘like-for-like’ basis. The percentage increase in the value of sales on a ‘like-for-like’ basis removes the effect of the expansion of retail floor space by the retailers concerned on their sales total. Due to the sample being biased towards large retailers, the ‘like-for-like’ increase usually provides a more accurate guide to general spending patterns, though it will be biased downwards as an estimate of the growth rate for retail as a whole.",
+    "comment": "BRC-KPMG Perakende Satış Monitörü, bir perakendeci örnekleminden perakende satışların gerçek değerindeki değişiklikleri ölçer. Monitör, harcamanın değerini ölçer ve dolayısıyla fiyat değişikliklerine göre ayarlama yapmaz. Fiyatlar artıyorsa satış hacimleri satış değerlerinden daha az artacaktır. Fiyatların düştüğü dönemlerde satış adetleri, satış değerlerinden daha fazla artacaktır. Perakendeciler bir yıl önceki eşdeğer haftadaki satışlarının ve satışlarının değerini rapor ediyor. Bu rakamlar hem toplamda hem de “benzer-benzer” esasına göre raporlanıyor. 'Benzer-benzer' esasına göre satış değerindeki yüzdesel artış, ilgili perakendecilerin perakende taban alanını genişletmesinin satış toplamları üzerindeki etkisini ortadan kaldırır. Örneklemin büyük perakendecilere yönelik önyargılı olması nedeniyle, \"benzer-benzeri\" artış genellikle genel harcama kalıpları için daha doğru bir kılavuz sağlar, ancak bir bütün olarak perakendenin büyüme oranının tahmini olarak aşağı yönlü olacaktır.",
     "affected_symbols": [
       "GBPUSD",
       "EURGBP",
