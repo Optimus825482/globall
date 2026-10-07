@@ -440,6 +440,10 @@ export default function ForexNativeChart({
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
 
   const lastCandleRef = useRef<CandleBar | null>(null);
+  // Canlı güncellemede göstergeleri yeniden hesaplamak için mum dizisinin aynası.
+  // `candles` state'ini tick başına değiştirmeyiz (ağır setData/jank olur); yalnız
+  // son mum burada güncellenir, göstergelerin son noktası `series.update()` edilir.
+  const candlesRef = useRef<CandleBar[]>([]);
   const timeframeRef = useRef<Timeframe>(timeframe);
   timeframeRef.current = timeframe;
 
@@ -499,6 +503,7 @@ export default function ForexNativeChart({
             Number.isFinite(b.low) && Number.isFinite(b.close));
         if (parsed.length > 0) {
           setCandles(parsed);
+          candlesRef.current = parsed;
           lastCandleRef.current = parsed[parsed.length - 1];
 
           if (data.current_price) {
@@ -532,6 +537,7 @@ export default function ForexNativeChart({
 
   useEffect(() => {
     setCandles([]);
+    candlesRef.current = [];
     lastCandleRef.current = null;
     loadKlines(timeframe);
   }, [timeframe, loadKlines]);
@@ -574,6 +580,58 @@ export default function ForexNativeChart({
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [timeframe, candles]);
+
+  // CANLI GÖSTERGE SENKRONU (2026-10-07, kullanıcı isteği): canlı tick geldiğinde
+  // yalnız mum güncellenirse BB/MACD/SMA son noktaları eski fiyatta kalıp "havada"
+  // asılı kalıyor (bantlar mumu içine almıyordu). Bu fonksiyon canlı mumu aynaya
+  // (`candlesRef`) yazıldıktan sonra göstergelerin YALNIZ son noktasını
+  // `series.update()` ile tazeler — tam `setData` yapmaz, görünüm sıçramaz/jank olmaz.
+  const syncLiveIndicators = useCallback(() => {
+    const arr = candlesRef.current;
+    if (arr.length === 0) return;
+
+    // Bollinger (20, 2): son bandı güncelle
+    if (showBB && upperBbRef.current && middleBbRef.current && lowerBbRef.current && arr.length >= 20) {
+      const { upper, middle, lower } = calculateBollingerBands(arr, 20, 2);
+      const u = upper[upper.length - 1];
+      const m = middle[middle.length - 1];
+      const l = lower[lower.length - 1];
+      if (u && m && l) {
+        try {
+          upperBbRef.current.update(u as any);
+          middleBbRef.current.update(m as any);
+          lowerBbRef.current.update(l as any);
+        } catch { /* görünüm kilidi bozulursa sonraki HTTP turu düzeltir */ }
+      }
+    }
+
+    // SMA 7 / 30 / 99: yalnız son nokta
+    if (showSma && sma7SeriesRef.current && sma30SeriesRef.current && sma99SeriesRef.current) {
+      const upd = (series: ISeriesApi<"Line"> | null, period: number) => {
+        if (!series || arr.length < period) return;
+        const pts = calculateSMA(arr, period);
+        const lastPt = pts[pts.length - 1];
+        if (lastPt) { try { series.update(lastPt as any); } catch {} }
+      };
+      upd(sma7SeriesRef.current, 7);
+      upd(sma30SeriesRef.current, 30);
+      upd(sma99SeriesRef.current, 99);
+    }
+
+    // MACD (12, 26, 9): histogram + macd + sinyal son noktası
+    if (showMacd && macdHistRef.current && macdLineRef.current && macdSignalRef.current) {
+      const bars = calculateMACD(arr, 12, 26, 9);
+      const m = bars[bars.length - 1];
+      if (m) {
+        try {
+          macdHistRef.current.update({ time: m.time, value: m.hist, color: m.color } as any);
+          macdLineRef.current.update({ time: m.time, value: m.macd } as any);
+          macdSignalRef.current.update({ time: m.time, value: m.signal } as any);
+          setLiveMacdHist(m.hist);
+        } catch {}
+      }
+    }
+  }, [showBB, showSma, showMacd]);
 
   // Canlı Ticker Dinleme
   useEffect(() => {
@@ -625,8 +683,14 @@ export default function ForexNativeChart({
                     close: px,
                   };
                   lastCandleRef.current = updatedBar;
+                  // Aynadaki son mumu da güncelle → göstergeler bu mumla senkron hesaplanır.
+                  const arr = candlesRef.current;
+                  if (arr.length > 0 && arr[arr.length - 1].time === updatedBar.time) {
+                    arr[arr.length - 1] = updatedBar;
+                  }
                   try {
                     candleSeriesRef.current.update(updatedBar as any);
+                    syncLiveIndicators();
                   } catch {}
                 }
               }
@@ -637,7 +701,7 @@ export default function ForexNativeChart({
     };
     const t = setInterval(fetchTicker, 2500);
     return () => clearInterval(t);
-  }, [symbol, livePrice]);
+  }, [symbol, livePrice, syncLiveIndicators]);
 
   // Grafik Tuvalini Başlat (lightweight-charts)
   useEffect(() => {
