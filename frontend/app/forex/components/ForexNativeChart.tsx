@@ -263,6 +263,102 @@ function calculateRSI(candles: CandleBar[], period = 14) {
   return result;
 }
 
+// ADX-14 (Wilder): TR/+DM/-DM yumuşatması → DI+/DI- → DX → ADX.
+// Yalnız son değer döndürülür (başlıktaki canlı sayı için; seri çizilmez).
+function calculateADXLatest(candles: CandleBar[], period = 14): number | null {
+  if (candles.length < period * 2 + 1) return null;
+  const trs: number[] = [];
+  const plusDM: number[] = [];
+  const minusDM: number[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const up = candles[i].high - candles[i - 1].high;
+    const down = candles[i - 1].low - candles[i].low;
+    plusDM.push(up > down && up > 0 ? up : 0);
+    minusDM.push(down > up && down > 0 ? down : 0);
+    trs.push(Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - candles[i - 1].close),
+      Math.abs(candles[i].low - candles[i - 1].close),
+    ));
+  }
+  const dxOf = (tr: number, pdm: number, mdm: number) => {
+    const pdi = tr > 0 ? (100 * pdm) / tr : 0;
+    const mdi = tr > 0 ? (100 * mdm) / tr : 0;
+    const sum = pdi + mdi;
+    return sum > 0 ? (100 * Math.abs(pdi - mdi)) / sum : 0;
+  };
+  let tr = 0, pdm = 0, mdm = 0;
+  for (let i = 0; i < period; i++) { tr += trs[i]; pdm += plusDM[i]; mdm += minusDM[i]; }
+  const dxs: number[] = [dxOf(tr, pdm, mdm)];
+  for (let i = period; i < trs.length; i++) {
+    tr = tr - tr / period + trs[i];
+    pdm = pdm - pdm / period + plusDM[i];
+    mdm = mdm - mdm / period + minusDM[i];
+    dxs.push(dxOf(tr, pdm, mdm));
+  }
+  if (dxs.length < period) return null;
+  let adx = 0;
+  for (let i = 0; i < period; i++) adx += dxs[i];
+  adx /= period;
+  for (let i = period; i < dxs.length; i++) adx = (adx * (period - 1) + dxs[i]) / period;
+  return adx;
+}
+
+// CCI-14: tipik fiyat (H+L+C)/3 ortalamadan sapması / 0.015 × ortalama sapma.
+function calculateCCILatest(candles: CandleBar[], period = 14): number | null {
+  if (candles.length < period) return null;
+  const win = candles.slice(candles.length - period);
+  const tps = win.map((c) => (c.high + c.low + c.close) / 3);
+  const sma = tps.reduce((a, b) => a + b, 0) / period;
+  const md = tps.reduce((a, b) => a + Math.abs(b - sma), 0) / period;
+  if (md === 0) return 0;
+  return (tps[tps.length - 1] - sma) / (0.015 * md);
+}
+
+// Chandelier Exit (9, 3×ATR): ATR tabanlı iz süren stop seviyesi.
+// `dir` +1 ise stop altta (uzun destek), -1 ise üstte (kısa direnç).
+function calculateChandelierLatest(
+  candles: CandleBar[],
+  period = 9,
+  mult = 3,
+): { stop: number; dir: 1 | -1 } | null {
+  if (candles.length < period + 2) return null;
+  const trs: number[] = [candles[0].high - candles[0].low];
+  for (let i = 1; i < candles.length; i++) {
+    trs.push(Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - candles[i - 1].close),
+      Math.abs(candles[i].low - candles[i - 1].close),
+    ));
+  }
+  let atr = trs.slice(1, period + 1).reduce((a, b) => a + b, 0) / period;
+  const start = period + 1;
+  let longStop = 0;
+  let shortStop = 0;
+  let dir: 1 | -1 = 1;
+  let seeded = false;
+  for (let i = start; i < candles.length; i++) {
+    if (i > start) atr = (atr * (period - 1) + trs[i]) / period;
+    const win = candles.slice(i - period + 1, i + 1);
+    const highest = Math.max(...win.map((c) => c.high));
+    const lowest = Math.min(...win.map((c) => c.low));
+    const rawLong = highest - mult * atr;
+    const rawShort = lowest + mult * atr;
+    const prevClose = candles[i - 1].close;
+    if (!seeded) {
+      longStop = rawLong;
+      shortStop = rawShort;
+      dir = candles[i].close >= prevClose ? 1 : -1;
+      seeded = true;
+      continue;
+    }
+    longStop = prevClose > longStop ? Math.max(rawLong, longStop) : rawLong;
+    shortStop = prevClose < shortStop ? Math.min(rawShort, shortStop) : rawShort;
+    dir = candles[i].close > shortStop ? 1 : candles[i].close < longStop ? -1 : dir;
+  }
+  return { stop: dir === 1 ? longStop : shortStop, dir };
+}
+
 // -------------------------------------------------------------
 // BİLEŞEN
 // -------------------------------------------------------------
@@ -306,6 +402,10 @@ export default function ForexNativeChart({
   const [lastTickDir, setLastTickDir] = useState<"up" | "down" | null>(null);
   const [countdown, setCountdown] = useState<number>(0);
   const [latestRsi, setLatestRsi] = useState<number | null>(null);
+  // Başlıktaki sayısal gösterge şeridi: ADX-14, CCI-14 ve Chandelier Exit (9, 3×ATR).
+  const [latestAdx, setLatestAdx] = useState<number | null>(null);
+  const [latestCci, setLatestCci] = useState<number | null>(null);
+  const [latestChandelier, setLatestChandelier] = useState<{ stop: number; dir: 1 | -1 } | null>(null);
 
   // Canlı İndikatör Değerleri (Header için)
   const [liveSma7, setLiveSma7] = useState<number | null>(null);
@@ -409,6 +509,13 @@ export default function ForexNativeChart({
           if (rsiArr.length > 0) {
             setLatestRsi(Math.round(rsiArr[rsiArr.length - 1].value * 10) / 10);
           }
+
+          // Başlık göstergeleri: aynı mum penceresinden ADX-14 / CCI-14 / Chandelier(9).
+          const adxVal = calculateADXLatest(parsed, 14);
+          setLatestAdx(adxVal == null ? null : Math.round(adxVal * 10) / 10);
+          const cciVal = calculateCCILatest(parsed, 14);
+          setLatestCci(cciVal == null ? null : Math.round(cciVal * 10) / 10);
+          setLatestChandelier(calculateChandelierLatest(parsed, 9, 3));
         } else if (!silent) {
           setError("Bu sembol için mum verisi bulunamadı.");
         }
@@ -985,12 +1092,49 @@ export default function ForexNativeChart({
           </button>
         </div>
 
-        <div className="flex items-center gap-3 text-xs">
-          {latestRsi !== null && (
-            <span className="text-bunker-muted hidden md:inline">
-              RSI: <strong className={latestRsi > 70 ? "text-rose-400" : latestRsi < 30 ? "text-emerald-400" : "text-white"}>{latestRsi}</strong>
-            </span>
-          )}
+        <div className="flex items-center gap-3 text-xs flex-wrap">
+          {/* Sayısal gösterge şeridi: aynı mum penceresinden hesaplanan son değerler */}
+          <div className="flex items-center gap-2.5 tabular-nums flex-wrap">
+            {latestRsi !== null && (
+              <span className="text-bunker-muted" title="RSI (14)">
+                RSI: <strong className={latestRsi > 70 ? "text-rose-400" : latestRsi < 30 ? "text-emerald-400" : "text-white"}>{latestRsi}</strong>
+              </span>
+            )}
+            {latestAdx !== null && (
+              <span
+                className="text-bunker-muted"
+                title="ADX (14) — trend gücü (≥25 güçlü trend)"
+              >
+                ADX(14):{" "}
+                <strong className={latestAdx >= 25 ? "text-emerald-400" : latestAdx >= 20 ? "text-yellow-400" : "text-bunker-muted"}>
+                  {latestAdx}
+                </strong>
+              </span>
+            )}
+            {latestChandelier !== null && (
+              <span
+                className="text-bunker-muted"
+                title="Chandelier Exit (9, 3×ATR) — ATR tabanlı iz süren stop seviyesi"
+              >
+                Chand(9):{" "}
+                <strong className={latestChandelier.dir === 1 ? "text-emerald-400" : "text-rose-400"}>
+                  {formatPriceBySymbol(latestChandelier.stop, symbol)}{" "}
+                  <span className="text-[10px]">{latestChandelier.dir === 1 ? "▲" : "▼"}</span>
+                </strong>
+              </span>
+            )}
+            {latestCci !== null && (
+              <span
+                className="text-bunker-muted"
+                title="CCI (14) — ±100 dışı aşırı bölge"
+              >
+                CCI(14):{" "}
+                <strong className={latestCci > 100 ? "text-rose-400" : latestCci < -100 ? "text-emerald-400" : "text-white"}>
+                  {latestCci}
+                </strong>
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 bg-bunker-900 px-2 py-0.5 rounded border border-bunker-800">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
             <span className="text-[10px] text-bunker-muted">Kapanış:</span>
