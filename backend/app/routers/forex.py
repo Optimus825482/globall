@@ -1710,6 +1710,152 @@ async def get_forex_tickers(category: Optional[str] = None):
     }
 
 
+_KLINES_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+_KLINES_CACHE_TTL = 4.0  # 4 sn in-memory kline önbellek (Yahoo hızlandırıcı)
+
+
+def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
+    clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
+    alias_map = {
+        "GOLD": "XAUUSD",
+        "ALTIN": "XAUUSD",
+        "SILVER": "XAGUSD",
+        "GUMUS": "XAGUSD",
+        "BTC": "BTCUSD",
+        "ETH": "ETHUSD",
+    }
+    clean_sym = alias_map.get(clean_sym, clean_sym)
+
+    yf_sym = YAHOO_SYMBOL_MAP.get(clean_sym)
+    if not yf_sym:
+        for k, v in YAHOO_SYMBOL_MAP.items():
+            if k.upper() == clean_sym:
+                yf_sym = v
+                clean_sym = k
+                break
+    if not yf_sym:
+        yf_sym = f"{clean_sym}=X"
+
+    cache_key = f"{clean_sym}:{interval}"
+    now = time.time()
+    if cache_key in _KLINES_CACHE:
+        cached_ts, cached_bars = _KLINES_CACHE[cache_key]
+        if now - cached_ts < _KLINES_CACHE_TTL and cached_bars:
+            return cached_bars[-limit:]
+
+    interval_map = {
+        "1m": ("1m", "2d"),
+        "5m": ("5m", "5d"),
+        "15m": ("15m", "10d"),
+        "30m": ("30m", "20d"),
+        "1h": ("60m", "60d"),
+        "60m": ("60m", "60d"),
+        "4h": ("60m", "120d"),
+        "240m": ("60m", "120d"),
+        "1d": ("1d", "1y"),
+        "D": ("1d", "1y"),
+    }
+    yf_interval, yf_range = interval_map.get(interval, ("5m", "5d"))
+
+    bars: List[Dict[str, Any]] = []
+    digits = 5
+    if clean_sym in ("USDJPY", "GBPJPY", "EURJPY"):
+        digits = 3
+    elif clean_sym in ("XAUUSD", "NAS100", "US30", "SPX500", "BTCUSD", "ETHUSD", "USOIL"):
+        digits = 2
+
+    for host in ("query1", "query2"):
+        url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval={yf_interval}&range={yf_range}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                res = data["chart"]["result"][0]
+                timestamps = res.get("timestamp", [])
+                quote = res["indicators"]["quote"][0]
+                opens = quote.get("open", [])
+                highs = quote.get("high", [])
+                lows = quote.get("low", [])
+                closes = quote.get("close", [])
+                volumes = quote.get("volume", [0] * len(timestamps))
+
+                for i, t in enumerate(timestamps):
+                    if i >= len(opens) or i >= len(highs) or i >= len(lows) or i >= len(closes):
+                        continue
+                    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                    v = volumes[i] if i < len(volumes) and volumes[i] is not None else 0
+                    if None not in (o, h, l, c):
+                        bars.append({
+                            "time": int(t),
+                            "open": round(float(o), digits),
+                            "high": round(float(h), digits),
+                            "low": round(float(l), digits),
+                            "close": round(float(c), digits),
+                            "volume": float(v) if v else 0.0,
+                        })
+                if bars:
+                    break
+        except Exception:
+            continue
+
+    if interval in ("4h", "240m") and bars:
+        resampled = []
+        groups: Dict[int, List[Dict[str, Any]]] = {}
+        for b in bars:
+            bucket = (b["time"] // 14400) * 14400
+            if bucket not in groups:
+                groups[bucket] = []
+            groups[bucket].append(b)
+        for bucket in sorted(groups.keys()):
+            gbars = groups[bucket]
+            resampled.append({
+                "time": bucket,
+                "open": gbars[0]["open"],
+                "high": max(x["high"] for x in gbars),
+                "low": min(x["low"] for x in gbars),
+                "close": gbars[-1]["close"],
+                "volume": sum(x.get("volume", 0) for x in gbars),
+            })
+        bars = resampled
+
+    if bars:
+        live_tick = _LIVE_PRICES_CACHE.get(clean_sym)
+        if live_tick and live_tick > 0 and len(bars) > 0:
+            last_bar = bars[-1]
+            last_bar["close"] = round(float(live_tick), digits)
+            last_bar["high"] = max(last_bar["high"], last_bar["close"])
+            last_bar["low"] = min(last_bar["low"], last_bar["close"])
+
+        _KLINES_CACHE[cache_key] = (now, bars)
+        return bars[-limit:]
+
+    if cache_key in _KLINES_CACHE:
+        return _KLINES_CACHE[cache_key][1][-limit:]
+    return []
+
+
+@router.get("/klines")
+async def get_forex_klines(
+    symbol: str = Query(..., description="Forex symbol, e.g. EURUSD, XAUUSD"),
+    interval: str = Query("5m", description="Candle interval (1m, 5m, 15m, 30m, 1h, 4h, 1d)"),
+    limit: int = Query(250, ge=10, le=1000, description="Max candle count"),
+):
+    """Return historical and live candlestick data for Lightweight Charts."""
+    loop = asyncio.get_running_loop()
+    bars = await loop.run_in_executor(None, _fetch_forex_klines, symbol, interval, limit)
+    clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
+    meta = next((s for s in FOREX_SYMBOLS if s["symbol"] == clean_sym), None)
+    current_price = bars[-1]["close"] if bars else (meta.get("default_price", 0.0) if meta else 0.0)
+    return {
+        "symbol": clean_sym,
+        "interval": interval,
+        "count": len(bars),
+        "candles": bars,
+        "current_price": current_price,
+        "meta": meta,
+    }
+
+
 def _evaluate_signal_gate(
     sym: str,
     cand: Dict[str, Any],

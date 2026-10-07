@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../lib/api";
 import { formatPrice } from "../lib/format";
+import ForexChartModal from "./components/ForexChartModal";
 
 interface SessionInfo {
   name: string;
@@ -136,6 +137,9 @@ export default function ForexRadarPage() {
   const [calcSlPips, setCalcSlPips] = useState<number>(20);
   const [calcSymbol, setCalcSymbol] = useState<string>("EURUSD");
   const [calcResult, setCalcResult] = useState<any>(null);
+
+  // Profesyonel Grafik Modalı (Spot tarzı Lightweight Charts)
+  const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidate | null>(null);
 
   const fetchRadar = async () => {
     try {
@@ -480,12 +484,15 @@ export default function ForexRadarPage() {
                       {c.bid} / {c.ask}
                     </span>
                     <span className="text-cyan-400 font-bold">{c.spread_pips}p spread</span>
-                    <Link
-                      href={`/forex/charts?symbol=${c.tv_symbol || c.symbol}`}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold hover:bg-blue-600/40 transition-colors"
+                    <button
+                      type="button"
+                      onClick={() => setChartModalCandidate(c)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold hover:bg-blue-600/50 hover:text-white transition-all shadow-[0_0_10px_rgba(59,130,246,0.25)] flex items-center gap-1"
+                      title="Profesyonel Mum Grafiğini Aç"
                     >
-                      Grafik ↗
-                    </Link>
+                      <span>📈</span>
+                      <span>Grafik</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -700,12 +707,15 @@ export default function ForexRadarPage() {
                         </td>
 
                         <td className="py-3.5 px-4 text-right">
-                          <Link
-                            href={`/forex/charts?symbol=${c.tv_symbol || c.symbol}`}
-                            className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/20 transition-all font-bold text-[11px]"
+                          <button
+                            type="button"
+                            onClick={() => setChartModalCandidate(c)}
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/25 hover:text-white transition-all font-bold text-[11px] inline-flex items-center gap-1 shadow-sm"
+                            title="Profesyonel Mum Grafiğini Aç"
                           >
-                            Grafik ↗
-                          </Link>
+                            <span>📈</span>
+                            <span>Grafik</span>
+                          </button>
                         </td>
                       </tr>
                     );
@@ -809,12 +819,15 @@ export default function ForexRadarPage() {
 
                     <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
                       <span className="text-bunker-muted">R/R {c.risk_reward}</span>
-                      <Link
-                        href={`/forex/charts?symbol=${c.tv_symbol || c.symbol}`}
-                        className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold text-xs hover:bg-blue-600/40 transition-colors touch-target"
+                      <button
+                        type="button"
+                        onClick={() => setChartModalCandidate(c)}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold text-xs hover:bg-blue-600/50 hover:text-white transition-all touch-target inline-flex items-center gap-1 shadow-sm"
+                        title="Profesyonel Mum Grafiğini Aç"
                       >
-                        Grafik ↗
-                      </Link>
+                        <span>📈</span>
+                        <span>Grafik</span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -825,7 +838,7 @@ export default function ForexRadarPage() {
       </div>
 
       {/* FOREX RİSK & LOT HESAPLAYICI (WIDGET) */}
-      <div className="p-5 rounded-2xl border border-bunker-800 bg-gradient-to-br from-bunker-900/90 to-bunker-950/90 shadow-xl space-y-4">
+      <div id="lot-calculator" className="p-5 rounded-2xl border border-bunker-800 bg-gradient-to-br from-bunker-900/90 to-bunker-950/90 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-bunker-800 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-lg">🧮</span>
@@ -922,6 +935,23 @@ export default function ForexRadarPage() {
           </div>
         )}
       </div>
+
+      {/* PROFESYONEL FOREX GRAFİK MODALI (Spot Tarzı Lightweight Charts) */}
+      {chartModalCandidate && (
+        <ForexChartModal
+          candidate={chartModalCandidate}
+          onClose={() => setChartModalCandidate(null)}
+          onOpenLotCalculator={(sym, sl) => {
+            setCalcSymbol(sym);
+            setCalcSlPips(sl);
+            // Sayfa altına doğru hesaplayıcıya kaydır
+            const calcElem = document.getElementById("lot-calculator");
+            if (calcElem) {
+              calcElem.scrollIntoView({ behavior: "smooth" });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
