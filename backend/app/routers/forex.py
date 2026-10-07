@@ -162,18 +162,6 @@ FOREX_SYMBOLS = [
         "tv_symbol": "OANDA:XAUUSD",
         "default_price": 2735.60,
     },
-    {
-        "symbol": "XAGUSD",
-        "display": "XAG/USD",
-        "name": "Silver / US Dollar",
-        "category": "commodity",
-        "base": "XAG",
-        "quote": "USD",
-        "pip_size": 0.01,
-        "digits": 3,
-        "tv_symbol": "OANDA:XAGUSD",
-        "default_price": 33.850,
-    },
     # Indices
     {
         "symbol": "NAS100",
@@ -227,6 +215,20 @@ FOREX_SYMBOLS = [
 # dokunulmadı — açık pozisyon varsa normal SL/TP kurallarıyla kendiliğinden
 # kapanır. Geri almak için ilgili blok `FOREX_SYMBOLS` içine geri taşınır.
 _RETIRED_FOREX_SYMBOLS = [
+    # XAGUSD 2026-10-07'de kullanıcı kararıyla emekliye ayrıldı (radar/panel temizliği);
+    # spec ve arşiv uyumluluğu yukarıdaki gibi korunur.
+    {
+        "symbol": "XAGUSD",
+        "display": "XAG/USD",
+        "name": "Silver / US Dollar",
+        "category": "commodity",
+        "base": "XAG",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "OANDA:XAGUSD",
+        "default_price": 33.850,
+    },
     {
         "symbol": "USOIL",
         "display": "WTI Oil",
@@ -393,7 +395,6 @@ YAHOO_SYMBOL_MAP = {
     "USDCAD": "USDCAD=X",
     "NZDUSD": "NZDUSD=X",
     "XAUUSD": "GC=F",
-    "XAGUSD": "SI=F",
     # USOIL (CL=F), ETHUSD (ETH-USD) ve SPX500 (^GSPC) 2026-10-07'de kaldırıldı
     # — bkz. _RETIRED_FOREX_SYMBOLS. Bu harita veri hattının çektiği evrendir.
     # JPY krosçarları (donchian_adx giriş modu sembolleri — 2026-10-07)
