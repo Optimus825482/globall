@@ -3007,7 +3007,8 @@ async def _forex_auto_paper_loop():
                     # Görünürlük: mod ne beklediğini 30 dk'da bir insan-okur cümleyle söyler;
                     # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
                     _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
-                    if _m_not_allowed or now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 1800.0:
+                    _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 1800.0
+                    if _m_wait_throttled:
                         _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
                         _m_disp = _m_item["display"] if _m_item else _m_sym
                         _m_side = "üstünde" if _m_price > float(_m_tech["donch_mid"]) else "altında"
