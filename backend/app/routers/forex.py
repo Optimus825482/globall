@@ -4373,7 +4373,7 @@ def _merge_partial_close_rows(deals: List[Dict[str, Any]]) -> List[Dict[str, Any
         new_t = _deal_ts(d) or 0.0
         old_t = _deal_ts(base) or 0.0
         if new_t >= old_t:
-            for field in ("exit_time", "exit_time_iso", "closed_at_ts", "exit_price", "exit_reason", "exit_reason_title"):
+            for field in ("exit_time", "exit_time_iso", "closed_at_ts", "time", "exit_price", "exit_reason", "exit_reason_title"):
                 if field in d:
                     base[field] = d[field]
         # Sınıflama toplam net sonuca göre yeniden yazılır.

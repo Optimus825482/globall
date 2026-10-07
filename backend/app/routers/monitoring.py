@@ -3271,7 +3271,7 @@ async def report_notifications(
     try:
         def _fetch_trades_op(conn):
             trades = conn.execute(
-                "SELECT id, symbol, notification_id, status, pnl, pnl_pct, exit_reason, entry_time, exit_time FROM auto_paper_trades ORDER BY entry_time DESC LIMIT 1000"
+                "SELECT id, symbol, notification_id, status, pnl, pnl_pct, exit_reason, entry_time, exit_time, entry_price, take_profit, notification_target_pct FROM auto_paper_trades ORDER BY entry_time DESC LIMIT 1000"
             ).fetchall()
             return [dict(t) for t in trades]
         t_rows = await database._run_db(_fetch_trades_op)
@@ -3325,12 +3325,25 @@ async def report_notifications(
 
         trade_info = None
         if matched_trade:
+            # Bildirim (radar) TP%'si sinyal-anı hedefi; otonom TP%'si gerçek
+            # dolum çabası (slippage+komisyon markup'ı dahil) — ikisi kolayca
+            # farklıdır ve rapor karışmasın diye ayrı taşınır.
+            auto_tp_pct = None
+            try:
+                tp_px = float(matched_trade.get("take_profit") or 0)
+                entry_px = float(matched_trade.get("entry_price") or 0)
+                if tp_px > 0 and entry_px > 0:
+                    auto_tp_pct = round((tp_px / entry_px - 1.0) * 100.0, 3)
+            except (TypeError, ValueError):
+                auto_tp_pct = None
             trade_info = {
                 "id": matched_trade.get("id"),
                 "status": matched_trade.get("status"),
                 "pnl": float(matched_trade["pnl"]) if matched_trade.get("pnl") is not None else None,
                 "pnl_pct": float(matched_trade["pnl_pct"]) if matched_trade.get("pnl_pct") is not None else None,
                 "exit_reason": matched_trade.get("exit_reason"),
+                "signal_target_pct": (float(row.get("target_pct") or 0) or None),
+                "auto_tp_pct": auto_tp_pct,
             }
 
         result.append({

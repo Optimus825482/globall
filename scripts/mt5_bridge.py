@@ -1020,6 +1020,8 @@ def sync_with_server(api_base: str):
         )
 
         mapped_sym = REVERSE_SYMBOL_ALIAS_MAP.get(sym, sym)
+        server_offset = _get_server_utc_offset()
+        pos_open_ts = int(p.time) - server_offset
         positions.append({
             "ticket": ticket,
             "symbol": mapped_sym,
@@ -1036,7 +1038,7 @@ def sync_with_server(api_base: str):
             "protection_label": prot_label,
             "breakeven_activated": (prot in ("BREAKEVEN", "TRAILING")),
             "trailing_activated": (prot == "TRAILING"),
-            "open_time": datetime.datetime.fromtimestamp(p.time, TZ_UTC3).strftime("%H:%M:%S UTC+3"),
+            "open_time": datetime.datetime.fromtimestamp(pos_open_ts, TZ_UTC3).strftime("%H:%M:%S UTC+3"),
         })
 
     # Kapanan işlem geçmişi (Broker zaman dilimi farkını tolere etmek için +2 gün buffer)
@@ -1059,8 +1061,10 @@ def sync_with_server(api_base: str):
                 break
 
         entry_p = in_deal.price if in_deal else d.price
-        open_time_str = datetime.datetime.fromtimestamp(in_deal.time, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3") if in_deal else "-"
-        close_time_str = datetime.datetime.fromtimestamp(d.time, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3")
+        in_deal_ts = (int(in_deal.time) - server_offset) if in_deal else None
+        close_ts = int(d.time) - server_offset
+        open_time_str = datetime.datetime.fromtimestamp(in_deal_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3") if in_deal_ts else "-"
+        close_time_str = datetime.datetime.fromtimestamp(close_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3")
 
         direction = "BUY" if in_deal and in_deal.type == mt5.DEAL_TYPE_BUY else ("SELL" if d.type == mt5.DEAL_TYPE_BUY else "BUY")
 
@@ -1105,6 +1109,8 @@ def sync_with_server(api_base: str):
             "swap": round(d.swap, 2),
             "open_time": open_time_str,
             "exit_time": close_time_str,
+            "time": close_ts,
+            "closed_at_ts": close_ts,
             "duration_sec": dur_sec,
             "duration_human": dur_human,
             "exit_reason": reason,

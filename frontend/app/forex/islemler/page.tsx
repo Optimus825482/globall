@@ -128,10 +128,10 @@ export default function ForexIslemlerPage() {
     open_pnl_usd: 0,
   });
 
-  // Kapanan İşlemler Filtresi & Sayfalama (Pagination: 20 per page)
+  // Kapanan İşlemler Filtresi & Sayfalama (Dinamik Sayfa Başı Kayıt: 10/20/50)
   const [filterOutcome, setFilterOutcome] = useState<"ALL" | "WIN" | "LOSS">("ALL");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const PAGE_SIZE = 20;
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // Tema Tercihini Yerel Hafızadan Yükle
   useEffect(() => {
@@ -155,11 +155,15 @@ export default function ForexIslemlerPage() {
     });
   };
 
-  // Veri Yükleme
+  // Veri Yükleme (Günün İşlemleri ve 00:00 Sıfırlaması Uyumlu)
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setRefreshing(true);
     try {
-      const reportRes = await apiFetch("/api/forex/auto-paper/trades?period=today&limit=250");
+      const [reportRes, statusRes] = await Promise.all([
+        apiFetch("/api/forex/auto-paper/trades?period=today&limit=250"),
+        apiFetch("/api/forex/auto-paper/status").catch(() => null),
+      ]);
+
       if (reportRes) {
         if (Array.isArray(reportRes.open_positions)) {
           setOpenPositions(reportRes.open_positions);
@@ -167,21 +171,30 @@ export default function ForexIslemlerPage() {
         if (Array.isArray(reportRes.trades)) {
           setClosedTrades(reportRes.trades);
         }
-        if (reportRes.kpi) {
+        const k = reportRes.kpi || statusRes?.today_kpi;
+        if (k) {
           setKpi((prev) => ({
             ...prev,
-            ...reportRes.kpi,
+            total_trades: k.total_trades ?? 0,
+            wins: k.won_trades ?? k.wins ?? 0,
+            losses: k.lost_trades ?? k.losses ?? 0,
+            win_rate: k.win_rate_pct ?? k.win_rate ?? 0,
+            total_pnl_usd: statusRes?.daily_pnl ?? k.total_pnl_usd ?? 0,
+            balance: statusRes?.balance ?? k.balance ?? prev.balance,
+            equity: statusRes?.equity ?? k.equity ?? prev.equity,
           }));
         }
-      }
-
-      const statusRes = await apiFetch("/api/forex/auto-paper/status");
-      if (statusRes) {
+      } else if (statusRes) {
+        const k = statusRes.today_kpi;
         setKpi((prev) => ({
           ...prev,
+          total_trades: k?.total_trades ?? 0,
+          wins: k?.won_trades ?? 0,
+          losses: k?.lost_trades ?? 0,
+          win_rate: k?.win_rate_pct ?? 0,
+          total_pnl_usd: statusRes.daily_pnl ?? 0,
           balance: statusRes.balance ?? prev.balance,
           equity: statusRes.equity ?? prev.equity,
-          total_pnl_usd: statusRes.daily_pnl ?? prev.total_pnl_usd,
         }));
       }
 
@@ -316,12 +329,13 @@ export default function ForexIslemlerPage() {
     });
   }, [closedTrades, filterOutcome]);
 
-  // Sayfalama (20'şerli gösterim)
-  const totalPages = Math.max(1, Math.ceil(filteredClosedTrades.length / PAGE_SIZE));
+  // Sayfalama (Dinamik sayfa başı kayıt ile)
+  const totalPages = Math.max(1, Math.ceil(filteredClosedTrades.length / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
   const paginatedClosedTrades = useMemo(() => {
-    const startIndex = (currentPage - 1) * PAGE_SIZE;
-    return filteredClosedTrades.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [filteredClosedTrades, currentPage]);
+    const startIndex = (safeCurrentPage - 1) * pageSize;
+    return filteredClosedTrades.slice(startIndex, startIndex + pageSize);
+  }, [filteredClosedTrades, safeCurrentPage, pageSize]);
 
   const handleFilterChange = (filter: "ALL" | "WIN" | "LOSS") => {
     setFilterOutcome(filter);
@@ -430,6 +444,25 @@ export default function ForexIslemlerPage() {
       </div>
 
       {/* 2. EN ÜST DASHBOARD & GÜNLÜK BAŞARI KARTLARI (4'LÜ GRID) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <h2 className={`text-sm font-bold uppercase tracking-wider ${theme.textPrimary}`}>
+            Günün Başarı Metrikleri
+          </h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-semibold">
+            Her Gece 00:00'da Otomatik Sıfırlanır (UTC+3)
+          </span>
+        </div>
+        <Link
+          href="/forex/reports"
+          className="text-xs text-blue-500 dark:text-cyan-400 hover:underline flex items-center gap-1 font-semibold transition-colors"
+        >
+          <span>📅 Geçmiş Tarihli Kayıtları İncele</span>
+          <span>→</span>
+        </Link>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         
         {/* KART 1: GÜNÜN BAŞARI ORANI (%) */}
@@ -878,41 +911,60 @@ export default function ForexIslemlerPage() {
             </h2>
           </div>
 
-          {/* Filtreleme Butonları */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <button
-              type="button"
-              onClick={() => handleFilterChange("ALL")}
-              className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
-                filterOutcome === "ALL"
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : `${theme.badgeBg} hover:opacity-80`
-              }`}
-            >
-              Tümü ({closedTrades.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFilterChange("WIN")}
-              className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
-                filterOutcome === "WIN"
-                  ? "bg-emerald-600 text-white border-emerald-600"
-                  : `${theme.badgeBg} hover:opacity-80`
-              }`}
-            >
-              Kârlılar ({kpi.wins})
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFilterChange("LOSS")}
-              className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
-                filterOutcome === "LOSS"
-                  ? "bg-rose-600 text-white border-rose-600"
-                  : `${theme.badgeBg} hover:opacity-80`
-              }`}
-            >
-              Zararlılar ({kpi.losses})
-            </button>
+          {/* Filtreleme & Sayfa Boyutu Butonları */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Sayfa Başı Kayıt Seçici */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold ${theme.badgeBg}`}>
+              <span className={theme.textSecondary}>Sayfa Başı:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className={`bg-transparent font-bold outline-none cursor-pointer ${theme.textPrimary}`}
+              >
+                <option value={10} className="bg-slate-900 text-white">10</option>
+                <option value={20} className="bg-slate-900 text-white">20</option>
+                <option value={50} className="bg-slate-900 text-white">50</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleFilterChange("ALL")}
+                className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
+                  filterOutcome === "ALL"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : `${theme.badgeBg} hover:opacity-80`
+                }`}
+              >
+                Tümü ({closedTrades.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFilterChange("WIN")}
+                className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
+                  filterOutcome === "WIN"
+                    ? "bg-emerald-600 text-white border-emerald-600"
+                    : `${theme.badgeBg} hover:opacity-80`
+                }`}
+              >
+                Kârlılar ({kpi.wins})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFilterChange("LOSS")}
+                className={`px-2.5 py-1 rounded-lg font-bold border transition-all ${
+                  filterOutcome === "LOSS"
+                    ? "bg-rose-600 text-white border-rose-600"
+                    : `${theme.badgeBg} hover:opacity-80`
+                }`}
+              >
+                Zararlılar ({kpi.losses})
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1056,19 +1108,21 @@ export default function ForexIslemlerPage() {
             </div>
 
             {/* SAYFALAMA (PAGINATION) BARI */}
-            {totalPages > 1 && (
+            {filteredClosedTrades.length > 0 && (
               <div className="p-3 sm:p-3.5 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
                 <span className={`text-center sm:text-left ${theme.textSecondary}`}>
-                  {filteredClosedTrades.length} işlemden{" "}
-                  <strong>{(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filteredClosedTrades.length)}</strong>{" "}
-                  arası gösteriliyor (Sayfa {currentPage} / {totalPages})
+                  Toplam {filteredClosedTrades.length} işlemden{" "}
+                  <strong>
+                    {(safeCurrentPage - 1) * pageSize + 1} – {Math.min(safeCurrentPage * pageSize, filteredClosedTrades.length)}
+                  </strong>{" "}
+                  arası gösteriliyor (Sayfa {safeCurrentPage} / {totalPages})
                 </span>
 
                 <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap justify-center">
                   <button
                     type="button"
                     onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
+                    disabled={safeCurrentPage <= 1}
                     className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
                   >
                     « İlk
@@ -1076,7 +1130,7 @@ export default function ForexIslemlerPage() {
                   <button
                     type="button"
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
+                    disabled={safeCurrentPage <= 1}
                     className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
                   >
                     ‹ Önceki
@@ -1084,7 +1138,7 @@ export default function ForexIslemlerPage() {
 
                   {/* Sayfa Butonları */}
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1)
                     .map((p, idx, arr) => (
                       <React.Fragment key={p}>
                         {idx > 0 && arr[idx - 1] !== p - 1 && (
@@ -1094,7 +1148,7 @@ export default function ForexIslemlerPage() {
                           type="button"
                           onClick={() => setCurrentPage(p)}
                           className={`w-7 h-7 rounded-lg border font-bold transition-all ${
-                            currentPage === p ? theme.pageActive : theme.pageInactive
+                            safeCurrentPage === p ? theme.pageActive : theme.pageInactive
                           }`}
                         >
                           {p}
@@ -1105,7 +1159,7 @@ export default function ForexIslemlerPage() {
                   <button
                     type="button"
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
+                    disabled={safeCurrentPage >= totalPages}
                     className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
                   >
                     Sonraki ›
@@ -1113,7 +1167,7 @@ export default function ForexIslemlerPage() {
                   <button
                     type="button"
                     onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
+                    disabled={safeCurrentPage >= totalPages}
                     className={`px-2.5 py-1 rounded-lg border font-bold transition-all disabled:opacity-40 disabled:pointer-events-none ${theme.pageInactive}`}
                   >
                     Son »

@@ -71,6 +71,7 @@ async def _log_blocked_decision(symbol: str, reason: str, price: float, extra: d
         from app import database
         reason_tr_map = {
             "stale_ticker": "Taze fiyat alınamadı (REST ve bildirim fiyatı bayat)",
+            "entry_drift_too_wide": f"Sinyal-giriş sapması %%%{extra.get('drift_pct')} (> %%{extra.get('max_drift_pct')}) — TP/SL çapası bildirim fiyatından koptu",
             "not_passing": "Aday panel kriterlerini karşılamadı (passes=False)",
             "quiet_hours": "Sessiz saatler devrede",
             "quiet_hours_query_error": "Sessiz saat kontrol hatası",
@@ -385,6 +386,21 @@ IKI OTONOM YOLUN KAPI/OLCEK KARSILASTIRMASI (R3-08 — DOKUMANTASYON):
                         "açılış engellendi", symbol, freshness.get("age_sec"))
             return _blocked(symbol, "stale_ticker", price=current_price, age_sec=freshness.get("age_sec"))
 
+        # Sinyal anı ile otonom giriş arasındaki fiyat sapması: >%0.5 ise
+        # pozisyon açma — TP/SL çapası bildirim fiyatından çoktan koptu,
+        # gerçek dolum planlanan hedef/stop geometrisini taşımıyor.
+        notif_ref_price = float(notification.get("price") or 0)
+        if notif_ref_price > 0 and current_price > 0:
+            drift_pct = abs(current_price - notif_ref_price) / notif_ref_price * 100.0
+            max_drift_pct = float(settings.get("max_entry_drift_pct", 0.5))
+            if drift_pct > max_drift_pct:
+                logger.warning(
+                    "auto_paper %s: giriş sapması %%%.2f (%.6f vs bildirim %.6f) > %%%.2f — açılmadı",
+                    symbol, drift_pct, current_price, notif_ref_price, max_drift_pct)
+                return _blocked(symbol, "entry_drift_too_wide", price=current_price,
+                                notification_price=notif_ref_price, drift_pct=round(drift_pct, 3),
+                                max_drift_pct=max_drift_pct)
+
         # MACD MTF Konfluans Kapısı: ZAYIF MTF / Yüksek sahte kırılım (%75 fake) filtresi
         block_weak_mtf = bool(settings.get("block_weak_mtf", True))
         min_mtf_confluence = float(settings.get("min_mtf_confluence", 45.0))
@@ -600,6 +616,17 @@ async def _open_new_trade(symbol: str, notification: dict, current_price: float,
                             atr_pct = atr_val / current_price
                             # 1.2 * ATR_pct nefes alma alanı, minimum sl_pct, maksimum %2.8
                             effective_sl_pct = max(sl_pct, min(0.028, 1.2 * atr_pct))
+                            # max(sl_pct, ...) ATR çok darsa sl_pct'i eziyor; ATR çok
+                            # yüksekse tavan %2.8'de kesiliyor. RR kapısı ise sabit
+                            # MONITORING_RR_SL_PCT'i baz alır — gerçek çıkış stop'u
+                            # effective_sl_pct olduğu için bu iki taban ayrışırsa
+                            # kapının doğruladığı R:R gerçekleşen işlemle çelişir.
+                            rr_sl = float(getattr(config, "MONITORING_RR_SL_PCT", 0.0) or 0.0)
+                            if rr_sl > 0 and abs(effective_sl_pct * 100.0 - rr_sl) / rr_sl > 0.35:
+                                logger.warning(
+                                    "auto_paper %s: ATR SL tavanı %.2f%%, RR kapısı dayanagi %%%.2f — "
+                                    "gerçek risk kapıdakinden farklı; panelde stop_loss_pct'i SL ile aynı tutun",
+                                    symbol, effective_sl_pct * 100.0, rr_sl)
             except Exception as atr_err:
                 logger.debug("auto_paper %s: ATR stop hesaplama atlandı: %s", symbol, atr_err)
 
@@ -1335,6 +1362,7 @@ async def get_default_settings() -> dict:
         "llm_gate_enabled": True,
         "llm_min_confidence": 60.0,
         "volatility_sl_enabled": True,
+        "max_entry_drift_pct": 0.5,
     }
 
 
@@ -1373,7 +1401,7 @@ async def update_settings_endpoint(payload: dict, request: Request):
                 "block_weak_mtf", "min_mtf_confluence",
                 "sl_cooldown_minutes", "post_win_cooldown_minutes",
                 "llm_gate_enabled", "llm_min_confidence",
-                "volatility_sl_enabled")
+                "volatility_sl_enabled", "max_entry_drift_pct")
     existing = await get_auto_paper_settings()
     merged = {**existing, **{k: payload[k] for k in editable if k in payload}}
 
@@ -1416,6 +1444,9 @@ async def update_settings_endpoint(payload: dict, request: Request):
         "llm_gate_enabled": bool(merged.get("llm_gate_enabled", True)),
         "llm_min_confidence": max(50.0, min(100.0, float(merged.get("llm_min_confidence", 60.0)))),
         "volatility_sl_enabled": bool(merged.get("volatility_sl_enabled", True)),
+        # Otonom giriş sapma kapısı: sinyal (bildirim) fiyatından %0.5'ten fazla
+        # kopan otomatik girişler TP/SL çapası bozuk açıldığı için engellenir.
+        "max_entry_drift_pct": max(0.05, min(5.0, float(merged.get("max_entry_drift_pct", 0.5)))),
     }
 
     await database.set_llm_setting("auto_paper_settings", json.dumps(settings))
