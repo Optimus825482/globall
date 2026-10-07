@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import AuthGate from "./components/AuthGate";
 import AppShell from "./components/AppShell";
@@ -60,7 +61,9 @@ export default function RootLayout({
         <PwaProvider>
           <OfflineBanner />
           <AuthGate>
-            <AppShell>{children}</AppShell>
+            <Suspense fallback={null}>
+              <AppShell>{children}</AppShell>
+            </Suspense>
           </AuthGate>
           <PwaInstallBanner />
         </PwaProvider>

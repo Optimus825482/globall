@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import RadarAlertModal from "./RadarAlertModal";
@@ -14,8 +14,15 @@ const CURRENT_BUILD = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const embeddedAnalysis = pathname === "/symbol-analysis" && searchParams.get("embedded") === "1";
+  const [embeddedAnalysis, setEmbeddedAnalysis] = useState(false);
+
+  useEffect(() => {
+    if (pathname === "/symbol-analysis") {
+      setEmbeddedAnalysis(new URLSearchParams(window.location.search).get("embedded") === "1");
+    } else {
+      setEmbeddedAnalysis(false);
+    }
+  }, [pathname]);
   // Borsa kimliği backend'den TEK kez okunur ve tüm ağaca dağıtılır
   // (menü, para birimi rozeti, sembol türetme). `NEXT_PUBLIC_*` build-time
   // sabittir; build ile backend arasında uyuşmazlık olursa bu değer onu
