@@ -71,9 +71,11 @@ export default function AutoSettingsPanel({
   onSaved,
   accent = "blue",
 }: AutoSettingsPanelProps) {
-  // Varsayılan olarak tüm sembollerin seçili gelmesini garantile
+  // Kapsam fallback'i ODAK setidir (XAU+BTC+JPY krosları). Tüm-enstrüman seçimini
+  // varsayılan yapmak, 30g replay'de 28/28 negatif çıkan FX evrenini paneli açıp
+  // kaydeden kullanıcıya sessizce açardı — bilinçli seçim olmalı, varsayılan değil.
   const resolveSymbols = (syms?: string[]) => {
-    if (!syms || syms.length === 0) return ALL_SYMBOL_KEYS;
+    if (!syms || syms.length === 0) return FOCUS_SYMBOLS;
     return syms;
   };
 
@@ -170,7 +172,7 @@ export default function AutoSettingsPanel({
             ? form.allowed_symbols
             : appliedSettings.allowed_symbols?.length
             ? appliedSettings.allowed_symbols
-            : ALL_SYMBOL_KEYS,
+            : FOCUS_SYMBOLS,
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {
