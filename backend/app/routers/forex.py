@@ -1716,6 +1716,12 @@ async def get_forex_tickers(category: Optional[str] = None):
 
 _KLINES_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 _KLINES_CACHE_TTL = 4.0  # 4 sn in-memory kline önbellek (Yahoo hızlandırıcı)
+# Vadeli↔spot baz farkı eşikleri (bkz. `_fetch_forex_klines` son-bar bloğu):
+# `_KLINE_BASIS_SHIFT_REL` üzerindeki fark normal tick değil, veri kaynağı baz
+# farkı sayılır ve tüm seri kaydırılır; `_KLINE_MAX_TICK_REL` üzerindeki fark ise
+# uçuk/bad tick kabul edilip yok sayılır (seri kirletilmez).
+_KLINE_BASIS_SHIFT_REL = 0.0015   # %0.15 — bunun üstü baz farkı → tüm seriyi kaydır
+_KLINE_MAX_TICK_REL = 0.15        # %15 — bunun üstü bad tick → hiç uygulama
 
 
 def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
@@ -1826,9 +1832,31 @@ def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> 
         live_tick = _LIVE_PRICES_CACHE.get(clean_sym)
         if live_tick and live_tick > 0 and len(bars) > 0:
             last_bar = bars[-1]
-            last_bar["close"] = round(float(live_tick), digits)
-            last_bar["high"] = max(last_bar["high"], last_bar["close"])
-            last_bar["low"] = min(last_bar["low"], last_bar["close"])
+            live_close = round(float(live_tick), digits)
+            # VADELİ ↔ SPOT BAZ FARKI (2026-10-07): XAUUSD geçmişi Yahoo `GC=F`
+            # (COMEX vadeli altın) ile çekilirken canlı fiyat MT5 spot kotasyonudur.
+            # İkisi arasında sürekli bir baz farkı vardır (ör. vadeli 4135 / spot
+            # 4108 → ~%0.6). Eskiden YALNIZ son mumun close/high/low'u canlı fiyata
+            # çekiliyordu; bu, düz seyreden seride tek mumda ~26$'lik SAHTE bir
+            # flash-crash çubuğu üretiyor, Bollinger/MACD'yi de tek barda patlatıyordu.
+            # Çözüm: fark küçükse (normal tick) yalnız son mum güncellenir; fark baz
+            # farkı kadar büyükse (ama uçuk/bad-tick değilse) TÜM seri aynı delta ile
+            # kaydırılır → mum şekilleri korunur, seviye spota hizalanır.
+            ref_close = float(last_bar["close"])
+            delta = live_close - ref_close
+            rel = abs(delta) / ref_close if ref_close > 0 else 0.0
+            if rel > _KLINE_BASIS_SHIFT_REL and rel <= _KLINE_MAX_TICK_REL:
+                shift = round(delta, digits)
+                for b in bars:
+                    b["open"] = round(float(b["open"]) + shift, digits)
+                    b["high"] = round(float(b["high"]) + shift, digits)
+                    b["low"] = round(float(b["low"]) + shift, digits)
+                    b["close"] = round(float(b["close"]) + shift, digits)
+            elif rel <= _KLINE_MAX_TICK_REL:
+                last_bar["close"] = live_close
+                last_bar["high"] = max(last_bar["high"], live_close)
+                last_bar["low"] = min(last_bar["low"], live_close)
+            # rel > MAX_TICK_REL → uçuk/bad tick; seriyi kirletmemek için yok say.
 
         _KLINES_CACHE[cache_key] = (now, bars)
         return bars[-limit:]

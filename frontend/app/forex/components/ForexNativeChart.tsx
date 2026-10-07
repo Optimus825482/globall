@@ -536,6 +536,13 @@ export default function ForexNativeChart({
     loadKlines(timeframe);
   }, [timeframe, loadKlines]);
 
+  // 4'lü ekrandaki slot periyot butonları `initialTimeframe` prop'unu günceller;
+  // bileşen bunu yalnız useState başlangıcında okuyordu → dıştaki butonlar grafiği
+  // değiştirmiyordu ("çift periyot kontrolü tutarsız" hissi). Prop değişince senkronla.
+  useEffect(() => {
+    setTimeframe(initialTimeframe);
+  }, [initialTimeframe]);
+
   // Canlı veri polling (her 4 saniyede bir sessiz tazeleme — görünümü sıfırlamaz!)
   useEffect(() => {
     const timer = setInterval(() => {
@@ -554,7 +561,11 @@ export default function ForexNativeChart({
       const last = lastCandleRef.current;
       if (last && Number(last.time) > 0) {
         const nextCandleSec = Number(last.time) + tfSecs;
-        setCountdown(Math.max(0, nextCandleSec - nowSec));
+        const remain = nextCandleSec - nowSec;
+        // Son mum BAYAT ise (Yahoo gecikmesi/piyasa arası) kalan süre negatife
+        // düşüp sayaç 00:00'da kilitleniyordu. Böyle durumda duvar saatine göre
+        // bir sonraki mum sınırına geri say (asılı kalmasın).
+        setCountdown(remain > 0 ? remain : tfSecs - (nowSec % tfSecs));
       } else {
         setCountdown(tfSecs - (nowSec % tfSecs));
       }
@@ -598,17 +609,26 @@ export default function ForexNativeChart({
             if (candleSeriesRef.current && lastCandleRef.current && Number.isFinite(px)) {
               const last = lastCandleRef.current;
               if (Number.isFinite(last.open) && Number.isFinite(last.high) && Number.isFinite(last.low)) {
-                const updatedBar: CandleBar = {
-                  time: last.time,
-                  open: last.open,
-                  high: Math.max(last.high, px),
-                  low: Math.min(last.low, px),
-                  close: px,
-                };
-                lastCandleRef.current = updatedBar;
-                try {
-                  candleSeriesRef.current.update(updatedBar as any);
-                } catch {}
+                // BAZ FARKI KAPISI (2026-10-07): canlı fiyat (MT5 spot) ile mum
+                // serisi (Yahoo vadeli GC=F) arasında baz farkı varsa, canlı fiyatı
+                // son mumun close'una yazmak tek barda ~26$'lik SAHTE çöküş çubuğu
+                // üretiyordu. Uçuk farkta mumu güncelleme; backend bir sonraki kline
+                // turunda tüm seriyi spota kaydırarak hizalar (bkz. _fetch_forex_klines).
+                const ref = Number(last.close);
+                const rel = ref > 0 ? Math.abs(px - ref) / ref : 0;
+                if (rel <= 0.0015) {
+                  const updatedBar: CandleBar = {
+                    time: last.time,
+                    open: last.open,
+                    high: Math.max(last.high, px),
+                    low: Math.min(last.low, px),
+                    close: px,
+                  };
+                  lastCandleRef.current = updatedBar;
+                  try {
+                    candleSeriesRef.current.update(updatedBar as any);
+                  } catch {}
+                }
               }
             }
           }
@@ -655,7 +675,9 @@ export default function ForexNativeChart({
       },
       rightPriceScale: {
         borderColor: "#1e293b",
-        scaleMargins: { top: 0.10, bottom: 0.10 },
+        // Marjlar geniş: sert hareket/volatilite sıçramasında mumlar üst/alt
+        // kenara yapışıp "kesilmiş" görünmesin (2026-10-07).
+        scaleMargins: { top: 0.15, bottom: 0.15 },
       },
     });
 
