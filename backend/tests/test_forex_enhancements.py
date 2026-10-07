@@ -369,18 +369,22 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
             self.assertIn(s, forex.YAHOO_SYMBOL_MAP)
 
     def test_retired_symbols_are_out_of_universe_but_specs_kept(self):
-        """ETHUSD ve USOIL 2026-10-07'de forex evreninden çıkarıldı.
+        """ETHUSD, USOIL ve SPX500 2026-10-07'de forex evreninden çıkarıldı.
 
         Kullanıcı kararı: tüm forex modülünden kaldır, ama geçmiş kayıtlara
         DOKUNMA. Bu iki şart aynı anda ancak şöyle sağlanır — semboller tarama
         evreninden (FOREX_SYMBOLS) ve veri hattından (YAHOO_SYMBOL_MAP) çıkar,
         buna karşılık pip/lot spec'leri `get_symbol_trading_specs` içinde
-        KALIR; aksi halde arşivdeki ETH/petrol işlemlerinin pip_val ve digits
-        bilgisi kaybolur ve PnL yeniden hesabı sessizce bozulurdu.
+        KALIR; aksi halde arşivdeki ETH/petrol/endeks işlemlerinin pip_val ve
+        digits bilgisi kaybolur ve PnL yeniden hesabı sessizce bozulurdu.
+
+        SPX500 ayrıca bir hata sınıfını kapatır: `get_symbol_trading_specs`
+        içinde endeks dalı olmadığı için forex varsayılanına (pip_size 0.0001)
+        düşüyor ve SL girişin binde bir puan uzağına kuruluyordu.
         """
         universe = [s["symbol"] for s in forex.FOREX_SYMBOLS]
         retired = [s["symbol"] for s in forex._RETIRED_FOREX_SYMBOLS]
-        self.assertEqual(sorted(retired), ["ETHUSD", "USOIL"])
+        self.assertEqual(sorted(retired), ["ETHUSD", "SPX500", "USOIL"])
 
         for sym in retired:
             self.assertNotIn(sym, universe, f"{sym} tarama evreninde olmamalı")
@@ -392,6 +396,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         # Radar/emir uçları artık bu sembolleri görmemeli
         self.assertNotIn("USOIL", universe)
         self.assertNotIn("ETHUSD", universe)
+        self.assertNotIn("SPX500", universe)
         # XAUUSD + BTCUSD (özel izleme sayfasının evreni) hâlâ yerinde
         for keep in ("XAUUSD", "BTCUSD", "EURUSD", "NAS100", "US30", "XAGUSD"):
             self.assertIn(keep, universe)
@@ -664,6 +669,108 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         # Directly verify the priority expression
         req = cfg.btc_min_score if cfg.btc_min_score > 0 else cfg.min_score
         self.assertEqual(req, 76.0)
+
+
+class TestForexAccountingFixes(unittest.IsolatedAsyncioTestCase):
+    """2026-10-07 denetim bulgularının regresyon testleri.
+
+    Her test, düzeltme geri alınırsa KIRILACAK şekilde yazıldı; yani bulgunun
+    sessizce geri gelmesini engeller.
+    """
+
+    def setUp(self):
+        forex._MT5_STATE["open_positions"] = []
+        forex._MT5_STATE["closed_deals"] = []
+        forex._MT5_STATE["pending_commands"] = []
+        forex._AUTO_STATE["open_positions"].clear()
+        forex._AUTO_STATE["closed_trades"].clear()
+
+    # --- #11: başabaş iki uçta aynı sınıflanmalı -------------------------
+    async def test_breakeven_classified_consistently(self):
+        """pnl tam 0.00 → her uçta WIN; wins+losses == total_trades."""
+        forex._MT5_STATE["connected"] = True
+        forex._MT5_STATE["account"] = {"balance": 1000.0, "equity": 1000.0}
+        forex._MT5_STATE["closed_deals"] = [
+            {"ticket": 1, "symbol": "EURUSD", "display": "EUR/USD", "pnl_usd": 0.0,
+             "profit": 0.0, "pnl_pips": 0.0, "exit_time": "2026-10-06 10:00:00 UTC+3"},
+        ]
+        try:
+            status = await forex.get_forex_auto_paper_status()
+        finally:
+            forex._MT5_STATE["connected"] = False
+        self.assertEqual(status["wins"] + status["losses"], status["total_trades"])
+        self.assertEqual(status["wins"], 1)
+        self.assertEqual(status["losses"], 0)
+
+    # --- #12: PF sonsuzluk nöbetçisi ------------------------------------
+    def test_profit_factor_sentinel_is_named(self):
+        """Sabit tek yerde tanımlı ve 999.0; panel eşiği buna göre."""
+        self.assertEqual(forex._PF_INFINITE, 999.0)
+
+    # --- #3: EV kalkanı UTC+3 damgasını doğru okumalı --------------------
+    # CANLI DAVRANIŞ düzeltmesi uygulandı (kullanıcı onayı 2026-10-07) —
+    # `_collect_symbol_ev` artık `_deal_ts`/`_parse_deal_ts` kullanıyor.
+    def test_collect_symbol_ev_reads_utc3_label(self):
+        """25 saat önce kapanan deal, 24 saatlik pencerenin DIŞINDA kalmalı."""
+        import datetime
+        now = time.time()
+        real = datetime.datetime.fromtimestamp(now - 25 * 3600, datetime.timezone.utc)
+        label = (real + datetime.timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S UTC+3")
+        deal = {"symbol": "EURUSD", "pnl_usd": -5.0, "exit_time": label}
+        stats = forex._collect_symbol_ev("EURUSD", now, 24 * 3600, source=[deal])
+        self.assertEqual(stats["n"], 0)
+
+    def test_collect_symbol_ev_counts_fresh_utc3_deal(self):
+        """2 saat önce kapanan deal pencerenin İÇİNDE sayılmalı."""
+        import datetime
+        now = time.time()
+        real = datetime.datetime.fromtimestamp(now - 2 * 3600, datetime.timezone.utc)
+        label = (real + datetime.timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S UTC+3")
+        deal = {"symbol": "EURUSD", "pnl_usd": -5.0, "exit_time": label}
+        stats = forex._collect_symbol_ev("EURUSD", now, 24 * 3600, source=[deal])
+        self.assertEqual(stats["n"], 1)
+
+    # --- #4: broker endeks alias'ları tanınmalı --------------------------
+    # CANLI DAVRANIŞ düzeltmesi uygulandı (kullanıcı onayı 2026-10-07).
+    def test_usd_bias_knows_broker_index_aliases(self):
+        """US100/NDX/DJ30/WS30 USD_SHORT olmalı (MT5 gerçek sembol adları)."""
+        for alias in ("US100", "NDX", "DJ30", "WS30"):
+            self.assertEqual(
+                forex.get_usd_bias(alias, "BUY"), "USD_SHORT",
+                msg=f"{alias} USD_SHORT olmalıydı (broker alias'ı tanınmıyor)",
+            )
+            self.assertEqual(forex.get_usd_bias(alias, "SELL"), "USD_LONG")
+
+    # --- #13: hayalet cache budanmalı ------------------------------------
+    async def test_retired_symbols_are_purged_from_tick_cache(self):
+        """Emekli sembol cache'te kalmamalı; evren sembolleri durmalı."""
+        forex._TICK_CACHE["USOIL"] = {"symbol": "USOIL", "stale": True}
+        forex._TICK_CACHE["SPX500"] = {"symbol": "SPX500", "stale": True}
+        await forex._generate_realistic_ticks()
+        self.assertNotIn("USOIL", forex._TICK_CACHE)
+        self.assertNotIn("SPX500", forex._TICK_CACHE)
+        self.assertIn("EURUSD", forex._TICK_CACHE)
+
+    # --- P1: kısmi kâr kapanış KAYDINA yansımalı -------------------------
+    def test_partial_tp_records_total_not_remaining_leg(self):
+        """Kısmi + kalan bacak kaydı $40; risk kalan bacak için işaretlenir."""
+        spec = forex.get_symbol_trading_specs("XAUUSD")
+        pos = {
+            "symbol": "XAUUSD", "direction": "BUY", "lots": 0.10,
+            "entry_price": 2000.0, "sl_price": 1990.0, "tp_price": 2060.0,
+            "pip_size": spec["pip_size"], "digits": spec["digits"],
+            "partial_target_pips": 20.0,
+        }
+        realized = forex.apply_partial_take_profit(pos, 20.0, spec["pip_val"])
+        self.assertAlmostEqual(realized, 10.0, places=2)
+        self.assertAlmostEqual(pos["partial_realized_usd"], 10.0, places=2)
+        self.assertAlmostEqual(pos["partial_realized_pips"], 20.0, places=1)
+        # Kalan bacak (0.05 lot) +60 pip → $30; kayıt toplamı $40 olmalı.
+        remaining = round(60.0 * pos["lots"] * spec["pip_val"], 2)
+        total = round(remaining + pos["partial_realized_usd"], 2)
+        self.assertAlmostEqual(total, 40.0, places=2)
+        # P3: kısmi sonrası kalan risk işaretlenmeli ve lotla birlikte yarıya inmeli.
+        self.assertIn("risk_usd_after_partial", pos)
 
 
 if __name__ == "__main__":

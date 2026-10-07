@@ -149,18 +149,6 @@ FOREX_SYMBOLS = [
     },
     # Indices
     {
-        "symbol": "SPX500",
-        "display": "S&P 500",
-        "name": "S&P 500 Index",
-        "category": "index",
-        "base": "SPX",
-        "quote": "USD",
-        "pip_size": 0.1,
-        "digits": 2,
-        "tv_symbol": "FOREXCOM:SPXUSD",
-        "default_price": 5830.20,
-    },
-    {
         "symbol": "NAS100",
         "display": "Nasdaq 100",
         "name": "US Tech 100 Index",
@@ -199,9 +187,13 @@ FOREX_SYMBOLS = [
     },
 ]
 
-# 2026-10-07 kullanıcı kararı: ETH/USD ve WTI Oil (USOIL) forex evreninden
-# ÇIKARILDI — radar, grafikler, teknik grafikler ve raporlar sembol listesinde
-# artık görünmez, veri hattı bunları çekmez.
+# 2026-10-07 kullanıcı kararı: ETH/USD, WTI Oil (USOIL) ve S&P 500 (SPX500)
+# forex evreninden ÇIKARILDI — radar, grafikler, teknik grafikler ve raporlar
+# sembol listesinde artık görünmez, veri hattı bunları çekmez.
+# SPX500 gerekçesi: `get_symbol_trading_specs` içinde endeks dalı olmadığı için
+# forex varsayılanına (pip_size 0.0001) düşüyordu ve SL girişin binde bir puan
+# uzağına kurulup açılış saniyesinde patlıyordu. Sembolü spec dalı ekleyerek
+# kurtarmak yerine kullanıcı evrenden tamamen çıkarmayı seçti (2026-10-07).
 # Spec kayıtları SİLİNMEDİ, buraya taşındı: geçmiş işlemlerin PnL/pip
 # gösterimi ve açık pozisyonların kapanışı bozulmasın. Bu liste HİÇBİR tarama
 # döngüsünde okunmaz (yalnızca kayıt/geri dönüş amaçlı); mevcut kayıtlara
@@ -231,6 +223,18 @@ _RETIRED_FOREX_SYMBOLS = [
         "digits": 2,
         "tv_symbol": "BINANCE:ETHUSDT",
         "default_price": 2700.0,
+    },
+    {
+        "symbol": "SPX500",
+        "display": "S&P 500",
+        "name": "S&P 500 Index",
+        "category": "index",
+        "base": "SPX",
+        "quote": "USD",
+        "pip_size": 0.1,
+        "digits": 2,
+        "tv_symbol": "FOREXCOM:SPXUSD",
+        "default_price": 5830.20,
     },
 ]
 
@@ -291,6 +295,21 @@ TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 # Technical Analysis & Indicator Cache
 _TECHNICAL_CACHE: Dict[str, Dict[str, Any]] = {}
 _LAST_TECH_FETCH_TIME = 0.0
+
+# Teknik veri bayatlık sınırı (#5). Yahoo fetch'i başarısız olduğunda
+# `_TECHNICAL_CACHE.update()` yalnız BAŞARILI sembolleri yazar; başarısız
+# sembolün önceki değeri süresiz kalıyordu ve motor o bayat skor/ATR ile giriş
+# açabiliyordu. refreshed_at bu sınırı aşınca sembolün göstergeleri yok sayılır
+# (skor 50/HOLD) — SL/TP de bayat ATR'den hesaplanmaz. 180 sn, 15 sn'lik
+# normal tazeleme kadansına karşı 12 ardışık başarısızlık demektir; geçici
+# Yahoo kesintisi tek başına tetiklemez, gerçek veri kesilmesi tetikler.
+_TECH_STALE_SEC = 180.0
+
+# ATR yumuşatma yöntemi (#15). False = son 14 TR'nin düz ortalaması (mevcut canlı
+# davranış). True = Wilder yumuşatması (RSI ile tutarlı). Varsayılan KAPALI: ATR
+# tabanlı SL/TP mesafelerini ve `major_min_atr` kapısını değiştirdiği için
+# açmadan önce replay A/B ölçümü şart. Replay anahtarı: `--wilder-atr`.
+ATR_USE_WILDER = False
 _LAST_GOLD_EXIT_TIME = 0.0
 _LAST_BTC_EXIT_TIME = 0.0
 _LAST_CLOSED_DEAL_IDS: set = set()
@@ -298,6 +317,22 @@ _LAST_CLOSED_DEAL_IDS: set = set()
 # FX korelasyon kalkanı: 5M kapanış önbelleğinden rolling Pearson matrisi
 _CLOSES_CACHE: Dict[str, List[float]] = {}
 _FX_CORR = FXCorrelationMonitor()
+
+
+def _tech_is_stale(sym: str, now: Optional[float] = None) -> bool:
+    """Teknik gösterge kaydı `_TECH_STALE_SEC`'ten eski mi (#5).
+
+    Kayıt yoksa False (henüz veri gelmedi; çağıran zaten varsayılana düşer).
+    Amaç: Yahoo o sembol için ardışık kez başarısız olduğunda bayat RSI/MACD/
+    ADX/ATR ile giriş kararı ve SL/TP hesabı yapılmasını engellemek.
+    """
+    tech = _TECHNICAL_CACHE.get(sym)
+    if not tech:
+        return False
+    ts = float(tech.get("updated_at", 0.0) or 0.0)
+    if ts <= 0.0:
+        return False
+    return ((now if now is not None else time.time()) - ts) > _TECH_STALE_SEC
 
 # MT5 köprüsünden gelen gerçek spread (pip) önbelleği
 _LIVE_SPREAD_PIPS: Dict[str, float] = {}
@@ -327,9 +362,8 @@ YAHOO_SYMBOL_MAP = {
     "NZDUSD": "NZDUSD=X",
     "XAUUSD": "GC=F",
     "XAGUSD": "SI=F",
-    # USOIL (CL=F) ve ETHUSD (ETH-USD) 2026-10-07'de kaldırıldı — bkz.
-    # _RETIRED_FOREX_SYMBOLS. Bu harita veri hattının çektiği evrendir.
-    "SPX500": "^GSPC",
+    # USOIL (CL=F), ETHUSD (ETH-USD) ve SPX500 (^GSPC) 2026-10-07'de kaldırıldı
+    # — bkz. _RETIRED_FOREX_SYMBOLS. Bu harita veri hattının çektiği evrendir.
     "NAS100": "^NDX",
     "US30": "^DJI",
     "BTCUSD": "BTC-USD",
@@ -345,7 +379,7 @@ def get_usd_bias(symbol: str, direction: str) -> str:
     - Pairs with USD as Quote (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD, XAGUSD, SPX500, NAS100, US30, USTEC, BTCUSD):
       BUY -> USD_SHORT, SELL -> USD_LONG
 
-    Emekliye ayrılan semboller (USOIL/ETHUSD, bkz. _RETIRED_FOREX_SYMBOLS)
+    Emekliye ayrılan semboller (USOIL/ETHUSD/SPX500, bkz. _RETIRED_FOREX_SYMBOLS)
     burada KALIR: arşivdeki eski pozisyonların kapanışı ve korelasyon kalkanı
     hâlâ onların USD yönünü bilmek zorunda.
     """
@@ -355,7 +389,15 @@ def get_usd_bias(symbol: str, direction: str) -> str:
 
     if clean_sym.startswith("USD"):
         return "USD_LONG" if d == "BUY" else "USD_SHORT"
-    elif clean_sym.endswith("USD") or clean_sym in ("USOIL", "OIL", "WTI", "XAUUSD", "XAGUSD", "SPX500", "NAS100", "US30", "USTEC"):
+    elif clean_sym.endswith("USD") or clean_sym in (
+        "USOIL", "OIL", "WTI", "XAUUSD", "XAGUSD", "SPX500", "NAS100", "US30", "USTEC",
+        # MT5'te endekslerin GERÇEK sembol adları: NAS100 → USTEC/US100/NDX,
+        # US30 → DJ30/WS30 (bkz. mt5_bridge.py SYMBOL_ALIAS_MAP). Köprünün
+        # REVERSE_SYMBOL_ALIAS_MAP'i bu dördünü geri eşlemediği için pozisyon
+        # adı ham hâliyle gelebiliyordu; tanınmadıklarında USD_NEUTRAL dönüp
+        # korelasyon kalkanından (aynı-bias şartı) tamamen düşüyorlardı (#4).
+        "US100", "NDX", "DJ30", "WS30", "DOW",
+    ):
         return "USD_SHORT" if d == "BUY" else "USD_LONG"
     return "USD_NEUTRAL"
 
@@ -479,14 +521,16 @@ def _collect_symbol_ev(symbol: str, now_ts: float, window_sec: float, source: Op
     for d in source or []:
         if str(d.get("symbol", "")).upper() != sym:
             continue
-        ts = d.get("closed_at_ts")
+        # Zaman damgası `_deal_ts` ile çözülür: MT5 köprüsü "… UTC+3" gönderir ve
+        # eski satır içi parser "UTC+3" etiketini atıp değeri UTC sanıyordu →
+        # pencere 3 saat kayıyordu. `_deal_ts` damga adını okur ve üç biçimi de
+        # (epoch / ISO+offset / "… UTC+3") doğru çözer. (Canlı EV kalkanı, #3.)
+        ts = _deal_ts(d)
         if ts is None:
-            iso = d.get("exit_time_iso") or d.get("exit_time") or ""
-            try:
-                ts = datetime.datetime.strptime(str(iso)[:19], "%Y-%m-%d %H:%M:%S").replace(
-                    tzinfo=datetime.timezone.utc).timestamp()
-            except Exception:
-                continue
+            # Zamanı çözülemeyen kayıt EV penceresine alınmaz (fail-open: n
+            # küçülür, kalkan tetiklenmez). Biçim değişirse bu sessiz kalır —
+            # bilinen sınır; format değişikliğinde buraya bakılmalı.
+            continue
         try:
             if now_ts - float(ts) > window_sec:
                 continue
@@ -535,6 +579,8 @@ def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: 
       döner ve arayan taraf işlemi tamamen pas geçmelidir.
     """
     s = str(symbol).upper()
+    # "SPX" dalı emekliye ayrılan SPX500 için KALIR (bkz. _RETIRED_FOREX_SYMBOLS):
+    # arşivdeki eski endeks kayıtları yeniden hesaplanırken bu tavan okunur.
     if "NAS" in s or "USTEC" in s or "US30" in s or "SPX" in s:
         floor_lot, step = 0.10, 0.05
     elif "OIL" in s or "WTI" in s:
@@ -836,6 +882,9 @@ def apply_partial_take_profit(pos: Dict[str, Any], pnl_pips: float, pip_usd_val:
     realized = round(pnl_pips * close_lots * pip_usd_val, 2)
     pos["lots"] = round(lots - close_lots, 2)
     pos["partial_realized_usd"] = round(float(pos.get("partial_realized_usd", 0.0)) + realized, 2)
+    # Kısmi bacağın pip'i de birikir: kapanış kaydı toplam pip'i gösterebilsin
+    # (yoksa yalnız kalan bacak raporlanır ve kazanan işlem eksik görünür — P1).
+    pos["partial_realized_pips"] = round(float(pos.get("partial_realized_pips", 0.0)) + pnl_pips, 1)
 
     # Kalan pozisyon için SL'i başabaş üstü net kâra kilit ($1 garantisinden aşağı inmez)
     pip_size = float(pos.get("pip_size", 0.0001))
@@ -855,6 +904,20 @@ def apply_partial_take_profit(pos: Dict[str, Any], pnl_pips: float, pip_usd_val:
         if (cur_sl == 0.0 or lock_sl < cur_sl) and lock_sl > entry_p - (target * pip_size):
             pos["sl_price"] = lock_sl
             pos["breakeven_activated"] = True
+
+    # Kısmi kapanıştan sonra kalan bacak aynı SL mesafesini ama YARI lotu taşır;
+    # yani gerçek risk anında yarıya iner. Eskiden bu hiçbir yerde işaretlenmediği
+    # için risk bütçesi modeli (apply_risk_normalization) kalan bacağı tam riskli
+    # sanıyordu (P3). Kalan riski pozisyona yazıyoruz ki replay/rapor doğru tabanı
+    # görsün — davranış değişmez, yalnız model şeffaflaşır. Nihai SL kilidinden
+    # SONRA hesaplanır, çünkü asıl korunan mesafe odur.
+    entry_p_check = float(pos.get("entry_price", 0.0))
+    sl_after_lock = float(pos.get("sl_price", 0.0))
+    sl_dist = abs(entry_p_check - sl_after_lock) if sl_after_lock > 0 else 0.0
+    if sl_dist > 0:
+        pos["risk_usd_after_partial"] = round(
+            sl_dist / max(pip_size, 1e-9) * float(pos.get("lots", 0.0)) * pip_usd_val, 2
+        )
     return realized
 
 
@@ -1104,9 +1167,19 @@ def _compute_technical_indicators(
     hist = float(macd_line[-1] - signal_line[-1])
 
     # 5. ATR 14
+    # Varsayılan: son 14 gerçek aralığın DÜZ ortalaması (mevcut davranış — korunur).
+    # `ATR_USE_WILDER=True` iken Wilder yumuşatması (RSI ile aynı yöntem) kullanılır;
+    # A/B replay ölçümü için anahtar (bkz. #15). Varsayılan kapalı: canlı davranış
+    # değişmez, ta ki replay sonucuna göre karar verilene kadar.
     if len(h) >= 15:
         tr = np.maximum(h[1:] - l[1:], np.maximum(abs(h[1:] - c[:-1]), abs(l[1:] - c[:-1])))
-        atr = float(np.mean(tr[-14:]))
+        if ATR_USE_WILDER and len(tr) >= 14:
+            atr_w = float(np.mean(tr[:14]))
+            for i in range(14, len(tr)):
+                atr_w = (atr_w * 13.0 + float(tr[i])) / 14.0
+            atr = atr_w
+        else:
+            atr = float(np.mean(tr[-14:]))
     else:
         atr = float(np.mean(h - l)) if len(h) > 0 else 0.001
 
@@ -1371,6 +1444,14 @@ async def _refresh_live_rates_if_needed():
         try:
             fresh_tech = await asyncio.to_thread(_sync_fetch_all_technical_data)
             if fresh_tech:
+                # Bu turda BAŞARISIZ olan semboller (`_TECH_STALE_SEC`'ten eski) cache'ten
+                # tahliye edilir: DXY dahil. Aksi halde DX-Y.NYB fetch'i bir kez
+                # başarısız olunca `get_dxy_regime` sonsuza kadar son değeri döndürüp
+                # rejimi donduruk bırakıyordu (#10). Tahliye edilen sembolün tick'i
+                # varsayılana düşer (HOLD) ve veri gelince yeniden dolar.
+                expired = [s for s in _TECHNICAL_CACHE if _tech_is_stale(s, now)]
+                for s in expired:
+                    _TECHNICAL_CACHE.pop(s, None)
                 _TECHNICAL_CACHE.update(fresh_tech)
                 mt5_connected = _MT5_STATE.get("connected") and (now - _MT5_STATE.get("last_ping", 0.0) < 60.0)
                 for sym, tech in fresh_tech.items():
@@ -1402,12 +1483,26 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
     await _refresh_live_rates_if_needed()
     now = time.time()
 
+    # Emekliye ayrılan semboller (USOIL/ETHUSD/SPX500) sıcak-reload sonrası
+    # cache'te kalabiliyordu: `get_forex_radar` `ticks.items()` üzerinden
+    # gittiği için hayalet satır olarak listede görünüyordu. Motor döngüsü
+    # zaten yalnız FOREX_SYMBOLS üzerinde döndüğünden bu bir İŞLEM kararı
+    # değil, liste temizliğidir; kaynağında kesiyoruz.
+    universe = {item["symbol"] for item in FOREX_SYMBOLS}
+    for stale in [s for s in _TICK_CACHE if s not in universe]:
+        _TICK_CACHE.pop(stale, None)
+
     for item in FOREX_SYMBOLS:
         sym = item["symbol"]
         pip = item["pip_size"]
         digits = item["digits"]
 
         tech = _TECHNICAL_CACHE.get(sym)
+        if tech and _tech_is_stale(sym, now):
+            # Bayat gösterge: sinyal skoru/ATR güvenilmez (bkz. #5). Bu sembol için
+            # gösterge varsayılanına düşülür (aşağıdaki `else` dalı → HOLD/50);
+            # fiyat yine canlı kalır ve bir sonraki başarılı fetch'te düzelir.
+            tech = None
         live_p = _LIVE_PRICES_CACHE.get(sym) or (tech["price"] if tech else item["default_price"])
 
         spread_pips = _LIVE_SPREAD_PIPS.get(sym) or (
@@ -1596,6 +1691,18 @@ def _evaluate_signal_gate(
                 (str(p.get("symbol", "")).upper(), get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY")))
                 for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", []))
             ]
+            # Motor kapısı bekleyen OPEN_ORDER'ları da korelogramaya katar
+            # (:2992-2997). Radar bunları atladığı için, motor bir emri kuyruğa
+            # alıp radar bir sonraki taramada ikinci aynı-bias girişi
+            # değerlendirdiğinde radar "STRONG sinyal" gösterip motorun
+            # korelasyonda engelleyeceği işlemi işaret edebiliyordu (#8). Panel
+            # göstergesi motor kararına uysun diye aynı küme kurulur.
+            for c in _MT5_STATE.get("pending_commands", []):
+                if c.get("action") == "OPEN_ORDER":
+                    corr_positions.append((
+                        str(c.get("symbol", "")).upper(),
+                        get_usd_bias(c.get("symbol", ""), c.get("direction", "BUY")),
+                    ))
             ok, _why = _FX_CORR.cluster_check(sym, bias, corr_positions)
             if not ok:
                 reasons.append("correlation")
@@ -2087,6 +2194,7 @@ class ForexAutoPaperSettings(BaseModel):
     adx_min: float = Field(28.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (yalnız adx_filter_enabled=True iken etkin)")
     supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
     ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
+    require_mt5_connection: bool = Field(True, description="MT5 köprüsü bağlı değilken YENİ işlem açılmaz (paper'a sessiz kayma + gerçek MT5 pozisyonunun yanlışlıkla kapanması biter — #7). False yapılırsa eski davranış: köprü yokken paper motoru devreye girer.")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
     ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
     ev_max_win_rate: float = Field(45.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (42 → 35 → 45: 2026-10-06 30g replay A/B kararı)")
@@ -2213,8 +2321,16 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         # Pip başına USD değeri sembol spec'inden alınır — BTCUSD/ETHUSD/NAS100/USOIL
         # için pip_val 1.0'dır; sabit 10.0 kullanmak paper PnL'i 10 kat şişiriyordu.
         pip_usd_val = get_symbol_trading_specs(target["symbol"])["pip_val"]
-        pnl_usd = round(pnl_pips * target["lots"] * pip_usd_val, 2)
-        pnl_pips = round(pnl_pips, 1)
+        # Kalan bacak: bakiye/realized bu kadarıyla güncellenir (kısmi bacak
+        # döngüde `apply_partial_take_profit` sırasında zaten kredilenmişti).
+        remaining_pnl_usd = round(pnl_pips * target["lots"] * pip_usd_val, 2)
+        remaining_pnl_pips = round(pnl_pips, 1)
+        # Kapanış KAYDI ise toplamı göstermelidir: aksi halde rapor kârı eksik,
+        # hatta kazanan işlem LOSS görünürdü (P1). Kayıt = kısmi + kalan.
+        partial_usd = float(target.get("partial_realized_usd", 0.0))
+        partial_pips = float(target.get("partial_realized_pips", 0.0))
+        pnl_usd = round(remaining_pnl_usd + partial_usd, 2)
+        pnl_pips = round(remaining_pnl_pips + partial_pips, 1)
 
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         now_time = time.time()
@@ -2231,7 +2347,9 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             "REVERSAL_FLIP": "🔄 Trend Dönüşü (Flip Reversal)",
         }
         human_reason = reason_titles.get(reason, reason)
-        bal_after = round(_AUTO_STATE["balance"] + pnl_usd, 2)
+        # Bakiye YALNIZ kalan bacakla ilerler: kısmi kâr döngüde kredilenmişti,
+        # `pnl_usd` ise kayıt için toplamı taşıyor (yukarıya bkz.).
+        bal_after = round(_AUTO_STATE["balance"] + remaining_pnl_usd, 2)
 
         now_dt = datetime.datetime.fromtimestamp(now_time, TZ_UTC3)
         closed_item = {
@@ -2251,8 +2369,8 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         }
 
         _AUTO_STATE["balance"] = bal_after
-        _AUTO_STATE["realized_pnl_usd"] = round(_AUTO_STATE["realized_pnl_usd"] + pnl_usd, 2)
-        _AUTO_STATE["realized_pnl_pips"] = round(_AUTO_STATE["realized_pnl_pips"] + pnl_pips, 1)
+        _AUTO_STATE["realized_pnl_usd"] = round(_AUTO_STATE["realized_pnl_usd"] + remaining_pnl_usd, 2)
+        _AUTO_STATE["realized_pnl_pips"] = round(_AUTO_STATE["realized_pnl_pips"] + remaining_pnl_pips, 1)
         _AUTO_STATE["total_trades"] += 1
         if pnl_usd >= 0:
             _AUTO_STATE["wins"] += 1
@@ -2285,8 +2403,13 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             target_ticket = target.get("mt5_ticket")
             for mpos in list(_MT5_STATE.get("open_positions", [])):
                 t_id = mpos.get("ticket")
-                # Eğer belirli bir MT5 biletine bağlıysa sadece onu kapat, değilse sembol eşleşeni
-                should_close = (target_ticket and t_id == target_ticket) or (not target_ticket and mpos.get("symbol", "").upper() == sym_target)
+                # KAYIT MT5'ten gelmiyorsa (paper pozisyonu — `mt5_ticket` yok) MT5'e
+                # DOKUNMA. Eskiden `not target_ticket` dalı sembol adı eşleşen HER MT5
+                # pozisyonunu kapatıyordu; köprü düşüp motor paper açtığında o paper
+                # kaydı, geri gelen köprüdeki gerçek pozisyonları siliyordu (#7).
+                if target_ticket is None:
+                    continue
+                should_close = (t_id == target_ticket)
                 if should_close and t_id:
                     already_closing = any(c.get("ticket") == t_id for c in _MT5_STATE.get("pending_commands", []))
                     if not already_closing:
@@ -2534,8 +2657,8 @@ async def _forex_auto_paper_loop():
                                 mt5_pos_id = pos.get("mt5_ticket")
                                 for mpos in _MT5_STATE.get("open_positions", []):
                                     m_t = mpos.get("ticket")
-                                    # Belirli bir bilete bağlıysa sadece onu, değilse sembol eşleşeni güncelle
-                                    if (mt5_pos_id and m_t == mt5_pos_id) or (not mt5_pos_id and mpos.get("symbol", "").upper() == sym.upper()):
+                                    # Paper kaydı (mt5_ticket yok) MT5 biletiyle eşleşemez → dokunma (#7).
+                                    if mt5_pos_id and m_t == mt5_pos_id:
                                         if m_t:
                                             _MT5_STATE["pending_commands"].append({
                                                 "id": f"CMD-MODIFY-{m_t}-BE",
@@ -2573,8 +2696,11 @@ async def _forex_auto_paper_loop():
 
                         # MT5 açık biletinde de Stop Loss seviyesini dinamik olarak yukarı sür
                         if updated_trail and _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                            # Yalnız bu pozisyonun bağlı olduğu MT5 bileti güncellenir;
+                            # paper kaydı (mt5_ticket yok) MT5'e dokunamaz (#7).
+                            trail_ticket = pos.get("mt5_ticket")
                             for mpos in _MT5_STATE.get("open_positions", []):
-                                if mpos.get("symbol", "").upper() == sym.upper():
+                                if trail_ticket and mpos.get("ticket") == trail_ticket:
                                     t_id = mpos.get("ticket")
                                     if t_id:
                                         _MT5_STATE["pending_commands"].append({
@@ -2586,10 +2712,15 @@ async def _forex_auto_paper_loop():
                                         })
 
                     # (c) KÂR AL (TAKE PROFIT) KONTROLÜ — tp_price=0 (TP'siz mod, örn. kripto) asla tetiklenmez
+                    # MT5'te TP bir LİMİT emridir: seviyeye ulaşınca o seviyeden
+                    # dolar, daha iyisinden değil. Eskiden çıkış fiyatı olarak
+                    # gap-sonrası `cur_p` yazılıyor ve paper TP kârları sistematik
+                    # iyimser çıkıyordu (P2). SL bir STOP emridir ve kötü fiyattan
+                    # dolabileceği için orada `cur_p` (daha kötü) bilinçli korunur.
                     if pos["tp_price"] > 0 and direction == "BUY" and cur_p >= pos["tp_price"]:
-                        positions_to_close.append((pos["id"], "TP_HIT", cur_p))
+                        positions_to_close.append((pos["id"], "TP_HIT", pos["tp_price"]))
                     elif pos["tp_price"] > 0 and direction == "SELL" and cur_p <= pos["tp_price"]:
-                        positions_to_close.append((pos["id"], "TP_HIT", cur_p))
+                        positions_to_close.append((pos["id"], "TP_HIT", pos["tp_price"]))
 
                     # (d) ZARAR DURDUR (STOP LOSS) KONTROLÜ
                     elif direction == "BUY" and cur_p <= pos["sl_price"]:
@@ -3145,6 +3276,22 @@ async def _forex_auto_paper_loop():
                         "comment": f"Scalper MT5 {cand['score']:.0f}",
                     })
                 else:
+                    # MT5 bağlı değil. Varsayılan olarak forekste PAPER'e düşmeyiz:
+                    # forex kısmı MT5 köprüsü üzerinden demo hesabı yönetir (kullanıcı
+                    # kararı 2026-10-07). Kilit olmadan, köprü geçici düştüğünde motor
+                    # sessizce paper pozisyon açıyor; sonra o kayıt `mt5_ticket`
+                    # taşımadığı için (aşağıda) aynı semboldeki GERÇEK MT5
+                    # pozisyonlarını kapatabiliyordu (#7). Panelden kapatılabilir.
+                    if _AUTO_SETTINGS.require_mt5_connection:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_mt5off", 0) > 60.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_mt5off"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}] MT5 köprüsü bağlı değil — yeni işlem açılmadı "
+                                f"(paper'a sessiz kayma engellendi).",
+                                symbol=sym,
+                            )
+                        continue
                     # MT5 bağlı değilse Paper Engine sanal pozisyon havuzuna ekle
                     sl_dist = sl_pips * spec["pip_size"]
                     tp_dist = tp_pips * spec["pip_size"]
@@ -3235,8 +3382,11 @@ async def get_forex_auto_paper_status():
         })
 
     normalized_deals = []
-    for d in closed_deals_source:
-        pnl = float(d.get("profit", d.get("pnl_usd", 0.0)))
+    # #2: status sayıları da pozisyon bazlı olsun (rapor/CSV ile aynı payda) —
+    # kısmi kapanış satırları birleştirilir.
+    for d in _merge_partial_close_rows(list(closed_deals_source)):
+        # #1: net sonuç = profit + commission + swap (MT5 bakiyesiyle uzlaşır).
+        pnl = _deal_net_pnl_usd(d)
         t_id = d.get("ticket") or d.get("id") or 0
         normalized_deals.append({
             "id": d.get("id") or f"MT5-{t_id}",
@@ -3251,7 +3401,7 @@ async def get_forex_auto_paper_status():
             "exit_time": d.get("exit_time", d.get("time", "")),
             "exit_reason": d.get("exit_reason", "MT5 Kapanış"),
             "exit_reason_title": d.get("exit_reason_title", "IC Markets MT5"),
-            "pnl_usd": round(pnl, 2),
+            "pnl_usd": pnl,
             "pnl_pips": float(d.get("pnl_pips", 0.0)),
             "outcome": "WIN" if pnl >= 0 else "LOSS",
         })
@@ -3260,11 +3410,28 @@ async def get_forex_auto_paper_status():
     equity = float(mt5_acc.get("equity", round(balance + open_pnl_usd, 2))) if is_mt5_conn else round(balance + open_pnl_usd, 2)
 
     # Realized PnL ve Kazanma Oranı
-    wins = sum(1 for d in normalized_deals if d["pnl_usd"] > 0)
+    # Sınıflama tüm uçlarda AYNI: kapanış kaydı (:2255), paper sayaçları (:2262),
+    # rapor (:3559) ve CSV (:3700) "pnl >= 0 → WIN" der. Burada eskiden kesin
+    # `> 0` / `< 0` vardı; tam 0.00'a yuvarlanan bir başabaş çıkışı raporda WIN,
+    # status'ta ne win ne loss sayılıyor ve `wins + losses != total_trades`
+    # oluyordu. Tek kural: WIN = pnl >= 0, LOSS = pnl < 0.
+    wins = sum(1 for d in normalized_deals if d["pnl_usd"] >= 0)
     losses = sum(1 for d in normalized_deals if d["pnl_usd"] < 0)
     total_trades = len(normalized_deals)
     realized_usd = round(sum(d["pnl_usd"] for d in normalized_deals), 2) if is_mt5_conn else _AUTO_STATE["realized_pnl_usd"]
     win_rate = round((wins / total_trades * 100.0), 1) if total_trades > 0 else 0.0
+
+    # Pip KPI'ları (eskiden sabit 0.0 dönüyordu, oysa pnl_pips her kayıtta mevcut).
+    # Pip ölçeği SEMBOL BAŞINA farklıdır (EURUSD 0.0001, XAUUSD 0.1, endeks 1 puan,
+    # BTC 1 USD); bu yüzden çok sembollü bir defterin pip toplamı farklı birimleri
+    # toplar. Toplam yine verilir ama `pnl_pips_mixed_scale` bayrağıyla birlikte
+    # döner; panel bu durumda "≈" ile işaretler.
+    realized_pips = round(sum(float(d.get("pnl_pips", 0.0)) for d in normalized_deals), 1)
+    open_pips = round(sum(float(p.get("pnl_pips", 0.0)) for p in normalized_positions), 1)
+    all_pip_symbols = {str(d.get("symbol", "")).upper() for d in normalized_deals} | {
+        str(p.get("symbol", "")).upper() for p in normalized_positions
+    }
+    pnl_pips_mixed_scale = len({s for s in all_pip_symbols if s}) > 1
 
     return {
         "status": _AUTO_STATE["last_status"],
@@ -3272,9 +3439,10 @@ async def get_forex_auto_paper_status():
         "balance": balance,
         "equity": equity,
         "open_pnl_usd": open_pnl_usd,
-        "open_pnl_pips": 0.0,
+        "open_pnl_pips": open_pips,
         "realized_pnl_usd": realized_usd,
-        "realized_pnl_pips": 0.0,
+        "realized_pnl_pips": realized_pips,
+        "pnl_pips_mixed_scale": pnl_pips_mixed_scale,
         "total_trades": total_trades,
         "wins": wins,
         "losses": losses,
@@ -3389,6 +3557,76 @@ async def reset_forex_auto_paper():
 
 # Rapor sayfasının dönem ön ayarları. "all" sınırsızdır; "custom" iki tarih ister.
 _FOREX_REPORT_PERIODS = ("all", "today", "yesterday", "last12h", "this_week", "this_month", "custom")
+
+# Zarar yokken kâr faktörü matematiksel olarak sonsuzdur. JSON `Infinity`
+# taşıyamadığı için tek bir nöbetçi sabit kullanılır; panel `>= _PF_INFINITE`
+# görünce "∞" yazar (reports/page.tsx). Sabiti tek yerde tutmak, eşiğin
+# backend ve panel arasında ayrışmasını engeller.
+_PF_INFINITE = 999.0
+
+
+def _deal_net_pnl_usd(deal: Dict[str, Any]) -> float:
+    """Bir kapanış kaydının NET USD sonucu = profit + komisyon + swap (#1).
+
+    MT5 hesabının bakiyesi tam olarak bu üçünün toplamı kadar hareket eder;
+    köprü `commission`/`swap`'i ayrı alanlara yazar (mt5_bridge.py:998-999) ama
+    backend bunları hiç okumuyordu → paneldeki "realize kâr" MT5 bakiyesinden
+    sistematik iyimser kalıyordu (deal başına komisyon işlem sayısıyla birikir).
+
+    Paper kayıtlarında `commission`/`swap` alanı yoktur (0.0) ve `pnl_usd` zaten
+    net olduğundan sonuç değişmez. Grafik/kapanış öncesi kayıtlar da güvenli.
+    """
+    profit = float(deal.get("profit", deal.get("pnl_usd", 0.0)) or 0.0)
+    commission = float(deal.get("commission", 0.0) or 0.0)
+    swap = float(deal.get("swap", 0.0) or 0.0)
+    return round(profit + commission + swap, 2)
+
+
+def _merge_partial_close_rows(deals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Aynı pozisyona ait kısmi kapanış satırlarını TEK işleme birleştirir (#2).
+
+    MT5'te kısmi kâr almayı köprü kendisi yapar (`execute_close_partial`) ve her
+    bacak ayrı bir DEAL_ENTRY_OUT üretir; köprü her OUT deal için `id="MT5-{pos_id}"`
+    taşıyan bir satır basar. Yani tek fiziksel pozisyon rapora 2+ satır olarak
+    düşüyordu → `total_trades`/`win_rate` paydası ve `avg_*` şişiyordu.
+
+    Birleştirme: `id` (veya `ticket`) bazında; miktarlar toplanır (`lots`,
+    `profit`/`pnl_usd`, `commission`, `swap`), zaman/en son çıkış korunur. Sıra
+    ilk görülme sırasıdır. Tek satırlık pozisyonlar aynen geçer.
+    """
+    merged: Dict[Any, Dict[str, Any]] = {}
+    order: List[Any] = []
+    passthrough: List[Dict[str, Any]] = []
+    for d in deals or []:
+        key = d.get("id") or d.get("ticket")
+        if key is None:
+            passthrough.append(d)
+            continue
+        if key not in merged:
+            merged[key] = dict(d)
+            order.append(key)
+            continue
+        base = merged[key]
+        for field in ("lots", "profit", "pnl_usd", "commission", "swap"):
+            if field in base or field in d:
+                base[field] = round(float(base.get(field, 0.0) or 0.0) + float(d.get(field, 0.0) or 0.0), 2)
+        # Kapanış zamanı: en son (en yeni) bacak.
+        new_t = _deal_ts(d) or 0.0
+        old_t = _deal_ts(base) or 0.0
+        if new_t >= old_t:
+            for field in ("exit_time", "exit_time_iso", "closed_at_ts", "exit_price", "exit_reason", "exit_reason_title"):
+                if field in d:
+                    base[field] = d[field]
+        # Sınıflama toplam net sonuca göre yeniden yazılır.
+        base["outcome"] = "WIN" if _deal_net_pnl_usd(base) >= 0 else "LOSS"
+    return [merged[k] for k in order] + passthrough
+
+# MT5 köprüsü en fazla son 300 kapanan anlaşmayı gönderir (mt5_bridge.py:
+# `for d in reversed(out_deals[-300:])`). Bu yüzden raporun `period="all"`
+# seçeneği gerçek "tüm geçmiş" DEĞİL, köprünün dönen penceresidir. Liste tam
+# 300'e ulaştıysa pencere doymuş demektir; panel bunu kullanıcıya bildirir ki
+# kartlar MT5 bakiyesiyle uzlaşmadığında sebebi görünür olsun.
+_MT5_DEAL_WINDOW = 300
 
 
 def _parse_deal_ts(value: Any) -> Optional[float]:
@@ -3516,7 +3754,7 @@ async def get_forex_trades_report(
     görünür ve kart anlamsızlaşırdı. Bu ayrım yanıtta `kpi_scope` ile bildirilir.
     """
     # MT5 Deals önceliklidir; yoksa auto_state geçmişi kullanılır
-    all_closed = list(_MT5_STATE.get("closed_deals", [])) or list(_AUTO_STATE.get("closed_trades", []))
+    all_closed = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
 
     now_ts = time.time()
     start_ts, end_ts = _resolve_report_window(period, date_from, date_to, now_ts)
@@ -3551,33 +3789,42 @@ async def get_forex_trades_report(
 
     # Performans Analitiği (Sembol + Dönem kapsamı; tablo filtreleri hariç)
     total_trades = len(kpi_scope)
-    wins = [t for t in kpi_scope if float(t.get("pnl_usd", t.get("profit", 0.0))) >= 0]
-    losses = [t for t in kpi_scope if float(t.get("pnl_usd", t.get("profit", 0.0))) < 0]
+    wins = [t for t in kpi_scope if _deal_net_pnl_usd(t) >= 0]
+    losses = [t for t in kpi_scope if _deal_net_pnl_usd(t) < 0]
 
     win_count = len(wins)
     loss_count = len(losses)
     win_rate = round((win_count / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
-    gross_profit = round(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in wins), 2)
-    gross_loss = round(abs(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in losses)), 2)
+    gross_profit = round(sum(_deal_net_pnl_usd(t) for t in wins), 2)
+    gross_loss = round(abs(sum(_deal_net_pnl_usd(t) for t in losses)), 2)
 
     if gross_loss > 0:
         profit_factor = round(gross_profit / gross_loss, 2)
     elif gross_profit > 0:
-        profit_factor = 999.0
+        # Zarar hiç yokken PF matematiksel olarak sonsuzdur; JSON `Infinity`
+        # yazamadığı için nöbetçi değer kullanılır. Panel bu değeri "∞" olarak
+        # gösterir (reports/page.tsx: `profit_factor >= _PF_INFINITE ? "∞"`),
+        # yani 999 gerçek bir faktör gibi görünmez. Sabit tek yerde tanımlı ki
+        # eşik iki tarafta ayrışmasın (`_is_infinite_pf` ile aynı değer).
+        profit_factor = _PF_INFINITE
     else:
         profit_factor = 0.0
 
-    total_pnl_usd = round(sum(float(t.get("pnl_usd", t.get("profit", 0.0))) for t in kpi_scope), 2)
+    total_pnl_usd = round(sum(_deal_net_pnl_usd(t) for t in kpi_scope), 2)
     total_pnl_pips = round(sum(float(t.get("pnl_pips", 0.0)) for t in kpi_scope), 1)
+    # Pip ölçeği sembol başına farklı (forex 0.0001 / altın 0.1 / endeks puanı /
+    # BTC 1 USD). Birden çok sembol kapsanıyorsa toplam birimi karışıktır; panel
+    # bunu "≈" ile işaretler, sayıyı gizlemez.
+    pnl_pips_mixed_scale = len({str(t.get("symbol", "")).upper() for t in kpi_scope if t.get("symbol")}) > 1
     total_lots = round(sum(float(t.get("lots", 0.0)) for t in kpi_scope), 2)
 
     avg_trade_usd = round(total_pnl_usd / total_trades, 2) if total_trades > 0 else 0.0
     avg_win_usd = round(gross_profit / win_count, 2) if win_count > 0 else 0.0
     avg_loss_usd = round(gross_loss / loss_count, 2) if loss_count > 0 else 0.0
 
-    max_win_usd = max([float(t.get("pnl_usd", t.get("profit", 0.0))) for t in wins], default=0.0)
-    max_loss_usd = min([float(t.get("pnl_usd", t.get("profit", 0.0))) for t in losses], default=0.0)
+    max_win_usd = max([_deal_net_pnl_usd(t) for t in wins], default=0.0)
+    max_loss_usd = min([_deal_net_pnl_usd(t) for t in losses], default=0.0)
 
     # Açık Pozisyonlar (MT5 veya Auto) — sembol filtresi burada da geçerlidir,
     # yoksa "EUR/USD" seçiliyken altın pozisyonunun yüzen K/Z'si karta sızardı.
@@ -3599,8 +3846,10 @@ async def get_forex_trades_report(
             "win_rate": win_rate,
             "total_pnl_usd": total_pnl_usd,
             "total_pnl_pips": total_pnl_pips,
+            "pnl_pips_mixed_scale": pnl_pips_mixed_scale,
             "gross_profit_usd": gross_profit,
             "gross_loss_usd": gross_loss,
+            "profit_factor_infinite": profit_factor >= _PF_INFINITE,
             "profit_factor": profit_factor,
             "avg_trade_usd": avg_trade_usd,
             "avg_win_usd": avg_win_usd,
@@ -3624,6 +3873,11 @@ async def get_forex_trades_report(
             "start_ts": start_ts,
             "end_ts": end_ts,
             "archived_total": len(all_closed),
+            # `period="all"` MT5'te köprünün son 300 anlaşmalık dönen penceresidir
+            # (bkz. _MT5_DEAL_WINDOW). "tüm geçmiş" ile karıştırılmasın diye
+            # pencerenin doyup dolmadığı açıkça bildirilir.
+            "mt5_deal_window": _MT5_DEAL_WINDOW if _MT5_STATE.get("closed_deals") else None,
+            "mt5_deal_window_full": bool(_MT5_STATE.get("closed_deals")) and len(_MT5_STATE.get("closed_deals", [])) >= _MT5_DEAL_WINDOW,
         },
         "trades": filtered[:limit],
         "total_filtered": len(filtered),
@@ -3637,7 +3891,8 @@ async def export_forex_trades_csv(
     outcome: Optional[str] = None,
 ):
     """Forex scalper işlem geçmişini Excel uyumlu UTF-8 CSV olarak dışa aktarır."""
-    trades = list(_MT5_STATE.get("closed_deals", [])) or list(_AUTO_STATE.get("closed_trades", []))
+    # #2: kısmi kapanış satırları pozisyon bazında birleştirilir (rapordaki ile aynı).
+    trades = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
     if symbol and symbol != "ALL":
         trades = [t for t in trades if t.get("symbol") == symbol or t.get("display") == symbol]
     if outcome and outcome != "ALL":
@@ -3671,7 +3926,8 @@ async def export_forex_trades_csv(
     ])
 
     for tr in trades:
-        pnl = float(tr.get("pnl_usd", tr.get("profit", 0.0)))
+        # #1: CSV net sonucu gösterir (profit + commission + swap), panel KPI ile aynı.
+        pnl = _deal_net_pnl_usd(tr)
         pips = float(tr.get("pnl_pips", 0.0))
         t_id = tr.get("id") or (f"#{tr['ticket']}" if tr.get("ticket") else "-")
         writer.writerow([

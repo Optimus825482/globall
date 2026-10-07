@@ -11,7 +11,10 @@ Pearson korelasyon matrisi üretir ve yeni girişleri küme kurallarına göre d
   yukarıdaki kural bunları da yakalar (iki kapıdan aynı bahse girmeyi önler)
 - Karşıt USD bias'ı = birbirini hedge eden pozisyonlardır → serbest
 
-Saf ve bağımsız modüldür (import bağımlılığı yok); veri yoksa fail-open davranır.
+Saf ve bağımsız modüldür (import bağımlılığı yok); bir çiftin korelasyonu
+matriste YOKSA fail-CLOSED davranır (bilinmeyen çift engellenir) — çünkü 0.0
+"güvenli" sanıldığında tek bir veri kaçağı kalkanı 30 dakika körleştiriyordu.
+Gerçekten nötr (ρ≈0) hesaplanan çiftler yine serbesttir.
 """
 from __future__ import annotations
 
@@ -32,14 +35,24 @@ class FXCorrelationMonitor:
     def snapshot(self) -> Dict[str, Dict[str, float]]:
         return {sym: dict(info) for sym, info in self._corr.items()}
 
-    def correlation_of(self, symbol_a: str, symbol_b: str) -> float:
-        """İki sembol arasındaki Pearson korelasyonu; veri yoksa 0.0 (nötr, fail-open)."""
+    def correlation_of(self, symbol_a: str, symbol_b: str) -> Optional[float]:
+        """İki sembol arasındaki Pearson korelasyonu; matriste yoksa None.
+
+        None "veri yok" demektir (fail-closed: `cluster_check` bunu engel sayar).
+        Eskiden 0.0 dönüyordu ve 0.0 "korelasyon yok" sanıldığı için çift, kalkanın
+        dışına düşüyordu — tek bir Yahoo kaçağı 30 dk boyunca gerçek ρ≈0.9 olan
+        çiftleri serbest bırakıyordu (#9). Gerçekten 0.0 hesaplanan bir korelasyon
+        (nötr çift) yine 0.0 döner; `len(medium_cluster)` ve `r >= high` eşikleri
+        0.0'ı zaten engel saymaz, yani nötr çift serbest kalır.
+        """
         info = self._corr.get(str(symbol_a).upper(), {})
         value = info.get(str(symbol_b).upper())
-        return float(value) if value is not None else 0.0
+        return float(value) if value is not None else None
 
     def refresh(self, closes_map: Dict[str, List[float]], lookback: int = 150) -> Dict[str, Any]:
         """5M kapanış serilerinden korelasyon matrisini yeniden hesaplar."""
+        # Başarılı semboller aktarılır; BAŞARISIZ (kısa/eksik) sembolün önceki
+        # değerleri KORUNUR — matristen düşerse kalkan o çift için körleşiyordu (#9).
         returns_map: Dict[str, List[float]] = {}
         for sym, closes in (closes_map or {}).items():
             if closes and len(closes) >= 60:
@@ -52,14 +65,16 @@ class FXCorrelationMonitor:
                 self._corr.setdefault(a, {})[b] = r
                 self._corr.setdefault(b, {})[a] = r
 
-        # Artık veri gelmeyen sembolleri temizle
-        stale = [s for s in self._corr if s not in returns_map]
-        for s in stale:
-            self._corr.pop(s, None)
+        # NOT: eskiden burada `returns_map`'te olmayan semboller matristen
+        # SİLİNİYORDU. Bir sembol tek yenilemede kısa/eksik veri döndürdüğünde
+        # çiftleri matristen düşüyor, `correlation_of` fail-open 0.0 dönüyor ve
+        # kalkan 30 dk körleşiyordu (#9). Artık mevcut değerler korunur; bu
+        # sembolün verisi geldiğinde yeni korelasyonlar yazılır. Süreç yeniden
+        # başlayınca matris doğal olarak sıfırdan kurulur.
 
         if syms:
             self._last_run = time.time()
-        return {"ok": bool(syms), "symbols": len(syms), "updated_at": self._last_run}
+        return {"ok": bool(syms), "symbols": len(returns_map), "updated_at": self._last_run}
 
     def maybe_refresh(self, closes_map: Dict[str, List[float]], interval_sec: int = 1800) -> Dict[str, Any]:
         """Yalnızca bayatladığında yeniler; aksi halde önbellek no-op."""
@@ -95,7 +110,13 @@ class FXCorrelationMonitor:
         sym_u = str(symbol).upper()
         medium_cluster: List[str] = []
         for other in same_bias_syms:
-            r = abs(self.correlation_of(sym_u, other))
+            rho = self.correlation_of(sym_u, other)
+            if rho is None:
+                # Matriste veri yok → fail-closed: bu çift için korelasyon
+                # BİLİNMİYOR, "güvenli" sayılamaz (#9). Aksi halde bilinmeyen
+                # bir çift sessizce serbest kalır ve kalkan bozulmayı yutar.
+                return False, f"no_corr_data:{other}"
+            r = abs(rho)
             if r >= high:
                 return False, f"high_corr:{other}:{r:.2f}"
             if r >= medium:

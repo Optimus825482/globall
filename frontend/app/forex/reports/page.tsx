@@ -36,9 +36,13 @@ interface ReportKPI {
   win_rate: number;
   total_pnl_usd: number;
   total_pnl_pips: number;
+  /** Pip ölçeği sembol başına farklı; true ise `total_pnl_pips` karışık birim toplar. */
+  pnl_pips_mixed_scale?: boolean;
   gross_profit_usd: number;
   gross_loss_usd: number;
   profit_factor: number;
+  /** Zarar hiç yokken PF matematiksel sonsuzdur (backend `_PF_INFINITE` nöbetçisi). */
+  profit_factor_infinite?: boolean;
   avg_trade_usd: number;
   avg_win_usd: number;
   avg_loss_usd: number;
@@ -58,6 +62,10 @@ interface KpiScope {
   date_from?: string | null;
   date_to?: string | null;
   archived_total: number;
+  /** MT5 köprüsünün gönderdiği anlaşma penceresi (300). Paper/boşsa null. */
+  mt5_deal_window?: number | null;
+  /** Pencere dolduysa true: `period="all"` gerçek tüm geçmiş değildir. */
+  mt5_deal_window_full?: boolean;
 }
 
 /**
@@ -327,6 +335,12 @@ export default function ForexReportsPage() {
                 {kpiScope && kpiScope.archived_total !== kpi.total_trades
                   ? ` · arşivde ${kpiScope.archived_total} kayıt var`
                   : ""}
+                {/* MT5 köprüsü en fazla son 300 anlaşmayı gönderir: pencere
+                    dolduysa "Tüm Zamanlar" gerçek tüm geçmiş değildir ve
+                    kartlar MT5 bakiyesiyle uzlaşmaz. Sessiz kalmak yerine söyle. */}
+                {kpiScope?.mt5_deal_window_full
+                  ? ` · ⚠️ MT5 penceresi doldu (son ${kpiScope.mt5_deal_window} anlaşma)`
+                  : ""}
               </span>
             </div>
             <span className="text-[10px] text-bunker-muted italic">
@@ -368,7 +382,11 @@ export default function ForexReportsPage() {
             >
               {kpi.total_pnl_usd >= 0 ? "+" : ""}${kpi.total_pnl_usd.toFixed(2)}
             </span>
-            <span className="text-[10px] text-bunker-muted block mt-0.5 font-bold">
+            <span
+              className="text-[10px] text-bunker-muted block mt-0.5 font-bold"
+              title={kpi.pnl_pips_mixed_scale ? "Farklı sembollerin pip ölçekleri toplandı (≈ karışık birim)" : undefined}
+            >
+              {kpi.pnl_pips_mixed_scale ? "≈ " : ""}
               {kpi.total_pnl_pips >= 0 ? "+" : ""}{kpi.total_pnl_pips} Pips
             </span>
           </div>
@@ -381,7 +399,7 @@ export default function ForexReportsPage() {
                 kpi.profit_factor >= 1.5 ? "text-emerald-400" : kpi.profit_factor >= 1.0 ? "text-yellow-400" : "text-rose-400"
               }`}
             >
-              {kpi.profit_factor >= 999 ? "∞" : kpi.profit_factor.toFixed(2)}
+              {kpi.profit_factor_infinite || kpi.profit_factor >= 999 ? "∞" : kpi.profit_factor.toFixed(2)}
             </span>
             <span className="text-[10px] text-bunker-muted block mt-0.5 truncate">
               Kâr: ${kpi.gross_profit_usd} | Z: ${kpi.gross_loss_usd}

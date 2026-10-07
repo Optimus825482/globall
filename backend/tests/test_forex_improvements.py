@@ -574,9 +574,10 @@ class TestFXCorrelationGuard(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(mon.correlation_of("EURUSD", "GBPUSD"), 0.95)
         self.assertLess(mon.correlation_of("EURUSD", "USDCHF"), -0.95)
 
-    def test_missing_data_is_neutral_fail_open(self):
+    def test_missing_data_reports_none_not_zero(self):
+        """#9: matriste olmayan çift None döner (fail-closed); 0.0 "güvenli" DEĞİL."""
         mon = FXCorrelationMonitor()
-        self.assertEqual(mon.correlation_of("EURUSD", "GBPUSD"), 0.0)
+        self.assertIsNone(mon.correlation_of("EURUSD", "GBPUSD"))
 
     def test_high_corr_same_bias_blocked(self):
         mon = FXCorrelationMonitor()
@@ -627,18 +628,22 @@ class TestFXCorrelationGuard(unittest.IsolatedAsyncioTestCase):
         allowed, _ = mon.cluster_check("EURUSD", "USD_SHORT", [])
         self.assertTrue(allowed)
 
-    def test_fail_open_without_correlation_data(self):
+    def test_fail_closed_without_correlation_data(self):
+        """#9: korelasyon verisi yoksa çift BİLİNMİYOR sayılır → engellenir."""
         mon = FXCorrelationMonitor()
-        allowed, _ = mon.cluster_check("EURUSD", "USD_SHORT", [("GBPUSD", "USD_SHORT")])
-        self.assertTrue(allowed)
+        allowed, reason = mon.cluster_check("EURUSD", "USD_SHORT", [("GBPUSD", "USD_SHORT")])
+        self.assertFalse(allowed)
+        self.assertIn("no_corr_data", reason)
 
-    def test_stale_symbols_pruned(self):
+    def test_stale_symbols_kept_not_pruned(self):
+        """#9: bir turda veri gelmeyen sembol matristen SİLİNMEZ (kalkan körleşmesin)."""
         mon = FXCorrelationMonitor()
         rets = _noisy_rets(119, seed=21)
         mon.refresh({"EURUSD": _closes_from_rets(rets), "GBPUSD": _closes_from_rets(rets)})
         mon.refresh({"EURUSD": _closes_from_rets(_noisy_rets(119, seed=22))})
         snap = mon.snapshot()
-        self.assertNotIn("GBPUSD", snap)
+        # GBPUSD hâlâ matriste: verisi gelmeyince korunur, silinmez.
+        self.assertIn("GBPUSD", snap)
 
 
 class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):

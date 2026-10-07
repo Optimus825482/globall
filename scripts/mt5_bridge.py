@@ -300,6 +300,8 @@ def execute_market_order(cmd: dict) -> dict:
 
     is_gold = ("XAU" in symbol or "GOLD" in symbol)
     is_crypto = ("BTC" in symbol or "ETH" in symbol)
+    # "SPX" dalı emekliye ayrılan SPX500 için KALIR (bkz. forex.py _RETIRED_FOREX_SYMBOLS):
+    # köprüde arşiv/manuel kayıt gelebilir; sınıflama doğru kalsın.
     is_index = ("USTEC" in symbol or "NAS100" in symbol or "US30" in symbol or "US100" in symbol or "DJ30" in symbol or "SPX" in symbol)
     is_oil = ("XTI" in symbol or "XBR" in symbol or "OIL" in symbol or "USOIL" in raw_symbol)
 
