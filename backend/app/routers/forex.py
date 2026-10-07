@@ -572,6 +572,30 @@ def ev_guard_decision(stats: Dict[str, Any], min_samples: int, max_win_rate: flo
     return wr < float(max_win_rate) or net <= -abs(float(risk_loss_floor))
 
 
+def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -> Tuple[int, bool]:
+    """Seri-SL sigortası sayacı (saf fonksiyon — test edilebilir).
+
+    Kullanıcı kuralı: aynı sembolde arka arkaya N kez tam-SL ile zararla kapanan işlem
+    olursa sembol kısa süreliğine YENİ giriş almaz (normal cooldown'dan bağımsız), süre
+    bitince normal değerlendirme devam eder. Kazançla kapanış seriyi sıfırlar.
+
+    Kurallar:
+      - pnl > 0 → seri sıfırlanır (BE/trailing kazançları da seriyi bozar).
+      - `SL_HIT` + pnl < 0 → seri 1 artar. BE/trailing çıkışları pnl < 0 üretemez
+        (SL hep giriş üstünde kilitlenir), yani "SL ile zarar" tam-SL kaybıdır.
+      - Sayı `limit`e ulaşınca (0, True) döner: soğuma tetiklenir, sayaç sıfırdan başlar.
+      - limit <= 0 → mekanizma kapalı; pnl==0 veya diğer nedenler sayacı değiştirmez.
+    """
+    if pnl_usd > 0:
+        return 0, False
+    if limit <= 0 or pnl_usd >= 0 or reason != "SL_HIT":
+        return streak, False
+    streak += 1
+    if streak >= limit:
+        return 0, True
+    return streak, False
+
+
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
     """Lot × SL × pip_val riskini bütçeye sıkıştırır (saf fonksiyon — test edilebilir).
 
@@ -2212,6 +2236,8 @@ class ForexAutoPaperSettings(BaseModel):
     crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
     crypto_tp_enabled: bool = Field(False, description="Kriptoda sabit TP emri (False = kapalı; 2026-10-06 30g replay: TP kapalıyken BTC −$55.70→−$18.02, kazanç trailing/BE ile koşturulur)")
     btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; süpürme: 76 noktası)")
+    loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
+    loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
@@ -2260,6 +2286,11 @@ _MT5_STATE: Dict[str, Any] = {
     "closed_deals": [],
     "pending_commands": [],
 }
+
+# Seri-SL sigortası durumu (yalnız dict mutasyonu kullanılır — döngü içinde yeniden
+# atama yok, bu yüzden `global` bildirimi gerekmez; bkz. globals-shadow regresyon testi)
+_SYMBOL_LOSS_STREAK: Dict[str, int] = {}
+_SYMBOL_LOSS_COOLDOWN_UNTIL: Dict[str, float] = {}
 
 _AUTO_STATE: Dict[str, Any] = {
     "enabled": False,
@@ -2387,6 +2418,24 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         _AUTO_STATE["closed_trades"].insert(0, closed_item)
         if len(_AUTO_STATE["closed_trades"]) > 1000:
             _AUTO_STATE["closed_trades"] = _AUTO_STATE["closed_trades"][:1000]
+
+        # Seri-SL sigortası: sembolün ardışık tam-SL kayıplarını izle (kullanıcı kuralı:
+        # N ardışık SL zararı → sembol kısa süre yeni giriş almaz, normal cooldown'dan bağımsız)
+        streak_sym = target.get("symbol", "").upper()
+        new_streak, streak_tripped = loss_streak_on_close(
+            _SYMBOL_LOSS_STREAK.get(streak_sym, 0),
+            reason,
+            pnl_usd,
+            _AUTO_SETTINGS.loss_streak_limit,
+        )
+        _SYMBOL_LOSS_STREAK[streak_sym] = new_streak
+        if streak_tripped:
+            _SYMBOL_LOSS_COOLDOWN_UNTIL[streak_sym] = time.time() + _AUTO_SETTINGS.loss_streak_cooldown_sec
+            _log_auto_decision(
+                "GATE",
+                f"🌡️ [{target.get('display', streak_sym)}] {_AUTO_SETTINGS.loss_streak_limit} ardışık SL kaybı tamamlandı — sembol {_AUTO_SETTINGS.loss_streak_cooldown_sec:.0f} sn serbest soğumaya alındı (açık pozisyon yönetimi sürer, süre bitince normal değerlendirme).",
+                symbol=streak_sym,
+            )
 
         _log_auto_decision(
             "EXIT",
@@ -2880,6 +2929,20 @@ async def _forex_auto_paper_loop():
                 sym = cand["symbol"].upper()
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
+
+                # Seri-SL Soğuması: sembol ardışık tam-SL kayıplarından sonra kısa süre
+                # YENİ giriş almaz (flip dahil); açık pozisyon yönetimi aynen sürer.
+                if _AUTO_SETTINGS.loss_streak_limit > 0:
+                    ser_cd_until = _SYMBOL_LOSS_COOLDOWN_UNTIL.get(sym, 0.0)
+                    if now_ts < ser_cd_until:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_seri", 0.0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_seri"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"🌡️ [{cand['display']}] Seri-SL Soğuması: {_AUTO_SETTINGS.loss_streak_limit} ardışık SL kaybı — {int(ser_cd_until - now_ts)} sn yeni giriş yok (süre bitince sembol normal değerlendirilir).",
+                                symbol=sym,
+                            )
+                        continue
 
                 # 1. Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Duplicate & Position Reversal/Flip)
                 new_action = cand.get("action", "")  # "BUY" or "SELL"

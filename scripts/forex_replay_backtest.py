@@ -58,7 +58,27 @@ REPLAY_SYMBOL_DEFS = {
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
                 "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS",
-                "HTF", "IRAD", "YAS")
+                "HTF", "IRAD", "YAS", "SERI")
+
+
+def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -> Tuple[int, bool]:
+    """Seri-SL sigortası sayacı (saf fonksiyon — replay ve canlı motor aynı kuralı kullanır).
+
+    Kurallar:
+      - Net kazançla kapanış seriyi sıfırlar (BE/trailing kazançları da seriyi bozar).
+      - Tam-SL kaybı (`SL_HIT`/`SL` + pnl < 0) seriyi 1 artırır; BE/trailing çıkışları
+        pnl < 0 üretemez (SL hep giriş+$1 üstünde kilitlenir) — sayılmaz.
+      - Sayı `limit`e ulaşınca (0, True) döner: soğuma tetiklenir, sayaç sıfırdan başlar.
+      - limit <= 0 → kapalı; pnl==0 veya diğer nedenler sayacı değiştirmez.
+    """
+    if pnl_usd > 0:
+        return 0, False
+    if limit <= 0 or pnl_usd >= 0 or reason not in ("SL_HIT", "SL"):
+        return streak, False
+    streak += 1
+    if streak >= limit:
+        return 0, True
+    return streak, False
 
 # EV kalkanı (canlı motorla aynı; WR 45 = 2026-10-06 30g replay kararı)
 EV_WINDOW_SEC = 24 * 3600
@@ -138,6 +158,13 @@ TUN_ST_FLIP_TIGHTEN = 0.0   # >0: ST flip'te kapatmak yerine trailing'i bu pip'e
 TUN_HTF_ALIGN = False       # 15M SuperTrend yönüyle ters giriş yok (5M sıçraması HTF karşıysa = sayaç-trend giriş)
 TUN_DIV_GATE = 0.0          # >0: RSI(14) uyumsuzluk eşiği — fiyat yeni zirve/dip, RSI teyit etmiyorsa giriş yok
 TUN_PYR_AGE_MAX = 0         # >0: 5M SuperTrend yaşı bu barı aşınca AYNI yönde piramit (2./3. pozisyon) yok; ilk giriş serbest
+
+# 2026-10-07 seri-SL soğuması (kullanıcı önerisi: "arka arkaya 3 SL ile kapanan işlem zararla
+# kapandıysa 5 dk cooldown yapsın, sonra yeniden değerlendirsin — normal cooldown'dan hariç"):
+# sembol ardışık tam-SL kayıplarını görünce kısa süreliğine YENİ giriş almaz (açık pozisyon
+# yönetimi sürer; süre bitince normal değerlendirme). Kazançla kapanış seriyi sıfırlar.
+TUN_LOSS_STREAK = 0         # 0 = kapalı; N = N ardışık tam-SL kaybında tetikle
+TUN_LOSS_STREAK_CD = 300.0  # tetiklenince sembolün yeni giriş penceresi (saniye)
 
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
 # Zarardaki işlemde fiyat, giriş-SL mesafesinin TUN_DCA_DIST_FRAC oranına gelince
@@ -1127,6 +1154,11 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         for s in symbols:
             div_maps[s] = _rsi_div_map(data[s], 12, TUN_DIV_GATE)
 
+    # Seri-SL sigortası durumu: kapanış tüketimi + sembol soğuma penceresi
+    loss_streak: Dict[str, int] = {}
+    loss_cd_until: Dict[str, float] = {}
+    streak_seen = {"NEW": 0}
+
     for idx, ts in enumerate(common_ts):
         # Pencere sonu: o haftanın kapanışıyla dur; kalan pozisyonlar aşağıda
         # pencere içi son fiyatla kapatılır (hafta-sonu ötesine taşmaz).
@@ -1172,6 +1204,21 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         exit_maps=(exit_maps if book.name == "NEW" else None))
         for sh in shadow_book.values():
             manage_book(sh["book"], by_ts, ts, chandelier_mult=chand, exit_maps=exit_maps)
+
+        # Seri-SL sayacını taze kapanışlarla güncelle (giriş kapısı aynı barı görür)
+        if TUN_LOSS_STREAK > 0:
+            while streak_seen["NEW"] < len(books["NEW"].closed):
+                t_close = books["NEW"].closed[streak_seen["NEW"]]
+                streak_seen["NEW"] += 1
+                sym_c = t_close["symbol"]
+                new_streak, tripped = loss_streak_on_close(
+                    loss_streak.get(sym_c, 0),
+                    "SL_HIT" if t_close["reason"] == "SL" else t_close["reason"],
+                    float(t_close.get("pnl_usd", 0.0)),
+                    TUN_LOSS_STREAK)
+                loss_streak[sym_c] = new_streak
+                if tripped:
+                    loss_cd_until[sym_c] = ts + TUN_LOSS_STREAK_CD
 
         # Özkaynak örnekleme (NEW): kapanmış kâr + açık pozisyonların işaret fiyatıyla floating PnL
         if idx >= warmup:
@@ -1342,6 +1389,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if (action == "BUY" and div == 1) or (action == "SELL" and div == -1):
                         blocked_events.append(("IRAD", cand("IRAD")))
                         continue
+                # SERI — sembol ardışık tam-SL kayıplarından sonra kısa süre yeni giriş almaz
+                if vname == "NEW" and TUN_LOSS_STREAK > 0 and ts < loss_cd_until.get(sym, 0.0):
+                    blocked_events.append(("SERI", cand("SERI")))
+                    continue
                 bias = forex.get_usd_bias(sym, action)
                 if vname == "NEW" and bias != "USD_NEUTRAL":
                     pos_biases = [(p.symbol, forex.get_usd_bias(p.symbol, p.direction)) for p in book.positions]
@@ -1620,6 +1671,8 @@ def main():
     parser.add_argument("--htf-align", action="store_true", help="15M SuperTrend yönü tersse yeni giriş yok (sayaç-trend 5M sıçramalarını ele)")
     parser.add_argument("--div-gate", type=float, default=0.0, help="RSI(14) uyumsuzluk eşiği (0 = kapalı; ~4-6): fiyat zirve/dip yenilerken RSI teyit etmiyorsa giriş yok")
     parser.add_argument("--pyr-age-max", type=int, default=0, help="5M ST yaşı bu barı aşınca aynı yönde piramit yok (0 = kapalı; 24 bar = 2 saat)")
+    parser.add_argument("--loss-streak", type=int, default=0, help="N ardışık tam-SL kaybında sembol yeni giriş almaz (0 = kapalı; kullanıcı önerisi: 3)")
+    parser.add_argument("--loss-streak-cd", type=float, default=300.0, help="Seri-SL tetiklenince sembol soğuma penceresi (saniye; kullanıcı önerisi: 300)")
     parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -1683,6 +1736,9 @@ def main():
     TUN_HTF_ALIGN = args.htf_align
     TUN_DIV_GATE = args.div_gate
     TUN_PYR_AGE_MAX = args.pyr_age_max
+    global TUN_LOSS_STREAK, TUN_LOSS_STREAK_CD
+    TUN_LOSS_STREAK = args.loss_streak
+    TUN_LOSS_STREAK_CD = args.loss_streak_cd
     TUN_DCA = args.dca
     TUN_DCA_DIST_FRAC = args.dca_dist_frac
     TUN_DCA_LOT_MULT = args.dca_lot_mult
@@ -1736,6 +1792,7 @@ def main():
                f"beUSD={TUN_BE_USD_GOLD} beRatio={TUN_BE_RATIO_GOLD} bePipFixed={TUN_BE_PIP_FIXED_GOLD or '-'} "
                f"momflip={TUN_ST_FLIP_EXIT}(minPnl={TUN_ST_FLIP_MIN_PNL or '-'} stP={ST_EXIT_PERIOD}/{ST_EXIT_MULT}) emaFlip={TUN_EMA_FLIP_EXIT} "
                f"htfAlign={TUN_HTF_ALIGN} divGate={TUN_DIV_GATE or '-'} pyrAge={TUN_PYR_AGE_MAX or '-'} "
+               f"lossStreak={TUN_LOSS_STREAK or '-'}({TUN_LOSS_STREAK_CD:.0f}s) "
                f"idxHours={args.index_hours or '-'} idxOpenDrive={TUN_INDEX_OPEN_DRIVE} "
                f"dca={TUN_DCA}(dist={TUN_DCA_DIST_FRAC}+{TUN_DCA_DIST_STEP} lot={TUN_DCA_LOT_MULT} katman={TUN_DCA_MAX_LAYERS} tp={TUN_DCA_TP_USD} "
                f"sl={TUN_DCA_SL_USD} buf={TUN_DCA_BUFFER_USD} lvl={TUN_DCA_LEVEL_CHECK}/{TUN_DCA_LEVEL_TOL_ATR}) "

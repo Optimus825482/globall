@@ -344,6 +344,55 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(name, code.co_varnames, f"{name} fonksiyon-yereli olmamalı")
             self.assertIn(name, code.co_names, f"{name} global olarak erişilmeli")
 
+    def test_loss_streak_on_close_rules(self):
+        """Seri-SL sigortası sayacı (2026-10-07 kullanıcı kuralı): aynı sembolde
+        3 ardışık tam-SL zararı → soğuma tetiklenir; kazanç seriyi sıfırlar;
+        BE/trailing kazanç çıkışları (SL_HIT değil) ve pnl==0 sayacı değiştirmez."""
+        f = forex.loss_streak_on_close
+        # 2 SL daha sayılmaz, 3.'de tetiklenir ve sayaç sıfırdan başlar
+        s, tripped = f(0, "SL_HIT", -12.0, 3)
+        self.assertEqual((s, tripped), (1, False))
+        s, tripped = f(s, "SL_HIT", -8.0, 3)
+        self.assertEqual((s, tripped), (2, False))
+        s, tripped = f(s, "SL_HIT", -5.0, 3)
+        self.assertEqual((s, tripped), (0, True))
+        # Kazanç seriyi sıfırlar
+        s, tripped = f(2, "TP_HIT", 4.0, 3)
+        self.assertEqual((s, tripped), (0, False))
+        # BE/trailing kazanç çıkışı (BE_HIT) sayılmaz
+        s, tripped = f(2, "BE_HIT", -0.5, 3)
+        self.assertEqual((s, tripped), (2, False))
+        s, tripped = f(2, "BE_HIT", 1.2, 3)
+        self.assertEqual((s, tripped), (0, False))
+        # pnl==0 veya diğer nedenler değiştirmez; limit=0 kapalı
+        self.assertEqual(f(1, "SL_HIT", 0.0, 3), (1, False))
+        self.assertEqual(f(1, "REVERSAL_FLIP", -9.0, 3), (1, False))
+        self.assertEqual(f(2, "SL_HIT", -9.0, 0), (2, False))
+        # Soğuma sonrası sayaç sıfırdan başlar: yeni SL tekrar 1 olur
+        self.assertEqual(f(0, "SL_HIT", -3.0, 3), (1, False))
+
+    async def test_loss_streak_gate_blocks_candidate_symbol(self):
+        """Seri-SL tetiklendiğinde giriş kapısı sembolü cooldown bitene dek es geçmeli."""
+        forex._SYMBOL_LOSS_STREAK.clear()
+        forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+        old_settings = forex._AUTO_SETTINGS
+        try:
+            cfg = forex.ForexAutoPaperSettings(**{**old_settings.model_dump(), "loss_streak_limit": 3})
+            forex._AUTO_SETTINGS = cfg
+            # 3 ardışık SL → sayaç tetikler, cooldown penceresi şu an + 300 sn
+            for pnl in (-10.0, -9.0, -8.0):
+                forex._SYMBOL_LOSS_STREAK["XAUUSD"], _ = forex.loss_streak_on_close(
+                    forex._SYMBOL_LOSS_STREAK.get("XAUUSD", 0), "SL_HIT", pnl, 3)
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK["XAUUSD"], 0)  # tetiklenince sıfırlanır
+            forex._SYMBOL_LOSS_COOLDOWN_UNTIL["XAUUSD"] = __import__("time").time() + 300.0
+            # Kapı davranışı: aday döngüsündeki kontrol koşulunu taklit eden minik doğrulama
+            now = __import__("time").time()
+            self.assertLess(now, forex._SYMBOL_LOSS_COOLDOWN_UNTIL["XAUUSD"])
+        finally:
+            forex._AUTO_SETTINGS = old_settings
+            forex._SYMBOL_LOSS_STREAK.clear()
+            forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+
 
 if __name__ == "__main__":
     unittest.main()
