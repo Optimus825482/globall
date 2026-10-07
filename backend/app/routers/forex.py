@@ -2212,6 +2212,7 @@ class ForexAutoPaperSettings(BaseModel):
     crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
     crypto_tp_enabled: bool = Field(False, description="Kriptoda sabit TP emri (False = kapalı; 2026-10-06 30g replay: TP kapalıyken BTC −$55.70→−$18.02, kazanç trailing/BE ile koşturulur)")
     btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; süpürme: 76 noktası)")
+    chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default=["XAUUSD", "BTCUSD"],
@@ -2608,6 +2609,9 @@ async def _forex_auto_paper_loop():
 
                     pos["pnl_pips"] = round(pnl_pips, 1)
                     pos["pnl_usd"] = round(pnl_pips * pos["lots"] * pip_usd_val, 2)
+                    # Chandelier kâr kilidi için tepe takibi (girişten beri en iyi pip)
+                    if pnl_pips > float(pos.get("mfe_pips", 0.0) or 0.0):
+                        pos["mfe_pips"] = round(pnl_pips, 1)
 
                     # (a0) KISMİ KÂR ALMA (Partial TP): İlk hedefte lot'un yarısı
                     # kapatılır; kalan pozisyonda SL başabaş üstü net kâra kilitlenir.
@@ -2679,26 +2683,48 @@ async def _forex_auto_paper_loop():
                     # Sembole ve volatiliteye (ATR) göre trailing mesafesi
                     # BE kilitlendikten sonra VEYA pnl_pips >= eff_trail_pips olduğunda fiyatı arkasından takip et
                     if pos.get("breakeven_activated") or pnl_pips >= eff_trail_pips:
-                        trail_dist = eff_trail_pips * pip_size
+                        chand_mult = float(_AUTO_SETTINGS.chandelier_atr_mult or 0.0)
+                        pos_mfe = float(pos.get("mfe_pips", 0.0) or 0.0)
                         updated_trail = False
-                        if direction == "BUY":
-                            cand_sl = round(cur_p - trail_dist, digits)
-                            # Trailing SL asla 1$ Breakeven seviyesinin altına inmez!
-                            min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
-                            cand_sl = max(cand_sl, min_safe_sl)
-                            if cand_sl > pos["sl_price"] and cand_sl > entry_p:
-                                pos["sl_price"] = cand_sl
-                                pos["trailing_activated"] = True
-                                updated_trail = True
+                        if chand_mult > 0 and atr_pips > 0 and pos_mfe > 0:
+                            # Chandelier: kâr tepesinden chand_mult×ATR geri verilince kilit
+                            # (replay: 1.2 → 30g +$29 / 10g +$6; "kazandığını geri verme" tavanı)
+                            cand_pips = pos_mfe - (chand_mult * atr_pips)
+                            if direction == "BUY":
+                                cand_sl = round(entry_p + (cand_pips * pip_size), digits)
+                                # Trailing SL asla 1$ Breakeven seviyesinin altına inmez!
+                                cand_sl = max(cand_sl, round(entry_p + (pips_for_1usd * pip_size), digits))
+                                if cand_sl > pos["sl_price"] and cand_sl > entry_p:
+                                    pos["sl_price"] = cand_sl
+                                    pos["trailing_activated"] = True
+                                    updated_trail = True
+                            else:
+                                cand_sl = round(entry_p - (cand_pips * pip_size), digits)
+                                cand_sl = min(cand_sl, round(entry_p - (pips_for_1usd * pip_size), digits))
+                                if (pos["sl_price"] == 0 or cand_sl < pos["sl_price"]) and cand_sl < entry_p:
+                                    pos["sl_price"] = cand_sl
+                                    pos["trailing_activated"] = True
+                                    updated_trail = True
                         else:
-                            cand_sl = round(cur_p + trail_dist, digits)
-                            # Trailing SL asla 1$ Breakeven seviyesinin üstüne çıkmaz!
-                            min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
-                            cand_sl = min(cand_sl, min_safe_sl)
-                            if (pos["sl_price"] == 0 or cand_sl < pos["sl_price"]) and cand_sl < entry_p:
-                                pos["sl_price"] = cand_sl
-                                pos["trailing_activated"] = True
-                                updated_trail = True
+                            trail_dist = eff_trail_pips * pip_size
+                            if direction == "BUY":
+                                cand_sl = round(cur_p - trail_dist, digits)
+                                # Trailing SL asla 1$ Breakeven seviyesinin altına inmez!
+                                min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
+                                cand_sl = max(cand_sl, min_safe_sl)
+                                if cand_sl > pos["sl_price"] and cand_sl > entry_p:
+                                    pos["sl_price"] = cand_sl
+                                    pos["trailing_activated"] = True
+                                    updated_trail = True
+                            else:
+                                cand_sl = round(cur_p + trail_dist, digits)
+                                # Trailing SL asla 1$ Breakeven seviyesinin üstüne çıkmaz!
+                                min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
+                                cand_sl = min(cand_sl, min_safe_sl)
+                                if (pos["sl_price"] == 0 or cand_sl < pos["sl_price"]) and cand_sl < entry_p:
+                                    pos["sl_price"] = cand_sl
+                                    pos["trailing_activated"] = True
+                                    updated_trail = True
 
                         # MT5 açık biletinde de Stop Loss seviyesini dinamik olarak yukarı sür
                         if updated_trail and _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):

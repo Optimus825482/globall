@@ -119,6 +119,18 @@ TUN_BE_USD_GOLD = 1.0       # BE dolar tabanı — garantili kilit hedefi ($)
 TUN_BE_RATIO_GOLD = 0.60    # altın BE anında kilitlenen kâr oranı (2026-10-06 canlı kararı: 0.40→0.60)
 TUN_BE_PIP_FIXED_GOLD = 0.0 # >0: BE tetiği+tabanı lot-bağımsız sabit pip (örn. 10) — hacimden arındırma
 
+# 2026-10-07 erken trend-dönüş/düzeltme çıkışı (kullanıcı: "trend dönüşlerini daha erken algıla,
+# cooldown değil"): pozisyon açıkken sembolün kendi 5M göstergesi pozisyona karşı dönünce SL'i
+# beklemeden kapat. Canlıda opposite-skor flip'i (min_score 76-78) çok geç tetikleniyor; buradaki
+# amaç skorun karşı eşiğe ulaşmasını beklemeden momentum kırılmasında çıkmak.
+TUN_ST_FLIP_EXIT = False    # SuperTrend(5M) yönü pozisyona karşı dönünce bar kapanışında kapat
+TUN_ST_FLIP_MIN_PNL = 0.0   # >0: MOMFLIP yalnız pnl(pip) >= eşikken (kâr koruma; 0 = zararda da erken kes)
+TUN_EMA_FLIP_EXIT = False   # EMA9/EMA21 çaprazı pozisyona karşı + kapanış EMA21 ötesinde → kapat
+ST_EXIT_PERIOD = 10         # çıkış SuperTrend'i parametreleri (canlı sinyal ST ile aynı 10/3.0)
+ST_EXIT_MULT = 3.0
+TUN_EXT_GATE_XG = False     # XAU/BTC pyramid girişlerinde de EMA21 uzama kapısı (kovalamayı engelle)
+TUN_ST_FLIP_TIGHTEN = 0.0   # >0: ST flip'te kapatmak yerine trailing'i bu pip'e sıkılaştır (kâr > 0 iken)
+
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
 # Zarardaki işlemde fiyat, giriş-SL mesafesinin TUN_DCA_DIST_FRAC oranına gelince
 # TUN_DCA_LOT_MULT× lot katman açılır (ops. S/R+Fibo seviye onayıyla). Katman sonrası
@@ -548,7 +560,7 @@ def manage_dca_groups(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: floa
 
 
 def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, chandelier_mult: float = 0.0,
-                tp_mode: str = "tp"):
+                tp_mode: str = "tp", exit_maps: Optional[Dict[str, Any]] = None):
     still = []
     for pos in book.positions:
         bar = by_ts[pos.symbol].get(ts)
@@ -569,6 +581,30 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
                               dca_mode=pos.dca_group)
         if res and res[0] in ("SL", "BE", "TP"):
             close_position(book, pos, res[0], res[1], closed_ts=ts)
+            continue
+        # (6) Erken momentum-dönüş tepkisi — SL/BE/trail/TP bu barda tetiklenmediyse:
+        #     a) TUN_ST_FLIP_TIGHTEN > 0: kapatma, kâr varsa stopu bu pip mesafeye sıkılaştır
+        #     b) aksi halde TUN_ST_FLIP_EXIT / TUN_EMA_FLIP_EXIT: bar kapanışında kapat (MOMFLIP)
+        if TUN_ST_FLIP_TIGHTEN > 0 and _st_ema_against(pos, bar, exit_maps):
+            c = bar[4]
+            pnl_now = ((c - pos.entry_price) / pos.pip_size if pos.direction == "BUY"
+                       else (pos.entry_price - c) / pos.pip_size)
+            if pnl_now > 0:
+                if pos.direction == "BUY":
+                    cand = round(c - TUN_ST_FLIP_TIGHTEN * pos.pip_size, pos.digits)
+                    if cand > pos.sl_price and cand > pos.entry_price:
+                        pos.sl_price = cand
+                        pos.trail_active = True
+                else:
+                    cand = round(c + TUN_ST_FLIP_TIGHTEN * pos.pip_size, pos.digits)
+                    if (pos.sl_price == 0 or cand < pos.sl_price) and cand < pos.entry_price:
+                        pos.sl_price = cand
+                        pos.trail_active = True
+            still.append(pos)
+            continue
+        flip = _momflip_exit(pos, bar, exit_maps)
+        if flip is not None:
+            close_position(book, pos, flip[0], flip[1], closed_ts=ts)
         else:
             still.append(pos)
     book.positions = still
@@ -600,6 +636,96 @@ def _ema_series(vals: List[float], period: int) -> List[float]:
         e += k * (v - e)
         out.append(e)
     return out
+
+
+def _st_dir_series(bars: List[Tuple], period: int = 10, mult: float = 3.0) -> List[int]:
+    """forex._compute_supertrend ile BİREBİR ratchet matematiği, tüm seri yönleri.
+
+    Look-ahead yok: i. barın yönü yalnız i ve öncesi barlardan türetilir.
+    İlk `period` bar için yön tanımsızdır (0 döner — çıkış sinyali üretmez).
+    """
+    n = len(bars)
+    out = [0] * n
+    if n < period + 2:
+        return out
+    h = [b[2] for b in bars]
+    l = [b[3] for b in bars]
+    c = [b[4] for b in bars]
+    tr = [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])) for i in range(1, n)]
+    atr_series = []
+    atr_val = sum(tr[:period]) / period
+    atr_series.append(atr_val)
+    for i in range(period, len(tr)):
+        atr_val = (atr_val * (period - 1) + tr[i]) / period
+        atr_series.append(atr_val)
+    hl2 = [(h[i] + l[i]) / 2.0 for i in range(n)]
+    direction = 0
+    final_upper = 0.0
+    final_lower = 0.0
+    for i in range(period, n):
+        atr_i = atr_series[i - period] if (i - period) < len(atr_series) else atr_series[-1]
+        upper = hl2[i] + mult * atr_i
+        lower = hl2[i] - mult * atr_i
+        prev_close = c[i - 1]
+        if i == period:
+            final_upper, final_lower = upper, lower
+            direction = 1 if c[i] >= hl2[i] else -1
+        else:
+            final_upper = upper if (upper < final_upper or prev_close > final_upper) else final_upper
+            final_lower = lower if (lower > final_lower or prev_close < final_lower) else final_lower
+            if c[i] > final_upper:
+                direction = 1
+            elif c[i] < final_lower:
+                direction = -1
+        out[i] = direction
+    return out
+
+
+def _st_ema_against(pos, bar: Tuple, exit_maps: Optional[Dict[str, Any]]) -> bool:
+    """Pozisyona karşı momentum döndü mü? (SuperTrend yönü veya EMA9/21 çaprazı)"""
+    if not exit_maps:
+        return False
+    i = exit_maps["ts_idx"].get(pos.symbol, {}).get(bar[0])
+    if i is None:
+        return False
+    c = bar[4]
+    if TUN_ST_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0:
+        dirs = exit_maps["st_dirs"].get(pos.symbol, [])
+        d = dirs[i] if i < len(dirs) else 0
+        if (pos.direction == "BUY" and d < 0) or (pos.direction == "SELL" and d > 0):
+            return True
+    if TUN_EMA_FLIP_EXIT:
+        e9s = exit_maps["ema9"].get(pos.symbol)
+        e21s = exit_maps["ema21"].get(pos.symbol)
+        if e9s and e21s and i < len(e9s) and i < len(e21s):
+            e9, e21 = e9s[i], e21s[i]
+            if ((pos.direction == "BUY" and c < e21 and e9 < e21)
+                    or (pos.direction == "SELL" and c > e21 and e9 > e21)):
+                return True
+    return False
+
+
+def _momflip_exit(pos, bar: Tuple, exit_maps: Optional[Dict[str, Any]]) -> Optional[Tuple[str, float]]:
+    """Erken momentum-dönüş çıkışı (MOMFLIP): pozisyon açıkken sembolün 5M SuperTrend yönü
+    (veya EMA9/21 çaprazı) pozisyona karşı döndüyse bar kapanışında kapat.
+
+    Canlıdaki REVERSAL_FLIP ancak karşı yönde tam sinyal (skor ≥ 76-78) gelince tetiklenir —
+    bu da hareketin çoğu bittikten sonra olur. MOMFLIP karşı skorun eşiğe ulaşmasını beklemez.
+    Çıkış fiyatı bar kapanışı ± yarım spread (SL çıkışıyla aynı muhafazakâr konvansiyon).
+    """
+    if not exit_maps:
+        return None
+    if not _st_ema_against(pos, bar, exit_maps):
+        return None
+    c = bar[4]
+    if TUN_ST_FLIP_MIN_PNL > 0:
+        pnl_pips = ((c - pos.entry_price) / pos.pip_size if pos.direction == "BUY"
+                    else (pos.entry_price - c) / pos.pip_size)
+        if pnl_pips < TUN_ST_FLIP_MIN_PNL:
+            return None
+    if pos.direction == "BUY":
+        return ("MOMFLIP", round(c - pos.fill_adjust, pos.digits))
+    return ("MOMFLIP", round(c + pos.fill_adjust, pos.digits))
 
 
 def _rsi_wilder(closes: List[float], period: int = 2) -> List[Optional[float]]:
@@ -899,6 +1025,21 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             if cum_v > 0:
                 btc_vwap_by_ts[b[0]] = cum_qv / cum_v
 
+    # Erken momentum-dönüş çıkışı (MOMFLIP) serileri: sembol başına tüm seri bir kez hesaplanır,
+    # ts→index haritasıyla bar bazında okunur (look-ahead yok: i. değer yalnız i ve öncesi barlardan).
+    exit_maps: Optional[Dict[str, Any]] = None
+    if TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0:
+        exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}}
+        for s in symbols:
+            bars_s = data[s]
+            exit_maps["ts_idx"][s] = {b[0]: i for i, b in enumerate(bars_s)}
+            if TUN_ST_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0:
+                exit_maps["st_dirs"][s] = _st_dir_series(bars_s, ST_EXIT_PERIOD, ST_EXIT_MULT)
+            if TUN_EMA_FLIP_EXIT:
+                closes_s = [b[4] for b in bars_s]
+                exit_maps["ema9"][s] = _ema_series(closes_s, 9)
+                exit_maps["ema21"][s] = _ema_series(closes_s, 21)
+
     for idx, ts in enumerate(common_ts):
         # Pencere sonu: o haftanın kapanışıyla dur; kalan pozisyonlar aşağıda
         # pencere içi son fiyatla kapatılır (hafta-sonu ötesine taşmaz).
@@ -940,9 +1081,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             if TUN_DCA and book.name == "NEW":
                 manage_dca_groups(book, by_ts, ts, data, cursors, idx)
             manage_book(book, by_ts, ts, chandelier_mult=(chand if book.name == "NEW" else 0.0),
-                        tp_mode=(TUN_TP_MODE if book.name == "NEW" else "tp"))
+                        tp_mode=(TUN_TP_MODE if book.name == "NEW" else "tp"),
+                        exit_maps=(exit_maps if book.name == "NEW" else None))
         for sh in shadow_book.values():
-            manage_book(sh["book"], by_ts, ts, chandelier_mult=chand)
+            manage_book(sh["book"], by_ts, ts, chandelier_mult=chand, exit_maps=exit_maps)
 
         # Özkaynak örnekleme (NEW): kapanmış kâr + açık pozisyonların işaret fiyatıyla floating PnL
         if idx >= warmup:
@@ -1047,6 +1189,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
                 # --gate-extras ile eklenen adaylar, --gold-session ile altın da kapsanır.
                 _gate_syms = sym in FX_MAJORS or sym in GATED_EXTRAS or (TUN_GOLD_SESSION and ("XAU" in sym or "GOLD" in sym))
+                _ext_syms = _gate_syms or (TUN_EXT_GATE_XG and ("XAU" in sym or "GOLD" in sym or "BTC" in sym))
                 if vname == "NEW" and _gate_syms:
                     if TUN_MAJOR_HOURS and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
                         blocked_events.append(("SEANS", cand("SEANS")))
@@ -1054,12 +1197,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if TUN_MAJOR_MIN_ATR > 0 and atr_pips < TUN_MAJOR_MIN_ATR:
                         blocked_events.append(("VOLATİLİTE", cand("VOLATİLİTE")))
                         continue
-                    if TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
-                        ext_atr = ((close_now - float(tech["ema21"])) if action == "BUY"
-                                   else (float(tech["ema21"]) - close_now)) / (atr_pips * pip_size)
-                        if ext_atr > TUN_MAJOR_MAX_EXT:
-                            blocked_events.append(("UZAMA", cand("UZAMA")))
-                            continue
+                if vname == "NEW" and _ext_syms and TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
+                    ext_atr = ((close_now - float(tech["ema21"])) if action == "BUY"
+                               else (float(tech["ema21"]) - close_now)) / (atr_pips * pip_size)
+                    if ext_atr > TUN_MAJOR_MAX_EXT:
+                        blocked_events.append(("UZAMA", cand("UZAMA")))
+                        continue
                 # 5d. BTC rejim kapıları (yalnız NEW): yapısal EMA200(1h) ve günlük VWAP yön hizası
                 if vname == "NEW" and sym == "BTCUSD":
                     if TUN_BTC_EMA200:
@@ -1360,6 +1503,13 @@ def main():
     parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
     parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
+    parser.add_argument("--st-flip-exit", action="store_true", help="Açık pozisyonda 5M SuperTrend yönü ters dönünce bar kapanışında kapat (MOMFLIP — erken trend-dönüş çıkışı)")
+    parser.add_argument("--st-flip-min-pnl", type=float, default=0.0, help="MOMFLIP yalnız pnl(pip) ≥ eşikken uygulansın (0 = zarardayken de erken kes)")
+    parser.add_argument("--st-exit-period", type=int, default=10, help="MOMFLIP çıkış SuperTrend periyodu (canlı sinyal ST: 10)")
+    parser.add_argument("--st-exit-mult", type=float, default=3.0, help="MOMFLIP çıkış SuperTrend ATR çarpanı (canlı sinyal ST: 3.0)")
+    parser.add_argument("--ema-flip-exit", action="store_true", help="EMA9/EMA21 çaprazı pozisyona karşı + kapanış EMA21 ötesinde → kapat")
+    parser.add_argument("--ext-gate-xg", action="store_true", help="XAU/BTC girişlerinde de EMA21 uzama kapısı (--major-max-ext ile eşik) — trend tepesinde yığılmayı önler")
+    parser.add_argument("--st-flip-tighten", type=float, default=0.0, help="ST flip'te kapatma; kâr varsa stopu bu pip mesafeye sıkılaştır (0 = kapalı; MOMFLIP-close ile birlikte kullanma)")
     parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -1409,6 +1559,16 @@ def main():
     TUN_BE_USD_GOLD = args.be_usd_gold
     TUN_BE_RATIO_GOLD = args.be_ratio_gold
     TUN_BE_PIP_FIXED_GOLD = args.be_pip_fixed_gold
+    global TUN_ST_FLIP_EXIT, TUN_ST_FLIP_MIN_PNL, TUN_EMA_FLIP_EXIT, ST_EXIT_PERIOD, ST_EXIT_MULT
+    TUN_ST_FLIP_EXIT = args.st_flip_exit
+    TUN_ST_FLIP_MIN_PNL = args.st_flip_min_pnl
+    TUN_EMA_FLIP_EXIT = args.ema_flip_exit
+    ST_EXIT_PERIOD = args.st_exit_period
+    ST_EXIT_MULT = args.st_exit_mult
+    global TUN_EXT_GATE_XG
+    TUN_EXT_GATE_XG = args.ext_gate_xg
+    global TUN_ST_FLIP_TIGHTEN
+    TUN_ST_FLIP_TIGHTEN = args.st_flip_tighten
     TUN_DCA = args.dca
     TUN_DCA_DIST_FRAC = args.dca_dist_frac
     TUN_DCA_LOT_MULT = args.dca_lot_mult
@@ -1460,6 +1620,7 @@ def main():
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "
                f"tpMode={TUN_TP_MODE} goldVol={TUN_GOLD_VOL_EXITS}(be={TUN_VOL_BE_MULT} trail={TUN_VOL_TRAIL_MULT}) "
                f"beUSD={TUN_BE_USD_GOLD} beRatio={TUN_BE_RATIO_GOLD} bePipFixed={TUN_BE_PIP_FIXED_GOLD or '-'} "
+               f"momflip={TUN_ST_FLIP_EXIT}(minPnl={TUN_ST_FLIP_MIN_PNL or '-'} stP={ST_EXIT_PERIOD}/{ST_EXIT_MULT}) emaFlip={TUN_EMA_FLIP_EXIT} "
                f"idxHours={args.index_hours or '-'} idxOpenDrive={TUN_INDEX_OPEN_DRIVE} "
                f"dca={TUN_DCA}(dist={TUN_DCA_DIST_FRAC}+{TUN_DCA_DIST_STEP} lot={TUN_DCA_LOT_MULT} katman={TUN_DCA_MAX_LAYERS} tp={TUN_DCA_TP_USD} "
                f"sl={TUN_DCA_SL_USD} buf={TUN_DCA_BUFFER_USD} lvl={TUN_DCA_LEVEL_CHECK}/{TUN_DCA_LEVEL_TOL_ATR}) "
