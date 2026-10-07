@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "./lib/api";
+import { triggerTestCalendarNotification } from "./lib/notificationSettings";
 
 interface OpenPosition {
   id: string;
@@ -74,11 +75,21 @@ interface EconomicEvent {
   title: string;
   original_title?: string;
   country: string;
+  currency?: string;
+  country_name?: string;
+  flag?: string;
   date_str: string;
+  date_iso?: string;
   impact: string;
+  stars?: number;
+  stars_str?: string;
   impact_label: string;
   forecast: string;
   previous: string;
+  actual?: string;
+  status?: string;
+  comment?: string;
+  is_passed?: boolean;
   affected_symbols: string[];
   scenario: {
     title: string;
@@ -87,6 +98,7 @@ interface EconomicEvent {
     bearish_trigger: string;
     bearish_outcome: string;
     scalper_tip: string;
+    summary_short?: string;
   };
 }
 
@@ -153,15 +165,37 @@ export default function HomePage() {
   const [calendarEvents, setCalendarEvents] = useState<EconomicEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EconomicEvent | null>(null);
   const [loadingCalendar, setLoadingCalendar] = useState<boolean>(true);
+  const [refreshingCalendar, setRefreshingCalendar] = useState<boolean>(false);
+  const [calendarFilterStars, setCalendarFilterStars] = useState<number | "ALL">("ALL");
+  const [calendarFilterCurrency, setCalendarFilterCurrency] = useState<string>("ALL");
+  const [calendarSearch, setCalendarSearch] = useState<string>("");
+  const [calendarLastUpdated, setCalendarLastUpdated] = useState<Date | null>(null);
 
-  // Veri Çekme
+  // Ekonomik Takvim Verisini Çekme (Investing.com 2 & 3 Yıldızlı Olaylar)
+  const fetchCalendar = useCallback(async (forceRefresh = false) => {
+    setRefreshingCalendar(true);
+    try {
+      const url = forceRefresh ? "/api/forex/news?refresh=true" : "/api/forex/news";
+      const newsRes = await apiFetch(url).catch(() => null);
+      if (newsRes?.news && Array.isArray(newsRes.news)) {
+        setCalendarEvents(newsRes.news);
+        setCalendarLastUpdated(new Date());
+      }
+    } catch (err) {
+      console.error("Ekonomik takvim yükleme hatası:", err);
+    } finally {
+      setLoadingCalendar(false);
+      setRefreshingCalendar(false);
+    }
+  }, []);
+
+  // İşlem ve Hesap Verisi Çekme (4 Saniyede Bir Otonom Akış)
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setRefreshing(true);
     try {
-      const [reportRes, statusRes, newsRes] = await Promise.all([
+      const [reportRes, statusRes] = await Promise.all([
         apiFetch("/api/forex/auto-paper/trades?period=today&limit=250"),
         apiFetch("/api/forex/auto-paper/status").catch(() => null),
-        apiFetch("/api/forex/news").catch(() => null),
       ]);
 
       if (reportRes) {
@@ -189,29 +223,79 @@ export default function HomePage() {
         }));
       }
 
-      if (newsRes?.news && Array.isArray(newsRes.news)) {
-        setCalendarEvents(newsRes.news);
-      }
-
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Ana sayfa Forex verisi yükleme hatası:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
-      setLoadingCalendar(false);
     }
   }, []);
 
+  // İlk Yükleme ve Ayrı Periyodik Döngüler
   useEffect(() => {
     fetchData(false);
-    const interval = setInterval(() => {
+    fetchCalendar(false);
+
+    // İşlemler her 4 saniyede bir güncellenir
+    const tradeInterval = setInterval(() => {
       if (!document.hidden) {
         fetchData(true);
       }
     }, 4000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+
+    // Ekonomik takvim her 90 saniyede bir güncellenir (Rate limit korumalı)
+    const calendarInterval = setInterval(() => {
+      if (!document.hidden) {
+        fetchCalendar(false);
+      }
+    }, 90000);
+
+    return () => {
+      clearInterval(tradeInterval);
+      clearInterval(calendarInterval);
+    };
+  }, [fetchData, fetchCalendar]);
+
+  // Filtrelenmiş Ekonomik Takvim Olayları
+  const filteredCalendarEvents = useMemo(() => {
+    return calendarEvents.filter((item) => {
+      // Yıldız Filtresi
+      if (calendarFilterStars !== "ALL") {
+        const itemStars = item.stars || (item.impact === "High" ? 3 : 2);
+        if (itemStars !== calendarFilterStars) return false;
+      }
+
+      // Para Birimi / Varlık Filtresi
+      if (calendarFilterCurrency !== "ALL") {
+        const c = (item.currency || item.country || "").toUpperCase();
+        if (calendarFilterCurrency === "XAU") {
+          if (!item.affected_symbols.includes("XAUUSD")) return false;
+        } else if (calendarFilterCurrency === "OIL") {
+          if (!item.affected_symbols.includes("USOIL") && !c.includes("CAD")) return false;
+        } else {
+          if (
+            c !== calendarFilterCurrency &&
+            !item.affected_symbols.some((s) => s.startsWith(calendarFilterCurrency) || s.endsWith(calendarFilterCurrency))
+          ) {
+            return false;
+          }
+        }
+      }
+
+      // Arama Filtresi
+      if (calendarSearch.trim()) {
+        const q = calendarSearch.toLowerCase().trim();
+        const inTitle = (item.title || "").toLowerCase().includes(q);
+        const inOrig = (item.original_title || "").toLowerCase().includes(q);
+        const inCountry = (item.country || "").toLowerCase().includes(q);
+        const inSymbols = item.affected_symbols.some((s) => s.toLowerCase().includes(q));
+        if (!inTitle && !inOrig && !inCountry && !inSymbols) return false;
+      }
+
+      return true;
+    });
+  }, [calendarEvents, calendarFilterStars, calendarFilterCurrency, calendarSearch]);
 
   // Hesaplanan Canlı Toplamlar
   const openPnlTotal = useMemo(() => {
@@ -528,87 +612,307 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4. EKONOMİK TAKVİM VE MAKRO AÇIKLAMA ANALİZİ (YENİ BÖLÜM) */}
+      {/* 4. EKONOMİK TAKVİM VE MAKRO AÇIKLAMA ANALİZİ (INVESTING.COM 2 & 3 YILDIZ) */}
       <section className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900/90 via-bunker-900/95 to-indigo-950/60 border border-indigo-500/30 shadow-2xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-bunker-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl">📅</span>
+        {/* Başlık ve Aksiyon Barı */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-bunker-800 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-xl shrink-0">
+              📅
+            </div>
             <div>
-              <h2 className="text-sm sm:text-base font-black text-white tracking-wide uppercase">
-                Ekonomik Takvim Açıklamaları &amp; &quot;Ne Olursa Ne Olur?&quot; Analizi
-              </h2>
-              <p className="text-[11px] text-bunker-muted">
-                Investing / Küresel makro veri açıklamaları, etkilenen semboller ve olası yön senaryoları
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-black text-white tracking-wide uppercase">
+                  Ekonomik Takvim (Investing.com 2 &amp; 3 Yıldız)
+                </h2>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  ⭐⭐ / ⭐⭐⭐ Kritik Volatilite
+                </span>
+              </div>
+              <p className="text-[11px] text-bunker-muted mt-0.5">
+                Investing.com 2 ve 3 yıldızlı makro açıklamalar, etkilenen Forex/Kripto pariteleri ve &quot;Hangi Durumda Nasıl Etkilenir?&quot; senaryoları
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
-              Canlı Takvim Akışı
-            </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <a
+              href="https://www.investing.com/economic-calendar"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <span>🌐</span> Investing.com Takvimi ↗
+            </a>
+
+            <button
+              type="button"
+              onClick={() => triggerTestCalendarNotification()}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 transition-all flex items-center gap-1.5 shadow-sm"
+              title="5 dakika kala çıkacak acil uyarı modalini ve sesini test edin"
+            >
+              <span>⚡</span> 5 Dk Uyarısını Test Et
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fetchCalendar(true)}
+              disabled={refreshingCalendar}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <span className={refreshingCalendar ? "animate-spin" : ""}>🔄</span>
+              <span>{refreshingCalendar ? "Yenileniyor…" : "Takvimi Yenile"}</span>
+            </button>
+
+            {calendarLastUpdated && (
+              <span className="text-[10px] text-bunker-muted hidden md:inline">
+                {calendarLastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </div>
         </div>
 
+        {/* Filtre ve Arama Kontrolleri */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
+          {/* Yıldız Filtreleri */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-bunker-muted font-bold mr-1">Önem:</span>
+            <button
+              type="button"
+              onClick={() => setCalendarFilterStars("ALL")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                calendarFilterStars === "ALL"
+                  ? "bg-cyan-500/30 text-cyan-200 border border-cyan-400"
+                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-white"
+              }`}
+            >
+              Tümü ({calendarEvents.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarFilterStars(3)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                calendarFilterStars === 3
+                  ? "bg-rose-500/30 text-rose-200 border border-rose-400"
+                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-rose-300"
+              }`}
+            >
+              ⭐⭐⭐ 3 Yıldız ({calendarEvents.filter((x) => (x.stars || (x.impact === "High" ? 3 : 2)) === 3).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarFilterStars(2)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                calendarFilterStars === 2
+                  ? "bg-amber-500/30 text-amber-200 border border-amber-400"
+                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-amber-300"
+              }`}
+            >
+              ⭐⭐ 2 Yıldız ({calendarEvents.filter((x) => (x.stars || (x.impact === "High" ? 3 : 2)) === 2).length})
+            </button>
+          </div>
+
+          {/* Varlık / Arama Filtresi */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+              {(["ALL", "USD", "EUR", "GBP", "JPY", "CAD", "XAU", "OIL"] as const).map((code) => {
+                const label = code === "ALL" ? "Tümü" : code === "XAU" ? "Altın (XAU)" : code === "OIL" ? "Petrol (OIL)" : code;
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setCalendarFilterCurrency(code)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                      calendarFilterCurrency === code
+                        ? "bg-indigo-500 text-white"
+                        : "bg-bunker-900/80 text-bunker-muted hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <input
+              type="text"
+              value={calendarSearch}
+              onChange={(e) => setCalendarSearch(e.target.value)}
+              placeholder="Olay, parite veya ülke ara..."
+              className="px-2.5 py-1 rounded-lg bg-bunker-950 border border-bunker-800 text-xs text-white placeholder-bunker-muted focus:border-cyan-400 focus:outline-none w-36 sm:w-44"
+            />
+          </div>
+        </div>
+
+        {/* İçerik Kartları */}
         {loadingCalendar && calendarEvents.length === 0 ? (
-          <div className="p-6 text-center text-xs text-bunker-muted animate-pulse font-mono">
-            Ekonomik takvim ve senaryo verileri yükleniyor…
+          <div className="p-8 text-center text-xs text-bunker-muted animate-pulse font-mono rounded-xl bg-bunker-950/50 border border-bunker-800">
+            Investing.com 2 ve 3 yıldızlı ekonomik takvim verileri ve senaryoları yükleniyor…
+          </div>
+        ) : filteredCalendarEvents.length === 0 ? (
+          <div className="p-8 text-center space-y-2 rounded-xl bg-bunker-950/50 border border-bunker-800">
+            <p className="text-xs text-bunker-muted font-mono">
+              Seçilen filtrelere uygun 2 veya 3 yıldızlı takvim olayı bulunamadı.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCalendarFilterStars("ALL");
+                setCalendarFilterCurrency("ALL");
+                setCalendarSearch("");
+              }}
+              className="px-3 py-1 rounded text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30"
+            >
+              Filtreleri Temizle
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {calendarEvents.slice(0, 6).map((item) => {
-              const isHigh = item.impact === "High";
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {filteredCalendarEvents.map((item) => {
+              const is3Stars = (item.stars || (item.impact === "High" ? 3 : 2)) === 3;
               return (
                 <div
                   key={item.id}
-                  onClick={() => setSelectedEvent(item)}
-                  className={`p-4 rounded-xl border backdrop-blur-md cursor-pointer transition-all hover:scale-[1.01] hover:border-cyan-400 group space-y-2.5 ${
-                    isHigh
-                      ? "border-rose-500/30 bg-rose-950/10 hover:shadow-[0_0_16px_rgba(244,63,94,0.2)]"
-                      : "border-amber-500/30 bg-amber-950/10 hover:shadow-[0_0_16px_rgba(245,158,11,0.2)]"
+                  className={`p-4 rounded-xl border backdrop-blur-md transition-all hover:scale-[1.008] space-y-3 flex flex-col justify-between ${
+                    is3Stars
+                      ? "border-rose-500/40 bg-gradient-to-b from-rose-950/20 via-bunker-900/90 to-bunker-950 hover:border-rose-400 hover:shadow-[0_0_20px_rgba(244,63,94,0.2)]"
+                      : "border-amber-500/35 bg-gradient-to-b from-amber-950/15 via-bunker-900/90 to-bunker-950 hover:border-amber-400 hover:shadow-[0_0_20px_rgba(245,158,11,0.2)]"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
-                      <span>⏰</span> {item.date_str}
-                    </span>
+                  {/* Kart Üst Barı: Zaman ve Yıldız */}
+                  <div className="flex items-center justify-between gap-2 border-b border-bunker-800/80 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-cyan-300 flex items-center gap-1.5">
+                        <span>⏰</span> {item.date_str}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          item.status === "Açıklandı"
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                            : item.is_passed
+                            ? "bg-slate-700/40 text-slate-300 border border-slate-600/40"
+                            : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                        }`}
+                      >
+                        {item.status || "Bekleniyor"}
+                      </span>
+                    </div>
+
                     <span
-                      className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                        isHigh
-                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                          : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                        is3Stars
+                          ? "bg-rose-500/25 text-rose-300 border border-rose-500/50"
+                          : "bg-amber-500/25 text-amber-300 border border-amber-500/50"
                       }`}
                     >
-                      {isHigh ? "🔴 YÜKSEK (3 Boğa)" : "🟡 ORTA (2 Boğa)"}
+                      {is3Stars ? "⭐⭐⭐ 3 YILDIZ (KRİTİK)" : "⭐⭐ 2 YILDIZ (ORTA)"}
                     </span>
                   </div>
 
-                  <div>
-                    <h3 className="font-bold text-sm text-white group-hover:text-cyan-300 transition-colors line-clamp-2">
+                  {/* Olay Başlığı ve Değerler */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs text-bunker-muted font-bold">
+                      <span>{item.flag || "🌐"}</span>
+                      <span>{item.country_name || item.country}</span>
+                      {item.currency && <span className="text-[10px] text-cyan-400">({item.currency})</span>}
+                    </div>
+
+                    <h3 className="font-black text-sm text-white hover:text-cyan-300 transition-colors leading-snug">
                       {item.title}
                     </h3>
-                    <div className="mt-1 flex items-center gap-3 text-[10px] text-bunker-muted">
-                      <span>Beklenti: <strong className="text-white">{item.forecast}</strong></span>
-                      <span>·</span>
-                      <span>Önceki: <strong className="text-white">{item.previous}</strong></span>
+                    {item.original_title && item.original_title !== item.title && (
+                      <p className="text-[10px] text-bunker-muted italic line-clamp-1">
+                        {item.original_title}
+                      </p>
+                    )}
+
+                    {/* Metrikler */}
+                    <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-bunker-950/80 border border-bunker-800/80 text-center text-[10px]">
+                      <div>
+                        <div className="text-bunker-muted text-[9px]">Beklenti</div>
+                        <div className="font-bold text-cyan-300">{item.forecast || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-bunker-muted text-[9px]">Önceki</div>
+                        <div className="font-bold text-slate-300">{item.previous || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-bunker-muted text-[9px]">Açıklanan</div>
+                        <div className={`font-black ${item.actual && item.actual !== "—" ? "text-emerald-400" : "text-bunker-muted"}`}>
+                          {item.actual || "—"}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-bunker-800/60 flex items-center justify-between">
-                    <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-                      {item.affected_symbols.slice(0, 3).map((sym) => (
-                        <span key={sym} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-bunker-800 text-bunker-200">
+                  {/* Etkilenen Pariteler */}
+                  <div className="space-y-1">
+                    <div className="text-[10px] uppercase font-bold text-bunker-muted flex items-center gap-1">
+                      <span>🎯</span> Etkilenen Pariteler:
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {item.affected_symbols.map((sym) => (
+                        <span
+                          key={sym}
+                          className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-950/60 text-cyan-300 border border-cyan-500/40"
+                        >
                           {sym}
                         </span>
                       ))}
-                      {item.affected_symbols.length > 3 && (
-                        <span className="text-[9px] text-bunker-muted font-bold">+{item.affected_symbols.length - 3}</span>
-                      )}
+                    </div>
+                  </div>
+
+                  {/* ⚡ HANGİ DURUMDA NASIL ETKİLENİR? (ÖZET SENARYO KUTUSU) */}
+                  <div className="p-3 rounded-xl bg-bunker-950/90 border border-bunker-800 space-y-2 text-xs">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <span>⚡</span> Hangi Durumda Nasıl Etkilenir?
+                      </span>
                     </div>
 
-                    <span className="text-[11px] font-bold text-cyan-400 group-hover:underline flex items-center gap-1">
-                      Analiz <span>→</span>
+                    {/* Beklenti Üzeri */}
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-emerald-400 text-[10px] flex items-center gap-1">
+                        <span>🟢</span>
+                        <span>{item.scenario?.bullish_trigger || "Beklenti Üzeri Gelirse:"}</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-200/90 pl-3 leading-tight">
+                        {item.scenario?.bullish_outcome}
+                      </p>
+                    </div>
+
+                    {/* Beklenti Altı */}
+                    <div className="space-y-0.5 pt-1 border-t border-bunker-800/60">
+                      <div className="font-bold text-rose-400 text-[10px] flex items-center gap-1">
+                        <span>🔴</span>
+                        <span>{item.scenario?.bearish_trigger || "Beklenti Altı Kalırsa:"}</span>
+                      </div>
+                      <p className="text-[11px] text-rose-200/90 pl-3 leading-tight">
+                        {item.scenario?.bearish_outcome}
+                      </p>
+                    </div>
+
+                    {/* Scalper Notu */}
+                    {item.scenario?.scalper_tip && (
+                      <div className="pt-1 border-t border-bunker-800/60 text-[10px] text-cyan-300/90 flex items-start gap-1">
+                        <span className="shrink-0">💡</span>
+                        <span className="italic leading-tight">{item.scenario.scalper_tip}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Kart Alt Butonu */}
+                  <div className="pt-2 border-t border-bunker-800/80 flex items-center justify-between">
+                    <span className="text-[10px] text-bunker-muted">
+                      Investing 2-3 Yıldız
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(item)}
+                      className="px-3 py-1 rounded-lg text-xs font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 hover:border-cyan-300 hover:text-white transition-all flex items-center gap-1"
+                    >
+                      Detaylı Analiz &amp; Taktik <span>→</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -857,33 +1161,38 @@ export default function HomePage() {
           aria-modal="true"
         >
           <div
-            className="w-full max-w-2xl rounded-2xl border border-indigo-500/40 bg-bunker-950 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150"
+            className="w-full max-w-2xl rounded-2xl border border-indigo-500/40 bg-bunker-950 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Başlığı */}
             <div className="flex items-start justify-between gap-4 border-b border-bunker-800 pb-4">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xl">📅</span>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                      selectedEvent.impact === "High"
+                      (selectedEvent.stars || (selectedEvent.impact === "High" ? 3 : 2)) === 3
                         ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
                         : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
                     }`}
                   >
-                    {selectedEvent.impact_label}
+                    {selectedEvent.impact_label || ((selectedEvent.stars || 2) === 3 ? "⭐⭐⭐ YÜKSEK (3 Yıldız)" : "⭐⭐ ORTA (2 Yıldız)")}
                   </span>
                   <span className="text-xs text-cyan-400 font-bold">
                     ⏰ {selectedEvent.date_str}
                   </span>
+                  {selectedEvent.status && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/30">
+                      {selectedEvent.status}
+                    </span>
+                  )}
                 </div>
                 <h2 className="text-lg font-black text-white mt-2 leading-tight">
-                  {selectedEvent.title}
+                  {selectedEvent.flag ? `${selectedEvent.flag} ` : ""}{selectedEvent.title}
                 </h2>
                 {selectedEvent.original_title && (
                   <p className="text-xs text-bunker-muted mt-0.5">
-                    Orijinal Adı: {selectedEvent.original_title} ({selectedEvent.country})
+                    Orijinal Adı: {selectedEvent.original_title} ({selectedEvent.country_name || selectedEvent.country})
                   </p>
                 )}
               </div>
@@ -891,7 +1200,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="w-8 h-8 rounded-xl bg-bunker-900 border border-bunker-700 hover:border-white text-bunker-muted hover:text-white flex items-center justify-center text-sm font-bold transition-all"
+                className="w-8 h-8 rounded-xl bg-bunker-900 border border-bunker-700 hover:border-white text-bunker-muted hover:text-white flex items-center justify-center text-sm font-bold transition-all shrink-0"
               >
                 ✕
               </button>
@@ -899,21 +1208,33 @@ export default function HomePage() {
 
             {/* Veri Özeti & Etkilenen Semboller */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="p-3 rounded-xl bg-bunker-900/80 border border-bunker-800 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-bunker-muted">Veri Beklentisi</span>
-                <div className="flex items-center gap-4 text-xs">
-                  <div>Beklenti: <strong className="text-cyan-300">{selectedEvent.forecast}</strong></div>
-                  <div>Önceki: <strong className="text-white">{selectedEvent.previous}</strong></div>
+              <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 space-y-1.5">
+                <span className="text-[10px] uppercase font-bold text-bunker-muted">Veri Beklentisi &amp; Sonuç</span>
+                <div className="grid grid-cols-3 gap-2 text-xs pt-1">
+                  <div>
+                    <div className="text-[10px] text-bunker-muted">Beklenti:</div>
+                    <strong className="text-cyan-300">{selectedEvent.forecast || "—"}</strong>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-bunker-muted">Önceki:</div>
+                    <strong className="text-white">{selectedEvent.previous || "—"}</strong>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-bunker-muted">Açıklanan:</div>
+                    <strong className={selectedEvent.actual && selectedEvent.actual !== "—" ? "text-emerald-400 font-black" : "text-bunker-muted"}>
+                      {selectedEvent.actual || "—"}
+                    </strong>
+                  </div>
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-bunker-900/80 border border-bunker-800 space-y-1">
+              <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 space-y-1.5">
                 <span className="text-[10px] uppercase font-bold text-bunker-muted">Etkilenen Pariteler</span>
-                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                <div className="flex flex-wrap gap-1.5 pt-1">
                   {selectedEvent.affected_symbols.map((sym) => (
                     <span
                       key={sym}
-                      className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
                     >
                       {sym}
                     </span>
@@ -921,6 +1242,14 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
+            {/* Gösterge Açıklaması (Varsa) */}
+            {selectedEvent.comment && (
+              <div className="p-3 rounded-xl bg-bunker-900/60 border border-bunker-800 text-xs text-bunker-muted leading-relaxed">
+                <strong className="text-white block text-[11px] mb-0.5">ℹ️ Gösterge Hakkında:</strong>
+                {selectedEvent.comment}
+              </div>
+            )}
 
             {/* "NE OLURSA NE OLUR?" SENARYO MATRİSİ */}
             <div className="space-y-3">
@@ -968,8 +1297,17 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Alt Kapat Butonu */}
-            <div className="pt-2 border-t border-bunker-800 flex justify-end">
+            {/* Alt Butonlar */}
+            <div className="pt-3 border-t border-bunker-800 flex items-center justify-between gap-3">
+              <a
+                href="https://www.investing.com/economic-calendar"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-all flex items-center gap-1"
+              >
+                <span>🌐</span> Investing.com Takvimine Git ↗
+              </a>
+
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}

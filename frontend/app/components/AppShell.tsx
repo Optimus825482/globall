@@ -6,6 +6,7 @@ import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import BottomNav from "./BottomNav";
 import ForexRadarModal from "../forex/components/ForexRadarModal";
+import ForexCalendarAlertModal from "../forex/components/ForexCalendarAlertModal";
 import { reconcilePushSubscription } from "../lib/push";
 import { useExchangeProvider } from "../lib/exchange";
 
@@ -53,6 +54,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {children}
           </div>
           <ForexRadarModal />
+          <ForexCalendarAlertModal />
         </main>
       </ExchangeContext.Provider>
     );
@@ -67,6 +69,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </main>
         <BottomNav />
         <ForexRadarModal />
+        <ForexCalendarAlertModal />
       </div>
     </ExchangeContext.Provider>
   );

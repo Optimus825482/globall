@@ -1,11 +1,12 @@
 """Forex Economic Calendar & Macro Event What-If Scenario Analyzer.
 
 Provides:
-- Live Economic Calendar events (ForexFactory / Investing.com macro feed)
-- Focus on High & Medium impact events (Fed, CPI, NFP, ECB, PMI, Oil Stocks, etc.)
-- Symbol impact mapping (EURUSD, XAUUSD, BTCUSD, USDJPY, GBPUSD)
-- Automated "What-If" (Ne Olursa Ne Olur?) Scenario Generation
-- In-memory cache for ultra-fast, resilient responses
+- Live Economic Calendar events matching Investing.com 2-Star (Medium) and 3-Star (High) impact.
+- Focus on High & Medium volatility events (Fed, CPI, NFP, ECB, BoE, BoJ, PMI, Retail Sales, EIA Oil, etc.)
+- Specific Forex & Crypto symbol impact mapping (XAUUSD, EURUSD, BTCUSD, USDJPY, GBPUSD, USOIL, USDCAD, AUDUSD)
+- Automated "What-If" (Ne Olursa Ne Olur?) Scenario Generation with explicit triggers and outcomes
+- Multi-provider resilience: TradingView API + Investing.com parser + ForexFactory + Curated Fallback
+- In-memory & disk caching for fast responses and zero downtime
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import re
 import time
 import urllib.request
@@ -21,161 +23,391 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Önbellek
+# Önbellek Ayarları
+_CACHE_TTL_SEC = 300  # 5 dakika
 _CALENDAR_CACHE: Dict[str, Any] = {
     "timestamp": 0,
     "items": [],
 }
-_CACHE_TTL_SEC = 300  # 5 dakika
 
-CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+CACHE_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "economic_calendar_cache.json")
 
 # Türkçe İsimlendirme ve Eşleme Sözlüğü
 TRANSLATIONS: Dict[str, str] = {
-    "Non-Farm Employment Change": "ABD Tarım Dışı İstihdam (NFP)",
-    "Unemployment Rate": "İşsizlik Oranı",
-    "CPI m/m": "TÜFE Enflasyon (Aylık)",
-    "CPI y/y": "TÜFE Enflasyon (Yıllık)",
-    "Core CPI m/m": "Çekirdek TÜFE (Aylık)",
-    "Core CPI y/y": "Çekirdek TÜFE (Yıllık)",
+    # Faiz ve Merkez Bankası
     "Federal Funds Rate": "Fed Faiz Kararı",
+    "Fed Interest Rate Decision": "Fed Faiz Kararı",
     "FOMC Statement": "FOMC Faiz Beyanatı",
     "FOMC Press Conference": "Powell Basın Toplantısı",
     "FOMC Meeting Minutes": "FOMC Toplantı Tutanakları",
-    "PPI m/m": "ÜFE Üretici Fiyat Endeksi (Aylık)",
-    "Retail Sales m/m": "Perakende Satışlar (Aylık)",
-    "Core Retail Sales m/m": "Çekirdek Perakende Satışlar",
-    "Crude Oil Inventories": "ABD Ham Petrol Stokları (EIA)",
+    "FOMC Minutes": "FOMC Toplantı Tutanakları",
+    "Fed Chair Powell Speaks": "Powell Konuşması",
     "ECB Monetary Policy Statement": "ECB Para Politikası Beyanatı",
     "Main Refinancing Rate": "ECB Faiz Kararı",
+    "ECB Interest Rate Decision": "ECB Faiz Kararı",
     "ECB Press Conference": "Lagarde Basın Toplantısı",
+    "ECB President Lagarde Speaks": "Lagarde Konuşması",
     "Monetary Policy Statement": "Merkez Bankası Para Politikası",
     "Official Bank Rate": "İngiltere (BoE) Faiz Kararı",
+    "BoE Interest Rate Decision": "İngiltere (BoE) Faiz Kararı",
+    "BoE Gov Bailey Speaks": "BoE Başkanı Bailey Konuşması",
     "BOJ Policy Rate": "Japonya (BoJ) Faiz Kararı",
-    "Flash Manufacturing PMI": "İmalat PMI (Öncü)",
-    "Flash Services PMI": "Hizmet PMI (Öncü)",
-    "ISM Manufacturing PMI": "ABD ISM İmalat PMI",
-    "ISM Services PMI": "ABD ISM Hizmet PMI",
+    "BoJ Interest Rate Decision": "Japonya (BoJ) Faiz Kararı",
+    "BOJ Gov Ueda Speaks": "BoJ Başkanı Ueda Konuşması",
+    "BoJ Monetary Policy Statement": "BoJ Para Politikası Raporu",
+    "RBA Interest Rate Decision": "Avustralya (RBA) Faiz Kararı",
+    "BOC Interest Rate Decision": "Kanada (BoC) Faiz Kararı",
+    "SNB Interest Rate Decision": "İsviçre (SNB) Faiz Kararı",
+
+    # Enflasyon
+    "CPI m/m": "TÜFE Enflasyon (Aylık)",
+    "CPI y/y": "TÜFE Enflasyon (Yıllık)",
+    "CPI MoM": "TÜFE Enflasyon (Aylık)",
+    "CPI YoY": "TÜFE Enflasyon (Yıllık)",
+    "Core CPI m/m": "Çekirdek TÜFE (Aylık)",
+    "Core CPI y/y": "Çekirdek TÜFE (Yıllık)",
+    "Core CPI MoM": "Çekirdek TÜFE (Aylık)",
+    "Core CPI YoY": "Çekirdek TÜFE (Yıllık)",
+    "PCE Price Index m/m": "PCE Fiyat Endeksi (Aylık)",
+    "Core PCE Price Index m/m": "Çekirdek PCE Enflasyon (Aylık)",
+    "Core PCE Price Index MoM": "Çekirdek PCE Enflasyon (Aylık)",
+    "PPI m/m": "ÜFE Üretici Fiyat Endeksi (Aylık)",
+    "PPI y/y": "ÜFE Üretici Fiyat Endeksi (Yıllık)",
+    "PPI MoM": "ÜFE Üretici Fiyat Endeksi (Aylık)",
+    "PPI YoY": "ÜFE Üretici Fiyat Endeksi (Yıllık)",
+    "Core PPI MoM": "Çekirdek ÜFE (Aylık)",
+
+    # İstihdam
+    "Non-Farm Employment Change": "ABD Tarım Dışı İstihdam (NFP)",
+    "Nonfarm Payrolls": "ABD Tarım Dışı İstihdam (NFP)",
+    "Unemployment Rate": "İşsizlik Oranı",
+    "Average Hourly Earnings m/m": "Ortalama Saatlik Kazançlar (Aylık)",
+    "Average Hourly Earnings MoM": "Ortalama Saatlik Kazançlar (Aylık)",
+    "ADP Nonfarm Employment Change": "ADP Özel Sektör İstihdamı",
+    "Initial Jobless Claims": "Haftalık İşsizlik Başvuruları",
+    "Jobless Claims": "İşsizlik Başvuruları",
+    "Continuing Jobless Claims": "Devam Eden İşsizlik Başvuruları",
+    "JOLTS Job Openings": "JOLTS Açık İş Sayısı",
+    "Employment Change": "İstihdam Değişimi",
+
+    # Büyüme & PMI & Perakende
     "Prelim GDP q/q": "GSYH Büyüme Oranı (Öncü)",
     "Final GDP q/q": "GSYH Büyüme Oranı (Nihai)",
-    "Unemployment Claims": "İşsizlik Haklarından Yararlanma Başvuruları",
-    "OPEC-JMMC Meetings": "OPEC+ Petrol Bakanları Toplantısı",
-    "OPEC Meetings": "OPEC Zirvesi",
+    "GDP QoQ": "GSYH Büyüme Oranı (Çeyreklik)",
+    "GDP YoY": "GSYH Büyüme Oranı (Yıllık)",
+    "Retail Sales m/m": "Perakende Satışlar (Aylık)",
+    "Retail Sales MoM": "Perakende Satışlar (Aylık)",
+    "Core Retail Sales m/m": "Çekirdek Perakende Satışlar",
+    "Core Retail Sales MoM": "Çekirdek Perakende Satışlar",
+    "ISM Manufacturing PMI": "ABD ISM İmalat PMI",
+    "ISM Services PMI": "ABD ISM Hizmet PMI",
+    "S&P Global Manufacturing PMI": "İmalat PMI",
+    "S&P Global Services PMI": "Hizmet PMI",
+    "Flash Manufacturing PMI": "Öncü İmalat PMI",
+    "Flash Services PMI": "Öncü Hizmet PMI",
+    "Michigan Consumer Sentiment": "Michigan Tüketici Güveni",
+    "CB Consumer Confidence": "CB Tüketici Güveni",
+
+    # Emtia ve Diğer
+    "Crude Oil Inventories": "ABD Ham Petrol Stokları (EIA)",
+    "EIA Crude Oil Stocks Change": "ABD Ham Petrol Stokları (EIA)",
     "Natural Gas Storage": "Doğalgaz Depolama Raporu",
+    "OPEC Meetings": "OPEC Zirvesi",
+    "Trade Balance": "Dış Ticaret Dengesi",
+    "Balance of Trade": "Dış Ticaret Dengesi",
+    "Current Account": "Cari Denge",
+    "Industrial Production": "Sanayi Üretimi",
+    "Industrial Production MoM": "Sanayi Üretimi (Aylık)",
+    "Industrial Production YoY": "Sanayi Üretimi (Yıllık)",
+    "Manufacturing Production MoM": "İmalat Üretimi (Aylık)",
+    "Factory Orders MoM": "Fabrika Siparişleri (Aylık)",
+    "Durable Goods Orders MoM": "Dayanıklı Tüketim Malları Siparişleri",
+    "Consumer Confidence": "Tüketici Güveni",
+    "Business Climate": "İş Dünyası Güven Endeksi (IFO)",
+    "Building Permits": "İnşaat İzinleri",
+    "Building Permits MoM": "İnşaat İzinleri (Aylık)",
+    "Existing Home Sales": "İkinci El Konut Satışları",
+    "New Home Sales": "Yeni Konut Satışları",
 }
 
-FALLBACK_EVENTS = [
+COUNTRY_MAP: Dict[str, Dict[str, str]] = {
+    "US": {"code": "USD", "name": "ABD", "flag": "🇺🇸"},
+    "USA": {"code": "USD", "name": "ABD", "flag": "🇺🇸"},
+    "USD": {"code": "USD", "name": "ABD", "flag": "🇺🇸"},
+    "EU": {"code": "EUR", "name": "Euro Bölgesi", "flag": "🇪🇺"},
+    "EUR": {"code": "EUR", "name": "Euro Bölgesi", "flag": "🇪🇺"},
+    "EMU": {"code": "EUR", "name": "Euro Bölgesi", "flag": "🇪🇺"},
+    "DE": {"code": "EUR", "name": "Almanya", "flag": "🇩🇪"},
+    "FR": {"code": "EUR", "name": "Fransa", "flag": "🇫🇷"},
+    "GB": {"code": "GBP", "name": "İngiltere", "flag": "🇬🇧"},
+    "UK": {"code": "GBP", "name": "İngiltere", "flag": "🇬🇧"},
+    "GBP": {"code": "GBP", "name": "İngiltere", "flag": "🇬🇧"},
+    "JP": {"code": "JPY", "name": "Japonya", "flag": "🇯🇵"},
+    "JPN": {"code": "JPY", "name": "Japonya", "flag": "🇯🇵"},
+    "JPY": {"code": "JPY", "name": "Japonya", "flag": "🇯🇵"},
+    "CA": {"code": "CAD", "name": "Kanada", "flag": "🇨🇦"},
+    "CAD": {"code": "CAD", "name": "Kanada", "flag": "🇨🇦"},
+    "AU": {"code": "AUD", "name": "Avustralya", "flag": "🇦🇺"},
+    "AUD": {"code": "AUD", "name": "Avustralya", "flag": "🇦🇺"},
+    "CH": {"code": "CHF", "name": "İsviçre", "flag": "🇨🇭"},
+    "CHF": {"code": "CHF", "name": "İsviçre", "flag": "🇨🇭"},
+    "NZ": {"code": "NZD", "name": "Yeni Zelanda", "flag": "🇳🇿"},
+    "NZD": {"code": "NZD", "name": "Yeni Zelanda", "flag": "🇳🇿"},
+}
+
+FALLBACK_EVENTS: List[Dict[str, Any]] = [
     {
         "id": "cal-fed-decision",
         "title": "Fed Faiz Kararı & FOMC Beyanatı",
-        "original_title": "Federal Funds Rate",
+        "original_title": "Federal Funds Rate & FOMC Statement",
         "country": "USD",
+        "currency": "USD",
+        "country_name": "ABD",
+        "flag": "🇺🇸",
         "date_str": "Bugün 21:00",
+        "date_iso": "2026-10-08T18:00:00Z",
         "impact": "High",
-        "impact_label": "YÜKSEK (3 Boğa)",
+        "stars": 3,
+        "stars_str": "⭐⭐⭐",
+        "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
         "forecast": "5.00%",
         "previous": "5.25%",
+        "actual": "—",
+        "status": "Bekleniyor",
         "affected_symbols": ["XAUUSD", "EURUSD", "BTCUSD", "USDJPY", "GBPUSD"],
         "scenario": {
             "title": "Fed Faiz & Para Politikası Senaryosu",
-            "bullish_trigger": "Faiz beklenti üzeri kalırsa veya Powell Şahin konuşursa",
-            "bullish_outcome": "Dolar Endeksi (DXY) fırlar. XAUUSD (Altın), EURUSD ve BTCUSD sert satış yer.",
-            "bearish_trigger": "Faiz indirimi onaylanır ve Güvercin mesajlar verilirse",
-            "bearish_outcome": "Dolar zayıflar. XAUUSD ve EURUSD yukarı patlar, BTCUSD güçlü yükselir.",
-            "scalper_tip": "Açıklanma dakikasında (21:00 - 21:05) yüksek spread oluşur; yön oturduktan sonra momentumla scalp yapın."
-        }
+            "bullish_trigger": "Faiz Beklenti Üzeri Kalırsa veya Powell Şahin Konuşursa",
+            "bullish_outcome": "Dolar Endeksi (DXY) güçlenir. Altın (XAUUSD), EURUSD ve BTCUSD sert geri çekilir.",
+            "bearish_trigger": "Faiz İndirimi Gelirse veya Güvercin Mesajlar Verilirse",
+            "bearish_outcome": "Dolar satılır. Altın (XAUUSD) ve EURUSD yukarı fırlar, BTCUSD güçlü prim yapar.",
+            "scalper_tip": "Açıklanma dakikasında (21:00-21:05) yüksek spread oluşur; yön oturduktan sonra momentumla scalp yapın.",
+            "summary_short": "Beklenti Üzeri: Dolar↑ / Altın↓ | Beklenti Altı: Altın↑ / Dolar↓",
+        },
     },
     {
         "id": "cal-us-cpi",
-        "title": "ABD TÜFE Enflasyon Verisi (CPI)",
-        "original_title": "CPI m/m",
+        "title": "ABD TÜFE Enflasyon Verisi (Tüketici Fiyat Endeksi)",
+        "original_title": "US CPI m/m & y/y",
         "country": "USD",
+        "currency": "USD",
+        "country_name": "ABD",
+        "flag": "🇺🇸",
         "date_str": "Bugün 15:30",
+        "date_iso": "2026-10-08T12:30:00Z",
         "impact": "High",
-        "impact_label": "YÜKSEK (3 Boğa)",
+        "stars": 3,
+        "stars_str": "⭐⭐⭐",
+        "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
         "forecast": "0.2%",
         "previous": "0.3%",
+        "actual": "—",
+        "status": "Bekleniyor",
         "affected_symbols": ["XAUUSD", "EURUSD", "BTCUSD", "USDJPY"],
         "scenario": {
-            "title": "ABD Enflasyon Senaryosu",
-            "bullish_trigger": "TÜFE Beklentiden Yüksek Gelirse (> 0.2%)",
-            "bullish_outcome": "Dolar güçlenir, faiz indirimi beklentileri ertelenir. XAUUSD ve EURUSD düşüşe geçer.",
-            "bearish_trigger": "TÜFE Beklentiden Düşük Gelirse (< 0.2%)",
-            "bearish_outcome": "Enflasyonun soğuduğu teyit edilir, Dolar değer kaybeder. XAUUSD ve EURUSD hızla yükselir.",
-            "scalper_tip": "Veri açıklandığı anda ters yöne emir asmayın; ilk 1 dakikalık fitilin yönüne göre pozisyon alın."
-        }
+            "title": "ABD Enflasyon (TÜFE) Senaryosu",
+            "bullish_trigger": "TÜFE Beklentiden Yüksek Gelirse (Sıcak Veri > 0.2%)",
+            "bullish_outcome": "Faiz indirimi ötelenir, Dolar güçlenir. XAUUSD ve EURUSD düşüş trendine girer.",
+            "bearish_trigger": "TÜFE Beklentiden Düşük Gelirse (Soğuyan Veri < 0.2%)",
+            "bearish_outcome": "Enflasyonun soğuduğu teyit edilir, Dolar değer kaybeder. XAUUSD ve EURUSD roketler.",
+            "scalper_tip": "Veri açıklandığı anda ters yöne limit emir asmayın; ilk 1 dakikalık fitilin yönüne göre scalp deneyin.",
+            "summary_short": "Sıcak Veri (>): Dolar↑ / Altın↓ | Soğuk Veri (<): Altın↑ / Dolar↓",
+        },
     },
     {
         "id": "cal-us-nfp",
         "title": "ABD Tarım Dışı İstihdam (NFP)",
         "original_title": "Non-Farm Employment Change",
         "country": "USD",
+        "currency": "USD",
+        "country_name": "ABD",
+        "flag": "🇺🇸",
         "date_str": "Cuma 15:30",
+        "date_iso": "2026-10-09T12:30:00Z",
         "impact": "High",
-        "impact_label": "YÜKSEK (3 Boğa)",
+        "stars": 3,
+        "stars_str": "⭐⭐⭐",
+        "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
         "forecast": "145K",
         "previous": "142K",
+        "actual": "—",
+        "status": "Bekleniyor",
         "affected_symbols": ["XAUUSD", "EURUSD", "GBPUSD", "BTCUSD"],
         "scenario": {
-            "title": "İstihdam Piyasası Senaryosu",
+            "title": "ABD İstihdam Senaryosu",
             "bullish_trigger": "İstihdam Beklenti Üzeri Çıkarsa (> 150K)",
-            "bullish_outcome": "ABD ekonomisi güçlü algısıyla Dolar değer kazanır. EURUSD ve XAUUSD geri çekilir.",
+            "bullish_outcome": "ABD ekonomisi güçlü algısıyla Dolar primlenir. EURUSD ve XAUUSD geri çekilir.",
             "bearish_trigger": "İstihdam Beklenti Altı Kalırsa (< 130K)",
-            "bearish_outcome": "Resesyon / faiz indirimi fiyatlanır. Dolar satılır, Altın ve Kripto yukarı fırlar.",
-            "scalper_tip": "NFP anında piyasanın en sert hareket ettiği zamandır. 15-20 saniye bekleyip yön trendine katılın."
-        }
+            "bearish_outcome": "Resesyon kaygısı ve faiz indirimi fiyatlanır. Dolar satılır, Altın yukarı fırlar.",
+            "scalper_tip": "Piyasanın en oynak 15 dakikasıdır. 30 saniye yönün oturmasını bekleyip kırılım yönünde girin.",
+            "summary_short": "Güçlü İstihdam (>): Dolar↑ / Altın↓ | Zayıf İstihdam (<): Altın↑ / Dolar↓",
+        },
+    },
+    {
+        "id": "cal-ecb-rate",
+        "title": "Avrupa Merkez Bankası (ECB) Faiz Kararı",
+        "original_title": "ECB Main Refinancing Rate",
+        "country": "EUR",
+        "currency": "EUR",
+        "country_name": "Euro Bölgesi",
+        "flag": "🇪🇺",
+        "date_str": "Perşembe 15:15",
+        "date_iso": "2026-10-08T12:15:00Z",
+        "impact": "High",
+        "stars": 3,
+        "stars_str": "⭐⭐⭐",
+        "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
+        "forecast": "3.50%",
+        "previous": "3.65%",
+        "actual": "—",
+        "status": "Bekleniyor",
+        "affected_symbols": ["EURUSD", "EURGBP", "EURJPY"],
+        "scenario": {
+            "title": "Avrupa Faiz & Para Politikası Senaryosu",
+            "bullish_trigger": "Faiz Sabit Tutulur veya Lagarde Şahin Konuşursa",
+            "bullish_outcome": "EURUSD ve EURGBP pariteleri 40-70 pip yukarı tepki verir.",
+            "bearish_trigger": "Erken Faiz İndirimi ve Güvercin Mesajlar",
+            "bearish_outcome": "Euro zayıflar, EURUSD paritesinde destek seviyeleri test edilir.",
+            "scalper_tip": "Karar sonrası 15:45 Lagarde konuşmasında da volatilite devam eder, stopu sıkı tutun.",
+            "summary_short": "Şahin Lagarde: EURUSD↑ / EURGBP↑ | Güvercin: EURUSD↓",
+        },
     },
     {
         "id": "cal-oil-inventory",
         "title": "ABD Ham Petrol Stokları (EIA)",
         "original_title": "Crude Oil Inventories",
         "country": "USD",
+        "currency": "USD",
+        "country_name": "ABD",
+        "flag": "🇺🇸",
         "date_str": "Çarşamba 17:30",
+        "date_iso": "2026-10-07T14:30:00Z",
         "impact": "Medium",
-        "impact_label": "ORTA (2 Boğa)",
+        "stars": 2,
+        "stars_str": "⭐⭐",
+        "impact_label": "⭐⭐ ORTA (2 Yıldız)",
         "forecast": "-1.5M",
         "previous": "+3.8M",
+        "actual": "-2.1M",
+        "status": "Açıklandı",
         "affected_symbols": ["USOIL", "USDCAD"],
         "scenario": {
-            "title": "Petrol Arz-Stok Senaryosu",
-            "bullish_trigger": "Stoklar beklenenden fazla düşerse (Arz kısıtlı)",
-            "bullish_outcome": "USOIL (Ham Petrol) yükselir. USDCAD düşüş eğilimine girer.",
-            "bearish_trigger": "Stoklarda beklenmeyen yüksek artış olursa (Talep zayıf)",
-            "bearish_outcome": "USOIL hızlı satış yer ve gevşer.",
-            "scalper_tip": "USOIL işlemlerinde stok verisi sonrası oluşan mumun kırıldığı yöne stoplu girin."
-        }
+            "title": "Ham Petrol Arz-Stok Senaryosu",
+            "bullish_trigger": "Stoklarda Beklenmedik Düşüş (Arz Daralması)",
+            "bullish_outcome": "USOIL (Ham Petrol) yukarı sıçrar. USDCAD düşüş eğilimine girer.",
+            "bearish_trigger": "Stoklarda Yüksek Artış (Talep Yetersizliği)",
+            "bearish_outcome": "USOIL hızlı satış yer ve geri çekilir. USDCAD yukarı tepki verir.",
+            "scalper_tip": "USOIL işlemlerinde stok verisi sonrası oluşan 5 dakikalık mum kırılımında pozisyon açın.",
+            "summary_short": "Stok Azalması (-): USOIL↑ / USDCAD↓ | Stok Artışı (+): USOIL↓ / USDCAD↑",
+        },
     },
     {
-        "id": "cal-ecb-rate",
-        "title": "Avrupa Merkez Bankası (ECB) Faiz Kararı",
-        "original_title": "Main Refinancing Rate",
-        "country": "EUR",
-        "date_str": "Perşembe 15:15",
-        "impact": "High",
-        "impact_label": "YÜKSEK (3 Boğa)",
-        "forecast": "3.50%",
-        "previous": "3.65%",
-        "affected_symbols": ["EURUSD", "EURGBP", "EURJPY"],
+        "id": "cal-us-jobless-claims",
+        "title": "ABD Haftalık İşsizlik Haklarından Yararlanma Başvuruları",
+        "original_title": "Initial Jobless Claims",
+        "country": "USD",
+        "currency": "USD",
+        "country_name": "ABD",
+        "flag": "🇺🇸",
+        "date_str": "Bugün 15:30",
+        "date_iso": "2026-10-08T12:30:00Z",
+        "impact": "Medium",
+        "stars": 2,
+        "stars_str": "⭐⭐",
+        "impact_label": "⭐⭐ ORTA (2 Yıldız)",
+        "forecast": "221K",
+        "previous": "225K",
+        "actual": "—",
+        "status": "Bekleniyor",
+        "affected_symbols": ["XAUUSD", "EURUSD", "USDJPY"],
         "scenario": {
-            "title": "Avrupa Faiz Senaryosu",
-            "bullish_trigger": "Faiz sabit tutulur veya Lagarde Şahin kalırsa",
-            "bullish_outcome": "EURUSD ve EURGBP pariteleri güçlü alımlarla 40-60 pip yukarı gider.",
-            "bearish_trigger": "Erken faiz indirimi ve gevşek mesajlar",
-            "bearish_outcome": "EURUSD satış baskısıyla desteklere çekilir.",
-            "scalper_tip": "ECB kararı sonrası 15:45'teki Lagarde konuşmasında da volatilite devam eder."
-        }
-    }
+            "title": "Haftalık İşsizlik Başvuruları Senaryosu",
+            "bullish_trigger": "Başvuru Sayısı Düşük Gelirse (< 215K)",
+            "bullish_outcome": "İstihdam piyasası sıkı algısıyla Dolar değer kazanır, Altın gevşer.",
+            "bearish_trigger": "Başvuru Sayısı Yüksek Gelirse (> 230K)",
+            "bearish_outcome": "İş gücünde zayıflama algısıyla Dolar gevşer, Altın ve EURUSD destek bulur.",
+            "scalper_tip": "Veri anında kısa vadeli 15-25 pip scalping fırsatı sunar.",
+            "summary_short": "Başvuru Azalırsa: Dolar↑ Altın↓ | Başvuru Artarsa: Altın↑ Dolar↓",
+        },
+    },
+    {
+        "id": "cal-boj-rate",
+        "title": "Japonya Merkez Bankası (BoJ) Faiz Kararı & Ueda Konuşması",
+        "original_title": "BOJ Policy Rate & Gov Ueda Speaks",
+        "country": "JPY",
+        "currency": "JPY",
+        "country_name": "Japonya",
+        "flag": "🇯🇵",
+        "date_str": "Cuma 06:00",
+        "date_iso": "2026-10-09T03:00:00Z",
+        "impact": "High",
+        "stars": 3,
+        "stars_str": "⭐⭐⭐",
+        "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
+        "forecast": "0.25%",
+        "previous": "0.25%",
+        "actual": "—",
+        "status": "Bekleniyor",
+        "affected_symbols": ["USDJPY", "EURJPY", "GBPJPY"],
+        "scenario": {
+            "title": "Yen (JPY) Faiz & Carry Trade Senaryosu",
+            "bullish_trigger": "BoJ Faiz Artırırsa veya Ueda Şahin Sinyal Verirse",
+            "bullish_outcome": "Japon Yeni hızla güçlenir; USDJPY sert düşer (100-150 pip), EURJPY çöker.",
+            "bearish_trigger": "Faiz Sabit ve Genişlemeci Güvercin Duruş Korunursa",
+            "bearish_outcome": "USDJPY ve GBPJPY paritelerinde yeni zirve denemeleri başlar.",
+            "scalper_tip": "USDJPY'de faiz kararlarında fitiller çok geniştir; stop-loss'u geniş tutun.",
+            "summary_short": "Şahin BoJ: USDJPY Sert Düşer↓ | Güvercin BoJ: USDJPY Yükselir↑",
+        },
+    },
+    {
+        "id": "cal-uk-cpi",
+        "title": "İngiltere TÜFE Enflasyon Verisi (Aylık & Yıllık)",
+        "original_title": "UK CPI YoY",
+        "country": "GBP",
+        "currency": "GBP",
+        "country_name": "İngiltere",
+        "flag": "🇬🇧",
+        "date_str": "Çarşamba 09:00",
+        "date_iso": "2026-10-07T06:00:00Z",
+        "impact": "High",
+        "stars": 3,
+        "stars_str": "⭐⭐⭐",
+        "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
+        "forecast": "2.2%",
+        "previous": "2.2%",
+        "actual": "—",
+        "status": "Bekleniyor",
+        "affected_symbols": ["GBPUSD", "EURGBP", "GBPJPY"],
+        "scenario": {
+            "title": "İngiltere Enflasyon & BoE Senaryosu",
+            "bullish_trigger": "TÜFE Beklenti Üzeri Gelirse",
+            "bullish_outcome": "BoE faiz indirimlerini erteler, GBPUSD yukarı ivmelenir, EURGBP geriler.",
+            "bearish_trigger": "TÜFE Beklenti Altı Gelirse",
+            "bearish_outcome": "BoE faiz indirimi beklentisi artar, GBPUSD satılır, EURGBP yükselir.",
+            "scalper_tip": "GBPUSD paritesinde Londra açılışındaki ivme ile işlem yapın.",
+            "summary_short": "Yüksek TÜFE: GBPUSD↑ / EURGBP↓ | Düşük TÜFE: GBPUSD↓ / EURGBP↑",
+        },
+    },
 ]
+
+# Geriye dönük uyumluluk için alias
+FALLBACK_NEWS = FALLBACK_EVENTS
 
 
 def format_event_date(date_iso: str) -> str:
-    """ISO tarihini kullanıcı dostu Türkçe zaman formatına çevirir."""
+    """ISO zamanını kullanıcı dostu Türkiye saati (UTC+3) formatına çevirir."""
     try:
         dt = datetime.datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
-        # Türkiye saatine göre düzenle
-        now = datetime.datetime.now(dt.tzinfo)
-        diff_days = (dt.date() - now.date()).days
-        time_str = dt.strftime("%H:%M")
+        tr_tz = datetime.timezone(datetime.timedelta(hours=3))
+        dt_tr = dt.astimezone(tr_tz)
+        now_tr = datetime.datetime.now(tr_tz)
+
+        diff_days = (dt_tr.date() - now_tr.date()).days
+        time_str = dt_tr.strftime("%H:%M")
+
+        months_tr = ["", "Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+        days_tr = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+        day_name = days_tr[dt_tr.weekday()]
 
         if diff_days == 0:
             return f"Bugün {time_str}"
@@ -184,114 +416,361 @@ def format_event_date(date_iso: str) -> str:
         elif diff_days == -1:
             return f"Dün {time_str}"
         else:
-            days_tr = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
-            day_name = days_tr[dt.weekday()]
-            return f"{day_name} {time_str}"
+            return f"{dt_tr.day} {months_tr[dt_tr.month]} ({day_name}) {time_str}"
     except Exception:
         return date_iso[:16].replace("T", " ")
 
 
-def map_symbols_for_event(country: str, title: str) -> List[str]:
-    """Ülke ve olaya göre etkilenen forex sembollerini belirler."""
+def map_symbols_for_event(currency: str, title: str) -> List[str]:
+    """Para birimi ve olaya göre etkilenen Forex & Kripto sembollerini çıkarır."""
     t = title.lower()
+    c = currency.upper()
     symbols: List[str] = []
 
-    if country == "USD":
+    if c == "USD":
         symbols = ["XAUUSD", "EURUSD", "BTCUSD", "USDJPY", "GBPUSD"]
-    elif country == "EUR":
+    elif c == "EUR":
         symbols = ["EURUSD", "EURGBP", "EURJPY"]
-    elif country == "GBP":
+    elif c == "GBP":
         symbols = ["GBPUSD", "EURGBP", "GBPJPY"]
-    elif country == "JPY":
+    elif c == "JPY":
         symbols = ["USDJPY", "EURJPY", "GBPJPY"]
-    elif country == "CAD":
+    elif c == "CAD":
         symbols = ["USDCAD", "USOIL"]
-    elif country == "AUD":
+    elif c == "AUD":
         symbols = ["AUDUSD", "XAUUSD"]
-    elif country == "CHF":
+    elif c == "CHF":
         symbols = ["USDCHF", "EURCHF"]
     else:
         symbols = ["EURUSD", "XAUUSD"]
 
-    if "oil" in t or "petrol" in t or "crude" in t:
+    if any(k in t for k in ["oil", "petrol", "crude", "energy", "enerji", "eia"]):
         if "USOIL" not in symbols:
             symbols.insert(0, "USOIL")
 
-    if "gold" in t or "altın" in t:
+    if any(k in t for k in ["gold", "altın", "precious"]):
         if "XAUUSD" not in symbols:
             symbols.insert(0, "XAUUSD")
 
     return symbols[:5]
 
 
-def generate_event_scenario(title: str, country: str, symbols: List[str]) -> Dict[str, str]:
-    """Ekonomik gösterge için 'Ne Olursa Ne Olur?' senaryosu oluşturur."""
+def translate_title(title: str, country_code: str) -> str:
+    """Gösterge başlığını profesyonel Türkçe isimlendirmeye çevirir."""
+    orig = title.strip()
+    c_info = COUNTRY_MAP.get(country_code, {})
+    c_name = c_info.get("name", country_code)
+
+    tr_term = TRANSLATIONS.get(orig)
+    if not tr_term:
+        for en_k, tr_v in TRANSLATIONS.items():
+            if en_k.lower() in orig.lower():
+                tr_term = tr_v
+                break
+
+    if tr_term:
+        if c_name and not any(k in tr_term for k in [c_name, "ABD", "Euro", "İngiltere", "Japonya", "Avustralya", "Kanada"]):
+            return f"{c_name} {tr_term}"
+        return tr_term
+
+    return f"{c_name} {orig}" if c_name and not orig.startswith(c_name) else orig
+
+
+def generate_event_scenario(title: str, country: str, currency: str, symbols: List[str]) -> Dict[str, str]:
+    """Her ekonomik olay için 'Ne Olursa Ne Olur?' senaryosu üretir."""
     sym_str = ", ".join(symbols[:3])
     t = title.lower()
 
-    if any(k in t for k in ["rate", "faiz", "fomc", "fed", "monetary"]):
+    if any(k in t for k in ["rate", "faiz", "fomc", "fed", "monetary", "beyanat", "statement", "powell", "lagarde", "ueda"]):
         return {
-            "title": f"{country} Faiz & Politika Senaryosu",
-            "bullish_trigger": "Faiz Beklenti Üzeri / Şahin Açıklama",
-            "bullish_outcome": f"{country} para birimi hızla değer kazanır. Ters pariteler ve Altın (XAUUSD) düşer.",
-            "bearish_trigger": "Faiz İndirimi / Güvercin Açıklama",
-            "bearish_outcome": f"{country} değer kaybeder. {sym_str} yukarı yönlü rahatlama rallisi yapar.",
-            "scalper_tip": "Açıklanma anında ilk 2-3 dakika spread açılabilir; yön netleşince kırılıma katılın."
+            "title": f"{currency} Faiz & Para Politikası Senaryosu",
+            "bullish_trigger": "Faiz Beklenti Üzeri Kalırsa / Şahin Açıklama",
+            "bullish_outcome": f"{currency} para birimi hızla primlenir. Karşıt pariteler ve Altın (XAUUSD) düşüşe geçer.",
+            "bearish_trigger": "Faiz İndirimi Gelirse / Güvercin Açıklama",
+            "bearish_outcome": f"{currency} değer kaybeder. {sym_str} üzerinde güçlü rahatlama yükselişi başlar.",
+            "scalper_tip": "Açıklanma dakikasında spread 2-3 katına çıkabilir; fitil oluştuktan 30 saniye sonra kırılımla girin.",
+            "summary_short": f"Şahin/Yüksek: {currency}↑ / Altın↓ | Güvercin/Düşük: Altın↑ / {currency}↓",
         }
-    elif any(k in t for k in ["cpi", "tüfe", "inflation", "enflasyon", "ppi", "üfe"]):
+    elif any(k in t for k in ["cpi", "tüfe", "inflation", "enflasyon", "pce", "ppi", "üfe"]):
         return {
-            "title": f"{country} Enflasyon (TÜFE) Senaryosu",
+            "title": f"{currency} Enflasyon Verisi Senaryosu",
             "bullish_trigger": "Enflasyon Beklenti Üstü Çıkarsa (Sıcak Veri)",
-            "bullish_outcome": f"Faiz artışı / sıkılaşma fiyatlanır. {country} güçlenir, XAUUSD ve risk varlıkları baskılanır.",
+            "bullish_outcome": f"Sıkılaşma/faiz koruma fiyatlanır. {currency} güçlenir, XAUUSD ve risk varlıkları baskılanır.",
             "bearish_trigger": "Enflasyon Beklenti Altı Kalırsa (Soğuma)",
-            "bearish_outcome": f"Faiz indirimi ihtimali güçlenir. Altın (XAUUSD) ve {sym_str} sert alım görür.",
-            "scalper_tip": "Veri anında ters yöne emir yazmayın; ilk 1 dakikalık mum kapanış yönünde scalp deneyin."
+            "bearish_outcome": f"Faiz indirim kapısı aralanır. {currency} değer kaybeder, Altın (XAUUSD) ve {sym_str} sert yükselir.",
+            "scalper_tip": "Veri anında ters yöne emir yazmayın; ilk 1 dakikalık mum kapanış yönünde momentum scalping yapın.",
+            "summary_short": f"Sıcak Veri (>): {currency}↑ / Altın↓ | Soğuk Veri (<): Altın↑ / {currency}↓",
         }
-    elif any(k in t for k in ["employment", "nfp", "istihdam", "payrolls", "işsizlik", "claims"]):
+    elif any(k in t for k in ["employment", "nfp", "istihdam", "payrolls", "işsizlik", "claims", "adp"]):
         return {
-            "title": f"{country} İstihdam Senaryosu",
-            "bullish_trigger": "İstihdam Beklenti Üstü / Güçlü İş Gücü",
-            "bullish_outcome": f"Ekonomi güçlü algısıyla {country} prim yapar. Karşıt pariteler geri çekilir.",
-            "bearish_trigger": "İstihdam Beklenti Altı / Zayıf İş Gücü",
-            "bearish_outcome": f"Ekonomik yavaşlama algısıyla {country} satılır; XAUUSD ve diğer pariteler yükselir.",
-            "scalper_tip": "Volatilite dalgası 10-15 dakika sürebilir; stop mesafesini normalin 1.5 katı tutun."
+            "title": f"{currency} İstihdam & İş Gücü Senaryosu",
+            "bullish_trigger": "İstihdam Beklenti Üstü / Düşük İşsizlik",
+            "bullish_outcome": f"Ekonomi güçlü algısıyla {currency} alım görür. Karşıt pariteler geri çekilir.",
+            "bearish_trigger": "İstihdam Beklenti Altı / Yüksek İşsizlik",
+            "bearish_outcome": f"Ekonomik yavaşlama endişesiyle {currency} satılır; XAUUSD ve diğer varlıklar fırlar.",
+            "scalper_tip": "İstihdam dalgası 10-15 dakika sürebilir; stop mesafesini normalin 1.5 katı tutun.",
+            "summary_short": f"Güçlü İstihdam: {currency}↑ / Altın↓ | Zayıf İstihdam: Altın↑ / {currency}↓",
         }
-    elif any(k in t for k in ["oil", "petrol", "crude", "inventories"]):
+    elif any(k in t for k in ["oil", "petrol", "crude", "inventories", "stok"]):
         return {
             "title": "Ham Petrol Stok Senaryosu",
-            "bullish_trigger": "Stoklarda Beklenmedik Düşüş (Arz Azalması)",
-            "bullish_outcome": "USOIL hızlı yükselişe geçer. USDCAD düşer.",
-            "bearish_trigger": "Stoklarda Yüksek Artış (Arz Fazlası)",
+            "bullish_trigger": "Stoklarda Beklenmedik Düşüş (Arz Kısıtı)",
+            "bullish_outcome": "USOIL (Ham Petrol) yukarı sıçrar. USDCAD düşüş eğilimine girer.",
+            "bearish_trigger": "Stoklarda Beklenti Üstü Artış (Talep Yetersizliği)",
             "bearish_outcome": "USOIL sert satış yer. USDCAD yukarı tepki verir.",
-            "scalper_tip": "Stok verisi açıklandıktan 30 saniye sonra trend yönüne stoplu katılın."
+            "scalper_tip": "Stok verisi açıklandıktan 30 saniye sonra trend yönüne stoplu katılın.",
+            "summary_short": "Stok Düşüşü: USOIL↑ / USDCAD↓ | Stok Artışı: USOIL↓ / USDCAD↑",
+        }
+    elif any(k in t for k in ["gdp", "gsyh", "büyüme"]):
+        return {
+            "title": f"{currency} Büyüme (GSYH) Senaryosu",
+            "bullish_trigger": "GSYH Beklenti Üzeri Çıkarsa",
+            "bullish_outcome": f"Büyüme ivmesiyle {currency} güçlenir, hisse endeksleri ve {sym_str} yön bulur.",
+            "bearish_trigger": "GSYH Beklenti Altı Kalırsa",
+            "bearish_outcome": f"Resesyon riskiyle {currency} baskılanır, güvenli limanlara kaçış hızlanır.",
+            "scalper_tip": "Öncü veriler nihai verilerden daha yüksek oynaklık yaratır.",
+            "summary_short": f"Güçlü GSYH: {currency}↑ | Zayıf GSYH: {currency}↓",
+        }
+    elif any(k in t for k in ["pmi", "ism", "imalat", "hizmet"]):
+        return {
+            "title": f"{currency} PMI Satın Alma Yöneticileri Senaryosu",
+            "bullish_trigger": "PMI > 50 ve Beklenti Üzeri (Genişleme)",
+            "bullish_outcome": f"Sektörel canlılık teyit edilir, {currency} alıcı bulur.",
+            "bearish_trigger": "PMI < 50 veya Beklenti Altı (Daralma)",
+            "bearish_outcome": f"Daralma endişesiyle {currency} geriler, savunmacı varlıklar prim yapar.",
+            "scalper_tip": "PMI verilerinde ilk 5 dakikalık hareket genellikle trend oluşturur.",
+            "summary_short": f"PMI > 50: {currency}↑ | PMI < 50: {currency}↓",
         }
     else:
         return {
-            "title": f"{country} Makro Veri Senaryosu",
+            "title": f"{currency} Makro Gösterge Senaryosu",
             "bullish_trigger": "Açıklanan > Beklenti (Pozitif Sürpriz)",
-            "bullish_outcome": f"{country} varlıkları primlenir. {sym_str} üzerinde hareketlilik artar.",
+            "bullish_outcome": f"{currency} varlıkları primlenir. {sym_str} üzerinde volatilite artar.",
             "bearish_trigger": "Açıklanan < Beklenti (Negatif Sürpriz)",
-            "bearish_outcome": f"{country} üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
-            "scalper_tip": "Veri açıklandığında seans hacmine dikkat edin; düşük hacimde sahte kırılımlar oluşabilir."
+            "bearish_outcome": f"{currency} üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
+            "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
+            "summary_short": f"Beklenti Üzeri: {currency}↑ | Beklenti Altı: {currency}↓",
         }
 
 
-async def fetch_economic_calendar() -> List[Dict[str, Any]]:
-    """ForexFactory & Küresel ekonomik takvim verisini çeker ve analiz eder."""
+# ============================================================================
+# VERİ ÇEKİCİLER (PROVIDERS)
+# ============================================================================
+
+async def fetch_tradingview_events() -> List[Dict[str, Any]]:
+    """TradingView Economic Calendar API'den 2 ve 3 yıldızlı olayları çeker."""
+    def _fetch() -> Optional[str]:
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            # Dün ile önümüzdeki 7 gün arasındaki kritik veriler
+            from_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%dT00:00:00.000Z")
+            to_str = (now + datetime.timedelta(days=7)).strftime("%Y-%m-%dT23:59:59.000Z")
+            url = f"https://economic-calendar.tradingview.com/events?from={from_str}&to={to_str}&countries=US,EU,GB,JP,CA,AU,CH,DE,FR"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Origin": "https://www.tradingview.com",
+                    "Accept": "application/json",
+                }
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                if resp.status == 200:
+                    return resp.read().decode("utf-8", errors="ignore")
+        except Exception as exc:
+            logger.debug("TradingView calendar fetch error: %s", exc)
+        return None
+
+    loop = asyncio.get_running_loop()
+    raw_json = await loop.run_in_executor(None, _fetch)
+    if not raw_json:
+        return []
+
+    try:
+        data = json.loads(raw_json)
+        results = data.get("result", [])
+    except Exception as exc:
+        logger.debug("TradingView JSON parse error: %s", exc)
+        return []
+
+    parsed: List[Dict[str, Any]] = []
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    for item in results:
+        # importance: 1 = Yüksek (3 Yıldız), 0 = Orta (2 Yıldız), -1 = Düşük (1 Yıldız)
+        imp = item.get("importance")
+        if imp not in [0, 1]:
+            continue
+
+        stars = 3 if imp == 1 else 2
+        impact = "High" if stars == 3 else "Medium"
+        orig_title = str(item.get("title") or item.get("indicator") or "").strip()
+        country_code = str(item.get("country") or "").strip().upper()
+        currency = str(item.get("currency") or "").strip().upper()
+
+        c_info = COUNTRY_MAP.get(country_code) or COUNTRY_MAP.get(currency) or {
+            "code": currency or country_code,
+            "name": country_code,
+            "flag": "🌐"
+        }
+        actual_currency = currency or c_info["code"]
+
+        date_iso = str(item.get("date") or "")
+        unit = str(item.get("unit") or "")
+
+        def _fmt_val(v: Any) -> str:
+            if v is None:
+                return "—"
+            return f"{v}{unit}" if unit else str(v)
+
+        forecast = _fmt_val(item.get("forecast"))
+        previous = _fmt_val(item.get("previous"))
+        actual = _fmt_val(item.get("actual"))
+
+        is_passed = False
+        try:
+            ev_dt = datetime.datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+            is_passed = ev_dt < now_utc
+        except Exception:
+            pass
+
+        status = "Açıklandı" if actual != "—" else ("Geçti" if is_passed else "Bekleniyor")
+        tr_title = translate_title(orig_title, country_code)
+        affected_symbols = map_symbols_for_event(actual_currency, orig_title)
+        scenario = generate_event_scenario(orig_title, c_info["name"], actual_currency, affected_symbols)
+
+        parsed.append({
+            "id": f"cal-tv-{item.get('id') or abs(hash(orig_title + date_iso)) % 1000000}",
+            "title": tr_title,
+            "original_title": orig_title,
+            "country": actual_currency,
+            "currency": actual_currency,
+            "country_name": c_info["name"],
+            "flag": c_info["flag"],
+            "date_str": format_event_date(date_iso),
+            "date_iso": date_iso,
+            "impact": impact,
+            "stars": stars,
+            "stars_str": "⭐⭐⭐" if stars == 3 else "⭐⭐",
+            "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)" if stars == 3 else "⭐⭐ ORTA (2 Yıldız)",
+            "forecast": forecast,
+            "previous": previous,
+            "actual": actual,
+            "status": status,
+            "comment": item.get("comment") or "",
+            "affected_symbols": affected_symbols,
+            "scenario": scenario,
+            "is_passed": is_passed,
+        })
+
+    return parsed
+
+
+async def fetch_investing_com_events() -> List[Dict[str, Any]]:
+    """Investing.com HTML / JSON verisinden 2 ve 3 yıldızlı olayları çeker."""
+    def _fetch() -> Optional[str]:
+        try:
+            from curl_cffi import requests
+            headers = {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            }
+            # tr.investing.com veya www.investing.com
+            for target_url in ["https://tr.investing.com/economic-calendar/", "https://www.investing.com/economic-calendar"]:
+                try:
+                    r = requests.get(target_url, headers=headers, impersonate="chrome120", timeout=7)
+                    if r.status_code == 200 and "economicCalendarStore" in r.text:
+                        return r.text
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.debug("Investing.com fetch exception: %s", exc)
+        return None
+
+    loop = asyncio.get_running_loop()
+    html_text = await loop.run_in_executor(None, _fetch)
+    if not html_text:
+        return []
+
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_text, "html.parser")
+        script_tag = None
+        for s in soup.find_all("script"):
+            if s.string and "economicCalendarStore" in s.string:
+                script_tag = s
+                break
+
+        if not script_tag:
+            return []
+
+        data = json.loads(script_tag.string)
+        store = data.get("props", {}).get("pageProps", {}).get("state", {}).get("economicCalendarStore", {})
+        events_by_date = store.get("calendarEventsByDate", {})
+
+        parsed: List[Dict[str, Any]] = []
+        for _, ev_list in events_by_date.items():
+            for ev in ev_list:
+                imp = str(ev.get("importance", "")).strip()
+                if imp not in ["2", "3"]:
+                    continue
+
+                stars = int(imp)
+                orig_title = str(ev.get("event") or ev.get("eventLong") or "").strip()
+                currency = str(ev.get("currency") or "").strip().upper()
+                country = str(ev.get("country") or "").strip()
+                time_iso = str(ev.get("time") or ev.get("date") or "")
+
+                c_info = COUNTRY_MAP.get(currency) or {"code": currency or "USD", "name": country or currency, "flag": "🌐"}
+                affected_symbols = map_symbols_for_event(currency, orig_title)
+                scenario = generate_event_scenario(orig_title, c_info["name"], currency or "USD", affected_symbols)
+
+                actual = str(ev.get("actual") or "—")
+                forecast = str(ev.get("forecast") or "—")
+                previous = str(ev.get("previous") or "—")
+
+                parsed.append({
+                    "id": f"cal-inv-{ev.get('eventId') or abs(hash(orig_title + time_iso)) % 1000000}",
+                    "title": orig_title,
+                    "original_title": orig_title,
+                    "country": currency or "USD",
+                    "currency": currency or "USD",
+                    "country_name": c_info["name"],
+                    "flag": c_info["flag"],
+                    "date_str": format_event_date(time_iso) if time_iso else "Bugün",
+                    "date_iso": time_iso,
+                    "impact": "High" if stars == 3 else "Medium",
+                    "stars": stars,
+                    "stars_str": "⭐⭐⭐" if stars == 3 else "⭐⭐",
+                    "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)" if stars == 3 else "⭐⭐ ORTA (2 Yıldız)",
+                    "forecast": forecast,
+                    "previous": previous,
+                    "actual": actual,
+                    "status": "Açıklandı" if actual != "—" else "Bekleniyor",
+                    "affected_symbols": affected_symbols,
+                    "scenario": scenario,
+                })
+
+        return parsed
+    except Exception as exc:
+        logger.debug("Investing.com parse error: %s", exc)
+        return []
+
+
+async def fetch_forexfactory_events() -> List[Dict[str, Any]]:
+    """ForexFactory JSON akışından High ve Medium olayları çeker."""
     def _fetch() -> Optional[str]:
         try:
             req = urllib.request.Request(
-                CALENDAR_URL,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "application/json",
-                }
+                "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+                headers={"User-Agent": "Mozilla/5.0"}
             )
             with urllib.request.urlopen(req, timeout=6) as resp:
                 if resp.status == 200:
                     return resp.read().decode("utf-8", errors="ignore")
         except Exception as exc:
-            logger.debug("Calendar fetch error: %s", exc)
+            logger.debug("ForexFactory fetch error: %s", exc)
         return None
 
     loop = asyncio.get_running_loop()
@@ -301,73 +780,200 @@ async def fetch_economic_calendar() -> List[Dict[str, Any]]:
 
     try:
         events = json.loads(raw_json)
+        parsed: List[Dict[str, Any]] = []
+        for ev in events:
+            impact = str(ev.get("impact", "")).capitalize()
+            if impact not in ["High", "Medium"]:
+                continue
+
+            stars = 3 if impact == "High" else 2
+            orig_title = str(ev.get("title", "")).strip()
+            country = str(ev.get("country", "")).strip().upper()
+            date_iso = str(ev.get("date", "")).strip()
+
+            c_info = COUNTRY_MAP.get(country, {"code": country, "name": country, "flag": "🌐"})
+            tr_title = translate_title(orig_title, country)
+            affected_symbols = map_symbols_for_event(country, orig_title)
+            scenario = generate_event_scenario(orig_title, c_info["name"], country, affected_symbols)
+
+            parsed.append({
+                "id": f"cal-ff-{abs(hash(orig_title + date_iso)) % 1000000}",
+                "title": tr_title,
+                "original_title": orig_title,
+                "country": country,
+                "currency": country,
+                "country_name": c_info["name"],
+                "flag": c_info["flag"],
+                "date_str": format_event_date(date_iso),
+                "date_iso": date_iso,
+                "impact": impact,
+                "stars": stars,
+                "stars_str": "⭐⭐⭐" if stars == 3 else "⭐⭐",
+                "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)" if stars == 3 else "⭐⭐ ORTA (2 Yıldız)",
+                "forecast": ev.get("forecast") or "—",
+                "previous": ev.get("previous") or "—",
+                "actual": "—",
+                "status": "Bekleniyor",
+                "affected_symbols": affected_symbols,
+                "scenario": scenario,
+            })
+        return parsed
     except Exception as exc:
-        logger.debug("Calendar JSON parse error: %s", exc)
+        logger.debug("ForexFactory parse error: %s", exc)
         return []
 
-    parsed: List[Dict[str, Any]] = []
 
-    for ev in events:
-        impact = str(ev.get("impact", "")).capitalize()
-        # Yalnızca High ve Medium olan önemli olayları al
-        if impact not in ["High", "Medium"]:
-            continue
-
-        orig_title = str(ev.get("title", "")).strip()
-        country = str(ev.get("country", "")).strip().upper()
-        date_iso = str(ev.get("date", "")).strip()
-
-        # Türkçe Başlık Eşlemesi
-        tr_title = TRANSLATIONS.get(orig_title)
-        if not tr_title:
-            # Kısmi arama
-            for en_k, tr_v in TRANSLATIONS.items():
-                if en_k.lower() in orig_title.lower():
-                    tr_title = f"{country} {tr_v}"
-                    break
-        if not tr_title:
-            tr_title = f"{country} {orig_title}"
-
-        affected_symbols = map_symbols_for_event(country, orig_title)
-        scenario = generate_event_scenario(orig_title, country, affected_symbols)
-
-        parsed.append({
-            "id": f"cal-{abs(hash(orig_title + date_iso)) % 1000000}",
-            "title": tr_title,
-            "original_title": orig_title,
-            "country": country,
-            "date_str": format_event_date(date_iso),
-            "impact": impact,
-            "impact_label": "YÜKSEK (3 Boğa)" if impact == "High" else "ORTA (2 Boğa)",
-            "forecast": ev.get("forecast") or "—",
-            "previous": ev.get("previous") or "—",
-            "affected_symbols": affected_symbols,
-            "scenario": scenario,
-        })
-
-    return parsed
+def _load_disk_cache() -> List[Dict[str, Any]]:
+    """Disk önbelleğinden takvim verisini okur."""
+    try:
+        if os.path.exists(CACHE_FILE_PATH):
+            with open(CACHE_FILE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    return data
+    except Exception as exc:
+        logger.debug("Disk cache okuma hatası: %s", exc)
+    return []
 
 
-async def get_forex_news(force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Ekonomik takvim açıklamalarını analiz edilmiş 'Ne Olursa Ne Olur' senaryolarıyla döner."""
+def _save_disk_cache(items: List[Dict[str, Any]]) -> None:
+    """Başarıyla çekilen takvim verilerini diske yazar."""
+    try:
+        os.makedirs(os.path.dirname(CACHE_FILE_PATH), exist_ok=True)
+        with open(CACHE_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.debug("Disk cache yazma hatası: %s", exc)
+
+
+# ============================================================================
+# ANA ÇEKME VE KOMBİNASYON FONKSİYONU
+# ============================================================================
+
+async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> List[Dict[str, Any]]:
+    """Investing.com 2 ve 3 Yıldızlı Olayları 'Ne Olursa Ne Olur' senaryolarıyla döner.
+    
+    Yalnızca 2 ve 3 yıldıza (Medium & High) sahip ekonomik verileri sunar.
+    Önce TradingView API ve Investing.com canlı akışlarını dener.
+    Başarısız olursa disk önbelleğini ve zengin hazır olay listesini devreye alır.
+    """
     now = time.time()
     if not force_refresh and _CALENDAR_CACHE["items"] and (now - _CALENDAR_CACHE["timestamp"]) < _CACHE_TTL_SEC:
-        return _CALENDAR_CACHE["items"]
+        cached = _CALENDAR_CACHE["items"]
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        for ev in cached:
+            date_iso = ev.get("date_iso")
+            if date_iso:
+                try:
+                    ev_dt = datetime.datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+                    diff_sec = (ev_dt - now_utc).total_seconds()
+                    mins = round(diff_sec / 60, 1)
+                    ev["minutes_until"] = mins
+                    ev["is_within_5m"] = bool(0 <= mins <= 5.5)
+                    ev["is_passed"] = bool(diff_sec < 0)
+                    if ev.get("actual") and ev["actual"] != "—":
+                        ev["status"] = "Açıklandı"
+                    elif ev["is_passed"]:
+                        ev["status"] = "Geçti"
+                    elif ev["is_within_5m"]:
+                        ev["status"] = "⏰ 5 Dk İçinde!"
+                except Exception:
+                    pass
+        return cached
 
-    items = await fetch_economic_calendar()
+    items: List[Dict[str, Any]] = []
 
-    # Eğer canlı takvim çekilemezse veya az geldiyse hazır olayları ekle
+    # 1. TradingView API'den çekmeyi dene (Hızlı, engelsiz, 2 ve 3 yıldız filtreli)
+    try:
+        tv_items = await fetch_tradingview_events()
+        if tv_items:
+            items.extend(tv_items)
+            logger.info("TradingView takviminden %d adet 2/3 yıldızlı olay çekildi.", len(tv_items))
+    except Exception as exc:
+        logger.warning("TradingView takvim çekme hatası: %s", exc)
+
+    # 2. Eğer az geldiyse Investing.com'u dene
+    if len(items) < 10:
+        try:
+            inv_items = await fetch_investing_com_events()
+            if inv_items:
+                # Başlık benzerliğine göre duplicate engelle
+                for inv in inv_items:
+                    if not any(x.get("original_title") == inv.get("original_title") for x in items):
+                        items.append(inv)
+                logger.info("Investing.com'dan ek olaylar eklendi. Toplam: %d", len(items))
+        except Exception as exc:
+            logger.debug("Investing.com ekleme hatası: %s", exc)
+
+    # 3. Hala az geldiyse ForexFactory akışını dene
+    if len(items) < 6:
+        try:
+            ff_items = await fetch_forexfactory_events()
+            for ff in ff_items:
+                if not any(x.get("title") == ff.get("title") for x in items):
+                    items.append(ff)
+        except Exception as exc:
+            logger.debug("ForexFactory ekleme hatası: %s", exc)
+
+    # 4. Eğer internet bağlantısı yoksa veya hiçbir veri çekilemediyse disk cache'e bak
     if len(items) < 4:
+        disk_items = _load_disk_cache()
+        if disk_items:
+            items = disk_items
+            logger.info("Disk önbelleğinden %d adet takvim olayı yüklendi.", len(items))
+
+    # 5. Hala boşsa veya kritik olaylar eksikse FALLBACK_EVENTS ile harmanla
+    if len(items) < 6:
         for fb in FALLBACK_EVENTS:
-            if not any(x["title"] == fb["title"] for x in items):
+            if not any(x.get("title") == fb.get("title") or x.get("original_title") == fb.get("original_title") for x in items):
                 items.append(fb)
 
-    # Önem derecesine göre sırala (High önce)
-    def sort_key(x: Dict[str, Any]) -> int:
-        return 0 if x.get("impact") == "High" else 1
+    # Yalnızca 2 ve 3 Yıldızlı Olayları tut
+    filtered_items = [
+        x for x in items 
+        if x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"]
+    ]
 
-    items.sort(key=sort_key)
+    # Sıralama Mantığı:
+    # 1. Gelecek/Bugün olayları önce (is_passed == False), sonra geçmiş olaylar
+    # 2. 3 Yıldızlı olaylar (High) önce
+    # 3. Tarihe göre kronolojik
+    def sort_key(ev: Dict[str, Any]) -> tuple:
+        passed = 1 if ev.get("is_passed", False) or ev.get("status") == "Açıklandı" else 0
+        stars_priority = 0 if ev.get("stars") == 3 or ev.get("impact") == "High" else 1
+        date_sort = ev.get("date_iso") or "9999-99-99"
+        return (passed, stars_priority, date_sort)
+
+    filtered_items.sort(key=sort_key)
+
+    # Önbelleğe al (En fazla 30 kritik olay)
+    final_items = filtered_items[:30]
 
     _CALENDAR_CACHE["timestamp"] = now
-    _CALENDAR_CACHE["items"] = items[:15]
-    return _CALENDAR_CACHE["items"]
+    _CALENDAR_CACHE["items"] = final_items
+
+    if len(final_items) >= 4:
+        _save_disk_cache(final_items)
+
+    # Her çağrıda güncel dakikayı hesapla
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    for ev in final_items:
+        date_iso = ev.get("date_iso")
+        if date_iso:
+            try:
+                ev_dt = datetime.datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+                diff_sec = (ev_dt - now_utc).total_seconds()
+                mins = round(diff_sec / 60, 1)
+                ev["minutes_until"] = mins
+                ev["is_within_5m"] = bool(0 <= mins <= 5.5)
+                ev["is_passed"] = bool(diff_sec < 0)
+                if ev.get("actual") and ev["actual"] != "—":
+                    ev["status"] = "Açıklandı"
+                elif ev["is_passed"]:
+                    ev["status"] = "Geçti"
+                elif ev["is_within_5m"]:
+                    ev["status"] = "⏰ 5 Dk İçinde!"
+            except Exception:
+                pass
+
+    return final_items

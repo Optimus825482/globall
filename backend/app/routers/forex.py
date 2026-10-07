@@ -4932,24 +4932,50 @@ async def toggle_mt5_auto_trading(req: MT5ToggleAutoRequest):
 
 
 @router.get("/news")
-async def get_macro_forex_news(refresh: bool = False):
-    """Investing.com ve küresel makro ekonomik haberleri 'Ne Olursa Ne Olur' senaryosuyla döner."""
+async def get_macro_forex_news(
+    refresh: bool = False,
+    stars: Optional[int] = None,
+    country: Optional[str] = None,
+    symbol: Optional[str] = None,
+):
+    """Investing.com 2 ve 3 Yıldızlı Makro Ekonomik Takvim Olaylarını 'Ne Olursa Ne Olur' senaryosuyla döner."""
     try:
-        from app.forex_news import get_forex_news
+        from app.forex_news import get_forex_news, FALLBACK_EVENTS
         items = await get_forex_news(force_refresh=refresh)
+        
+        # Filtreleme
+        if stars is not None:
+            items = [x for x in items if x.get("stars") == stars]
+        if country:
+            c_upper = country.upper()
+            items = [x for x in items if x.get("country", "").upper() == c_upper or x.get("currency", "").upper() == c_upper]
+        if symbol:
+            s_upper = symbol.upper()
+            items = [x for x in items if any(s_upper in str(sym).upper() for sym in x.get("affected_symbols", []))]
+
+        upcoming_5m = [x for x in items if x.get("is_within_5m")]
+
         return {
             "status": "ok",
             "count": len(items),
             "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "Investing.com & Küresel Makro Akış (2 & 3 Yıldız)",
+            "upcoming_5m_count": len(upcoming_5m),
+            "upcoming_5m_alerts": upcoming_5m,
             "news": items,
         }
     except Exception as exc:
         logger.warning("Forex haberleri getirme hatası: %s", exc)
-        from app.forex_news import FALLBACK_NEWS
+        try:
+            from app.forex_news import FALLBACK_EVENTS
+            fallback = FALLBACK_EVENTS
+        except Exception:
+            fallback = []
         return {
             "status": "ok",
-            "count": len(FALLBACK_NEWS),
+            "count": len(fallback),
             "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "news": FALLBACK_NEWS,
+            "source": "Yedek Makro Senaryo Akışı",
+            "news": fallback,
         }
 
