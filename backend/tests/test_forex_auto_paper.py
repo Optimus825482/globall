@@ -689,6 +689,9 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         # donchian modu hâlâ yerinde
         self.assertIn("donchian_adx_entry", src)
         self.assertIn("entry_source", src)
+        # Motor başlangıcında boş kapsam 13-sembol evreniyle doldurulmamalı (kalibre 4'lü set)
+        self.assertNotIn('"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",', src,
+                         "motor başlangıcı geniş FX evrenini otomatik yüklüyor")
 
 
 if __name__ == "__main__":

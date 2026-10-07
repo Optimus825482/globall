@@ -4009,13 +4009,11 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
     _MT5_STATE["auto_trade"] = req.enabled
 
     if req.enabled:
-        # Eğer izin verilen semboller boşsa tüm aktif forex enstrümanlarını varsayılan olarak yükle
+        # Kapsam boşsa KALİBRE ODAK setine düş (2026-10-07): tüm FX evrenini otomatik
+        # açmak, 30g replay'de 28/28 negatif çıkan çiftleri motor başlangıcında sessizce
+        # devreye alırdı. Kapsam genişletmesi bilinçli panel seçimi gerektirir.
         if not _AUTO_SETTINGS.allowed_symbols:
-            _AUTO_SETTINGS.allowed_symbols = [
-                "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
-                "USDCAD", "NZDUSD", "GBPJPY", "EURJPY", "XAUUSD",
-                "NAS100", "US30", "BTCUSD"
-            ]
+            _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"]
         # İlk start verildiğinde soğuma kalkanını dikkate almaması için sıfırla
         _LAST_GOLD_EXIT_TIME = 0.0
         _LAST_BTC_EXIT_TIME = 0.0
