@@ -393,6 +393,148 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._SYMBOL_LOSS_STREAK.clear()
             forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
 
+    def test_collect_symbol_ev_respects_reset_cutoff(self):
+        """EV reset kesimi (2026-10-07 kullanıcı isteği): resetten önce kapanan işlemler
+        EV penceresine alınmaz — sembol temiz sicille değerlendirilir."""
+        old_cutoff = forex._EV_RESET_AT_TS
+        now = __import__("time").time()
+        source = [
+            {"symbol": "XAUUSD", "pnl_usd": -50.0, "closed_at_ts": now - 3600.0},   # resetten önce
+            {"symbol": "XAUUSD", "pnl_usd": -40.0, "closed_at_ts": now - 1800.0},   # resetten önce
+            {"symbol": "XAUUSD", "pnl_usd": 6.0, "closed_at_ts": now - 300.0},      # resetten sonra
+        ]
+        try:
+            # Kesim yok: üçü de pencerede (2.4h pencere)
+            forex._EV_RESET_AT_TS = 0.0
+            stats = forex._collect_symbol_ev("XAUUSD", now, 2.5 * 3600.0, source=source)
+            self.assertEqual(stats["n"], 3)
+            # Kesim aktif: yalnız reset sonrası işlem sayılır → kalkan tetiklenmez
+            forex._EV_RESET_AT_TS = now - 600.0
+            stats = forex._collect_symbol_ev("XAUUSD", now, 2.5 * 3600.0, source=source)
+            self.assertEqual(stats["n"], 1)
+            self.assertEqual(stats["net"], 6.0)
+            self.assertFalse(forex.ev_guard_decision(stats, 3, 45.0, 100.0))
+        finally:
+            forex._EV_RESET_AT_TS = old_cutoff
+
+    async def test_reset_symbol_guards_endpoint(self):
+        """Reset endpoint'i kesim zamanlarını ilerletir ve seri-SL durumunu temizler."""
+        forex._SYMBOL_LOSS_STREAK["XAUUSD"] = 2
+        forex._SYMBOL_LOSS_COOLDOWN_UNTIL["BTCUSD"] = __import__("time").time() + 300.0
+        old_ev_cutoff = forex._EV_RESET_AT_TS
+        old_ledger_cutoff = forex._LEDGER_RESET_AT_TS
+        try:
+            res = await forex.reset_forex_symbol_guards()
+            self.assertEqual(res["status"], "ok")
+            self.assertIn("ev_before_reset", res)
+            self.assertGreater(forex._EV_RESET_AT_TS, old_ev_cutoff)
+            self.assertGreater(forex._LEDGER_RESET_AT_TS, old_ledger_cutoff)
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK, {})
+            self.assertEqual(forex._SYMBOL_LOSS_COOLDOWN_UNTIL, {})
+        finally:
+            forex._EV_RESET_AT_TS = old_ev_cutoff
+            forex._LEDGER_RESET_AT_TS = old_ledger_cutoff
+            forex._SYMBOL_LOSS_STREAK.clear()
+            forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+
+    async def test_archive_and_reset_ledger_flow(self):
+        """Temiz-sayfa (2026-10-07 kullanıcı isteği): eski işlemler arşive alınır;
+        rapor/CSV/KPI'lar resetten sonra kapananlarla sıfırdan hesaplanır; bakiyeye
+        dokunulmaz; arşiv okuma uç noktası eski kayıtları döner."""
+        import time as _time
+        now = _time.time()
+        saved = {
+            "closed_trades": list(forex._AUTO_STATE["closed_trades"]),
+            "total_trades": forex._AUTO_STATE["total_trades"],
+            "wins": forex._AUTO_STATE["wins"],
+            "losses": forex._AUTO_STATE["losses"],
+            "realized_pnl_usd": forex._AUTO_STATE["realized_pnl_usd"],
+            "realized_pnl_pips": forex._AUTO_STATE["realized_pnl_pips"],
+            "archived_trades": forex._AUTO_STATE.get("archived_trades"),
+            "archived_at": forex._AUTO_STATE.get("archived_at"),
+            "archived_path": forex._AUTO_STATE.get("archived_path"),
+        }
+        saved_ledger_cutoff = forex._LEDGER_RESET_AT_TS
+        saved_mt5_deals = list(forex._MT5_STATE.get("closed_deals", []))
+        old_rec = {
+            "id": "FX-OLD-1", "symbol": "XAUUSD", "display": "XAU/USD", "direction": "SELL",
+            "lots": 0.05, "entry_price": 4150.0, "exit_price": 4155.0,
+            "exit_time": "2026-10-06 10:00:00 UTC+3", "exit_reason": "SL_HIT",
+            "pnl_usd": -25.0, "pnl_pips": -50.0, "outcome": "LOSS",
+            "closed_at_ts": now - 86400.0,
+        }
+        try:
+            forex._MT5_STATE["closed_deals"] = []  # paper defteri kaynak olsun
+            forex._AUTO_STATE["closed_trades"] = [dict(old_rec), dict(old_rec, id="FX-OLD-2")]
+            forex._AUTO_STATE["total_trades"] = 2
+            forex._AUTO_STATE["wins"] = 0
+            forex._AUTO_STATE["losses"] = 2
+            forex._AUTO_STATE["realized_pnl_usd"] = -50.0
+
+            res = await forex.reset_forex_symbol_guards()
+            self.assertEqual(res["status"], "ok")
+            self.assertEqual(res["archived_count"], 2)
+            self.assertGreater(forex._LEDGER_RESET_AT_TS, saved_ledger_cutoff)
+            self.assertEqual(forex._AUTO_STATE["closed_trades"], [])
+            self.assertEqual(forex._AUTO_STATE["total_trades"], 0)
+            self.assertEqual(forex._AUTO_STATE["wins"], 0)
+            self.assertEqual(forex._AUTO_STATE["losses"], 0)
+            self.assertEqual(forex._AUTO_STATE["realized_pnl_usd"], 0.0)
+            self.assertEqual(len(forex._AUTO_STATE["archived_trades"]), 2)
+            self.assertIsNotNone(res.get("archive_path"))
+
+            # (a) Paper yolu: reset defteri fiziksel boşaltır → raporda yeni işlem,
+            # arşivlenmiş sayı 0 (silinecek şey kalmadı).
+            forex._AUTO_STATE["closed_trades"].insert(0, {
+                **old_rec, "id": "FX-NEW-1", "exit_reason": "TP_HIT", "outcome": "WIN",
+                "pnl_usd": 10.0, "pnl_pips": 20.0, "closed_at_ts": now + 1.0,
+            })
+            rep = await forex.get_forex_trades_report()
+            self.assertEqual(rep["kpi"]["total_trades"], 1)
+            self.assertEqual(rep["kpi_scope"]["archived_before_reset"], 0)
+            self.assertIsNotNone(rep["kpi_scope"]["ledger_reset_at"])
+            self.assertTrue(any(t["id"] == "FX-NEW-1" for t in rep["trades"]))
+
+            # (b) MT5-deal yolu (canlı gerçekliği): köprü eski deal'leri yeniden gönderir;
+            # kesim filtresi onları rapora sokmaz ve arşivlenmiş olarak sayar.
+            forex._MT5_STATE["closed_deals"] = [
+                {"id": "MT5-OLD-1", "ticket": 1, "symbol": "XAUUSD", "display": "XAU/USD",
+                 "direction": "SELL", "lots": 0.05, "pnl_usd": -25.0, "outcome": "LOSS",
+                 "closed_at_ts": now - 86400.0, "exit_time": "2026-10-06 10:00:00 UTC+3"},
+                {"id": "MT5-NEW-1", "ticket": 2, "symbol": "XAUUSD", "display": "XAU/USD",
+                 "direction": "SELL", "lots": 0.05, "pnl_usd": 8.0, "outcome": "WIN",
+                 "closed_at_ts": now + 2.0, "exit_time": "2026-10-07 12:00:00 UTC+3"},
+            ]
+            rep_mt5 = await forex.get_forex_trades_report()
+            self.assertEqual(rep_mt5["kpi"]["total_trades"], 1)
+            self.assertEqual(rep_mt5["kpi_scope"]["archived_before_reset"], 1)
+            self.assertTrue(any(t["id"] == "MT5-NEW-1" for t in rep_mt5["trades"]))
+            self.assertFalse(any(t["id"] == "MT5-OLD-1" for t in rep_mt5["trades"]))
+
+            # CSV de yalnız yeni dönemi içerir (MT5 kaynak öncelikli)
+            csv_res = await forex.export_forex_trades_csv()
+            body = csv_res.body.decode("utf-8-sig")
+            self.assertIn("MT5-NEW-1", body)
+            self.assertNotIn("MT5-OLD-1", body)
+            self.assertNotIn("FX-OLD-1", body)
+
+            # Arşiv okuma uç noktası eski kayıtları döner
+            arc = await forex.get_forex_archived_ledger()
+            self.assertEqual(arc["count"], 2)
+            self.assertTrue(any(t["id"] == "FX-OLD-1" for t in arc["trades"]))
+        finally:
+            forex._LEDGER_RESET_AT_TS = saved_ledger_cutoff
+            forex._MT5_STATE["closed_deals"] = saved_mt5_deals
+            forex._AUTO_STATE["closed_trades"] = saved["closed_trades"]
+            forex._AUTO_STATE["total_trades"] = saved["total_trades"]
+            forex._AUTO_STATE["wins"] = saved["wins"]
+            forex._AUTO_STATE["losses"] = saved["losses"]
+            forex._AUTO_STATE["realized_pnl_usd"] = saved["realized_pnl_usd"]
+            forex._AUTO_STATE["realized_pnl_pips"] = saved["realized_pnl_pips"]
+            forex._AUTO_STATE["archived_trades"] = saved["archived_trades"]
+            forex._AUTO_STATE["archived_at"] = saved["archived_at"]
+            forex._AUTO_STATE["archived_path"] = saved["archived_path"]
+
 
 if __name__ == "__main__":
     unittest.main()

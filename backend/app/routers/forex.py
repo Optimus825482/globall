@@ -17,7 +17,9 @@ import io
 import json
 import logging
 import math
+import os
 import random
+import tempfile
 import time
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -538,6 +540,10 @@ def _collect_symbol_ev(symbol: str, now_ts: float, window_sec: float, source: Op
             continue
         try:
             if now_ts - float(ts) > window_sec:
+                continue
+            # EV reset kesimi: reset anından önce kapanan işlemler sicile girmez —
+            # sembol, reset sonrasındaki davranışıyla değerlendirilir.
+            if _EV_RESET_AT_TS and float(ts) < _EV_RESET_AT_TS:
                 continue
             pnl = float(d.get("pnl_usd", d.get("profit", 0.0)) or 0.0)
         except Exception:
@@ -2291,6 +2297,37 @@ _MT5_STATE: Dict[str, Any] = {
 # atama yok, bu yüzden `global` bildirimi gerekmez; bkz. globals-shadow regresyon testi)
 _SYMBOL_LOSS_STREAK: Dict[str, int] = {}
 _SYMBOL_LOSS_COOLDOWN_UNTIL: Dict[str, float] = {}
+# EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
+# (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
+# 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
+_EV_RESET_AT_TS: float = 0.0
+# Temiz-sayfa (arşiv + sıfırdan başla) kesim zamanı: resetten önce kapanan işlemler
+# rapor/KPI/CSV/panel listelerinde görünmez; eski veriler arşive alınır (kullanıcı
+# isteği 2026-10-07: "başarı hesaplamaları da sıfırdan olsun"). Bakiyeye DOKUNULMAZ.
+_LEDGER_RESET_AT_TS: float = 0.0
+
+
+def _ledger_archive_dir() -> str:
+    """Arşiv dosyası için yazılabilir dizin: env → /data (Docker volume) → repo outputs → tmp."""
+    cands = [
+        os.environ.get("FOREX_LEDGER_ARCHIVE_DIR") or "",
+        "/data",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "outputs"),
+        tempfile.gettempdir(),
+    ]
+    for c in cands:
+        if not c:
+            continue
+        try:
+            os.makedirs(c, exist_ok=True)
+            probe = os.path.join(c, ".write_probe")
+            with open(probe, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(probe)
+            return c
+        except Exception:
+            continue
+    return tempfile.gettempdir()
 
 _AUTO_STATE: Dict[str, Any] = {
     "enabled": False,
@@ -3510,6 +3547,9 @@ async def get_forex_auto_paper_status():
     # `> 0` / `< 0` vardı; tam 0.00'a yuvarlanan bir başabaş çıkışı raporda WIN,
     # status'ta ne win ne loss sayılıyor ve `wins + losses != total_trades`
     # oluyordu. Tek kural: WIN = pnl >= 0, LOSS = pnl < 0.
+    # Temiz-sayfa kesimi: resetten önce kapanan işlemler status KPI'larına girmez.
+    if _LEDGER_RESET_AT_TS:
+        normalized_deals = [d for d in normalized_deals if (_deal_ts(d) or 0.0) >= _LEDGER_RESET_AT_TS]
     wins = sum(1 for d in normalized_deals if d["pnl_usd"] >= 0)
     losses = sum(1 for d in normalized_deals if d["pnl_usd"] < 0)
     total_trades = len(normalized_deals)
@@ -3603,6 +3643,95 @@ async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings)
         f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p, Trailing: {new_settings.trailing_stop_pips}p, Min Skor: {new_settings.min_score}",
     )
     return {"status": "ok", "settings": _AUTO_SETTINGS.model_dump()}
+
+
+@router.post("/auto-paper/reset-symbol-guards")
+async def reset_forex_symbol_guards():
+    """Temiz sayfa: sembol kalkanlarını sıfırlar + eski işlemleri arşive alır.
+
+    Kullanıcı senaryosu (2026-10-07): kural seti değişti (chandelier + seri-SL +
+    yeni ayarlar); eski dönemde biriken (1) kayıp sicili EV kalkanının sembolleri
+    eski performansıyla cezalandırmaması, (2) işlem geçmişi de rapor/KPI/CSV'de
+    sıfırdan sayılmaya başlaması için arşive alınmalı — her sembol temiz sayfayla
+    başlar. EV kalkanı kalıcı bir sayaç değil, kapanmış işlemlerden her taramada
+    yeniden hesaplanır (köprü bağlıyken MT5 son-300-deal kaynağı) — bu yüzden
+    restart yetmez; kesim zamanı işaretleriyle resetten önceki işlemler hem EV
+    penceresine hem rapor/KPI/CSV'ye hiç alınmaz. Bakiyeye DOKUNULMAZ.
+    """
+    global _EV_RESET_AT_TS, _LEDGER_RESET_AT_TS
+    now_ts = time.time()
+    before = {
+        s: _collect_symbol_ev(s, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
+        for s in _AUTO_SETTINGS.allowed_symbols
+    }
+
+    # --- Arşiv: mevcut rapor görünümü (MT5 deal'leri varsa onlar, yoksa paper defteri)
+    archived_view = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(
+        _AUTO_STATE.get("closed_trades", [])
+    )
+    counters_before = {
+        "total_trades": _AUTO_STATE.get("total_trades", 0),
+        "wins": _AUTO_STATE.get("wins", 0),
+        "losses": _AUTO_STATE.get("losses", 0),
+        "realized_pnl_usd": _AUTO_STATE.get("realized_pnl_usd", 0.0),
+    }
+    archive_meta: Dict[str, Any] = {"count": len(archived_view), "path": None}
+    try:
+        stamp = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y%m%d_%H%M%S")
+        archive_path = os.path.join(
+            _ledger_archive_dir(), f"forex_ledger_arşiv_{stamp}.json"
+        )
+        with open(archive_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "archived_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).isoformat(),
+                "reason": "Kural seti yenilendi (chandelier + seri-SL + yeni ayarlar) — eski sicil arşive alındı, raporlar sıfırdan başlar.",
+                "counters_before": counters_before,
+                "trades": archived_view,
+            }, f, ensure_ascii=False)
+        archive_meta["path"] = archive_path
+    except Exception as exc:
+        _log_auto_decision("SYSTEM", f"⚠️ İşlem arşivi dosyaya yazılamadı (bellek kopyası yine de tutuluyor): {exc}")
+
+    # --- Kesim + sayaç sıfırlama
+    _EV_RESET_AT_TS = now_ts
+    _LEDGER_RESET_AT_TS = now_ts
+    _SYMBOL_LOSS_STREAK.clear()
+    _SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+    _AUTO_STATE["archived_trades"] = archived_view
+    _AUTO_STATE["archived_at"] = now_ts
+    _AUTO_STATE["archived_path"] = archive_meta["path"]
+    _AUTO_STATE["closed_trades"] = []
+    _AUTO_STATE["total_trades"] = 0
+    _AUTO_STATE["wins"] = 0
+    _AUTO_STATE["losses"] = 0
+    _AUTO_STATE["realized_pnl_usd"] = 0.0
+    _AUTO_STATE["realized_pnl_pips"] = 0.0
+
+    _log_auto_decision(
+        "SYSTEM",
+        f"🧹 Temiz sayfa: {archive_meta['count']} eski işlem arşive alındı — EV kalkanı + seri-SL sayaçları sıfırlandı, rapor/KPI'lar sıfırdan saymaya başladı (bakiye korunur).",
+    )
+    return {
+        "status": "ok",
+        "reset_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3"),
+        "ev_before_reset": before,
+        "archived_count": archive_meta["count"],
+        "archive_path": archive_meta["path"],
+        "counters_before": counters_before,
+        "note": "EV kalkanı ve rapor/KPI'lar artık yalnız bu andan sonra kapanan işlemlerle hesaplanır; seri-SL sayaçları sıfırlandı; eski işlemler arşivde (bellek + JSON dosyası). Bakiye değişmedi.",
+    }
+
+
+@router.get("/auto-paper/archived-ledger")
+async def get_forex_archived_ledger(limit: int = 500):
+    """Arşive alınmış eski işlem defterini döner (temiz-sayfa resetinden önceki kayıtlar)."""
+    archived = list(_AUTO_STATE.get("archived_trades", []))
+    return {
+        "archived_at": _AUTO_STATE.get("archived_at"),
+        "archived_path": _AUTO_STATE.get("archived_path"),
+        "count": len(archived),
+        "trades": archived[: max(1, min(int(limit), 1000))],
+    }
 
 
 @router.post("/auto-paper/close-position")
@@ -3851,6 +3980,13 @@ async def get_forex_trades_report(
     # MT5 Deals önceliklidir; yoksa auto_state geçmişi kullanılır
     all_closed = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
 
+    # Temiz-sayfa kesimi (arşiv+reset sonrası): rapor yalnız reset sonrası kapananları gösterir
+    archived_before_reset = 0
+    if _LEDGER_RESET_AT_TS:
+        kept_closed = [t for t in all_closed if (_deal_ts(t) or 0.0) >= _LEDGER_RESET_AT_TS]
+        archived_before_reset = len(all_closed) - len(kept_closed)
+        all_closed = kept_closed
+
     now_ts = time.time()
     start_ts, end_ts = _resolve_report_window(period, date_from, date_to, now_ts)
     period_active = start_ts is not None or end_ts is not None
@@ -3968,6 +4104,9 @@ async def get_forex_trades_report(
             "start_ts": start_ts,
             "end_ts": end_ts,
             "archived_total": len(all_closed),
+            # Temiz-sayfa kesimi: arşiv kararı sonrası raporların sıfırdan başladığı an
+            "ledger_reset_at": _LEDGER_RESET_AT_TS or None,
+            "archived_before_reset": archived_before_reset,
             # `period="all"` MT5'te köprünün son 300 anlaşmalık dönen penceresidir
             # (bkz. _MT5_DEAL_WINDOW). "tüm geçmiş" ile karıştırılmasın diye
             # pencerenin doyup dolmadığı açıkça bildirilir.
@@ -3988,6 +4127,9 @@ async def export_forex_trades_csv(
     """Forex scalper işlem geçmişini Excel uyumlu UTF-8 CSV olarak dışa aktarır."""
     # #2: kısmi kapanış satırları pozisyon bazında birleştirilir (rapordaki ile aynı).
     trades = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
+    # Temiz-sayfa kesimi: resetten önce kapananlar CSV'ye de girmez (raporla aynı payda)
+    if _LEDGER_RESET_AT_TS:
+        trades = [t for t in trades if (_deal_ts(t) or 0.0) >= _LEDGER_RESET_AT_TS]
     if symbol and symbol != "ALL":
         trades = [t for t in trades if t.get("symbol") == symbol or t.get("display") == symbol]
     if outcome and outcome != "ALL":
