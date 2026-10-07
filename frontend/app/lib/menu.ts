@@ -90,6 +90,7 @@ export const FOREX_MENU_GROUPS: MenuGroup[] = [
       { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği" },
       { href: "/forex/calendar", label: "Ekonomik Takvim", icon: "📅", desc: "Canlı makroekonomik veriler ve haberler" },
       { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı demo hesap yönetimi" },
+      { href: "/forex/ayarlar", label: "Ayarlar", icon: "⚙️", desc: "Otonom scalping risk, çıkış ve sembol parametreleri" },
       { href: "/chat", label: "Forex Chat", icon: "💬", desc: "Makroekonomi ve FX uzman AI asistanı" },
     ],
   },

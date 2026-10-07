@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { formatUtc3 } from "../../lib/format";
-import AutoSettingsPanel, { type AutoSettings } from "../components/AutoSettingsPanel";
 
 interface AutoPosition {
   id: string;
@@ -146,25 +145,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [sessions, setSessions] = useState<any[]>([]);
   const [logFilter, setLogFilter] = useState<string>("ALL");
 
-  // Ayarlar — ortak AutoSettingsPanel (/forex/btc-gold ile aynı tek form)
-  const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
-    enabled: false,
-    balance: 1000.0,
-    risk_per_trade_pct: 10.0,
-    max_open_positions: 25,
-    min_score: 70.0,
-    tp_pips: 25.0,
-    sl_pips: 15.0,
-    breakeven_pips: 8.0,
-    trailing_stop_pips: 12.0,
-    session_filter: false,
-    max_spread_pips: 3.0,
-    gold_cooldown_sec: 60.0,
-    // ETH/USD ve WTI Oil 2026-10-07'de evrenden çıkarıldı (kullanıcı kararı).
-    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "NAS100", "US30", "XAUUSD"],
-  });
-
-  const [showSettings, setShowSettings] = useState(false);
+  // Parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı —
+  // bu sayfa yalnızca izler, motor ayarlarını düzenlemez.
   const [showManualForm, setShowManualForm] = useState(false);
 
   // Manuel İşlem Formu (symbols verilirse varsayılan ilk izinli sembol olur)
@@ -200,9 +182,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           (l: DecisionLog) => !symFilter || !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
         ));
         setSessions(res.sessions || []);
-        if (res.settings) {
-          setAppliedSettings(res.settings);
-        }
       }
     } catch (err) {
       console.error("Forex auto-paper status alınamadı:", err);
@@ -456,14 +435,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             <span>{autoEnabled ? "⏹ Otonomu Durdur" : "▶ Otonom Scalper'ı Başlat"}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowSettings(!showSettings)}
-            className="px-3.5 py-2 rounded-xl bg-bunker-900 border border-bunker-700 text-white hover:border-blue-400 transition-all text-xs font-bold flex items-center gap-1.5"
-          >
-            <span>⚙️ Parametreler</span>
-          </button>
-
           {mt5.open_positions && mt5.open_positions.length > 0 && (
             <button
               type="button"
@@ -483,15 +454,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           </button>
         </div>
       </div>
-
-      {/* PARAMETRE AYARLARI PANELİ (Ortak bileşen — /forex/btc-gold ile aynı tek form) */}
-      <AutoSettingsPanel
-        show={showSettings}
-        onClose={() => setShowSettings(false)}
-        appliedSettings={appliedSettings}
-        onSaved={setAppliedSettings}
-        accent="blue"
-      />
 
       {/* Rehber / Yardım Paneli */}
       {showMt5Guide && (

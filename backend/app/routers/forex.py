@@ -2279,7 +2279,7 @@ class ForexAutoPaperSettings(BaseModel):
     gold_be_lock_ratio: float = Field(0.6, ge=0.1, le=1.0, description="Altın (XAUUSD) BE kâr kilitleme oranı — BE anındaki kârın bu oranındaki mesafe kilitlenir (2026-10-06 2×30g replay: %40→%60 her pencerede ~+$750, maxDD düşer)")
     trailing_stop_pips: float = Field(20.0, ge=4.0, le=60.0, description="İz süren stop mesafesi (pip)")
     session_filter: bool = Field(False, description="Seans filtresi (False: Asya ve tüm seanslarda kesintisiz işlem açılır)")
-    max_spread_pips: float = Field(3.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip)")
+    max_spread_pips: float = Field(10.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip) — 2026-10-07 kullanıcı kararı: 3.0→10.0 (raw hesapta gerçek spreadler 0.1-2.1 pip; kısıt artık filtre değil sigorta)")
     max_forex_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı")
     max_gold_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")

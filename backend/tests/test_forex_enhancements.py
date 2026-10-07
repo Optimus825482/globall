@@ -555,7 +555,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(opposite_dirs_rev, {"BUY"}, "Opposite direction must trigger reversal flip!")
 
     def test_crypto_spread_allowance(self):
-        """Verify that ETHUSD and BTCUSD get a 20.0 pip spread allowance while standard forex gets 3.0."""
+        """Verify that ETHUSD and BTCUSD get a 20.0 pip spread allowance while standard forex gets 10.0 (2026-10-07 default)."""
         cfg = forex.ForexAutoPaperSettings()
         for sym in ["BTCUSD", "ETHUSD", "BTC/USD", "ETH/USD"]:
             effective_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else cfg.max_spread_pips
@@ -565,7 +565,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
 
         for sym in ["EURUSD", "GBPUSD", "USDJPY"]:
             effective_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else cfg.max_spread_pips
-            self.assertEqual(effective_spread, 3.0, f"{sym} should have standard max spread")
+            self.assertEqual(effective_spread, 10.0, f"{sym} should have standard max spread")
             self.assertFalse(12.0 <= effective_spread)
 
     def test_winning_pyramiding_rule(self):

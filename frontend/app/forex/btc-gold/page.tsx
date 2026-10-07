@@ -4,7 +4,9 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { formatUtc3 } from "../../lib/format";
-import AutoSettingsPanel, { type AutoSettings } from "../components/AutoSettingsPanel";
+// AutoSettings tipi kokpit kartlarının TP/SL/spread hedefleri için kullanılır;
+// parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı.
+import { type AutoSettings } from "../components/AutoSettingsPanel";
 
 // --- VERİ TİPLERİ ---
 interface AutoPosition {
@@ -439,8 +441,8 @@ export default function BtcGoldForexPage() {
   const [tickers, setTickers] = useState<Record<string, TickerData>>({});
   const [radarMap, setRadarMap] = useState<Record<string, RadarCandidate>>({});
 
-  // Parametre Paneli — ortak bileşen (/forex/portfolio ile aynı tek form)
-  const [showSettings, setShowSettings] = useState(false);
+  // Motor ayarları — kokpit kartlarındaki TP/SL/spread hedef göstergeleri için.
+  // (Panel /forex/ayarlar sayfasına taşındı; düzenleme artık oradan yapılır.)
   const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 1000.0,
@@ -801,14 +803,6 @@ export default function BtcGoldForexPage() {
             <span>{autoEnabled ? "⏹ Otonomu Durdur" : "▶ Otonom Scalper'ı Başlat"}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowSettings(!showSettings)}
-            className="px-3.5 py-2 rounded-xl bg-bunker-900 border border-bunker-700 text-white hover:border-amber-400 transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm"
-          >
-            <span>⚙️ Parametreler</span>
-          </button>
-
           {mt5.open_positions && mt5.open_positions.length > 0 && (
             <button
               type="button"
@@ -842,15 +836,6 @@ export default function BtcGoldForexPage() {
           {quickTradeMsg}
         </div>
       )}
-
-      {/* PARAMETRE AYARLARI PANELİ (Ortak bileşen — /forex/portfolio ile aynı tek form) */}
-      <AutoSettingsPanel
-        show={showSettings}
-        onClose={() => setShowSettings(false)}
-        appliedSettings={appliedSettings}
-        onSaved={setAppliedSettings}
-        accent="amber"
-      />
 
       {/* HESAP METRİKLERİ KARTLARI */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

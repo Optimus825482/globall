@@ -1,10 +1,11 @@
 "use client";
 
 // ============================================================================
-// ORTAK PARAMETRE PANELİ — Forex izleme sayfalarının TEK parametre formu.
-// /forex/btc-gold ve /forex/portfolio aynı global motor ayarlarını düzenler
-// (backend: /api/forex/auto-paper/settings, tek ayar nesnesi). Formun tek
-// kaynağı burasıdır; sayfalar yalnızca gösterge rengini seçer.
+// ORTAK PARAMETRE PANELİ — Forex'in TEK parametre formu.
+// 2026-10-07: Panel /forex/btc-gold ve /forex/portfolio izleme sayfalarından
+// sökülüp /forex/ayarlar sayfasına taşındı; sayfalar yalnızca izler,
+// parametreler yalnız buradan düzenlenir (backend: /api/forex/auto-paper/
+// settings, tek ayar nesnesi).
 // ============================================================================
 
 import React, { useEffect, useState } from "react";
@@ -38,6 +39,9 @@ const ALL_SYMBOLS = [
   { sym: "AUDUSD", label: "AUD/USD" },
   { sym: "USDCAD", label: "USD/CAD" },
   { sym: "NZDUSD", label: "NZD/USD" },
+  // JPY kros pariteleri (donchian modu sembolleri — 2026-10-07 eklendi)
+  { sym: "GBPJPY", label: "GBP/JPY" },
+  { sym: "EURJPY", label: "EUR/JPY" },
   { sym: "BTCUSD", label: "Bitcoin (BTC)" },
   // ETH/USD ve WTI Oil 2026-10-07'de forex evreninden çıkarıldı (kullanıcı
   // kararı) — bu listeden kaldırıldılar ki tekrar açılamasınlar.
@@ -47,7 +51,10 @@ const ALL_SYMBOLS = [
 ];
 
 const MAJORS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"];
-const FOCUS_SYMBOLS = ["XAUUSD", "BTCUSD"];
+// Odak seti: XAU + BTC + JPY krosları (donchian modu sembolleri).
+// Panel boş allowed_symbols ile kaydetmeye çalışırsa ve "Yalnız Odak"
+// hızlı seçimi bu seti uygular — JPY krosları buradan düşmez.
+const FOCUS_SYMBOLS = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"];
 
 interface AutoSettingsPanelProps {
   show: boolean;
@@ -139,10 +146,10 @@ export default function AutoSettingsPanel({
           form.btc_min_score,
           appliedSettings.btc_min_score ?? appliedSettings.min_score ?? 76.0
         ),
-        max_spread_pips: num(form.max_spread_pips, appliedSettings.max_spread_pips || 3.0),
+        max_spread_pips: num(form.max_spread_pips, appliedSettings.max_spread_pips || 10.0),
         max_open_positions: Math.max(
           1,
-          Math.round(num(form.max_open_positions, appliedSettings.max_open_positions || 25))
+          Math.round(num(form.max_open_positions, appliedSettings.max_open_positions || 99))
         ),
         gold_cooldown_sec: Math.max(60, num(form.gold_cooldown_sec, appliedSettings.gold_cooldown_sec || 60.0)),
         session_filter: Boolean(form.session_filter),
@@ -200,7 +207,7 @@ export default function AutoSettingsPanel({
 
       <div className="text-[10px] text-bunker-muted font-bold flex items-center gap-1.5">
         <span>🔗</span>
-        <span>Tek kaynak: Bu panel her iki izleme sayfasında (BTC+Altın ve Merkezi Otonom) aynı motor ayarlarını düzenler.</span>
+        <span>Tek kaynak: Bu panel Forex Ayarları sayfasından tüm motor ayarlarını düzenler; değişiklikler anında motora uygulanır.</span>
       </div>
 
       {saveMsg && (
@@ -317,11 +324,11 @@ export default function AutoSettingsPanel({
         </div>
 
         <div>
-          <label className="text-[11px] text-bunker-muted block mb-1">Max. Açık Pozisyon (1-25):</label>
+          <label className="text-[11px] text-bunker-muted block mb-1">Max. Açık Pozisyon (1-99):</label>
           <input
             type="number"
             min="1"
-            max="25"
+            max="99"
             value={form.max_open_positions ?? ""}
             onChange={(e) => setIntField("max_open_positions", e.target.value)}
             className={inputCls}
@@ -371,15 +378,15 @@ export default function AutoSettingsPanel({
                 onClick={() => setField("allowed_symbols", ALL_SYMBOLS.map((s) => s.sym))}
                 className={`${acc.icon} hover:underline`}
               >
-                Tümünü Seç (12 Enstrüman)
+                Tümünü Seç (14 Enstrüman)
               </button>
               <span className="text-bunker-700">|</span>
               <button
                 type="button"
-                onClick={() => setField("allowed_symbols", [...MAJORS])}
+                onClick={() => setField("allowed_symbols", [...MAJORS, ...FOCUS_SYMBOLS])}
                 className="text-bunker-muted hover:underline"
               >
-                Sadece 7 Majör
+                7 Majör + Odak (11)
               </button>
               <span className="text-bunker-700">|</span>
               <button
@@ -387,7 +394,7 @@ export default function AutoSettingsPanel({
                 onClick={() => setField("allowed_symbols", [...FOCUS_SYMBOLS])}
                 className="text-amber-400 hover:underline"
               >
-                Yalnız XAU + BTC
+                Yalnız XAU+BTC+JPY Kros
               </button>
             </div>
           </div>
@@ -412,7 +419,7 @@ export default function AutoSettingsPanel({
             })}
           </div>
           <span className="text-[10px] text-bunker-muted block mt-2">
-            Bu liste motor genelinde tektir — BTC+Altın ve Merkezi Otonom izleme aynı listeyi kullanır.
+            Bu liste motor genelinde tektir — tüm forex izleme sayfaları aynı listeyi kullanır.
           </span>
         </div>
       </div>
