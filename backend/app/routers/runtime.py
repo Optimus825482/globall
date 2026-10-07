@@ -34,6 +34,8 @@ gainers_radar = pending_dep("gainers_radar")
 
 async def correlation_refresh_loop():
     """S5: periodically recompute BTC/ETH correlations from the candle cache."""
+    if getattr(config, "FOREX_ONLY", False):
+        return
     await asyncio.sleep(300)  # let candles warm up first
     while True:
         try:
@@ -322,6 +324,8 @@ async def strategy_loop():
     stop/TP/trailing/timeout yönetimini sürdürür. Velocity (CHAT_PREDICTION)
     ve LLM_PAPER pozisyonları da bu yolla kapanır.
     """
+    if getattr(config, "FOREX_ONLY", False):
+        return
     await asyncio.sleep(5)
     while True:
         try:
@@ -399,6 +403,8 @@ def _ma_cascade_observation_context(symbol: str, event: dict) -> dict:
 
 
 async def radar_loop():
+    if getattr(config, "FOREX_ONLY", False):
+        return
     await asyncio.sleep(15)
     while True:
         if migration_monitor.state["status"] == "running":
@@ -497,6 +503,8 @@ async def refresh_top_gainer_symbols():
             "generated_at": time.time(), "source": "binance_tr_public_24h_ticker"}
 
 async def top_gainers_refresh_loop():
+    if getattr(config, "FOREX_ONLY", False):
+        return
     await asyncio.sleep(10)
     while True:
         try:
@@ -1084,6 +1092,8 @@ async def refresh_symbol_activity():
 
 async def bootstrap_symbol_activity():
     """Warm all symbols enough for the first activity decision before trading starts."""
+    if getattr(config, "FOREX_ONLY", False):
+        return
     known_try = set(await trading_symbols())
     open_symbols = await get_all_open_symbols()
     universe = list(dict.fromkeys(sorted(known_try | open_symbols)))
@@ -1124,6 +1134,8 @@ async def bootstrap_symbol_activity():
     print(f"[Activity] ilk kontrol tamamlandı | universe={len(universe)} active={result['active_count']} passive={result['passive_count']} warming={result['warming_count']}", flush=True)
 
 async def symbol_activity_loop():
+    if getattr(config, "FOREX_ONLY", False):
+        return
     await asyncio.sleep(20)
     while True:
         try:
@@ -1294,6 +1306,8 @@ async def derivatives_refresh_loop():
     servisin farklı aralıklarını gereksiz görev patlaması olmadan korur
     (asyncio.gather + iki ayrı sleep, ortak hata izolasyonu gerektirirdi).
     """
+    if getattr(config, "FOREX_ONLY", False):
+        return
     # Isınma: startup sırasında WS/REST hazırlanırken ilk tur atlanır.
     await asyncio.sleep(20)
     last_macro_at = 0.0

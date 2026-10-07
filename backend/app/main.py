@@ -1048,8 +1048,9 @@ async def startup_services():
                 config.SYMBOLS = [s for s in persisted["symbols"] if is_binance_tr_symbol(s)]
         except Exception as exc:
             print(f"[Config] Kalıcı ayarlar yüklenemedi: {exc}")
-    _start_background(refresh_binance_tr_symbols, "binance-tr-symbols-refresh", single_pass=True)
-    config.SYMBOLS = [s for s in (config.SYMBOLS or []) if is_binance_tr_symbol(s)]
+    if not config.FOREX_ONLY:
+        _start_background(refresh_binance_tr_symbols, "binance-tr-symbols-refresh", single_pass=True)
+        config.SYMBOLS = [s for s in (config.SYMBOLS or []) if is_binance_tr_symbol(s)]
     # G-19: market.timeframes/evren, analyzer.load_state() ve
     # bootstrap_symbol_activity()'ten ÖNCE atanır. Eskiden bu atama ikisinden
     # sonra geliyordu; DB'den yüklenen runtime_config (timeframes/symbols) ile
@@ -1101,75 +1102,91 @@ async def startup_services():
     # container healthcheck and force a restart loop.
     # (G-19: market.timeframes/evren yukarıda, analyzer.load_state()'ten önce
     #  atanır — burada tekrar atama yok.)
-    _start_background(startup_market_warmup, "startup-market-warmup")
-    await asyncio.sleep(0.05)
-    _start_background(backfill_missing_active_history, "historical-backfill-active")
-    await asyncio.sleep(0.05)
-    _start_background(history_candle_loop, "history-candle-loop")
-    await asyncio.sleep(0.05)
-    _start_background(lambda: market.connect(skip_history=True), "market-connect")
-    await asyncio.sleep(0.05)
-    _start_background(microstructure_snapshot_loop, "microstructure-snapshot")
-    await asyncio.sleep(0.05)
-    _start_background(strategy_loop, "strategy-loop")
-    await asyncio.sleep(0.05)
-    # Canlı Hesap açık pozisyonları: WS fiyat + 24s hacim tick'leri (4 sn)
-    _start_background(binance_price_tick_loop, "binance-price-tick")
-    await asyncio.sleep(0.05)
-    # Binance hesap + pozisyon verisi: 15 sn'de bir WS push (REST polling yerine)
-    _start_background(binance_account_push_loop, "binance-account-push")
-    await asyncio.sleep(0.05)
-    _start_background(llm_forecast_evaluation_loop, "llm-forecast-evaluator")
-    await asyncio.sleep(0.05)
-    _start_background(chart_forecast_evaluation_loop, "chart-forecast-evaluator")
-    await asyncio.sleep(0.05)
-    _start_background(chat_prediction_learning_loop, "chat-prediction-learner")
-    await asyncio.sleep(0.05)
-    _start_background(chat_prediction_auto_trade_loop, "chat-prediction-auto-trade")
-    await asyncio.sleep(0.05)
-    # Velocity ATR profillerini hemen yükle (ilk scan doğru eşikle çalışsın)
-    await load_velocity_atr_profiles()
-    _start_background(velocity_learning_loop, "velocity-learner")
-    await asyncio.sleep(0.05)
-    # Otonom Hız Avcısı: her M5 kapanışında tarama yapıp en iyi adaya paper
-    # pozisyon açar. Kendi içinde kapılıdır (her turda VELOCITY_AUTO_ENABLED +
-    # llm_paper_trade_enabled yeniden okunur) → ayar kapatılınca tarama durur,
-    # yeniden açılınca restart gerekmeden devam eder. Paper-only; gerçek emir yok.
-    _start_background(autonomous_velocity_loop, "velocity-autonomous")
-    await asyncio.sleep(0.05)
-    _start_background(radar_loop, "radar-loop")
-    await asyncio.sleep(0.05)
-    _start_background(top_gainers_refresh_loop, "top-gainers-monitor")
-    await asyncio.sleep(0.05)
-    _start_background(symbol_activity_loop, "symbol-activity")
-    await asyncio.sleep(0.05)
-    _start_background(llm_idle_trigger_loop, "llm-idle-trigger")
-    await asyncio.sleep(0.05)
-    _start_background(llm_position_manager_loop, "llm-position-manager")
-    await asyncio.sleep(0.05)
-    _start_background(learning_promotion_loop, "learning-promotion")
-    await asyncio.sleep(0.05)
-    _start_background(retention_loop, "retention")
-    await asyncio.sleep(0.05)
-    _start_background(ml_training_loop, "ml_training")
-    await asyncio.sleep(0.05)
-    _start_background(calibration_refresh_loop, "calibration-refresh")
-    await asyncio.sleep(0.05)
-    _start_background(correlation_refresh_loop, "correlation-refresh")
-    await asyncio.sleep(0.05)
-    # 2026-09-26 denetimi (bölüm 2.3): türev + BTC makro cache'ini periyodik
-    # dolduran döngü. Bu olmadan Master Surge'un EXTREME_LONG (-15) cezası ve
-    # BTC panik kapısı yapısal olarak HİÇ uygulanmıyordu.
-    _start_background(derivatives_refresh_loop, "derivatives-refresh")
-    await asyncio.sleep(0.05)
+    if not config.FOREX_ONLY:
+        _start_background(startup_market_warmup, "startup-market-warmup")
+        await asyncio.sleep(0.05)
+        _start_background(backfill_missing_active_history, "historical-backfill-active")
+        await asyncio.sleep(0.05)
+        _start_background(history_candle_loop, "history-candle-loop")
+        await asyncio.sleep(0.05)
+        _start_background(lambda: market.connect(skip_history=True), "market-connect")
+        await asyncio.sleep(0.05)
+        _start_background(microstructure_snapshot_loop, "microstructure-snapshot")
+        await asyncio.sleep(0.05)
+        _start_background(strategy_loop, "strategy-loop")
+        await asyncio.sleep(0.05)
+        # Canlı Hesap açık pozisyonları: WS fiyat + 24s hacim tick'leri (4 sn)
+        _start_background(binance_price_tick_loop, "binance-price-tick")
+        await asyncio.sleep(0.05)
+        # Binance hesap + pozisyon verisi: 15 sn'de bir WS push (REST polling yerine)
+        _start_background(binance_account_push_loop, "binance-account-push")
+        await asyncio.sleep(0.05)
+        _start_background(llm_forecast_evaluation_loop, "llm-forecast-evaluator")
+        await asyncio.sleep(0.05)
+        _start_background(chart_forecast_evaluation_loop, "chart-forecast-evaluator")
+        await asyncio.sleep(0.05)
+        _start_background(chat_prediction_learning_loop, "chat-prediction-learner")
+        await asyncio.sleep(0.05)
+        _start_background(chat_prediction_auto_trade_loop, "chat-prediction-auto-trade")
+        await asyncio.sleep(0.05)
+        # Velocity ATR profillerini hemen yükle (ilk scan doğru eşikle çalışsın)
+        await load_velocity_atr_profiles()
+        _start_background(velocity_learning_loop, "velocity-learner")
+        await asyncio.sleep(0.05)
+        # Otonom Hız Avcısı: her M5 kapanışında tarama yapıp en iyi adaya paper
+        # pozisyon açar. Kendi içinde kapılıdır (her turda VELOCITY_AUTO_ENABLED +
+        # llm_paper_trade_enabled yeniden okunur) → ayar kapatılınca tarama durur,
+        # yeniden açılınca restart gerekmeden devam eder. Paper-only; gerçek emir yok.
+        _start_background(autonomous_velocity_loop, "velocity-autonomous")
+        await asyncio.sleep(0.05)
+        _start_background(radar_loop, "radar-loop")
+        await asyncio.sleep(0.05)
+        _start_background(top_gainers_refresh_loop, "top-gainers-monitor")
+        await asyncio.sleep(0.05)
+        _start_background(symbol_activity_loop, "symbol-activity")
+        await asyncio.sleep(0.05)
+        _start_background(llm_idle_trigger_loop, "llm-idle-trigger")
+        await asyncio.sleep(0.05)
+        _start_background(llm_position_manager_loop, "llm-position-manager")
+        await asyncio.sleep(0.05)
+        _start_background(learning_promotion_loop, "learning-promotion")
+        await asyncio.sleep(0.05)
+        _start_background(retention_loop, "retention")
+        await asyncio.sleep(0.05)
+        _start_background(ml_training_loop, "ml_training")
+        await asyncio.sleep(0.05)
+        _start_background(calibration_refresh_loop, "calibration-refresh")
+        await asyncio.sleep(0.05)
+        _start_background(correlation_refresh_loop, "correlation-refresh")
+        await asyncio.sleep(0.05)
+        # 2026-09-26 denetimi (bölüm 2.3): türev + BTC makro cache'ini periyodik
+        # dolduran döngü. Bu olmadan Master Surge'un EXTREME_LONG (-15) cezası ve
+        # BTC panik kapısı yapısal olarak HİÇ uygulanmıyordu.
+        _start_background(derivatives_refresh_loop, "derivatives-refresh")
+        await asyncio.sleep(0.05)
+        _start_background(alert_loop, "alert-engine")
+        await asyncio.sleep(0.05)
+        _start_background(monitoring_start_loop, "monitoring-start")
+        await asyncio.sleep(0.05)
+        _start_background(rising_evidence_loop, "rising-evidence")
+        await asyncio.sleep(0.05)
+        _start_background(macd_monitor_start_loop, "macd-monitor")
+        await asyncio.sleep(0.05)
+        _start_background(auto_paper_start_loop, "auto-paper-start")
+    else:
+        logger.info("[Forex-Only] Binance spot coin tarama ve işlem döngüleri devre dışı bırakıldı.")
+
     _start_background(ws_broadcast_loop, "ws-broadcast")
     await asyncio.sleep(0.05)
-    # 2026-10-07: Forex-Only Mod — Binance kripto spot radar ve alert döngüleri devre dışı.
-    # _start_background(alert_loop, "alert-engine")
-    # _start_background(monitoring_start_loop, "monitoring-start")
-    # _start_background(rising_evidence_loop, "rising-evidence")
-    _start_background(auto_paper_start_loop, "auto-paper-start")
-    # _start_background(macd_monitor_start_loop, "macd-monitor")
+    _start_background(forex_auto_paper_start_loop, "forex-auto-paper")
+
+async def forex_auto_paper_start_loop():
+    """Forex Otonom Scalper motorunu arka planda başlat."""
+    try:
+        forex_routes.start_forex_auto_paper()
+        logger.info("[ForexAutoPaper] motor başarıyla başlatıldı.")
+    except Exception as exc:
+        logger.error("[ForexAutoPaper] motor başlatılamadı: %s", exc)
 
 async def monitoring_start_loop():
     """Forex-only modda Binance kripto radar döngüsü devre dışıdır."""
@@ -1206,6 +1223,10 @@ async def shutdown_services():
         monitoring.stop_monitoring_loop()
     except Exception:
         logger.warning("shutdown: monitoring.stop_monitoring_loop() hatası", exc_info=True)
+    try:
+        forex_routes.stop_forex_auto_paper()
+    except Exception:
+        logger.warning("shutdown: forex_routes.stop_forex_auto_paper() hatası", exc_info=True)
     # DENETİM 3.4 #40: bu iki çağrı `except Exception: pass` içinde yutuluyordu.
     # Hata olursa GERÇEK paper trade döngüsü / MACD hesaplama döngüsü açık
     # kalır ve kapanmış DB havuzuna yazmaya çalışır. Sessizce yutmak yerine

@@ -303,6 +303,9 @@ class MarketData:
 
     async def fetch_historical_data(self, timeframes=None):
         """Warm the cache using closed REST candles only."""
+        if getattr(config, "FOREX_ONLY", False):
+            self.history_loaded = True
+            return
         requested_timeframes = list(timeframes or self._all_timeframes())
         if not self.history_loaded:
             self.timeframes = sorted(set(requested_timeframes))
@@ -724,6 +727,11 @@ class MarketData:
                 return
 
     async def connect(self, skip_history: bool = False):
+        if getattr(config, "FOREX_ONLY", False):
+            self.running = True
+            while self.running:
+                await asyncio.sleep(60)
+            return
         if not skip_history:
             await self.fetch_historical_data()
         self.running = True

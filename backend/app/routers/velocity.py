@@ -1222,6 +1222,8 @@ async def velocity_learning_loop():
     """Ufku dolan hız adaylarını (5dk-%2 ve 15dk-%3) kapanmış M1 mumlarıyla
     ölç; eşikleri canlı dokunuş oranına göre ayarla; LLM'e postmortem bağlamı
     kaydet."""
+    if getattr(config, "FOREX_ONLY", False):
+        return
     await asyncio.sleep(120)
     global VELOCITY_MIN_ATR_PCT
     # Kalibre edilmiş eşikleri kalıcı depodan geri yükle; aksi halde her restart
@@ -2576,6 +2578,8 @@ async def autonomous_velocity_loop():
     Başlatma sırasında ikisi de açıktı (env=true, DB=1).
     """
     global _VELOCITY_AUTO_LOOP_STARTED
+    if getattr(config, "FOREX_ONLY", False):
+        return
     # Döngü gövdesi çalışmaya başladığı anda "başlatıldı" sayılır; ilk 60 sn'lik
     # uyku boyunca da durum ucu doğru (True) raporlar.
     _VELOCITY_AUTO_LOOP_STARTED = True

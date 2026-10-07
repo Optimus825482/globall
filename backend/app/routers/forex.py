@@ -3956,6 +3956,28 @@ async def get_forex_auto_paper_status():
     realized_usd = round(sum(d["pnl_usd"] for d in normalized_deals), 2) if is_mt5_conn else _AUTO_STATE["realized_pnl_usd"]
     win_rate = round((wins / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
+    # ── Günün Başarı Metrikleri (Her Gece 12'de / 00:00 UTC+3'te Otomatik Sıfırlanır) ──
+    now3 = datetime.datetime.now(TZ_UTC3)
+    today_midnight3 = now3.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_midnight_ts = today_midnight3.timestamp()
+
+    today_deals = [d for d in normalized_deals if (_deal_ts(d) or 0.0) >= today_midnight_ts]
+    today_wins = sum(1 for d in today_deals if d["pnl_usd"] >= 0)
+    today_losses = sum(1 for d in today_deals if d["pnl_usd"] < 0)
+    today_total = len(today_deals)
+    today_pnl_usd = round(sum(d["pnl_usd"] for d in today_deals), 2)
+    today_pnl_pips = round(sum(float(d.get("pnl_pips", 0.0)) for d in today_deals), 1)
+    today_win_rate = round((today_wins / today_total * 100.0), 1) if today_total > 0 else 0.0
+
+    today_gross_profit = round(sum(d["pnl_usd"] for d in today_deals if d["pnl_usd"] >= 0), 2)
+    today_gross_loss = round(abs(sum(d["pnl_usd"] for d in today_deals if d["pnl_usd"] < 0)), 2)
+    if today_gross_loss > 0:
+        today_pf = round(today_gross_profit / today_gross_loss, 2)
+    elif today_gross_profit > 0:
+        today_pf = _PF_INFINITE
+    else:
+        today_pf = 0.0
+
     # Pip KPI'ları (eskiden sabit 0.0 dönüyordu, oysa pnl_pips her kayıtta mevcut).
     # Pip ölçeği SEMBOL BAŞINA farklıdır (EURUSD 0.0001, XAUUSD 0.1, endeks 1 puan,
     # BTC 1 USD); bu yüzden çok sembollü bir defterin pip toplamı farklı birimleri
@@ -3982,6 +4004,29 @@ async def get_forex_auto_paper_status():
         "wins": wins,
         "losses": losses,
         "win_rate": win_rate,
+        "daily_pnl": today_pnl_usd,
+        "daily_pips": today_pnl_pips,
+        "daily_trades": today_total,
+        "daily_wins": today_wins,
+        "daily_losses": today_losses,
+        "daily_win_rate": today_win_rate,
+        "today_kpi": {
+            "total_trades": today_total,
+            "wins": today_wins,
+            "losses": today_losses,
+            "win_rate": today_win_rate,
+            "total_pnl_usd": today_pnl_usd,
+            "total_pnl_pips": today_pnl_pips,
+            "profit_factor": today_pf,
+            "profit_factor_infinite": today_pf >= _PF_INFINITE,
+            "gross_profit_usd": today_gross_profit,
+            "gross_loss_usd": today_gross_loss,
+            "balance": balance,
+            "equity": equity,
+            "open_positions_count": len(normalized_positions),
+            "open_pnl_usd": open_pnl_usd,
+        },
+        "today_trades": today_deals,
         "settings": _AUTO_SETTINGS.model_dump(),
         "open_positions": normalized_positions,
         "closed_trades": normalized_deals,
@@ -4033,6 +4078,35 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
         "status": _AUTO_STATE["last_status"],
         "message": "Otonom Forex Scalper durumu güncellendi.",
     }
+
+
+def start_forex_auto_paper():
+    """Forex Otonom Scalper motorunu arka planda başlatır."""
+    global _AUTO_PAPER_TASK, _AUTO_STATE, _AUTO_SETTINGS, _MT5_STATE, _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME
+    _AUTO_STATE["enabled"] = True
+    _AUTO_SETTINGS.enabled = True
+    _MT5_STATE["auto_trade"] = True
+    if not _AUTO_SETTINGS.allowed_symbols:
+        _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"]
+    _LAST_GOLD_EXIT_TIME = 0.0
+    _LAST_BTC_EXIT_TIME = 0.0
+    _LAST_SYMBOL_ENTRY_TIME.clear()
+    if _AUTO_PAPER_TASK is None or _AUTO_PAPER_TASK.done():
+        _AUTO_PAPER_TASK = asyncio.create_task(_forex_auto_paper_loop())
+        _log_auto_decision("SYSTEM", "Forex Otonom Scalper motoru başlatıldı.")
+
+
+def stop_forex_auto_paper():
+    """Forex Otonom Scalper motorunu durdurur."""
+    global _AUTO_PAPER_TASK, _AUTO_STATE, _AUTO_SETTINGS, _MT5_STATE
+    _AUTO_STATE["enabled"] = False
+    _AUTO_SETTINGS.enabled = False
+    _MT5_STATE["auto_trade"] = False
+    if _AUTO_PAPER_TASK and not _AUTO_PAPER_TASK.done():
+        _AUTO_PAPER_TASK.cancel()
+        _AUTO_PAPER_TASK = None
+    _AUTO_STATE["last_status"] = "Durduruldu"
+    _log_auto_decision("SYSTEM", "Forex Otonom Scalper motoru durduruldu.")
 
 
 @router.post("/auto-paper/settings")
@@ -4352,11 +4426,20 @@ def _parse_deal_ts(value: Any) -> Optional[float]:
 
 
 def _deal_ts(deal: Dict[str, Any]) -> Optional[float]:
-    """İşlem kaydının kapanış zamanı: `closed_at_ts` → `exit_time_iso` → `exit_time`."""
+    """İşlem kaydının kapanış zamanı: `closed_at_ts` → `time` → `time_msc` → `exit_time_iso` → `exit_time` → `close_time`."""
     ts = _parse_deal_ts(deal.get("closed_at_ts"))
     if ts is not None:
         return ts
-    return _parse_deal_ts(deal.get("exit_time_iso") or deal.get("exit_time"))
+    ts = _parse_deal_ts(deal.get("time"))
+    if ts is not None:
+        return ts
+    ts = _parse_deal_ts(deal.get("time_msc"))
+    if ts is not None:
+        return ts
+    ts = _parse_deal_ts(deal.get("exit_time_iso") or deal.get("exit_time"))
+    if ts is not None:
+        return ts
+    return _parse_deal_ts(deal.get("close_time"))
 
 
 def _resolve_report_window(
@@ -4429,6 +4512,7 @@ async def get_forex_trades_report(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     limit: int = 500,
+    date: Optional[str] = None,
 ):
     """Forex Otonom Scalper ayrıntılı işlem raporları, filtreleme ve performans analitiği.
 
@@ -4438,6 +4522,10 @@ async def get_forex_trades_report(
     yoksa "Sadece Kaybedenler" seçildiğinde kazanma oranı tanım gereği %0
     görünür ve kart anlamsızlaşırdı. Bu ayrım yanıtta `kpi_scope` ile bildirilir.
     """
+    if date:
+        date_from = date.strip()
+        date_to = date.strip()
+        period = "custom"
     # MT5 Deals önceliklidir; yoksa auto_state geçmişi kullanılır
     all_closed = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
 

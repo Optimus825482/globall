@@ -205,21 +205,36 @@ export default function HomePage() {
         if (Array.isArray(reportRes.trades)) {
           setClosedTrades(reportRes.trades);
         }
-        if (reportRes.kpi) {
+        const k = reportRes.kpi || statusRes?.today_kpi;
+        if (k) {
           setKpi((prev) => ({
             ...prev,
-            ...reportRes.kpi,
-            balance: statusRes?.balance ?? reportRes.kpi.balance ?? prev.balance,
-            equity: statusRes?.equity ?? reportRes.kpi.equity ?? prev.equity,
-            total_pnl_usd: statusRes?.daily_pnl ?? reportRes.kpi.total_pnl_usd ?? prev.total_pnl_usd,
+            total_trades: k.total_trades ?? 0,
+            wins: k.won_trades ?? k.wins ?? 0,
+            losses: k.lost_trades ?? k.losses ?? 0,
+            win_rate: k.win_rate_pct ?? k.win_rate ?? 0,
+            total_pnl_usd: statusRes?.daily_pnl ?? k.total_pnl_usd ?? 0,
+            total_pnl_pips: statusRes?.daily_pips ?? k.total_pnl_pips ?? 0,
+            profit_factor: k.profit_factor ?? 0,
+            profit_factor_infinite: !!k.profit_factor_infinite,
+            balance: statusRes?.balance ?? k.balance ?? prev.balance,
+            equity: statusRes?.equity ?? k.equity ?? prev.equity,
           }));
         }
       } else if (statusRes) {
+        const k = statusRes.today_kpi;
         setKpi((prev) => ({
           ...prev,
+          total_trades: k?.total_trades ?? 0,
+          wins: k?.won_trades ?? 0,
+          losses: k?.lost_trades ?? 0,
+          win_rate: k?.win_rate_pct ?? 0,
+          total_pnl_usd: statusRes.daily_pnl ?? 0,
+          total_pnl_pips: statusRes.daily_pips ?? 0,
+          profit_factor: k?.profit_factor ?? 0,
+          profit_factor_infinite: !!k?.profit_factor_infinite,
           balance: statusRes.balance ?? prev.balance,
           equity: statusRes.equity ?? prev.equity,
-          total_pnl_usd: statusRes.daily_pnl ?? prev.total_pnl_usd,
         }));
       }
 
@@ -407,6 +422,23 @@ export default function HomePage() {
       </header>
 
       {/* 2. GÜNÜN KARNESİ: ANA METRİKLER (KPI CARDS) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <h2 className="text-sm font-bold uppercase tracking-wider text-white">Günün Başarı Metrikleri</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-semibold">
+            Her Gece 00:00'da Otomatik Sıfırlanır (UTC+3)
+          </span>
+        </div>
+        <Link
+          href="/forex/reports"
+          className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold transition-colors"
+        >
+          <span>📅 Geçmiş Tarihli Kayıtları İncele</span>
+          <span>→</span>
+        </Link>
+      </div>
+
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" aria-label="Günün KPI Göstergeleri">
         {/* KART 1: GÜNLÜK NET PNL */}
         <div className={`p-4 sm:p-5 rounded-2xl border backdrop-blur-md shadow-xl transition-all ${

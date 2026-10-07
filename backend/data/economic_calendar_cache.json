@@ -660,7 +660,7 @@
     "previous": "3.7%",
     "actual": "—",
     "status": "Bekleniyor",
-    "comment": "Atlanta Fed GDPNow, Atlanta Federal Reserve Bank'ın, Ekonomik Analiz Bürosu'nun (BEA) resmi tahmininden önce cari çeyreğe ilişkin ABD reel GSYİH büyümesinin \"şimdiki tahminini\" sağlayan gerçek zamanlı bir modelidir. Model, 13 GSYİH alt bileşenini tahmin ediyor: kişisel tüketim harcamaları; özel sabit yatırım; özel stoklardaki değişim; ihracat; ithalat; federal hükümetin tüketimi ve yatırımı; ve eyalet ve yerel yönetim tüketim ve yatırımları; çeşitli kategoriler ayrıca temel bileşenlere ayrılmıştır. GDPNow, genellikle ayda altı veya yedi kez yeni ekonomik veriler yayınlandıkça güncellenir ve hiçbir öznel ayarlama olmaksızın veriye dayalı bir tahmin üretir. Bu, Atlanta Fed'in veya Federal Rezerv'in resmi bir tahmini değil.",
+    "comment": "Atlanta Fed GDPNow, Atlanta Federal Reserve Bank'ın, Ekonomik Analiz Bürosu'nun (BEA) resmi tahmininden önce, cari çeyrek için ABD'nin gerçek GSYİH büyümesine ilişkin \"şimdiki tahmini\" sağlayan gerçek zamanlı bir modelidir. Model, 13 GSYİH alt bileşenini tahmin ediyor: kişisel tüketim harcamaları; özel sabit yatırım; özel stoklardaki değişim; ihracat; ithalat; federal hükümetin tüketimi ve yatırımı; ve eyalet ve yerel yönetim tüketim ve yatırımları; çeşitli kategoriler ayrıca temel bileşenlere ayrılmıştır. GDPNow, genellikle ayda altı veya yedi kez yeni ekonomik veriler yayınlandıkça güncellenir ve hiçbir öznel ayarlama olmaksızın veriye dayalı bir tahmin üretir. Bu, Atlanta Fed'in veya Federal Rezerv'in resmi bir tahmini değil.",
     "affected_symbols": [
       "XAUUSD",
       "EURUSD",

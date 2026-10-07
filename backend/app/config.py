@@ -241,6 +241,9 @@ class Config:
     BINANCE_TR_BRIDGE_COOLDOWN_SEC = float(os.getenv("BINANCE_TR_BRIDGE_COOLDOWN_SEC", "10.0"))
     # SPOT KISIMDA SADECE BINANCE TR'DE OLAN SEMBOLLERİ TARAMA VE BİLDİRİM FİLTRESİ
     BINANCE_TR_FILTER_ENABLED = os.getenv("BINANCE_TR_FILTER_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+    # FOREX-ONLY MOTOR KONTROLÜ (2026-10-08): Spot coin tarama ve işlemleri tamamen devre dışıdır.
+    # Yalnızca Forex ve Emtia (XAUUSD, EURUSD, GBPUSD, USDJPY, USOIL, BTCUSD) modülü aktiftir.
+    FOREX_ONLY = os.getenv("FOREX_ONLY", "true").strip().lower() in ("1", "true", "yes", "on")
 
     MAX_TICKER_AGE_SEC = 15
     MAX_POSITION_HOLD_SEC = 4 * 60 * 60

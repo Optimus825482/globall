@@ -1518,6 +1518,8 @@ def reset_state():
 
 def start_auto_paper_loop() -> bool:
     """Arka plan döngüsünü bir kez başlat."""
+    if getattr(config, "FOREX_ONLY", False):
+        return False
     global _loop_task
     if _loop_task is not None and not _loop_task.done():
         return False

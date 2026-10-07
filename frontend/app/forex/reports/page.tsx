@@ -77,6 +77,7 @@ const PERIOD_PRESETS: { key: string; label: string; hint: string }[] = [
   { key: "all", label: "🌐 Tüm Zamanlar", hint: "Tüm arşiv" },
   { key: "today", label: "🟢 Bugün", hint: "00:00'dan beri (UTC+3)" },
   { key: "yesterday", label: "🟡 Dün", hint: "Dün 00:00–24:00 (UTC+3)" },
+  { key: "single_date", label: "📅 Belirli Bir Gün Seç", hint: "İstediğiniz tarihe ait işlemler ve başarı karnesi" },
   { key: "last12h", label: "⏱️ Son 12 Saat", hint: "Şu andan geriye 12 saat" },
   { key: "this_week", label: "📅 Bu Hafta", hint: "Pazartesi'den beri (UTC+3)" },
   { key: "this_month", label: "🗓️ Bu Ay", hint: "Ayın 1'inden beri (UTC+3)" },
@@ -105,12 +106,33 @@ export default function ForexReportsPage() {
 
   // Dönem filtresi (KPI kartları dahil tüm raporu kapsar)
   const [period, setPeriod] = useState<string>("all");
+  const [selectedSingleDate, setSelectedSingleDate] = useState<string>(() => localDateInput());
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const isSingleDate = period === "single_date";
   const isCustomPeriod = period === "custom";
-  // Özel aralıkta iki tarih de girilene kadar istek atılmaz; eksik aralıkla
-  // sorgu tüm arşivi döndürüp kartları sessizce yanıltırdı.
-  const customRangeReady = !isCustomPeriod || (!!dateFrom && !!dateTo);
+  // Özel aralıkta iki tarih de girilene kadar istek atılmaz; tek günde tarih dolu olmalıdır
+  const customRangeReady = isSingleDate
+    ? !!selectedSingleDate
+    : (!isCustomPeriod || (!!dateFrom && !!dateTo));
+
+  const shiftSingleDate = (days: number) => {
+    try {
+      const parts = selectedSingleDate.split("-").map(Number);
+      if (parts.length === 3) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        d.setDate(d.getDate() + days);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        setSelectedSingleDate(`${y}-${m}-${day}`);
+      } else {
+        setSelectedSingleDate(localDateInput());
+      }
+    } catch {
+      setSelectedSingleDate(localDateInput());
+    }
+  };
 
   const fetchReport = async () => {
     try {
@@ -119,10 +141,18 @@ export default function ForexReportsPage() {
       if (selectedOutcome !== "ALL") qParams.append("outcome", selectedOutcome);
       if (selectedReason !== "ALL") qParams.append("reason", selectedReason);
       if (searchQuery.trim()) qParams.append("search", searchQuery.trim());
-      qParams.append("period", period);
-      if (isCustomPeriod) {
-        if (dateFrom) qParams.append("date_from", dateFrom);
-        if (dateTo) qParams.append("date_to", dateTo);
+      
+      if (isSingleDate) {
+        qParams.append("period", "custom");
+        qParams.append("date", selectedSingleDate);
+        qParams.append("date_from", selectedSingleDate);
+        qParams.append("date_to", selectedSingleDate);
+      } else {
+        qParams.append("period", period);
+        if (isCustomPeriod) {
+          if (dateFrom) qParams.append("date_from", dateFrom);
+          if (dateTo) qParams.append("date_to", dateTo);
+        }
       }
 
       const url = `/api/forex/auto-paper/trades?${qParams.toString()}`;
@@ -142,13 +172,13 @@ export default function ForexReportsPage() {
 
   useEffect(() => {
     if (customRangeReady) fetchReport();
-  }, [selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, dateFrom, dateTo]);
+  }, [selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!autoRefresh || !customRangeReady) return;
     const interval = setInterval(fetchReport, 3000);
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, dateFrom, dateTo]);
+  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
 
   // Dönem değişiminde özel aralığa geçilirse makul bir varsayılan doldur
   // (boş tarih kutularıyla kullanıcıyı bekletmemek için).
@@ -326,7 +356,9 @@ export default function ForexReportsPage() {
                 {availableSymbols.find((s) => s.key === selectedSymbol)?.label || selectedSymbol}
               </span>
               <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-bold">
-                {isCustomPeriod && customRangeReady
+                {isSingleDate
+                  ? `📅 ${selectedSingleDate} Tarihli İşlemler`
+                  : isCustomPeriod && customRangeReady
                   ? `${dateFrom} → ${dateTo}`
                   : PERIOD_LABELS[period] || period}
               </span>
@@ -490,6 +522,53 @@ export default function ForexReportsPage() {
             );
           })}
         </div>
+
+        {isSingleDate && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-bunker-800 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-cyan-300 font-bold uppercase tracking-wider">
+                📅 İncelenecek Gün:
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => shiftSingleDate(-1)}
+                  className="px-2.5 py-1.5 rounded-lg bg-bunker-950 hover:bg-bunker-800 border border-bunker-700 text-white font-bold text-xs transition-colors flex items-center gap-1 active:scale-95"
+                  title="Bir önceki güne git"
+                >
+                  <span>◀</span>
+                  <span>Önceki Gün</span>
+                </button>
+                <input
+                  type="date"
+                  value={selectedSingleDate}
+                  onChange={(e) => setSelectedSingleDate(e.target.value)}
+                  className="bg-bunker-950 border border-cyan-500/60 rounded-lg px-3 py-1.5 text-white font-mono text-xs font-bold outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all shadow-inner"
+                />
+                <button
+                  type="button"
+                  onClick={() => shiftSingleDate(1)}
+                  className="px-2.5 py-1.5 rounded-lg bg-bunker-950 hover:bg-bunker-800 border border-bunker-700 text-white font-bold text-xs transition-colors flex items-center gap-1 active:scale-95"
+                  title="Bir sonraki güne git"
+                >
+                  <span>Sonraki Gün</span>
+                  <span>▶</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSingleDate(localDateInput())}
+                  className="px-2.5 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 text-cyan-300 font-bold text-xs transition-colors active:scale-95"
+                  title="Bugünün tarihine dön"
+                >
+                  Bugün
+                </button>
+              </div>
+            </div>
+            <div className="text-[11px] text-bunker-muted">
+              Seçilen Gün: <strong className="text-white font-mono">{selectedSingleDate}</strong> (00:00 – 23:59 UTC+3 arası otonom işlemler ve başarı karnesi)
+            </div>
+          </div>
+        )}
 
         {isCustomPeriod && (
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-bunker-800 text-xs">

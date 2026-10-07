@@ -142,13 +142,9 @@ async def backfill_symbol_history(symbol: str, days: int = 7):
 
 
 async def history_candle_loop(interval_minutes: int = 5):
-    """Canlı 5m mum kalıcılığı: her 5 dakikada son kapanan barları upsert eder.
-
-    historical_candles'a yalnızca tek seferlik backfill'ler yazıyordu; deploy
-    aralarında tablo bayatlıyor ve ML eğitimi 'boş' pencereye düşüyordu.
-    Evren: config.SYMBOLS + veritabanında zaten bulunan semboller (hız avcısı
-    backfill'leriyle büyüyen evren). Kapanmamış bar yazılmaz.
-    """
+    """Canlı 5m mum kalıcılığı: her 5 dakikada son kapanan barları upsert eder."""
+    if getattr(config, "FOREX_ONLY", False):
+        return
     semaphore = asyncio.Semaphore(8)
     await asyncio.sleep(120)  # startup backfill'i bitmeden çakışmasın
     while True:
@@ -195,12 +191,9 @@ async def history_candle_loop(interval_minutes: int = 5):
 
 
 async def microstructure_snapshot_loop():
-    """Sample live bid/ask and depth only for symbols with open positions.
-
-    Sürekli tüm sembolleri saniyede bir kaydetmek tabloyu aylık ~130M satıra
-    (34 GB) büyütüyordu; mikro yapı kanıtının değeri işlem anında olduğundan
-    yalnızca açık pozisyonu olan semboller örneklenir.
-    """
+    """Sample live bid/ask and depth only for symbols with open positions."""
+    if getattr(config, "FOREX_ONLY", False):
+        return
     while True:
         try:
             open_symbols = {str(symbol or "").upper() for symbol in analyzer.positions}
