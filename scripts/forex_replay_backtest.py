@@ -243,19 +243,31 @@ def _bb_bandwidth_series(closes: List[float], period: int = 20, mult: float = 2.
     """Bollinger bant genişliği serisi: (upper−lower)/mid. Sıkışma (squeeze) tespiti için.
 
     i. değer yalnız i ve öncesi kapanışlardan türetilir (look-ahead yok). İlk period-1
-    barda tanımsız → 0.0 döner.
+    barda tanımsız → 0.0 döner. Kayan toplam/kare-toplam ile O(n) — bar başına yeniden
+    hesaplama O(n²) olurdu (squeeze modu 16k barlık seride koşuyu dakikalara çıkarıyordu).
     """
     n = len(closes)
     out = [0.0] * n
+    if n < period:
+        return out
+    s = 0.0
+    s2 = 0.0
+    for j in range(period):
+        s += closes[j]
+        s2 += closes[j] * closes[j]
     for i in range(period - 1, n):
-        win = closes[i - period + 1:i + 1]
-        m = sum(win) / period
-        var = sum((x - m) ** 2 for x in win) / period
-        sd = var ** 0.5
-        if m <= 0:
-            continue
-        out[i] = (2.0 * mult * sd) / m
+        if i >= period:
+            s += closes[i] - closes[i - period]
+            s2 += closes[i] * closes[i] - closes[i - period] * closes[i - period]
+        m = s / period
+        if m > 0:
+            var = max(0.0, s2 / period - m * m)
+            out[i] = (2.0 * mult * (var ** 0.5)) / m
     return out
+
+
+# Squeeze modu bandwidth serisi önbelleği: sembol → tam seri (her barda yeniden hesaplamayı önler)
+_BB_BW_CACHE: Dict[str, List[float]] = {}
 
 
 def _mode_session_ok(sym: str, hour: int) -> bool:
@@ -426,17 +438,20 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
         period = TUN_SQUEEZE_BB_PERIOD
         if ci < period + 100:
             return None
-        closes_s = [b[4] for b in bars[:ci]]
-        bw = _bb_bandwidth_series(closes_s, period, 2.0)
-        recent_bw = [x for x in bw[-100:] if x > 0]
+        bw = _BB_BW_CACHE.get(sym)
+        if bw is None or len(bw) < ci:
+            bw = _bb_bandwidth_series([b[4] for b in bars], period, 2.0)
+            _BB_BW_CACHE[sym] = bw
+        recent_bw = [x for x in bw[max(0, ci - 100):ci] if x > 0]
         if len(recent_bw) < 50:
             return None
-        cur_bw = bw[-1]
+        cur_bw = bw[ci - 1]
         if cur_bw <= 0:
             return None
         thr = sorted(recent_bw)[max(0, int(len(recent_bw) * TUN_SQUEEZE_BB_PCT / 100.0) - 1)]
         if cur_bw > thr:
             return None
+        closes_s = [b[4] for b in bars[:ci]]
         win = closes_s[-period:]
         m = sum(win) / period
         sd = (sum((x - m) ** 2 for x in win) / period) ** 0.5
@@ -1472,7 +1487,8 @@ def run_fade_engine(data: Dict[str, List[Tuple]], entry_start_ts: Optional[float
 # ---------------------------------------------------------------------------
 def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional[float] = None,
                entry_end_ts: Optional[float] = None, symbol_filter: Optional[set] = None,
-               add_symbols: Optional[set] = None) -> Dict[str, Any]:
+               add_symbols: Optional[set] = None,
+               exclude_symbols: Optional[set] = None) -> Dict[str, Any]:
     # Ek metrikler: NEW defteri için bar-bazlı özkaynak örnekleme (maks. düşüş için)
     eq_ts: List[float] = []
     eq_new: List[float] = []
@@ -1484,6 +1500,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         allowed &= {s.upper() for s in symbol_filter}
     if add_symbols:
         allowed |= {s.upper() for s in add_symbols}
+    if exclude_symbols:
+        allowed -= {s.upper() for s in exclude_symbols}
     symbols = [s for s in data if s != "DXY" and s in allowed]
     by_ts = {s: {b[0]: b for b in data[s]} for s in symbols}
     # Birleşim zaman ekseni: her sembol kendi seansında bar üretir; kesişim örneklemi kısaltır
@@ -2053,6 +2071,7 @@ def main():
     parser.add_argument("--end", default="", help="Giriş penceresi sonu, dahil değil (YYYY-MM-DD, UTC)")
     parser.add_argument("--symbols", default="", help="Virgüllü sembol filtresi (örn: XAUUSD,US30,NAS100) — yalnız bu semboller işlenir")
     parser.add_argument("--add-symbols", default="", help="Virgüllü ek aday semboller (örn: XAGUSD,USOIL,GBPJPY) — izin listesine EKLENİR (test-only)")
+    parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
     parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
@@ -2392,6 +2411,7 @@ def main():
     t0 = time.time()
     sym_filter = {s.strip().upper() for s in args.symbols.split(",") if s.strip()} or None
     add_syms = {s.strip().upper() for s in getattr(args, "add_symbols", "").split(",") if s.strip()} or None
+    excl_syms = {s.strip().upper() for s in getattr(args, "exclude_symbols", "").split(",") if s.strip()} or None
     if args.mini_only:
         report = {"days": args.days, "variants": {}}
         if RSI2_ENABLED:
@@ -2400,7 +2420,7 @@ def main():
             report["variants"]["FADE"] = run_fade_engine(data, entry_start_ts, entry_end_ts)
     else:
         report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts,
-                            symbol_filter=sym_filter, add_symbols=add_syms)
+                            symbol_filter=sym_filter, add_symbols=add_syms, exclude_symbols=excl_syms)
     report["config"] = cfg_str
     print(f"\n[REPLAY BİTTİ] {time.time() - t0:.1f} sn")
 

@@ -969,6 +969,7 @@ def sync_with_server(api_base: str):
     positions = []
     be_threshold = float(CURRENT_SETTINGS.get("breakeven_pips", 10.0))
     trail_threshold = float(CURRENT_SETTINGS.get("trailing_stop_pips", 16.0))
+    server_offset = _get_server_utc_offset()
 
     for p in mt5.positions_get() or []:
         ticket = p.ticket
