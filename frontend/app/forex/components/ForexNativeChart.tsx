@@ -387,24 +387,37 @@ export default function ForexNativeChart({
     try {
       const data = await apiFetch(`/api/forex/klines?symbol=${encodeURIComponent(symbol)}&interval=${tf}&limit=250`);
       if (data && Array.isArray(data.candles) && data.candles.length > 0) {
-        const parsed: CandleBar[] = data.candles.map((c: any) => ({
-          time: Number(c.time) as UTCTimestamp,
-          open: Number(c.open),
-          high: Number(c.high),
-          low: Number(c.low),
-          close: Number(c.close),
-          volume: Number(c.volume ?? 0),
-        }));
-        setCandles(parsed);
-        lastCandleRef.current = parsed[parsed.length - 1];
+        // SONLULUK KAPISI: backend eksik/`None` alan döndürürse `Number(undefined)`
+        // = NaN olur; NaN'lı bir mum seriye girerse lightweight-charts onu boyarken
+        // "Value is undefined" istisnası fırlatır (grafik her karede patlar).
+        // Bozuk mumlar seriye HİÇ girmesin.
+        const parsed: CandleBar[] = data.candles
+          .map((c: any) => ({
+            time: Number(c.time) as UTCTimestamp,
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+            volume: Number(c.volume ?? 0),
+          }))
+          .filter((b: CandleBar) =>
+            Number.isFinite(b.time) && b.time > 0 &&
+            Number.isFinite(b.open) && Number.isFinite(b.high) &&
+            Number.isFinite(b.low) && Number.isFinite(b.close));
+        if (parsed.length > 0) {
+          setCandles(parsed);
+          lastCandleRef.current = parsed[parsed.length - 1];
 
-        if (data.current_price) {
-          setLivePrice(data.current_price);
-        }
+          if (data.current_price) {
+            setLivePrice(data.current_price);
+          }
 
-        const rsiArr = calculateRSI(parsed, 14);
-        if (rsiArr.length > 0) {
-          setLatestRsi(Math.round(rsiArr[rsiArr.length - 1].value * 10) / 10);
+          const rsiArr = calculateRSI(parsed, 14);
+          if (rsiArr.length > 0) {
+            setLatestRsi(Math.round(rsiArr[rsiArr.length - 1].value * 10) / 10);
+          }
+        } else if (!silent) {
+          setError("Bu sembol için mum verisi bulunamadı.");
         }
       } else {
         if (!silent) setError("Bu sembol için mum verisi bulunamadı.");
@@ -459,27 +472,44 @@ export default function ForexNativeChart({
         if (res && Array.isArray(res.tickers)) {
           const tick = res.tickers.find((t: any) => t.symbol === symbol.toUpperCase());
           if (tick) {
-            if (tick.price && Math.abs(tick.price - (livePrice || 0)) > 1e-6) {
-              setLastTickDir(livePrice != null && tick.price >= livePrice ? "up" : "down");
-              setLivePrice(tick.price);
+            // FİYAT KAPISI: tick nesnesi `price` taşımazsa (yalnız bid/ask yayınlanır)
+            // eskiden `tick.price` = `undefined` doğrudan mumun `close` alanına yazılıyor,
+            // `series.update()` ile seriye giriyor ve lightweight-charts mumu boyarken
+            // `ensure(close)` ile "Value is undefined" fırlatıp grafiği her karede
+            // patlatıyordu. Fiyatı bid/ask ortasından türet; sonlu değilse muma dokunma.
+            const bid = Number(tick.bid);
+            const ask = Number(tick.ask);
+            const mid = Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0
+              ? (bid + ask) / 2
+              : NaN;
+            const rawPrice = Number(tick.price);
+            const px = Number.isFinite(rawPrice) && rawPrice > 0
+              ? rawPrice
+              : (Number.isFinite(mid) ? mid : NaN);
+
+            if (Number.isFinite(px) && Math.abs(px - (livePrice || 0)) > 1e-6) {
+              setLastTickDir(livePrice != null && px >= livePrice ? "up" : "down");
+              setLivePrice(px);
             }
-            if (tick.bid) setLiveBid(tick.bid);
-            if (tick.ask) setLiveAsk(tick.ask);
+            if (Number.isFinite(bid) && bid > 0) setLiveBid(bid);
+            if (Number.isFinite(ask) && ask > 0) setLiveAsk(ask);
             if (tick.spread_pips != null) setLiveSpread(tick.spread_pips);
 
-            if (candleSeriesRef.current && lastCandleRef.current) {
+            if (candleSeriesRef.current && lastCandleRef.current && Number.isFinite(px)) {
               const last = lastCandleRef.current;
-              const updatedBar: CandleBar = {
-                time: last.time,
-                open: last.open,
-                high: Math.max(last.high, tick.price),
-                low: Math.min(last.low, tick.price),
-                close: tick.price,
-              };
-              lastCandleRef.current = updatedBar;
-              try {
-                candleSeriesRef.current.update(updatedBar as any);
-              } catch {}
+              if (Number.isFinite(last.open) && Number.isFinite(last.high) && Number.isFinite(last.low)) {
+                const updatedBar: CandleBar = {
+                  time: last.time,
+                  open: last.open,
+                  high: Math.max(last.high, px),
+                  low: Math.min(last.low, px),
+                  close: px,
+                };
+                lastCandleRef.current = updatedBar;
+                try {
+                  candleSeriesRef.current.update(updatedBar as any);
+                } catch {}
+              }
             }
           }
         }

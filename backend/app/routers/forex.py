@@ -1647,6 +1647,10 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "tv_symbol": item["tv_symbol"],
             "bid": bid_p,
             "ask": ask_p,
+            # `price` = orta fiyat. Frontend grafik/mum tüketicileri bu alanı
+            # bekliyor (radar ucu da aynı anahtarı yayınlar); eksik olduğunda
+            # `undefined` mum `close`una yazılıp grafiği patlatıyordu.
+            "price": round(live_p, digits),
             "spread_pips": spread_pips,
             "change_pct": change_pct,
             "high": high_p,
@@ -3156,7 +3160,7 @@ async def _forex_auto_paper_loop():
                     _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 1800.0
                     if _m_wait_throttled:
                         _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
-                        _m_disp = _m_item["display"] if _m_item else _m_sym
+                        _m_disp = _m_t["display"] if _m_t else _m_sym
                         _m_side = "üstünde" if _m_price > float(_m_tech["donch_mid"]) else "altında"
                         if _m_not_allowed:
                             _log_auto_decision(
