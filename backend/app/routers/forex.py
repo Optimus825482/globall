@@ -3645,8 +3645,36 @@ async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings)
     return {"status": "ok", "settings": _AUTO_SETTINGS.model_dump()}
 
 
+def _parse_reset_cutoff(value: str, now_ts: float) -> float:
+    """Kesim zamanı metnini epoch'a çevirir (saf fonksiyon — test edilebilir).
+
+    Kabul edilen biçimler (hepsi UTC+3 yerel saat varsayılır): epoch saniye,
+    "YYYY-MM-DD", "YYYY-MM-DD HH:MM", "YYYY-MM-DD HH:MM:SS" ve ISO "T" ayraçlı
+    varyantları. Geleceğe ait kesim reddedilir (ValueError).
+    """
+    v = str(value).strip()
+    if not v:
+        raise ValueError("Kesim zamanı boş olamaz.")
+    if v.replace(".", "", 1).isdigit():
+        ts = float(v)
+    else:
+        ts = None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+            try:
+                ts = datetime.datetime.strptime(v, fmt).replace(tzinfo=TZ_UTC3).timestamp()
+                break
+            except ValueError:
+                continue
+        if ts is None:
+            raise ValueError(f"Kesim zamanı anlaşılamadı: {value!r} (ör. '2026-10-07 07:10').")
+    if ts > now_ts + 60.0:
+        raise ValueError("Kesim zamanı gelecekte olamaz.")
+    return ts
+
+
 @router.post("/auto-paper/reset-symbol-guards")
-async def reset_forex_symbol_guards():
+async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
     """Temiz sayfa: sembol kalkanlarını sıfırlar + eski işlemleri arşive alır.
 
     Kullanıcı senaryosu (2026-10-07): kural seti değişti (chandelier + seri-SL +
@@ -3657,18 +3685,34 @@ async def reset_forex_symbol_guards():
     yeniden hesaplanır (köprü bağlıyken MT5 son-300-deal kaynağı) — bu yüzden
     restart yetmez; kesim zamanı işaretleriyle resetten önceki işlemler hem EV
     penceresine hem rapor/KPI/CSV'ye hiç alınmaz. Bakiyeye DOKUNULMAZ.
+
+    `cutoff` (opsiyonel, UTC+3): "şimdi" yerine verilen saatten önce kapananlar
+    arşive kalkar, sonraki işlemler raporda kalır (örn. deploy sonrası biriken
+    yeni-dönem işlemlerini korumak için: ?cutoff=2026-10-07 07:10). Verilmezse
+    tam temiz sayfa (tümü arşive). Seri-SL sayaçları yalnız tam temiz sayfada
+    sıfırlanır — kesimli resette kısa vadeli canlı sayaca dokunulmaz.
     """
     global _EV_RESET_AT_TS, _LEDGER_RESET_AT_TS
     now_ts = time.time()
+    full_reset = cutoff is None or not str(cutoff).strip()
+    if full_reset:
+        reset_ts = now_ts
+    else:
+        try:
+            reset_ts = _parse_reset_cutoff(cutoff, now_ts)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     before = {
         s: _collect_symbol_ev(s, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
         for s in _AUTO_SETTINGS.allowed_symbols
     }
 
-    # --- Arşiv: mevcut rapor görünümü (MT5 deal'leri varsa onlar, yoksa paper defteri)
-    archived_view = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(
+    # --- Arşiv: mevcut rapor görünümünden kesim öncesini ayır
+    # (MT5 deal'leri varsa onlar, yoksa paper defteri)
+    merged_view = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(
         _AUTO_STATE.get("closed_trades", [])
     )
+    archived_view = [t for t in merged_view if (_deal_ts(t) or 0.0) < reset_ts]
     counters_before = {
         "total_trades": _AUTO_STATE.get("total_trades", 0),
         "wins": _AUTO_STATE.get("wins", 0),
@@ -3676,49 +3720,61 @@ async def reset_forex_symbol_guards():
         "realized_pnl_usd": _AUTO_STATE.get("realized_pnl_usd", 0.0),
     }
     archive_meta: Dict[str, Any] = {"count": len(archived_view), "path": None}
-    try:
-        stamp = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y%m%d_%H%M%S")
-        archive_path = os.path.join(
-            _ledger_archive_dir(), f"forex_ledger_arşiv_{stamp}.json"
-        )
-        with open(archive_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "archived_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).isoformat(),
-                "reason": "Kural seti yenilendi (chandelier + seri-SL + yeni ayarlar) — eski sicil arşive alındı, raporlar sıfırdan başlar.",
-                "counters_before": counters_before,
-                "trades": archived_view,
-            }, f, ensure_ascii=False)
-        archive_meta["path"] = archive_path
-    except Exception as exc:
-        _log_auto_decision("SYSTEM", f"⚠️ İşlem arşivi dosyaya yazılamadı (bellek kopyası yine de tutuluyor): {exc}")
+    if archived_view:
+        try:
+            stamp = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y%m%d_%H%M%S")
+            archive_path = os.path.join(
+                _ledger_archive_dir(), f"forex_ledger_arşiv_{stamp}.json"
+            )
+            with open(archive_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "archived_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).isoformat(),
+                    "cutoff": datetime.datetime.fromtimestamp(reset_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3"),
+                    "reason": "Kural seti yenilendi (chandelier + seri-SL + yeni ayarlar) — kesim öncesi sicil arşive alındı.",
+                    "counters_before": counters_before,
+                    "trades": archived_view,
+                }, f, ensure_ascii=False)
+            archive_meta["path"] = archive_path
+        except Exception as exc:
+            _log_auto_decision("SYSTEM", f"⚠️ İşlem arşivi dosyaya yazılamadı (bellek kopyası yine de tutuluyor): {exc}")
 
-    # --- Kesim + sayaç sıfırlama
-    _EV_RESET_AT_TS = now_ts
-    _LEDGER_RESET_AT_TS = now_ts
-    _SYMBOL_LOSS_STREAK.clear()
-    _SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+    # --- Kesim + sayaç durumları
+    _EV_RESET_AT_TS = reset_ts
+    _LEDGER_RESET_AT_TS = reset_ts
+    if full_reset:
+        _SYMBOL_LOSS_STREAK.clear()
+        _SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+    # Paper defteri: kesim sonrası kapananlar kalır, sayaçlar onlardan yeniden hesaplanır
+    kept_paper = [t for t in _AUTO_STATE.get("closed_trades", []) if (_deal_ts(t) or 0.0) >= reset_ts]
+    _AUTO_STATE["closed_trades"] = kept_paper
+    _AUTO_STATE["total_trades"] = len(kept_paper)
+    _AUTO_STATE["wins"] = sum(1 for t in kept_paper if float(t.get("pnl_usd", 0.0) or 0.0) >= 0)
+    _AUTO_STATE["losses"] = len(kept_paper) - _AUTO_STATE["wins"]
+    _AUTO_STATE["realized_pnl_usd"] = round(sum(float(t.get("pnl_usd", 0.0) or 0.0) for t in kept_paper), 2)
+    _AUTO_STATE["realized_pnl_pips"] = round(sum(float(t.get("pnl_pips", 0.0) or 0.0) for t in kept_paper), 1)
     _AUTO_STATE["archived_trades"] = archived_view
     _AUTO_STATE["archived_at"] = now_ts
     _AUTO_STATE["archived_path"] = archive_meta["path"]
-    _AUTO_STATE["closed_trades"] = []
-    _AUTO_STATE["total_trades"] = 0
-    _AUTO_STATE["wins"] = 0
-    _AUTO_STATE["losses"] = 0
-    _AUTO_STATE["realized_pnl_usd"] = 0.0
-    _AUTO_STATE["realized_pnl_pips"] = 0.0
 
+    cut_human = datetime.datetime.fromtimestamp(reset_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3")
     _log_auto_decision(
         "SYSTEM",
-        f"🧹 Temiz sayfa: {archive_meta['count']} eski işlem arşive alındı — EV kalkanı + seri-SL sayaçları sıfırlandı, rapor/KPI'lar sıfırdan saymaya başladı (bakiye korunur).",
+        (f"🧹 Temiz sayfa: {archive_meta['count']} eski işlem arşive alındı — EV kalkanı + seri-SL sayaçları sıfırlandı, rapor/KPI'lar sıfırdan saymaya başladı (bakiye korunur)."
+         if full_reset else
+         f"🧹 Kesimli arşiv: {cut_human} öncesindeki {archive_meta['count']} işlem arşive alındı — sonraki işlemler raporda kaldı; EV kalkanı da bu kesimden değerlendirir (bakiye ve seri-SL sayaçları korunur)."),
     )
     return {
         "status": "ok",
         "reset_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3"),
+        "cutoff": None if full_reset else cut_human,
         "ev_before_reset": before,
         "archived_count": archive_meta["count"],
+        "kept_paper_count": len(kept_paper),
         "archive_path": archive_meta["path"],
         "counters_before": counters_before,
-        "note": "EV kalkanı ve rapor/KPI'lar artık yalnız bu andan sonra kapanan işlemlerle hesaplanır; seri-SL sayaçları sıfırlandı; eski işlemler arşivde (bellek + JSON dosyası). Bakiye değişmedi.",
+        "note": ("EV kalkanı ve rapor/KPI'lar artık yalnız kesim sonrası kapanan işlemlerle hesaplanır; "
+                 + ("seri-SL sayaçları sıfırlandı; " if full_reset else "seri-SL sayaçlarına dokunulmadı; ")
+                 + "eski işlemler arşivde (bellek + JSON dosyası). Bakiye değişmedi."),
     }
 
 
