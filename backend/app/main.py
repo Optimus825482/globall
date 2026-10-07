@@ -287,6 +287,10 @@ async def require_admin_session(request: Request, call_next):
         "/api/auth/status",
         "/api/auth/login",
         "/api/forex/mt5/sync",
+        "/api/forex/auto-paper/trades",
+        "/api/forex/auto-paper/status",
+        "/api/forex/tickers",
+        "/api/forex/klines",
     }
     if request.method == "OPTIONS" or request.url.path in public_paths:
         return await call_next(request)

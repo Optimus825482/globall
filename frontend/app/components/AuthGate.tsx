@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { API_BASE, apiRequest } from "../lib/api";
 import { AuthContext } from "../lib/auth";
 import NotificationPermissionModal from "./NotificationPermissionModal";
@@ -12,6 +13,8 @@ import AppLoader from "./AppLoader";
 type AuthStatus = { configured: boolean; authenticated: boolean; username?: string | null; role?: string | null };
 
 export default function AuthGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isPublicRoute = pathname === "/forex/islemler" || pathname?.startsWith("/forex/islemler/");
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -81,6 +84,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     () => ({ username: status?.username ?? null, role: status?.role ?? null, logout }),
     [status?.username, status?.role, logout],
   );
+
+  if (isPublicRoute) {
+    return (
+      <AuthContext.Provider value={authValue}>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
 
   if (!status?.authenticated) return <main className="grid min-h-screen place-items-center bg-bunker-950 p-5">
     <section className="w-full max-w-md rounded-xl border border-bunker-700 bg-bunker-900 p-6 shadow-2xl">

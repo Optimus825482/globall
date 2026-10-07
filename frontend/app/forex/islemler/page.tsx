@@ -1041,14 +1041,14 @@ export default function ForexIslemlerPage() {
 
             {/* SAYFALAMA (PAGINATION) BARI */}
             {totalPages > 1 && (
-              <div className="p-3.5 border-t flex flex-wrap items-center justify-between gap-3 text-xs">
-                <span className={theme.textSecondary}>
+              <div className="p-3 sm:p-3.5 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <span className={`text-center sm:text-left ${theme.textSecondary}`}>
                   {filteredClosedTrades.length} işlemden{" "}
                   <strong>{(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filteredClosedTrades.length)}</strong>{" "}
                   arası gösteriliyor (Sayfa {currentPage} / {totalPages})
                 </span>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap justify-center">
                   <button
                     type="button"
                     onClick={() => setCurrentPage(1)}

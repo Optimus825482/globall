@@ -44,8 +44,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const isForexIslemler = pathname === "/forex/islemler" || pathname?.startsWith("/forex/islemler/");
+
   if (embeddedAnalysis) {
     return <main className="min-h-screen overflow-y-auto"><div className="content-shell">{children}</div></main>;
+  }
+
+  if (isForexIslemler) {
+    return (
+      <ExchangeContext.Provider value={exchange}>
+        <MarketModeProvider>
+          <main className="min-h-screen w-full overflow-y-auto">
+            <div className="w-full px-2 sm:px-4 lg:px-6 py-2.5 sm:py-4 max-w-[1700px] mx-auto">
+              {children}
+            </div>
+          </main>
+        </MarketModeProvider>
+      </ExchangeContext.Provider>
+    );
   }
   return (
     <ExchangeContext.Provider value={exchange}>
