@@ -414,8 +414,16 @@ export default function ForexIslemlerPage() {
         };
       });
 
-    // En çok kâr getiren sembolden düşüğe doğru sırala
-    return list.sort((a, b) => b.netPnlUsd - a.netPnlUsd);
+    // En çok işlem gören sembolden başlayarak azalan sırada sırala (en çok işlem gören en üstte)
+    return list.sort((a, b) => {
+      if (b.totalTrades !== a.totalTrades) {
+        return b.totalTrades - a.totalTrades;
+      }
+      if (b.netPnlUsd !== a.netPnlUsd) {
+        return b.netPnlUsd - a.netPnlUsd;
+      }
+      return b.winRate - a.winRate;
+    });
   }, [closedTrades, openPositions]);
 
   // Filtrelenmiş Kapanan İşlemler
@@ -900,7 +908,7 @@ export default function ForexIslemlerPage() {
                 Günün İşlem Gören Sembolleri &amp; Başarı Oranları
               </h2>
               <p className={`text-[11px] ${theme.textSecondary}`}>
-                Bugün saat 00:01'den sonra işlem açılan paritelerin başarı oranları ve net kârlılık durumları (İşlem açılmamış semboller gizlenir)
+                Bugün saat 00:01'den sonra en çok işlem gören sembolden azalan sıraya göre başarı ve kârlılık oranları (İşlem açılmamış semboller gizlenir)
               </p>
             </div>
           </div>
@@ -920,7 +928,7 @@ export default function ForexIslemlerPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {symbolPerformanceList.map((item) => {
+            {symbolPerformanceList.map((item, idx) => {
               const isNetProfitable = item.netPnlUsd >= 0;
               const winRateColor =
                 item.winRate >= 60
@@ -939,6 +947,9 @@ export default function ForexIslemlerPage() {
                   {/* Başlık ve Kategori */}
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-bunker-800/80">
                     <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black flex items-center justify-center border border-blue-500/20 shrink-0">
+                        #{idx + 1}
+                      </span>
                       <span className="font-bold text-sm tracking-wide">
                         {item.display || item.symbol}
                       </span>
