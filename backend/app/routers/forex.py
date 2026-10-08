@@ -4990,7 +4990,12 @@ async def _forex_auto_paper_loop():
                 # 8b. Risk Normalizasyonu: ATR ile genişleyen SL'de lot tavanı risk
                 # bütçesini aşabilir (gerçek örnek: US30 0.20 lot × 81.7 pip = %1.6).
                 # Lot bütçeye çekilir; kategori minimumu bile sert sınırı aşıyorsa pas.
+                # Kripto istisnası (2026-10-08 kullanıcı kararı): BTC'de lot zaten
+                # kategori minimumu (0.01) — geniş ATR SL'i (ör. 339p) skip kapısına
+                # takılıp BTC adaylarını sürekli eziyordu; kriptoda pas yok.
                 mt5_lots, risk_skip = apply_risk_normalization(sym, mt5_lots, sl_pips, pip_val, risk_usd)
+                if risk_skip and is_crypto:
+                    risk_skip = False
                 if risk_skip:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_risk", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_risk"] = now_ts
