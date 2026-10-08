@@ -446,7 +446,7 @@ export default function BtcGoldForexPage() {
   const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
     enabled: false,
     balance: 1000.0,
-    risk_per_trade_pct: 10.0,
+    risk_per_trade_pct: 5.0,
     max_open_positions: 25,
     min_score: 70.0,
     tp_pips: 25.0,

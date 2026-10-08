@@ -150,7 +150,7 @@ export default function AutoSettingsPanel({
       const payload: AutoSettings = {
         ...appliedSettings,
         ...form,
-        risk_per_trade_pct: num(form.risk_per_trade_pct, appliedSettings.risk_per_trade_pct || 10.0),
+        risk_per_trade_pct: num(form.risk_per_trade_pct, appliedSettings.risk_per_trade_pct || 5.0),
         tp_pips: num(form.tp_pips, appliedSettings.tp_pips || 20.0),
         sl_pips: num(form.sl_pips, appliedSettings.sl_pips || 8.0),
         breakeven_pips: num(form.breakeven_pips, appliedSettings.breakeven_pips || 14.0),

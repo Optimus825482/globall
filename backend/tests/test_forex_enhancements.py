@@ -512,11 +512,12 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
     def test_default_risk_and_position_limits(self):
-        """Verify default position sizing is 10% balance risk and max_open_positions is 99 (2026-10-07 slot rekabeti kaldırıldı)."""
+        """Verify default position sizing is 5% balance risk (2026-10-08: 10→5) and max_open_positions is 99."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 3)
-        self.assertEqual(cfg.risk_per_trade_pct, 10.0)
+        self.assertEqual(cfg.risk_per_trade_pct, 5.0)
         self.assertEqual(cfg.max_open_positions, 99)
+        # LotCalculatorRequest ayrı, manuel hesap aracı (grafik butonu) — kendi varsayılanı kalır.
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
     def test_same_symbol_pyramiding_limit_three(self):

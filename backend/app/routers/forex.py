@@ -2673,7 +2673,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(10.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye)")
+    risk_per_trade_pct: float = Field(5.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye) — 2026-10-08 kullanıcı kararı: 10→5 (replay XAU lot tavanı ~0,13% idi; %5 = ~1,5 lot tipik XAU, işlem riski ~$500 @10k)")
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
