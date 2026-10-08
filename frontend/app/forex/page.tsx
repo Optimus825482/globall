@@ -118,6 +118,28 @@ function scoreTone(score: number, required: number): string {
   return "text-bunker-muted";
 }
 
+/** Manuel tarama satırı (backend /auto-paper/scan-now). */
+interface ScanNowRow {
+  strategy: string;
+  strategy_label: string;
+  symbol: string;
+  display: string;
+  status: string;
+  action: string | null;
+  panel_kapsaminda: boolean;
+}
+
+interface ScanNowResponse {
+  status: string;
+  scanned_at: string;
+  total_rows: number;
+  candidates_count: number;
+  sessions_active: string[];
+  entry_hour_blocked: boolean;
+  motor_enabled: boolean;
+  rows: ScanNowRow[];
+}
+
 export default function ForexRadarPage() {
   const [candidates, setCandidates] = useState<ForexCandidate[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -140,6 +162,21 @@ export default function ForexRadarPage() {
 
   // Profesyonel Grafik Modalı (Lightweight Charts)
   const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidate | null>(null);
+
+  // Manuel "Şimdi Tara" — tüm stratejileri sırayla tek turda tetikler
+  const [scanning, setScanning] = useState(false);
+  const [scanNowResult, setScanNowResult] = useState<ScanNowResponse | null>(null);
+  const runScanNow = async () => {
+    setScanning(true);
+    try {
+      const res = await apiFetch("/api/forex/auto-paper/scan-now", { method: "POST" });
+      setScanNowResult(res);
+    } catch (err) {
+      console.error("Manuel tarama hatası:", err);
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const fetchRadar = async () => {
     try {
@@ -228,6 +265,21 @@ export default function ForexRadarPage() {
               Majör Döviz Çiftleri, Değerli Madenler ve Endeksler — algoritma taraması
             </p>
           </div>
+          <button
+            onClick={runScanNow}
+            disabled={scanning}
+            className="ml-2 shrink-0 px-4 py-2.5 rounded-lg font-mono text-sm font-bold bg-emerald-600/90 hover:bg-emerald-500 disabled:bg-bunker-700 disabled:text-bunker-muted text-white border border-emerald-400/40 shadow-[0_0_12px_rgba(16,185,129,0.25)] transition-all flex items-center gap-2"
+            title="Tüm stratejileri (Radar, S3, LB, Donchian, EAP) sırayla tek turda tetikler — salt-okunur rapor, işlem açmaz"
+          >
+            {scanning ? (
+              <>
+                <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Taranıyor…
+              </>
+            ) : (
+              <>🔍 Şimdi Tara</>
+            )}
+          </button>
         </div>
 
         {/* Canlı Piyasa Seansları */}
@@ -252,6 +304,64 @@ export default function ForexRadarPage() {
           ))}
         </div>
       </div>
+
+      {/* MANUEL TARAMA SONUCU */}
+      {scanNowResult && (
+        <div className="p-4 rounded-2xl bg-bunker-900/80 border border-emerald-500/30 backdrop-blur-md shadow-lg">
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div className="font-mono text-sm font-bold text-emerald-300">
+              🔍 Manuel Tarama Sonucu — {scanNowResult.candidates_count}/{scanNowResult.total_rows} kol canlı aday üretti
+            </div>
+            <div className="flex items-center gap-2 flex-wrap font-mono text-[11px]">
+              <span className="text-bunker-muted">{scanNowResult.scanned_at}</span>
+              {scanNowResult.motor_enabled ? (
+                <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold">MOTOR AÇIK</span>
+              ) : (
+                <span className="px-2 py-0.5 rounded bg-yellow-500/15 border border-yellow-500/40 text-yellow-300 font-bold">MOTOR KAPALI — adaylar işleme çevrilmez</span>
+              )}
+              {scanNowResult.entry_hour_blocked && (
+                <span className="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/40 text-rose-300 font-bold">ZAYIF SAAT KALKANI</span>
+              )}
+              <button
+                onClick={() => setScanNowResult(null)}
+                className="px-2 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
+              >
+                ✕ kapat
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1 max-h-72 overflow-y-auto">
+            {scanNowResult.rows.map((r, i) => (
+              <div
+                key={`${r.strategy}-${r.symbol}-${i}`}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-mono text-xs border ${
+                  r.action
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-bunker-900/60 border-bunker-800"
+                }`}
+              >
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                  r.action ? "bg-emerald-500/20 text-emerald-300" : "bg-bunker-800 text-bunker-muted"
+                }`}>
+                  {r.strategy_label}
+                </span>
+                <span className="font-bold text-white shrink-0">{r.display}</span>
+                {r.action && (
+                  <span className={`font-bold shrink-0 ${r.action === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
+                    {r.action === "BUY" ? "▲ AL" : "▼ SAT"}
+                  </span>
+                )}
+                <span className={r.action ? "text-emerald-200/90" : "text-bunker-muted"}>{r.status}</span>
+                {!r.panel_kapsaminda && r.symbol !== "—" && (
+                  <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/10 border border-yellow-500/30 text-yellow-300">
+                    panel kapsamı dışı
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* HIZLI ERİŞİM KARTLARI */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">

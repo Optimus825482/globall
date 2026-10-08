@@ -3110,7 +3110,7 @@ class ForexAutoPaperSettings(BaseModel):
     major_session_filter: bool = Field(True, description="Majör FX seans filtresi: majörler yalnız belirlenen UTC saat penceresinde işlem açılır (Asya seansı chop'u — 30g replay: +$427 iyileşme)")
     major_session_start_utc: int = Field(7, ge=0, le=23, description="Majör seans penceresi başlangıcı (UTC, dahil) — 07:00 London açık")
     major_session_end_utc: int = Field(20, ge=1, le=24, description="Majör seans penceresi bitişi (UTC, dahil değil) — 20:00 NY öğleden sonra")
-    major_min_atr_pips: float = Field(4.0, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (30g replay: WR %63→%68; 0 = kapalı)")
+    major_min_atr_pips: float = Field(2.5, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (0 = kapalı; 2026-10-08 kullanıcı kararı: 4.0 → 2.5 — GBPUSD 3.6p / AUDUSD 1.7p majörleri 'ölü piyasa' diye eliyordu, FX'te işlem açılmıyordu)")
     crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
     crypto_tp_enabled: bool = Field(False, description="Kriptoda sabit TP emri (False = kapalı; 2026-10-06 30g replay: TP kapalıyken BTC −$55.70→−$18.02, kazanç trailing/BE ile koşturulur)")
     btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; süpürme: 76 noktası)")
@@ -5508,9 +5508,209 @@ async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
 
 
 # ============================================================================
-# SEMBOL EV KALKANI YÖNETİMİ & MANUEL İPTAL/MUAFIYET UÇ NOKTALARI
+# MANUEL TARAMA TETİKLEYİCİ (ŞİMDİ TARA)
 # ============================================================================
 
+def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Tüm stratejilerin ŞU ANKI durumunu tek turda değerlendirir (salt-okunur).
+
+    Motor döngüsündeki aday üretim felsefesini aynalar: saf giriş fonksiyonları
+    çağrılır ama `counts` sayaçları ve `_DONCHIAN_STATE`/`_S3_DAY_STATE`/
+    `_LB_STATE` GÜNCELLENMEZ (kopya üzerinde çalışılır) — manuel tarama hiçbir
+    zaman gerçek girişin gün-limitini yakmamalı. Data refresh yine de yapılır
+    (taze tick + teknik) ama motor state'ine dokunulmaz.
+    """
+    s = _AUTO_SETTINGS
+    now = datetime.datetime.now(datetime.timezone.utc)
+    day = now.toordinal()
+    hour = now.hour
+    rows: List[Dict[str, Any]] = []
+    allowed = {x.upper() for x in (s.allowed_symbols or [])}
+
+    def _row(strategy: str, sym: str, status: str, action: Optional[str] = None) -> None:
+        item = next((i for i in FOREX_SYMBOLS if i["symbol"] == sym), None)
+        rows.append({
+            "strategy": strategy,
+            "strategy_label": strategy_display_label(strategy),
+            "symbol": sym,
+            "display": (ticks.get(sym, {}) or {}).get("display") or (item["display"] if item else sym),
+            "status": status,
+            "action": action,
+            "panel_kapsaminda": sym in allowed,
+        })
+
+    # --- 1) RADAR (klasik çoklu skor taraması) — radar sonucundan özet
+    try:
+        top = radar.get("candidates", [])[:3]
+        if top:
+            for c in top:
+                _row("RADAR", str(c.get("symbol", "")).upper(),
+                     f"{c.get('action')} adayı skor {float(c.get('score', 0)):.0f} ({c.get('tier', '')})",
+                     c.get("action"))
+        else:
+            _row("RADAR", "—", str(radar.get("scan_note") or "Aday yok — eşiklerin üstünde sinyal yok"))
+    except Exception as exc:
+        _row("RADAR", "—", f"Tarama hatası: {exc}")
+
+    # --- 2) DONCHIAN+ADX modu
+    if _mode_syms_now := {x.upper() for x in (s.mode_symbols or [])}:
+        for sym in sorted(_mode_syms_now):
+            t = ticks.get(sym)
+            tech = _TECHNICAL_CACHE.get(sym) or {}
+            if not t or tech.get("donch_mid") is None:
+                _row("DONCHIAN_ADX", sym, "Veri yok — mum/gösterge bekleniyor")
+                continue
+            price = (t.get("bid", 0.0) + t.get("ask", 0.0)) / 2.0 or tech.get("price", 0.0)
+            mid = float(tech["donch_mid"])
+            st_copy = {"day": day, "counts": dict(_DONCHIAN_STATE.get(sym, {}).get("counts", {}))}
+            act = donchian_adx_entry(
+                prev_close=_DONCHIAN_STATE.get(sym, {}).get("prev_close"),
+                prev_mid=_DONCHIAN_STATE.get(sym, {}).get("prev_mid"),
+                close=price, mid=mid,
+                adx=float(tech.get("adx", 25.0)), adx_min=18.0,
+                day=day, day_counts=st_copy["counts"], max_per_day=2,
+                hour_utc=hour, is_jpy=("JPY" in sym),
+            )
+            if act:
+                _row("DONCHIAN_ADX", sym, f"{act} kırılım adayı (ADX {float(tech.get('adx', 0)):.0f})", act)
+            else:
+                side = "üstünde" if price > mid else "altında"
+                _row("DONCHIAN_ADX", sym,
+                     f"Fiyat orta hattın {side} ({price:.3f} / orta {mid:.3f}), ADX {float(tech.get('adx', 0)):.0f} — yeniden kırılım bekleniyor")
+
+    # --- 3) EMA+ADX geri-çekilme (M5)
+    if s.ema_adx_enabled:
+        for sym in sorted({x.upper() for x in (s.ema_adx_symbols or [])}):
+            t = ticks.get(sym)
+            tech = _TECHNICAL_CACHE.get(sym) or {}
+            if not t or not tech.get("ema21"):
+                _row(EMA_ADX_PULLBACK_STRATEGY, sym, "Veri yok — mum/gösterge bekleniyor")
+                continue
+            price = (t.get("bid", 0.0) + t.get("ask", 0.0)) / 2.0 or tech.get("price", 0.0)
+            counts = dict(_EMA_ADX_STATE.get(sym, {}).get("counts", {}))
+            act = ema_adx_pullback_entry(
+                ema8=float(tech.get("ema8", 0.0)), ema21=float(tech.get("ema21", 0.0)),
+                ema50=float(tech.get("ema50", 0.0)),
+                adx=float(tech.get("adx", 0.0)), adx_min=float(s.ema_adx_adx_min),
+                close=price,
+                open_=float(tech.get("open_last", 0.0)) or price,
+                high=float(tech.get("high_last", 0.0)) or price,
+                low=float(tech.get("low_last", 0.0)) or price,
+                atr_price=float(tech.get("atr", 0.0)),
+                touch_atr=float(s.ema_adx_touch_atr),
+                day_counts=counts, max_per_day=int(s.ema_adx_max_per_day),
+            )
+            e8, e21, e50 = float(tech.get("ema8", 0)), float(tech.get("ema21", 0)), float(tech.get("ema50", 0))
+            trend_txt = "boğa dizilimi" if e8 > e21 > e50 else ("ayı dizilimi" if e8 < e21 < e50 else "dizilim yok")
+            if act:
+                _row(EMA_ADX_PULLBACK_STRATEGY, sym, f"{act} geri-çekilme adayı ({trend_txt}, ADX {float(tech.get('adx', 0)):.0f})", act)
+            else:
+                _row(EMA_ADX_PULLBACK_STRATEGY, sym, f"{trend_txt}, ADX {float(tech.get('adx', 0)):.0f} (eşik {s.ema_adx_adx_min:.0f}) — EMA21 teması/onay barı bekleniyor")
+
+    # --- 4) S3 (Supertrend+RSI pullback) 5m + 15m
+    if s.s3_enabled:
+        for tf, syms in (("5m", s.s3_symbols_5m), ("15m", s.s3_symbols_15m)):
+            for sym in sorted({x.upper() for x in (syms or [])}):
+                t = ticks.get(sym)
+                tech = _S3_STATE.get(f"{sym}|{tf}") or _s3_tech_for(sym, tf)
+                if not t or not tech:
+                    _row(f"S3_{tf.upper()}", sym, f"Veri yok — {tf} mum serisi (≥215 bar) bekleniyor")
+                    continue
+                counts = dict(_S3_DAY_STATE.get(f"{sym}|{tf}", {}).get("counts", {}))
+                act = s3_pullback_entry(
+                    st_dir=int(tech.get("st_dir", 0)),
+                    close=float(tech.get("close", 0.0)),
+                    ema200=float(tech.get("ema200", 0.0)), use_ema200=True,
+                    adx=float(tech.get("adx", 0.0)), adx_min=float(s.s3_adx_min),
+                    rsi_now=tech.get("rsi_now"), rsi_prev=tech.get("rsi_prev"),
+                    rsi_window=list(tech.get("rsi_window") or []),
+                    rsi_lo=float(s.s3_rsi_lo),
+                    atr_price=float(tech.get("atr", 0.0)),
+                    pip_size=next((i["pip_size"] for i in FOREX_SYMBOLS if i["symbol"] == sym), 0.0001),
+                    day_counts=counts, max_per_day=int(s.s3_max_per_day),
+                )
+                st_txt = "▲" if int(tech.get("st_dir", 0)) > 0 else ("▼" if int(tech.get("st_dir", 0)) < 0 else "—")
+                if act:
+                    _row(f"S3_{tf.upper()}", sym, f"{act} pullback adayı (ST {st_txt}, RSI {float(tech.get('rsi_now', 0)):.0f})", act)
+                else:
+                    _row(f"S3_{tf.upper()}", sym,
+                         f"ST {st_txt}, RSI {float(tech.get('rsi_now', 0) or 0):.0f}, ADX {float(tech.get('adx', 0)):.0f} — pullback dönüşü bekleniyor")
+
+    # --- 5) London Breakout
+    if s.lb_enabled:
+        for sym in sorted({x.upper() for x in (s.lb_symbols or [])}):
+            t = ticks.get(sym)
+            if not t:
+                _row(LONDON_BREAKOUT_STRATEGY, sym, "Veri yok")
+                continue
+            st_copy = dict(_LB_STATE.get(sym, {}))
+            if st_copy.get("day") != day:
+                st_copy = {"day": day, "box_hi": 0.0, "box_lo": 0.0, "counts": {}}
+            box_hi, box_lo = float(st_copy.get("box_hi") or 0.0), float(st_copy.get("box_lo") or 0.0)
+            counts = dict(st_copy.get("counts", {}))
+            act = london_breakout_entry(
+                close=float(t.get("ask", 0.0)), box_hi=box_hi, box_lo=box_lo,
+                hour_utc=hour, box_end_utc=int(s.lb_box_end_utc), entry_end_utc=int(s.lb_entry_end_utc),
+                day_counts=counts, max_per_day=int(s.lb_max_per_day),
+            )
+            pip = next((i["pip_size"] for i in FOREX_SYMBOLS if i["symbol"] == sym), 0.0001)
+            box_p = ((box_hi - box_lo) / pip) if (box_hi > 0 and pip > 0) else 0.0
+            if act:
+                _row(LONDON_BREAKOUT_STRATEGY, sym,
+                     f"{act} kırılım adayı — kutu {box_lo:.5g}–{box_hi:.5g} ({box_p:.1f}p)", act)
+            elif hour < int(s.lb_box_end_utc):
+                _row(LONDON_BREAKOUT_STRATEGY, sym, f"Asya kutusu oluşuyor (00:00–{int(s.lb_box_end_utc):02d}:00 UTC, kutu: {box_p:.1f}p)")
+            elif hour < int(s.lb_entry_end_utc):
+                if box_hi <= 0:
+                    _row(LONDON_BREAKOUT_STRATEGY, sym, f"Tetik penceresi açık ama kutu henüz ölçülemedi (00:00–{int(s.lb_box_end_utc):02d}:00 UTC barları bekleniyor)")
+                else:
+                    _row(LONDON_BREAKOUT_STRATEGY, sym, f"Kutu {box_lo:.5g}–{box_hi:.5g} ({box_p:.1f}p) kırılımı taranıyor")
+            else:
+                _row(LONDON_BREAKOUT_STRATEGY, sym, f"Günün tetik penceresi kapandı ({int(s.lb_entry_end_utc):02d}:00 UTC)")
+
+    return rows
+
+
+@router.post("/auto-paper/scan-now")
+async def trigger_forex_manual_scan():
+    """Manuel strateji taraması: tüm stratejileri sırayla tek turda değerlendirir.
+
+    Salt-okunur raporlayıcı — motor döngüsünü (`_forex_auto_paper_loop`) ve hiçbir
+    sayaç/state'i değiştirmez; giriş kararları yine motorun kendi turunda
+    verilir. Panelin "Şimdi Tara" butonu radar/S3/LB/Donchian/EAP'nin o anki
+    durumunu insan-okur satırlarla görür.
+    """
+    now_ts = time.time()
+    await _refresh_live_rates_if_needed()
+    ticks = await _generate_realistic_ticks()
+    radar_res = await get_forex_radar()
+    rows = _scan_now_strategy_rows(ticks, radar_res)
+    candidates_count = sum(1 for r in rows if r.get("action"))
+    sessions = _get_market_sessions()
+    active_names = [x["name"] for x in sessions if x.get("active")]
+    blocked = is_entry_hour_blocked(datetime.datetime.now(datetime.timezone.utc).hour,
+                                    _AUTO_SETTINGS.blocked_hours_utc)
+    _AUTO_STATE["last_scan_time"] = now_ts
+    _log_auto_decision(
+        "MANUAL",
+        (f"🖐️ Kullanıcı manuel tarama başlattı: {len(rows)} strateji-kolu tarandı, "
+         f"{candidates_count} canlı aday (seanslar: {', '.join(active_names) if active_names else 'kapalı'})."),
+    )
+    return {
+        "status": "ok",
+        "scanned_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3"),
+        "total_rows": len(rows),
+        "candidates_count": candidates_count,
+        "sessions_active": active_names,
+        "entry_hour_blocked": blocked,
+        "motor_enabled": bool(_AUTO_STATE.get("enabled")),
+        "rows": rows,
+    }
+
+
+# ============================================================================
+# SEMBOL EV KALKANI YÖNETİMİ & MANUEL İPTAL/MUAFIYET UÇ NOKTALARI
+# ============================================================================
 class EVShieldOverrideRequest(BaseModel):
     symbol: Optional[str] = None
     action: Optional[str] = "bypass_today"  # "bypass_today", "bypass_24h", "reset_history", "restore"

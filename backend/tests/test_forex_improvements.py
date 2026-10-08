@@ -317,7 +317,7 @@ class TestDXYRegimeFilter(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.major_session_filter)
         self.assertEqual(cfg.major_session_start_utc, 7)
         self.assertEqual(cfg.major_session_end_utc, 20)
-        self.assertEqual(cfg.major_min_atr_pips, 4.0)
+        self.assertEqual(cfg.major_min_atr_pips, 2.5)
         # 2026-10-06 B3 kazananı: kripto özel stop + BTC özel skor (süpürme: 76 en iyi nokta —
         # işlem düşüşü yalnız %11.5, BTC −$30→+$78, net +$2.018; 78'de hem az işlem hem az kâr)
         self.assertEqual(cfg.crypto_sl_atr_mult, 1.5)
@@ -683,6 +683,72 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AUDNZD", cfg.allowed_symbols)
         self.assertIn("GBPCHF", cfg.allowed_symbols)
         self.assertNotIn("DXY", cfg.allowed_symbols)
+
+
+class TestManualScanNow(unittest.TestCase):
+    """Manuel 'Şimdi Tara' satır üreticisi — salt-okunur tarama disiplini.
+
+    Regresyon: `_scan_now_strategy_rows` motor sayaçlarını (day_counts,
+    `_DONCHIAN_STATE`/`_LB_STATE`) güncellememeli; aksi halde manuel tarama
+    gerçek girişin gün-limitini yakar ve motor o gün işlem açamaz.
+    """
+
+    def test_rows_readonly_and_complete(self):
+        cfg = forex.ForexAutoPaperSettings()
+        radar = {"candidates": [{"symbol": "EURUSD", "display": "EUR/USD", "action": "BUY",
+                                 "score": 88.0, "tier": "ACTIVE"}], "scan_note": ""}
+        ticks = {sym: {"display": sym, "bid": 1.1, "ask": 1.1001} for sym in cfg.lb_symbols}
+        for sym in cfg.mode_symbols + cfg.ema_adx_symbols + cfg.s3_symbols_5m + cfg.s3_symbols_15m:
+            ticks.setdefault(sym, {"display": sym, "bid": 1.1, "ask": 1.1001})
+
+        donch_before = {k: dict(v) for k, v in forex._DONCHIAN_STATE.items()}
+        lb_before = {k: dict(v) for k, v in forex._LB_STATE.items()}
+        s3day_before = {k: dict(v) for k, v in forex._S3_DAY_STATE.items()}
+        ema_before = {k: dict(v) for k, v in forex._EMA_ADX_STATE.items()}
+
+        rows = forex._scan_now_strategy_rows(ticks, radar)
+
+        # Tüm strateji kolları temsil edilmeli
+        strategies = {r["strategy"] for r in rows}
+        self.assertIn("RADAR", strategies)
+        self.assertIn("DONCHIAN_ADX", strategies)
+        self.assertIn("S3_5M", strategies)
+        self.assertIn("S3_15M", strategies)
+        self.assertIn("LONDON_BREAKOUT", strategies)
+        # EAP kolu da var (ema_adx_enabled=True)
+        self.assertIn(forex.EMA_ADX_PULLBACK_STRATEGY, strategies)
+        # Her satır insan-okur alanlar taşır
+        for r in rows:
+            self.assertTrue(r["status"], f"boş status: {r}")
+            self.assertIn("strategy_label", r)
+            self.assertIn("panel_kapsaminda", r)
+
+        # Salt-okunur: motor state dict'lerine yazılmamış olmalı
+        self.assertEqual({k: dict(v) for k, v in forex._DONCHIAN_STATE.items()}, donch_before)
+        self.assertEqual({k: dict(v) for k, v in forex._LB_STATE.items()}, lb_before)
+        self.assertEqual({k: dict(v) for k, v in forex._S3_DAY_STATE.items()}, s3day_before)
+        self.assertEqual({k: dict(v) for k, v in forex._EMA_ADX_STATE.items()}, ema_before)
+
+    def test_lb_state_not_advanced_by_scan(self):
+        """LB örneği: kutu-dışı saatta tarama `counts`'a dokunmaz (giriş olsa bile
+        manuel tur motorun gün-limitini harcamaz)."""
+        cfg = forex.ForexAutoPaperSettings()
+        radar = {"candidates": [], "scan_note": "yok"}
+        sym = "GBPUSD"  # default lb_symbols üyesi
+        ticks = {sym: {"display": "GBP/USD", "bid": 1.09, "ask": 1.0901}}
+        # Kutuyu kırılıma zorla: hour < entry_end varsayımıyla box üstüne fiyat
+        forex._LB_STATE[sym] = {
+            "day": datetime.datetime.now(datetime.timezone.utc).toordinal(),
+            "box_hi": 1.08, "box_lo": 1.07, "counts": {},
+        }
+        try:
+            rows = forex._scan_now_strategy_rows(ticks, radar)
+            lb_rows = [r for r in rows if r["strategy"] == "LONDON_BREAKOUT" and r["symbol"] == sym]
+            self.assertTrue(lb_rows)
+            # Sayaçlar taramayla artmamalı
+            self.assertEqual(forex._LB_STATE[sym]["counts"], {})
+        finally:
+            forex._LB_STATE.pop(sym, None)
 
 
 class TestRiskNormalization(unittest.IsolatedAsyncioTestCase):
