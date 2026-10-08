@@ -354,14 +354,15 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["command"]["lots"], 0.50)
 
     def test_target_two_symbols_configuration(self):
-        """Verify the configured instruments are set in allowed_symbols (2026-10-08: + US30 S3 15m)."""
-        expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30"]
+        """Verify the configured instruments are set in allowed_symbols (2026-10-08: + Radar-evreni replay pozitifleri)."""
+        expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
+                    "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 5)
+        self.assertEqual(len(cfg.allowed_symbols), 9)
         for s in expected:
             self.assertIn(s, cfg.allowed_symbols)
-        # Sadece bu ikisi — diğer semboller izin listesinden çıkarıldı
-        for s in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
+        # Replay kanıtı olmayanlar izin listesinin dışında kalır
+        for s in ("EURUSD", "USDJPY", "USDCHF", "USDCAD", "NZDUSD",
                   "ETHUSD", "NAS100", "USTEC", "USOIL"):
             self.assertNotIn(s, cfg.allowed_symbols)
         # Check MT5 Bridge check_syms list contains these 4

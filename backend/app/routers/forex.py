@@ -411,6 +411,9 @@ YAHOO_SYMBOL_MAP = {
     # JPY krosçarları (donchian_adx giriş modu sembolleri — 2026-10-07)
     "GBPJPY": "GBPJPY=X",
     "EURJPY": "EURJPY=X",
+    # 2026-10-08 Radar-evreni replay pozitifleri (S3 akışı + köprü mum izleme)
+    "NZDJPY": "NZDJPY=X",
+    "AUDNZD": "AUDNZD=X",
     "NAS100": "^NDX",
     "US30": "^DJI",
     "BTCUSD": "BTC-USD",
@@ -3065,8 +3068,9 @@ class ForexAutoPaperSettings(BaseModel):
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30"],
-        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam: XAU+BTC klasik, GBPJPY/EURJPY donchian modu; US30 S3 15m — 2026-10-08 L30 +$133.54 PF 4.82; 28/28 FX çifti klasik sinyalle 30g replay'de negatif — majör/kros genişlemesi panelden yapılmaz, replay kanıtı ister)",
+        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
+                                 "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"],
+        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam: XAU+BTC klasik, GBPJPY/EURJPY donchian modu; US30 S3 15m — 2026-10-08 L30 +$133.54 PF 4.82; GBPUSD/AUDUSD/NZDJPY/AUDNZD 2026-10-08 Radar-evreni L30 replay pozitifleri — S3 akışıyla birlikte canlıda; diğer 24 FX çifti klasik sinyalde negatif, genişleme replay kanıtı ister)",
     )
     mode_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
@@ -3087,8 +3091,8 @@ class ForexAutoPaperSettings(BaseModel):
     ema_adx_tp_atr: float = Field(2.0, ge=0.0, le=6.0, description="EMA+ADX: TP (× ATR(14)); 0 = sabit TP yok (trailing'e bırakılır)")
     ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
     s3_enabled: bool = Field(True, description="S3 (Supertrend+RSI pullback) akışı: ST(10,3) yön + EMA200 tarafı + ADX≥25 + RSI pullback dönüşü (L30 replay: XAU/BTC üç pencere pozitif)")
-    s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09)")
-    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82; USTEC 0 işlem — pullback deseni oluşmuyor)")
+    s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD", "AUDNZD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09; AUDNZD 2026-10-08 7-sembol L30 +$27.36)")
+    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30", "GBPUSD"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82; 2026-10-08 7-sembol evren: stflip +$279.54 PF 3.13 / tp2 +$278.97 PF 3.12 — GBPUSD +$29.65 eklendi; USTEC 0 işlem — pullback deseni oluşmuyor)")
     s3_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="S3: ADX(14) trend gücü eşiği (spec: 25)")
     s3_rsi_lo: float = Field(40.0, ge=0.0, le=50.0, description="S3: pullback bandı alt sınırı (son 6 bar TAMAMEN bu bandın altına inerse trend bozulmuş sayılır)")
     s3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="S3: SL (× ATR(14)) — replay spec")
@@ -5053,7 +5057,8 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
         # açmak, 30g replay'de 28/28 negatif çıkan çiftleri motor başlangıcında sessizce
         # devreye alırdı. Kapsam genişletmesi bilinçli panel seçimi gerektirir.
         if not _AUTO_SETTINGS.allowed_symbols:
-            _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"]
+            _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY",
+                                              "US30", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]
         # İlk start verildiğinde soğuma kalkanını dikkate almaması için sıfırla
         _LAST_GOLD_EXIT_TIME = 0.0
         _LAST_BTC_EXIT_TIME = 0.0
@@ -5082,7 +5087,8 @@ def start_forex_auto_paper():
     _AUTO_SETTINGS.enabled = True
     _MT5_STATE["auto_trade"] = True
     if not _AUTO_SETTINGS.allowed_symbols:
-        _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"]
+        _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY",
+                                          "US30", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]
     _LAST_GOLD_EXIT_TIME = 0.0
     _LAST_BTC_EXIT_TIME = 0.0
     _LAST_SYMBOL_ENTRY_TIME.clear()

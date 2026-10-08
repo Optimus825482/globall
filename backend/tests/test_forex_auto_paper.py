@@ -887,8 +887,15 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("BTCUSD", cfg.s3_symbols_15m)
         # US30 (Dow): 2026-10-08 L30 replay +$133.54 PF 4.82 → 15m kola eklendi
         self.assertIn("US30", cfg.s3_symbols_15m)
+        # 2026-10-08 Radar-evreni (7 sembol) L30 replay: 15m stflip +$279.54 PF 3.13
+        self.assertIn("GBPUSD", cfg.s3_symbols_15m)
+        self.assertIn("AUDNZD", cfg.s3_symbols_5m)
         # US30 işlem kapısından geçebilmeli (kapsam kapısı allowed_symbols kesindir)
         self.assertIn("US30", cfg.allowed_symbols)
+        self.assertIn("GBPUSD", cfg.allowed_symbols)
+        self.assertIn("AUDUSD", cfg.allowed_symbols)
+        self.assertIn("NZDJPY", cfg.allowed_symbols)
+        self.assertIn("AUDNZD", cfg.allowed_symbols)
         self.assertEqual(cfg.s3_adx_min, 25.0)
         self.assertEqual(cfg.s3_rsi_lo, 40.0)
         self.assertEqual(cfg.s3_sl_atr, 1.5)
@@ -911,6 +918,8 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             self.assertIn(("XAUUSD", "5m"), pairs)
             self.assertIn(("XAUUSD", "15m"), pairs)
             self.assertIn(("BTCUSD", "15m"), pairs)
+            self.assertIn(("GBPUSD", "15m"), pairs)
+            self.assertIn(("AUDNZD", "5m"), pairs)
         finally:
             forex._FOREX_VIEWED.clear()
             forex._FOREX_VIEWED.update(saved_viewed)
@@ -1056,8 +1065,8 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("donchian_adx_entry", src)
         self.assertIn("entry_source", src)
         # Motor başlangıcı yalnız kalibre odak setini doldurmalı (geniş FX evrenini DEĞİL).
-        self.assertIn('_AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"]', src,
-                      "motor başlangıcı kalibre 4'lü seti doldurmalı")
+        self.assertIn('_AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY",\n                                              "US30", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]', src,
+                      "motor başlangıcı kalibre 9'lu seti doldurmalı")
         self.assertNotIn('"NAS100", "US30", "BTCUSD"', src,
                          "motor başlangıcı geniş FX evrenini otomatik yüklüyor")
 
