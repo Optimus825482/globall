@@ -218,6 +218,7 @@ from app.routers import macd_monitor as macd_monitor_routes
 from app.routers import bridge as bridge_routes
 from app.routers import forex as forex_routes
 from app.routers import snapback as snapback_routes
+from app.forex_news import economic_calendar_background_loop
 app.include_router(auto_paper_routes.router)
 app.include_router(macd_monitor_routes.router)
 app.include_router(bridge_routes.router)
@@ -1180,17 +1181,7 @@ async def startup_services():
     await asyncio.sleep(0.05)
     _start_background(forex_auto_paper_start_loop, "forex-auto-paper")
     await asyncio.sleep(0.05)
-    _start_background(economic_calendar_start_loop, "economic-calendar-sync")
-
-async def economic_calendar_start_loop():
-    """Investing.com & küresel ekonomik takvim 3 saatlik arka plan senkronizasyon döngüsü."""
-    try:
-        from app.forex_news import economic_calendar_background_loop
-        await economic_calendar_background_loop()
-    except asyncio.CancelledError:
-        pass
-    except Exception as exc:
-        logger.error("[EconomicCalendar] Arka plan servisi başlatılamadı: %s", exc)
+    _start_background(economic_calendar_background_loop, "economic-calendar-sync")
 
 async def forex_auto_paper_start_loop():
     """Forex Otonom Scalper motorunu arka planda başlat."""

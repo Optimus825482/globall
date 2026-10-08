@@ -476,10 +476,11 @@ def execute_market_order(cmd: dict) -> dict:
         if _p.ticket not in _seen:
             _seen.add(_p.ticket)
             active_now.append(_p)
-    same_dir_positions = [pos for pos in active_now if ("BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL") == direction]
+    # Aynı sembolde aynı yönde maksimum açık pozisyon kontrolü (Varsayılan: 1)
+    max_pos = int(cmd.get("max_positions_per_symbol") or CURRENT_SETTINGS.get("max_positions_per_symbol", 1))
     same_dir_count = len(same_dir_positions)
-    if same_dir_count >= 3:
-        err = f"{symbol} için {direction} yönünde zaten {same_dir_count} açık pozisyon var (Maksimum 3 kuralı)."
+    if same_dir_count >= max_pos:
+        err = f"{symbol} için {direction} yönünde zaten {same_dir_count} açık pozisyon var (Maksimum {max_pos} kuralı)."
         print(f"  🛑 {err}")
         return {"success": False, "error": err}
 
@@ -1059,13 +1060,19 @@ def sync_with_server(api_base: str):
         strategy_tag = str(in_deal.comment or "").strip() if in_deal else ""
 
         comment = str(d.comment or "")
+        comment_l = comment.lower()
+        d_reason_code = getattr(d, "reason", -1)
         reason = "IC Markets MT5"
-        if "[tp" in comment.lower():
+        if "[tp" in comment_l or "tp " in comment_l or d_reason_code == getattr(mt5, "DEAL_REASON_TP", 5):
             reason = "🎯 Kâr Al (TP)"
-        elif "[sl" in comment.lower():
+        elif "[sl" in comment_l or "sl " in comment_l or d_reason_code == getattr(mt5, "DEAL_REASON_SL", 4):
             reason = "🛑 Zarar Durdur (SL)"
-        elif "[be" in comment.lower():
+        elif "[be" in comment_l or "be " in comment_l:
             reason = "🛡️ Başabaş (BE)"
+        elif d_reason_code == getattr(mt5, "DEAL_REASON_SO", 6):
+            reason = "🛑 Stop Out (SO)"
+        elif d.profit < -0.01 and "scalper close" not in comment_l:
+            reason = f"🛑 Zarar ({comment if comment else 'SL/Piyasa'})"
         elif comment:
             reason = comment
 

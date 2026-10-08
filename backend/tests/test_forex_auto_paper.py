@@ -452,6 +452,58 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._AUTO_SETTINGS = old_settings
             forex._SYMBOL_LOSS_STREAK.clear()
             forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+            forex._SYMBOL_DIR_LOSS_STREAK.clear()
+            forex._SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.clear()
+
+    def test_directional_loss_streak_and_reason_tokens(self):
+        """Yön bazlı (BUY/SELL) seri zarar takibi ve broker token genişletmesi testi.
+
+        Kullanıcı şikayeti: BTCUSD ve XAUUSD arka arkaya SELL zararlarıyla kapandı
+        fakat bot SELL açmaya devam etti. Çözüm: 3 ardışık SELL kaybı doğrudan
+        SELL yönünü 5 dk soğumaya almalı ve max_positions_per_symbol varsayılanı 1 olmalı.
+        """
+        f_norm = forex.normalize_close_reason
+        # Genişletilmiş broker tokenleri
+        self.assertEqual(f_norm("sl 82675.03"), "SL_HIT")
+        self.assertEqual(f_norm("🛑 Zarar (IC Markets MT5)"), "SL_HIT")
+        self.assertEqual(f_norm("🛑 Stop Out (SO)"), "SL_HIT")
+        self.assertEqual(f_norm("[so 50.0]"), "SL_HIT")
+        self.assertEqual(f_norm("so hit"), "SL_HIT")
+
+        # Varsayılan max_positions_per_symbol = 1 (tek scalper pozisyonu)
+        self.assertEqual(forex.ForexAutoPaperSettings().max_positions_per_symbol, 1)
+
+        # Yön bazlı seri zarar takibi
+        forex._SYMBOL_LOSS_STREAK.clear()
+        forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+        forex._SYMBOL_DIR_LOSS_STREAK.clear()
+        forex._SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.clear()
+        old_settings = forex._AUTO_SETTINGS
+        try:
+            forex._AUTO_SETTINGS = forex.ForexAutoPaperSettings(
+                **{**old_settings.model_dump(), "loss_streak_limit": 3,
+                   "loss_streak_cooldown_sec": 300.0})
+
+            # 2 SELL kaybı
+            self.assertFalse(forex.feed_loss_streak_from_deal("BTCUSD", "sl 82675.03", -14.39, direction="SELL"))
+            self.assertFalse(forex.feed_loss_streak_from_deal("BTCUSD", "🛑 Zarar (IC Markets MT5)", -11.85, direction="SELL"))
+            self.assertEqual(forex._SYMBOL_DIR_LOSS_STREAK[("BTCUSD", "SELL")], 2)
+
+            # 3. SELL kaybı -> tetiklenmeli
+            tripped = forex.feed_loss_streak_from_deal("BTCUSD", "🛑 Zarar Durdur (SL)", -9.30, direction="SELL")
+            self.assertTrue(tripped)
+            self.assertEqual(forex._SYMBOL_DIR_LOSS_STREAK[("BTCUSD", "SELL")], 0)
+            now = __import__("time").time()
+            self.assertGreater(forex._SYMBOL_DIR_LOSS_COOLDOWN_UNTIL[("BTCUSD", "SELL")], now)
+
+            # BUY yönü etkilenmemeli (soğuma olmamalı)
+            self.assertLessEqual(forex._SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.get(("BTCUSD", "BUY"), 0.0), now)
+        finally:
+            forex._AUTO_SETTINGS = old_settings
+            forex._SYMBOL_LOSS_STREAK.clear()
+            forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+            forex._SYMBOL_DIR_LOSS_STREAK.clear()
+            forex._SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.clear()
 
     async def test_mt5_sync_feeds_loss_streak(self):
         """Uçtan uca: `/mt5/sync` köprü kapanışları seri-SL sayacını beslemeli.

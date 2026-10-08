@@ -636,9 +636,9 @@ def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -
 # Seri-SL sayacı kanonik token bekler; eşleme TEK yerde durur ki köprü metni
 # değişse de canlı kapanış beslemesi aynı kuralı uygulasın.
 _BROKER_REASON_TOKENS = (
-    ("SL_HIT", ("[sl", "sl_hit", "zarar durdur", "zarar kes", "stop loss")),
-    ("TP_HIT", ("[tp", "tp_hit", "kâr al", "kar al", "take profit")),
-    ("BE_HIT", ("[be", "be_hit", "başabaş", "basabas")),
+    ("SL_HIT", ("[sl", "sl ", "sl_", "sl]", "sl_hit", "zarar durdur", "zarar kes", "zarar", "stop loss", "stop out", "[so", "so ")),
+    ("TP_HIT", ("[tp", "tp ", "tp_", "tp]", "tp_hit", "kâr al", "kar al", "take profit")),
+    ("BE_HIT", ("[be", "be ", "be_", "be]", "be_hit", "başabaş", "basabas")),
     ("TRAILING_HIT", ("trailing", "süren")),
 )
 
@@ -661,15 +661,13 @@ def normalize_close_reason(reason: Any) -> str:
     return ""
 
 
-def feed_loss_streak_from_deal(symbol: Any, reason: Any, pnl_usd: Any) -> bool:
+def feed_loss_streak_from_deal(symbol: Any, reason: Any, pnl_usd: Any, direction: Optional[str] = None) -> bool:
     """Köprüden gelen kapanmış işlemi seri-SL sayacına besler (CANLI MT5 yolu).
 
     Canlı modda pozisyonlar `_MT5_STATE`'te tutulur ve kapanışları panele köprü
     `deals` akışıyla düşer — `_close_position_internal` bu yollardan GEÇMEZ.
-    Sayacı yalnız oraya bağlamak, sigortayı canlıda fiilen ölü bırakıyordu
-    (2026-10-08: BTCUSD arka arkaya 5 zararlı kapanışa rağmen yeni giriş durmadı).
-    Bu yüzden aynı saf kural (`loss_streak_on_close`) köprü beslemesinden de
-    sürülür; iki yol TEK sayacı paylaşır.
+    Hem sembol geneli hem de işlem yönü (BUY / SELL) bazında ardışık zararları izler.
+    3 ardışık zararda sembol ve ilgili yön 5 dakika soğumaya alınır.
 
     Döner: True → soğuma penceresi tetiklendi (yeni girişler kısa süre durur).
     """
@@ -678,23 +676,52 @@ def feed_loss_streak_from_deal(symbol: Any, reason: Any, pnl_usd: Any) -> bool:
         return False
     sym = _MT5_TO_APP_SYMBOLS.get(sym, sym)
     limit = int(_AUTO_SETTINGS.loss_streak_limit)
+    norm_reason = normalize_close_reason(reason)
+    pnl = float(pnl_usd or 0.0)
+
+    # 1. Sembol Geneli Seri
     streak, tripped = loss_streak_on_close(
         _SYMBOL_LOSS_STREAK.get(sym, 0),
-        normalize_close_reason(reason),
-        float(pnl_usd or 0.0),
+        norm_reason,
+        pnl,
         limit,
     )
     _SYMBOL_LOSS_STREAK[sym] = streak
+    now_t = time.time()
+    cd_duration = float(_AUTO_SETTINGS.loss_streak_cooldown_sec)
+
     if tripped:
-        _SYMBOL_LOSS_COOLDOWN_UNTIL[sym] = time.time() + float(_AUTO_SETTINGS.loss_streak_cooldown_sec)
+        _SYMBOL_LOSS_COOLDOWN_UNTIL[sym] = now_t + cd_duration
         _log_auto_decision(
             "GATE",
             f"🌡️ [{sym}] {limit} ardışık SL kaybı (canlı MT5 kapanışı) — sembol "
-            f"{_AUTO_SETTINGS.loss_streak_cooldown_sec:.0f} sn serbest soğumaya alındı "
+            f"{cd_duration:.0f} sn serbest soğumaya alındı "
             f"(açık pozisyon yönetimi sürer, süre bitince normal değerlendirme).",
             symbol=sym,
         )
-    return tripped
+
+    # 2. Yön Bazlı Seri (BUY / SELL)
+    dir_up = str(direction or "").upper().strip()
+    dir_tripped = False
+    if dir_up in ("BUY", "SELL"):
+        dir_key = (sym, dir_up)
+        d_streak, dir_tripped = loss_streak_on_close(
+            _SYMBOL_DIR_LOSS_STREAK.get(dir_key, 0),
+            norm_reason,
+            pnl,
+            limit,
+        )
+        _SYMBOL_DIR_LOSS_STREAK[dir_key] = d_streak
+        if dir_tripped:
+            _SYMBOL_DIR_LOSS_COOLDOWN_UNTIL[dir_key] = now_t + cd_duration
+            _log_auto_decision(
+                "GATE",
+                f"🌡️ [{sym} {dir_up}] {limit} ardışık {dir_up} kaybı — bu yönde "
+                f"{cd_duration:.0f} sn yeni işlem açılmayacak.",
+                symbol=sym,
+            )
+
+    return tripped or dir_tripped
 
 
 def donchian_adx_entry(prev_close: Optional[float], prev_mid: Optional[float], close: float,
@@ -2675,7 +2702,7 @@ class ForexAutoPaperSettings(BaseModel):
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(5.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye) — 2026-10-08 kullanıcı kararı: 10→5 (replay XAU lot tavanı ~0,13% idi; %5 = ~1,5 lot tipik XAU, işlem riski ~$500 @10k)")
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
-    max_positions_per_symbol: int = Field(3, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Piramitleme)")
+    max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli scalper pozisyonu)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
     sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
@@ -2781,6 +2808,8 @@ _MT5_STATE: Dict[str, Any] = {
 # atama yok, bu yüzden `global` bildirimi gerekmez; bkz. globals-shadow regresyon testi)
 _SYMBOL_LOSS_STREAK: Dict[str, int] = {}
 _SYMBOL_LOSS_COOLDOWN_UNTIL: Dict[str, float] = {}
+_SYMBOL_DIR_LOSS_STREAK: Dict[Tuple[str, str], int] = {}
+_SYMBOL_DIR_LOSS_COOLDOWN_UNTIL: Dict[Tuple[str, str], float] = {}
 # Donchian+ADX mod durumu (yalnız dict mutasyonu — global bildirimi gerekmez)
 _DONCHIAN_STATE: Dict[str, Dict[str, Any]] = {}
 # EMA+ADX geri-çekilme (M5) mod durumu: gün + yön başına giriş sayacı
@@ -2946,23 +2975,10 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         if len(_AUTO_STATE["closed_trades"]) > 1000:
             _AUTO_STATE["closed_trades"] = _AUTO_STATE["closed_trades"][:1000]
 
-        # Seri-SL sigortası: sembolün ardışık tam-SL kayıplarını izle (kullanıcı kuralı:
-        # N ardışık SL zararı → sembol kısa süre yeni giriş almaz, normal cooldown'dan bağımsız)
+        # Seri-SL sigortası: sembol ve yön ardışık kayıplarını izle
         streak_sym = target.get("symbol", "").upper()
-        new_streak, streak_tripped = loss_streak_on_close(
-            _SYMBOL_LOSS_STREAK.get(streak_sym, 0),
-            reason,
-            pnl_usd,
-            _AUTO_SETTINGS.loss_streak_limit,
-        )
-        _SYMBOL_LOSS_STREAK[streak_sym] = new_streak
-        if streak_tripped:
-            _SYMBOL_LOSS_COOLDOWN_UNTIL[streak_sym] = time.time() + _AUTO_SETTINGS.loss_streak_cooldown_sec
-            _log_auto_decision(
-                "GATE",
-                f"🌡️ [{target.get('display', streak_sym)}] {_AUTO_SETTINGS.loss_streak_limit} ardışık SL kaybı tamamlandı — sembol {_AUTO_SETTINGS.loss_streak_cooldown_sec:.0f} sn serbest soğumaya alındı (açık pozisyon yönetimi sürer, süre bitince normal değerlendirme).",
-                symbol=streak_sym,
-            )
+        streak_dir = target.get("direction", "").upper()
+        feed_loss_streak_from_deal(streak_sym, reason, pnl_usd, streak_dir)
 
         _log_auto_decision(
             "EXIT",
@@ -3622,24 +3638,28 @@ async def _forex_auto_paper_loop():
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
                     continue
 
-                # Seri-SL Soğuması: sembol ardışık tam-SL kayıplarından sonra kısa süre
-                # YENİ giriş almaz (flip dahil); açık pozisyon yönetimi aynen sürer.
-                if _AUTO_SETTINGS.loss_streak_limit > 0:
-                    ser_cd_until = _SYMBOL_LOSS_COOLDOWN_UNTIL.get(sym, 0.0)
-                    if now_ts < ser_cd_until:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_seri", 0.0) > 30.0:
-                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_seri"] = now_ts
-                            _log_auto_decision(
-                                "GATE",
-                                f"🌡️ [{cand['display']}] Seri-SL Soğuması: {_AUTO_SETTINGS.loss_streak_limit} ardışık SL kaybı — {int(ser_cd_until - now_ts)} sn yeni giriş yok (süre bitince sembol normal değerlendirilir).",
-                                symbol=sym,
-                            )
-                        continue
-
-                # 1. Zaten açık pozisyon veya bekleyen MT5 emri var mı? (Anti-Duplicate & Position Reversal/Flip)
                 new_action = cand.get("action", "")  # "BUY" or "SELL"
                 if new_action not in ("BUY", "SELL"):
                     continue
+
+                # Seri-SL ve Yön Bazlı Seri Zarar Soğuması: sembol veya yön ardışık kayıplardan sonra
+                # YENİ giriş almaz (flip dahil); açık pozisyon yönetimi aynen sürer.
+                if _AUTO_SETTINGS.loss_streak_limit > 0:
+                    sym_cd_until = _SYMBOL_LOSS_COOLDOWN_UNTIL.get(sym, 0.0)
+                    dir_cd_until = _SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.get((sym, new_action), 0.0)
+                    effective_cd = max(sym_cd_until, dir_cd_until)
+                    if now_ts < effective_cd:
+                        rem_s = int(effective_cd - now_ts)
+                        is_dir_only = (effective_cd == dir_cd_until and now_ts >= sym_cd_until)
+                        cd_label = f"{new_action} Yönlü Seri Zarar" if is_dir_only else "Seri-SL"
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_{new_action}_seri", 0.0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_{new_action}_seri"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"🌡️ [{cand['display']}] {cd_label} Soğuması: {_AUTO_SETTINGS.loss_streak_limit} ardışık kayıp — {rem_s} sn {new_action} yönünde yeni giriş yok (süre bitince normal değerlendirilir).",
+                                symbol=sym,
+                            )
+                        continue
 
                 if sym in all_active_syms:
                     existing_dirs = set()
@@ -4074,6 +4094,7 @@ async def _forex_auto_paper_loop():
                         "lots": mt5_lots,
                         "sl_pips": sl_pips,
                         "tp_pips": tp_pips,
+                        "max_positions_per_symbol": _AUTO_SETTINGS.max_positions_per_symbol,
                         # Pozisyon bazlı çıkış planı: köprü BE/Trail'i motorun gönderdiği değerlerle
                         # yönetsin (köprünün kendi spec kopyası ikinci kez hesap yapmaz)
                         "be_pips": spec_exits["be_pips"],
@@ -5167,15 +5188,13 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
         #   - Kronolojik sırayla beslenir: kısmi bacaklar aynı senkronda toplu
         #     gelir; ters sıra SL'i kazanca çevirip seriyi yanlış sıfırlardı.
         if not is_first_sync:
-            recent_closed = [d for d in newly_closed_deals
-                             if (_deal_ts(d) or float(d.get("time", 0) or 0.0) or 0.0) > 0
-                             and (now_ts - (_deal_ts(d) or float(d.get("time", 0) or 0.0))) <= 900.0]
-            for d in sorted(recent_closed,
+            for d in sorted(newly_closed_deals,
                             key=lambda x: (_deal_ts(x) or float(x.get("time", 0) or 0.0) or 0.0)):
                 feed_loss_streak_from_deal(
                     d.get("symbol"),
                     d.get("exit_reason") or d.get("exit_reason_title"),
                     _deal_net_pnl_usd(d),
+                    d.get("direction"),
                 )
 
     # Bekleyen emirleri al ve boşalt
@@ -5196,6 +5215,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "sl_pips": _AUTO_SETTINGS.sl_pips,
             "tp_pips": _AUTO_SETTINGS.tp_pips,
             "max_open_positions": _AUTO_SETTINGS.max_open_positions,
+            "max_positions_per_symbol": _AUTO_SETTINGS.max_positions_per_symbol,
             "max_forex_lot": _AUTO_SETTINGS.max_forex_lot,
             "max_gold_lot": _AUTO_SETTINGS.max_gold_lot,
             "gold_cooldown_sec": _AUTO_SETTINGS.gold_cooldown_sec,

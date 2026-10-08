@@ -132,6 +132,10 @@ TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
 # hesaplanır (= motorun cmd ile köprüye gönderdiği ATR'li değerler; canlıda artık cmd ile taşınıyor).
 # Kapalıyken replay ATR'siz spec kullanır (= köprünün ESKİ davranışı) → A/B bu ayrışmayı ölçer.
 TUN_SPEC_ATR = False
+# --no-be: BE kilidi tamamen kapalı (2026-10-08 BE-istismarı testi). BE kilidi küçük kârı
+# kilitleyip chop'ta BE vuruşu üretiyordu (H48 S3: 63 işlemin 34'ü BE çıkışı). BE'siz modda
+# pozisyon gerçek SL/TP'ye (veya mod çıkışına) koşar; trailing BE kilidine bağlı olmadan çalışır.
+TUN_NO_BE = False
 
 # 2026-10-06 varyant mekanikleri (30 günlük replay A/B ile test ediliyor)
 FX_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
@@ -1063,8 +1067,10 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
             seg_bw = [x for x in bw[max(0, ci - 100):ci] if x > 0]
             if len(seg_bw) < 50:
                 return None
-            # BBW mevcut genişlik son 100 barın bu persentilinin altındaysa squeeze → giriş yok
+            # Sıkışma: state makinesini de sıfırla (squeeze'da kırılım sayılmaz — spec)
             if 100.0 * sum(1 for x in seg_bw if x <= cur_bw) / len(seg_bw) < TUN_BBW_SQZ_PCT:
+                BBW_STATE[(sym, 1)] = 0
+                BBW_STATE[(sym, -1)] = 0
                 return None
         # BB(20, 2.0) seviyeleri — kayan pencere (yalnız son bar; cache'li seriden değil)
         win = closes_s[-period:]
@@ -1073,63 +1079,60 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
         up = m + 2.0 * sd
         lo = m - 2.0 * sd
         c = bars[ci - 1][4]
-        # Walk tespiti (yön-bağımsız iki yön ayrı değerlendirilir)
+        # Re-entry durum makinesi: walk şartından BAĞIMSIZ ilerler (band-dışı kapanış walk
+        # penceresi bozulsa bile kaydedilir — yalnız SON onay barda walk hâlâ istenir).
         last_n = bars[max(0, ci - TUN_BBW_WALK_N):ci]
         up_touches = sum(1 for b in last_n if b[2] >= up)
         dn_touches = sum(1 for b in last_n if b[3] <= lo)
-        closes_above = all(b[4] > m for b in last_n)
-        closes_below = all(b[4] < m for b in last_n)
-        cand_dirs = []
-        if up_touches >= TUN_BBW_WALK_TOUCH and closes_above:
-            cand_dirs.append(1)
-        if dn_touches >= TUN_BBW_WALK_TOUCH and closes_below:
-            cand_dirs.append(-1)
-        if not cand_dirs:
-            BBW_STATE[(sym, 1)] = 0
-            BBW_STATE[(sym, -1)] = 0
+        walk_up = up_touches >= TUN_BBW_WALK_TOUCH and all(b[4] > m for b in last_n)
+        walk_dn = dn_touches >= TUN_BBW_WALK_TOUCH and all(b[4] < m for b in last_n)
+        chosen = None
+        for d in (1, -1):
+            state = BBW_STATE.get((sym, d), 0)
+            if d == 1:
+                out_close = c > up
+                back_in = c <= up
+                re_touch = c > m
+                walk_now = walk_up
+            else:
+                out_close = c < lo
+                back_in = c >= lo
+                re_touch = c < m
+                walk_now = walk_dn
+            if state == 0:
+                if out_close:
+                    BBW_STATE[(sym, d)] = 1   # band dışına kapanış kaydedildi
+            elif state == 1:
+                if out_close:
+                    pass                       # hâlâ dışarıda — bekle (state 1 kalır)
+                elif back_in:
+                    BBW_STATE[(sym, d)] = 2    # band içine geri giriş (spike eleme)
+            elif state == 2:
+                if out_close:
+                    BBW_STATE[(sym, d)] = 1    # tekrar dışarı çıktı — zincir başa dönmez, state 1
+                elif re_touch and walk_now:
+                    chosen = d                 # tekrar bant tarafında kapanış + walk aktif → giriş
+                    BBW_STATE[(sym, d)] = 0
+            if chosen is not None:
+                break
+        if chosen is None:
             return None
+        action = "BUY" if chosen == 1 else "SELL"
         if TUN_BBW_ADX_MIN > 0:
             adx = float(tech.get("adx") or 0.0)
             if adx < TUN_BBW_ADX_MIN:
                 return None
         ema200_s = _sr_ema200_series(closes_s, sym)
         e200 = ema200_s[ci - 1]
-        atr_s = _sr_atr14_series(bars, sym)
-        ap = atr_s[ci - 1]
-        if ap <= 0 or pip_size <= 0:
-            return None
-        chosen = None
-        for d in cand_dirs:
-            state = BBW_STATE.get((sym, d), 0)
-            if d == 1:
-                out_close = c > up
-                back_in = c <= up
-                re_touch = c > m
-            else:
-                out_close = c < lo
-                back_in = c >= lo
-                re_touch = c < m
-            if state == 0 and out_close:
-                BBW_STATE[(sym, d)] = 1    # band dışına kapanış kaydedildi
-            elif state == 1 and back_in:
-                BBW_STATE[(sym, d)] = 2    # band içine geri giriş (spike eleme)
-            elif state == 2 and re_touch:
-                # tekrar bant tarafında (orta-bantın trend yönünde) kapanış → giriş
-                if d == 1 and closes_above:
-                    chosen = 1
-                elif d == -1 and closes_below:
-                    chosen = -1
-                BBW_STATE[(sym, d)] = 0    # tetiklendi; yeni döngü için sıfırla
-            if chosen is not None:
-                break
-        if chosen is None:
-            return None
-        action = "BUY" if chosen == 1 else "SELL"
         if TUN_BBW_EMA200 and e200 > 0:
             if action == "BUY" and c <= e200:
                 return None
             if action == "SELL" and c >= e200:
                 return None
+        atr_s = _sr_atr14_series(bars, sym)
+        ap = atr_s[ci - 1]
+        if ap <= 0 or pip_size <= 0:
+            return None
         day = int(ts // 86400)
         key = (sym, day, action)
         if MODE_DAY_STATE.get(key, 0) >= 2:
@@ -1394,7 +1397,7 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
         pos.mfe_pips = pnl_extreme_pips
 
     # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi) — sepet üyesinde atlanır
-    if not pos.be_locked and not dca_mode:
+    if not TUN_NO_BE and not pos.be_locked and not dca_mode:
         is_dollar_be = pnl_extreme_pips >= (be_trigger_pips + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
         if (is_dollar_be or is_pip_be) and pnl_extreme_pips >= min_be_pips:
@@ -2889,6 +2892,7 @@ def main():
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
+    parser.add_argument("--no-be", action="store_true", help="BE kilidini tamamen kapat (BE-istismarı testi; trailing bağımsız çalışır)")
     parser.add_argument("--fx-min-score", type=float, default=0.0, help="FX majörleri için ayrı skor eşiği (0 = min_score ile aynı)")
     parser.add_argument("--gold-dxy-soft", action="store_true", help="(Eski) XAUUSD DXY vetosunu +skora indirmek için — canlıda artık XAUUSD tamamen muaf, etki etmez")
     parser.add_argument("--gold-dxy-bump", type=float, default=5.0, help="XAUUSD DXY yumuşatma ekstra skoru")
@@ -3088,6 +3092,8 @@ def main():
     TUN_ADX_MIN = args.adx_min
     TUN_ST_FILTER = args.st_filter
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
+    global TUN_NO_BE
+    TUN_NO_BE = args.no_be
     TUN_SPEC_ATR = args.spec_atr
     TUN_BE_USD_FX = args.be_usd_fx
     TUN_MAX_SPREAD_FX = args.max_spread
