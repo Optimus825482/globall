@@ -631,6 +631,72 @@ def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -
     return streak, False
 
 
+# Köprü kapanış nedenleri serbest metindir (scripts/mt5_bridge.py: MT5 anlaşma
+# yorumundan "[sl …]" / "[tp …]" / "[be …]" okunur, yoksa ham yorum taşınır).
+# Seri-SL sayacı kanonik token bekler; eşleme TEK yerde durur ki köprü metni
+# değişse de canlı kapanış beslemesi aynı kuralı uygulasın.
+_BROKER_REASON_TOKENS = (
+    ("SL_HIT", ("[sl", "sl_hit", "zarar durdur", "zarar kes", "stop loss")),
+    ("TP_HIT", ("[tp", "tp_hit", "kâr al", "kar al", "take profit")),
+    ("BE_HIT", ("[be", "be_hit", "başabaş", "basabas")),
+    ("TRAILING_HIT", ("trailing", "süren")),
+)
+
+
+def normalize_close_reason(reason: Any) -> str:
+    """Kapanış nedenini kanonik token'a çevirir (saf fonksiyon — test edilebilir).
+
+    Canlı MT5 modunda kapanışlar panel motorundan değil köprüden gelir; neden
+    alanı Türkçe başlık ("🛑 Zarar Durdur (SL)") ya da ham MT5 yorumudur
+    ("Scalper Close" / "Scalper Partial"). Seri-SL sigortası `SL_HIT` beklediği
+    için bu eşleme olmadan canlı kapanışlar sayaca hiç girmez.
+    Eşleşme yoksa "" döner → sayaç değişmez (manuel/kısmi kapanışlar sayılmaz).
+    """
+    text = str(reason or "").strip().lower()
+    if not text:
+        return ""
+    for token, needles in _BROKER_REASON_TOKENS:
+        if any(n in text for n in needles):
+            return token
+    return ""
+
+
+def feed_loss_streak_from_deal(symbol: Any, reason: Any, pnl_usd: Any) -> bool:
+    """Köprüden gelen kapanmış işlemi seri-SL sayacına besler (CANLI MT5 yolu).
+
+    Canlı modda pozisyonlar `_MT5_STATE`'te tutulur ve kapanışları panele köprü
+    `deals` akışıyla düşer — `_close_position_internal` bu yollardan GEÇMEZ.
+    Sayacı yalnız oraya bağlamak, sigortayı canlıda fiilen ölü bırakıyordu
+    (2026-10-08: BTCUSD arka arkaya 5 zararlı kapanışa rağmen yeni giriş durmadı).
+    Bu yüzden aynı saf kural (`loss_streak_on_close`) köprü beslemesinden de
+    sürülür; iki yol TEK sayacı paylaşır.
+
+    Döner: True → soğuma penceresi tetiklendi (yeni girişler kısa süre durur).
+    """
+    sym = str(symbol or "").upper().strip()
+    if not sym:
+        return False
+    sym = _MT5_TO_APP_SYMBOLS.get(sym, sym)
+    limit = int(_AUTO_SETTINGS.loss_streak_limit)
+    streak, tripped = loss_streak_on_close(
+        _SYMBOL_LOSS_STREAK.get(sym, 0),
+        normalize_close_reason(reason),
+        float(pnl_usd or 0.0),
+        limit,
+    )
+    _SYMBOL_LOSS_STREAK[sym] = streak
+    if tripped:
+        _SYMBOL_LOSS_COOLDOWN_UNTIL[sym] = time.time() + float(_AUTO_SETTINGS.loss_streak_cooldown_sec)
+        _log_auto_decision(
+            "GATE",
+            f"🌡️ [{sym}] {limit} ardışık SL kaybı (canlı MT5 kapanışı) — sembol "
+            f"{_AUTO_SETTINGS.loss_streak_cooldown_sec:.0f} sn serbest soğumaya alındı "
+            f"(açık pozisyon yönetimi sürer, süre bitince normal değerlendirme).",
+            symbol=sym,
+        )
+    return tripped
+
+
 def donchian_adx_entry(prev_close: Optional[float], prev_mid: Optional[float], close: float,
                        mid: float, adx: float, adx_min: float, day: int, day_counts: Dict[str, int],
                        max_per_day: int, hour_utc: int, is_jpy: bool) -> Optional[str]:
@@ -1211,10 +1277,12 @@ def _compute_technical_indicators(
         return np.array(res, dtype=float)
 
     # 1. 5M LTF EMAs
+    ema8_series = _calc_ema(c, 8)
     ema9_series = _calc_ema(c, 9)
     ema21_series = _calc_ema(c, 21)
     ema50_series = _calc_ema(c, min(len(c), 50))
 
+    ema8 = float(ema8_series[-1])
     ema9 = float(ema9_series[-1])
     ema21 = float(ema21_series[-1])
     ema50 = float(ema50_series[-1])
@@ -1424,6 +1492,7 @@ def _compute_technical_indicators(
         "high": float(np.max(h)),
         "low": float(np.min(l)),
         "change_pct": change_pct,
+        "ema8": ema8,
         "ema9": ema9,
         "ema21": ema21,
         "ema50": ema50,
@@ -4849,22 +4918,42 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
     if req.deals:
         _MT5_STATE["closed_deals"] = req.deals
         is_first_sync = len(_LAST_CLOSED_DEAL_IDS) == 0
+        newly_closed_deals: List[Dict[str, Any]] = []
         for d in req.deals:
             deal_id = d.get("ticket") or d.get("id")
             if deal_id and deal_id not in _LAST_CLOSED_DEAL_IDS:
                 _LAST_CLOSED_DEAL_IDS.add(deal_id)
+                newly_closed_deals.append(d)
                 d_sym = str(d.get("symbol", "")).upper()
+                deal_time = float(d.get("time", 0)) if isinstance(d.get("time", 0), (int, float)) else 0.0
                 if "XAU" in d_sym or "GOLD" in d_sym:
-                    deal_time = float(d.get("time", 0)) if isinstance(d.get("time"), (int, float)) else 0.0
                     # İlk senkronizasyonda eski geçmiş deals için false cooldown başlatma; sadece son 180s içinde kapananlar için başlat
                     if not is_first_sync or (deal_time > 0 and (now_ts - deal_time < _AUTO_SETTINGS.gold_cooldown_sec)):
                         global _LAST_GOLD_EXIT_TIME
                         _LAST_GOLD_EXIT_TIME = now_ts
                 if "BTC" in d_sym:
-                    deal_time = float(d.get("time", 0)) if isinstance(d.get("time"), (int, float)) else 0.0
                     if not is_first_sync or (deal_time > 0 and (now_ts - deal_time < 60.0)):
                         global _LAST_BTC_EXIT_TIME
                         _LAST_BTC_EXIT_TIME = now_ts
+
+        # Seri-SL sigortası (CANLI MT5 yolu): kapanan her işlem sayaca girer.
+        #   - İlk senkronizasyonda geçmiş penceresi (300 deal) topluca beslenirse
+        #     sahte seri/soğuma doğar → o tur atlanır.
+        #   - Yalnız son 15 dk'da kapananlar sayılır (gecikmeli görünen eski deal
+        #     seriyi bozmasın).
+        #   - Kronolojik sırayla beslenir: kısmi bacaklar aynı senkronda toplu
+        #     gelir; ters sıra SL'i kazanca çevirip seriyi yanlış sıfırlardı.
+        if not is_first_sync:
+            recent_closed = [d for d in newly_closed_deals
+                             if (_deal_ts(d) or float(d.get("time", 0) or 0.0) or 0.0) > 0
+                             and (now_ts - (_deal_ts(d) or float(d.get("time", 0) or 0.0))) <= 900.0]
+            for d in sorted(recent_closed,
+                            key=lambda x: (_deal_ts(x) or float(x.get("time", 0) or 0.0) or 0.0)):
+                feed_loss_streak_from_deal(
+                    d.get("symbol"),
+                    d.get("exit_reason") or d.get("exit_reason_title"),
+                    _deal_net_pnl_usd(d),
+                )
 
     # Bekleyen emirleri al ve boşalt
     commands = list(_MT5_STATE["pending_commands"])

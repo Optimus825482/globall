@@ -393,6 +393,128 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._SYMBOL_LOSS_STREAK.clear()
             forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
 
+    def test_normalize_close_reason_maps_broker_text(self):
+        """Köprü kapanış nedeni serbest metin → kanonik token (canlı besleme kapısı).
+
+        2026-10-08 kök neden: canlı MT5'te seri-SL canlıda ölüydü çünkü kapanış
+        nedenleri köprüden "🛑 Zarar Durdur (SL)" gibi başlık olarak geliyordu ve
+        sayaç yalnız birebir "SL_HIT" bekliyordu.
+        """
+        f = forex.normalize_close_reason
+        self.assertEqual(f("🛑 Zarar Durdur (SL)"), "SL_HIT")
+        self.assertEqual(f("[sl 8.0]"), "SL_HIT")
+        self.assertEqual(f("🛑 Zarar Kes (SL)"), "SL_HIT")
+        self.assertEqual(f("🎯 Kâr Al (TP)"), "TP_HIT")
+        self.assertEqual(f("[tp 30.0]"), "TP_HIT")
+        self.assertEqual(f("🛡️ Başabaş (BE)"), "BE_HIT")
+        self.assertEqual(f("Trailing hit"), "TRAILING_HIT")
+        # Eşleşmeyen ham/manual metinler sayaca girmez
+        self.assertEqual(f("Scalper Close"), "")
+        self.assertEqual(f("IC Markets MT5"), "")
+        self.assertEqual(f(""), "")
+        self.assertEqual(f(None), "")
+
+    def test_feed_loss_streak_from_deal_drives_cooldown(self):
+        """CANLI MT5 yolu: köprüden gelen 3 ardışık SL kapanışı soğuma tetiklemeli.
+
+        Regresyon hedefi: eskiden sayaç yalnız paper defterinin kapandığı yolda
+        besleniyordu; canlı pozisyonların kapanışı köprü `deals` akışıyla geldiği
+        için BTC arka arkaya zararla kapansa da cooldown hiç devreye girmiyordu.
+        """
+        forex._SYMBOL_LOSS_STREAK.clear()
+        forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+        old_settings = forex._AUTO_SETTINGS
+        try:
+            forex._AUTO_SETTINGS = forex.ForexAutoPaperSettings(
+                **{**old_settings.model_dump(), "loss_streak_limit": 3,
+                   "loss_streak_cooldown_sec": 300.0})
+            # Köprü MT5 sembol adı (BTCUSD) uygulama sembolüne çevrilir; başlık nedeni kanonikleşir
+            self.assertFalse(forex.feed_loss_streak_from_deal("BTCUSD", "🛑 Zarar Durdur (SL)", -5.36))
+            self.assertFalse(forex.feed_loss_streak_from_deal("BTCUSD", "🛑 Zarar Durdur (SL)", -12.4))
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK["BTCUSD"], 2)
+            # 3. SL → tetiklenir, sayaç sıfırlanır, cooldown penceresi yazılır
+            self.assertTrue(forex.feed_loss_streak_from_deal("BTCUSD", "🛑 Zarar Durdur (SL)", -9.8))
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK["BTCUSD"], 0)
+            self.assertGreater(forex._SYMBOL_LOSS_COOLDOWN_UNTIL["BTCUSD"], __import__("time").time())
+
+            # Kazanç seriyi sıfırlar (TP kapanışı)
+            forex.feed_loss_streak_from_deal("BTCUSD", "🎯 Kâr Al (TP)", 7.0)
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK["BTCUSD"], 0)
+
+            # MT5 sembol adı eşlenir (XAUUSD zaten kanonik; XTIUSD→USOIL örnek eşleme)
+            forex.feed_loss_streak_from_deal("XTIUSD", "🛑 Zarar Durdur (SL)", -3.0)
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK.get("USOIL"), 1)
+
+            # Manuel/kısmi kapanış (eşleşmeyen neden) ve BE kazancı sayacı değiştirmez
+            forex.feed_loss_streak_from_deal("BTCUSD", "Scalper Close", -4.0)
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK["BTCUSD"], 0)
+        finally:
+            forex._AUTO_SETTINGS = old_settings
+            forex._SYMBOL_LOSS_STREAK.clear()
+            forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+
+    async def test_mt5_sync_feeds_loss_streak(self):
+        """Uçtan uca: `/mt5/sync` köprü kapanışları seri-SL sayacını beslemeli.
+
+        İlk senkron turu geçmiş 300 deal'i topluca taşır; o tur ATLANMALI ki
+        eski sicil sahte soğuma üretmesin. Sonraki tur yeni kapanışları sayar.
+        """
+        forex._SYMBOL_LOSS_STREAK.clear()
+        forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+        forex._LAST_CLOSED_DEAL_IDS.clear()
+        old_settings = forex._AUTO_SETTINGS
+        # `sync_mt5_bridge` paylaşılan `_MT5_STATE`'i yazar (connected/closed_deals/
+        # last_ping + altın/BTC çıkış damgaları). Test sırası kirlenmesin diye
+        # anlık görüntü alınır ve teardown'da geri konur — aksi halde sonraki
+        # rapor testleri MT5 deal penceresini görüp paper defterini atlar.
+        mt5_snapshot = {
+            "state": {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v)
+                      for k, v in forex._MT5_STATE.items()},
+            "gold": forex._LAST_GOLD_EXIT_TIME,
+            "btc": forex._LAST_BTC_EXIT_TIME,
+        }
+        now = __import__("time").time()
+        try:
+            forex._AUTO_SETTINGS = forex.ForexAutoPaperSettings(
+                **{**old_settings.model_dump(), "loss_streak_limit": 3,
+                   "loss_streak_cooldown_sec": 300.0})
+            # İlk tur: eski geçmiş deals (sayaç beslenmemeli)
+            historical = [
+                {"ticket": 10, "symbol": "BTCUSD", "profit": -20.0, "time": now - 3600,
+                 "exit_reason": "🛑 Zarar Durdur (SL)", "exit_reason_title": "🛑 Zarar Durdur (SL)"},
+                {"ticket": 11, "symbol": "BTCUSD", "profit": -18.0, "time": now - 3500,
+                 "exit_reason": "🛑 Zarar Durdur (SL)", "exit_reason_title": "🛑 Zarar Durdur (SL)"},
+            ]
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(deals=list(historical)))
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK.get("BTCUSD", 0), 0)
+            self.assertEqual(forex._SYMBOL_LOSS_COOLDOWN_UNTIL.get("BTCUSD", 0.0), 0.0)
+
+            # Sonraki tur: yeni kapanan 3 SL (kronolojik, son 15 dk) → soğuma
+            fresh = [
+                {"ticket": 21, "symbol": "BTCUSD", "profit": -5.36, "time": now - 200,
+                 "exit_reason": "🛑 Zarar Durdur (SL)", "exit_reason_title": "🛑 Zarar Durdur (SL)"},
+                {"ticket": 20, "symbol": "BTCUSD", "profit": -21.91, "time": now - 120,
+                 "exit_reason": "🛑 Zarar Durdur (SL)", "exit_reason_title": "🛑 Zarar Durdur (SL)"},
+                {"ticket": 22, "symbol": "BTCUSD", "profit": -23.70, "time": now - 60,
+                 "exit_reason": "🛑 Zarar Durdur (SL)", "exit_reason_title": "🛑 Zarar Durdur (SL)"},
+                # Kronolojik sırada önce gelen -5.36 sonra +7.0 kazanç → seri sıfırlanır:
+                # (ticket 23 TP, en yeni) → net birikim 0
+            ]
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(deals=list(historical) + fresh))
+            # 3 SL sonra sayaç: tick 21,20,22 → 3. SL tetikler → sıfırlanır + cooldown
+            self.assertEqual(forex._SYMBOL_LOSS_STREAK.get("BTCUSD", 0), 0)
+            self.assertGreater(forex._SYMBOL_LOSS_COOLDOWN_UNTIL.get("BTCUSD", 0.0), now)
+        finally:
+            forex._AUTO_SETTINGS = old_settings
+            forex._SYMBOL_LOSS_STREAK.clear()
+            forex._SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+            forex._LAST_CLOSED_DEAL_IDS.clear()
+            # Paylaşılan MT5 durumunu ve çıkış damgalarını geri yükle (sıra izolasyonu)
+            forex._MT5_STATE.clear()
+            forex._MT5_STATE.update(mt5_snapshot["state"])
+            forex._LAST_GOLD_EXIT_TIME = mt5_snapshot["gold"]
+            forex._LAST_BTC_EXIT_TIME = mt5_snapshot["btc"]
+
     def test_collect_symbol_ev_respects_reset_cutoff(self):
         """EV reset kesimi (2026-10-07 kullanıcı isteği): resetten önce kapanan işlemler
         EV penceresine alınmaz — sembol temiz sicille değerlendirilir."""
