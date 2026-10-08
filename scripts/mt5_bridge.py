@@ -478,6 +478,8 @@ def execute_market_order(cmd: dict) -> dict:
             active_now.append(_p)
     # Aynı sembolde aynı yönde maksimum açık pozisyon kontrolü (Varsayılan: 1)
     max_pos = int(cmd.get("max_positions_per_symbol") or CURRENT_SETTINGS.get("max_positions_per_symbol", 1))
+    same_dir_positions = [p for p in active_now
+                          if ("BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL") == direction]
     same_dir_count = len(same_dir_positions)
     if same_dir_count >= max_pos:
         err = f"{symbol} için {direction} yönünde zaten {same_dir_count} açık pozisyon var (Maksimum {max_pos} kuralı)."
