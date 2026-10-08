@@ -1038,15 +1038,13 @@ def sync_with_server(api_base: str):
 
     # Sadece kapanış (OUT) işlemlerini filtrele
     out_deals = [d for d in history if d.entry == mt5.DEAL_ENTRY_OUT]
+    # Açılış (IN) işlemlerini pozisyon bazında hızlı erişim için indexle
+    in_deals_by_pos = {cand.position_id: cand for cand in history if cand.entry == mt5.DEAL_ENTRY_IN}
     # En son 300 kapanmış işlemi dahil et
     for d in reversed(out_deals[-300:]):
         pos_id = d.position_id
         # Pozisyonun açılış biletini bul (in_deal)
-        in_deal = None
-        for cand in history:
-            if cand.position_id == pos_id and cand.entry == mt5.DEAL_ENTRY_IN:
-                in_deal = cand
-                break
+        in_deal = in_deals_by_pos.get(pos_id)
 
         entry_p = in_deal.price if in_deal else d.price
         in_deal_ts = int(in_deal.time) if in_deal else None
@@ -1171,7 +1169,7 @@ def sync_with_server(api_base: str):
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=7.0) as resp:
+        with urllib.request.urlopen(req, timeout=15.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             # Backend "panelde şu mumlar bakılıyor" der → sonraki senkronda broker'dan çekilir
             watch = data.get("candle_watch")
