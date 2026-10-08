@@ -436,6 +436,100 @@ export default function AutoSettingsPanel({
             Bu liste motor genelinde tektir — tüm forex izleme sayfaları aynı listeyi kullanır.
           </span>
         </div>
+
+        {/* EMA+ADX GERİ-ÇEKİLME (M5) — 2026-10-08 canlıya alım */}
+        <div className="col-span-2 md:col-span-4 pt-3 border-t border-bunker-800">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[11px] text-amber-300 font-bold">
+              📐 EMA+ADX Geri Çekilme (M5) — {form.ema_adx_symbols?.length || 0} Sembol:
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(form.ema_adx_enabled)}
+                onChange={(e) => setField("ema_adx_enabled", e.target.checked)}
+                className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} focus:ring-0 w-4 h-4`}
+              />
+              <span className="text-white text-[11px] font-semibold">Aktif</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {["XAUUSD", "BTCUSD"].map((sym) => {
+              const list: string[] = form.ema_adx_symbols || [];
+              const active = list.includes(sym);
+              return (
+                <button
+                  key={sym}
+                  type="button"
+                  onClick={() => {
+                    const next = active ? list.filter((s) => s !== sym) : [...list, sym];
+                    setField("ema_adx_symbols", next);
+                  }}
+                  className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all border ${
+                    active
+                      ? "bg-amber-600/30 text-amber-300 border-amber-400/50"
+                      : "bg-bunker-950/70 text-bunker-muted border-bunker-800 hover:border-bunker-700 hover:text-white"
+                  }`}
+                >
+                  {active ? "✓ " : "+ "}
+                  {sym === "XAUUSD" ? "Ons Altın (XAU)" : "Bitcoin (BTC)"}
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">ADX Eşiği:</label>
+              <input
+                type="number" min="0" max="60" step="1"
+                value={form.ema_adx_adx_min ?? ""}
+                onChange={(e) => setNumField("ema_adx_adx_min", e.target.value)}
+                className={`${inputCls} text-amber-300`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">SL (×ATR):</label>
+              <input
+                type="number" min="0.5" max="5" step="0.1"
+                value={form.ema_adx_sl_atr ?? ""}
+                onChange={(e) => setNumField("ema_adx_sl_atr", e.target.value)}
+                className={`${inputCls} text-rose-400`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">TP (×ATR):</label>
+              <input
+                type="number" min="0" max="6" step="0.1"
+                value={form.ema_adx_tp_atr ?? ""}
+                onChange={(e) => setNumField("ema_adx_tp_atr", e.target.value)}
+                className={`${inputCls} text-emerald-400`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">EMA21 Temas (×ATR):</label>
+              <input
+                type="number" min="0" max="2" step="0.05"
+                value={form.ema_adx_touch_atr ?? ""}
+                onChange={(e) => setNumField("ema_adx_touch_atr", e.target.value)}
+                className={`${inputCls} text-cyan-300`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">Günde Max Giriş:</label>
+              <input
+                type="number" min="0" max="20" step="1"
+                value={form.ema_adx_max_per_day ?? ""}
+                onChange={(e) => setIntField("ema_adx_max_per_day", e.target.value)}
+                className={`${inputCls} text-white`}
+              />
+            </div>
+          </div>
+          <span className="text-[10px] text-bunker-muted block mt-2">
+            Kural: EMA8/21/50 dizilimi + ADX eşiği + EMA21&apos;e geri çekilme + trend yönünde onay barı.
+            Replay kanıtı (XAU 5m): 60g +$184.56, Temmuz 1-15 +$153.90. TP=0 → sabit TP yok (BE/trailing).
+            Klasik radar ve donchian akışları bu sembollerde KORUNUR (üç akış birlikte).
+          </span>
+        </div>
       </div>
 
       <div className="flex justify-end gap-2 pt-2 border-t border-bunker-800">

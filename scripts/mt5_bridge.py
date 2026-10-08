@@ -76,31 +76,7 @@ MT5_TIMEFRAMES = {
 
 
 def _get_server_utc_offset() -> int:
-    """MT5 mum zamanları BROKER sunucu saatindedir (genelde UTC+2/+3). UTC'ye
-    çevirmek için farkı taze bir tick'ten türetir (30 dk'ya yuvarlanır).
-
-    Neden gerekli: frontend kapanış sayacı `mum zamanı + periyot` ile duvar
-    saatini karşılaştırır; zamanlar UTC olmazsa sayaç saatlerce kayardı.
-    """
-    global _SERVER_UTC_OFFSET
-    if _SERVER_UTC_OFFSET is not None:
-        return _SERVER_UTC_OFFSET
-    for probe in ("EURUSD", "XAUUSD", "GBPUSD"):
-        try:
-            sym = resolve_mt5_symbol(probe)
-            t = mt5.symbol_info_tick(sym)
-        except Exception:
-            t = None
-        if t and t.time:
-            server_now = int(t.time)
-            utc_now = calendar.timegm(time.gmtime())
-            # Taze tick değilse (piyasa kapalı vb.) bu probu atla
-            if abs(server_now - utc_now) > 36 * 3600:
-                continue
-            # 30 dk'lık kuantalamaya yuvarla (saniye gürültüsünü at)
-            off = int(round((server_now - utc_now) / 1800.0) * 1800)
-            _SERVER_UTC_OFFSET = off
-            return off
+    """MT5 zaman damgaları broker terminal saatiyle birebirdir. Çift kayma olmaması için ofset 0 döner."""
     return 0
 
 
@@ -1028,8 +1004,7 @@ def sync_with_server(api_base: str):
         )
 
         mapped_sym = REVERSE_SYMBOL_ALIAS_MAP.get(sym, sym)
-        server_offset = _get_server_utc_offset()
-        pos_open_ts = int(p.time) - server_offset
+        pos_open_ts = int(p.time)
         positions.append({
             "ticket": ticket,
             "symbol": mapped_sym,
@@ -1046,7 +1021,9 @@ def sync_with_server(api_base: str):
             "protection_label": prot_label,
             "breakeven_activated": (prot in ("BREAKEVEN", "TRAILING")),
             "trailing_activated": (prot == "TRAILING"),
-            "open_time": datetime.datetime.fromtimestamp(pos_open_ts, TZ_UTC3).strftime("%H:%M:%S UTC+3"),
+            "open_time": datetime.datetime.fromtimestamp(pos_open_ts, datetime.timezone.utc).strftime("%H:%M:%S"),
+            # Açık pozisyonun strateji etiketi (emir açılışındaki yorum; panel rozet için)
+            "strategy_tag": str(getattr(p, "comment", "") or "").strip(),
         })
 
     # Kapanan işlem geçmişi (Broker zaman dilimi farkını tolere etmek için +2 gün buffer)
@@ -1069,12 +1046,17 @@ def sync_with_server(api_base: str):
                 break
 
         entry_p = in_deal.price if in_deal else d.price
-        in_deal_ts = (int(in_deal.time) - server_offset) if in_deal else None
-        close_ts = int(d.time) - server_offset
-        open_time_str = datetime.datetime.fromtimestamp(in_deal_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3") if in_deal_ts else "-"
-        close_time_str = datetime.datetime.fromtimestamp(close_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3")
+        in_deal_ts = int(in_deal.time) if in_deal else None
+        close_ts = int(d.time)
+        open_time_str = datetime.datetime.fromtimestamp(in_deal_ts, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if in_deal_ts else "-"
+        close_time_str = datetime.datetime.fromtimestamp(close_ts, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         direction = "BUY" if in_deal and in_deal.type == mt5.DEAL_TYPE_BUY else ("SELL" if d.type == mt5.DEAL_TYPE_BUY else "BUY")
+
+        # Strateji etiketi: emir AÇILIRKEN yazılan `comment` giriş (IN) deal'inde durur
+        # (kapanış deal'inde MT5 onu "[tp ...]/[sl ...]" ile ezer). Panelde/reportta
+        # işlemin hangi algoritmayla açıldığı bu alandan okunur (2026-10-08).
+        strategy_tag = str(in_deal.comment or "").strip() if in_deal else ""
 
         comment = str(d.comment or "")
         reason = "IC Markets MT5"
@@ -1124,6 +1106,9 @@ def sync_with_server(api_base: str):
             "exit_reason": reason,
             "exit_reason_title": reason,
             "outcome": "WIN" if d.profit >= 0 else "LOSS",
+            # Emir açılışında yazılan strateji etiketi ("EAP-M5", "DONCH", "RADAR"...)
+            # Broker yorumu 31 kr; backend bunu tam strateji adına çevirir.
+            "strategy_tag": strategy_tag,
         })
 
     # Altın ve BTC kapanışlarını takip et (İlk startta geçmiş deals kalkanı tetiklemez!)

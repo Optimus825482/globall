@@ -21,6 +21,7 @@ interface OpenPosition {
   pnl_pips: number;
   open_time?: string;
   category?: string;
+  strategy?: string;
 }
 
 interface ClosedTrade {
@@ -43,6 +44,21 @@ interface ClosedTrade {
   open_time?: string;
   time?: number | string;
   closed_at_ts?: number;
+  strategy?: string;
+  entry_source?: string;
+}
+
+// Strateji kimliği → panelde okunur kısa etiket (backend `strategy` alanı, 2026-10-08).
+const STRATEGY_LABELS: Record<string, string> = {
+  EMA_ADX_PULLBACK_M5: "EMA+ADX Geri Çekilme (M5)",
+  DONCHIAN_ADX: "Donchian Kırılımı",
+  M1_M5_RADAR_SCALPER: "Radar Skalper",
+  IC_MARKETS_MT5: "IC Markets MT5",
+};
+
+function strategyLabel(code?: string): string {
+  if (!code) return "-";
+  return STRATEGY_LABELS[code] || code;
 }
 
 interface KPIStats {
@@ -93,46 +109,22 @@ function formatPrice(v?: number | null, symbol: string = ""): string {
 }
 
 function formatClockTime(timeStr?: string | number, closedAtTs?: number): string {
-  if (closedAtTs && typeof closedAtTs === "number" && closedAtTs > 0) {
+  if (!timeStr && closedAtTs && typeof closedAtTs === "number" && closedAtTs > 0) {
     const ms = closedAtTs > 1e11 ? closedAtTs : closedAtTs * 1000;
     const d = new Date(ms);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString("tr-TR", {
-        timeZone: "Europe/Istanbul",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      });
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(d.getUTCMinutes()).padStart(2, "0");
+      const ss = String(d.getUTCSeconds()).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
     }
   }
   if (!timeStr) return "—";
   try {
     const raw = String(timeStr).trim();
-    // Eğer ISO veya timezone formatındaysa
-    let s = raw.replace(/\s+UTC\+3/i, "+03:00").replace(/\s+UTC/i, "Z");
-
-    // Yalnızca saat ("HH:mm:ss" veya "HH:mm:ss UTC+3") ise
-    const timeMatch = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
-    if (timeMatch && !raw.includes("-") && !raw.includes("/")) {
+    const timeMatch = raw.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch) {
       return `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
-    }
-
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString("tr-TR", {
-        timeZone: "Europe/Istanbul",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      });
-    }
-
-    // "YYYY-MM-DD HH:mm:ss" formatı
-    const parts = raw.match(/\d{4}-\d{2}-\d{2}[T\s](\d{2}):(\d{2}):?(\d{2})?/);
-    if (parts) {
-      return `${parts[1]}:${parts[2]}:${parts[3] || "00"}`;
     }
     return raw;
   } catch {
@@ -140,7 +132,7 @@ function formatClockTime(timeStr?: string | number, closedAtTs?: number): string
   }
 }
 
-// Bulunulan tarihteki işlem zaman damgasını milisaniyeye çevirir (UTC+3 uyumlu)
+// Bulunulan tarihteki işlem zaman damgasını milisaniyeye çevirir (MT5 zaman damgasıyla uyumlu)
 function parseTradeTime(t: ClosedTrade | any): number {
   if (typeof t.closed_at_ts === "number" && t.closed_at_ts > 0) {
     return t.closed_at_ts > 1e11 ? t.closed_at_ts : t.closed_at_ts * 1000;
@@ -151,32 +143,19 @@ function parseTradeTime(t: ClosedTrade | any): number {
   const rawStr = t.close_time || t.exit_time || t.time || t.open_time;
   if (!rawStr) return 0;
 
-  let s = String(rawStr).trim();
-  s = s.replace(/\s+UTC\+3/i, "+03:00").replace(/\s+UTC/i, "Z");
-
-  const parsed = new Date(s).getTime();
-  if (!isNaN(parsed)) return parsed;
-
+  const s = String(rawStr).trim();
   const parts = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
   if (parts) {
-    const isoWithTz = `${parts[1]}-${parts[2]}-${parts[3]}T${parts[4]}:${parts[5]}:${parts[6] || "00"}+03:00`;
-    const parsedWithTz = new Date(isoWithTz).getTime();
-    if (!isNaN(parsedWithTz)) return parsedWithTz;
+    return Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]), Number(parts[4]), Number(parts[5]), Number(parts[6] || 0));
   }
-  return 0;
+  const parsed = new Date(s).getTime();
+  return isNaN(parsed) ? 0 : parsed;
 }
 
-// Bulunulan tarihteki saat 00:01:00 eşiğini verir (UTC+3 Türkiye Saati)
+// Bulunulan tarihteki saat 00:01:00 eşiğini verir (MT5 sunucu takvimiyle uyumlu)
 function getToday0001Cutoff(): number {
   const now = new Date();
-  const trDateStr = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Istanbul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-  const cutoffIso = `${trDateStr}T00:01:00+03:00`;
-  return new Date(cutoffIso).getTime();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 1, 0);
 }
 
 export default function ForexIslemlerPage() {
@@ -753,6 +732,7 @@ export default function ForexIslemlerPage() {
                 <thead className={`uppercase border-b ${theme.tableHeader}`}>
                   <tr>
                     <th className="py-3 px-4">Sembol / Parite</th>
+                    <th className="py-3 px-3">Strateji</th>
                     <th className="py-3 px-3">Yön</th>
                     <th className="py-3 px-3">Lot</th>
                     <th className="py-3 px-3">Giriş Fiyatı</th>
@@ -783,6 +763,21 @@ export default function ForexIslemlerPage() {
                               {formatClockTime(p.open_time)}
                             </div>
                           )}
+                        </td>
+
+                        {/* Strateji */}
+                        <td className="py-3.5 px-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${
+                            p.strategy === "EMA_ADX_PULLBACK_M5"
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/30"
+                              : p.strategy === "DONCHIAN_ADX"
+                              ? "bg-violet-500/15 text-violet-600 dark:text-violet-300 border-violet-500/30"
+                              : p.strategy === "M1_M5_RADAR_SCALPER"
+                              ? "bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/30"
+                              : "bg-slate-500/10 text-slate-500 dark:text-bunker-muted border-slate-500/20"
+                          }`}>
+                            {strategyLabel(p.strategy)}
+                          </span>
                         </td>
 
                         {/* İşlem Tipi: BUY / SELL */}
@@ -1105,6 +1100,7 @@ export default function ForexIslemlerPage() {
                 <thead className={`uppercase border-b ${theme.tableHeader}`}>
                   <tr>
                     <th className="py-3 px-4">Sembol / Parite</th>
+                    <th className="py-3 px-3">Strateji</th>
                     <th className="py-3 px-3">Yön</th>
                     <th className="py-3 px-3">Lot</th>
                     <th className="py-3 px-3">Kapanış Saati (UTC+3)</th>
@@ -1121,6 +1117,20 @@ export default function ForexIslemlerPage() {
                       <tr key={t.id || t.ticket || Math.random()} className={theme.tableRow}>
                         <td className="py-3.5 px-4 font-bold text-sm">
                           {t.display || t.symbol}
+                        </td>
+
+                        <td className="py-3.5 px-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${
+                            t.strategy === "EMA_ADX_PULLBACK_M5"
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/30"
+                              : t.strategy === "DONCHIAN_ADX"
+                              ? "bg-violet-500/15 text-violet-600 dark:text-violet-300 border-violet-500/30"
+                              : t.strategy === "M1_M5_RADAR_SCALPER"
+                              ? "bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/30"
+                              : "bg-slate-500/10 text-slate-500 dark:text-bunker-muted border-slate-500/20"
+                          }`}>
+                            {strategyLabel(t.strategy)}
+                          </span>
                         </td>
 
                         <td className="py-3.5 px-3">

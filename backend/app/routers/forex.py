@@ -726,6 +726,96 @@ def donchian_adx_entry(prev_close: Optional[float], prev_mid: Optional[float], c
     return None
 
 
+# EMA+ADX geri-çekilme skalpi (2026-10-08 canlıya alım — replay kanıtı):
+#   XAUUSD 5m SL 1.5×ATR / TP 2.0×ATR: 60g +$184.56 (PF 1.33, n=227, WR %83.7) ve
+#   bağımsız pencere Temmuz 1-15 +$153.90 (PF 2.31, n=87, WR %89.7) → iki pencerede
+#   de pozitif. Kayıtta `EMA_ADX_PULLBACK_M5`, logda "EMA+ADX Geri Çekilme (M5)".
+EMA_ADX_PULLBACK_STRATEGY = "EMA_ADX_PULLBACK_M5"
+EMA_ADX_PULLBACK_LABEL = "EMA+ADX Geri Çekilme (M5)"
+
+
+def strategy_name_for(entry_source: Any) -> str:
+    """Giriş kaynağından işlem kaydına yazılacak strateji kimliğini türetir.
+
+    Kayıt/repor/CSV'de hangi algoritmanın işlemi açtığı görünür olsun (kullanıcı
+    isteği 2026-10-08). Öncelik: mod → donchian → klasik radar.
+    """
+    src = str(entry_source or "").strip().lower()
+    if src == "ema_adx_pullback":
+        return EMA_ADX_PULLBACK_STRATEGY
+    if src == "donchian":
+        return "DONCHIAN_ADX"
+    return "M1_M5_RADAR_SCALPER"
+
+
+def strategy_comment_tag(entry_source: Any) -> str:
+    """MT5 emir yorumu için KISA strateji etiketi (MT5 yorum sınırı 31 karakter).
+
+    Kapanan işlemlerin `comment` alanı köprüden geri gelir; bu etiket sayesinde
+    MT5 geçmişinde/işlem kaydında işlemin hangi stratejiye ait olduğu okunur.
+    """
+    src = str(entry_source or "").strip().lower()
+    if src == "ema_adx_pullback":
+        return "EAP-M5"
+    if src == "donchian":
+        return "DONCH"
+    return "RADAR"
+
+
+def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
+    """MT5 kapanış kaydından strateji kimliğini çöz (etiket → tam ad).
+
+    Köprü emir açılışındaki `comment`'i `strategy_tag` olarak taşır. Eski/etiketsiz
+    kayıtlar (köprü güncellenmeden önce açılanlar) nötr "IC_MARKETS_MT5" alır.
+    """
+    src = deal.get("strategy") or ""
+    if src:
+        return str(src)
+    tag = str(deal.get("strategy_tag") or deal.get("entry_source") or "").upper()
+    if tag.startswith("EAP"):
+        return EMA_ADX_PULLBACK_STRATEGY
+    if tag.startswith("DONCH"):
+        return "DONCHIAN_ADX"
+    if tag.startswith("RADAR"):
+        return "M1_M5_RADAR_SCALPER"
+    return "IC_MARKETS_MT5"
+
+
+def ema_adx_pullback_entry(
+    ema8: float, ema21: float, ema50: float,
+    adx: float, adx_min: float,
+    close: float, open_: float, high: float, low: float,
+    atr_price: float, touch_atr: float,
+    day_counts: Dict[str, int], max_per_day: int,
+) -> Optional[str]:
+    """EMA+ADX geri-çekilme giriş kararı (saf fonksiyon — replay ile birebir).
+
+    Kural seti (kullanıcı spesifikasyonu 2026-10-08):
+      1) EMA dizilimi: 8>21>50 → yalnız LONG ; 8<21<50 → yalnız SHORT
+      2) ADX(14) ≥ eşik (trend rejimi)
+      3) geri çekilme: bar EMA21'i keser (low≤e21≤high) veya kapanış EMA21'e
+         touch_atr×ATR mesafede
+      4) onay: kapanış EMA21'in trend tarafında ve bar trend yönünde (BUY: c>o)
+    Döner: "BUY" / "SELL" / None. Gün içi yön başına max_per_day limiti.
+    """
+    if atr_price <= 0 or ema8 <= 0 or ema21 <= 0 or ema50 <= 0 or close <= 0:
+        return None
+    if adx < adx_min:
+        return None
+    touched = (low <= ema21 <= high) or (abs(close - ema21) <= touch_atr * atr_price)
+    if not touched:
+        return None
+    if ema8 > ema21 > ema50 and close > ema21 and close > open_:
+        action = "BUY"
+    elif ema8 < ema21 < ema50 and close < ema21 and close < open_:
+        action = "SELL"
+    else:
+        return None
+    if max_per_day > 0 and day_counts.get(action, 0) >= max_per_day:
+        return None
+    return action
+
+
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
     """Lot × SL × pip_val riskini bütçeye sıkıştırır (saf fonksiyon — test edilebilir).
 
@@ -1504,6 +1594,11 @@ def _compute_technical_indicators(
         "adx": round(adx_val, 1),
         "supertrend_dir": int(st_dir),
         "atr": atr,
+        # Son barın OHLC'si (EMA+ADX geri-çekilme giriş modu — 2026-10-08): dokunma
+        # (EMA21'i kesme) ve onay (bar trend yönünde kapanış) bu bardan okunur.
+        "open_last": float(opens[-1]) if opens else last_price,
+        "high_last": float(highs[-1]) if highs else float(np.max(h)),
+        "low_last": float(lows[-1]) if lows else float(np.min(l)),
         # Donchian(20) orta hat + önceki barın orta hattı (donchian_adx giriş modu — 2026-10-07)
         "donch_mid": round((max(highs[-20:]) + min(lows[-20:])) / 2.0, 6) if len(highs) >= 20 else None,
         "donch_mid_prev": round((max(highs[-21:-1]) + min(lows[-21:-1])) / 2.0, 6) if len(highs) >= 21 else None,
@@ -2629,6 +2724,16 @@ class ForexAutoPaperSettings(BaseModel):
         default_factory=lambda: ["GBPJPY", "EURJPY"],
         description="YALNIZ donchian_adx moduyla işlem açılan semboller (klasik skor sinyali bu çiftlerde replay'de kanıtlanmış negatif beklentiye sahip — kapalı kalır)",
     )
+    ema_adx_symbols: List[str] = Field(
+        default_factory=lambda: ["XAUUSD"],
+        description="EMA+ADX geri-çekilme skalpi (M5) akışının AKTİF olduğu semboller (2026-10-08: XAUUSD 5m; 60g +$184.56 + Tem15 +$153.90 iki bağımsız pencerede pozitif). Klasik ve donchian akışları bu sembollerde KORUNUR (üç akış birlikte).",
+    )
+    ema_adx_enabled: bool = Field(True, description="EMA+ADX geri-çekilme (M5) akışı: EMA8/21/50 dizilimi + ADX + EMA21 geri çekilmesi + trend yönünde onay barı")
+    ema_adx_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="EMA+ADX: ADX(14) trend gücü eşiği (spec: 25)")
+    ema_adx_touch_atr: float = Field(0.30, ge=0.0, le=2.0, description="EMA+ADX: barın EMA21'e 'değmiş' sayılma toleransı (× ATR)")
+    ema_adx_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="EMA+ADX: SL (× ATR(14)) — 48h RR süpürmesinde optimal bant")
+    ema_adx_tp_atr: float = Field(2.0, ge=0.0, le=6.0, description="EMA+ADX: TP (× ATR(14)); 0 = sabit TP yok (trailing'e bırakılır)")
+    ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
 
 
 class ClosePositionRequest(BaseModel):
@@ -2678,6 +2783,9 @@ _SYMBOL_LOSS_STREAK: Dict[str, int] = {}
 _SYMBOL_LOSS_COOLDOWN_UNTIL: Dict[str, float] = {}
 # Donchian+ADX mod durumu (yalnız dict mutasyonu — global bildirimi gerekmez)
 _DONCHIAN_STATE: Dict[str, Dict[str, Any]] = {}
+# EMA+ADX geri-çekilme (M5) mod durumu: gün + yön başına giriş sayacı
+# (yalnız dict mutasyonu — global bildirimi gerekmez; bkz. globals-shadow testi)
+_EMA_ADX_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -3357,6 +3465,89 @@ async def _forex_auto_paper_loop():
                             symbol=_m_sym,
                         )
 
+            # EMA+ADX geri-çekilme (M5) akışı (2026-10-08 canlıya alım — XAUUSD):
+            # klasik + donchian akışları KORUNUR; bu üçüncü bir aday kaynağıdır.
+            if _AUTO_SETTINGS.ema_adx_enabled:
+                for _e_sym in {s.upper() for s in (_AUTO_SETTINGS.ema_adx_symbols or [])}:
+                    _e_tech = _TECHNICAL_CACHE.get(_e_sym) or {}
+                    _e_t = ticks.get(_e_sym)
+                    if not _e_t or not _e_tech or not _e_tech.get("ema21"):
+                        continue
+                    _e_price = (_e_t.get("bid", 0.0) + _e_t.get("ask", 0.0)) / 2.0 or _e_tech.get("price", 0.0)
+                    _e_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _e_sym), None)
+                    _e_pip_size = _e_tech.get("pip_size") or (_e_item["pip_size"] if _e_item else 0.0001)
+                    if _e_price <= 0 or _e_pip_size <= 0:
+                        continue
+                    _e_now = datetime.datetime.now(datetime.timezone.utc)
+                    _e_day = _e_now.toordinal()
+                    _e_st = _EMA_ADX_STATE.setdefault(_e_sym, {"day": _e_day, "counts": {}})
+                    if _e_st["day"] != _e_day:
+                        _e_st["day"] = _e_day
+                        _e_st["counts"] = {}
+                    _e_atr = float(_e_tech.get("atr", 0.0))
+                    _e_action = ema_adx_pullback_entry(
+                        ema8=float(_e_tech.get("ema8", 0.0)),
+                        ema21=float(_e_tech.get("ema21", 0.0)),
+                        ema50=float(_e_tech.get("ema50", 0.0)),
+                        adx=float(_e_tech.get("adx", 0.0)),
+                        adx_min=float(_AUTO_SETTINGS.ema_adx_adx_min),
+                        close=_e_price,
+                        open_=float(_e_tech.get("open_last", 0.0)) or _e_price,
+                        high=float(_e_tech.get("high_last", 0.0)) or _e_price,
+                        low=float(_e_tech.get("low_last", 0.0)) or _e_price,
+                        atr_price=_e_atr,
+                        touch_atr=float(_AUTO_SETTINGS.ema_adx_touch_atr),
+                        day_counts=_e_st["counts"],
+                        max_per_day=int(_AUTO_SETTINGS.ema_adx_max_per_day),
+                    )
+                    _e_disp = _e_t.get("display", _e_sym)
+                    _e_allowed = _e_sym in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                    if _e_action:
+                        _e_st["counts"][_e_action] = _e_st["counts"].get(_e_action, 0) + 1
+                        candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _e_sym] + [{
+                            "symbol": _e_sym,
+                            "display": _e_disp,
+                            "action": _e_action,
+                            "score": 200.0,
+                            "spread_pips": _LIVE_SPREAD_PIPS.get(_e_sym, 2.0),
+                            "atr_pips": round(_e_atr / _e_pip_size, 1) if _e_pip_size > 0 else 15.0,
+                            "adx": float(_e_tech.get("adx", 25.0)),
+                            "supertrend_dir": int(_e_tech.get("supertrend_dir", 0)),
+                            "entry_source": "ema_adx_pullback",
+                            "strategy": EMA_ADX_PULLBACK_STRATEGY,
+                        }]
+                        _log_auto_decision(
+                            "SCAN",
+                            f"📐 [{_e_disp}] {EMA_ADX_PULLBACK_LABEL}: {_e_action} adayı "
+                            f"(ADX {_e_tech.get('adx', 0):.0f}, EMA dizilimi "
+                            f"{'boğa' if _e_action == 'BUY' else 'ayı'}, EMA21 geri çekilmesi onaylı) — değerlendiriliyor.",
+                            symbol=_e_sym,
+                        )
+                    else:
+                        # Görünürlük: akış ne beklediğini 30 dk'da bir insan-okur cümleyle söyler.
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_e_sym}_eap_wait", 0.0) > 1800.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{_e_sym}_eap_wait"] = now_ts
+                            if not _e_allowed:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚠️ [{_e_disp}] {EMA_ADX_PULLBACK_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                    symbol=_e_sym,
+                                )
+                            else:
+                                _e8 = float(_e_tech.get("ema8", 0.0)); _e21 = float(_e_tech.get("ema21", 0.0)); _e50 = float(_e_tech.get("ema50", 0.0))
+                                if _e8 > _e21 > _e50:
+                                    _e_trend_txt, _e_wait = "boğa dizilimi", "fiyat EMA21'e geri çekilip yeşil kapanışla dönünce AL"
+                                elif _e8 < _e21 < _e50:
+                                    _e_trend_txt, _e_wait = "ayı dizilimi", "fiyat EMA21'e geri çekilip kırmızı kapanışla dönünce SAT"
+                                else:
+                                    _e_trend_txt, _e_wait = "dizilim yok", "EMA8/21/50 diziliminin netleşmesi bekleniyor"
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"📐 [{_e_disp}] {EMA_ADX_PULLBACK_LABEL} bekliyor: {_e_trend_txt}, "
+                                    f"ADX {_e_tech.get('adx', 0):.0f} (eşik {_AUTO_SETTINGS.ema_adx_adx_min:.0f}) → {_e_wait}.",
+                                    symbol=_e_sym,
+                                )
+
             # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
                 _LAST_SCAN_PULSE_TIME = now_ts
@@ -3754,8 +3945,12 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 7c. SuperTrend Yön Teyidi — giriş yalnızca SuperTrend tarafıyla uyumlu açılır
+                # İstisna: EMA+ADX geri-çekilme modu KENDİ yön teyidini taşır (EMA8/21/50
+                # dizilimi + onay barı); SuperTrend bu moda canlı davranışı replay kanıtından
+                # saptırırdı (kanıt EAP-pure koşuldu) → bu aday için ST kapısı atlanır.
                 st_dir = int(cand.get("supertrend_dir", 0))
-                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0:
+                _is_eap = str(cand.get("entry_source", "")) == "ema_adx_pullback"
+                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap:
                     if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
@@ -3803,6 +3998,12 @@ async def _forex_auto_paper_loop():
                     # Donchian modu çıkışları (replay ile birebir): SL 2×ATR, TP 4×ATR, kısmi kâr yok
                     sl_pips = round(2.0 * atr_pips, 1)
                     tp_pips = round(4.0 * atr_pips, 1)
+                    first_target_pips = 0.0
+                if str(cand.get("entry_source", "")) == "ema_adx_pullback" and atr_pips > 0:
+                    # EMA+ADX geri-çekilme modu çıkışları (replay ile birebir): SL 1.5×ATR,
+                    # TP 2.0×ATR (0 ise sabit TP yok → BE/trailing), kısmi kâr yok.
+                    sl_pips = round(float(_AUTO_SETTINGS.ema_adx_sl_atr) * atr_pips, 1)
+                    tp_pips = round(float(_AUTO_SETTINGS.ema_adx_tp_atr) * atr_pips, 1)
                     first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
@@ -3879,7 +4080,10 @@ async def _forex_auto_paper_loop():
                         "trail_pips": spec_exits["trail_pips"],
                         "be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio if is_gold else 0.40,
                         "partial_pips": first_target_pips,
-                        "comment": f"Scalper MT5 {cand['score']:.0f}",
+                        # Strateji etiketi MT5 emrine gömülür (kapanan deal `comment`'iyle geri
+                        # gelir → işlem kaydında hangi strateji olduğu görünür). 31 kr sınırı.
+                        "comment": f"{strategy_comment_tag(cand.get('entry_source'))} {cand['score']:.0f}",
+                        "strategy": strategy_name_for(cand.get("entry_source")),
                     })
                 else:
                     # MT5 bağlı değil. Varsayılan olarak forekste PAPER'e düşmeyiz:
@@ -3925,7 +4129,8 @@ async def _forex_auto_paper_loop():
                         "pip_size": spec["pip_size"],
                         "digits": spec["digits"],
                         "score": cand["score"],
-                        "strategy": "M1_M5_RADAR_SCALPER",
+                        "entry_source": cand.get("entry_source", ""),
+                        "strategy": strategy_name_for(cand.get("entry_source")),
                     }
                     async with _AUTO_PAPER_LOCK:
                         _AUTO_STATE["open_positions"].append(pos_item)
@@ -3933,11 +4138,14 @@ async def _forex_auto_paper_loop():
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
 
                 actual_risk_usd = round(mt5_lots * sl_pips * pip_val, 2)
+                _strat_name = strategy_name_for(cand.get("entry_source"))
                 _log_auto_decision(
                     "ENTRY",
-                    f"⚡ [İŞLEM AÇILDI]: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f})",
+                    f"⚡ [İŞLEM AÇILDI] {_strat_name}: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f})",
                     symbol=sym,
-                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"], "risk_usd": actual_risk_usd},
+                    metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"],
+                              "risk_usd": actual_risk_usd, "strategy": _strat_name,
+                              "entry_source": cand.get("entry_source", "")},
                 )
 
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
@@ -3985,6 +4193,8 @@ async def get_forex_auto_paper_status():
             **p,
             "pnl_usd": round(pnl, 2),
             "pnl_pips": float(p.get("pnl_pips", 0.0)),
+            # Strateji kimliği (açık pozisyonlar için etiketten çözülür)
+            "strategy": strategy_from_mt5_deal(p),
         })
 
     normalized_deals = []
@@ -4007,6 +4217,8 @@ async def get_forex_auto_paper_status():
             "exit_time": d.get("exit_time", d.get("time", "")),
             "exit_reason": d.get("exit_reason", "MT5 Kapanış"),
             "exit_reason_title": d.get("exit_reason_title", "IC Markets MT5"),
+            "strategy": strategy_from_mt5_deal(d),
+            "entry_source": d.get("entry_source", ""),
             "pnl_usd": pnl,
             "pnl_pips": float(d.get("pnl_pips", 0.0)),
             "outcome": "WIN" if pnl >= 0 else "LOSS",
@@ -4529,8 +4741,8 @@ def _resolve_report_window(
     """
     if period not in _FOREX_REPORT_PERIODS:
         period = "all"
-    now3 = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
-    midnight = now3.replace(hour=0, minute=0, second=0, microsecond=0)
+    now_utc = datetime.datetime.fromtimestamp(now_ts, datetime.timezone.utc)
+    midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if period == "all":
         return None, None
@@ -4768,6 +4980,7 @@ async def export_forex_trades_csv(
         "Bilet No",
         "Parite",
         "Sembol",
+        "Strateji",
         "İşlem Yönü",
         "Lot",
         "Radar Skoru",
@@ -4794,6 +5007,7 @@ async def export_forex_trades_csv(
             t_id,
             tr.get("display", tr.get("symbol", "")),
             tr.get("symbol", ""),
+            strategy_from_mt5_deal(tr),
             tr.get("direction", ""),
             tr.get("lots", 0.0),
             tr.get("score", "-"),
@@ -4916,10 +5130,20 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
                         _LIVE_SPREAD_PIPS[app_sym] = round(spread_pips, 2)
 
     if req.deals:
-        _MT5_STATE["closed_deals"] = req.deals
+        # Her deal'e strateji kimliği yazılır (köprü `strategy_tag`'inden çözülür):
+        # status/rapor/CSV hepsi aynı kaynaktan okusun diye tek noktada zenginleştirilir.
+        _enriched_deals: List[Dict[str, Any]] = []
+        for _d in req.deals:
+            try:
+                _dd = dict(_d)
+            except (TypeError, ValueError):
+                continue
+            _dd["strategy"] = strategy_from_mt5_deal(_dd)
+            _enriched_deals.append(_dd)
+        _MT5_STATE["closed_deals"] = _enriched_deals
         is_first_sync = len(_LAST_CLOSED_DEAL_IDS) == 0
         newly_closed_deals: List[Dict[str, Any]] = []
-        for d in req.deals:
+        for d in _enriched_deals:
             deal_id = d.get("ticket") or d.get("id")
             if deal_id and deal_id not in _LAST_CLOSED_DEAL_IDS:
                 _LAST_CLOSED_DEAL_IDS.add(deal_id)

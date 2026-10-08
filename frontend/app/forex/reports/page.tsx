@@ -89,6 +89,19 @@ const PERIOD_LABELS: Record<string, string> = Object.fromEntries(
   PERIOD_PRESETS.map((p) => [p.key, p.label.replace(/^\S+\s/, "")]),
 );
 
+// Strateji kimliği → panelde okunur kısa etiket (backend `strategy` alanı).
+const STRATEGY_LABELS: Record<string, string> = {
+  EMA_ADX_PULLBACK_M5: "EMA+ADX Geri Çekilme (M5)",
+  DONCHIAN_ADX: "Donchian Kırılımı",
+  M1_M5_RADAR_SCALPER: "Radar Skalper",
+  IC_MARKETS_MT5: "IC Markets MT5",
+};
+
+function strategyLabel(code?: string): string {
+  if (!code) return "-";
+  return STRATEGY_LABELS[code] || code;
+}
+
 export default function ForexReportsPage() {
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<any[]>([]);
@@ -201,6 +214,7 @@ export default function ForexReportsPage() {
         "Bilet No",
         "Parite",
         "Sembol",
+        "Strateji",
         "Yön",
         "Lot",
         "Radar Skoru",
@@ -226,6 +240,7 @@ export default function ForexReportsPage() {
           t.id || "-",
           t.display || t.symbol || "-",
           t.symbol || "-",
+          strategyLabel(t.strategy),
           t.direction || "BUY",
           t.lots || 0.01,
           t.score || "-",
@@ -737,6 +752,7 @@ export default function ForexReportsPage() {
                 <tr>
                   <th className="py-3 px-3">Bilet ID</th>
                   <th className="py-3 px-3">Parite</th>
+                  <th className="py-3 px-3">Strateji</th>
                   <th className="py-3 px-2">Yön</th>
                   <th className="py-3 px-2">Lot</th>
                   <th className="py-3 px-2">Skor</th>
@@ -766,6 +782,21 @@ export default function ForexReportsPage() {
                       <td className="py-3 px-3">
                         <span className="font-bold text-white text-xs block">{tr.display || tr.symbol}</span>
                         <span className="text-[10px] text-bunker-muted">{tr.symbol}</span>
+                      </td>
+
+                      {/* Strateji */}
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
+                          tr.strategy === "EMA_ADX_PULLBACK_M5"
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : tr.strategy === "DONCHIAN_ADX"
+                            ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                            : tr.strategy === "M1_M5_RADAR_SCALPER"
+                            ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                            : "bg-bunker-800/60 text-bunker-muted border border-bunker-700"
+                        }`}>
+                          {strategyLabel(tr.strategy)}
+                        </span>
                       </td>
 
                       {/* Yön */}

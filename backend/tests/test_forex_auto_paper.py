@@ -777,6 +777,71 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(f(1.1000, 1.0995, 1.1010, 1.0997, 25.0, 18.0, 738000, {}, 2, 17, True))
         self.assertIsNone(f(1.1000, 1.0995, 1.1010, 1.0997, 25.0, 18.0, 738000, {}, 2, 5, False))
 
+    def test_ema_adx_pullback_entry_rules(self):
+        """EMA+ADX geri-çekilme canlı giriş kararı (XAU 5m replay kuralıyla birebir)."""
+        f = forex.ema_adx_pullback_entry
+        # Boğa dizilimi + ADX yeterli + EMA21'e temas + yeşil onay barı → BUY
+        self.assertEqual(
+            f(ema8=101.0, ema21=100.0, ema50=99.0, adx=30.0, adx_min=25.0,
+              close=100.5, open_=100.0, high=100.6, low=99.9,
+              atr_price=1.0, touch_atr=0.30, day_counts={}, max_per_day=0),
+            "BUY")
+        # Ayı dizilimi + temas + kırmızı onay barı → SELL
+        self.assertEqual(
+            f(ema8=99.0, ema21=100.0, ema50=101.0, adx=30.0, adx_min=25.0,
+              close=99.5, open_=100.0, high=100.1, low=99.4,
+              atr_price=1.0, touch_atr=0.30, day_counts={}, max_per_day=0),
+            "SELL")
+        # ADX eşiğin altında → yok
+        self.assertIsNone(
+            f(101.0, 100.0, 99.0, 12.0, 25.0, 100.5, 100.0, 100.6, 99.9, 1.0, 0.30, {}, 0))
+        # Temas yok (bar EMA21'den uzak) → yok
+        self.assertIsNone(
+            f(101.0, 100.0, 99.0, 30.0, 25.0, 103.0, 102.0, 103.1, 102.5, 1.0, 0.30, {}, 0))
+        # Dizilim karışık (8>21 ama 21<50) → yok
+        self.assertIsNone(
+            f(101.0, 100.0, 100.5, 30.0, 25.0, 100.5, 100.0, 100.6, 99.9, 1.0, 0.30, {}, 0))
+        # Onay barı ters (boğa dizilimi ama kırmızı kapanış) → yok
+        self.assertIsNone(
+            f(101.0, 100.0, 99.0, 30.0, 25.0, 100.5, 101.0, 101.2, 99.9, 1.0, 0.30, {}, 0))
+        # ATR sıfır/geçersiz → yok
+        self.assertIsNone(
+            f(101.0, 100.0, 99.0, 30.0, 25.0, 100.5, 100.0, 100.6, 99.9, 0.0, 0.30, {}, 0))
+        # Gün içi limit: BUY dolu → BUY gelmez
+        self.assertIsNone(
+            f(101.0, 100.0, 99.0, 30.0, 25.0, 100.5, 100.0, 100.6, 99.9, 1.0, 0.30, {"BUY": 3}, 3))
+
+    def test_strategy_name_helpers(self):
+        """Strateji kimliği: giriş kaynağı → kayıt adı; MT5 etiketi → kayıt adı."""
+        self.assertEqual(forex.strategy_name_for("ema_adx_pullback"), "EMA_ADX_PULLBACK_M5")
+        self.assertEqual(forex.strategy_name_for("donchian"), "DONCHIAN_ADX")
+        self.assertEqual(forex.strategy_name_for(""), "M1_M5_RADAR_SCALPER")
+        self.assertEqual(forex.strategy_name_for(None), "M1_M5_RADAR_SCALPER")
+        # MT5 emir yorumu etiketleri (kapanan deal'den geri gelen)
+        self.assertEqual(forex.strategy_comment_tag("ema_adx_pullback"), "EAP-M5")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "EAP-M5"}),
+                         "EMA_ADX_PULLBACK_M5")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "DONCH 88"}),
+                         "DONCHIAN_ADX")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "RADAR 91"}),
+                         "M1_M5_RADAR_SCALPER")
+        # Etiketsiz/eski kayıt → nötr
+        self.assertEqual(forex.strategy_from_mt5_deal({}), "IC_MARKETS_MT5")
+        # Zaten çözülmüş `strategy` alanı korunur
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy": "EMA_ADX_PULLBACK_M5"}),
+                         "EMA_ADX_PULLBACK_M5")
+
+    async def test_ema_adx_settings_defaults(self):
+        """EMA+ADX canlı taşıma ayarları: XAU açık, SL/TP replay optimaliyle aynı."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertTrue(cfg.ema_adx_enabled)
+        self.assertIn("XAUUSD", cfg.ema_adx_symbols)
+        self.assertEqual(cfg.ema_adx_adx_min, 25.0)
+        self.assertEqual(cfg.ema_adx_sl_atr, 1.5)
+        self.assertEqual(cfg.ema_adx_tp_atr, 2.0)
+        # XAU, klasik ve donchian akışlarını korumak için mode_exclusive'da OLMAMALI
+        self.assertNotIn("XAUUSD", cfg.mode_exclusive)
+
     async def test_mode_settings_defaults(self):
         """Canlı taşima ayarlari: mode sembolleri, exclusive liste ve 99 slot."""
         cfg = forex.ForexAutoPaperSettings()
