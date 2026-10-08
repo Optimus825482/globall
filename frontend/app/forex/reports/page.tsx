@@ -91,9 +91,14 @@ const PERIOD_LABELS: Record<string, string> = Object.fromEntries(
 
 // Strateji kimliği → panelde okunur kısa etiket (backend `strategy` alanı).
 const STRATEGY_LABELS: Record<string, string> = {
-  EMA_ADX_PULLBACK_M5: "EMA+ADX Geri Çekilme (M5)",
-  DONCHIAN_ADX: "Donchian Kırılımı",
-  M1_M5_RADAR_SCALPER: "Radar Skalper",
+  EMA_ADX_PULLBACK_M5: "EMA+ADX Pullback (M5)",
+  EMA_ADX_PULLBACK: "EMA+ADX Pullback (M5)",
+  S3_SUPERTREND_RSI: "S3 SuperTrend+RSI",
+  S3_5M: "S3 SuperTrend+RSI (M5)",
+  S3_15M: "S3 SuperTrend+RSI (M15)",
+  DONCHIAN_ADX: "Donchian ADX Kırılımı",
+  M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
+  MANUAL: "Manuel Giriş",
   IC_MARKETS_MT5: "IC Markets MT5",
 };
 
@@ -115,6 +120,7 @@ export default function ForexReportsPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string>("ALL");
   const [selectedOutcome, setSelectedOutcome] = useState<string>("ALL");
   const [selectedReason, setSelectedReason] = useState<string>("ALL");
+  const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Dönem filtresi (KPI kartları dahil tüm raporu kapsar)
@@ -153,6 +159,7 @@ export default function ForexReportsPage() {
       if (selectedSymbol !== "ALL") qParams.append("symbol", selectedSymbol);
       if (selectedOutcome !== "ALL") qParams.append("outcome", selectedOutcome);
       if (selectedReason !== "ALL") qParams.append("reason", selectedReason);
+      if (selectedStrategy !== "ALL") qParams.append("strategy", selectedStrategy);
       if (searchQuery.trim()) qParams.append("search", searchQuery.trim());
       
       if (isSingleDate) {
@@ -185,13 +192,13 @@ export default function ForexReportsPage() {
 
   useEffect(() => {
     if (customRangeReady) fetchReport();
-  }, [selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
+  }, [selectedSymbol, selectedOutcome, selectedReason, selectedStrategy, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!autoRefresh || !customRangeReady) return;
     const interval = setInterval(fetchReport, 3000);
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
+  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, selectedStrategy, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
 
   // Dönem değişiminde özel aralığa geçilirse makul bir varsayılan doldur
   // (boş tarih kutularıyla kullanıcıyı bekletmemek için).
@@ -621,7 +628,7 @@ export default function ForexReportsPage() {
 
       {/* FİLTRELEME & ARAMA ÇUBUĞU */}
       <div className="p-4 rounded-2xl bg-bunker-900/70 border border-bunker-800 space-y-3 shadow-lg">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
           {/* Arama */}
           <div>
             <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
@@ -651,6 +658,26 @@ export default function ForexReportsPage() {
                   {item.label}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Strateji Filtresi */}
+          <div>
+            <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
+              🎯 Strateji Filtresi:
+            </label>
+            <select
+              value={selectedStrategy}
+              onChange={(e) => setSelectedStrategy(e.target.value)}
+              className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
+            >
+              <option value="ALL">Tüm Stratejiler</option>
+              <option value="EMA_ADX_PULLBACK_M5">EMA+ADX Pullback (M5)</option>
+              <option value="S3_SUPERTREND_RSI">S3 SuperTrend+RSI</option>
+              <option value="DONCHIAN_ADX">Donchian ADX Kırılımı</option>
+              <option value="M1_M5_RADAR_SCALPER">M1/M5 Çoklu Radar</option>
+              <option value="IC_MARKETS_MT5">IC Markets MT5</option>
+              <option value="MANUAL">Manuel Giriş</option>
             </select>
           </div>
 
@@ -691,13 +718,14 @@ export default function ForexReportsPage() {
         </div>
 
         {/* Hızlı Filtre Temizle */}
-        {(selectedSymbol !== "ALL" || selectedOutcome !== "ALL" || selectedReason !== "ALL" || searchQuery || period !== "all") && (
+        {(selectedSymbol !== "ALL" || selectedStrategy !== "ALL" || selectedOutcome !== "ALL" || selectedReason !== "ALL" || searchQuery || period !== "all") && (
           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-bunker-800 text-[11px]">
             <span className="text-bunker-muted">Aktif filtreler uygulanıyor ({trades.length} işlem listelendi)</span>
             <button
               type="button"
               onClick={() => {
                 setSelectedSymbol("ALL");
+                setSelectedStrategy("ALL");
                 setSelectedOutcome("ALL");
                 setSelectedReason("ALL");
                 setSearchQuery("");
@@ -787,15 +815,19 @@ export default function ForexReportsPage() {
                       {/* Strateji */}
                       <td className="py-3 px-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
-                          tr.strategy === "EMA_ADX_PULLBACK_M5"
+                          tr.strategy === "EMA_ADX_PULLBACK_M5" || tr.strategy === "EMA_ADX_PULLBACK"
                             ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : tr.strategy === "S3_SUPERTREND_RSI" || String(tr.strategy).startsWith("S3")
+                            ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
                             : tr.strategy === "DONCHIAN_ADX"
                             ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
                             : tr.strategy === "M1_M5_RADAR_SCALPER"
                             ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                            : tr.strategy === "MANUAL"
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                             : "bg-bunker-800/60 text-bunker-muted border border-bunker-700"
                         }`}>
-                          {strategyLabel(tr.strategy)}
+                          {tr.strategy_label || strategyLabel(tr.strategy)}
                         </span>
                       </td>
 

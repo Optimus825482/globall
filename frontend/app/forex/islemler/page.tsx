@@ -52,9 +52,14 @@ interface ClosedTrade {
 
 // Strateji kimliği → panelde okunur kısa etiket (backend `strategy` alanı, 2026-10-08).
 const STRATEGY_LABELS: Record<string, string> = {
-  EMA_ADX_PULLBACK_M5: "EMA+ADX Geri Çekilme (M5)",
-  DONCHIAN_ADX: "Donchian Kırılımı",
-  M1_M5_RADAR_SCALPER: "Radar Skalper",
+  EMA_ADX_PULLBACK_M5: "EMA+ADX Pullback (M5)",
+  EMA_ADX_PULLBACK: "EMA+ADX Pullback (M5)",
+  S3_SUPERTREND_RSI: "S3 SuperTrend+RSI",
+  S3_5M: "S3 SuperTrend+RSI (M5)",
+  S3_15M: "S3 SuperTrend+RSI (M15)",
+  DONCHIAN_ADX: "Donchian ADX Kırılımı",
+  M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
+  MANUAL: "Manuel Giriş",
   IC_MARKETS_MT5: "IC Markets MT5",
 };
 
@@ -885,15 +890,19 @@ export default function ForexIslemlerPage() {
                         {/* Strateji */}
                         <td className="py-3.5 px-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${
-                            p.strategy === "EMA_ADX_PULLBACK_M5"
-                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/30"
+                            p.strategy === "EMA_ADX_PULLBACK_M5" || p.strategy === "EMA_ADX_PULLBACK"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                              : p.strategy === "S3_SUPERTREND_RSI" || String(p.strategy).startsWith("S3")
+                              ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30"
                               : p.strategy === "DONCHIAN_ADX"
-                              ? "bg-violet-500/15 text-violet-600 dark:text-violet-300 border-violet-500/30"
+                              ? "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30"
                               : p.strategy === "M1_M5_RADAR_SCALPER"
-                              ? "bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/30"
-                              : "bg-slate-500/10 text-slate-500 dark:text-bunker-muted border-slate-500/20"
+                              ? "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30"
+                              : p.strategy === "MANUAL"
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                              : "bg-slate-500/10 text-slate-700 dark:text-bunker-muted border-slate-500/20"
                           }`}>
-                            {strategyLabel(p.strategy)}
+                            {(p as any).strategy_label || strategyLabel(p.strategy)}
                           </span>
                         </td>
 
@@ -1241,15 +1250,19 @@ export default function ForexIslemlerPage() {
 
                         <td className="py-3.5 px-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${
-                            t.strategy === "EMA_ADX_PULLBACK_M5"
-                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/30"
+                            t.strategy === "EMA_ADX_PULLBACK_M5" || t.strategy === "EMA_ADX_PULLBACK"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                              : t.strategy === "S3_SUPERTREND_RSI" || String(t.strategy).startsWith("S3")
+                              ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30"
                               : t.strategy === "DONCHIAN_ADX"
-                              ? "bg-violet-500/15 text-violet-600 dark:text-violet-300 border-violet-500/30"
+                              ? "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30"
                               : t.strategy === "M1_M5_RADAR_SCALPER"
-                              ? "bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/30"
-                              : "bg-slate-500/10 text-slate-500 dark:text-bunker-muted border-slate-500/20"
+                              ? "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30"
+                              : t.strategy === "MANUAL"
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                              : "bg-slate-500/10 text-slate-700 dark:text-bunker-muted border-slate-500/20"
                           }`}>
-                            {strategyLabel(t.strategy)}
+                            {(t as any).strategy_label || strategyLabel(t.strategy)}
                           </span>
                         </td>
 

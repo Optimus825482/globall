@@ -29,6 +29,8 @@ interface OpenPosition {
   pnl_pips: number;
   open_time?: string;
   category?: string;
+  strategy?: string;
+  strategy_label?: string;
 }
 
 interface ClosedTrade {
@@ -1277,7 +1279,14 @@ export default function HomePage() {
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-slate-900 dark:text-white">{pos.symbol}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">{pos.symbol}</span>
+                      {(pos.strategy_label || pos.strategy) && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-600/50 whitespace-nowrap">
+                          {pos.strategy_label || pos.strategy}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-black ${
                         pos.direction === "BUY"

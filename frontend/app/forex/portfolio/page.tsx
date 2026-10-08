@@ -83,6 +83,8 @@ interface MT5State {
     breakeven_activated?: boolean;
     trailing_activated?: boolean;
     open_time: string;
+    strategy?: string;
+    strategy_label?: string;
   }>;
   closed_deals: Array<{
     ticket: number;
@@ -93,6 +95,8 @@ interface MT5State {
     profit: number;
     commission: number;
     time: string;
+    strategy?: string;
+    strategy_label?: string;
   }>;
   pending_commands_count: number;
 }
@@ -606,7 +610,16 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     return (
                       <tr key={p.ticket} className="hover:bg-slate-50 dark:hover:bg-bunker-800/40 transition-colors">
                         <td className="py-3 px-4 font-mono text-[11px] text-sky-600 dark:text-cyan-300 font-black">#{p.ticket}</td>
-                        <td className="py-3 px-3 font-black text-slate-900 dark:text-white text-sm">{p.symbol}</td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-black text-slate-900 dark:text-white text-sm">{p.symbol}</span>
+                            {(p.strategy_label || (p as any).strategy) && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-600/50 whitespace-nowrap">
+                                {p.strategy_label || (p as any).strategy}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 px-3">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-black ${
@@ -898,6 +911,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       <span className="font-bold mr-1.5 uppercase tracking-wider text-[10px]">
                         {icon} [{log.category}]
                       </span>
+                      {((log as any).strategy_label || (log as any).metadata?.strategy_label) && (
+                        <span className="mr-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-600/50 whitespace-nowrap inline-block">
+                          🎯 {(log as any).strategy_label || (log as any).metadata?.strategy_label}
+                        </span>
+                      )}
                       <span>{log.message}</span>
                     </div>
                     <span className="text-[10px] opacity-70 whitespace-nowrap">{formatUtc3(log.time)}</span>
@@ -964,7 +982,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     className="p-2.5 rounded-lg border border-slate-200 dark:border-bunker-800 bg-slate-50/70 dark:bg-bunker-950/60 flex items-center justify-between hover:border-slate-300 dark:hover:border-bunker-700 transition-colors"
                   >
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-black text-slate-900 dark:text-white text-xs">{symDisplay}</span>
                         <span
                           className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
@@ -975,6 +993,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                         >
                           {dir}
                         </span>
+                        {(tr.strategy_label || tr.strategy) && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-600/50">
+                            {tr.strategy_label || tr.strategy}
+                          </span>
+                        )}
                         <span className="text-[10px] font-semibold text-slate-700 dark:text-bunker-muted">{lotsVal} Lot</span>
                         <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-bunker-800 text-slate-700 dark:text-bunker-muted font-bold">
                           {reasonStr}
