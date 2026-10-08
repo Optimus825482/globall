@@ -774,9 +774,51 @@ class TestForexAccountingFixes(unittest.IsolatedAsyncioTestCase):
         # P3: kısmi sonrası kalan risk işaretlenmeli ve lotla birlikte yarıya inmeli.
         self.assertIn("risk_usd_after_partial", pos)
 
+    # --- EV KALKANI LİSTESİ VE MANUEL İPTAL/MUAFIYET TESTLERİ -----------------
+    async def test_ev_shield_status_and_override_lifecycle(self):
+        """Kullanıcı bir sembolü (örn. USDJPY) bugün için EV kalkanından muaf tutabilmeli, sıfırlayabilmeli veya geri alabilmeli."""
+        sym = "USDJPY"
+        # 1. Başlangıç temizliği
+        forex._SYMBOL_EV_OVERRIDE_UNTIL.pop(sym, None)
+        forex._SYMBOL_EV_RESET_AT_TS.pop(sym, None)
+
+        status_init = await forex.get_forex_ev_shield_status()
+        self.assertIn("symbols", status_init)
+        self.assertIn("blocked_count", status_init)
+
+        # 2. "bypass_today" ile muafiyet ver
+        req_override = forex.EVShieldOverrideRequest(symbol=sym, action="bypass_today")
+        res_override = await forex.override_forex_ev_shield(req_override)
+        self.assertTrue(res_override["success"])
+        self.assertIn(sym, forex._SYMBOL_EV_OVERRIDE_UNTIL)
+        self.assertGreater(forex._SYMBOL_EV_OVERRIDE_UNTIL[sym], time.time())
+
+        # 3. Durumu kontrol et: is_overridden True olmalı
+        status_after = await forex.get_forex_ev_shield_status()
+        sym_entry = next((s for s in status_after["symbols"] if s["symbol"] == sym), None)
+        self.assertIsNotNone(sym_entry)
+        self.assertTrue(sym_entry["is_overridden"])
+        self.assertFalse(sym_entry["is_blocked"])
+
+        # 4. "reset_history" ile geçmişi sıfırla
+        req_reset = forex.EVShieldOverrideRequest(symbol=sym, action="reset_history")
+        res_reset = await forex.override_forex_ev_shield(req_reset)
+        self.assertTrue(res_reset["success"])
+        self.assertIn(sym, forex._SYMBOL_EV_RESET_AT_TS)
+
+        # 5. "restore" ile muafiyeti kaldır
+        req_restore = forex.EVShieldOverrideRequest(symbol=sym, action="restore")
+        res_restore = await forex.override_forex_ev_shield(req_restore)
+        self.assertTrue(res_restore["success"])
+        self.assertNotIn(sym, forex._SYMBOL_EV_OVERRIDE_UNTIL)
+
+        # Temizlik
+        forex._SYMBOL_EV_RESET_AT_TS.pop(sym, None)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

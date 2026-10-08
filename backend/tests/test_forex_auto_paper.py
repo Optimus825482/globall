@@ -809,6 +809,120 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._SYMBOL_LOSS_STREAK.clear()
 
 
+    def test_s3_pullback_entry_rules(self):
+        """S3 (Supertrend+RSI pullback) canlı giriş kararı (L30 replay kuralıyla birebir)."""
+        f = forex.s3_pullback_entry
+        # LONG: ST boğa + kapanış EMA200 üstü + ADX yeter + son 6 barda RSI<50 sarkması
+        # + önceki bar 50 altı + bu bar 50 üstü → BUY
+        self.assertEqual(
+            f(st_dir=1, close=101.0, ema200=100.0, use_ema200=True,
+              adx=30.0, adx_min=25.0,
+              rsi_now=52.0, rsi_prev=47.0, rsi_window=[55.0, 49.0, 44.0, 47.0],
+              rsi_lo=40.0, atr_price=1.0, pip_size=0.1,
+              day_counts={}, max_per_day=0),
+            "BUY")
+        # SHORT ayna: ST ayı + EMA200 altı + son 6 barda RSI>50 + önceki 50 üstü + bu bar 50 altı → SELL
+        self.assertEqual(
+            f(st_dir=-1, close=99.0, ema200=100.0, use_ema200=True,
+              adx=30.0, adx_min=25.0,
+              rsi_now=48.0, rsi_prev=53.0, rsi_window=[45.0, 51.0, 56.0, 53.0],
+              rsi_lo=40.0, atr_price=1.0, pip_size=0.1,
+              day_counts={}, max_per_day=0),
+            "SELL")
+        # ST tanımsız (0) → yok
+        self.assertIsNone(f(0, 101.0, 100.0, True, 30.0, 25.0, 52.0, 47.0, [49.0], 40.0, 1.0, 0.1, {}, 0))
+        # EMA200 tarafı bozuk (ST boğa ama kapanış EMA200 altı) → yok
+        self.assertIsNone(f(1, 99.0, 100.0, True, 30.0, 25.0, 52.0, 47.0, [49.0], 40.0, 1.0, 0.1, {}, 0))
+        # ADX eşiğin altında → yok
+        self.assertIsNone(f(1, 101.0, 100.0, True, 20.0, 25.0, 52.0, 47.0, [49.0], 40.0, 1.0, 0.1, {}, 0))
+        # Son 6 barda RSI<50 sarkması YOK (hepsi 50 üstü) → yok
+        self.assertIsNone(f(1, 101.0, 100.0, True, 30.0, 25.0, 52.0, 51.0, [55.0, 54.0, 56.0], 40.0, 1.0, 0.1, {}, 0))
+        # 40 bandını TAMAMEN kırdı (hepsi <40) → trend bozulmuş → yok
+        self.assertIsNone(f(1, 101.0, 100.0, True, 30.0, 25.0, 52.0, 47.0, [35.0, 38.0, 36.0], 40.0, 1.0, 0.1, {}, 0))
+        # Önceki bar zaten 50 üstündeydi → yeni dönüş yok → yok
+        self.assertIsNone(f(1, 101.0, 100.0, True, 30.0, 25.0, 52.0, 51.0, [49.0, 55.0], 40.0, 1.0, 0.1, {}, 0))
+        # Bu bar 50 üstüne kapanmamış → onay yok → yok
+        self.assertIsNone(f(1, 101.0, 100.0, True, 30.0, 25.0, 48.0, 47.0, [49.0], 40.0, 1.0, 0.1, {}, 0))
+        # ATR geçersiz → yok
+        self.assertIsNone(f(1, 101.0, 100.0, True, 30.0, 25.0, 52.0, 47.0, [49.0], 40.0, 0.0, 0.1, {}, 0))
+        # Gün içi limit dolu → yok; sayaç artmaz
+        counts = {"s3_5m": 2}
+        self.assertIsNone(f(1, 101.0, 100.0, True, 30.0, 25.0, 52.0, 47.0, [49.0], 40.0, 1.0, 0.1,
+                            counts, 2, "s3_5m"))
+        self.assertEqual(counts["s3_5m"], 2)
+
+    def test_s3_series_helpers_match_replay(self):
+        """S3 seri yardımcıları replay fonksiyonlarıyla birebir sonuç vermeli."""
+        bars = [{"open": 100.0 + i * 0.1, "high": 100.6 + i * 0.1,
+                 "low": 99.8 + i * 0.1, "close": 100.3 + i * 0.1}
+                for i in range(60)]
+        closes = [b["close"] for b in bars]
+        # RSI: ilk 14 bar None
+        rsi = forex._s3_rsi_wilder(closes, 14)
+        self.assertIsNone(rsi[13])
+        self.assertIsNotNone(rsi[14])
+        # Monoton yükselen seride RSI yüksek olmalı
+        self.assertGreater(rsi[-1], 70.0)
+        # ATR: negatif olmayan, sıfırdan büyük seri
+        atr = forex._s3_atr_series(bars, 14)
+        self.assertEqual(len(atr), len(bars))
+        self.assertGreater(atr[-1], 0.0)
+        # ST: yükselen seride son yön boğa
+        st = forex._s3_st_dir_series(bars, 10, 3.0)
+        self.assertEqual(len(st), len(bars))
+        self.assertEqual(st[-1], 1)
+        # EMA serisi: uzunluk eşleşir, tohum ilk değer, yükselişte geride kalır
+        ema = forex._s3_ema_series(closes, 200)
+        self.assertEqual(len(ema), len(closes))
+        self.assertEqual(ema[0], closes[0])
+        self.assertGreater(ema[-1], closes[0])
+        self.assertLess(ema[-1], closes[-1])
+
+    def test_s3_settings_defaults_and_watch(self):
+        """S3 canlı taşıma ayarları: semboller, köprü izleme listesi kalıcılığı."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertTrue(cfg.s3_enabled)
+        self.assertIn("XAUUSD", cfg.s3_symbols_5m)
+        self.assertIn("XAUUSD", cfg.s3_symbols_15m)
+        self.assertIn("BTCUSD", cfg.s3_symbols_15m)
+        self.assertEqual(cfg.s3_adx_min, 25.0)
+        self.assertEqual(cfg.s3_rsi_lo, 40.0)
+        self.assertEqual(cfg.s3_sl_atr, 1.5)
+        self.assertEqual(cfg.s3_tp_atr_15m, 2.0)
+        # Strateji kimliği: s3_* kaynağı → S3 adı; etiketler S3/S3F
+        self.assertEqual(forex.strategy_name_for("s3_5m"), forex.S3_PULLBACK_STRATEGY)
+        self.assertEqual(forex.strategy_name_for("s3_15m"), forex.S3_PULLBACK_STRATEGY)
+        self.assertEqual(forex.strategy_comment_tag("s3_5m"), "S3")
+        self.assertEqual(forex.strategy_comment_tag("s3_15m"), "S3F")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "S3 85"}),
+                         forex.S3_PULLBACK_STRATEGY)
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "S3F 88"}),
+                         forex.S3_PULLBACK_STRATEGY)
+        # Köprü izleme listesi: S3 sembolleri panel bakmasa da listede
+        saved_viewed = dict(forex._FOREX_VIEWED)
+        saved_enabled = forex._AUTO_SETTINGS.s3_enabled
+        try:
+            forex._FOREX_VIEWED.clear()
+            pairs = {(w["symbol"], w["interval"]) for w in forex._get_forex_watch()}
+            self.assertIn(("XAUUSD", "5m"), pairs)
+            self.assertIn(("XAUUSD", "15m"), pairs)
+            self.assertIn(("BTCUSD", "15m"), pairs)
+        finally:
+            forex._FOREX_VIEWED.clear()
+            forex._FOREX_VIEWED.update(saved_viewed)
+            forex._AUTO_SETTINGS.s3_enabled = saved_enabled
+
+    def test_s3_resample_15m(self):
+        """5m→15m birleştirme: open ilk, high max, low min, close son."""
+        bars5 = [{"time": 1000 + i * 300, "open": float(i), "high": float(i) + 1.0,
+                  "low": float(i) - 1.0, "close": float(i) + 0.5} for i in range(9)]
+        out = forex._s3_resample_15m(bars5)
+        self.assertEqual(len(out), 3)
+        self.assertEqual(out[0]["open"], 0.0)
+        self.assertEqual(out[0]["high"], 3.0)
+        self.assertEqual(out[0]["low"], -1.0)
+        self.assertEqual(out[0]["close"], 2.5)
+
     def test_donchian_adx_entry_rules(self):
         """Donchian+ADX canlı giriş kararı (replay kazananı ile aynı kural)."""
         f = forex.donchian_adx_entry

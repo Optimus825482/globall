@@ -541,6 +541,11 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     return None
 
 
+# Sembol EV kalkanı muafiyet ve sıfırlama durumu (yalnız dict mutasyonu)
+_SYMBOL_EV_OVERRIDE_UNTIL: Dict[str, float] = {}
+_SYMBOL_EV_RESET_AT_TS: Dict[str, float] = {}
+
+
 def _collect_symbol_ev(symbol: str, now_ts: float, window_sec: float, source: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Kapanmış işlemlerden sembol bazlı son `window_sec` EV istatistiği.
 
@@ -570,9 +575,10 @@ def _collect_symbol_ev(symbol: str, now_ts: float, window_sec: float, source: Op
         try:
             if now_ts - float(ts) > window_sec:
                 continue
-            # EV reset kesimi: reset anından önce kapanan işlemler sicile girmez —
+            # EV reset kesimi: global veya sembol bazlı reset anından önce kapanan işlemler sicile girmez —
             # sembol, reset sonrasındaki davranışıyla değerlendirilir.
-            if _EV_RESET_AT_TS and float(ts) < _EV_RESET_AT_TS:
+            sym_reset_ts = max(_EV_RESET_AT_TS, _SYMBOL_EV_RESET_AT_TS.get(sym, 0.0))
+            if sym_reset_ts and float(ts) < sym_reset_ts:
                 continue
             pnl = float(d.get("pnl_usd", d.get("profit", 0.0)) or 0.0)
         except Exception:
@@ -759,6 +765,10 @@ def donchian_adx_entry(prev_close: Optional[float], prev_mid: Optional[float], c
 #   de pozitif. Kayıtta `EMA_ADX_PULLBACK_M5`, logda "EMA+ADX Geri Çekilme (M5)".
 EMA_ADX_PULLBACK_STRATEGY = "EMA_ADX_PULLBACK_M5"
 EMA_ADX_PULLBACK_LABEL = "EMA+ADX Geri Çekilme (M5)"
+# S3 = Supertrend+RSI pullback (goose AI strateji #3; L30 replay: XAU 5m +90/PF 2.09,
+# XAU 15m +58/PF 3.08, BTC 15m +59/PF 6.63 — 2026-10-08 kullanıcı kararı canlıya alındı)
+S3_PULLBACK_STRATEGY = "S3_SUPERTREND_RSI"
+S3_PULLBACK_LABEL = "S3 Supertrend+RSI"
 
 
 def strategy_name_for(entry_source: Any) -> str:
@@ -770,6 +780,8 @@ def strategy_name_for(entry_source: Any) -> str:
     src = str(entry_source or "").strip().lower()
     if src == "ema_adx_pullback":
         return EMA_ADX_PULLBACK_STRATEGY
+    if src.startswith("s3_"):
+        return S3_PULLBACK_STRATEGY
     if src == "donchian":
         return "DONCHIAN_ADX"
     return "M1_M5_RADAR_SCALPER"
@@ -784,6 +796,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
     src = str(entry_source or "").strip().lower()
     if src == "ema_adx_pullback":
         return "EAP-M5"
+    if src.startswith("s3_"):
+        return "S3" if src == "s3_5m" else "S3F"  # S3=5m, S3F=15m (flip/four-hour değil!)
     if src == "donchian":
         return "DONCH"
     return "RADAR"
@@ -801,11 +815,164 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
     tag = str(deal.get("strategy_tag") or deal.get("entry_source") or "").upper()
     if tag.startswith("EAP"):
         return EMA_ADX_PULLBACK_STRATEGY
+    if tag.startswith("S3"):
+        return S3_PULLBACK_STRATEGY
     if tag.startswith("DONCH"):
         return "DONCHIAN_ADX"
     if tag.startswith("RADAR"):
         return "M1_M5_RADAR_SCALPER"
     return "IC_MARKETS_MT5"
+
+
+def _s3_ema_series(vals: List[float], period: int) -> List[float]:
+    """EMA serisi (replay `_ema_series` ile birebir)."""
+    if not vals:
+        return []
+    k = 2.0 / (period + 1.0)
+    out = [vals[0]]
+    e = vals[0]
+    for v in vals[1:]:
+        e += k * (v - e)
+        out.append(e)
+    return out
+
+
+def _s3_rsi_wilder(closes: List[float], period: int = 14) -> List[Optional[float]]:
+    """Wilder RSI serisi (replay `_rsi_wilder` ile birebir; ilk `period` bar None)."""
+    out: List[Optional[float]] = [None] * len(closes)
+    if len(closes) < period + 1:
+        return out
+    deltas = [closes[i + 1] - closes[i] for i in range(period)]
+    avg_g = sum(max(d, 0.0) for d in deltas) / period
+    avg_l = sum(max(-d, 0.0) for d in deltas) / period
+    for i in range(period, len(closes)):
+        if i > period:
+            d = closes[i] - closes[i - 1]
+            avg_g = (avg_g * (period - 1) + max(d, 0.0)) / period
+            avg_l = (avg_l * (period - 1) + max(-d, 0.0)) / period
+        out[i] = 100.0 if avg_l <= 0 else 100.0 - 100.0 / (1.0 + avg_g / avg_l)
+    return out
+
+
+def _s3_atr_series(bars: List[Dict[str, Any]], period: int = 14) -> List[float]:
+    """ATR serisi (replay `_mini_atr_series` ile birebir; bars = {open,high,low,close})."""
+    if not bars:
+        return []
+    trs: List[float] = []
+    prev_c = float(bars[0]["close"])
+    for b in bars:
+        h, l, c = float(b["high"]), float(b["low"]), float(b["close"])
+        trs.append(max(h - l, abs(h - prev_c), abs(l - prev_c)))
+        prev_c = c
+    a = sum(trs[:period]) / period
+    out = [a] * min(period, len(trs))
+    for i in range(period, len(trs)):
+        a = (a * (period - 1) + trs[i]) / period
+        out.append(a)
+    return out
+
+
+def _s3_st_dir_series(bars: List[Dict[str, Any]], period: int = 10, mult: float = 3.0) -> List[int]:
+    """SuperTrend yön serisi (replay `_st_dir_series` / forex._compute_supertrend ile birebir ratchet)."""
+    n = len(bars)
+    out = [0] * n
+    if n < period + 2:
+        return out
+    h = [float(b["high"]) for b in bars]
+    l = [float(b["low"]) for b in bars]
+    c = [float(b["close"]) for b in bars]
+    tr = [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])) for i in range(1, n)]
+    atr_series = []
+    atr_val = sum(tr[:period]) / period
+    atr_series.append(atr_val)
+    for i in range(period, len(tr)):
+        atr_val = (atr_val * (period - 1) + tr[i]) / period
+        atr_series.append(atr_val)
+    hl2 = [(h[i] + l[i]) / 2.0 for i in range(n)]
+    direction = 0
+    final_upper = 0.0
+    final_lower = 0.0
+    for i in range(period, n):
+        atr_i = atr_series[i - period] if (i - period) < len(atr_series) else atr_series[-1]
+        upper = hl2[i] + mult * atr_i
+        lower = hl2[i] - mult * atr_i
+        prev_close = c[i - 1]
+        if i == period:
+            final_upper, final_lower = upper, lower
+            direction = 1 if c[i] >= hl2[i] else -1
+        else:
+            if c[i] > final_upper:
+                direction = 1
+            elif c[i] < final_lower:
+                direction = -1
+            if direction > 0:
+                final_lower = max(final_lower, lower)
+                final_upper = hl2[i] + mult * atr_i
+            else:
+                final_upper = min(final_upper, upper)
+                final_lower = hl2[i] - mult * atr_i
+        out[i] = direction
+    return out
+
+
+def s3_pullback_entry(
+    st_dir: int,
+    close: float, ema200: float, use_ema200: bool,
+    adx: float, adx_min: float,
+    rsi_now: Optional[float], rsi_prev: Optional[float], rsi_window: List[Optional[float]],
+    rsi_lo: float,
+    atr_price: float, pip_size: float,
+    day_counts: Dict[str, int], max_per_day: int, action_key: Optional[str] = None,
+) -> Optional[str]:
+    """S3 (Supertrend+RSI pullback) giriş kararı (saf fonksiyon — replay ile birebir).
+
+    Kural seti (goose AI #3, replay `_entry_mode_candidate` supertrend_rsi bloğu):
+      1) Yön: ST(10,3) son kapanmış bar (0 = tanımsız → yok)
+      2) EMA200 tarafı: LONG için kapanış EMA200 üstünde, SHORT altında
+      3) ADX(14) ≥ eşik
+      4) LONG: son 6 barda RSI < 50 sarkması (40 bandını TAMAMEN kırma yok — trend
+         bozulur) + önceki bar 50 altında + bu barda 50 üstüne kapanış; SHORT ayna
+      Döner: "BUY" / "SELL" / None.
+    """
+    if atr_price <= 0 or pip_size <= 0:
+        return None
+    if st_dir == 0:
+        return None
+    if rsi_now is None:
+        return None
+    if use_ema200 and ema200 > 0:
+        if st_dir > 0 and close <= ema200:
+            return None
+        if st_dir < 0 and close >= ema200:
+            return None
+    if adx_min > 0 and adx < adx_min:
+        return None
+    past_vals = [x for x in (rsi_window or []) if x is not None]
+    if st_dir > 0:
+        if not any(x < 50.0 for x in past_vals):
+            return None
+        if rsi_lo > 0 and past_vals and all(x < rsi_lo for x in past_vals):
+            return None
+        if rsi_prev is not None and rsi_prev >= 50.0:
+            return None
+        if rsi_now <= 50.0:
+            return None
+        action = "BUY"
+    else:
+        if not any(x > 50.0 for x in past_vals):
+            return None
+        if past_vals and all(x > 100.0 - rsi_lo for x in past_vals):
+            return None
+        if rsi_prev is not None and rsi_prev <= 50.0:
+            return None
+        if rsi_now >= 50.0:
+            return None
+        action = "SELL"
+    if max_per_day > 0 and action_key:
+        if day_counts.get(action_key, 0) >= max_per_day:
+            return None
+        day_counts[action_key] = day_counts.get(action_key, 0) + 1
+    return action
 
 
 def ema_adx_pullback_entry(
@@ -1444,6 +1611,22 @@ def _compute_technical_indicators(
     signal_line = _calc_ema(macd_line, 9)
     hist = float(macd_line[-1] - signal_line[-1])
 
+    # 4b. RSI(14) serisi (Wilder) + EMA200 — S3 (Supertrend+RSI pullback) giriş modu.
+    # Replay kuralı son 6 barın RSI geçmişini tarar → seri gerekir; EMA200 trend
+    # tarafı filtresi (replay: kapanış EMA200'ün trend tarafında) için seviye.
+    rsi_series: List[float] = []
+    if len(deltas) >= 14:
+        rg = np.where(deltas > 0, deltas, 0.0)
+        rl = np.where(deltas < 0, -deltas, 0.0)
+        ag = float(np.mean(rg[:14]))
+        al = float(np.mean(rl[:14]))
+        for i in range(14, len(deltas)):
+            ag = (ag * 13.0 + float(rg[i])) / 14.0
+            al = (al * 13.0 + float(rl[i])) / 14.0
+        rs_i = ag / al if al != 0 else 100.0
+        rsi_series.append(100.0 - (100.0 / (1.0 + rs_i)))
+    ema200 = float(_calc_ema(c, min(len(c), 200))[-1])
+
     # 5. ATR 14
     # Varsayılan (ATR_USE_WILDER=True): Wilder yumuşatması — ilk 14 TR'nin
     # ortalaması tohum, sonra `avg = (avg*13 + tr)/14` (RSI ile aynı yöntem).
@@ -1936,15 +2119,116 @@ def _note_forex_viewed(symbol: str, interval: str) -> None:
 
 
 def _get_forex_watch() -> List[Dict[str, str]]:
-    """Son `_FOREX_VIEWED_TTL` içinde bakılan çiftler (bayat olanlar budanır)."""
-    now = time.time()
+    """Son `_FOREX_VIEWED_TTL` içinde bakılan çiftler (bayat olanlar budanır).
+
+    S3 motoru için sembol+periyot çiftleri KALİCİ eklenir: S3 (Supertrend+RSI)
+    broker mumlarıyla (Yahoo yerine — aynı kotasyon) sinyal üretir ve panel
+    kapalıyken de köprünün bu çiftleri çekmesi gerekir.
+    """
     out: List[Dict[str, str]] = []
+    seen: set = set()
+    if _AUTO_SETTINGS.s3_enabled:
+        for sym in list(_AUTO_SETTINGS.s3_symbols_5m) + list(_AUTO_SETTINGS.s3_symbols_15m):
+            s = str(sym).upper()
+            for tf in ("5m", "15m"):
+                key = (s, tf)
+                if key not in seen:
+                    seen.add(key)
+                    out.append({"symbol": s, "interval": tf})
+    now = time.time()
     for (sym, tf), ts in list(_FOREX_VIEWED.items()):
         if now - ts > _FOREX_VIEWED_TTL:
             _FOREX_VIEWED.pop((sym, tf), None)
             continue
-        out.append({"symbol": sym, "interval": tf})
+        if (sym, tf) not in seen:
+            seen.add((sym, tf))
+            out.append({"symbol": sym, "interval": tf})
     return out[:_MT5_WATCH_MAX]
+
+
+def _s3_bars_for(sym: str, interval: str, limit: int = 260) -> Optional[List[Dict[str, Any]]]:
+    """S3 göstergeleri için bar dizisi: ÖNCE köprü broker mumları, yoksa Yahoo.
+
+    Köprü `candle_watch`'e S3 sembolleri kalıcı yazılır (bkz. `_get_forex_watch`)
+    → panel kapalıyken bile XAUUSD/BTCUSD 5m+15m mumları broker'dan akar.
+    """
+    mt5_bars = _fetch_mt5_candles(sym, interval, limit)
+    if mt5_bars and len(mt5_bars) >= 30:
+        return mt5_bars
+    try:
+        bars = _fetch_forex_klines(sym, interval, limit)
+        if bars and len(bars) >= 30:
+            return [
+                {"time": int(b.get("time", 0)), "open": float(b.get("open", 0.0)),
+                 "high": float(b.get("high", 0.0)), "low": float(b.get("low", 0.0)),
+                 "close": float(b.get("close", 0.0))}
+                for b in bars
+            ]
+    except Exception:
+        pass
+    return None
+
+
+def _s3_resample_15m(bars5: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """5m barları 15m'e birleştirir (replay 15m cache'i ile aynı paradigma:
+    3×5m → open ilk, high max, low min, close son)."""
+    out: List[Dict[str, Any]] = []
+    for i in range(0, len(bars5) - 2, 3):
+        chunk = bars5[i:i + 3]
+        out.append({
+            "time": int(chunk[0]["time"]),
+            "open": float(chunk[0]["open"]),
+            "high": max(float(b["high"]) for b in chunk),
+            "low": min(float(b["low"]) for b in chunk),
+            "close": float(chunk[-1]["close"]),
+        })
+    return out
+
+
+def _s3_tech_for(sym: str, tf: str) -> Optional[Dict[str, Any]]:
+    """S3 gösterge setini hesaplar: ST yön serisi (son kapanmış bar), RSI serisi,
+    EMA200, ADX, ATR. Barlar kapanmış barlardır; son bar (formasyon halindeki)
+    göstergelere DAHİL EDİLMEZ (look-ahead yok — replay `ci-1` referansı)."""
+    bars = _s3_bars_for(sym, tf)
+    if not bars or len(bars) < 215:
+        return None
+    # Son bar hâlâ şekilleniyor olabilir: MT5 copy_rates_from_pos(pos=0) oluşan
+    # barı da verir. Kapanmış son bar = len-2 (sunucu ts'inden emin olamayız,
+    # replay `ci-1` disiplini birebir korunur).
+    closed = bars[:-1]
+    if len(closed) < 215:
+        return None
+    closes = [float(b["close"]) for b in closed]
+    rsi_s = _s3_rsi_wilder(closes, 14)
+    ema_s = _s3_ema_series(closes, 200)
+    atr_s = _s3_atr_series(closed, 14)
+    st_s = _s3_st_dir_series(closed, 10, 3.0)
+    tech = _TECHNICAL_CACHE.get(sym) or {}
+    return {
+        "st_dir": int(st_s[-1]),
+        "close": closes[-1],
+        "ema200": float(ema_s[-1]),
+        "rsi_now": rsi_s[-1],
+        "rsi_prev": rsi_s[-2] if len(rsi_s) >= 2 else None,
+        "rsi_window": rsi_s[-7:-1],
+        "adx": float(tech.get("adx", 0.0)) if tf == "5m" else float(tech.get("adx", 0.0)),
+        "atr": float(atr_s[-1]),
+        "bars": len(closed),
+        "updated_at": time.time(),
+    }
+
+
+def _refresh_s3_state(ticks: Dict[str, Dict[str, Any]]) -> None:
+    """S3 sembollerinin gösterge setlerini tazeler (motor döngüsünden çağrılır).
+
+    TF başına tek hesap; aday üretimi `_S3_STATE`'i okur. Yahoo düşüşü köprü
+    mumlarını korur; iki kaynak da yoksa sembol bu tur sessizce atlanır.
+    """
+    for tf, syms in (("5m", _AUTO_SETTINGS.s3_symbols_5m), ("15m", _AUTO_SETTINGS.s3_symbols_15m)):
+        for sym in {s.upper() for s in (syms or [])}:
+            tech = _s3_tech_for(sym, tf)
+            if tech:
+                _S3_STATE[f"{sym}|{tf}"] = tech
 
 
 def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[List[Dict[str, Any]]]:
@@ -2761,6 +3045,14 @@ class ForexAutoPaperSettings(BaseModel):
     ema_adx_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="EMA+ADX: SL (× ATR(14)) — 48h RR süpürmesinde optimal bant")
     ema_adx_tp_atr: float = Field(2.0, ge=0.0, le=6.0, description="EMA+ADX: TP (× ATR(14)); 0 = sabit TP yok (trailing'e bırakılır)")
     ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
+    s3_enabled: bool = Field(True, description="S3 (Supertrend+RSI pullback) akışı: ST(10,3) yön + EMA200 tarafı + ADX≥25 + RSI pullback dönüşü (L30 replay: XAU/BTC üç pencere pozitif)")
+    s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09)")
+    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63)")
+    s3_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="S3: ADX(14) trend gücü eşiği (spec: 25)")
+    s3_rsi_lo: float = Field(40.0, ge=0.0, le=50.0, description="S3: pullback bandı alt sınırı (son 6 bar TAMAMEN bu bandın altına inerse trend bozulmuş sayılır)")
+    s3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="S3: SL (× ATR(14)) — replay spec")
+    s3_tp_atr_15m: float = Field(2.0, ge=0.0, le=6.0, description="S3 15m kol: TP (× ATR(14)); 5m kolu TP'sizdir (ST-flip + BE/trailing)")
+    s3_max_per_day: int = Field(0, ge=0, le=20, description="S3: sembol+TF+yön başına günde azami giriş (0 = sınırsız)")
 
 
 class ClosePositionRequest(BaseModel):
@@ -2815,6 +3107,12 @@ _DONCHIAN_STATE: Dict[str, Dict[str, Any]] = {}
 # EMA+ADX geri-çekilme (M5) mod durumu: gün + yön başına giriş sayacı
 # (yalnız dict mutasyonu — global bildirimi gerekmez; bkz. globals-shadow testi)
 _EMA_ADX_STATE: Dict[str, Dict[str, Any]] = {}
+# S3 (Supertrend+RSI pullback) mod durumu: sembol+TF → gösterge seti.
+# Göstergeler `_MT5_CANDLES_CACHE` broker mumlarından (yoksa Yahoo fallback) hesaplanır.
+_S3_STATE: Dict[str, Dict[str, Any]] = {}
+# S3 gün içi giriş sayaçları — `_S3_STATE`'ten AYRI: `_refresh_s3_state` gösterge
+# dict'ini her turda değiştirdiği için sayaçlar aynı dict'te tutulursa silinir.
+_S3_DAY_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -2887,6 +3185,117 @@ def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None
         _AUTO_STATE["decision_logs"] = _AUTO_STATE["decision_logs"][:120]
 
 
+def get_all_symbol_ev_status(now_ts: Optional[float] = None) -> Dict[str, Any]:
+    """Tüm Forex sembollerinin canlı EV Kalkanı durumunu, bloke nedenlerini ve muafiyetlerini hesaplar."""
+    if now_ts is None:
+        now_ts = time.time()
+
+    is_mt5_conn = bool(_MT5_STATE.get("connected"))
+    ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if is_mt5_conn else float(_AUTO_STATE["balance"])
+    ev_risk_usd = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+    risk_floor = ev_risk_usd * _AUTO_SETTINGS.ev_loss_risk_mult
+    window_sec = _AUTO_SETTINGS.ev_window_hours * 3600.0
+
+    closed_source = list(_MT5_STATE.get("closed_deals", [])) if is_mt5_conn else list(_AUTO_STATE.get("closed_trades", []))
+
+    # Sembol havuzu: FOREX_SYMBOLS + allowed_symbols + muafiyetli olanlar + kapalı işlemi olanlar
+    symbols_set = {str(item.get("symbol", "")).upper() for item in FOREX_SYMBOLS if item.get("symbol")}
+    symbols_set.update(str(s).upper() for s in _AUTO_SETTINGS.allowed_symbols)
+    symbols_set.update(str(s).upper() for s in _SYMBOL_EV_OVERRIDE_UNTIL.keys())
+    symbols_set.update(str(s).upper() for s in _SYMBOL_EV_RESET_AT_TS.keys())
+    for d in closed_source:
+        s = str(d.get("symbol", "")).upper().replace("/", "").replace("-", "").strip()
+        if s:
+            symbols_set.add(s)
+
+    symbols_list: List[Dict[str, Any]] = []
+    blocked_symbols: List[Dict[str, Any]] = []
+    overridden_symbols: List[Dict[str, Any]] = []
+
+    for sym in sorted(symbols_set):
+        stats = _collect_symbol_ev(sym, now_ts, window_sec, source=closed_source)
+        override_until = _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
+        is_overridden = now_ts < override_until
+        is_exempt_symbol = sym in ("XAUUSD", "BTCUSD")
+
+        raw_blocked = ev_guard_decision(
+            stats,
+            _AUTO_SETTINGS.ev_min_trades,
+            _AUTO_SETTINGS.ev_max_win_rate,
+            risk_floor,
+        ) if not is_exempt_symbol else False
+
+        is_effectively_blocked = raw_blocked and not is_overridden and _AUTO_SETTINGS.ev_guard_enabled
+
+        disp = sym
+        item_meta = next((i for i in FOREX_SYMBOLS if i.get("symbol") == sym), None)
+        if item_meta and item_meta.get("display"):
+            disp = item_meta["display"]
+        elif len(sym) == 6:
+            disp = f"{sym[:3]}/{sym[3:]}"
+
+        reason = "Normal (İşleme Açık)"
+        if is_exempt_symbol:
+            reason = "Özel Kural (EV kalkanından muaf)"
+        elif is_overridden:
+            rem_m = max(1, int((override_until - now_ts) / 60))
+            reason = f"Kullanıcı Tarafından Muaf Tutuldu (~{rem_m} dk kaldı)"
+        elif raw_blocked:
+            n = stats["n"]
+            net = stats["net"]
+            wr = stats["win_rate"]
+            if net <= -abs(risk_floor):
+                reason = f"Akut Kayıp: Net ${net:+.2f} (Eşik: -${abs(risk_floor):.2f})"
+            elif wr < _AUTO_SETTINGS.ev_max_win_rate:
+                reason = f"Düşük Başarı Oranı: %{wr:.0f} (Hedef min %{_AUTO_SETTINGS.ev_max_win_rate:.0f})"
+            else:
+                reason = "EV Kalkanı Tetiklendi"
+
+        sym_obj = {
+            "symbol": sym,
+            "display": disp,
+            "is_blocked": is_effectively_blocked,
+            "raw_blocked": raw_blocked,
+            "is_overridden": is_overridden,
+            "override_until": override_until if is_overridden else None,
+            "override_until_str": datetime.datetime.fromtimestamp(override_until, TZ_UTC3).strftime("%H:%M:%S UTC+3") if is_overridden else None,
+            "override_remaining_sec": max(0, int(override_until - now_ts)) if is_overridden else 0,
+            "n": stats["n"],
+            "wins": stats["wins"],
+            "losses": stats["n"] - stats["wins"],
+            "win_rate": stats["win_rate"],
+            "net_usd": stats["net"],
+            "reason": reason,
+            "is_exempt_symbol": is_exempt_symbol,
+            "is_allowed": sym in _AUTO_SETTINGS.allowed_symbols,
+        }
+
+        symbols_list.append(sym_obj)
+        if is_effectively_blocked:
+            blocked_symbols.append(sym_obj)
+        if is_overridden:
+            overridden_symbols.append(sym_obj)
+
+    # Sıralama: Önce bloke olanlar, sonra muaf olanlar, sonra işlem sayısı çok olanlar
+    symbols_list.sort(key=lambda x: (not x["is_blocked"], not x["is_overridden"], -x["n"], x["net_usd"]))
+
+    return {
+        "enabled": _AUTO_SETTINGS.ev_guard_enabled,
+        "window_hours": _AUTO_SETTINGS.ev_window_hours,
+        "min_trades": _AUTO_SETTINGS.ev_min_trades,
+        "max_win_rate": _AUTO_SETTINGS.ev_max_win_rate,
+        "loss_risk_mult": _AUTO_SETTINGS.ev_loss_risk_mult,
+        "risk_loss_floor_usd": round(risk_floor, 2),
+        "account_balance": round(ev_balance, 2),
+        "blocked_count": len(blocked_symbols),
+        "overridden_count": len(overridden_symbols),
+        "total_symbols": len(symbols_list),
+        "blocked_symbols": blocked_symbols,
+        "overridden_symbols": overridden_symbols,
+        "symbols": symbols_list,
+    }
+
+
 async def _close_position_internal(pos_id: str, reason: str, exit_price: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """Açık pozisyonu kapatır ve muhasebeleştirir."""
     async with _AUTO_PAPER_LOCK:
@@ -2939,6 +3348,7 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             "MANUAL": "✋ Manuel Kapatma",
             "REVERSAL_FLIP": "🔄 Trend Dönüşü (Flip Reversal)",
             "SEANS16": "🕒 Seans Kapanışı (16:00 UTC)",
+            "S3_ST_FLIP": "🧭 S3 SuperTrend Dönüşü",
         }
         human_reason = reason_titles.get(reason, reason)
         # Bakiye YALNIZ kalan bacakla ilerler: kısmi kâr döngüde kredilenmişti,
@@ -3205,6 +3615,23 @@ async def _forex_auto_paper_loop():
                     if pnl_pips > float(pos.get("mfe_pips", 0.0) or 0.0):
                         pos["mfe_pips"] = round(pnl_pips, 1)
 
+                    # (a-) S3 5m kol ST-flip çıkışı: stratejinin kendi yön motoru (ST 10,3)
+                    # tersine döndüyse pozisyon tutulmaz (replay --st-flip-exit kanıtı).
+                    # MT5 biletli pozisyonda da CLOSE_ORDER komutu kuyruğa girer.
+                    if str(pos.get("entry_source", "")) == "s3_5m" and _AUTO_SETTINGS.s3_enabled:
+                        _s3_flip_tech = _S3_STATE.get(f"{sym}|5m")
+                        if _s3_flip_tech:
+                            _s3_st = int(_s3_flip_tech.get("st_dir", 0))
+                            if _s3_st != 0 and ((direction == "BUY" and _s3_st < 0) or (direction == "SELL" and _s3_st > 0)):
+                                positions_to_close.append((pos["id"], "S3_ST_FLIP", cur_p))
+                                _log_auto_decision(
+                                    "EXIT",
+                                    f"🧭 [{pos.get('display', sym)}] {S3_PULLBACK_LABEL} ST-flip çıkışı: SuperTrend yönü tersine döndü "
+                                    f"({'BOĞA' if _s3_st > 0 else 'AYI'}) — pozisyon kapatılıyor.",
+                                    symbol=sym,
+                                )
+                                continue
+
                     # (a0) KISMİ KÂR ALMA (Partial TP): İlk hedefte lot'un yarısı
                     # kapatılır; kalan pozisyonda SL başabaş üstü net kâra kilitlenir.
                     if _AUTO_SETTINGS.partial_tp_enabled:
@@ -3363,6 +3790,42 @@ async def _forex_auto_paper_loop():
             # Pozisyonları kapat
             for pid, rsn, p_exit in positions_to_close:
                 await _close_position_internal(pid, rsn, p_exit)
+
+            # S3 5m ST-flip: MT5 yoluyla açılmış pozisyonlar (paper kaydı yok) da
+            # aynı çıkış kuralına tabidir — pozisyon `strategy_tag` (emir yorumu)
+            # "S3" ile başlıyorsa ST yön tersine döndüğünde CLOSE_ORDER kuyruğa girer.
+            if _AUTO_SETTINGS.s3_enabled and _MT5_STATE.get("connected"):
+                for mpos in list(_MT5_STATE.get("open_positions", [])):
+                    m_sym = str(mpos.get("symbol", "")).upper()
+                    m_tag = str(mpos.get("strategy_tag", "") or "").strip().upper()
+                    if not m_tag.startswith("S3") or "S3F" in m_tag:
+                        continue
+                    m_t = mpos.get("ticket")
+                    if not m_t:
+                        continue
+                    already_closing = any(
+                        c.get("ticket") == m_t and c.get("action") == "CLOSE_ORDER"
+                        for c in _MT5_STATE.get("pending_commands", [])
+                    )
+                    if already_closing:
+                        continue
+                    _s3_m_tech = _S3_STATE.get(f"{m_sym}|5m")
+                    if not _s3_m_tech:
+                        continue
+                    _s3_m_st = int(_s3_m_tech.get("st_dir", 0))
+                    m_dir = str(mpos.get("direction", "")).upper()
+                    if _s3_m_st != 0 and ((m_dir == "BUY" and _s3_m_st < 0) or (m_dir == "SELL" and _s3_m_st > 0)):
+                        _MT5_STATE["pending_commands"].append({
+                            "id": f"CMD-CLOSE-{m_t}-S3FLIP",
+                            "action": "CLOSE_ORDER",
+                            "ticket": m_t,
+                        })
+                        _log_auto_decision(
+                            "EXIT",
+                            f"🧭 [MT5] {mpos.get('display', m_sym)} Bilet #{m_t} {S3_PULLBACK_LABEL} ST-flip çıkışı: "
+                            f"SuperTrend tersine döndü ({'BOĞA' if _s3_m_st > 0 else 'AYI'}).",
+                            symbol=m_sym,
+                        )
 
             # ---------------------------------------------------------------
             # 2. YENİ İŞLEM FIRSATLARI DEĞERLENDİRME & GİRİŞ (IC MARKETS MT5)
@@ -3563,6 +4026,92 @@ async def _forex_auto_paper_loop():
                                     f"ADX {_e_tech.get('adx', 0):.0f} (eşik {_AUTO_SETTINGS.ema_adx_adx_min:.0f}) → {_e_wait}.",
                                     symbol=_e_sym,
                                 )
+
+            # S3 (Supertrend+RSI pullback) akışı (2026-10-08 canlıya alım — kullanıcı kararı):
+            # L30 replay temiz koşum: XAU 5m +$90.04 PF 2.09, XAU 15m +$58.12 PF 3.08,
+            # BTC 15m +$59.28 PF 6.63. Klasik/donchian/EAP akışları KORUNUR; bu dördüncü
+            # aday kaynağıdır. Göstergeler köprü broker mumlarından (fallback Yahoo).
+            if _AUTO_SETTINGS.s3_enabled:
+                _refresh_s3_state(ticks)
+                for _s_tf, _s_syms, _s_src in (
+                    ("5m", _AUTO_SETTINGS.s3_symbols_5m, "s3_5m"),
+                    ("15m", _AUTO_SETTINGS.s3_symbols_15m, "s3_15m"),
+                ):
+                    for _s_sym in {s.upper() for s in (_s_syms or [])}:
+                        _s_tech = _S3_STATE.get(f"{_s_sym}|{_s_tf}")
+                        _s_t = ticks.get(_s_sym)
+                        if not _s_tech or not _s_t:
+                            continue
+                        _s_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _s_sym), None)
+                        _s_pip = _s_item["pip_size"] if _s_item else 0.0001
+                        if _s_pip <= 0:
+                            continue
+                        _s_now = datetime.datetime.now(datetime.timezone.utc)
+                        _s_day = _s_now.toordinal()
+                        _s_key = f"{_s_sym}|{_s_tf}"
+                        _s_st = _S3_DAY_STATE.setdefault(_s_key, {"day": _s_day, "counts": {}})
+                        if _s_st["day"] != _s_day:
+                            _s_st["day"] = _s_day
+                            _s_st["counts"] = {}
+                        _s_action = s3_pullback_entry(
+                            st_dir=int(_s_tech.get("st_dir", 0)),
+                            close=float(_s_tech.get("close", 0.0)),
+                            ema200=float(_s_tech.get("ema200", 0.0)),
+                            use_ema200=True,
+                            adx=float(_s_tech.get("adx", 0.0)),
+                            adx_min=float(_AUTO_SETTINGS.s3_adx_min),
+                            rsi_now=_s_tech.get("rsi_now"),
+                            rsi_prev=_s_tech.get("rsi_prev"),
+                            rsi_window=list(_s_tech.get("rsi_window") or []),
+                            rsi_lo=float(_AUTO_SETTINGS.s3_rsi_lo),
+                            atr_price=float(_s_tech.get("atr", 0.0)),
+                            pip_size=float(_s_pip),
+                            day_counts=_s_st["counts"],
+                            max_per_day=int(_AUTO_SETTINGS.s3_max_per_day),
+                            action_key=_s_src,
+                        )
+                        _s_disp = _s_t.get("display", _s_sym)
+                        _s_allowed = _s_sym in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                        if _s_action:
+                            candidates = [c for c in candidates if not (
+                                str(c.get("symbol", "")).upper() == _s_sym and str(c.get("entry_source", "")).startswith("s3_"))] + [{
+                                "symbol": _s_sym,
+                                "display": _s_disp,
+                                "action": _s_action,
+                                "score": 200.0,
+                                "spread_pips": _LIVE_SPREAD_PIPS.get(_s_sym, 2.0),
+                                "atr_pips": round(float(_s_tech.get("atr", 0.0)) / _s_pip, 1) if _s_pip > 0 else 15.0,
+                                "adx": float(_s_tech.get("adx", 25.0)),
+                                "supertrend_dir": int(_s_tech.get("st_dir", 0)),
+                                "entry_source": _s_src,
+                                "strategy": S3_PULLBACK_STRATEGY,
+                                "s3_tf": _s_tf,
+                            }]
+                            _log_auto_decision(
+                                "SCAN",
+                                f"🧭 [{_s_disp}] {S3_PULLBACK_LABEL} ({_s_tf}): {_s_action} adayı "
+                                f"(ST {'BOĞA' if int(_s_tech.get('st_dir', 0)) > 0 else 'AYI'}, "
+                                f"RSI {float(_s_tech.get('rsi_now') or 0):.1f}→50 geçişi, "
+                                f"ADX {float(_s_tech.get('adx', 0)):.0f}) — değerlendiriliyor.",
+                                symbol=_s_sym,
+                            )
+                        else:
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_s_key}_s3_wait", 0.0) > 1800.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{_s_key}_s3_wait"] = now_ts
+                                if not _s_allowed:
+                                    _log_auto_decision(
+                                        "SCAN",
+                                        f"⚠️ [{_s_disp}] {S3_PULLBACK_LABEL} ({_s_tf}) aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                        symbol=_s_sym,
+                                    )
+                                else:
+                                    _s_dir_txt = "BOĞA" if int(_s_tech.get("st_dir", 0)) > 0 else ("AYI" if int(_s_tech.get("st_dir", 0)) < 0 else "tanımsız")
+                                    _log_auto_decision(
+                                        "SCAN",
+                                        f"🧭 [{_s_disp}] {S3_PULLBACK_LABEL} ({_s_tf}) bekliyor: ST {_s_dir_txt}, "
+                                        f"RSI {float(_s_tech.get('rsi_now') or 0):.1f} → {'50 üstüne yeşil kapanışta AL' if int(_s_tech.get('st_dir', 0)) > 0 else '50 altına kapanışta SAT' if int(_s_tech.get('st_dir', 0)) < 0 else 'ST yönü netleşmeli'}.",
+                                        symbol=_s_sym,
+                                    )
 
             # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
@@ -3837,21 +4386,26 @@ async def _forex_auto_paper_loop():
                 # 3b. Sembol EV Kalkanı — son pencerede sermaye yakan semboller dinlenir
                 # (Kullanıcı kararı: XAUUSD ve BTCUSD özel modda 24 saatlik EV kilidi yerine 60 sn soğuma uygulanır)
                 if _AUTO_SETTINGS.ev_guard_enabled and sym not in ("XAUUSD", "BTCUSD"):
-                    ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
-                    ev_risk_usd = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
-                    ev_stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
-                    if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades,
-                                         _AUTO_SETTINGS.ev_max_win_rate,
-                                         ev_risk_usd * _AUTO_SETTINGS.ev_loss_risk_mult):
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_ev", 0) > 60.0:
-                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_ev"] = now_ts
-                            _log_auto_decision(
-                                "GATE",
-                                f"[{cand['display']}] Sembol EV Kalkanı: Son {ev_stats['n']} işlemde ${ev_stats['net']:+.2f} "
-                                f"(WR %{ev_stats['win_rate']:.0f}) — sembol {_AUTO_SETTINGS.ev_window_hours:.0f} saatlik pencere boyunca dinlenmeye alındı.",
-                                symbol=sym,
-                            )
-                        continue
+                    ev_override_until = _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
+                    if now_ts < ev_override_until:
+                        # Kullanıcı bu sembolü bugün/geçici olarak EV kalkanından muaf tuttu
+                        pass
+                    else:
+                        ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
+                        ev_risk_usd = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                        ev_stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
+                        if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades,
+                                             _AUTO_SETTINGS.ev_max_win_rate,
+                                             ev_risk_usd * _AUTO_SETTINGS.ev_loss_risk_mult):
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_ev", 0) > 60.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_ev"] = now_ts
+                                _log_auto_decision(
+                                    "GATE",
+                                    f"[{cand['display']}] Sembol EV Kalkanı: Son {ev_stats['n']} işlemde ${ev_stats['net']:+.2f} "
+                                    f"(WR %{ev_stats['win_rate']:.0f}) — sembol {_AUTO_SETTINGS.ev_window_hours:.0f} saatlik pencere boyunca dinlenmeye alındı.",
+                                    symbol=sym,
+                                )
+                            continue
 
                 # 4. DXY (ABD Dolar Endeksi) Rejim Filtresi
                 # Pozisyon DXY rejimiyle çelişiyorsa veto; zayıf semboller nötr rejimde ekstra skor ister.
@@ -3968,9 +4522,12 @@ async def _forex_auto_paper_loop():
                 # İstisna: EMA+ADX geri-çekilme modu KENDİ yön teyidini taşır (EMA8/21/50
                 # dizilimi + onay barı); SuperTrend bu moda canlı davranışı replay kanıtından
                 # saptırırdı (kanıt EAP-pure koşuldu) → bu aday için ST kapısı atlanır.
+                # Aynı istisna S3 için geçerli: ST(10,3) stratejinin KENDİ yön motorudur
+                # (replay PURE koşumu kural seti birebir).
                 st_dir = int(cand.get("supertrend_dir", 0))
                 _is_eap = str(cand.get("entry_source", "")) == "ema_adx_pullback"
-                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap:
+                _is_s3 = str(cand.get("entry_source", "")).startswith("s3_")
+                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap and not _is_s3:
                     if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
@@ -4025,6 +4582,15 @@ async def _forex_auto_paper_loop():
                     sl_pips = round(float(_AUTO_SETTINGS.ema_adx_sl_atr) * atr_pips, 1)
                     tp_pips = round(float(_AUTO_SETTINGS.ema_adx_tp_atr) * atr_pips, 1)
                     first_target_pips = 0.0
+                if str(cand.get("entry_source", "")).startswith("s3_") and atr_pips > 0:
+                    # S3 çıkışları (replay ile birebir): SL 1.5×ATR her iki kol.
+                    # 15m kol: TP 2.0×ATR. 5m kol: TP YOK (ST-flip çıkışı + BE/trailing).
+                    sl_pips = round(float(_AUTO_SETTINGS.s3_sl_atr) * atr_pips, 1)
+                    if str(cand.get("entry_source", "")) == "s3_15m":
+                        tp_pips = round(float(_AUTO_SETTINGS.s3_tp_atr_15m) * atr_pips, 1)
+                    else:
+                        tp_pips = 0.0
+                    first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
@@ -4034,9 +4600,10 @@ async def _forex_auto_paper_loop():
                 is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
                 is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
                 is_crypto = ("BTC" in sym or "ETH" in sym)
-                if is_crypto and not _AUTO_SETTINGS.crypto_tp_enabled:
+                if is_crypto and not _AUTO_SETTINGS.crypto_tp_enabled and not str(cand.get("entry_source", "")).startswith("s3_"):
                     # Kriptoda sabit TP kapalı (2026-10-06 30g replay kazananı: BTC −$55.70→−$18.02):
                     # kazanç BE kilidi + trailing ile koşturulur, TP emri kurulmaz.
+                    # İstisna: S3 adayı — kanıt koşumda TP'liydi (BTC 15m +$59.28 PF 6.63).
                     tp_pips = 0.0
 
                 if is_index:
@@ -4345,6 +4912,7 @@ async def get_forex_auto_paper_status():
             s: _collect_symbol_ev(s, time.time(), _AUTO_SETTINGS.ev_window_hours * 3600.0)
             for s in _AUTO_SETTINGS.allowed_symbols
         },
+        "ev_shield": get_all_symbol_ev_status(time.time()),
         "last_scan_time": _AUTO_STATE["last_scan_time"],
         "mt5_account": mt5_acc,
         "mt5_connected": is_mt5_conn,
@@ -4529,6 +5097,8 @@ async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
     if full_reset:
         _SYMBOL_LOSS_STREAK.clear()
         _SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+        _SYMBOL_EV_OVERRIDE_UNTIL.clear()
+        _SYMBOL_EV_RESET_AT_TS.clear()
     # Paper defteri: kesim sonrası kapananlar kalır, sayaçlar onlardan yeniden hesaplanır
     kept_paper = [t for t in _AUTO_STATE.get("closed_trades", []) if (_deal_ts(t) or 0.0) >= reset_ts]
     _AUTO_STATE["closed_trades"] = kept_paper
@@ -4561,6 +5131,90 @@ async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
                  + ("seri-SL sayaçları sıfırlandı; " if full_reset else "seri-SL sayaçlarına dokunulmadı; ")
                  + "eski işlemler arşivde (bellek + JSON dosyası). Bakiye değişmedi."),
     }
+
+
+# ============================================================================
+# SEMBOL EV KALKANI YÖNETİMİ & MANUEL İPTAL/MUAFIYET UÇ NOKTALARI
+# ============================================================================
+
+class EVShieldOverrideRequest(BaseModel):
+    symbol: str
+    action: str = "bypass_today"  # "bypass_today", "bypass_24h", "reset_history", "restore"
+    hours: Optional[float] = 24.0
+
+
+@router.get("/auto-paper/ev-shield")
+@router.get("/ev-shield")
+async def get_forex_ev_shield_status():
+    """Tüm Forex sembollerinin canlı EV Kalkanı durumunu, bloke nedenlerini ve muafiyetlerini döner."""
+    return get_all_symbol_ev_status(time.time())
+
+
+@router.post("/auto-paper/ev-shield/override")
+@router.post("/ev-shield/override")
+async def override_forex_ev_shield(req: EVShieldOverrideRequest):
+    """Belirli bir sembol için EV Kalkanını geçici olarak devre dışı bırakır, geçmişini sıfırlar veya eski haline getirir."""
+    sym = str(req.symbol).upper().replace("/", "").replace("-", "").strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="Geçersiz sembol.")
+
+    now_ts = time.time()
+    disp = sym
+    item_meta = next((i for i in FOREX_SYMBOLS if i.get("symbol") == sym), None)
+    if item_meta and item_meta.get("display"):
+        disp = item_meta["display"]
+    elif len(sym) == 6:
+        disp = f"{sym[:3]}/{sym[3:]}"
+
+    if req.action in ("bypass_today", "today"):
+        now_dt = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
+        end_of_day = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+        override_until = end_of_day.timestamp()
+        _SYMBOL_EV_OVERRIDE_UNTIL[sym] = override_until
+        rem_hours = max(0.1, (override_until - now_ts) / 3600.0)
+        msg = f"🛡️ [{disp}] EV Kalkanı bugün sonuna kadar ({end_of_day.strftime('%H:%M')} UTC+3, ~{rem_hours:.1f} saat) iptal edildi. Sembol işleme açıldı."
+        _log_auto_decision("MANUAL", msg, symbol=sym)
+        return {"success": True, "action": req.action, "symbol": sym, "override_until": override_until, "message": msg}
+
+    elif req.action in ("bypass_24h", "override_hours"):
+        h = max(1.0, float(req.hours or 24.0))
+        override_until = now_ts + (h * 3600.0)
+        _SYMBOL_EV_OVERRIDE_UNTIL[sym] = override_until
+        msg = f"🛡️ [{disp}] EV Kalkanı {h:.0f} saat boyunca kullanıcı tarafından muaf tutuldu. Sembol işleme açıldı."
+        _log_auto_decision("MANUAL", msg, symbol=sym)
+        return {"success": True, "action": req.action, "symbol": sym, "override_until": override_until, "message": msg}
+
+    elif req.action in ("reset_history", "reset"):
+        _SYMBOL_EV_RESET_AT_TS[sym] = now_ts
+        _SYMBOL_EV_OVERRIDE_UNTIL.pop(sym, None)
+        msg = f"🔄 [{disp}] EV geçmiş işlem sicili sıfırlandı. Sembol yeni bir başlangıçla değerlendirilecek."
+        _log_auto_decision("MANUAL", msg, symbol=sym)
+        return {"success": True, "action": req.action, "symbol": sym, "reset_at": now_ts, "message": msg}
+
+    elif req.action in ("restore", "cancel_override", "enable"):
+        _SYMBOL_EV_OVERRIDE_UNTIL.pop(sym, None)
+        msg = f"🛡️ [{disp}] EV Kalkanı muafiyeti kaldırıldı. Normal koruma kuralları tekrar devrede."
+        _log_auto_decision("MANUAL", msg, symbol=sym)
+        return {"success": True, "action": req.action, "symbol": sym, "message": msg}
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bilinmeyen eylem: {req.action}. (Desteklenenler: bypass_today, bypass_24h, reset_history, restore)",
+        )
+
+
+@router.post("/auto-paper/ev-shield/reset-all")
+@router.post("/ev-shield/reset-all")
+async def reset_all_forex_ev_shields():
+    """Tüm sembollerin EV kalkanı muafiyetlerini ve sicillerini sıfırlar / serbest bırakır."""
+    now_ts = time.time()
+    for s in _AUTO_SETTINGS.allowed_symbols:
+        _SYMBOL_EV_RESET_AT_TS[s] = now_ts
+        _SYMBOL_EV_OVERRIDE_UNTIL.pop(s, None)
+    msg = "🔄 Tüm sembollerin EV kalkanı sicili sıfırlandı; tüm pariteler temiz sayfayla işleme açıldı."
+    _log_auto_decision("MANUAL", msg)
+    return {"success": True, "message": msg}
 
 
 @router.get("/auto-paper/archived-ledger")

@@ -12,6 +12,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "./lib/api";
 import { triggerTestCalendarNotification } from "./lib/notificationSettings";
+import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 
 interface OpenPosition {
   id: string;
@@ -328,6 +329,10 @@ export default function HomePage() {
   const [calendarSearch, setCalendarSearch] = useState<string>("");
   const [calendarLastUpdated, setCalendarLastUpdated] = useState<Date | null>(null);
 
+  // Sembol EV Kalkanı Durumu ve Modalı
+  const [evShieldModalOpen, setEvShieldModalOpen] = useState<boolean>(false);
+  const [evShieldStatus, setEvShieldStatus] = useState<EVShieldStatusResponse | null>(null);
+
   // Ekonomik Takvim Verisini Çekme (Investing.com 2 & 3 Yıldızlı Olaylar)
   const fetchCalendar = useCallback(async (forceRefresh = false) => {
     setRefreshingCalendar(true);
@@ -428,6 +433,10 @@ export default function HomePage() {
           balance: statusRes.balance ?? prev.balance,
           equity: statusRes.equity ?? prev.equity,
         }));
+      }
+
+      if (statusRes?.ev_shield) {
+        setEvShieldStatus(statusRes.ev_shield);
       }
 
       setLastUpdated(new Date());
