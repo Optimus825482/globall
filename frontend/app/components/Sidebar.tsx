@@ -119,21 +119,21 @@ export default function Sidebar() {
                     anlatan rozet yoktur. */}
 
                 {/* Global Borsa / Forex Rozet Kartı — tek piyasa (Forex). */}
-                <div className="mt-2.5 rounded-lg border p-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-colors border-blue-500/40 bg-gradient-to-r from-blue-950/70 via-slate-900/70 to-indigo-950/60">
+                <div className="mt-2.5 rounded-xl border p-2.5 shadow-sm transition-colors border-blue-300 dark:border-blue-500/40 bg-blue-50/80 dark:bg-gradient-to-r dark:from-blue-950/70 dark:via-slate-900/70 dark:to-indigo-950/60">
                     <div className="flex items-center justify-between font-mono">
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
-                            <span className="w-2 h-2 rounded-full animate-pulse bg-blue-400 shadow-[0_0_8px_#38bdf8]" />
+                        <span className="flex items-center gap-1.5 text-xs font-black text-blue-900 dark:text-cyan-300">
+                            <span className="w-2 h-2 rounded-full animate-pulse bg-blue-500 shadow-[0_0_8px_#38bdf8]" />
                             GLOBAL FOREX
                         </span>
-                        <span className="rounded px-2 py-0.5 text-[10px] font-bold border bg-blue-500/20 text-blue-200 border-blue-400/40 shadow-[0_0_8px_rgba(59,130,246,0.2)]">
+                        <span className="rounded px-2 py-0.5 text-[10px] font-bold border bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-400/40">
                             FX
                         </span>
                     </div>
-                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono border-t border-bunker-700/60 pt-1.5">
-                        <span className="text-blue-300/80">
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono border-t border-blue-200 dark:border-bunker-700/60 pt-1.5">
+                        <span className="text-blue-700 dark:text-blue-300/80 font-bold">
                             PARİTE &amp; EMTİA
                         </span>
-                        <span className="text-emerald-400 font-bold">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-black">
                             DEMO / LIVE
                         </span>
                     </div>
@@ -141,11 +141,11 @@ export default function Sidebar() {
                 <button
                     type="button"
                     onClick={() => { setNotificationsOpen(true); setUnread(0); }}
-                    className="relative mt-3.5 flex w-full items-center justify-between rounded-lg border border-bunker-700 bg-bunker-950/70 px-3 py-2 text-left transition-colors hover:border-neon-green/50"
+                    className="relative mt-3.5 flex w-full items-center justify-between rounded-xl border border-slate-300 dark:border-bunker-700 bg-slate-50 dark:bg-bunker-950/70 px-3 py-2 text-left transition-colors hover:border-blue-400"
                     aria-label={`Bildirimleri aç${unread ? `, ${unread} yeni bildirim` : ""}`}
                 >
-                    <span className="flex items-center gap-2 font-mono text-xs text-white"><span className="text-lg">🔔</span> BİLDİRİMLER</span>
-                    {unread > 0 && <span className="min-w-5 rounded-full bg-neon-red px-1.5 py-0.5 text-center font-mono text-[10px] font-bold text-white">{unread > 99 ? "99+" : unread}</span>}
+                    <span className="flex items-center gap-2 font-mono text-xs font-bold text-slate-900 dark:text-white"><span className="text-lg">🔔</span> BİLDİRİMLER</span>
+                    {unread > 0 && <span className="min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center font-mono text-[10px] font-bold text-white">{unread > 99 ? "99+" : unread}</span>}
                 </button>
             </div>
 

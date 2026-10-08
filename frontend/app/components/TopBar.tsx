@@ -110,15 +110,15 @@ export default function TopBar() {
               uygulama yalnızca Forex & Emtia sunar, seçilecek ikinci piyasa yok. */}
 
           {/* Canlı Veri Göstergesi */}
-          <div className="hidden md:flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-1 font-mono text-[10px] text-cyan-300 shadow-[inset_0_1px_rgba(255,255,255,0.06)]">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
-            <span className="font-semibold tracking-wider">
+          <div className="hidden md:flex items-center gap-1.5 rounded-full border border-blue-300 dark:border-cyan-500/30 bg-blue-50 dark:bg-cyan-950/40 px-2.5 py-1 font-mono text-[10px] text-blue-950 dark:text-cyan-300 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-blue-500 dark:bg-cyan-400 animate-pulse shadow-[0_0_8px_#38bdf8]" />
+            <span className="font-black tracking-wider">
               GLOBAL FOREX
             </span>
           </div>
 
-          <div className="flex items-center gap-1 font-mono text-[10px] tracking-wider text-slate-300">
-            <span className="w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse" />
+          <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-900 dark:text-slate-300 font-black">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-neon-green animate-pulse" />
             <span className="hidden sm:inline">
               {exchange.error && !exchange.loading ? "BAĞLANTI HATASI" : "CANLI PİYASA"}
             </span>

@@ -38,6 +38,7 @@ export const MENU_GROUPS: MenuGroup[] = [
     items: [
       { href: "/", label: "Ana Sayfa", icon: "🏠", desc: "Günün Forex işlem karnesi, başarı oranı ve kârlılık özeti" },
       { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı hesap yönetimi" },
+      { href: "/metamobil", label: "MetaMobil", icon: "📱", desc: "MetaTrader 5 mobil arayüz kopyası (Kotasyonlar, Grafik, Ticaret & Geçmiş)", alsoActive: ["/forex/metamobil"] },
       { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
       { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği", alsoActive: ["/charts"] },
@@ -54,6 +55,7 @@ export const MENU_GROUPS: MenuGroup[] = [
  */
 export const BOTTOM_NAV_ITEMS: MenuItem[] = [
   { href: "/", label: "Ana Sayfa", icon: "🏠", desc: "" },
+  { href: "/metamobil", label: "MetaMobil", icon: "📱", desc: "" },
   { href: "/forex/portfolio", label: "Portföy", icon: "💼", desc: "" },
   { href: "/forex", label: "Radar", icon: "📡", desc: "" },
   { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "" },

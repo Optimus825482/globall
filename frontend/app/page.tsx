@@ -501,6 +501,27 @@ export default function HomePage() {
       }
 
       return true;
+    }).sort((a, b) => {
+      // Tarihe göre artan (kronolojik: en erken/en yakın olandan ileriye doğru) sıralama
+      const getTime = (e: EconomicEvent): number => {
+        if (e.date_iso) {
+          const t = new Date(e.date_iso).getTime();
+          if (!isNaN(t) && t > 0) return t;
+        }
+        if (e.date_str) {
+          const m = e.date_str.match(/(\d{1,2}):(\d{2})/);
+          if (m) {
+            const d = new Date();
+            d.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
+            if (e.date_str.toLowerCase().includes("yarın")) {
+              d.setDate(d.getDate() + 1);
+            }
+            return d.getTime();
+          }
+        }
+        return 9999999999999;
+      };
+      return getTime(a) - getTime(b);
     });
   }, [calendarEvents, calendarFilterStars, calendarFilterCurrency, calendarSearch]);
 
@@ -1005,162 +1026,149 @@ export default function HomePage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {filteredCalendarEvents.map((item) => {
-              const is3Stars = (item.stars || (item.impact === "High" ? 3 : 2)) === 3;
-              return (
-                <div
-                  key={item.id}
-                  className={`p-4 rounded-xl border backdrop-blur-md transition-all hover:scale-[1.008] space-y-3 flex flex-col justify-between ${
-                    is3Stars
-                      ? "border-rose-500/40 bg-gradient-to-b from-rose-950/20 via-bunker-900/90 to-bunker-950 hover:border-rose-400 hover:shadow-[0_0_20px_rgba(244,63,94,0.2)]"
-                      : "border-amber-500/35 bg-gradient-to-b from-amber-950/15 via-bunker-900/90 to-bunker-950 hover:border-amber-400 hover:shadow-[0_0_20px_rgba(245,158,11,0.2)]"
-                  }`}
-                >
-                  {/* Kart Üst Barı: Zaman, Geri Sayım ve Yıldız */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bunker-800/80 pb-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-black text-cyan-300 flex items-center gap-1.5">
-                        <span>⏰</span> {item.date_str}
-                      </span>
-                      <EventCountdownBadge
-                        dateIso={item.date_iso}
-                        dateStr={item.date_str}
-                        status={item.status}
-                        isPassed={item.is_passed}
-                      />
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                          item.status === "Açıklandı"
-                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                            : item.is_passed
-                            ? "bg-slate-700/40 text-slate-300 border border-slate-600/40"
-                            : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                        }`}
-                      >
-                        {item.status || "Bekleniyor"}
-                      </span>
-                    </div>
-
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                        is3Stars
-                          ? "bg-rose-500/25 text-rose-300 border border-rose-500/50"
-                          : "bg-amber-500/25 text-amber-300 border border-amber-500/50"
-                      }`}
-                    >
-                      {is3Stars ? "⭐⭐⭐ 3 YILDIZ (KRİTİK)" : "⭐⭐ 2 YILDIZ (ORTA)"}
-                    </span>
-                  </div>
-
-                  {/* Olay Başlığı ve Değerler */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-xs text-bunker-muted font-bold">
-                      <span>{item.flag || "🌐"}</span>
-                      <span>{item.country_name || item.country}</span>
-                      {item.currency && <span className="text-[10px] text-cyan-400">({item.currency})</span>}
-                    </div>
-
-                    <h3 className="font-black text-sm text-white hover:text-cyan-300 transition-colors leading-snug">
-                      {item.title}
-                    </h3>
-                    {item.original_title && item.original_title !== item.title && (
-                      <p className="text-[10px] text-bunker-muted italic line-clamp-1">
-                        {item.original_title}
-                      </p>
-                    )}
-
-                    {/* Metrikler */}
-                    <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-bunker-950/80 border border-bunker-800/80 text-center text-[10px]">
-                      <div>
-                        <div className="text-bunker-muted text-[9px]">Beklenti</div>
-                        <div className="font-bold text-cyan-300">{item.forecast || "—"}</div>
-                      </div>
-                      <div>
-                        <div className="text-bunker-muted text-[9px]">Önceki</div>
-                        <div className="font-bold text-slate-300">{item.previous || "—"}</div>
-                      </div>
-                      <div>
-                        <div className="text-bunker-muted text-[9px]">Açıklanan</div>
-                        <div className={`font-black ${item.actual && item.actual !== "—" ? "text-emerald-400" : "text-bunker-muted"}`}>
-                          {item.actual || "—"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Etkilenen Pariteler */}
-                  <div className="space-y-1">
-                    <div className="text-[10px] uppercase font-bold text-bunker-muted flex items-center gap-1">
-                      <span>🎯</span> Etkilenen Pariteler:
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {item.affected_symbols.map((sym) => (
-                        <span
-                          key={sym}
-                          className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-950/60 text-cyan-300 border border-cyan-500/40"
-                        >
-                          {sym}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* ⚡ HANGİ DURUMDA NASIL ETKİLENİR? (ÖZET SENARYO KUTUSU) */}
-                  <div className="p-3 rounded-xl bg-bunker-950/90 border border-bunker-800 space-y-2 text-xs">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <span>⚡</span> Hangi Durumda Nasıl Etkilenir?
-                      </span>
-                    </div>
-
-                    {/* Beklenti Üzeri */}
-                    <div className="space-y-0.5">
-                      <div className="font-bold text-emerald-400 text-[10px] flex items-center gap-1">
-                        <span>🟢</span>
-                        <span>{item.scenario?.bullish_trigger || "Beklenti Üzeri Gelirse:"}</span>
-                      </div>
-                      <p className="text-[11px] text-emerald-200/90 pl-3 leading-tight">
-                        {item.scenario?.bullish_outcome}
-                      </p>
-                    </div>
-
-                    {/* Beklenti Altı */}
-                    <div className="space-y-0.5 pt-1 border-t border-bunker-800/60">
-                      <div className="font-bold text-rose-400 text-[10px] flex items-center gap-1">
-                        <span>🔴</span>
-                        <span>{item.scenario?.bearish_trigger || "Beklenti Altı Kalırsa:"}</span>
-                      </div>
-                      <p className="text-[11px] text-rose-200/90 pl-3 leading-tight">
-                        {item.scenario?.bearish_outcome}
-                      </p>
-                    </div>
-
-                    {/* Scalper Notu */}
-                    {item.scenario?.scalper_tip && (
-                      <div className="pt-1 border-t border-bunker-800/60 text-[10px] text-cyan-300/90 flex items-start gap-1">
-                        <span className="shrink-0">💡</span>
-                        <span className="italic leading-tight">{item.scenario.scalper_tip}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Kart Alt Butonu */}
-                  <div className="pt-2 border-t border-bunker-800/80 flex items-center justify-between">
-                    <span className="text-[10px] text-bunker-muted">
-                      Investing 2-3 Yıldız
-                    </span>
-                    <button
-                      type="button"
+          <div className="overflow-x-auto rounded-xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/80 shadow-md">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-300 dark:border-bunker-800 bg-slate-100/90 dark:bg-bunker-950/80 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+                  <th className="py-3 px-3.5 whitespace-nowrap">Tarih &amp; Saat</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Yıldız (Önem)</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Geri Sayım</th>
+                  <th className="py-3 px-4 min-w-[240px]">Haber / Olay Başlığı</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Beklenti / Sonuç</th>
+                  <th className="py-3 px-3 min-w-[140px]">Etkilenebilecek Semboller</th>
+                  <th className="py-3 px-3 text-right whitespace-nowrap">İşlem</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-bunker-800/80">
+                {filteredCalendarEvents.map((item) => {
+                  const is3Stars = (item.stars || (item.impact === "High" ? 3 : 2)) === 3;
+                  return (
+                    <tr
+                      key={item.id}
                       onClick={() => setSelectedEvent(item)}
-                      className="px-3 py-1 rounded-lg text-xs font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 hover:border-cyan-300 hover:text-white transition-all flex items-center gap-1"
+                      className={`cursor-pointer transition-colors group ${
+                        is3Stars
+                          ? "hover:bg-rose-500/10 dark:hover:bg-rose-950/20"
+                          : "hover:bg-cyan-500/10 dark:hover:bg-cyan-950/20"
+                      }`}
+                      title="Detaylı senaryo ve strateji analizini kart olarak açmak için tıklayın"
                     >
-                      Detaylı Analiz &amp; Taktik <span>→</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                      {/* 1. Sütun: Tarih & Saat */}
+                      <td className="py-3 px-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-cyan-300 font-mono text-xs">
+                          <span>⏰</span>
+                          <span>{item.date_str}</span>
+                        </div>
+                      </td>
+
+                      {/* 2. Sütun: Yıldız Sayısı */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide ${
+                            is3Stars
+                              ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40"
+                              : "bg-amber-500/20 text-amber-750 dark:text-amber-300 border border-amber-500/40"
+                          }`}
+                        >
+                          {is3Stars ? "⭐⭐⭐ 3 Yıldız" : "⭐⭐ 2 Yıldız"}
+                        </span>
+                      </td>
+
+                      {/* 3. Sütun: Geri Sayım */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <EventCountdownBadge
+                            dateIso={item.date_iso}
+                            dateStr={item.date_str}
+                            status={item.status}
+                            isPassed={item.is_passed}
+                          />
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              item.status === "Açıklandı"
+                                ? "bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40"
+                                : item.is_passed
+                                ? "bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600/40"
+                                : "bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border border-cyan-500/40"
+                            }`}
+                          >
+                            {item.status || "Bekleniyor"}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* 4. Sütun: Başlık */}
+                      <td className="py-3 px-4">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-bold">
+                            <span>{item.flag || "🌐"}</span>
+                            <span>{item.country_name || item.country}</span>
+                            {item.currency && (
+                              <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-black">
+                                ({item.currency})
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-extrabold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors text-xs leading-snug">
+                            {item.title}
+                          </div>
+                          {item.original_title && item.original_title !== item.title && (
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 italic line-clamp-1">
+                              {item.original_title}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Ek Bilgi Sütunu: Beklenti / Önceki / Sonuç */}
+                      <td className="py-3 px-3 whitespace-nowrap text-[11px]">
+                        <div className="space-y-0.5">
+                          <div className="text-slate-600 dark:text-slate-400">
+                            Beklenti: <span className="font-bold text-slate-900 dark:text-cyan-300">{item.forecast || "—"}</span>
+                          </div>
+                          <div className="text-slate-500 dark:text-slate-400">
+                            Önceki: <span className="font-medium text-slate-700 dark:text-slate-300">{item.previous || "—"}</span>
+                          </div>
+                          {item.actual && item.actual !== "—" && (
+                            <div className="text-emerald-700 dark:text-emerald-400 font-black">
+                              Açıklanan: {item.actual}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 5. Sütun: Etkilenebilecek Semboller */}
+                      <td className="py-3 px-3">
+                        <div className="flex flex-wrap gap-1 items-center">
+                          {item.affected_symbols.map((sym) => (
+                            <span
+                              key={sym}
+                              className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-100 dark:bg-cyan-950/70 text-cyan-800 dark:text-cyan-300 border border-cyan-400/50 dark:border-cyan-500/40"
+                            >
+                              {sym}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+
+                      {/* 6. Sütun: Detaylı Kart Butonu */}
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEvent(item);
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-cyan-700 dark:text-cyan-300 bg-cyan-100 dark:bg-cyan-950/60 border border-cyan-400/60 dark:border-cyan-500/40 hover:bg-cyan-200 dark:hover:bg-cyan-900/60 transition-all inline-flex items-center gap-1 shadow-sm"
+                        >
+                          <span>🔍 Kart İncele</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

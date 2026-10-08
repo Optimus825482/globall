@@ -609,10 +609,22 @@ html.light body {
   color: #0f172a !important; /* slate-900 */
 }
 
-/* Koyu renkli kartlar ve arka planlar açık moda dönüştürülür */
+/* ==========================================================================
+   YÜKSEK KONTRASTLI AYDINLIK MOD (HIGH CONTRAST LIGHT THEME)
+   Kullanıcı Bildirimi: "Light temada gri yazılar okunmuyor, renk kontrastını canlı ve zıt yapın"
+   ========================================================================== */
+
+/* 1. Temel Sayfa ve Kart Zeminleri */
+html.light,
+html.light body {
+  background-color: #f8fafc !important; /* slate-50 */
+  color: #0f172a !important;            /* slate-900 */
+}
+
+/* Koyu bunker zeminleri temiz beyaz ve açık slate'e dönüştürülür */
 html.light .bg-bunker-950,
 html.light [class*="bg-bunker-950"] {
-  background-color: #f8fafc !important; /* slate-50 */
+  background-color: #ffffff !important;
 }
 
 html.light .bg-bunker-900,
@@ -625,38 +637,142 @@ html.light [class*="bg-bunker-800"] {
   background-color: #f1f5f9 !important; /* slate-100 */
 }
 
+html.light .bg-slate-900,
+html.light .bg-slate-950 {
+  background-color: #ffffff !important;
+}
+
+/* Koyu degrade zeminler açık modda temiz ve ferah hale getirilir */
+html.light [class*="bg-gradient-"] {
+  background-image: none !important;
+  background-color: #ffffff !important;
+}
+
+/* 2. Keskin ve Belirgin Kenarlıklar (Borders) */
 html.light .border-bunker-800,
 html.light .border-bunker-700,
 html.light [class*="border-bunker-800"],
-html.light [class*="border-bunker-700"] {
-  border-color: #e2e8f0 !important; /* slate-200 */
+html.light [class*="border-bunker-700"],
+html.light [class*="border-slate-800"],
+html.light [class*="border-slate-700"] {
+  border-color: #cbd5e1 !important; /* slate-300: beyaz üstünde net ve belirgin */
 }
 
-/* Metin renkleri */
+/* 3. YÜKSEK KONTRASTLI METİN VE BAŞLIKLAR (SİLİK GRİLER ENGELLENDİ) */
 html.light .text-white,
 html.light h1,
 html.light h2,
 html.light h3,
-html.light h4 {
-  color: #0f172a !important; /* slate-900 */
+html.light h4,
+html.light h5,
+html.light h6 {
+  color: #0f172a !important; /* slate-900: Simsiyah/koyu lacivert */
+  font-weight: 700;
 }
 
+/* Soluk gri etiketler artık koyu ve okunaklı slate-700 */
 html.light .text-bunker-muted,
-html.light .text-slate-400 {
-  color: #64748b !important; /* slate-500 */
+html.light .text-slate-400,
+html.light .text-slate-500,
+html.light [class*="text-bunker-muted"] {
+  color: #334155 !important; /* slate-700: net ve yüksek kontrast */
+  font-weight: 600;
 }
 
+/* İkincil metinler ve açıklamalar */
 html.light .text-slate-300,
 html.light .text-slate-200,
 html.light .text-slate-100 {
-  color: #334155 !important; /* slate-700 */
+  color: #1e293b !important; /* slate-800 */
+  font-weight: 600;
 }
 
-/* Üst ve Yan Çubuklar */
+/* Tablo başlıkları (th) simsiyah, kalın ve belirgin */
+html.light table th,
+html.light thead th {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+  background-color: #f1f5f9 !important;
+  border-bottom: 2px solid #cbd5e1 !important;
+}
+
+html.light table td {
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* 4. CANLI VE ZIT VURGU RENKLERİ (BEYAZDA ASLA PARLAMAZ, NET OKUNUR) */
+
+/* Yeşil / Kazanç: Açık fosfor yerine zengin zümrüt yeşili */
+html.light .text-emerald-400,
+html.light .text-emerald-300,
+html.light .text-neon-green {
+  color: #047857 !important; /* emerald-700 */
+  font-weight: 700 !important;
+}
+
+/* Kırmızı / Kayıp: Açık pembe yerine canlı yakut kırmızısı */
+html.light .text-rose-400,
+html.light .text-rose-300,
+html.light .text-neon-red,
+html.light .text-red-400 {
+  color: #b91c1c !important; /* red-700 */
+  font-weight: 700 !important;
+}
+
+/* Mavi / Cyan: Açık turkuaz yerine derin kobalt mavisi */
+html.light .text-cyan-400,
+html.light .text-cyan-300,
+html.light .text-sky-400,
+html.light .text-blue-400 {
+  color: #0369a1 !important; /* sky-700 */
+  font-weight: 700 !important;
+}
+
+/* Sarı / Kehribar: Beyazda kaybolan sarı yerine ZENGİN KOYU KEHRİBAR */
+html.light .text-yellow-400,
+html.light .text-yellow-300,
+html.light .text-amber-400,
+html.light .text-amber-300 {
+  color: #b45309 !important; /* amber-700: %100 okunabilir koyu kehribar */
+  font-weight: 700 !important;
+}
+
+/* 5. CANLI VE TEMİZ ROZETLER (BADGES) */
+html.light [class*="bg-emerald-500/"],
+html.light [class*="bg-emerald-400/"] {
+  background-color: #ecfdf5 !important; /* açık zümrüt zemin */
+  color: #047857 !important;            /* koyu zümrüt yazı */
+  border-color: #a7f3d0 !important;     /* açık zümrüt kenarlık */
+}
+
+html.light [class*="bg-rose-500/"],
+html.light [class*="bg-rose-600/"] {
+  background-color: #fef2f2 !important; /* açık kırmızı zemin */
+  color: #b91c1c !important;            /* koyu kırmızı yazı */
+  border-color: #fecaca !important;
+}
+
+html.light [class*="bg-blue-500/"],
+html.light [class*="bg-cyan-500/"],
+html.light [class*="bg-sky-500/"] {
+  background-color: #eff6ff !important; /* açık mavi zemin */
+  color: #1d4ed8 !important;            /* koyu mavi yazı */
+  border-color: #bfdbfe !important;
+}
+
+html.light [class*="bg-amber-500/"],
+html.light [class*="bg-yellow-500/"] {
+  background-color: #fffbeb !important; /* açık kehribar zemin */
+  color: #b45309 !important;            /* koyu kehribar yazı */
+  border-color: #fde68a !important;
+}
+
+/* 6. ÜST ÇUBUK (TOPBAR) & YAN ÇUBUK (SIDEBAR) */
 html.light .topbar {
-  background: rgba(255, 255, 255, 0.95) !important;
-  border-bottom-color: #e2e8f0 !important;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  background: #ffffff !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.06);
 }
 
 html.light .topbar-title {
@@ -665,56 +781,53 @@ html.light .topbar-title {
 
 html.light .topbar-kicker {
   color: #0284c7 !important;
+  font-weight: 700 !important;
 }
 
 html.light .app-sidebar,
 html.light aside[data-sidebar] {
   background: #ffffff !important;
-  border-right-color: #e2e8f0 !important;
-  box-shadow: 1px 0 3px 0 rgba(0, 0, 0, 0.05);
+  border-right: 1px solid #cbd5e1 !important;
+  box-shadow: 2px 0 6px 0 rgba(0, 0, 0, 0.04);
+}
+
+html.light .app-sidebar .text-bunker-muted {
+  color: #475569 !important; /* menü altındaki açıklamalar artık net okunur */
 }
 
 html.light .bottom-nav {
-  background: rgba(255, 255, 255, 0.95) !important;
-  border-top-color: #e2e8f0 !important;
+  background: #ffffff !important;
+  border-top: 1px solid #cbd5e1 !important;
 }
 
-/* Tablolar ve Form Elemanları */
-html.light table thead tr {
-  background-color: #f8fafc !important;
-  border-color: #e2e8f0 !important;
-}
-
-html.light table tbody tr:hover {
-  background-color: #f8fafc !important;
-}
-
-html.light table tbody td {
-  border-color: #f1f5f9 !important;
-}
-
+/* 7. FORM ELEMANLARI & BUTONLAR */
 html.light select,
 html.light input,
 html.light textarea {
   background-color: #ffffff !important;
   color: #0f172a !important;
-  border-color: #cbd5e1 !important;
+  border: 1px solid #94a3b8 !important; /* slate-400 */
 }
 
-/* Butonlar & Rozetler */
+html.light select:focus,
+html.light input:focus,
+html.light textarea:focus {
+  border-color: #0284c7 !important;
+  outline: 2px solid rgba(2, 132, 199, 0.2) !important;
+}
+
 html.light .section-tabs {
-  background: #f1f5f9 !important;
-  border-color: #e2e8f0 !important;
+  background: #e2e8f0 !important;
+  border: 1px solid #cbd5e1 !important;
 }
 
-html.light .section-tabs button:hover {
-  background: #e2e8f0 !important;
-  color: #0f172a !important;
+html.light .section-tabs button {
+  color: #334155 !important;
 }
 
 html.light .section-tabs button.active {
   background: #ffffff !important;
   color: #0284c7 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
 }
 
