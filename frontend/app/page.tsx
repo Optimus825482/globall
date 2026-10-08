@@ -49,6 +49,8 @@ interface ClosedTrade {
   exit_time?: string;
   open_time?: string;
   duration_human?: string;
+  time?: number | string;
+  closed_at_ts?: number;
 }
 
 interface KPIStats {
@@ -121,20 +123,54 @@ function formatPrice(v?: number | null, symbol: string = ""): string {
   return v.toFixed(5);
 }
 
-function formatClockTime(timeStr?: string): string {
+function formatClockTime(timeStr?: string | number, closedAtTs?: number): string {
+  if (!timeStr && closedAtTs && typeof closedAtTs === "number" && closedAtTs > 0) {
+    const ms = closedAtTs > 1e11 ? closedAtTs : closedAtTs * 1000;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) {
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(d.getUTCMinutes()).padStart(2, "0");
+      const ss = String(d.getUTCSeconds()).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    }
+  }
   if (!timeStr) return "—";
   try {
-    const d = new Date(timeStr);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const raw = String(timeStr).trim();
+    const timeMatch = raw.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch) {
+      return `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
     }
-    if (timeStr.includes(" ")) {
-      return timeStr.split(" ")[1] || timeStr;
-    }
-    return timeStr;
+    return raw;
   } catch {
-    return timeStr;
+    return String(timeStr);
   }
+}
+
+// Bulunulan tarihteki işlem zaman damgasını milisaniyeye çevirir (MT5 zaman damgasıyla uyumlu)
+function parseTradeTime(t: ClosedTrade | any): number {
+  if (typeof t.closed_at_ts === "number" && t.closed_at_ts > 0) {
+    return t.closed_at_ts > 1e11 ? t.closed_at_ts : t.closed_at_ts * 1000;
+  }
+  if (typeof t.time === "number" && t.time > 0) {
+    return t.time > 1e11 ? t.time : t.time * 1000;
+  }
+  const rawStr = t.close_time || t.exit_time || t.time || t.open_time;
+  if (!rawStr) return 0;
+
+  const s = String(rawStr).trim();
+  const parts = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
+  if (parts) {
+    return Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]), Number(parts[4]), Number(parts[5]), Number(parts[6] || 0));
+  }
+  const parsed = new Date(s).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+// Bulunulan tarihteki saat 00:01:00 eşiğini verir (MT5 sunucu takvimiyle uyumlu)
+function getToday0001Cutoff(): number {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 1, 0);
 }
 
 interface EventCountdownBadgeProps {
@@ -323,25 +359,60 @@ export default function HomePage() {
         if (Array.isArray(reportRes.open_positions)) {
           setOpenPositions(reportRes.open_positions);
         }
+
+        // Bulunulan tarihteki saat 00:01'den sonraki kapanan işlemleri filtrele (İşlemler sayfasıyla birebir aynı)
+        const cutoff0001 = getToday0001Cutoff();
+        let validTrades: ClosedTrade[] = [];
         if (Array.isArray(reportRes.trades)) {
-          setClosedTrades(reportRes.trades);
+          validTrades = reportRes.trades.filter((t: ClosedTrade) => {
+            const ts = parseTradeTime(t);
+            return ts >= cutoff0001;
+          });
+          setClosedTrades(validTrades);
         }
-        const k = reportRes.kpi || statusRes?.today_kpi;
-        if (k) {
-          setKpi((prev) => ({
-            ...prev,
-            total_trades: k.total_trades ?? 0,
-            wins: k.won_trades ?? k.wins ?? 0,
-            losses: k.lost_trades ?? k.losses ?? 0,
-            win_rate: k.win_rate_pct ?? k.win_rate ?? 0,
-            total_pnl_usd: statusRes?.daily_pnl ?? k.total_pnl_usd ?? 0,
-            total_pnl_pips: statusRes?.daily_pips ?? k.total_pnl_pips ?? 0,
-            profit_factor: k.profit_factor ?? 0,
-            profit_factor_infinite: !!k.profit_factor_infinite,
-            balance: statusRes?.balance ?? k.balance ?? prev.balance,
-            equity: statusRes?.equity ?? k.equity ?? prev.equity,
-          }));
+
+        // Günün 00:01 sonrası başarı metriklerini (KPI) hesapla
+        let winsCount = 0;
+        let lossesCount = 0;
+        let totalPnl = 0;
+        let totalPips = 0;
+        let grossProfit = 0;
+        let grossLoss = 0;
+        for (const t of validTrades) {
+          const pnl = Number(t.pnl_usd ?? 0);
+          totalPnl += pnl;
+          totalPips += Number(t.pnl_pips ?? 0);
+          if (pnl > 0 || t.outcome === "WIN") {
+            winsCount += 1;
+            grossProfit += pnl;
+          } else if (pnl < 0 || t.outcome === "LOSS") {
+            lossesCount += 1;
+            grossLoss += Math.abs(pnl);
+          }
         }
+        const totalTradesCount = validTrades.length;
+        const winRatePct = totalTradesCount > 0 ? (winsCount / totalTradesCount) * 100 : 0;
+        const pf = grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : (grossProfit > 0 ? 999 : 0);
+
+        setKpi((prev) => ({
+          ...prev,
+          total_trades: totalTradesCount,
+          wins: winsCount,
+          losses: lossesCount,
+          win_rate: winRatePct,
+          total_pnl_usd: totalPnl,
+          total_pnl_pips: totalPips,
+          profit_factor: pf,
+          profit_factor_infinite: pf >= 999,
+          gross_profit_usd: grossProfit,
+          gross_loss_usd: grossLoss,
+          balance: statusRes?.balance ?? reportRes.kpi?.balance ?? prev.balance,
+          equity: statusRes?.equity ?? reportRes.kpi?.equity ?? prev.equity,
+          open_positions_count: Array.isArray(reportRes.open_positions) ? reportRes.open_positions.length : prev.open_positions_count,
+          open_pnl_usd: Array.isArray(reportRes.open_positions)
+            ? reportRes.open_positions.reduce((acc: number, p: any) => acc + Number(p.pnl_usd ?? 0), 0)
+            : prev.open_pnl_usd,
+        }));
       } else if (statusRes) {
         const k = statusRes.today_kpi;
         setKpi((prev) => ({
