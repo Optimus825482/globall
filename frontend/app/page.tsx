@@ -451,12 +451,12 @@ export default function HomePage() {
       }
     }, 4000);
 
-    // Ekonomik takvim her 90 saniyede bir güncellenir (Rate limit korumalı)
+    // Ekonomik takvim veritabanı önbelleğinden anında okunur (3 dakikada bir senkron kontrolü)
     const calendarInterval = setInterval(() => {
       if (!document.hidden) {
         fetchCalendar(false);
       }
-    }, 90000);
+    }, 180000);
 
     return () => {
       clearInterval(tradeInterval);
@@ -863,9 +863,12 @@ export default function HomePage() {
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                   ⭐⭐ / ⭐⭐⭐ Kritik Volatilite
                 </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  ⚡ Veritabanı Önbelleği (3 Saatte Bir Otomatik)
+                </span>
               </div>
               <p className="text-[11px] text-bunker-muted mt-0.5">
-                Investing.com 2 ve 3 yıldızlı makro açıklamalar, etkilenen Forex/Kripto pariteleri ve &quot;Hangi Durumda Nasıl Etkilenir?&quot; senaryoları
+                Investing.com 2 ve 3 yıldızlı makro açıklamalar günde bir ve gün içerisinde 3 saatte bir arka planda çekilir; veritabanından anında sunulur.
               </p>
             </div>
           </div>

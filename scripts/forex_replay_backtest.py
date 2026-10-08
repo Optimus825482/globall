@@ -285,6 +285,40 @@ TUN_TFIX_GOTOBI_ONLY = False    # True: yalnız 5/10/15/20/25/ay-sonu günleri
 TUN_MODE_FLAT16 = False         # 16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma ADAY 5)
 MODE_DAY_STATE: Dict[Tuple[str, int, str], int] = {}  # (sembol, gün, yön) → gün içi giriş sayısı
 MODE_SYMBOLS: set = set()       # boş = mod tüm sembollerde; dolu = yalnız bu sembollerde
+# goose AI strateji #3 — Supertrend + RSI Pullback (2026-10-08 kural seti):
+#   ST(10,3) yönü (kapanmış bar) + EMA200 tarafı + ADX>25 + RSI(14) pullback:
+#   LONG: RSI 50 altına sarkıp 40-50 bandına girer, sonra 50 üstüne kapanışla döner → BUY
+#   SHORT: RSI 50 üstüne çıkıp 50-60 bandına sarkar, sonra 50 altına kapanışla iner → SELL
+#   SL = 1.5×ATR(14); TP = 2.0×ATR(14) veya TP'siz + ST-flip çıkışı (MOMFLIP)
+TUN_SRP_RSI_LO = 40.0           # long pullback bandı alt sınırı (RSI bu değerin altına inmezse de 50 altına sarkma geçerli)
+TUN_SRP_ADX_MIN = 25.0          # 0 = ADX filtresi kapalı (spec: opsiyonel ama önerilir)
+TUN_SRP_EMA200 = True           # EMA200 tarafı filtresi (spec: açık)
+TUN_SRP_SL_ATR = 1.5            # SL (× ATR14)
+TUN_SRP_TP_ATR = 2.0            # TP (× ATR14); 0 = sabit TP yok (--st-flip-exit ile ST çevirince çık)
+TUN_SRP_MAX_PER_DAY = 0         # 0 = sınırsız (duplicate koruması motor tarafında MAX_PER_SYMBOL_DIR ile)
+# goose AI strateji #4 — Bollinger "Band Walk" (2026-10-08 kural seti):
+#   Walk tespiti: son N barda ≥K kez üst/alt banda değmiş VE kapanışlar SMA20'nin doğru tarafında
+#   Squeeze koruması: BBW son 100 barın alt %40'ındaysa giriş yok
+#   Re-entry (spec önerilen): band dışına kapanış → band içine geri giriş → tekrar band tarafında kapanış → giriş
+#   SL = max(1.5×ATR14, swing low − 0.5×ATR mesafesi); TP = sabit TP yok, orta-bant/karşı-bant çıkışı modda
+TUN_BBW_WALK_N = 8              # walk tespit penceresi (bar)
+TUN_BBW_WALK_TOUCH = 3          # pencerede min bant temas sayısı
+TUN_BBW_ADX_MIN = 25.0          # 0 = ADX kapalı (spec: band walk'ı yataydan ayıran ana filtre)
+TUN_BBW_EMA200 = True           # EMA200 tarafı filtresi (spec: açık)
+TUN_BBW_SQZ_PCT = 40.0          # BBW bu persentilin altındaysa squeeze → giriş yok (0 = kapalı)
+TUN_BBW_SL_ATR = 1.5            # min SL (× ATR14); gerçek SL = max(bu, swing low − 0.5×ATR)
+TUN_BBW_TP_ATR = 0.0            # sabit TP (× ATR14); 0 = TP yok (orta-bant/karşı-bant çıkışı VAR)
+BBW_STATE: Dict[Tuple[str, int], int] = {}  # (sembol, yön +1/-1) → re-entry durum makinesi
+                                # 0:armed-dışı 1:band-dışı-kapanış-geldi 2:band-içine-geri-girdi (tekrar band tarafı kapanış → giriş)
+# Giriş-modu çıkış motoru state'i: (sembol, yönde pozisyon çifti değil — pozisyonla taşınmalı;
+# manage_book pos bazlı olduğu için orta-bant/karşı-bant çıkışı TUN_BBW_EXIT_MID bayrağıyla
+# manage_position sonrası _momflip_exit deseninde işlenir.
+TUN_BBW_EXIT_MID = True         # long: kapanış SMA20 altı → çık; short: kapanış SMA20 üstü → çık
+TUN_BBW_EXIT_OPP_BAND = True    # karşı banda kapanış dokunuşu → çık
+_SR_EMA_CACHE: Dict[str, List[float]] = {}   # sembol → tam EMA200 serisi (supertrend_rsi + bb_bandwalk paylaşır)
+_SR_RSI_CACHE: Dict[str, List[Optional[float]]] = {}  # sembol → tam RSI(14) serisi
+_SR_ATR_CACHE: Dict[str, List[float]] = {}   # sembol → tam ATR(14) serisi
+_SR_ST_CACHE: Dict[str, List[int]] = {}      # sembol → ST(10,3) yön serisi
 
 
 def _bb_bandwidth_series(closes: List[float], period: int = 20, mult: float = 2.0) -> List[float]:
@@ -316,6 +350,36 @@ def _bb_bandwidth_series(closes: List[float], period: int = 20, mult: float = 2.
 
 # Squeeze modu bandwidth serisi önbelleği: sembol → tam seri (her barda yeniden hesaplamayı önler)
 _BB_BW_CACHE: Dict[str, List[float]] = {}
+
+
+def _sr_ema200_series(closes: List[float], cache_key: str) -> List[float]:
+    """EMA(200) tam serisi (sembol başına önbellekli; look-ahead yok)."""
+    cached = _SR_EMA_CACHE.get(cache_key)
+    if cached is not None and len(cached) == len(closes):
+        return cached
+    out = _ema_series(closes, 200)
+    _SR_EMA_CACHE[cache_key] = out
+    return out
+
+
+def _sr_rsi14_series(closes: List[float], cache_key: str) -> List[Optional[float]]:
+    """Wilder RSI(14) tam serisi (sembol başına önbellekli; look-ahead yok)."""
+    cached = _SR_RSI_CACHE.get(cache_key)
+    if cached is not None and len(cached) == len(closes):
+        return cached
+    out = _rsi_wilder(closes, 14)
+    _SR_RSI_CACHE[cache_key] = out
+    return out
+
+
+def _sr_atr14_series(bars: List[Tuple], cache_key: str) -> List[float]:
+    """ATR(14) tam serisi (mini motor; sembol başına önbellekli)."""
+    cached = _SR_ATR_CACHE.get(cache_key)
+    if cached is not None and len(cached) == len(bars):
+        return cached
+    out = _mini_atr_series(bars, 14)
+    _SR_ATR_CACHE[cache_key] = out
+    return out
 # Dalga-2: H1 EMA200 trend durumu önbelleği (squeeze_exp yön filtresi + H1 kapısı paylaşır)
 _HTF_EMA_STATE: Dict[str, Dict[int, int]] = {}
 # Dalga-2: ADR (avg daily range) serisi önbelleği — sembol → {ts: adr_pips}
@@ -905,6 +969,183 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
                           "tp_pips": round(1.5 * ap / pip_size, 1)},
                 "time_stop_bars": TUN_TFIX_WINDOW_MIN}
 
+    if TUN_ENTRY_MODE == "supertrend_rsi":
+        # goose AI strateji #3 (2026-10-08 kural seti, birebir):
+        #   1) Yön: ST(10,3) kapanmış barda up/down  2) EMA200 tarafı  3) ADX>25 (önerilen)
+        #   4) LONG: RSI 50 altına sarkıp 40-50 bandına girdikten sonra 50 üstüne kapanışla döner
+        #      SHORT ayna: RSI 50 üstüne çıkıp 50-60 bandına sarkar, 50 altına kapanışla iner
+        #   5) SL = 1.5×ATR(14); TP = 2.0×ATR(14) (0 = TP'siz + --st-flip-exit ST çevirince çık)
+        if ci < 210:
+            return None
+        closes_s = [b[4] for b in bars[:ci]]
+        st_dirs = _SR_ST_CACHE.get(sym)
+        if st_dirs is None or len(st_dirs) < ci + 1:
+            st_dirs = _st_dir_series(bars, 10, 3.0)
+            _SR_ST_CACHE[sym] = st_dirs
+        st_now = st_dirs[ci - 1]
+        if st_now == 0:
+            return None
+        rsi_s = _sr_rsi14_series(closes_s, sym)
+        r_now = rsi_s[ci - 1]
+        r_prev = rsi_s[ci - 2] if ci >= 2 and rsi_s[ci - 2] is not None else None
+        if r_now is None:
+            return None
+        atr_s = _sr_atr14_series(bars, sym)
+        ap = atr_s[ci - 1]
+        if ap <= 0 or pip_size <= 0:
+            return None
+        ema200_s = _sr_ema200_series(closes_s, sym)
+        e200 = ema200_s[ci - 1]
+        c = bars[ci - 1][4]
+        if TUN_SRP_EMA200 and e200 > 0:
+            if st_now > 0 and c <= e200:
+                return None
+            if st_now < 0 and c >= e200:
+                return None
+        if TUN_SRP_ADX_MIN > 0:
+            adx = float(tech.get("adx") or 0.0)
+            if adx < TUN_SRP_ADX_MIN:
+                return None
+        # Pullback durumu: son 6 bar içinde RSI trend-yönü bandına sarkmış olmalı
+        # (LONG: 40-50; SHORT: 50-60) ve bu barda 50'yi trend yönünde kapanışla geçmeli.
+        lookback = rsi_s[max(0, ci - 6):ci - 1]
+        past_vals = [x for x in lookback if x is not None]
+        if st_now > 0:
+            if not any(x < 50.0 for x in past_vals):
+                return None
+            if TUN_SRP_RSI_LO > 0 and past_vals and all(x < TUN_SRP_RSI_LO for x in past_vals):
+                return None  # 40 bandını tamamen kırdı → trend bozulmuş sayılır
+            if r_prev is not None and r_prev >= 50.0:
+                return None  # zaten 50 üstündeydi → yeni dönüş yok
+            if r_now <= 50.0:
+                return None  # 50 üstüne kapanış onayı yok
+            action = "BUY"
+        else:
+            if not any(x > 50.0 for x in past_vals):
+                return None
+            if past_vals and all(x > 100.0 - TUN_SRP_RSI_LO for x in past_vals):
+                return None
+            if r_prev is not None and r_prev <= 50.0:
+                return None
+            if r_now >= 50.0:
+                return None
+            action = "SELL"
+        if TUN_SRP_MAX_PER_DAY > 0:
+            day = int(ts // 86400)
+            key = (sym, day, action)
+            if MODE_DAY_STATE.get(key, 0) >= TUN_SRP_MAX_PER_DAY:
+                return None
+            MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        return {"action": action,
+                "exits": {"sl_pips": round(TUN_SRP_SL_ATR * ap / pip_size, 1),
+                          "tp_pips": round(TUN_SRP_TP_ATR * ap / pip_size, 1)}}
+
+    if TUN_ENTRY_MODE == "bb_bandwalk":
+        # goose AI strateji #4 (2026-10-08 kural seti, re-entry versiyonu):
+        #   Walk tespiti: son N barda ≥K kez bant teması VE kapanışlar SMA20'nin trend tarafında
+        #   ADX>25 + EMA200 tarafı; BBW son 100 barın alt %40'ı = squeeze → giriş yok
+        #   Re-entry: band dışına kapanış (1) → band içine geri giriş (2) → tekrar band
+        #   tarafında kapanış → giriş. Spike-eleme şartı spec'in %60 sahte kırılım filtresi.
+        #   SL = max(1.5×ATR, swing low − 0.5×ATR); TP yok → çıkış: orta-bant altı kapanış
+        #   veya karşı banda dokunuş (manage_book'ta TUN_BBW_EXIT_* bayraklarıyla).
+        period = 20
+        if ci < max(period + 5, 210):
+            return None
+        closes_s = [b[4] for b in bars[:ci]]
+        bw = _BB_BW_CACHE.get(sym)
+        if bw is None or len(bw) < ci:
+            bw = _bb_bandwidth_series(closes_s, period, 2.0)
+            _BB_BW_CACHE[sym] = bw
+        cur_bw = bw[ci - 1]
+        if cur_bw <= 0:
+            return None
+        if TUN_BBW_SQZ_PCT > 0:
+            seg_bw = [x for x in bw[max(0, ci - 100):ci] if x > 0]
+            if len(seg_bw) < 50:
+                return None
+            # BBW mevcut genişlik son 100 barın bu persentilinin altındaysa squeeze → giriş yok
+            if 100.0 * sum(1 for x in seg_bw if x <= cur_bw) / len(seg_bw) < TUN_BBW_SQZ_PCT:
+                return None
+        # BB(20, 2.0) seviyeleri — kayan pencere (yalnız son bar; cache'li seriden değil)
+        win = closes_s[-period:]
+        m = sum(win) / period
+        sd = (sum((x - m) ** 2 for x in win) / period) ** 0.5
+        up = m + 2.0 * sd
+        lo = m - 2.0 * sd
+        c = bars[ci - 1][4]
+        # Walk tespiti (yön-bağımsız iki yön ayrı değerlendirilir)
+        last_n = bars[max(0, ci - TUN_BBW_WALK_N):ci]
+        up_touches = sum(1 for b in last_n if b[2] >= up)
+        dn_touches = sum(1 for b in last_n if b[3] <= lo)
+        closes_above = all(b[4] > m for b in last_n)
+        closes_below = all(b[4] < m for b in last_n)
+        cand_dirs = []
+        if up_touches >= TUN_BBW_WALK_TOUCH and closes_above:
+            cand_dirs.append(1)
+        if dn_touches >= TUN_BBW_WALK_TOUCH and closes_below:
+            cand_dirs.append(-1)
+        if not cand_dirs:
+            BBW_STATE[(sym, 1)] = 0
+            BBW_STATE[(sym, -1)] = 0
+            return None
+        if TUN_BBW_ADX_MIN > 0:
+            adx = float(tech.get("adx") or 0.0)
+            if adx < TUN_BBW_ADX_MIN:
+                return None
+        ema200_s = _sr_ema200_series(closes_s, sym)
+        e200 = ema200_s[ci - 1]
+        atr_s = _sr_atr14_series(bars, sym)
+        ap = atr_s[ci - 1]
+        if ap <= 0 or pip_size <= 0:
+            return None
+        chosen = None
+        for d in cand_dirs:
+            state = BBW_STATE.get((sym, d), 0)
+            if d == 1:
+                out_close = c > up
+                back_in = c <= up
+                re_touch = c > m
+            else:
+                out_close = c < lo
+                back_in = c >= lo
+                re_touch = c < m
+            if state == 0 and out_close:
+                BBW_STATE[(sym, d)] = 1    # band dışına kapanış kaydedildi
+            elif state == 1 and back_in:
+                BBW_STATE[(sym, d)] = 2    # band içine geri giriş (spike eleme)
+            elif state == 2 and re_touch:
+                # tekrar bant tarafında (orta-bantın trend yönünde) kapanış → giriş
+                if d == 1 and closes_above:
+                    chosen = 1
+                elif d == -1 and closes_below:
+                    chosen = -1
+                BBW_STATE[(sym, d)] = 0    # tetiklendi; yeni döngü için sıfırla
+            if chosen is not None:
+                break
+        if chosen is None:
+            return None
+        action = "BUY" if chosen == 1 else "SELL"
+        if TUN_BBW_EMA200 and e200 > 0:
+            if action == "BUY" and c <= e200:
+                return None
+            if action == "SELL" and c >= e200:
+                return None
+        day = int(ts // 86400)
+        key = (sym, day, action)
+        if MODE_DAY_STATE.get(key, 0) >= 2:
+            return None
+        MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        # SL: swing low − 0.5×ATR, min 1.5×ATR mesafe (spec)
+        swing_low = min(b[3] for b in bars[max(0, ci - 10):ci])
+        swing_high = max(b[2] for b in bars[max(0, ci - 10):ci])
+        if action == "BUY":
+            sl_dist = max(TUN_BBW_SL_ATR * ap, c - (swing_low - 0.5 * ap))
+        else:
+            sl_dist = max(TUN_BBW_SL_ATR * ap, (swing_high + 0.5 * ap) - c)
+        return {"action": action,
+                "exits": {"sl_pips": round(sl_dist / pip_size, 1),
+                          "tp_pips": round(TUN_BBW_TP_ATR * ap / pip_size, 1)}}
+
     return None
 
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
@@ -1444,8 +1685,35 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
             still.append(pos)
             continue
         flip = _momflip_exit(pos, bar, exit_maps)
+        bw_exit = None
+        if flip is None and TUN_ENTRY_MODE == "bb_bandwalk" and book.name == "NEW":
+            # Strateji #4 çıkışları: güvenli çıkış = orta-bant altı/üstü kapanış (trend bozuldu);
+            # karşı banda kapanış dokunuşu da çıkıştır. BB(20) seviyeleri bar kapanış penceresi
+            # günceldir (bar zaten kapandı — look-ahead yok). ts_idx serisi üzerinden pencere.
+            i_now = exit_maps["ts_idx"].get(pos.symbol, {}).get(bar[0]) if exit_maps else None
+            closes_s = exit_maps.get("bb_closes", {}).get(pos.symbol) if exit_maps else None
+            if i_now is not None and closes_s is not None and i_now >= 19:
+                w = closes_s[i_now - 19:i_now + 1]
+                if len(w) == 20:
+                    m = sum(w) / 20.0
+                    sd = (sum((x - m) ** 2 for x in w) / 20.0) ** 0.5
+                    c = bar[4]
+                    if pos.direction == "BUY":
+                        if TUN_BBW_EXIT_MID and c < m:
+                            bw_exit = ("BWMID", c)
+                        elif TUN_BBW_EXIT_OPP_BAND and c <= m - 2.0 * sd:
+                            bw_exit = ("BWOPP", c)
+                    else:
+                        if TUN_BBW_EXIT_MID and c > m:
+                            bw_exit = ("BWMID", c)
+                        elif TUN_BBW_EXIT_OPP_BAND and c >= m + 2.0 * sd:
+                            bw_exit = ("BWOPP", c)
         if flip is not None:
             close_position(book, pos, flip[0], flip[1], closed_ts=ts)
+        elif bw_exit is not None:
+            ex_px = (round(bw_exit[1] - pos.fill_adjust, pos.digits) if pos.direction == "BUY"
+                     else round(bw_exit[1] + pos.fill_adjust, pos.digits))
+            close_position(book, pos, bw_exit[0], ex_px, closed_ts=ts)
         elif (TUN_MODE_FLAT16 and TUN_ENTRY_MODE != "classic"
               and "XAU" not in pos.symbol.upper() and "BTC" not in pos.symbol.upper()
               and datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).hour == 16):
@@ -1986,8 +2254,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     # ts→index haritasıyla bar bazında okunur (look-ahead yok: i. değer yalnız i ve öncesi barlardan).
     exit_maps: Optional[Dict[str, Any]] = None
     _time_stop_mode = TUN_ENTRY_MODE in ("orb_filtered", "reopen_fade", "tokyo_fix")
-    if TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0 or _time_stop_mode:
-        exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}}
+    if (TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0 or _time_stop_mode
+            or TUN_ENTRY_MODE == "bb_bandwalk"):
+        exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}, "bb_closes": {}}
         for s in symbols:
             bars_s = data[s]
             exit_maps["ts_idx"][s] = {b[0]: i for i, b in enumerate(bars_s)}
@@ -1997,6 +2266,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 closes_s = [b[4] for b in bars_s]
                 exit_maps["ema9"][s] = _ema_series(closes_s, 9)
                 exit_maps["ema21"][s] = _ema_series(closes_s, 21)
+            if TUN_ENTRY_MODE == "bb_bandwalk":
+                exit_maps["bb_closes"][s] = [b[4] for b in bars_s]
 
     # "Trend bitti" dedektör haritaları (giriş kapıları): HTF 15M ST yönü, 5M ST yaşı, RSI uyumsuzluk
     htf_maps: Dict[str, Dict[int, int]] = {}
@@ -2543,7 +2814,7 @@ def main():
     parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
-    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
+    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
     parser.add_argument("--lb-entry-end", type=int, default=11, help="London breakout tetik penceresi bitiş saati (UTC)")
     parser.add_argument("--lb-sl-frac", type=float, default=0.5, help="LB SL = kutu yüksekliği × bu oran")
@@ -2554,6 +2825,22 @@ def main():
     parser.add_argument("--eap-sl-atr", type=float, default=1.5, help="ema_adx_pullback: SL (x ATR(14))")
     parser.add_argument("--eap-tp-atr", type=float, default=2.0, help="ema_adx_pullback: TP (x ATR(14)); 0 = sabit TP yok (trailing)")
     parser.add_argument("--eap-max-per-day", type=int, default=0, help="ema_adx_pullback: gun basina azami giris (0 = sinirsiz)")
+    # ---- goose AI stratejileri #3 / #4 (2026-10-08 kural seti) ----
+    parser.add_argument("--srp-rsi-lo", type=float, default=40.0, help="supertrend_rsi: long pullback band alt siniri (40-50 bandi)")
+    parser.add_argument("--srp-adx-min", type=float, default=25.0, help="supertrend_rsi: ADX esigi (0 = kapali; spec: opsiyonel ama onerilir)")
+    parser.add_argument("--srp-no-ema200", action="store_true", help="supertrend_rsi: EMA200 tarafi filtresini kapat (spec: acik)")
+    parser.add_argument("--srp-sl-atr", type=float, default=1.5, help="supertrend_rsi: SL (x ATR14)")
+    parser.add_argument("--srp-tp-atr", type=float, default=2.0, help="supertrend_rsi: TP (x ATR14); 0 = TP yok (--st-flip-exit ile ST cevirince cik)")
+    parser.add_argument("--srp-max-per-day", type=int, default=0, help="supertrend_rsi: gun basina azami giris (0 = sinirsiz)")
+    parser.add_argument("--bbw-walk-n", type=int, default=8, help="bb_bandwalk: walk tespit penceresi (bar)")
+    parser.add_argument("--bbw-walk-touch", type=int, default=3, help="bb_bandwalk: pencerede min bant temas sayisi")
+    parser.add_argument("--bbw-adx-min", type=float, default=25.0, help="bb_bandwalk: ADX esigi (0 = kapali)")
+    parser.add_argument("--bbw-no-ema200", action="store_true", help="bb_bandwalk: EMA200 tarafi filtresini kapat (spec: acik)")
+    parser.add_argument("--bbw-sqz-pct", type=float, default=40.0, help="bb_bandwalk: BBW bu persentilin altindaysa squeeze -> giris yok (0 = kapali)")
+    parser.add_argument("--bbw-sl-atr", type=float, default=1.5, help="bb_bandwalk: min SL (x ATR14)")
+    parser.add_argument("--bbw-tp-atr", type=float, default=0.0, help="bb_bandwalk: sabit TP (x ATR14); 0 = TP yok (orta-bant/karsi-bant cikisi)")
+    parser.add_argument("--bbw-no-exit-mid", action="store_true", help="bb_bandwalk: orta-bant kapanis cikisini kapat")
+    parser.add_argument("--bbw-no-exit-opp", action="store_true", help="bb_bandwalk: karsi-bant dokunus cikisini kapat")
     parser.add_argument("--pb-adx-min", type=float, default=20.0, help="Pullback modu ADX eşiği")
     parser.add_argument("--da-adx-min", type=float, default=18.0, help="Donchian+ADX modu ADX eşiği")
     parser.add_argument("--da-sl-atr", type=float, default=2.0, help="Donchian+ADX modu SL (× ATR)")
@@ -2712,6 +2999,29 @@ def main():
     MODE_DAY_STATE.clear()
     global TUN_PB_ADX_MIN, TUN_DA_ADX_MIN, TUN_MODE_FLAT16
     global TUN_EAP_ADX_MIN, TUN_EAP_TOUCH_ATR, TUN_EAP_SL_ATR, TUN_EAP_TP_ATR, TUN_EAP_MAX_PER_DAY
+    global TUN_SRP_RSI_LO, TUN_SRP_ADX_MIN, TUN_SRP_EMA200, TUN_SRP_SL_ATR, TUN_SRP_TP_ATR, TUN_SRP_MAX_PER_DAY
+    global TUN_BBW_WALK_N, TUN_BBW_WALK_TOUCH, TUN_BBW_ADX_MIN, TUN_BBW_EMA200
+    global TUN_BBW_SQZ_PCT, TUN_BBW_SL_ATR, TUN_BBW_TP_ATR, TUN_BBW_EXIT_MID, TUN_BBW_EXIT_OPP_BAND
+    TUN_SRP_RSI_LO = args.srp_rsi_lo
+    TUN_SRP_ADX_MIN = args.srp_adx_min
+    TUN_SRP_EMA200 = not args.srp_no_ema200
+    TUN_SRP_SL_ATR = args.srp_sl_atr
+    TUN_SRP_TP_ATR = args.srp_tp_atr
+    TUN_SRP_MAX_PER_DAY = args.srp_max_per_day
+    TUN_BBW_WALK_N = args.bbw_walk_n
+    TUN_BBW_WALK_TOUCH = args.bbw_walk_touch
+    TUN_BBW_ADX_MIN = args.bbw_adx_min
+    TUN_BBW_EMA200 = not args.bbw_no_ema200
+    TUN_BBW_SQZ_PCT = args.bbw_sqz_pct
+    TUN_BBW_SL_ATR = args.bbw_sl_atr
+    TUN_BBW_TP_ATR = args.bbw_tp_atr
+    TUN_BBW_EXIT_MID = not args.bbw_no_exit_mid
+    TUN_BBW_EXIT_OPP_BAND = not args.bbw_no_exit_opp
+    BBW_STATE.clear()
+    _SR_EMA_CACHE.clear()
+    _SR_RSI_CACHE.clear()
+    _SR_ATR_CACHE.clear()
+    _SR_ST_CACHE.clear()
     TUN_EAP_ADX_MIN = args.eap_adx_min
     TUN_EAP_TOUCH_ATR = args.eap_touch_atr
     TUN_EAP_SL_ATR = args.eap_sl_atr

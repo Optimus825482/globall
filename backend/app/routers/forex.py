@@ -5360,11 +5360,20 @@ async def get_macro_forex_news(
 
         upcoming_5m = [x for x in items if x.get("is_within_5m")]
 
+        last_sync_ts = 0.0
+        try:
+            from app import database
+            if database:
+                last_sync_ts = await database.get_last_economic_calendar_sync()
+        except Exception:
+            pass
+
         return {
             "status": "ok",
             "count": len(items),
             "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "source": "Investing.com & Küresel Makro Akış (2 & 3 Yıldız)",
+            "last_sync_ts": last_sync_ts,
+            "source": "Investing.com & Küresel Makro Akış (2 & 3 Yıldız - Veritabanı Önbellekli)",
             "upcoming_5m_count": len(upcoming_5m),
             "upcoming_5m_alerts": upcoming_5m,
             "news": items,

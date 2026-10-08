@@ -55,3 +55,65 @@ def test_turkish_comment_resolution():
     # Generic
     c3 = get_turkish_comment("", "Some Unknown Event", "Bilinmeyen Gösterge")
     assert "piyasa katılımcıları" in c3
+
+
+def test_economic_calendar_db_persistence():
+    from app import database
+    from app.forex_news import sync_economic_calendar_to_db, _CALENDAR_CACHE
+
+    # Test event saving and loading
+    sample_events = [
+        {
+            "id": "test-cal-1",
+            "title": "Fed Faiz Kararı Test",
+            "original_title": "Fed Interest Rate Test",
+            "country": "USD",
+            "currency": "USD",
+            "country_name": "ABD",
+            "flag": "🇺🇸",
+            "date_str": "Bugün 21:00",
+            "date_iso": "2026-10-08T18:00:00Z",
+            "impact": "High",
+            "stars": 3,
+            "stars_str": "⭐⭐⭐",
+            "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
+            "forecast": "5.00%",
+            "previous": "5.25%",
+            "actual": "—",
+            "status": "Bekleniyor",
+            "affected_symbols": ["XAUUSD", "EURUSD"],
+            "scenario": {
+                "title": "Test Senaryo",
+                "bullish_trigger": "Faiz Sabit",
+                "bullish_outcome": "Dolar Artar",
+                "bearish_trigger": "Faiz İndirimi",
+                "bearish_outcome": "Dolar Düşer",
+                "summary_short": "Test Özet",
+            },
+        }
+    ]
+
+    # Test DB save
+    count = asyncio.run(database.save_economic_calendar_events(sample_events))
+    assert count == 1
+
+    # Test DB read
+    loaded = asyncio.run(database.get_economic_calendar_events())
+    assert len(loaded) >= 1
+    found = next((x for x in loaded if x.get("id") == "test-cal-1"), None)
+    assert found is not None
+    assert found["title"] == "Fed Faiz Kararı Test"
+    assert found["stars"] == 3
+
+    # Test last sync ts
+    last_sync = asyncio.run(database.get_last_economic_calendar_sync())
+    assert last_sync > 0
+
+    # Test get_forex_news reads from cache / DB without network delay
+    _CALENDAR_CACHE["items"] = []
+    _CALENDAR_CACHE["timestamp"] = 0
+    news = asyncio.run(get_forex_news(force_refresh=False))
+    assert isinstance(news, list)
+    assert len(news) > 0
+    assert any(x.get("id") == "test-cal-1" for x in news)
+

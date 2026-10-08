@@ -24,8 +24,18 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Önbellek Ayarları
-_CACHE_TTL_SEC = 300  # 5 dakika
+try:
+    from app import database
+except ImportError:
+    try:
+        from . import database
+    except ImportError:
+        database = None  # type: ignore
+
+# Önbellek ve Senkronizasyon Ayarları
+_CACHE_TTL_SEC = 300  # 5 dakika bellek tazeleme
+CALENDAR_REFRESH_INTERVAL_SEC = 3 * 3600  # 3 saatte bir arka planda kontrol ve DB güncelleme
+
 _CALENDAR_CACHE: Dict[str, Any] = {
     "timestamp": 0,
     "items": [],
@@ -933,117 +943,13 @@ def _save_disk_cache(items: List[Dict[str, Any]]) -> None:
 
 
 # ============================================================================
-# ANA ÇEKME VE KOMBİNASYON FONKSİYONU
+# DİNAMİK ALAN VE SAYIM HESAPLAYICI
 # ============================================================================
 
-async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> List[Dict[str, Any]]:
-    """Investing.com 2 ve 3 Yıldızlı Olayları 'Ne Olursa Ne Olur' senaryolarıyla döner.
-    
-    Yalnızca 2 ve 3 yıldıza (Medium & High) sahip ekonomik verileri sunar.
-    Önce TradingView API ve Investing.com canlı akışlarını dener.
-    Başarısız olursa disk önbelleğini ve zengin hazır olay listesini devreye alır.
-    """
-    now = time.time()
-    if not force_refresh and _CALENDAR_CACHE["items"] and (now - _CALENDAR_CACHE["timestamp"]) < _CACHE_TTL_SEC:
-        cached = _CALENDAR_CACHE["items"]
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        for ev in cached:
-            date_iso = ev.get("date_iso")
-            if date_iso:
-                try:
-                    ev_dt = datetime.datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
-                    diff_sec = (ev_dt - now_utc).total_seconds()
-                    mins = round(diff_sec / 60, 1)
-                    ev["minutes_until"] = mins
-                    ev["is_within_5m"] = bool(0 <= mins <= 5.5)
-                    ev["is_passed"] = bool(diff_sec < 0)
-                    if ev.get("actual") and ev["actual"] != "—":
-                        ev["status"] = "Açıklandı"
-                    elif ev["is_passed"]:
-                        ev["status"] = "Geçti"
-                    elif ev["is_within_5m"]:
-                        ev["status"] = "⏰ 5 Dk İçinde!"
-                except Exception:
-                    pass
-        return cached
-
-    items: List[Dict[str, Any]] = []
-
-    # 1. TradingView API'den çekmeyi dene (Hızlı, engelsiz, 2 ve 3 yıldız filtreli)
-    try:
-        tv_items = await fetch_tradingview_events()
-        if tv_items:
-            items.extend(tv_items)
-            logger.info("TradingView takviminden %d adet 2/3 yıldızlı olay çekildi.", len(tv_items))
-    except Exception as exc:
-        logger.warning("TradingView takvim çekme hatası: %s", exc)
-
-    # 2. Eğer az geldiyse Investing.com'u dene
-    if len(items) < 10:
-        try:
-            inv_items = await fetch_investing_com_events()
-            if inv_items:
-                # Başlık benzerliğine göre duplicate engelle
-                for inv in inv_items:
-                    if not any(x.get("original_title") == inv.get("original_title") for x in items):
-                        items.append(inv)
-                logger.info("Investing.com'dan ek olaylar eklendi. Toplam: %d", len(items))
-        except Exception as exc:
-            logger.debug("Investing.com ekleme hatası: %s", exc)
-
-    # 3. Hala az geldiyse ForexFactory akışını dene
-    if len(items) < 6:
-        try:
-            ff_items = await fetch_forexfactory_events()
-            for ff in ff_items:
-                if not any(x.get("title") == ff.get("title") for x in items):
-                    items.append(ff)
-        except Exception as exc:
-            logger.debug("ForexFactory ekleme hatası: %s", exc)
-
-    # 4. Eğer internet bağlantısı yoksa veya hiçbir veri çekilemediyse disk cache'e bak
-    if len(items) < 4:
-        disk_items = _load_disk_cache()
-        if disk_items:
-            items = disk_items
-            logger.info("Disk önbelleğinden %d adet takvim olayı yüklendi.", len(items))
-
-    # 5. Hala boşsa veya kritik olaylar eksikse FALLBACK_EVENTS ile harmanla
-    if len(items) < 6:
-        for fb in FALLBACK_EVENTS:
-            if not any(x.get("title") == fb.get("title") or x.get("original_title") == fb.get("original_title") for x in items):
-                items.append(fb)
-
-    # Yalnızca 2 ve 3 Yıldızlı Olayları tut
-    filtered_items = [
-        x for x in items 
-        if x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"]
-    ]
-
-    # Sıralama Mantığı:
-    # 1. Gelecek/Bugün olayları önce (is_passed == False), sonra geçmiş olaylar
-    # 2. 3 Yıldızlı olaylar (High) önce
-    # 3. Tarihe göre kronolojik
-    def sort_key(ev: Dict[str, Any]) -> tuple:
-        passed = 1 if ev.get("is_passed", False) or ev.get("status") == "Açıklandı" else 0
-        stars_priority = 0 if ev.get("stars") == 3 or ev.get("impact") == "High" else 1
-        date_sort = ev.get("date_iso") or "9999-99-99"
-        return (passed, stars_priority, date_sort)
-
-    filtered_items.sort(key=sort_key)
-
-    # Önbelleğe al (En fazla 30 kritik olay)
-    final_items = filtered_items[:30]
-
-    _CALENDAR_CACHE["timestamp"] = now
-    _CALENDAR_CACHE["items"] = final_items
-
-    if len(final_items) >= 4:
-        _save_disk_cache(final_items)
-
-    # Her çağrıda güncel dakikayı hesapla
+def _update_event_dynamic_fields(items: List[Dict[str, Any]]) -> None:
+    """Olayların dakikasını, 5 dakika uyarısını ve durumunu dinamik günceller."""
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    for ev in final_items:
+    for ev in items:
         date_iso = ev.get("date_iso")
         if date_iso:
             try:
@@ -1062,4 +968,196 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
             except Exception:
                 pass
 
+
+# ============================================================================
+# ARKA PLAN SENKRONİZASYONU VE VERİTABANI YAZIMI (INVESTING.COM 2 & 3 YILDIZ)
+# ============================================================================
+
+async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any]]:
+    """Investing.com, TradingView ve ForexFactory üzerinden verileri çeker ve veritabanına yazar.
+    
+    Kullanıcı arayüzünü bekletmez; arka planda periyodik (3 saatte bir) veya ilk kurulumda çalışır.
+    """
+    now = time.time()
+    items: List[Dict[str, Any]] = []
+
+    # 1. TradingView API'den çekmeyi dene (Hızlı, engelsiz, 2 ve 3 yıldız filtreli)
+    try:
+        tv_items = await fetch_tradingview_events()
+        if tv_items:
+            items.extend(tv_items)
+            logger.info("[EconomicCalendar] TradingView takviminden %d adet 2/3 yıldızlı olay çekildi.", len(tv_items))
+    except Exception as exc:
+        logger.warning("[EconomicCalendar] TradingView takvim çekme hatası: %s", exc)
+
+    # 2. Eğer az geldiyse Investing.com'u dene
+    if len(items) < 10:
+        try:
+            inv_items = await fetch_investing_com_events()
+            if inv_items:
+                for inv in inv_items:
+                    if not any(x.get("original_title") == inv.get("original_title") for x in items):
+                        items.append(inv)
+                logger.info("[EconomicCalendar] Investing.com'dan ek olaylar eklendi. Toplam: %d", len(items))
+        except Exception as exc:
+            logger.debug("[EconomicCalendar] Investing.com ekleme hatası: %s", exc)
+
+    # 3. Hala az geldiyse ForexFactory akışını dene
+    if len(items) < 6:
+        try:
+            ff_items = await fetch_forexfactory_events()
+            for ff in ff_items:
+                if not any(x.get("title") == ff.get("title") for x in items):
+                    items.append(ff)
+        except Exception as exc:
+            logger.debug("[EconomicCalendar] ForexFactory ekleme hatası: %s", exc)
+
+    # 4. İnternet kesikse disk önbelleğine bak
+    if len(items) < 4:
+        disk_items = _load_disk_cache()
+        if disk_items:
+            items = disk_items
+            logger.info("[EconomicCalendar] Disk önbelleğinden %d adet takvim olayı yüklendi.", len(items))
+
+    # 5. Kritik olaylar eksikse FALLBACK_EVENTS ile harmanla
+    if len(items) < 6:
+        for fb in FALLBACK_EVENTS:
+            if not any(x.get("title") == fb.get("title") or x.get("original_title") == fb.get("original_title") for x in items):
+                items.append(fb)
+
+    # Yalnızca 2 ve 3 Yıldızlı Olayları filtrele
+    filtered_items = [
+        x for x in items 
+        if x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"]
+    ]
+
+    def sort_key(ev: Dict[str, Any]) -> tuple:
+        passed = 1 if ev.get("is_passed", False) or ev.get("status") == "Açıklandı" else 0
+        stars_priority = 0 if ev.get("stars") == 3 or ev.get("impact") == "High" else 1
+        date_sort = ev.get("date_iso") or "9999-99-99"
+        return (passed, stars_priority, date_sort)
+
+    filtered_items.sort(key=sort_key)
+    final_items = filtered_items[:30]
+
+    # Bellek ve disk önbelleğini güncelle
+    _CALENDAR_CACHE["timestamp"] = now
+    _CALENDAR_CACHE["items"] = final_items
+    if len(final_items) >= 4:
+        _save_disk_cache(final_items)
+
+    # Veritabanına kaydet
+    if database and final_items:
+        try:
+            saved_cnt = await database.save_economic_calendar_events(final_items)
+            logger.info("[EconomicCalendar] %d adet takvim olayı veritabanına başarıyla kaydedildi.", saved_cnt)
+        except Exception as exc:
+            logger.warning("[EconomicCalendar] Veritabanına kaydetme hatası: %s", exc)
+
+    _update_event_dynamic_fields(final_items)
     return final_items
+
+
+# ============================================================================
+# HIZLI OKUMA VE SUNUM (VERİTABANI / BELLEK ÖNCELİKLİ - SIFIR BEKLEME)
+# ============================================================================
+
+async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> List[Dict[str, Any]]:
+    """Investing.com 2 ve 3 Yıldızlı Olayları veritabanından / bellekten anında döner.
+    
+    Sayfa açılışlarında harici sitelere istek atarak kullanıcıyı bekletmez.
+    Tüm veriler önceden veritabanına yazılmıştır; doğrudan veritabanından okunur.
+    """
+    now = time.time()
+
+    # Kullanıcı elle "Yenile" butonuna bastıysa arka plan senkronunu hemen tetikle
+    if force_refresh:
+        return await sync_economic_calendar_to_db(min_stars=min_stars)
+
+    # 1. Bellek Önbelleği (RAM) Kontrolü
+    if _CALENDAR_CACHE["items"] and (now - _CALENDAR_CACHE["timestamp"]) < _CACHE_TTL_SEC:
+        items = _CALENDAR_CACHE["items"]
+        _update_event_dynamic_fields(items)
+        return items
+
+    # 2. Veritabanı Kontrolü (Hızlı SQL Okuması)
+    db_items: List[Dict[str, Any]] = []
+    if database:
+        try:
+            db_items = await database.get_economic_calendar_events(min_stars=min_stars)
+        except Exception as exc:
+            logger.debug("[EconomicCalendar] Veritabanından okuma hatası: %s", exc)
+
+    if db_items and len(db_items) > 0:
+        _CALENDAR_CACHE["timestamp"] = now
+        _CALENDAR_CACHE["items"] = db_items
+        _update_event_dynamic_fields(db_items)
+        return db_items
+
+    # 3. Veritabanı boşsa (ilk kurulum anı): Disk önbelleğine bak
+    disk_items = _load_disk_cache()
+    if disk_items and len(disk_items) > 0:
+        _CALENDAR_CACHE["timestamp"] = now
+        _CALENDAR_CACHE["items"] = disk_items
+        _update_event_dynamic_fields(disk_items)
+        # Arka planda DB'yi doldurması için görevi asenkron başlat (kullanıcıyı bekletme)
+        asyncio.create_task(sync_economic_calendar_to_db(min_stars=min_stars))
+        return disk_items
+
+    # 4. Tamamen boşsa hazır yedek olayları hemen sun ve arka planda DB'yi doldur
+    fallback = [x for x in FALLBACK_EVENTS if x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"]]
+    _CALENDAR_CACHE["timestamp"] = now
+    _CALENDAR_CACHE["items"] = fallback
+    _update_event_dynamic_fields(fallback)
+    asyncio.create_task(sync_economic_calendar_to_db(min_stars=min_stars))
+    return fallback
+
+
+# ============================================================================
+# 3 SAATLİK ARKA PLAN DÖNGÜSÜ (GÜNDE BİR VE GÜN İÇİNDE 3 SAATTE BİR)
+# ============================================================================
+
+async def economic_calendar_background_loop():
+    """Investing.com 2 & 3 yıldızlı takvim verilerini 3 saatte bir arka planda kontrol eder ve DB'ye yazar."""
+    logger.info("[EconomicCalendar] 3 saatlik arka plan senkronizasyon servisi devrede.")
+
+    # 1. Başlangıçta: Veri hiç çekilmemişse veya 3 saatten eskiyse arka planda hemen çek
+    try:
+        last_sync = 0.0
+        if database:
+            last_sync = await database.get_last_economic_calendar_sync()
+        now = time.time()
+
+        if (now - last_sync) >= CALENDAR_REFRESH_INTERVAL_SEC or last_sync == 0:
+            logger.info("[EconomicCalendar] İlk açılışta takvim verisi eski veya boş (Son senkron: %.0f sn önce). Arka planda çekiliyor...", now - last_sync if last_sync else 0)
+            await sync_economic_calendar_to_db()
+        else:
+            # DB'de geçerli taze veri var; belleğe aktar
+            if database:
+                db_items = await database.get_economic_calendar_events()
+                if db_items:
+                    _CALENDAR_CACHE["items"] = db_items
+                    _CALENDAR_CACHE["timestamp"] = now
+                    logger.info("[EconomicCalendar] Veritabanından %d olay belleğe yüklendi (Son senkron: %.1f saat önce).", len(db_items), (now - last_sync) / 3600)
+    except Exception as exc:
+        logger.warning("[EconomicCalendar] Başlangıç senkronizasyon kontrol hatası: %s", exc)
+
+    # 2. Periyodik Kontrol Döngüsü: Her 60 saniyede bir kontrol et, 3 saatlik süre dolduğunda arka planda çek
+    while True:
+        try:
+            await asyncio.sleep(60)
+            now = time.time()
+            last_sync = 0.0
+            if database:
+                last_sync = await database.get_last_economic_calendar_sync()
+
+            if (now - last_sync) >= CALENDAR_REFRESH_INTERVAL_SEC:
+                logger.info("[EconomicCalendar] 3 saatlik periyot doldu, arka planda ekonomik takvim güncelleniyor...")
+                await sync_economic_calendar_to_db()
+        except asyncio.CancelledError:
+            logger.info("[EconomicCalendar] Arka plan servisi durduruldu.")
+            break
+        except Exception as exc:
+            logger.error("[EconomicCalendar] Arka plan döngüsünde beklenmeyen hata: %s", exc)
+            await asyncio.sleep(180)
+

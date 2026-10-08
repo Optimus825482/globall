@@ -10,6 +10,7 @@ import tempfile
 import re
 import uuid
 from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
 
 from app.config import config
 from app.forecast_learning import outcome_window_seconds
@@ -354,6 +355,8 @@ async def init_db():
         # bunları kullanıcı adıyla yeniden yazar. Seçili alıcılara hedefli
         # push bu kolonla filtrelenir.
         conn.execute("ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS username TEXT")
+        # 2026-10-08: Investing.com & küresel ekonomik takvim verileri (2 & 3 yıldız)
+        _ensure_economic_calendar_schema(conn)
         # V-04: MACD kanıt şeması artık OKUMA yolunda değil, açılışta bir kez
         # hazırlanır (istatistik uçları DDL/INSERT/COMMIT yapmaz).
         _ensure_macd_evidence_schema(conn)
@@ -5905,6 +5908,179 @@ async def get_llm_vs_rules_comparison(
         }
 
         return {"stats": stats, "trades": trades}
+
+    return await _run_db(op)
+
+
+# ============================================================================
+# EKONOMİK TAKVİM (INVESTING.COM 2 & 3 YILDIZ) VERİTABANI KATMANI
+# ============================================================================
+
+_ECONOMIC_CALENDAR_SCHEMA_READY = False
+
+def _ensure_economic_calendar_schema(conn) -> None:
+    """economic_calendar tablosunu ve indexlerini idempotent hazırlar."""
+    global _ECONOMIC_CALENDAR_SCHEMA_READY
+    if _ECONOMIC_CALENDAR_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS economic_calendar (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                original_title TEXT,
+                country TEXT,
+                currency TEXT,
+                country_name TEXT,
+                flag TEXT,
+                date_str TEXT,
+                date_iso TEXT,
+                impact TEXT,
+                stars INTEGER,
+                stars_str TEXT,
+                impact_label TEXT,
+                forecast TEXT,
+                previous TEXT,
+                actual TEXT,
+                status TEXT,
+                comment TEXT,
+                affected_symbols TEXT,
+                scenario TEXT,
+                raw_data TEXT,
+                updated_at DOUBLE PRECISION
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_economic_calendar_date ON economic_calendar(date_iso)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_economic_calendar_stars ON economic_calendar(stars)")
+        conn.commit()
+        _ECONOMIC_CALENDAR_SCHEMA_READY = True
+    except Exception as exc:
+        logger.warning("economic_calendar şema hazırlama hatası: %s", exc)
+
+
+async def save_economic_calendar_events(events: List[Dict[str, Any]]) -> int:
+    """Ekonomik takvim olaylarını veritabanına kaydeder veya günceller."""
+    now_ts = time.time()
+
+    def op(conn):
+        _ensure_economic_calendar_schema(conn)
+        saved_count = 0
+        for ev in events:
+            ev_id = str(ev.get("id") or "").strip()
+            if not ev_id:
+                continue
+            title = str(ev.get("title") or "")
+            orig_title = str(ev.get("original_title") or title)
+            country = str(ev.get("country") or "")
+            currency = str(ev.get("currency") or country)
+            c_name = str(ev.get("country_name") or "")
+            flag = str(ev.get("flag") or "")
+            d_str = str(ev.get("date_str") or "")
+            d_iso = str(ev.get("date_iso") or "")
+            impact = str(ev.get("impact") or "Medium")
+            stars = int(ev.get("stars") or (3 if impact == "High" else 2))
+            stars_str = str(ev.get("stars_str") or ("⭐⭐⭐" if stars == 3 else "⭐⭐"))
+            impact_label = str(ev.get("impact_label") or "")
+            forecast = str(ev.get("forecast") or "—")
+            previous = str(ev.get("previous") or "—")
+            actual = str(ev.get("actual") or "—")
+            status = str(ev.get("status") or "Bekleniyor")
+            comment = str(ev.get("comment") or "")
+            symbols_json = json.dumps(ev.get("affected_symbols") or [], ensure_ascii=False)
+            scenario_json = json.dumps(ev.get("scenario") or {}, ensure_ascii=False)
+            raw_json = json.dumps(ev, ensure_ascii=False)
+
+            conn.execute(
+                """
+                INSERT INTO economic_calendar (
+                    id, title, original_title, country, currency, country_name, flag,
+                    date_str, date_iso, impact, stars, stars_str, impact_label,
+                    forecast, previous, actual, status, comment,
+                    affected_symbols, scenario, raw_data, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=EXCLUDED.title,
+                    original_title=EXCLUDED.original_title,
+                    country=EXCLUDED.country,
+                    currency=EXCLUDED.currency,
+                    country_name=EXCLUDED.country_name,
+                    flag=EXCLUDED.flag,
+                    date_str=EXCLUDED.date_str,
+                    date_iso=EXCLUDED.date_iso,
+                    impact=EXCLUDED.impact,
+                    stars=EXCLUDED.stars,
+                    stars_str=EXCLUDED.stars_str,
+                    impact_label=EXCLUDED.impact_label,
+                    forecast=EXCLUDED.forecast,
+                    previous=EXCLUDED.previous,
+                    actual=EXCLUDED.actual,
+                    status=EXCLUDED.status,
+                    comment=EXCLUDED.comment,
+                    affected_symbols=EXCLUDED.affected_symbols,
+                    scenario=EXCLUDED.scenario,
+                    raw_data=EXCLUDED.raw_data,
+                    updated_at=EXCLUDED.updated_at
+                """,
+                (
+                    ev_id, title, orig_title, country, currency, c_name, flag,
+                    d_str, d_iso, impact, stars, stars_str, impact_label,
+                    forecast, previous, actual, status, comment,
+                    symbols_json, scenario_json, raw_json, now_ts
+                )
+            )
+            saved_count += 1
+
+        conn.execute(
+            "INSERT INTO llm_settings(key, value) VALUES('last_economic_calendar_sync', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+            (str(now_ts),)
+        )
+        conn.commit()
+        return saved_count
+
+    return await _run_db(op)
+
+
+async def get_economic_calendar_events(min_stars: int = 2) -> List[Dict[str, Any]]:
+    """Veritabanından önbelleklenmiş ekonomik takvim olaylarını getirir."""
+    def op(conn):
+        _ensure_economic_calendar_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT raw_data FROM economic_calendar
+            WHERE stars >= ?
+            ORDER BY date_iso ASC
+            LIMIT 50
+            """,
+            (min_stars,)
+        ).fetchall()
+        items = []
+        for r in rows:
+            try:
+                raw_str = r[0] if isinstance(r, (list, tuple)) else r["raw_data"]
+                if raw_str:
+                    item = json.loads(raw_str)
+                    items.append(item)
+            except Exception:
+                continue
+        return items
+
+    return await _run_db(op)
+
+
+async def get_last_economic_calendar_sync() -> float:
+    """Son ekonomik takvim senkronizasyon zamanını döner (timestamp)."""
+    def op(conn):
+        row = conn.execute(
+            "SELECT value FROM llm_settings WHERE key='last_economic_calendar_sync'"
+        ).fetchone()
+        if row:
+            try:
+                val = row[0] if isinstance(row, (list, tuple)) else row["value"]
+                return float(val)
+            except Exception:
+                return 0.0
+        return 0.0
 
     return await _run_db(op)
 

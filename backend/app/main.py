@@ -1179,6 +1179,18 @@ async def startup_services():
     _start_background(ws_broadcast_loop, "ws-broadcast")
     await asyncio.sleep(0.05)
     _start_background(forex_auto_paper_start_loop, "forex-auto-paper")
+    await asyncio.sleep(0.05)
+    _start_background(economic_calendar_start_loop, "economic-calendar-sync")
+
+async def economic_calendar_start_loop():
+    """Investing.com & küresel ekonomik takvim 3 saatlik arka plan senkronizasyon döngüsü."""
+    try:
+        from app.forex_news import economic_calendar_background_loop
+        await economic_calendar_background_loop()
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        logger.error("[EconomicCalendar] Arka plan servisi başlatılamadı: %s", exc)
 
 async def forex_auto_paper_start_loop():
     """Forex Otonom Scalper motorunu arka planda başlat."""

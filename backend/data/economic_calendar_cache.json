@@ -1,40 +1,5 @@
 [
   {
-    "id": "cal-tv-402760",
-    "title": "Almanya Dış Ticaret Dengesi",
-    "original_title": "Balance of Trade",
-    "country": "EUR",
-    "currency": "EUR",
-    "country_name": "Almanya",
-    "flag": "🇩🇪",
-    "date_str": "Bugün 09:00",
-    "date_iso": "2026-10-08T06:00:00.000Z",
-    "impact": "High",
-    "stars": 3,
-    "stars_str": "⭐⭐⭐",
-    "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)",
-    "forecast": "19€",
-    "previous": "21.3€",
-    "actual": "—",
-    "status": "Bekleniyor",
-    "comment": "Almanya, 2024 yılında önemli ortaklarıyla önemli ticaret fazlası vermeye devam etti. ABD ile olan fazlalık yaklaşık 69,8 milyar Euro seviyesinde gerçekleşti; bu, motorlu taşıtlar ve makineler gibi Alman endüstriyel mallarına yönelik güçlü talebi yansıtıyor. Buna karşılık Almanya, yüksek elektronik, makine ve diğer imalat ürünleri ithalatı nedeniyle Çin ile önemli bir ticaret açığı (yaklaşık 66,3 milyar Euro) kaydetti. Genel olarak ABD, Çin'in biraz önünde Almanya'nın en büyük ticaret ortağı konumunu yeniden kazanırken, Hollanda üçüncü sırada yer aldı.",
-    "affected_symbols": [
-      "EURUSD",
-      "EURGBP",
-      "EURJPY"
-    ],
-    "scenario": {
-      "title": "EUR Makro Gösterge Senaryosu",
-      "bullish_trigger": "Açıklanan > Beklenti (Pozitif Sürpriz)",
-      "bullish_outcome": "EUR varlıkları primlenir. EURUSD, EURGBP, EURJPY üzerinde volatilite artar.",
-      "bearish_trigger": "Açıklanan < Beklenti (Negatif Sürpriz)",
-      "bearish_outcome": "EUR üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
-      "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
-      "summary_short": "Beklenti Üzeri: EUR↑ | Beklenti Altı: EUR↓"
-    },
-    "is_passed": false
-  },
-  {
     "id": "cal-tv-409048",
     "title": "Kanada İşsizlik Oranı",
     "original_title": "Unemployment Rate",
@@ -464,41 +429,6 @@
       "bearish_outcome": "USD üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
       "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
       "summary_short": "Beklenti Üzeri: USD↑ | Beklenti Altı: USD↓"
-    },
-    "is_passed": false
-  },
-  {
-    "id": "cal-tv-401808",
-    "title": "Almanya Exports MoM",
-    "original_title": "Exports MoM",
-    "country": "EUR",
-    "currency": "EUR",
-    "country_name": "Almanya",
-    "flag": "🇩🇪",
-    "date_str": "Bugün 09:00",
-    "date_iso": "2026-10-08T06:00:00.000Z",
-    "impact": "Medium",
-    "stars": 2,
-    "stars_str": "⭐⭐",
-    "impact_label": "⭐⭐ ORTA (2 Yıldız)",
-    "forecast": "0.8%",
-    "previous": "-0.8%",
-    "actual": "—",
-    "status": "Bekleniyor",
-    "comment": "Almanya, 2024 yılında, öncelikle imalat sektörünün öncülüğünde güçlü küresel ihracat konumunu korudu. Motorlu taşıtlar ve parçaları, toplam ihracatın yaklaşık %17'sini (yaklaşık 263 milyar Euro) oluşturarak ülkenin en büyük ihracat kategorisi olmaya devam etti. Bunu yüzde 14'lük payla makineler takip ederken, kimyasal ürünler yüzde 9'luk paya sahip oldu. ABD, Alman firmalarının Atlantik üzerinden 161,4 milyar Euro değerinde mal taşımasıyla Almanya'nın en büyük ihracat noktası haline geldi. Fransa, Hollanda, Polonya ve Çin de Almanya'nın küresel endüstriyel tedarik zincirlerindeki kilit rolünün altını çizerek en önemli destinasyonlar arasında yer aldı.",
-    "affected_symbols": [
-      "EURUSD",
-      "EURGBP",
-      "EURJPY"
-    ],
-    "scenario": {
-      "title": "EUR Makro Gösterge Senaryosu",
-      "bullish_trigger": "Açıklanan > Beklenti (Pozitif Sürpriz)",
-      "bullish_outcome": "EUR varlıkları primlenir. EURUSD, EURGBP, EURJPY üzerinde volatilite artar.",
-      "bearish_trigger": "Açıklanan < Beklenti (Negatif Sürpriz)",
-      "bearish_outcome": "EUR üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
-      "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
-      "summary_short": "Beklenti Üzeri: EUR↑ | Beklenti Altı: EUR↓"
     },
     "is_passed": false
   },
@@ -1066,6 +996,78 @@
       "bearish_outcome": "USD değer kaybeder. XAUUSD, EURUSD, BTCUSD üzerinde güçlü rahatlama yükselişi başlar.",
       "scalper_tip": "Açıklanma dakikasında spread 2-3 katına çıkabilir; fitil oluştuktan 30 saniye sonra kırılımla girin.",
       "summary_short": "Şahin/Yüksek: USD↑ / Altın↓ | Güvercin/Düşük: Altın↑ / USD↓"
+    },
+    "is_passed": false
+  },
+  {
+    "id": "cal-tv-399571",
+    "title": "İngiltere BRC Retail Sales Monitor YoY",
+    "original_title": "BRC Retail Sales Monitor YoY",
+    "country": "GBP",
+    "currency": "GBP",
+    "country_name": "İngiltere",
+    "flag": "🇬🇧",
+    "date_str": "13 Eki (Sal) 02:01",
+    "date_iso": "2026-10-12T23:01:00.000Z",
+    "impact": "Medium",
+    "stars": 2,
+    "stars_str": "⭐⭐",
+    "impact_label": "⭐⭐ ORTA (2 Yıldız)",
+    "forecast": "—",
+    "previous": "0.5",
+    "actual": "—",
+    "status": "Bekleniyor",
+    "comment": "BRC-KPMG Perakende Satış Monitörü, bir perakendeci örnekleminden perakende satışların gerçek değerindeki değişiklikleri ölçer. Monitör, harcamanın değerini ölçer ve dolayısıyla fiyat değişikliklerine göre ayarlama yapmaz. Fiyatlar artıyorsa satış hacimleri satış değerlerinden daha az artacaktır. Fiyatların düştüğü dönemlerde satış adetleri, satış değerlerinden daha fazla artacaktır. Perakendeciler bir yıl önceki eşdeğer haftadaki satışlarının ve satışlarının değerini rapor ediyor. Bu rakamlar hem toplamda hem de “benzer-benzer” esasına göre raporlanıyor. 'Benzer-benzer' esasına göre satış değerindeki yüzdesel artış, ilgili perakendecilerin perakende taban alanını genişletmesinin satış toplamları üzerindeki etkisini ortadan kaldırır. Örneklemin büyük perakendecilere yönelik önyargılı olması nedeniyle, \"benzer-benzer\" artışı genellikle genel harcama kalıpları için daha doğru bir kılavuz sağlar, ancak bir bütün olarak perakendenin büyüme oranına ilişkin bir tahmin olarak aşağı yönlü önyargılı olacaktır.",
+    "affected_symbols": [
+      "GBPUSD",
+      "EURGBP",
+      "GBPJPY"
+    ],
+    "scenario": {
+      "title": "GBP Makro Gösterge Senaryosu",
+      "bullish_trigger": "Açıklanan > Beklenti (Pozitif Sürpriz)",
+      "bullish_outcome": "GBP varlıkları primlenir. GBPUSD, EURGBP, GBPJPY üzerinde volatilite artar.",
+      "bearish_trigger": "Açıklanan < Beklenti (Negatif Sürpriz)",
+      "bearish_outcome": "GBP üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
+      "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
+      "summary_short": "Beklenti Üzeri: GBP↑ | Beklenti Altı: GBP↓"
+    },
+    "is_passed": false
+  },
+  {
+    "id": "cal-tv-397848",
+    "title": "ABD İstihdam Değişimi",
+    "original_title": "ADP Employment Change Weekly",
+    "country": "USD",
+    "currency": "USD",
+    "country_name": "ABD",
+    "flag": "🇺🇸",
+    "date_str": "13 Eki (Sal) 15:15",
+    "date_iso": "2026-10-13T12:15:00.000Z",
+    "impact": "Medium",
+    "stars": 2,
+    "stars_str": "⭐⭐",
+    "impact_label": "⭐⭐ ORTA (2 Yıldız)",
+    "forecast": "—",
+    "previous": "23.75",
+    "actual": "—",
+    "status": "Bekleniyor",
+    "comment": "ADP Ulusal İstihdam Raporunun ön tahmini, özel istihdamdaki haftalık değişiklikleri yansıtıyor ve toplam özel istihdam değişiminin dört haftalık hareketli ortalamasını içeriyor.",
+    "affected_symbols": [
+      "XAUUSD",
+      "EURUSD",
+      "BTCUSD",
+      "USDJPY",
+      "GBPUSD"
+    ],
+    "scenario": {
+      "title": "USD İstihdam & İş Gücü Senaryosu",
+      "bullish_trigger": "İstihdam Beklenti Üstü / Düşük İşsizlik",
+      "bullish_outcome": "Ekonomi güçlü algısıyla USD alım görür. Karşıt pariteler geri çekilir.",
+      "bearish_trigger": "İstihdam Beklenti Altı / Yüksek İşsizlik",
+      "bearish_outcome": "Ekonomik yavaşlama endişesiyle USD satılır; XAUUSD ve diğer varlıklar fırlar.",
+      "scalper_tip": "İstihdam dalgası 10-15 dakika sürebilir; stop mesafesini normalin 1.5 katı tutun.",
+      "summary_short": "Güçlü İstihdam: USD↑ / Altın↓ | Zayıf İstihdam: Altın↑ / USD↓"
     },
     "is_passed": false
   }
