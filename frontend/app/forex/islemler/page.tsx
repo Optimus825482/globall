@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import { useTheme } from "../../lib/theme";
 import EVShieldModal, { EVShieldStatusResponse } from "../components/EVShieldModal";
 
@@ -279,15 +280,9 @@ export default function ForexIslemlerPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchData(false);
-    const timer = setInterval(() => {
-      if (!document.hidden) {
-        fetchData(true);
-      }
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [fetchData]);
+  // PERFORMANS (2026-10-08): Çıplak interval yerine usePolling — arka plana
+  // geçince tamamen durur ve tur üst üste binmesi engellenir.
+  usePolling(() => fetchData(true), 3000);
 
   // Dinamik Açık PnL Toplamları
   const openSummary = useMemo(() => {

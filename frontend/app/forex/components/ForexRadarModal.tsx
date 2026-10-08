@@ -9,6 +9,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import {
   getInAppNotificationSettings,
   InAppNotificationSettings,
@@ -142,6 +143,16 @@ export default function ForexRadarModal() {
         // Aynı sinyal için 120 saniyede bir en fazla 1 kez bildirim göster (spam koruması)
         if (now - lastSeen > 120_000) {
           seenSignalsRef.current.set(key, now);
+          // PERFORMANS: Harita sınırsız büyümesin (uzun süre açık uygulamada
+          // bellek şişmesi); 500 kaydı aşınca en eski yarısı düşürülür.
+          if (seenSignalsRef.current.size > 500) {
+            const excess = seenSignalsRef.current.size - 250;
+            let dropped = 0;
+            for (const k of seenSignalsRef.current.keys()) {
+              if (dropped++ >= excess) break;
+              seenSignalsRef.current.delete(k);
+            }
+          }
           setActiveSignal(cand);
           if (current.soundEnabled) {
             playRadarSound();
@@ -153,24 +164,23 @@ export default function ForexRadarModal() {
   }, []);
 
   // Açık olan bildirimdeki sembole işlem açıldıysa bildirimi kendiliğinden hemen kapat
-  useEffect(() => {
+  // PERFORMANS (2026-10-08): /auto-paper/status ağırlıklı bir uçtur; modal açıkken
+  // 2 sn'de bir dövmek yerine 5 sn yeterli. usePolling: arka planda durur.
+  const pollActiveStatus = useCallback(async () => {
     if (!activeSignal) return;
-    const pollActiveStatus = async () => {
-      try {
-        const statusRes = await apiFetch("/api/forex/auto-paper/status");
-        if (statusRes?.open_positions && Array.isArray(statusRes.open_positions)) {
-          const isNowOpen = statusRes.open_positions.some(
-            (p: any) => String(p.symbol || "").toUpperCase() === activeSignal.symbol.toUpperCase()
-          );
-          if (isNowOpen) {
-            setActiveSignal(null);
-          }
+    try {
+      const statusRes = await apiFetch("/api/forex/auto-paper/status");
+      if (statusRes?.open_positions && Array.isArray(statusRes.open_positions)) {
+        const isNowOpen = statusRes.open_positions.some(
+          (p: any) => String(p.symbol || "").toUpperCase() === activeSignal.symbol.toUpperCase()
+        );
+        if (isNowOpen) {
+          setActiveSignal(null);
         }
-      } catch {}
-    };
-    const timer = setInterval(pollActiveStatus, 2000);
-    return () => clearInterval(timer);
+      }
+    } catch {}
   }, [activeSignal]);
+  usePolling(pollActiveStatus, activeSignal ? 5000 : null);
 
   // Otomatik kapanma sayacı (autoCloseSec)
   useEffect(() => {
@@ -181,17 +191,12 @@ export default function ForexRadarModal() {
     return () => clearTimeout(timer);
   }, [activeSignal, notifSettings.autoCloseSec]);
 
-  useEffect(() => {
-    // 4 saniyede bir radarı tara (yalnızca bildirimler açıkken)
-    if (!notifSettings.enabled) return;
-
-    const interval = setInterval(() => {
-      if (!document.hidden && !activeSignal) {
-        checkRadarSignals();
-      }
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [checkRadarSignals, activeSignal, notifSettings.enabled]);
+  // 4 saniyede bir radarı tara (yalnızca bildirimler açıkken ve modal kapalıyken).
+  // PERFORMANS: ms=null iken hook hiç interval kurmaz; arka planda da durur.
+  usePolling(
+    checkRadarSignals,
+    notifSettings.enabled && !activeSignal ? 4000 : null
+  );
 
   if (!activeSignal) return null;
 

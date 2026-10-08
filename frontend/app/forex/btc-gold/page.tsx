@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import { formatUtc3 } from "../../lib/format";
 // AutoSettings tipi kokpit kartlarının TP/SL/spread hedefleri için kullanılır;
 // parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı.
@@ -576,27 +577,24 @@ export default function BtcGoldForexPage() {
     }
   };
 
-  useEffect(() => {
-    fetchAllData();
-    const interval = setInterval(fetchAllData, 1500);
-    return () => clearInterval(interval);
-  }, []);
+  // PERFORMANS (2026-10-08): 1.5 sn'lik dört-endpoint'li döngü (1) arka planda
+  // da dönüyordu ve (2) tur tamamlanmadan yenisi başlıyordu. usePolling ile
+  // sekme arka plana geçince tamamen durur, üst üste binme engellenir; aralık
+  // 3 sn'ye çıkarıldı (backend teknik önbelleği zaten 15 sn'de tazeleniyor —
+  // 1.5 sn'lik sorgu görsel fark üretmiyordu, yalnız CPU/ağ yakıyordu).
+  usePolling(fetchAllData, 3000);
 
   // Otomatik yorum: 60 sn'de bir backend'den insan-okur analiz çeker
   // (gösterge verisi ana döngüyle zaten canlı; yorum metni sakin kalsın diye ayrı yavaş döngü)
-  useEffect(() => {
-    const fetchComment = async () => {
-      try {
-        const res = await apiFetch("/api/forex/btc-gold/comment");
-        if (res) setAutoComment(res);
-      } catch (err) {
-        console.error("Otomatik yorum hatası:", err);
-      }
-    };
-    fetchComment();
-    const interval = setInterval(fetchComment, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const fetchComment = async () => {
+    try {
+      const res = await apiFetch("/api/forex/btc-gold/comment");
+      if (res) setAutoComment(res);
+    } catch (err) {
+      console.error("Otomatik yorum hatası:", err);
+    }
+  };
+  usePolling(fetchComment, 60000);
 
   // Otomatik kaydırma
   useEffect(() => {

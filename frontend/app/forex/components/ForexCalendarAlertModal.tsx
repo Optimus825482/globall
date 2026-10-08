@@ -11,6 +11,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import {
   getInAppNotificationSettings,
   InAppNotificationSettings,
@@ -140,7 +141,9 @@ export default function ForexCalendarAlertModal() {
     };
   }, []);
 
-  // 15 saniyede bir yaklaşan 5 dakika olaylarını kontrol et
+  // 15 saniyede bir yaklaşan 5 dakika olaylarını kontrol et.
+  // PERFORMANS (2026-10-08): notifiedIds sınırsız büyüyordu (uzun süre açık
+  // uygulamada bellek şişmesi); yalnızca son 500 olay hatırlanır.
   const checkApproachingEvents = useCallback(async () => {
     if (!notifSettings.enabled) return;
 
@@ -169,6 +172,15 @@ export default function ForexCalendarAlertModal() {
 
         if (isWithin5m && !notifiedIdsRef.current.has(item.id)) {
           notifiedIdsRef.current.add(item.id);
+          if (notifiedIdsRef.current.size > 500) {
+            // En eski 250 kaydı düşür (Set sıraya uyumlu; makul tavan)
+            const excess = notifiedIdsRef.current.size - 250;
+            let dropped = 0;
+            for (const id of notifiedIdsRef.current) {
+              if (dropped++ >= excess) break;
+              notifiedIdsRef.current.delete(id);
+            }
+          }
           setActiveAlert(item);
 
           if (notifSettings.soundEnabled) {
@@ -195,15 +207,12 @@ export default function ForexCalendarAlertModal() {
     } catch {}
   }, [notifSettings]);
 
-  useEffect(() => {
-    checkApproachingEvents();
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        checkApproachingEvents();
-      }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [checkApproachingEvents]);
+  // PERFORMANS: Çıplak interval yerine usePolling — arka planda durur,
+  // bildirim ayarı kapalıysa interval hiç kurulmaz.
+  usePolling(
+    checkApproachingEvents,
+    notifSettings.enabled ? 15000 : null
+  );
 
   // Manuel veya otomatik kapatma
   const handleClose = useCallback(() => {

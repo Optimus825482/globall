@@ -2649,9 +2649,20 @@ _MARKET_BLOCKERS = frozenset({
     "dxy", "major_session", "major_min_atr", "correlation",
 })
 
+# PERFORMANS (2026-10-08): /radar yanıtı için kısa TTL'li önbellek. Birden çok
+# sayfa/modal aynı ucu 1.5–4 sn aralıklarla dövdüğü için her istek tam tarama
+# yapıyordu. (now_ts, response) ikilisi tutulur; TTL taze ise aynı yanıt döner.
+_RADAR_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
+_RADAR_CACHE_TTL = 2.0
+
+# PERFORMANS (2026-10-08): /auto-paper/status yanıtı için 1 sn TTL'li önbellek
+# (aşağıda kullanılır; tanım, /radar önbelleğiyle aynı blokta tutulur).
+_STATUS_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
+_STATUS_CACHE_TTL = 1.0
+
 
 @router.get("/radar")
-async def get_forex_radar():
+async def get_forex_radar(use_cache: bool = True):
     """Forex radar taraması: gerçek göstergelerle güçlü işlem sinyalleri.
 
     İki katmanlı sonuç döner:
@@ -2670,7 +2681,21 @@ async def get_forex_radar():
     çıktı (XAUUSD +$1374, US30 +$501, BTCUSD +$165, GBPUSD +$43, AUDUSD +$26,
     NZDJPY +$26, AUDNZD +$10); 24+ FX majör/kros sistematik negatifti. Bu yüzden
     radar yalnız kanıtlı evrende döner.
+
+    PERFORMANS (2026-10-08): 2 sn TTL'li sunucu içi önbellek. Ana sayfa, radar
+    sayfası, BTC+Altın, MetaMobil ve uygulama içi radar modalı aynı ucu
+    farklı aralıklarla dövüyordu; her istek tam tarama + kapı değerlendirmesi
+    yapıyordu. Önbellek 2 sn'den taze ise aynısı döner. Otonom motor döngüsü
+    `use_cache=False` ile çağırır — işlem kararı daima taze veriyle alınır.
     """
+    # --- PERFORMANS: kısa TTL'li yanıt önbelleği ---
+    now_ts = time.time()
+    global _RADAR_CACHE
+    if use_cache:
+        cached = _RADAR_CACHE
+        if cached is not None and now_ts - cached[0] < _RADAR_CACHE_TTL:
+            return cached[1]
+
     ticks = await _generate_realistic_ticks()
     dxy_regime = get_dxy_regime()
     current_utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
@@ -2759,7 +2784,7 @@ async def get_forex_radar():
 
     signals = [c for c in candidates if c["tier"] == "STRONG" and not c.get("has_open_position")]
 
-    return {
+    response = {
         "candidates": candidates,
         # `signals` = motora göre şu an işlem açılabilecek adaylar (radarın özü).
         "signals": signals,
@@ -2782,6 +2807,8 @@ async def get_forex_radar():
         "total": len(candidates),
         "updated_at": time.time(),
     }
+    _RADAR_CACHE = (now_ts, response)
+    return response
 
 
 def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
@@ -4029,8 +4056,8 @@ async def _forex_auto_paper_loop():
                     )
                 continue
 
-            # Radar Sinyallerini Al
-            radar_res = await get_forex_radar()
+            # Radar Sinyallerini Al — işlem kararı taze veriyle alınır (önbellek yok).
+            radar_res = await get_forex_radar(use_cache=False)
             candidates = radar_res.get("candidates", [])
             dxy_regime = radar_res.get("dxy")
 
@@ -5139,7 +5166,19 @@ async def _forex_auto_paper_loop():
 
 @router.get("/auto-paper/status")
 async def get_forex_auto_paper_status():
-    """IC Markets MT5 Otonom Scalper sistem durumu, canlı MT5 pozisyonları ve hesap metrikleri."""
+    """IC Markets MT5 Otonom Scalper sistem durumu, canlı MT5 pozisyonları ve hesap metrikleri.
+
+    PERFORMANS (2026-10-08): 1 sn TTL'li sunucu içi önbellek. Bu uç normalizesiz
+    onlarca kayıt + EV hesapları içeren büyük bir JSON döner ve ana sayfa,
+    portföy, MetaMobil, radar modalı gibi birden çok istemci tarafından saniyede
+    birden çok kez çağrılır. Önbellek taze ise aynı yanıt döner.
+    """
+    now_ts = time.time()
+    global _STATUS_CACHE
+    cached = _STATUS_CACHE
+    if cached is not None and now_ts - cached[0] < _STATUS_CACHE_TTL:
+        return cached[1]
+
     is_mt5_conn = _MT5_STATE.get("connected", False)
     mt5_acc = _MT5_STATE.get("account", {})
 
@@ -5296,6 +5335,8 @@ async def get_forex_auto_paper_status():
         "mt5_account": mt5_acc,
         "mt5_connected": is_mt5_conn,
     }
+    _STATUS_CACHE = (now_ts, response)
+    return response
 
 
 @router.post("/auto-paper/toggle")

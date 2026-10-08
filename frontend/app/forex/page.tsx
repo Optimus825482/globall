@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/usePolling";
 import { formatPrice } from "../lib/format";
 import ForexChartModal from "./components/ForexChartModal";
 
@@ -195,11 +196,9 @@ export default function ForexRadarPage() {
     }
   };
 
-  useEffect(() => {
-    fetchRadar();
-    const timer = setInterval(fetchRadar, 3000);
-    return () => clearInterval(timer);
-  }, []);
+  // PERFORMANS (2026-10-08): 3 sn'lik çıplak interval yerine usePolling —
+  // arka planda durur, üst üste binen istekleri engeller.
+  usePolling(fetchRadar, 3000);
 
   const calculateLot = async () => {
     try {

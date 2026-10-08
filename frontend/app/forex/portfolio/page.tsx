@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import { formatUtc3 } from "../../lib/format";
 
 interface AutoPosition {
@@ -204,11 +205,10 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     }
   };
 
-  useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 1500);
-    return () => clearInterval(interval);
-  }, []);
+  // PERFORMANS (2026-10-08): 1.5 sn'lik interval arka planda da dönüyordu ve
+  // iki endpoint'i (auto-paper/status + mt5/status) her turda çekiyordu.
+  // usePolling: arka planda durur, üst üste binen turları engeller; 3 sn yeterli.
+  usePolling(fetchStatus, 3000);
 
   // MT5 Otomatik Emir İletimini Aç / Kapat
   const toggleMt5Auto = async () => {

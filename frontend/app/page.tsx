@@ -8,9 +8,10 @@
 // AÇIKLAMALARI VE "NE OLURSA NE OLUR" SENARYO ANALİZİNİ canlı olarak sunar.
 // ============================================================================
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { apiFetch } from "./lib/api";
+import { usePolling } from "./lib/usePolling";
 import { triggerTestCalendarNotification } from "./lib/notificationSettings";
 import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 
@@ -181,18 +182,32 @@ interface EventCountdownBadgeProps {
   dateStr?: string;
   status?: string;
   isPassed?: boolean;
+  nowSec: number;
   className?: string;
 }
+
+// PERFORMANS (2026-10-08): Takvim tablosundaki her satır eskiden KENDİ 1 sn'lik
+// interval'ini kuruyordu (EventCountdownBadge içinde); 20+ olay açıkken saniyede
+// 20+ state güncellemesi tüm tabloyu yeniden render ediyordu. Artık tek paylaşımlı
+// sayaç bir saniyede bir `nowSec`'i tazeler; geri sayım rozetleri onu okur.
+const useSharedNowSec = (active: boolean): number => {
+  const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  return nowSec;
+};
 
 const EventCountdownBadge = React.memo(function EventCountdownBadge({
   dateIso,
   dateStr,
   status,
   isPassed,
+  nowSec,
   className = "",
 }: EventCountdownBadgeProps) {
-  const [now, setNow] = useState<number>(() => Date.now());
-
   const targetMs = useMemo(() => {
     if (dateIso) {
       const parsed = new Date(dateIso).getTime();
@@ -214,17 +229,9 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
     return null;
   }, [dateIso, dateStr]);
 
-  useEffect(() => {
-    if (!targetMs) return;
-    const interval = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [targetMs]);
-
   if (!targetMs) return null;
 
-  const diffSec = Math.floor((targetMs - now) / 1000);
+  const diffSec = Math.floor((targetMs - nowSec * 1000) / 1000);
 
   // Açıklanmış veya geçmiş olaylar
   if (status === "Açıklandı" || isPassed || diffSec <= 0) {
@@ -451,29 +458,10 @@ export default function HomePage() {
   }, []);
 
   // İlk Yükleme ve Ayrı Periyodik Döngüler
-  useEffect(() => {
-    fetchData(false);
-    fetchCalendar(false);
-
-    // İşlemler her 4 saniyede bir güncellenir
-    const tradeInterval = setInterval(() => {
-      if (!document.hidden) {
-        fetchData(true);
-      }
-    }, 4000);
-
-    // Ekonomik takvim veritabanı önbelleğinden anında okunur (3 dakikada bir senkron kontrolü)
-    const calendarInterval = setInterval(() => {
-      if (!document.hidden) {
-        fetchCalendar(false);
-      }
-    }, 180000);
-
-    return () => {
-      clearInterval(tradeInterval);
-      clearInterval(calendarInterval);
-    };
-  }, [fetchData, fetchCalendar]);
+  // PERFORMANS (2026-10-08): Çıplak setInterval yerine usePolling — sekme arka
+  // plana geçince döngü tamamen durur ve üst üste binen turlar engellenir.
+  usePolling(() => fetchData(true), 4000);
+  usePolling(() => fetchCalendar(false), 180000);
 
   // Filtrelenmiş Ekonomik Takvim Olayları
   const filteredCalendarEvents = useMemo(() => {
@@ -612,6 +600,11 @@ export default function HomePage() {
 
   const winRate = kpi.total_trades > 0 ? (kpi.wins / kpi.total_trades) * 100 : 0;
   const isNetProfit = kpi.total_pnl_usd >= 0;
+
+  // PERFORMANS: Takvim geri sayımları için tek paylaşımlı saniyelik sayaç.
+  // Takvim listesi boşsa interval kurulmaz.
+  const hasPendingEvents = filteredCalendarEvents.length > 0;
+  const nowSec = useSharedNowSec(hasPendingEvents);
 
   return (
     <div className="space-y-6 pb-16 font-mono text-white">
@@ -1147,6 +1140,7 @@ export default function HomePage() {
                             dateStr={item.date_str}
                             status={item.status}
                             isPassed={item.is_passed}
+                            nowSec={nowSec}
                           />
                           <span
                             className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
@@ -1429,6 +1423,7 @@ export default function HomePage() {
                     dateStr={selectedEvent.date_str}
                     status={selectedEvent.status}
                     isPassed={selectedEvent.is_passed}
+                    nowSec={nowSec}
                   />
                   {selectedEvent.status && (
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 border border-cyan-400/50 dark:border-cyan-500/30">

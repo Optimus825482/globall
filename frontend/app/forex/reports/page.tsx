@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import { formatUtc3, localDateInput } from "../../lib/format";
 
 interface ClosedTrade {
@@ -194,11 +195,19 @@ export default function ForexReportsPage() {
     if (customRangeReady) fetchReport();
   }, [selectedSymbol, selectedOutcome, selectedReason, selectedStrategy, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
 
+  // PERFORMANS (2026-10-08): Otomatik yenileme usePolling ile — arka planda
+  // durur, üst üste binen turlar engellenir. Filtre bağımlılıkları callback
+  // üzerinden okunur; interval filtre değişimlerinde yeniden kurulmaz.
+  const fetchReportRef = useRef(fetchReport);
   useEffect(() => {
-    if (!autoRefresh || !customRangeReady) return;
-    const interval = setInterval(fetchReport, 3000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, selectedSymbol, selectedOutcome, selectedReason, selectedStrategy, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
+    fetchReportRef.current = fetchReport;
+  });
+  usePolling(
+    () => {
+      if (autoRefresh && customRangeReady) return fetchReportRef.current();
+    },
+    5000
+  );
 
   // Dönem değişiminde özel aralığa geçilirse makul bir varsayılan doldur
   // (boş tarih kutularıyla kullanıcıyı bekletmemek için).

@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 
 function formatPrice(v?: number | null, symbol: string = ""): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return "—";
@@ -240,6 +241,13 @@ export default function MetaMobilePage() {
             };
           });
         });
+        // Flash efektlerini kısa süre sonra temizle (eskiden ayrı bir useEffect
+        // her quotes değişiminde yeni timer kuruyordu; tek yerde temizlenir).
+        setTimeout(() => {
+          setQuotes((prev) =>
+            prev.map((q) => (q.flash_bid || q.flash_ask ? { ...q, flash_bid: null, flash_ask: null } : q))
+          );
+        }, 600);
       }
 
       // 2. Açık ve Kapanan İşlemler
@@ -280,22 +288,12 @@ export default function MetaMobilePage() {
     }
   }, []);
 
-  // Periyodik Canlı Veri Yenileme (1.5 saniyede bir akıcı MT5 hissi)
-  useEffect(() => {
-    refreshAllData();
-    const iv = setInterval(refreshAllData, 2000);
-    return () => clearInterval(iv);
-  }, [refreshAllData]);
-
-  // Flash efektlerini temizleme timer'ı
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setQuotes((prev) =>
-        prev.map((q) => (q.flash_bid || q.flash_ask ? { ...q, flash_bid: null, flash_ask: null } : q))
-      );
-    }, 600);
-    return () => clearTimeout(t);
-  }, [quotes]);
+  // Periyodik Canlı Veri Yenileme
+  // PERFORMANS (2026-10-08): 2 sn'lik çıplak interval arka planda da dönüyordu
+  // ve üç endpoint'i sırayla çekiyordu. usePolling ile arka planda durur,
+  // üst üste binen turlar engellenir. Flash efektleri tazelenme sonunda
+  // temizlenir (eskiden her quotes değişiminde yeni bir timer kuruluyordu).
+  usePolling(refreshAllData, 3000);
 
   // Güncel seçili sembol verisi
   const activeQuote = useMemo(() => {
@@ -366,10 +364,10 @@ export default function MetaMobilePage() {
   }, [filteredClosedTrades]);
 
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] bg-[#0c1017] text-slate-100 flex flex-col overflow-hidden font-sans select-none antialiased z-50">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-bunker-950 text-slate-100 flex flex-col overflow-hidden font-sans select-none antialiased z-50">
       
       {/* 1. METATRADER 5 ÜST BAŞLIK ÇUBUĞU (TOP BAR - NATIVE APP HEADER) */}
-      <header className="h-12 bg-[#121722] border-b border-slate-800/80 flex items-center justify-between px-3 shrink-0 z-20 pt-[env(safe-area-inset-top,0px)]">
+      <header className="h-12 bg-bunker-900 border-b border-slate-800/80 flex items-center justify-between px-3 shrink-0 z-20 pt-[env(safe-area-inset-top,0px)]">
           {/* Sol: Geri Çıkış & Hesap No */}
           <div className="flex items-center gap-2">
             <Link
@@ -420,7 +418,7 @@ export default function MetaMobilePage() {
         </header>
 
         {/* 3. İÇERİK ALANI (TAB VIEW CONTENT) */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-[#090d14]">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-bunker-950">
 
           {/* ========================================================= */}
           {/* SEKME 1: KOTASYONLAR (QUOTES)                             */}
@@ -428,7 +426,7 @@ export default function MetaMobilePage() {
           {activeTab === "QUOTES" && (
             <div className="divide-y divide-slate-800/60 pb-16">
               {/* Başlık Başlığı */}
-              <div className="p-2.5 bg-[#0f141f] flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="p-2.5 bg-bunker-900 flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 <span>Sembol / Spread</span>
                 <div className="flex items-center gap-12 mr-2">
                   <span>Bid (Sat)</span>
@@ -524,7 +522,7 @@ export default function MetaMobilePage() {
           {activeTab === "CHART" && (
             <div className="h-full flex flex-col pb-16">
               {/* Grafik Üst Araç Çubuğu: Sembol, Zaman Dilimi, One-Click Trading */}
-              <div className="p-2 bg-[#121722] border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
+              <div className="p-2 bg-bunker-900 border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
                 <div className="flex items-center gap-2">
                   <select
                     value={selectedSymbol}
@@ -570,7 +568,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* MT5 ONE-CLICK HIZLI AL-SAT ÇUBUĞU */}
-              <div className="grid grid-cols-3 gap-1 p-2 bg-[#0d121c] border-b border-slate-800/80 text-xs shrink-0">
+              <div className="grid grid-cols-3 gap-1 p-2 bg-bunker-800 border-b border-slate-800/80 text-xs shrink-0">
                 {/* Hızlı Sell */}
                 <button
                   type="button"
@@ -615,7 +613,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* Gerçekçi Grafik Alanı (TradingView / SVG Simülasyonu) */}
-              <div className="flex-1 relative bg-[#070b11] p-3 flex flex-col justify-between overflow-hidden">
+              <div className="flex-1 relative bg-bunker-950 p-3 flex flex-col justify-between overflow-hidden">
                 {/* Üst Bilgi Rozeti */}
                 <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 z-10">
                   <div className="flex items-center gap-2">
@@ -692,7 +690,7 @@ export default function MetaMobilePage() {
           {activeTab === "TRADE" && (
             <div className="pb-16 divide-y divide-slate-800/70">
               {/* MT5 HESAP ÖZET KARTI (Bakiye, Varlık, Marjin, PnL) */}
-              <div className="p-3.5 bg-[#0f141f] space-y-1.5 font-mono text-xs">
+              <div className="p-3.5 bg-bunker-900 space-y-1.5 font-mono text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400 font-sans">Bakiye:</span>
                   <span className="font-bold text-white">${account.balance.toFixed(2)}</span>
@@ -726,7 +724,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* Pozisyonlar Bölüm Başlığı */}
-              <div className="p-2.5 bg-[#0b0f17] flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="p-2.5 bg-bunker-950 flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 <span>Pozisyonlar ({openPositions.length})</span>
                 <span className="text-[10px] text-blue-400 font-sans font-semibold">Tıklayarak Yönet</span>
               </div>
@@ -812,7 +810,7 @@ export default function MetaMobilePage() {
           {activeTab === "HISTORY" && (
             <div className="pb-16 divide-y divide-slate-800/70">
               {/* Dönem Filtresi (Bugün, Hafta, Ay, Tümü) */}
-              <div className="p-2 bg-[#0f141f] flex items-center justify-around text-xs">
+              <div className="p-2 bg-bunker-900 flex items-center justify-around text-xs">
                 {(["TODAY", "WEEK", "MONTH", "ALL"] as const).map((period) => (
                   <button
                     key={period}
@@ -830,7 +828,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* MT5 Geçmiş Özet Şeridi */}
-              <div className="p-3 bg-[#0d121c] grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="p-3 bg-bunker-800 grid grid-cols-2 gap-2 text-xs font-mono">
                 <div>
                   <span className="text-slate-400 block text-[10px]">KÂR / ZARAR:</span>
                   <span
@@ -904,7 +902,7 @@ export default function MetaMobilePage() {
           {activeTab === "SETTINGS" && (
             <div className="p-4 space-y-4 pb-20 text-xs">
               {/* Hesap Bilgisi Kartı */}
-              <div className="p-3.5 rounded-xl bg-[#121722] border border-slate-800 space-y-2">
+              <div className="p-3.5 rounded-xl bg-bunker-900 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <div className="font-bold text-white text-sm">Hesap Bilgileri</div>
                   <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
@@ -932,7 +930,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* Otonom Bot Durumu */}
-              <div className="p-3.5 rounded-xl bg-[#121722] border border-slate-800 space-y-2">
+              <div className="p-3.5 rounded-xl bg-bunker-900 border border-slate-800 space-y-2">
                 <div className="font-bold text-white text-sm">Otonom Bot Entegrasyonu</div>
                 <p className="text-slate-400 text-[11px]">
                   MetaMobil arayüzü doğrudan canlı otonom motor ve MT5 köprüsü ile eşzamanlı çalışır. Açılan işlemler otonom motora aktarılır.
@@ -971,7 +969,7 @@ export default function MetaMobilePage() {
 
         {/* 4. METATRADER 5 SABİT ALT MENÜ ÇUBUĞU (BOTTOM NAVIGATION BAR - 5 TAB) */}
         <nav
-          className="h-14 bg-[#101520] border-t border-slate-800 flex items-center justify-around px-1 shrink-0 z-20"
+          className="h-14 bg-bunker-900 border-t border-slate-800 flex items-center justify-around px-1 shrink-0 z-20"
           style={{ paddingBottom: "max(0.2rem, env(safe-area-inset-bottom, 0px))" }}
         >
           {/* TAB 1: KOTASYONLAR */}
@@ -1055,7 +1053,7 @@ export default function MetaMobilePage() {
         {/* ========================================================= */}
         {actionSheetSymbol && (
           <div className="absolute inset-0 bg-black/60 z-40 flex flex-col justify-end animate-in fade-in duration-150">
-            <div className="bg-[#121824] rounded-t-2xl p-4 border-t border-slate-700 space-y-3">
+            <div className="bg-bunker-900 rounded-t-2xl p-4 border-t border-slate-700 space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                 <div>
                   <div className="font-bold text-base text-white">{actionSheetSymbol.symbol}</div>
@@ -1114,7 +1112,7 @@ export default function MetaMobilePage() {
         {/* ========================================================= */}
         {newOrderModalOpen && (
           <div className="absolute inset-0 bg-black/75 z-50 flex flex-col justify-end animate-in fade-in duration-150">
-            <div className="bg-[#101622] rounded-t-3xl p-4 border-t border-slate-700 space-y-4 max-h-[90%] overflow-y-auto">
+            <div className="bg-bunker-900 rounded-t-3xl p-4 border-t border-slate-700 space-y-4 max-h-[90%] overflow-y-auto">
               {/* Başlık */}
               <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                 <div>
@@ -1251,7 +1249,7 @@ export default function MetaMobilePage() {
         {/* ========================================================= */}
         {closingPosition && (
           <div className="absolute inset-0 bg-black/75 z-50 flex flex-col justify-end animate-in fade-in duration-150">
-            <div className="bg-[#121824] rounded-t-3xl p-4 border-t border-slate-700 space-y-3">
+            <div className="bg-bunker-900 rounded-t-3xl p-4 border-t border-slate-700 space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                 <div>
                   <div className="font-bold text-base text-white">
