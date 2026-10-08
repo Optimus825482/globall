@@ -41,6 +41,8 @@ interface ClosedTrade {
   close_time?: string;
   exit_time?: string;
   open_time?: string;
+  time?: number | string;
+  closed_at_ts?: number;
 }
 
 interface KPIStats {
@@ -95,30 +97,56 @@ function formatClockTime(timeStr?: string | number, closedAtTs?: number): string
     const ms = closedAtTs > 1e11 ? closedAtTs : closedAtTs * 1000;
     const d = new Date(ms);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return d.toLocaleTimeString("tr-TR", {
+        timeZone: "Europe/Istanbul",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
     }
   }
   if (!timeStr) return "—";
   try {
-    const s = String(timeStr).replace(/\s+UTC\+3/i, "+03:00").replace(/\s+UTC/i, "Z");
+    const raw = String(timeStr).trim();
+    // Eğer ISO veya timezone formatındaysa
+    let s = raw.replace(/\s+UTC\+3/i, "+03:00").replace(/\s+UTC/i, "Z");
+
+    // Yalnızca saat ("HH:mm:ss" veya "HH:mm:ss UTC+3") ise
+    const timeMatch = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch && !raw.includes("-") && !raw.includes("/")) {
+      return `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
+    }
+
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return d.toLocaleTimeString("tr-TR", {
+        timeZone: "Europe/Istanbul",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
     }
-    const str = String(timeStr);
-    if (str.includes(" ")) {
-      return str.split(" ")[1] || str;
+
+    // "YYYY-MM-DD HH:mm:ss" formatı
+    const parts = raw.match(/\d{4}-\d{2}-\d{2}[T\s](\d{2}):(\d{2}):?(\d{2})?/);
+    if (parts) {
+      return `${parts[1]}:${parts[2]}:${parts[3] || "00"}`;
     }
-    return str;
+    return raw;
   } catch {
     return String(timeStr);
   }
 }
 
-// Bulunulan tarihteki işlem zaman damgasını milisaniyeye çevirir
+// Bulunulan tarihteki işlem zaman damgasını milisaniyeye çevirir (UTC+3 uyumlu)
 function parseTradeTime(t: ClosedTrade | any): number {
   if (typeof t.closed_at_ts === "number" && t.closed_at_ts > 0) {
     return t.closed_at_ts > 1e11 ? t.closed_at_ts : t.closed_at_ts * 1000;
+  }
+  if (typeof t.time === "number" && t.time > 0) {
+    return t.time > 1e11 ? t.time : t.time * 1000;
   }
   const rawStr = t.close_time || t.exit_time || t.time || t.open_time;
   if (!rawStr) return 0;
@@ -131,24 +159,24 @@ function parseTradeTime(t: ClosedTrade | any): number {
 
   const parts = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
   if (parts) {
-    const d = new Date(
-      Number(parts[1]),
-      Number(parts[2]) - 1,
-      Number(parts[3]),
-      Number(parts[4]),
-      Number(parts[5]),
-      parts[6] ? Number(parts[6]) : 0
-    );
-    return d.getTime();
+    const isoWithTz = `${parts[1]}-${parts[2]}-${parts[3]}T${parts[4]}:${parts[5]}:${parts[6] || "00"}+03:00`;
+    const parsedWithTz = new Date(isoWithTz).getTime();
+    if (!isNaN(parsedWithTz)) return parsedWithTz;
   }
   return 0;
 }
 
-// Bulunulan tarihteki saat 00:01:00 eşiğini verir (Milisaniye)
+// Bulunulan tarihteki saat 00:01:00 eşiğini verir (UTC+3 Türkiye Saati)
 function getToday0001Cutoff(): number {
   const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 1, 0, 0);
-  return d.getTime();
+  const trDateStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Istanbul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const cutoffIso = `${trDateStr}T00:01:00+03:00`;
+  return new Date(cutoffIso).getTime();
 }
 
 export default function ForexIslemlerPage() {
@@ -1068,7 +1096,7 @@ export default function ForexIslemlerPage() {
                     <th className="py-3 px-4">Sembol / Parite</th>
                     <th className="py-3 px-3">Yön</th>
                     <th className="py-3 px-3">Lot</th>
-                    <th className="py-3 px-3">Kapanış Saati</th>
+                    <th className="py-3 px-3">Kapanış Saati (UTC+3)</th>
                     <th className="py-3 px-4">Net Kâr / Zarar</th>
                     <th className="py-3 px-3">Net Pip</th>
                     <th className="py-3 px-4 text-right">Durum / Sebep</th>
@@ -1100,8 +1128,8 @@ export default function ForexIslemlerPage() {
                           {t.lots.toFixed(2)} Lot
                         </td>
 
-                        <td className={`py-3.5 px-3 ${theme.textSecondary}`}>
-                          {formatClockTime(t.close_time || t.exit_time)}
+                        <td className={`py-3.5 px-3 font-semibold ${theme.textSecondary}`}>
+                          {formatClockTime(t.close_time || t.exit_time || t.time, t.closed_at_ts)}
                         </td>
 
                         <td className="py-3.5 px-4 whitespace-nowrap">
@@ -1163,7 +1191,7 @@ export default function ForexIslemlerPage() {
                         <span className={`text-[11px] ${theme.textSecondary}`}>{t.lots.toFixed(2)}L</span>
                       </div>
                       <div className={`text-[10px] mt-0.5 ${theme.textSecondary}`}>
-                        {formatClockTime(t.close_time || t.exit_time)} · {t.exit_reason_title || (isProfitable ? "TP" : "SL")}
+                        {formatClockTime(t.close_time || t.exit_time || t.time, t.closed_at_ts)} · {t.exit_reason_title || (isProfitable ? "TP" : "SL")}
                       </div>
                     </div>
 
