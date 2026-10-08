@@ -1397,11 +1397,11 @@ export default function BtcGoldForexPage() {
       </div>
 
       {/* =========================================================================
-          3. ALT KISIM: CANLI LOG AKIŞI (TERMINAL & STREAM) VE KAPANAN İŞLEMLER
+          3. ALT KISIM: CANLI LOG AKIŞI (TERMINAL & STREAM)
       ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sol 2 Kolon: CANLI LOG AKIŞI (Terminal Konsolu) */}
-        <div className="lg:col-span-2 rounded-2xl border border-bunker-800 bg-bunker-950 p-4 shadow-2xl flex flex-col h-[480px]">
+      <div className="w-full">
+        {/* CANLI LOG AKIŞI (Terminal Konsolu - Tam Genişlik) */}
+        <div className="w-full rounded-2xl border border-bunker-800 bg-bunker-950 p-4 shadow-2xl flex flex-col h-[480px]">
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-bunker-800/80 pb-3 mb-2 gap-2">
             <div className="flex items-center gap-2.5">
@@ -1415,7 +1415,14 @@ export default function BtcGoldForexPage() {
               </h3>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <Link
+                href="/forex/reports"
+                className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
+              >
+                <span>📜 Kapanan İşlem Raporları</span>
+                <span>→</span>
+              </Link>
               <label className="text-[10px] text-bunker-muted flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -1559,83 +1566,6 @@ export default function BtcGoldForexPage() {
           </div>
         </div>
 
-        {/* Sağ 1 Kolon: KAPANAN SCALP İŞLEMLERİ */}
-        <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl flex flex-col h-[480px]">
-          <div className="flex items-center justify-between border-b border-bunker-800 pb-3 mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🏁</span>
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                Kapanan İşlemler ({closedTrades.length})
-              </h3>
-            </div>
-            <Link
-              href="/forex/reports"
-              className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors"
-            >
-              Raporlar →
-            </Link>
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
-            {closedTrades.length === 0 ? (
-              <div className="text-center py-20 text-bunker-muted">
-                Henüz kapanmış bir işlem bulunmuyor.
-              </div>
-            ) : (
-              closedTrades.map((tr: any, idx: number) => {
-                const pnlVal = Number(tr.pnl_usd ?? tr.profit ?? 0);
-                const isWin = pnlVal >= 0;
-                const pnlPips = tr.pnl_pips != null ? Number(tr.pnl_pips) : null;
-                const keyId = tr.id ?? tr.ticket ?? `deal-${idx}`;
-                const symDisplay = tr.symbol ?? "FX";
-                const dir = tr.direction ?? "BUY";
-                const lotsVal = tr.lots ?? 0.01;
-                const reasonStr = tr.exit_reason_title ?? tr.exit_reason ?? "Kâr Al / SL";
-
-                return (
-                  <div
-                    key={keyId}
-                    className="p-2.5 rounded-lg border border-bunker-800 bg-bunker-950/60 flex items-center justify-between hover:border-bunker-700 transition-colors"
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white text-xs">{symDisplay}</span>
-                        <span
-                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                            dir === "BUY"
-                              ? "bg-emerald-500/15 text-emerald-400"
-                              : "bg-rose-500/15 text-rose-400"
-                          }`}
-                        >
-                          {dir}
-                        </span>
-                        <span className="text-[10px] text-bunker-muted">{lotsVal} Lot</span>
-                      </div>
-                      <div className="text-[10px] text-bunker-muted mt-0.5 truncate max-w-[170px]">
-                        {reasonStr}
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className={`font-bold font-mono text-xs ${isWin ? "text-emerald-400" : "text-rose-400"}`}>
-                        {isWin ? "+" : ""}${pnlVal.toFixed(2)}
-                      </div>
-                      {pnlPips !== null && (
-                        <div
-                          className={`text-[10px] font-mono ${
-                            pnlPips >= 0 ? "text-emerald-400" : "text-rose-400"
-                          }`}
-                        >
-                          {pnlPips >= 0 ? "+" : ""}{pnlPips} p
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
       </div>
 
       {/* ALT GEZİNTİ BAĞLANTILARI */}

@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { useTheme } from "../../lib/theme";
 
 interface OpenPosition {
   id: string;
@@ -159,11 +160,14 @@ function getToday0001Cutoff(): number {
 }
 
 export default function ForexIslemlerPage() {
-  // Tema Durumu: Varsayılan "Açık Mod" (Light Mode), Koyu Mod seçilebilir
-  const [isLightMode, setIsLightMode] = useState<boolean>(true);
+  // Global Tema Context'i
+  const { isLight: isLightMode, toggleTheme } = useTheme();
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Sekme Seçimi: Varsayılan "OPEN" (Açık Pozisyonlar) - Kullanıcı isteği: Arayüz kalabalığını önleme
+  const [activeTab, setActiveTab] = useState<"OPEN" | "CLOSED">("OPEN");
 
   // Veri Durumları
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
@@ -184,28 +188,6 @@ export default function ForexIslemlerPage() {
   const [filterOutcome, setFilterOutcome] = useState<"ALL" | "WIN" | "LOSS">("ALL");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
-
-  // Tema Tercihini Yerel Hafızadan Yükle
-  useEffect(() => {
-    try {
-      const savedTheme = localStorage.getItem("forex_theme_preference");
-      if (savedTheme === "dark") {
-        setIsLightMode(false);
-      } else if (savedTheme === "light") {
-        setIsLightMode(true);
-      }
-    } catch {}
-  }, []);
-
-  const toggleTheme = () => {
-    setIsLightMode((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem("forex_theme_preference", next ? "light" : "dark");
-      } catch {}
-      return next;
-    });
-  };
 
   // Veri Yükleme (Günün 00:01 Sonrası İşlemleri ve Canlı Pozisyonlar)
   const fetchData = useCallback(async (isSilent = false) => {
@@ -676,6 +658,73 @@ export default function ForexIslemlerPage() {
 
       </div>
 
+      {/* 2.5 TAB SEÇİCİ (AÇIK POZİSYONLAR / KAPANAN İŞLEMLER) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 border-slate-200 dark:border-bunker-800">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("OPEN")}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${
+              activeTab === "OPEN"
+                ? "bg-blue-600 text-white shadow-blue-500/25"
+                : isLightMode
+                ? "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:bg-bunker-800 hover:text-white"
+            }`}
+          >
+            <span>💼</span>
+            <span>Açık Pozisyonlar</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+                activeTab === "OPEN"
+                  ? "bg-white/20 text-white"
+                  : isLightMode
+                  ? "bg-slate-100 text-slate-700"
+                  : "bg-bunker-800 text-bunker-muted"
+              }`}
+            >
+              {openPositions.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("CLOSED")}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${
+              activeTab === "CLOSED"
+                ? "bg-blue-600 text-white shadow-blue-500/25"
+                : isLightMode
+                ? "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:bg-bunker-800 hover:text-white"
+            }`}
+          >
+            <span>📜</span>
+            <span>Kapanan İşlemler</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+                activeTab === "CLOSED"
+                  ? "bg-white/20 text-white"
+                  : isLightMode
+                  ? "bg-slate-100 text-slate-700"
+                  : "bg-bunker-800 text-bunker-muted"
+              }`}
+            >
+              {closedTrades.length}
+            </span>
+          </button>
+        </div>
+
+        <Link
+          href="/forex/reports"
+          className="text-xs font-bold text-blue-600 dark:text-cyan-400 hover:underline flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors"
+        >
+          <span>📊 Detaylı Raporlar &amp; Analiz</span>
+          <span>→</span>
+        </Link>
+      </div>
+
+      {activeTab === "OPEN" && (
+        <>
       {/* 3. AÇIK OLAN FOREX İŞLEMLERİ (KULLANICI İSTEĞİ: KAPAT BUTONU KALDIRILDI) */}
       <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
@@ -1011,8 +1060,11 @@ export default function ForexIslemlerPage() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* 5. KAPANAN FOREX İŞLEMLERİ TABLOSU (DATA TABLE & PAGINATION 20'ŞERLİ) */}
+      {activeTab === "CLOSED" && (
       <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -1304,6 +1356,7 @@ export default function ForexIslemlerPage() {
           </>
         )}
       </div>
+      )}
 
     </div>
   );

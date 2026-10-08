@@ -1277,199 +1277,42 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* 7. GÜNÜN KAPANAN İŞLEMLERİ LİSTESİ */}
-      <section className="p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-base">📜</span>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-              Bugün Kapanan İşlemler ({filteredClosedTrades.length})
-            </h2>
+      {/* 7. KAPANAN İŞLEMLER RAPOR YÖNLENDİRMESİ & GÜNLÜK ÖZET */}
+      <section className="p-4 sm:p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-xl shrink-0">
+            📜
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Sayfa Başı Kayıt */}
-            <div className="flex items-center gap-1.5 bg-bunker-950 px-2.5 py-1 rounded-xl border border-bunker-800 text-[11px] text-bunker-muted">
-              <span>Sayfa Başı:</span>
-              <select
-                value={tradesPageSize}
-                onChange={(e) => setTradesPageSize(Number(e.target.value))}
-                className="bg-bunker-900 border border-bunker-700 rounded px-1.5 py-0.5 text-white font-bold outline-none cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                Geçmiş ve Kapanan İşlem Raporları
+              </h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-bunker-950 text-cyan-300 border border-bunker-800 font-mono font-bold">
+                Bugün {closedTrades.length} İşlem Kapandı
+              </span>
             </div>
-
-            {/* Filtre Butonları */}
-            <div className="flex items-center gap-1 bg-bunker-950 p-1 rounded-xl border border-bunker-800">
-              <button
-                type="button"
-                onClick={() => setFilterOutcome("ALL")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  filterOutcome === "ALL" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40" : "text-bunker-muted hover:text-white"
-                }`}
-              >
-                Tümü ({closedTrades.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterOutcome("WIN")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  filterOutcome === "WIN" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "text-bunker-muted hover:text-white"
-                }`}
-              >
-                Kazanılan ({kpi.wins})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterOutcome("LOSS")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  filterOutcome === "LOSS" ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "text-bunker-muted hover:text-white"
-                }`}
-              >
-                Kayıp ({kpi.losses})
-              </button>
-            </div>
+            <p className="text-xs text-bunker-muted mt-1">
+              Kapanan işlemlerin tam dökümü, kâr faktörü, PnL detayları ve filtrelemeleri Raporlar sayfasında listelenmektedir.
+            </p>
           </div>
         </div>
 
-        {filteredClosedTrades.length === 0 ? (
-          <div className="p-8 text-center text-bunker-muted text-xs">
-            {loading ? "İşlem verileri yükleniyor…" : "Bugün için seçilen filtrede kapanmış işlem bulunmuyor."}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="hidden md:flex flex-col text-right font-mono text-xs">
+            <span className="text-[10px] text-bunker-muted">Bugün Net K/Z:</span>
+            <span className={`font-bold ${kpi.total_pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+              {kpi.total_pnl_usd >= 0 ? `+$${kpi.total_pnl_usd.toFixed(2)}` : `-$${Math.abs(kpi.total_pnl_usd).toFixed(2)}`}
+            </span>
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-bunker-800 text-[10px] text-bunker-muted uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Zaman</th>
-                    <th className="py-2.5 px-3">Parite</th>
-                    <th className="py-2.5 px-3">Yön / Lot</th>
-                    <th className="py-2.5 px-3 text-right">Giriş / Çıkış</th>
-                    <th className="py-2.5 px-3 text-right">Pip</th>
-                    <th className="py-2.5 px-3 text-right">Net Getiri ($)</th>
-                    <th className="py-2.5 px-3">Çıkış Nedeni</th>
-                    <th className="py-2.5 px-3 text-center">Sonuç</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-bunker-800/60 font-mono">
-                  {paginatedClosedTrades.map((t) => {
-                    const isWin = (t.pnl_usd ?? 0) > 0 || t.outcome === "WIN";
-                    return (
-                      <tr key={t.id || t.ticket} className="hover:bg-bunker-800/30 transition-colors">
-                        <td className="py-2.5 px-3 text-bunker-muted text-[11px]">
-                          {formatClockTime(t.exit_time || t.close_time)}
-                        </td>
-                        <td className="py-2.5 px-3 font-bold text-white">
-                          {t.symbol || t.display}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              t.direction === "BUY"
-                                ? "bg-emerald-500/15 text-emerald-300"
-                                : "bg-rose-500/15 text-rose-300"
-                            }`}
-                          >
-                            {t.direction} {t.lots}L
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-[11px] text-bunker-muted">
-                          <div>{formatPrice(t.entry_price, t.symbol)}</div>
-                          <div className="text-white">{formatPrice(t.exit_price ?? t.close_price, t.symbol)}</div>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold">
-                          <span className={(t.pnl_pips ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                            {(t.pnl_pips ?? 0) >= 0 ? `+${(t.pnl_pips ?? 0).toFixed(1)}` : (t.pnl_pips ?? 0).toFixed(1)}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-black text-sm">
-                          <span className={isWin ? "text-emerald-400" : "text-rose-400"}>
-                            {(t.pnl_usd ?? 0) >= 0 ? `+$${(t.pnl_usd ?? 0).toFixed(2)}` : `-$${Math.abs(t.pnl_usd ?? 0).toFixed(2)}`}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-[11px] text-bunker-300 truncate max-w-[140px]" title={t.exit_reason || ""}>
-                          {t.exit_reason_title || t.exit_reason || "Pozisyon Kapanışı"}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                              isWin
-                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                            }`}
-                          >
-                            {isWin ? "WIN" : "LOSS"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Sayfalandırma (Pagination) Kontrolleri */}
-            {filteredClosedTrades.length > 0 && (
-              <div className="pt-3 border-t border-bunker-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <div className="text-[11px] text-bunker-muted">
-                  Toplam <strong className="text-white">{filteredClosedTrades.length}</strong> işlemden{" "}
-                  <strong className="text-cyan-300">
-                    {(safeTradesPage - 1) * tradesPageSize + 1} – {Math.min(safeTradesPage * tradesPageSize, filteredClosedTrades.length)}
-                  </strong>{" "}
-                  arası gösteriliyor (Sayfa {safeTradesPage} / {totalTradesPages})
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setTradesPage(1)}
-                    disabled={safeTradesPage <= 1}
-                    className="px-2.5 py-1 rounded-lg bg-bunker-950 border border-bunker-800 text-bunker-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                    title="İlk Sayfa"
-                  >
-                    ⏮ İlk
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
-                    disabled={safeTradesPage <= 1}
-                    className="px-2.5 py-1 rounded-lg bg-bunker-950 border border-bunker-800 text-bunker-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors font-bold"
-                    title="Önceki Sayfa"
-                  >
-                    ◀ Önceki
-                  </button>
-
-                  <span className="px-3 py-1 rounded-lg bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-bold font-mono text-xs">
-                    {safeTradesPage} / {totalTradesPages}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => setTradesPage((p) => Math.min(totalTradesPages, p + 1))}
-                    disabled={safeTradesPage >= totalTradesPages}
-                    className="px-2.5 py-1 rounded-lg bg-bunker-950 border border-bunker-800 text-bunker-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors font-bold"
-                    title="Sonraki Sayfa"
-                  >
-                    Sonraki ▶
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTradesPage(totalTradesPages)}
-                    disabled={safeTradesPage >= totalTradesPages}
-                    className="px-2.5 py-1 rounded-lg bg-bunker-950 border border-bunker-800 text-bunker-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                    title="Son Sayfa"
-                  >
-                    Son ⏭
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          <Link
+            href="/forex/reports"
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-2 transition-all shadow-sm active:scale-95"
+          >
+            <span>Tüm Kapanan İşlem Raporları</span>
+            <span>→</span>
+          </Link>
+        </div>
       </section>
 
       {/* 8. HABER / TAKVİM DETAY VE SENARYO ANALİZ MODALI (PENCERE) */}

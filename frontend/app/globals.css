@@ -595,3 +595,126 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
     gap: 0.75rem;
   }
 }
+
+/* ==========================================================================
+   AYDINLIK MOD (LIGHT THEME) DESTEĞİ
+   ========================================================================== */
+
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background-color: #f1f5f9 !important; /* slate-100 */
+  color: #0f172a !important; /* slate-900 */
+}
+
+/* Koyu renkli kartlar ve arka planlar açık moda dönüştürülür */
+html.light .bg-bunker-950,
+html.light [class*="bg-bunker-950"] {
+  background-color: #f8fafc !important; /* slate-50 */
+}
+
+html.light .bg-bunker-900,
+html.light [class*="bg-bunker-900"] {
+  background-color: #ffffff !important;
+}
+
+html.light .bg-bunker-800,
+html.light [class*="bg-bunker-800"] {
+  background-color: #f1f5f9 !important; /* slate-100 */
+}
+
+html.light .border-bunker-800,
+html.light .border-bunker-700,
+html.light [class*="border-bunker-800"],
+html.light [class*="border-bunker-700"] {
+  border-color: #e2e8f0 !important; /* slate-200 */
+}
+
+/* Metin renkleri */
+html.light .text-white,
+html.light h1,
+html.light h2,
+html.light h3,
+html.light h4 {
+  color: #0f172a !important; /* slate-900 */
+}
+
+html.light .text-bunker-muted,
+html.light .text-slate-400 {
+  color: #64748b !important; /* slate-500 */
+}
+
+html.light .text-slate-300,
+html.light .text-slate-200,
+html.light .text-slate-100 {
+  color: #334155 !important; /* slate-700 */
+}
+
+/* Üst ve Yan Çubuklar */
+html.light .topbar {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+html.light .topbar-title {
+  color: #0f172a !important;
+}
+
+html.light .topbar-kicker {
+  color: #0284c7 !important;
+}
+
+html.light .app-sidebar,
+html.light aside[data-sidebar] {
+  background: #ffffff !important;
+  border-right-color: #e2e8f0 !important;
+  box-shadow: 1px 0 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+html.light .bottom-nav {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-top-color: #e2e8f0 !important;
+}
+
+/* Tablolar ve Form Elemanları */
+html.light table thead tr {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light table tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html.light table tbody td {
+  border-color: #f1f5f9 !important;
+}
+
+html.light select,
+html.light input,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Butonlar & Rozetler */
+html.light .section-tabs {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light .section-tabs button:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light .section-tabs button.active {
+  background: #ffffff !important;
+  color: #0284c7 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+}
+

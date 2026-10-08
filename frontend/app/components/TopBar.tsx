@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useExchange } from "../lib/exchange";
 import { usePwa } from "../lib/pwa";
+import { useTheme } from "../lib/theme";
 
 // 2026-10-07: Yalnız var olan rotaların başlıkları tutulur. Silinen spot
 // sayfalarının girdileri burada kalsaydı ölü referans olurdu.
@@ -27,6 +28,7 @@ export default function TopBar() {
   const pathname = usePathname();
   const exchange = useExchange();
   const { isInstallable, isInstalled, openInstallDialog } = usePwa();
+  const { isLight, toggleTheme } = useTheme();
 
   const raw =
     labels[pathname] ||
@@ -77,8 +79,20 @@ export default function TopBar() {
           </div>
         </div>
 
-        {/* Sağ Alan: PWA Yükle Butonu + Mod Seçici + Durum */}
+        {/* Sağ Alan: PWA Yükle Butonu + Tema Değiştirici + Durum */}
         <div className="topbar-status flex items-center gap-2 shrink-0">
+          {/* Aydınlık / Karanlık Mod Değiştirici */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-slate-300 dark:border-bunker-700 bg-white/80 dark:bg-bunker-900/90 hover:bg-slate-100 dark:hover:bg-bunker-800 text-slate-800 dark:text-cyan-300 font-mono text-[10px] sm:text-xs font-bold transition-all touch-target active:scale-95 shadow-sm"
+            title={isLight ? "Karanlık Moda Geç (Dark Mode)" : "Aydınlık Moda Geç (Light Mode)"}
+            aria-label={isLight ? "Karanlık Moda Geç" : "Aydınlık Moda Geç"}
+          >
+            <span>{isLight ? "🌙" : "☀️"}</span>
+            <span className="hidden xs:inline sm:inline">{isLight ? "Karanlık" : "Aydınlık"}</span>
+          </button>
+
           {/* Mobil/Masaüstü PWA Yükleme Butonu */}
           {isInstallable && !isInstalled && (
             <button

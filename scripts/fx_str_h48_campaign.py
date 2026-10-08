@@ -40,7 +40,13 @@ FXBTC = "EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,NZDUSD,EURJPY,GBPJPY," \
 GROUPS = {"FX": FXBTC, "XAU": "XAUUSD"}
 
 # H24 = kullanıcının istediği 24 saat (en taze tam gün: 2026-10-06)
-WINDOW = ("2026-10-06", "2026-10-07")
+# L30 = 30 günlük doğrulama penceresi (protokol OOS) — CLI ile --window L30 seçilir
+WINDOWS = {
+    "H24": ("2026-10-06", "2026-10-07"),
+    "L30": ("2026-09-07", "2026-10-07"),
+    "L15": ("2026-09-22", "2026-10-07"),
+}
+WINDOW = WINDOWS["H24"]
 
 TFS = {"5m": CACHE5, "15m": CACHE15}
 
@@ -66,12 +72,12 @@ MODES = {
 }
 
 
-def build_cmd(mode_name, mode, tf, cfg, grp):
+def build_cmd(mode_name, mode, tf, cfg, grp, wname):
     extra = CONFIGS[cfg][0]
-    start, end = WINDOW
+    start, end = WINDOWS[wname]
     entry_mode = "supertrend_rsi" if cfg.startswith("S_") else "bb_bandwalk"
-    out_path = os.path.join(OUTDIR, f"{grp}__{cfg}__{mode}__{tf}.json")
-    cmd = [PY, REPLAY, "--entry-mode", entry_mode, "--tag", f"{grp}|{cfg}|{mode}|{tf}",
+    out_path = os.path.join(OUTDIR, f"{grp}__{cfg}__{mode}__{tf}__{wname}.json")
+    cmd = [PY, REPLAY, "--entry-mode", entry_mode, "--tag", f"{grp}|{cfg}|{mode}|{tf}|{wname}",
            "--out", out_path, "--skip-old", "--cache", TFS[tf],
            "--add-symbols", GROUPS[grp], "--max-open", "99", "--spread-profile", SPREAD,
            "--start", start, "--end", end]
@@ -114,17 +120,17 @@ def parse_metrics(out_path):
 
 
 def run_one(job):
-    grp, mode_name, mode, tf, cfg = job
-    cmd, out_path = build_cmd(mode_name, mode, tf, cfg, grp)
+    grp, mode_name, mode, tf, cfg, wname = job
+    cmd, out_path = build_cmd(mode_name, mode, tf, cfg, grp, wname)
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                           encoding="utf-8", errors="replace")
     m = parse_metrics(out_path)
     m.update({"grp": grp, "strat": mode_name, "mode": mode, "tf": tf, "cfg": cfg,
-              "elapsed_s": round(time.time() - t0, 1)})
+              "window": wname, "elapsed_s": round(time.time() - t0, 1)})
     if m.get("error"):
         m["log_tail"] = ((proc.stdout or "") + (proc.stderr or ""))[-800:]
-    print(f"[{grp} {mode_name} {mode} {tf} {cfg}] net={m.get('net')} n={m.get('trades')} "
+    print(f"[{wname} {grp} {mode_name} {mode} {tf} {cfg}] net={m.get('net')} n={m.get('trades')} "
           f"wr={m.get('wr')} pf={m.get('pf')} dd={m.get('dd')} ({m['elapsed_s']}s)"
           + (f" ERR={m['error']}" if m.get("error") else ""), flush=True)
     return m
@@ -135,14 +141,21 @@ def main():
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--tfs", default="5m,15m", help="koşulacak zaman dilimleri")
     ap.add_argument("--groups", default="FX,XAU")
+    ap.add_argument("--windows", default="H24", help="H24 | L30 (virgüllü)")
     args = ap.parse_args()
     os.makedirs(OUTDIR, exist_ok=True)
 
     tfs = [t.strip() for t in args.tfs.split(",") if t.strip()]
     grps = [g.strip() for g in args.groups.split(",") if g.strip()]
-    jobs = [(grp, s, "PURE", tf, cfg) for grp in grps for s in ("S3", "S4") for tf in tfs
+    wins = [w.strip().upper() for w in args.windows.split(",") if w.strip()]
+    for w in wins:
+        if w not in WINDOWS:
+            print(f"[HATA] bilinmeyen pencere: {w} — seçenekler: {list(WINDOWS)}")
+            sys.exit(2)
+    jobs = [(grp, s, "PURE", tf, cfg, w) for w in wins for grp in grps
+            for s in ("S3", "S4") for tf in tfs
             for cfg in CONFIGS if cfg.startswith("S_") == (s == "S3")]
-    print(f"[PLAN] {len(jobs)} koşum — H24 {WINDOW[0]}→{WINDOW[1]}, "
+    print(f"[PLAN] {len(jobs)} koşum — pencereler={wins}, "
           f"gruplar={grps} (FX=12çift+BTC, XAU=altın), stratejiler=S3 S4, BE kolu dahil", flush=True)
 
     results = []
@@ -150,12 +163,16 @@ def main():
         for r in ex.map(run_one, jobs):
             results.append(r)
 
-    with open(os.path.join(OUTDIR, "_summary_h24.json"), "w", encoding="utf-8") as f:
+    tag = "_".join(w.lower() for w in wins)
+    with open(os.path.join(OUTDIR, f"_summary_{tag}.json"), "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=1)
 
-    rows = [r for r in results if not r.get("error")]
-    if rows:
-        print(f"\n=== H24 ({WINDOW[0]} → {WINDOW[1]}) — strateji x grup x BE kolu ===")
+    for wname in wins:
+        rows = [r for r in results if r["window"] == wname and not r.get("error")]
+        if not rows:
+            continue
+        start, end = WINDOWS[wname]
+        print(f"\n=== {wname} ({start} → {end}) — strateji x grup x BE kolu ===")
         print(f"{'GRP':4s}{'STR':4s}{'CFG':15s}{'TF':4s}{'n':>5s}{'WR%':>7s}{'NET$':>10s}"
               f"{'PF':>6s}{'DD$':>8s}{'JPY$':>9s}")
         print("-" * 84)

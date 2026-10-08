@@ -4,6 +4,7 @@ import "./globals.css";
 import AuthGate from "./components/AuthGate";
 import AppShell from "./components/AppShell";
 import { PwaProvider } from "./lib/pwa";
+import { ThemeProvider } from "./lib/theme";
 import PwaInstallBanner from "./components/PwaInstallBanner";
 import OfflineBanner from "./components/OfflineBanner";
 
@@ -56,17 +57,24 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="build-id" content={BUILD_ID} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("theme")||localStorage.getItem("forex_theme_preference");if(t==="light"){document.documentElement.classList.remove("dark");document.documentElement.classList.add("light");document.documentElement.setAttribute("data-theme","light");document.documentElement.style.colorScheme="light";}else{document.documentElement.classList.remove("light");document.documentElement.classList.add("dark");document.documentElement.setAttribute("data-theme","dark");document.documentElement.style.colorScheme="dark";}}catch(e){}})()`,
+          }}
+        />
       </head>
-      <body suppressHydrationWarning className="font-sans antialiased bg-bunker-950 text-white min-h-screen">
-        <PwaProvider>
-          <OfflineBanner />
-          <AuthGate>
-            <Suspense fallback={null}>
-              <AppShell>{children}</AppShell>
-            </Suspense>
-          </AuthGate>
-          <PwaInstallBanner />
-        </PwaProvider>
+      <body suppressHydrationWarning className="font-sans antialiased bg-bunker-950 text-white min-h-screen transition-colors duration-150">
+        <ThemeProvider>
+          <PwaProvider>
+            <OfflineBanner />
+            <AuthGate>
+              <Suspense fallback={null}>
+                <AppShell>{children}</AppShell>
+              </Suspense>
+            </AuthGate>
+            <PwaInstallBanner />
+          </PwaProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
