@@ -674,10 +674,11 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.ev_min_trades, 10)
         self.assertEqual(cfg.ev_max_win_rate, 45.0)
         self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
-        # allowed_symbols: yalnız 2 sembol (2026-10-06 kullanıcı kararı — XAUUSD + BTCUSD)
-        self.assertEqual(len(cfg.allowed_symbols), 4)  # 2026-10-07: + GBPJPY/EURJPY
+        # allowed_symbols: 5 sembol (2026-10-08: XAUUSD+BTCUSD+GBPJPY/EURJPY+US30 S3 15m)
+        self.assertEqual(len(cfg.allowed_symbols), 5)
         self.assertIn("XAUUSD", cfg.allowed_symbols)
         self.assertIn("BTCUSD", cfg.allowed_symbols)
+        self.assertIn("US30", cfg.allowed_symbols)
         self.assertNotIn("DXY", cfg.allowed_symbols)
 
 

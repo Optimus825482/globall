@@ -803,23 +803,44 @@ def strategy_comment_tag(entry_source: Any) -> str:
     return "RADAR"
 
 
+def strategy_display_label(code_or_source: Any) -> str:
+    """Strateji kodundan veya giriş kaynağından insan-okur Türkçe etiket türetir."""
+    s = str(code_or_source or "").strip()
+    u = s.upper()
+    if u in ("EMA_ADX_PULLBACK", "EMA_ADX_PULLBACK_M5", "EAP", "EAP-M5") or "EMA_ADX" in u or "EAP" in u:
+        return "EMA+ADX Pullback (M5)"
+    if u in ("S3_SUPERTREND_RSI", "S3", "S3_5M", "S3_15M") or "S3" in u:
+        if "15" in u or "S3F" in u:
+            return "S3 SuperTrend+RSI (M15)"
+        return "S3 SuperTrend+RSI (M5)"
+    if u in ("DONCHIAN_ADX", "DONCHIAN", "DONCH") or "DONCH" in u:
+        return "Donchian ADX Kırılımı"
+    if u in ("M1_M5_RADAR_SCALPER", "RADAR", "RADAR_SCALPER") or "RADAR" in u:
+        return "M1/M5 Çoklu Radar"
+    if u == "MANUAL":
+        return "Manuel Giriş"
+    if u == "IC_MARKETS_MT5":
+        return "IC Markets MT5"
+    return s if s else "M1/M5 Çoklu Radar"
+
+
 def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
-    """MT5 kapanış kaydından strateji kimliğini çöz (etiket → tam ad).
+    """MT5 kapanış kaydından strateji kimliğini çöz (etiket/yorum → tam ad).
 
     Köprü emir açılışındaki `comment`'i `strategy_tag` olarak taşır. Eski/etiketsiz
     kayıtlar (köprü güncellenmeden önce açılanlar) nötr "IC_MARKETS_MT5" alır.
     """
-    src = deal.get("strategy") or ""
+    src = str(deal.get("strategy") or "").strip()
     if src:
-        return str(src)
-    tag = str(deal.get("strategy_tag") or deal.get("entry_source") or "").upper()
-    if tag.startswith("EAP"):
+        return src
+    raw_tag = str(deal.get("strategy_tag") or deal.get("entry_source") or deal.get("comment") or "").upper().strip()
+    if "EAP" in raw_tag or "EMA_ADX" in raw_tag:
         return EMA_ADX_PULLBACK_STRATEGY
-    if tag.startswith("S3"):
+    if "S3" in raw_tag:
         return S3_PULLBACK_STRATEGY
-    if tag.startswith("DONCH"):
+    if "DONCH" in raw_tag:
         return "DONCHIAN_ADX"
-    if tag.startswith("RADAR"):
+    if "RADAR" in raw_tag:
         return "M1_M5_RADAR_SCALPER"
     return "IC_MARKETS_MT5"
 
@@ -3024,8 +3045,8 @@ class ForexAutoPaperSettings(BaseModel):
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
-        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam: XAU+BTC klasik, GBPJPY/EURJPY donchian modu; 28/28 FX çifti klasik sinyalle 30g replay'de negatif — majör/kros genişlemesi panelden yapılmaz, replay kanıtı ister)",
+        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30"],
+        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam: XAU+BTC klasik, GBPJPY/EURJPY donchian modu; US30 S3 15m — 2026-10-08 L30 +$133.54 PF 4.82; 28/28 FX çifti klasik sinyalle 30g replay'de negatif — majör/kros genişlemesi panelden yapılmaz, replay kanıtı ister)",
     )
     mode_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
@@ -3047,7 +3068,7 @@ class ForexAutoPaperSettings(BaseModel):
     ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
     s3_enabled: bool = Field(True, description="S3 (Supertrend+RSI pullback) akışı: ST(10,3) yön + EMA200 tarafı + ADX≥25 + RSI pullback dönüşü (L30 replay: XAU/BTC üç pencere pozitif)")
     s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09)")
-    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63)")
+    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82; USTEC 0 işlem — pullback deseni oluşmuyor)")
     s3_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="S3: ADX(14) trend gücü eşiği (spec: 25)")
     s3_rsi_lo: float = Field(40.0, ge=0.0, le=50.0, description="S3: pullback bandı alt sınırı (son 6 bar TAMAMEN bu bandın altına inerse trend bozulmuş sayılır)")
     s3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="S3: SL (× ATR(14)) — replay spec")
@@ -3162,7 +3183,14 @@ _AUTO_STATE: Dict[str, Any] = {
 }
 
 
-def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+def _log_auto_decision(
+    category: str,
+    message: str,
+    symbol: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    strategy: Optional[str] = None,
+    strategy_label: Optional[str] = None,
+):
     """Kayıt defterine otonom karar gerekçesi ekler (şeffaf izleme)."""
     # Mükerrer ardışık logları engelle
     if _AUTO_STATE["decision_logs"]:
@@ -3171,14 +3199,22 @@ def _log_auto_decision(category: str, message: str, symbol: Optional[str] = None
 
     now_ts = time.time()
     now_dt = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
+    meta = dict(metadata or {})
+    strat = strategy or meta.get("strategy")
+    strat_lbl = strategy_label or meta.get("strategy_label")
+    if strat and not strat_lbl:
+        strat_lbl = strategy_display_label(strat)
+
     log_item = {
         "id": f"LOG-{int(now_ts * 1000) % 1000000}",
         "time": now_dt.strftime("%H:%M:%S UTC+3"),
         "created_at_ts": now_ts,
         "category": category,
         "symbol": symbol,
+        "strategy": strat,
+        "strategy_label": strat_lbl,
         "message": message,
-        "metadata": metadata or {},
+        "metadata": meta,
     }
     _AUTO_STATE["decision_logs"].insert(0, log_item)
     if len(_AUTO_STATE["decision_logs"]) > 120:
@@ -3356,8 +3392,13 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         bal_after = round(_AUTO_STATE["balance"] + remaining_pnl_usd, 2)
 
         now_dt = datetime.datetime.fromtimestamp(now_time, TZ_UTC3)
+        _strat = target.get("strategy") or strategy_name_for(target.get("entry_source"))
+        _strat_lbl = target.get("strategy_label") or strategy_display_label(_strat)
+
         closed_item = {
             **target,
+            "strategy": _strat,
+            "strategy_label": _strat_lbl,
             "exit_price": cur_p,
             "exit_time": now_dt.strftime("%Y-%m-%d %H:%M:%S UTC+3"),
             "exit_time_iso": now_dt.isoformat(),
@@ -3392,9 +3433,11 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
 
         _log_auto_decision(
             "EXIT",
-            f"{target.get('display', target.get('symbol', ''))} {human_reason} ile kapandı: ${pnl_usd:+.2f} ({pnl_pips:+.1f} pip)",
+            f"{target.get('display', target.get('symbol', ''))} [{_strat_lbl}] {human_reason} ile kapandı: ${pnl_usd:+.2f} ({pnl_pips:+.1f} pip)",
             symbol=target["symbol"],
-            metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason},
+            strategy=_strat,
+            strategy_label=_strat_lbl,
+            metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason, "strategy": _strat, "strategy_label": _strat_lbl},
         )
 
         # Altın veya BTC pozisyonu kapandığında 60 saniye soğuma sayacını başlat
@@ -4094,6 +4137,8 @@ async def _forex_auto_paper_loop():
                                 f"RSI {float(_s_tech.get('rsi_now') or 0):.1f}→50 geçişi, "
                                 f"ADX {float(_s_tech.get('adx', 0)):.0f}) — değerlendiriliyor.",
                                 symbol=_s_sym,
+                                strategy=S3_PULLBACK_STRATEGY,
+                                strategy_label=strategy_display_label(_s_src),
                             )
                         else:
                             if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_s_key}_s3_wait", 0.0) > 1800.0:
@@ -4117,10 +4162,12 @@ async def _forex_auto_paper_loop():
             if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
                 _LAST_SCAN_PULSE_TIME = now_ts
                 active_str = ", ".join(active_names) if active_names else "24/5 Açık"
-                top_3 = ", ".join([f"{c['display']} (Skor:{c['score']:.0f} {c['action']})" for c in candidates[:3]])
+                top_3 = ", ".join([f"{c['display']} ({strategy_display_label(c.get('entry_source'))} Skor:{c['score']:.0f} {c['action']})" for c in candidates[:3]])
+                unique_strats = list(dict.fromkeys([strategy_display_label(c.get("entry_source")) for c in candidates]))
+                strat_summary = " · ".join(unique_strats) if unique_strats else "Radar"
                 _log_auto_decision(
                     "SCAN",
-                    f"🔍 Radar Taraması: {len(candidates)} parite analiz edildi. [Öncü: {top_3}] (Seanslar: {active_str})",
+                    f"🔍 Piyasa Taraması: {len(candidates)} parite analiz edildi | Taranan Stratejiler: [{strat_summary}] [Öncü: {top_3}] (Seanslar: {active_str})",
                 )
                 # XAU/USD tarama özeti: her taramada altının durumu tek temiz cümleyle stream'e düşer
                 gold_tick = ticks.get("XAUUSD")
@@ -4182,6 +4229,10 @@ async def _forex_auto_paper_loop():
 
             for cand in candidates:
                 sym = cand["symbol"].upper()
+                _c_src = cand.get("entry_source", "")
+                _c_strat = strategy_name_for(_c_src)
+                _c_strat_lbl = strategy_display_label(_c_src)
+
                 # Kapsam kapısı kesindir: güçlü sinyal bile allowed_symbols dışına işlem açamaz
                 # (2026-10-07 kalibrasyonu: 28/28 FX çifti klasik sinyalle negatif — bypass yok).
                 if sym not in _AUTO_SETTINGS.allowed_symbols:
@@ -4205,8 +4256,10 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_{new_action}_seri"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"🌡️ [{cand['display']}] {cd_label} Soğuması: {_AUTO_SETTINGS.loss_streak_limit} ardışık kayıp — {rem_s} sn {new_action} yönünde yeni giriş yok (süre bitince normal değerlendirilir).",
+                                f"🌡️ [{cand['display']}][{_c_strat_lbl}] {cd_label} Soğuması: {_AUTO_SETTINGS.loss_streak_limit} ardışık kayıp — {rem_s} sn {new_action} yönünde yeni giriş yok (süre bitince normal değerlendirilir).",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
 
@@ -4233,8 +4286,10 @@ async def _forex_auto_paper_loop():
                             old_dir_str = "/".join(opposite_dirs)
                             _log_auto_decision(
                                 "REVERSAL",
-                                f"🔄 [{cand['display']}] TREND DÖNÜŞÜ (FLIP): Açık {old_dir_str} pozisyonu kapatılıyor -> Yeni {new_action} açılıyor! (Skor: {cand['score']:.1f})",
+                                f"🔄 [{cand['display']}][{_c_strat_lbl}] TREND DÖNÜŞÜ (FLIP): Açık {old_dir_str} pozisyonu kapatılıyor -> Yeni {new_action} açılıyor! (Skor: {cand['score']:.1f})",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                             # Önce açık auto-paper ZIT pozisyonunu kapat
                             for ap in matching_auto:
@@ -4287,8 +4342,10 @@ async def _forex_auto_paper_loop():
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_max_pyr"] = now_ts
                                 _log_auto_decision(
                                     "SCAN",
-                                    f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({new_action}) fakat bu yönde maksimum {max_pyr} pozisyon zaten açık ({same_dir_count}/{max_pyr}). Yeni giriş pas geçildi.",
+                                    f"[{cand['display']}][{_c_strat_lbl}] Tarandı: Skor {cand['score']:.1f} ({new_action}) fakat bu yönde maksimum {max_pyr} pozisyon zaten açık ({same_dir_count}/{max_pyr}). Yeni giriş pas geçildi.",
                                     symbol=sym,
+                                    strategy=_c_strat,
+                                    strategy_label=_c_strat_lbl,
                                 )
                             continue
 
@@ -4302,8 +4359,10 @@ async def _forex_auto_paper_loop():
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_pyr_loss"] = now_ts
                                 _log_auto_decision(
                                     "GATE",
-                                    f"[{cand['display']}] Piramitleme Kalkanı: Mevcut açık {same_dir_count} pozisyon henüz kârda değil (${existing_pnl_usd:+.2f}). Zarara ekleme engellendi (Kazanana ekleme kuralı).",
+                                    f"[{cand['display']}][{_c_strat_lbl}] Piramitleme Kalkanı: Mevcut açık {same_dir_count} pozisyon henüz kârda değil (${existing_pnl_usd:+.2f}). Zarara ekleme engellendi (Kazanana ekleme kuralı).",
                                     symbol=sym,
+                                    strategy=_c_strat,
+                                    strategy_label=_c_strat_lbl,
                                 )
                             continue
 
@@ -4316,16 +4375,20 @@ async def _forex_auto_paper_loop():
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_same_cd"] = now_ts
                                 _log_auto_decision(
                                     "SCAN",
-                                    f"[{cand['display']}] Tarandı: Skor {cand['score']:.1f} ({new_action}) - Aynı yönde ek pozisyon için 1 dk kuralı ({same_dir_count}/{max_pyr} açık, {rem_sec} sn kaldı).",
+                                    f"[{cand['display']}][{_c_strat_lbl}] Tarandı: Skor {cand['score']:.1f} ({new_action}) - Aynı yönde ek pozisyon için 1 dk kuralı ({same_dir_count}/{max_pyr} açık, {rem_sec} sn kaldı).",
                                     symbol=sym,
+                                    strategy=_c_strat,
+                                    strategy_label=_c_strat_lbl,
                                 )
                             continue
 
                         # 60 saniye dolduysa ve count < 3 ise ve pozisyon kârdaysa: Aynı yönde ekleme onaylandı!
                         _log_auto_decision(
                             "SCAN",
-                            f"[{cand['display']}] 📈 KÂRDA EK POZİSYON ONAYLANDI: Skor {cand['score']:.1f} ({new_action}) | Mevcut Kâr: ${existing_pnl_usd:+.2f} ({same_dir_count + 1}/{max_pyr}. pozisyon).",
+                            f"[{cand['display']}][{_c_strat_lbl}] 📈 KÂRDA EK POZİSYON ONAYLANDI: Skor {cand['score']:.1f} ({new_action}) | Mevcut Kâr: ${existing_pnl_usd:+.2f} ({same_dir_count + 1}/{max_pyr}. pozisyon).",
                             symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
 
                 is_gold = ("XAU" in sym or "GOLD" in sym)
@@ -4342,8 +4405,10 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_gold_cd"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] Ons Altın Soğuma Kalkanı: Kapanıştan sonra {remaining_cd} sn bekleniyor (min {_AUTO_SETTINGS.gold_cooldown_sec:.0f} sn kuralı).",
+                                f"[{cand['display']}][{_c_strat_lbl}] Ons Altın Soğuma Kalkanı: Kapanıştan sonra {remaining_cd} sn bekleniyor (min {_AUTO_SETTINGS.gold_cooldown_sec:.0f} sn kuralı).",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
 
@@ -4360,8 +4425,10 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_btc_cd"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] Bitcoin Soğuma Kalkanı: Kapanıştan sonra {remaining_btc_cd} sn bekleniyor (min 60 sn kuralı).",
+                                f"[{cand['display']}][{_c_strat_lbl}] Bitcoin Soğuma Kalkanı: Kapanıştan sonra {remaining_btc_cd} sn bekleniyor (min 60 sn kuralı).",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
 
@@ -4378,8 +4445,10 @@ async def _forex_auto_paper_loop():
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_symcd"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"[{cand['display']}] Sembol Soğuma Kalkanı: Son girişten sonra {int(sym_cd_left)} sn bekleniyor (min {sym_cd:.0f} sn kuralı).",
+                            f"[{cand['display']}][{_c_strat_lbl}] Sembol Soğuma Kalkanı: Son girişten sonra {int(sym_cd_left)} sn bekleniyor (min {sym_cd:.0f} sn kuralı).",
                             symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
                     continue
 
@@ -4401,9 +4470,11 @@ async def _forex_auto_paper_loop():
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_ev"] = now_ts
                                 _log_auto_decision(
                                     "GATE",
-                                    f"[{cand['display']}] Sembol EV Kalkanı: Son {ev_stats['n']} işlemde ${ev_stats['net']:+.2f} "
+                                    f"[{cand['display']}][{_c_strat_lbl}] Sembol EV Kalkanı: Son {ev_stats['n']} işlemde ${ev_stats['net']:+.2f} "
                                     f"(WR %{ev_stats['win_rate']:.0f}) — sembol {_AUTO_SETTINGS.ev_window_hours:.0f} saatlik pencere boyunca dinlenmeye alındı.",
                                     symbol=sym,
+                                    strategy=_c_strat,
+                                    strategy_label=_c_strat_lbl,
                                 )
                             continue
 
@@ -4421,8 +4492,10 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_dxy"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] DXY Kalkanı: {direction} yönü dolar rejimiyle ({dxy_regime.get('regime')}) çelişiyor. İşlem engellendi.",
+                                f"[{cand['display']}][{_c_strat_lbl}] DXY Kalkanı: {direction} yönü dolar rejimiyle ({dxy_regime.get('regime')}) çelişiyor. İşlem engellendi.",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
                     if veto_reason == "dxy_strict_neutral":
@@ -4452,8 +4525,10 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_fxcorr"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] Korelasyon Kalkanı: {cand_usd_bias} yönlü yüksek korelasyonlu açık pozisyon var ({corr_reason}). Aynı teze ikinci kapıdan giriş engellendi.",
+                                f"[{cand['display']}][{_c_strat_lbl}] Korelasyon Kalkanı: {cand_usd_bias} yönlü yüksek korelasyonlu açık pozisyon var ({corr_reason}). Aynı teze ikinci kapıdan giriş engellendi.",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
 
@@ -4472,7 +4547,13 @@ async def _forex_auto_paper_loop():
                                       if gate_reason == "major_session" else
                                       f"Majör Volatilite Tabanı: ATR {float(cand.get('atr_pips', 0.0)):.1f}p < "
                                       f"{_AUTO_SETTINGS.major_min_atr_pips:.1f}p — ölü piyasa.")
-                        _log_auto_decision("GATE", f"[{cand['display']}] {reason_str} İşlem engellendi.", symbol=sym)
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] {reason_str} İşlem engellendi.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
                     continue
 
                 # 6. Spread Filtresi
@@ -4482,8 +4563,10 @@ async def _forex_auto_paper_loop():
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"[{cand['display']}] Tarandı: Spread engeli ({cand['spread_pips']:.1f}p > {effective_max_spread:.1f}p limit). İşlem engellendi.",
+                            f"[{cand['display']}][{_c_strat_lbl}] Tarandı: Spread engeli ({cand['spread_pips']:.1f}p > {effective_max_spread:.1f}p limit). İşlem engellendi.",
                             symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
                     continue
 
@@ -4501,8 +4584,10 @@ async def _forex_auto_paper_loop():
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
                         _log_auto_decision(
                             "SCAN",
-                            f"[{cand['display']}] Tarandı: Skor yetersiz ({cand['score']:.1f} < {req_score:.0f} eşik) | Yön: {cand['action']} | Spread: {cand['spread_pips']:.1f}p | Beklemede.",
+                            f"[{cand['display']}][{_c_strat_lbl}] Tarandı: Skor yetersiz ({cand['score']:.1f} < {req_score:.0f} eşik) | Yön: {cand['action']} | Spread: {cand['spread_pips']:.1f}p | Beklemede.",
                             symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
                     continue
 
@@ -4513,8 +4598,10 @@ async def _forex_auto_paper_loop():
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_adx"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"[{cand['display']}] ADX Kalkanı: Trend gücü yetersiz (ADX {adx_val:.1f} < {_AUTO_SETTINGS.adx_min:.0f}) — piyasa yönsüz. İşlem engellendi.",
+                            f"[{cand['display']}][{_c_strat_lbl}] ADX Kalkanı: Trend gücü yetersiz (ADX {adx_val:.1f} < {_AUTO_SETTINGS.adx_min:.0f}) — piyasa yönsüz. İşlem engellendi.",
                             symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
                     continue
 
@@ -4533,8 +4620,10 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] SuperTrend Teyidi: {direction} yönü SuperTrend yönüyle ({'BOĞA' if st_dir > 0 else 'AYI'}) çelişiyor. İşlem engellendi.",
+                                f"[{cand['display']}][{_c_strat_lbl}] SuperTrend Teyidi: {direction} yönü SuperTrend yönüyle ({'BOĞA' if st_dir > 0 else 'AYI'}) çelişiyor. İşlem engellendi.",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
 
@@ -4634,9 +4723,11 @@ async def _forex_auto_paper_loop():
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_risk"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"[{cand['display']}] Risk Kalkanı: SL {sl_pips:.0f}p ile en küçük mümkün lot bile "
+                            f"[{cand['display']}][{_c_strat_lbl}] Risk Kalkanı: SL {sl_pips:.0f}p ile en küçük mümkün lot bile "
                             f"{_AUTO_SETTINGS.risk_per_trade_pct:.1f}% bütçenin 2 katını aşıyor. İşlem pas geçildi.",
                             symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
                     continue
 
@@ -4671,7 +4762,9 @@ async def _forex_auto_paper_loop():
                         # Strateji etiketi MT5 emrine gömülür (kapanan deal `comment`'iyle geri
                         # gelir → işlem kaydında hangi strateji olduğu görünür). 31 kr sınırı.
                         "comment": f"{strategy_comment_tag(cand.get('entry_source'))} {cand['score']:.0f}",
-                        "strategy": strategy_name_for(cand.get("entry_source")),
+                        "strategy": _c_strat,
+                        "strategy_label": _c_strat_lbl,
+                        "strategy_tag": strategy_comment_tag(cand.get("entry_source")),
                     })
                 else:
                     # MT5 bağlı değil. Varsayılan olarak forekste PAPER'e düşmeyiz:
@@ -4685,9 +4778,11 @@ async def _forex_auto_paper_loop():
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_mt5off"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}] MT5 köprüsü bağlı değil — yeni işlem açılmadı "
+                                f"[{cand['display']}][{_c_strat_lbl}] MT5 köprüsü bağlı değil — yeni işlem açılmadı "
                                 f"(paper'a sessiz kayma engellendi).",
                                 symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                             )
                         continue
                     # MT5 bağlı değilse Paper Engine sanal pozisyon havuzuna ekle
@@ -4718,7 +4813,9 @@ async def _forex_auto_paper_loop():
                         "digits": spec["digits"],
                         "score": cand["score"],
                         "entry_source": cand.get("entry_source", ""),
-                        "strategy": strategy_name_for(cand.get("entry_source")),
+                        "strategy": _c_strat,
+                        "strategy_label": _c_strat_lbl,
+                        "strategy_tag": strategy_comment_tag(cand.get("entry_source")),
                     }
                     async with _AUTO_PAPER_LOCK:
                         _AUTO_STATE["open_positions"].append(pos_item)
@@ -4727,12 +4824,16 @@ async def _forex_auto_paper_loop():
 
                 actual_risk_usd = round(mt5_lots * sl_pips * pip_val, 2)
                 _strat_name = strategy_name_for(cand.get("entry_source"))
+                _strat_lbl = strategy_display_label(cand.get("entry_source"))
                 _log_auto_decision(
                     "ENTRY",
-                    f"⚡ [İŞLEM AÇILDI] {_strat_name}: {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f})",
+                    f"⚡ [İŞLEM AÇILDI] [{_strat_lbl}] {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f})",
                     symbol=sym,
+                    strategy=_strat_name,
+                    strategy_label=_strat_lbl,
                     metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"],
                               "risk_usd": actual_risk_usd, "strategy": _strat_name,
+                              "strategy_label": _strat_lbl,
                               "entry_source": cand.get("entry_source", "")},
                 )
 
@@ -5468,6 +5569,7 @@ async def get_forex_trades_report(
     outcome: Optional[str] = None,
     reason: Optional[str] = None,
     search: Optional[str] = None,
+    strategy: Optional[str] = None,
     period: str = "all",
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -5489,6 +5591,13 @@ async def get_forex_trades_report(
     # MT5 Deals önceliklidir; yoksa auto_state geçmişi kullanılır
     all_closed = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
 
+    # Her kapalı işleme strateji ve strateji etiketi alanlarını enjekte et
+    for t in all_closed:
+        if not t.get("strategy"):
+            t["strategy"] = strategy_from_mt5_deal(t)
+        if not t.get("strategy_label"):
+            t["strategy_label"] = strategy_display_label(t.get("strategy"))
+
     # Temiz-sayfa kesimi (arşiv+reset sonrası): rapor yalnız reset sonrası kapananları gösterir
     archived_before_reset = 0
     if _LEDGER_RESET_AT_TS:
@@ -5500,12 +5609,21 @@ async def get_forex_trades_report(
     start_ts, end_ts = _resolve_report_window(period, date_from, date_to, now_ts)
     period_active = start_ts is not None or end_ts is not None
 
-    # --- KPI kapsamı: sembol + dönem (tablo filtreleri hariç) ---
+    # --- KPI kapsamı: sembol + dönem + strateji (tablo filtreleri hariç) ---
     kpi_scope = all_closed
     if symbol and symbol != "ALL":
         kpi_scope = [t for t in kpi_scope if t.get("symbol") == symbol or t.get("display") == symbol]
     if period_active:
         kpi_scope = [t for t in kpi_scope if _deal_in_window(_deal_ts(t), start_ts, end_ts)]
+    if strategy and strategy != "ALL":
+        strat_q = strategy.strip()
+        kpi_scope = [
+            t for t in kpi_scope
+            if t.get("strategy") == strat_q
+            or t.get("strategy_label") == strat_q
+            or strat_q.lower() in str(t.get("strategy", "")).lower()
+            or strat_q.lower() in str(t.get("strategy_label", "")).lower()
+        ]
 
     filtered = kpi_scope
 
@@ -5525,6 +5643,8 @@ async def get_forex_trades_report(
             or s_low in str(t.get("symbol", "")).lower()
             or s_low in str(t.get("display", "")).lower()
             or s_low in str(t.get("exit_reason", "")).lower()
+            or s_low in str(t.get("strategy", "")).lower()
+            or s_low in str(t.get("strategy_label", "")).lower()
         ]
 
     # Performans Analitiği (Sembol + Dönem kapsamı; tablo filtreleri hariç)
@@ -5574,6 +5694,12 @@ async def get_forex_trades_report(
             p for p in open_positions
             if p.get("symbol") == symbol or p.get("display") == symbol
         ]
+    for p in open_positions:
+        if not p.get("strategy"):
+            p["strategy"] = strategy_from_mt5_deal(p)
+        if not p.get("strategy_label"):
+            p["strategy_label"] = strategy_display_label(p.get("strategy"))
+
     open_pnl_usd = round(sum(float(p.get("pnl_usd", p.get("profit", 0.0))) for p in open_positions), 2)
     acc_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"]))
     acc_eq = float(_MT5_STATE.get("account", {}).get("equity", round(acc_bal + open_pnl_usd, 2)))
@@ -5608,6 +5734,7 @@ async def get_forex_trades_report(
         "kpi_scope": {
             "symbol": symbol or "ALL",
             "period": period if period in _FOREX_REPORT_PERIODS else "all",
+            "strategy": strategy or "ALL",
             "date_from": date_from,
             "date_to": date_to,
             "start_ts": start_ts,
@@ -5622,6 +5749,15 @@ async def get_forex_trades_report(
             "mt5_deal_window": _MT5_DEAL_WINDOW if _MT5_STATE.get("closed_deals") else None,
             "mt5_deal_window_full": bool(_MT5_STATE.get("closed_deals")) and len(_MT5_STATE.get("closed_deals", [])) >= _MT5_DEAL_WINDOW,
         },
+        "available_strategies": [
+            {"code": "ALL", "label": "Tüm Stratejiler"},
+            {"code": "EMA_ADX_PULLBACK_M5", "label": "EMA+ADX Pullback (M5)"},
+            {"code": "S3_SUPERTREND_RSI", "label": "S3 SuperTrend+RSI"},
+            {"code": "DONCHIAN_ADX", "label": "Donchian ADX Kırılımı"},
+            {"code": "M1_M5_RADAR_SCALPER", "label": "M1/M5 Çoklu Radar"},
+            {"code": "MANUAL", "label": "Manuel Giriş"},
+            {"code": "IC_MARKETS_MT5", "label": "IC Markets MT5"},
+        ],
         "trades": filtered[:limit],
         "total_filtered": len(filtered),
         "open_positions": open_positions,
@@ -5632,10 +5768,16 @@ async def get_forex_trades_report(
 async def export_forex_trades_csv(
     symbol: Optional[str] = None,
     outcome: Optional[str] = None,
+    strategy: Optional[str] = None,
 ):
     """Forex scalper işlem geçmişini Excel uyumlu UTF-8 CSV olarak dışa aktarır."""
     # #2: kısmi kapanış satırları pozisyon bazında birleştirilir (rapordaki ile aynı).
     trades = _merge_partial_close_rows(list(_MT5_STATE.get("closed_deals", []))) or list(_AUTO_STATE.get("closed_trades", []))
+    for tr in trades:
+        if not tr.get("strategy"):
+            tr["strategy"] = strategy_from_mt5_deal(tr)
+        if not tr.get("strategy_label"):
+            tr["strategy_label"] = strategy_display_label(tr.get("strategy"))
     # Temiz-sayfa kesimi: resetten önce kapananlar CSV'ye de girmez (raporla aynı payda)
     if _LEDGER_RESET_AT_TS:
         trades = [t for t in trades if (_deal_ts(t) or 0.0) >= _LEDGER_RESET_AT_TS]
@@ -5643,6 +5785,14 @@ async def export_forex_trades_csv(
         trades = [t for t in trades if t.get("symbol") == symbol or t.get("display") == symbol]
     if outcome and outcome != "ALL":
         trades = [t for t in trades if str(t.get("outcome", "")).upper() == str(outcome).upper()]
+    if strategy and strategy != "ALL":
+        strat_q = strategy.strip()
+        trades = [
+            t for t in trades
+            if t.get("strategy") == strat_q
+            or t.get("strategy_label") == strat_q
+            or strat_q.lower() in str(t.get("strategy", "")).lower()
+        ]
 
     output = io.StringIO()
     # UTF-8 BOM yaz (Excel'in Türkçe karakterleri düzgün açması için)
@@ -5677,11 +5827,12 @@ async def export_forex_trades_csv(
         pnl = _deal_net_pnl_usd(tr)
         pips = float(tr.get("pnl_pips", 0.0))
         t_id = tr.get("id") or (f"#{tr['ticket']}" if tr.get("ticket") else "-")
+        strat_display = tr.get("strategy_label") or strategy_display_label(strategy_from_mt5_deal(tr))
         writer.writerow([
             t_id,
             tr.get("display", tr.get("symbol", "")),
             tr.get("symbol", ""),
-            strategy_from_mt5_deal(tr),
+            strat_display,
             tr.get("direction", ""),
             tr.get("lots", 0.0),
             tr.get("score", "-"),

@@ -885,6 +885,10 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("XAUUSD", cfg.s3_symbols_5m)
         self.assertIn("XAUUSD", cfg.s3_symbols_15m)
         self.assertIn("BTCUSD", cfg.s3_symbols_15m)
+        # US30 (Dow): 2026-10-08 L30 replay +$133.54 PF 4.82 → 15m kola eklendi
+        self.assertIn("US30", cfg.s3_symbols_15m)
+        # US30 işlem kapısından geçebilmeli (kapsam kapısı allowed_symbols kesindir)
+        self.assertIn("US30", cfg.allowed_symbols)
         self.assertEqual(cfg.s3_adx_min, 25.0)
         self.assertEqual(cfg.s3_rsi_lo, 40.0)
         self.assertEqual(cfg.s3_sl_atr, 1.5)
@@ -996,6 +1000,15 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         # Zaten çözülmüş `strategy` alanı korunur
         self.assertEqual(forex.strategy_from_mt5_deal({"strategy": "EMA_ADX_PULLBACK_M5"}),
                          "EMA_ADX_PULLBACK_M5")
+        # İnsan-okur etiket: S3 TF ayrımı yapıyor (kullanıcı: logda strateji adı görünsün)
+        self.assertEqual(forex.strategy_display_label("s3_5m"), "S3 SuperTrend+RSI (M5)")
+        self.assertEqual(forex.strategy_display_label("s3_15m"), "S3 SuperTrend+RSI (M15)")
+        self.assertEqual(forex.strategy_display_label("S3_SUPERTREND_RSI"), "S3 SuperTrend+RSI (M5)")
+        # EXIT log kaydı stratejiyi taşımali: `_close_position_internal` çıkış mesajı
+        # `target.get("strategy") or strategy_name_for(entry_source)` ile kurulur.
+        self.assertEqual(
+            "S3_SUPERTREND_RSI",
+            {}.get("strategy") or forex.strategy_name_for("s3_15m"))
 
     async def test_ema_adx_settings_defaults(self):
         """EMA+ADX canlı taşıma ayarları: XAU açık, SL/TP replay optimaliyle aynı."""
