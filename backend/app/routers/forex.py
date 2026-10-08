@@ -22,10 +22,10 @@ import random
 import tempfile
 import time
 import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, Request, Body
 from pydantic import BaseModel, Field
 
 try:
@@ -5239,9 +5239,12 @@ async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
 # ============================================================================
 
 class EVShieldOverrideRequest(BaseModel):
-    symbol: str
-    action: str = "bypass_today"  # "bypass_today", "bypass_24h", "reset_history", "restore"
+    symbol: Optional[str] = None
+    action: Optional[str] = "bypass_today"  # "bypass_today", "bypass_24h", "reset_history", "restore"
     hours: Optional[float] = 24.0
+
+    class Config:
+        extra = "allow"
 
 
 @router.get("/auto-paper/ev-shield")
@@ -5253,9 +5256,19 @@ async def get_forex_ev_shield_status():
 
 @router.post("/auto-paper/ev-shield/override")
 @router.post("/ev-shield/override")
-async def override_forex_ev_shield(req: EVShieldOverrideRequest):
+async def override_forex_ev_shield(
+    req: Optional[EVShieldOverrideRequest] = None,
+    symbol: Optional[str] = Query(None),
+    action: Optional[str] = Query(None),
+    hours: Optional[float] = Query(24.0),
+):
     """Belirli bir sembol için EV Kalkanını geçici olarak devre dışı bırakır, geçmişini sıfırlar veya eski haline getirir."""
-    sym = str(req.symbol).upper().replace("/", "").replace("-", "").strip()
+    req_symbol = (req.symbol if req and req.symbol else symbol) or ""
+    req_action = (req.action if req and req.action else action) or "bypass_today"
+    req_hours = (req.hours if req and req.hours is not None else hours) or 24.0
+
+    req_action = str(req_action or "bypass_today").lower()
+    sym = str(req_symbol or "").upper().replace("/", "").replace("-", "").strip()
     if not sym:
         raise HTTPException(status_code=400, detail="Geçersiz sembol.")
 
@@ -5267,7 +5280,7 @@ async def override_forex_ev_shield(req: EVShieldOverrideRequest):
     elif len(sym) == 6:
         disp = f"{sym[:3]}/{sym[3:]}"
 
-    if req.action in ("bypass_today", "today"):
+    if req_action in ("bypass_today", "today"):
         now_dt = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
         end_of_day = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
         override_until = end_of_day.timestamp()
@@ -5275,33 +5288,33 @@ async def override_forex_ev_shield(req: EVShieldOverrideRequest):
         rem_hours = max(0.1, (override_until - now_ts) / 3600.0)
         msg = f"🛡️ [{disp}] EV Kalkanı bugün sonuna kadar ({end_of_day.strftime('%H:%M')} UTC+3, ~{rem_hours:.1f} saat) iptal edildi. Sembol işleme açıldı."
         _log_auto_decision("MANUAL", msg, symbol=sym)
-        return {"success": True, "action": req.action, "symbol": sym, "override_until": override_until, "message": msg}
+        return {"success": True, "action": req_action, "symbol": sym, "override_until": override_until, "message": msg}
 
-    elif req.action in ("bypass_24h", "override_hours"):
-        h = max(1.0, float(req.hours or 24.0))
+    elif req_action in ("bypass_24h", "override_hours"):
+        h = max(1.0, float(req_hours or 24.0))
         override_until = now_ts + (h * 3600.0)
         _SYMBOL_EV_OVERRIDE_UNTIL[sym] = override_until
         msg = f"🛡️ [{disp}] EV Kalkanı {h:.0f} saat boyunca kullanıcı tarafından muaf tutuldu. Sembol işleme açıldı."
         _log_auto_decision("MANUAL", msg, symbol=sym)
-        return {"success": True, "action": req.action, "symbol": sym, "override_until": override_until, "message": msg}
+        return {"success": True, "action": req_action, "symbol": sym, "override_until": override_until, "message": msg}
 
-    elif req.action in ("reset_history", "reset"):
+    elif req_action in ("reset_history", "reset"):
         _SYMBOL_EV_RESET_AT_TS[sym] = now_ts
         _SYMBOL_EV_OVERRIDE_UNTIL.pop(sym, None)
         msg = f"🔄 [{disp}] EV geçmiş işlem sicili sıfırlandı. Sembol yeni bir başlangıçla değerlendirilecek."
         _log_auto_decision("MANUAL", msg, symbol=sym)
-        return {"success": True, "action": req.action, "symbol": sym, "reset_at": now_ts, "message": msg}
+        return {"success": True, "action": req_action, "symbol": sym, "reset_at": now_ts, "message": msg}
 
-    elif req.action in ("restore", "cancel_override", "enable"):
+    elif req_action in ("restore", "cancel_override", "enable"):
         _SYMBOL_EV_OVERRIDE_UNTIL.pop(sym, None)
         msg = f"🛡️ [{disp}] EV Kalkanı muafiyeti kaldırıldı. Normal koruma kuralları tekrar devrede."
         _log_auto_decision("MANUAL", msg, symbol=sym)
-        return {"success": True, "action": req.action, "symbol": sym, "message": msg}
+        return {"success": True, "action": req_action, "symbol": sym, "message": msg}
 
     else:
         raise HTTPException(
             status_code=400,
-            detail=f"Bilinmeyen eylem: {req.action}. (Desteklenenler: bypass_today, bypass_24h, reset_history, restore)",
+            detail=f"Bilinmeyen eylem: {req_action}. (Desteklenenler: bypass_today, bypass_24h, reset_history, restore)",
         )
 
 

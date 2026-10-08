@@ -23,7 +23,11 @@ export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
   // Audit: başarısız login POST'u auth-expired yayınlamamalı (login ekranında
   // yanlış "Oturum süresi doldu" flaşı), o yüzden URL de ayrıştırılır.
   const url = input instanceof Request ? input.url : String(input);
-  const merged: RequestInit = { credentials: "include", ...init };
+  const headers = new Headers(init?.headers);
+  if (init?.body && typeof init.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const merged: RequestInit = { credentials: "include", ...init, headers };
   if ((method === "GET" || method === "HEAD") && merged.cache === undefined) {
     merged.cache = "no-store";
   }

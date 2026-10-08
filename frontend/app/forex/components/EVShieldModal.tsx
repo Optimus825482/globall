@@ -91,6 +91,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
 
       const res = (await apiFetch("/api/forex/ev-shield/override", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol, action }),
       })) as { success: boolean; message: string };
 
