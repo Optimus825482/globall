@@ -1332,24 +1332,24 @@ export default function HomePage() {
           aria-modal="true"
         >
           <div
-            className="w-full max-w-2xl rounded-2xl border border-indigo-500/40 bg-bunker-950 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-2xl rounded-2xl border border-slate-300 dark:border-indigo-500/40 bg-white dark:bg-bunker-950 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Başlığı */}
-            <div className="flex items-start justify-between gap-4 border-b border-bunker-800 pb-4">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-bunker-800 pb-4">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xl">📅</span>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                       (selectedEvent.stars || (selectedEvent.impact === "High" ? 3 : 2)) === 3
-                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                        : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                        ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40"
+                        : "bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40"
                     }`}
                   >
                     {selectedEvent.impact_label || ((selectedEvent.stars || 2) === 3 ? "⭐⭐⭐ YÜKSEK (3 Yıldız)" : "⭐⭐ ORTA (2 Yıldız)")}
                   </span>
-                  <span className="text-xs text-cyan-400 font-bold">
+                  <span className="text-xs text-cyan-800 dark:text-cyan-400 font-bold">
                     ⏰ {selectedEvent.date_str}
                   </span>
                   <EventCountdownBadge
@@ -1359,16 +1359,16 @@ export default function HomePage() {
                     isPassed={selectedEvent.is_passed}
                   />
                   {selectedEvent.status && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/30">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 border border-cyan-400/50 dark:border-cyan-500/30">
                       {selectedEvent.status}
                     </span>
                   )}
                 </div>
-                <h2 className="text-lg font-black text-white mt-2 leading-tight">
+                <h2 className="text-lg font-black text-slate-900 dark:text-white mt-2 leading-tight">
                   {selectedEvent.flag ? `${selectedEvent.flag} ` : ""}{selectedEvent.title}
                 </h2>
                 {selectedEvent.original_title && (
-                  <p className="text-xs text-bunker-muted mt-0.5">
+                  <p className="text-xs text-slate-500 dark:text-bunker-muted mt-0.5">
                     Orijinal Adı: {selectedEvent.original_title} ({selectedEvent.country_name || selectedEvent.country})
                   </p>
                 )}
@@ -1377,7 +1377,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="w-8 h-8 rounded-xl bg-bunker-900 border border-bunker-700 hover:border-white text-bunker-muted hover:text-white flex items-center justify-center text-sm font-bold transition-all shrink-0"
+                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-bunker-900 border border-slate-300 dark:border-bunker-700 hover:border-slate-400 dark:hover:border-white text-slate-700 dark:text-bunker-muted hover:text-slate-900 dark:hover:text-white flex items-center justify-center text-sm font-bold transition-all shrink-0"
               >
                 ✕
               </button>
@@ -1385,33 +1385,34 @@ export default function HomePage() {
 
             {/* Veri Özeti & Etkilenen Semboller */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 space-y-1.5">
-                <span className="text-[10px] uppercase font-bold text-bunker-muted">Veri Beklentisi &amp; Sonuç</span>
+              {/* Beklenti & Sonuçlar */}
+              <div className="p-3.5 rounded-xl bg-slate-100/90 dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 space-y-1.5 shadow-sm">
+                <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-bunker-muted">Veri Beklentisi &amp; Sonuç</span>
                 <div className="grid grid-cols-3 gap-2 text-xs pt-1">
                   <div>
-                    <div className="text-[10px] text-bunker-muted">Beklenti:</div>
-                    <strong className="text-cyan-300">{selectedEvent.forecast || "—"}</strong>
+                    <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Beklenti:</div>
+                    <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{selectedEvent.forecast || "—"}</strong>
                   </div>
                   <div>
-                    <div className="text-[10px] text-bunker-muted">Önceki:</div>
-                    <strong className="text-white">{selectedEvent.previous || "—"}</strong>
+                    <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Önceki:</div>
+                    <strong className="text-slate-800 dark:text-white font-bold">{selectedEvent.previous || "—"}</strong>
                   </div>
                   <div>
-                    <div className="text-[10px] text-bunker-muted">Açıklanan:</div>
-                    <strong className={selectedEvent.actual && selectedEvent.actual !== "—" ? "text-emerald-400 font-black" : "text-bunker-muted"}>
+                    <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Açıklanan:</div>
+                    <strong className={selectedEvent.actual && selectedEvent.actual !== "—" ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-slate-500 dark:text-bunker-muted font-bold"}>
                       {selectedEvent.actual || "—"}
                     </strong>
                   </div>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 space-y-1.5">
-                <span className="text-[10px] uppercase font-bold text-bunker-muted">Etkilenen Pariteler</span>
+              <div className="p-3.5 rounded-xl bg-slate-100/90 dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 space-y-1.5 shadow-sm">
+                <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-bunker-muted">Etkilenen Pariteler</span>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {selectedEvent.affected_symbols.map((sym) => (
                     <span
                       key={sym}
-                      className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-cyan-100 dark:bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border border-cyan-400/60 dark:border-cyan-500/40 shadow-xs"
                     >
                       {sym}
                     </span>
@@ -1422,8 +1423,8 @@ export default function HomePage() {
 
             {/* Gösterge Açıklaması (Varsa) */}
             {selectedEvent.comment && (
-              <div className="p-3 rounded-xl bg-bunker-900/60 border border-bunker-800 text-xs text-bunker-muted leading-relaxed">
-                <strong className="text-white block text-[11px] mb-0.5">ℹ️ Gösterge Hakkında:</strong>
+              <div className="p-3.5 rounded-xl bg-slate-100/90 dark:bg-bunker-900/60 border border-slate-300 dark:border-bunker-800 text-xs text-slate-700 dark:text-bunker-muted leading-relaxed shadow-sm">
+                <strong className="text-slate-900 dark:text-white block text-[11px] font-bold mb-1">ℹ️ Gösterge Hakkında:</strong>
                 {selectedEvent.comment}
               </div>
             )}
@@ -1432,41 +1433,41 @@ export default function HomePage() {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-base">⚡</span>
-                <h3 className="text-xs font-black uppercase tracking-wider text-amber-300">
+                <h3 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">
                   {selectedEvent.scenario?.title || "Ne Olursa Ne Olur? Senaryo Analizi"}
                 </h3>
               </div>
 
               <div className="space-y-2.5 text-xs">
                 {/* OLUMLU / BEKLENTİ ÜZERİ */}
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
-                  <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/30 space-y-1 shadow-sm">
+                  <div className="font-black text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
                     <span>🟢</span>
                     <span>{selectedEvent.scenario?.bullish_trigger}</span>
                   </div>
-                  <p className="text-[11px] text-emerald-200/90 leading-relaxed pl-5">
+                  <p className="text-[11px] text-emerald-900 dark:text-emerald-200/90 font-medium leading-relaxed pl-5">
                     {selectedEvent.scenario?.bullish_outcome}
                   </p>
                 </div>
 
                 {/* OLUMSUZ / BEKLENTİ ALTI */}
-                <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1">
-                  <div className="font-bold text-rose-400 flex items-center gap-1.5">
+                <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-400 dark:border-rose-500/30 space-y-1 shadow-sm">
+                  <div className="font-black text-rose-800 dark:text-rose-400 flex items-center gap-1.5">
                     <span>🔴</span>
                     <span>{selectedEvent.scenario?.bearish_trigger}</span>
                   </div>
-                  <p className="text-[11px] text-rose-200/90 leading-relaxed pl-5">
+                  <p className="text-[11px] text-rose-900 dark:text-rose-200/90 font-medium leading-relaxed pl-5">
                     {selectedEvent.scenario?.bearish_outcome}
                   </p>
                 </div>
 
                 {/* SCALPER İPUCU */}
                 {selectedEvent.scenario?.scalper_tip && (
-                  <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-[11px] text-cyan-200 space-y-1">
-                    <span className="font-bold text-cyan-400 uppercase text-[10px] tracking-wider block">
+                  <div className="p-3.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-400 dark:border-cyan-500/30 text-[11px] text-cyan-950 dark:text-cyan-200 space-y-1 shadow-sm">
+                    <span className="font-black text-cyan-800 dark:text-cyan-400 uppercase text-[10px] tracking-wider block">
                       🎯 Scalper Operatör Notu:
                     </span>
-                    <p className="leading-relaxed">
+                    <p className="leading-relaxed font-semibold">
                       {selectedEvent.scenario.scalper_tip}
                     </p>
                   </div>

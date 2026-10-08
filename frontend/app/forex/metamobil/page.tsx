@@ -158,9 +158,6 @@ export default function MetaMobilePage() {
   // Aktif Sekme: "QUOTES" | "CHART" | "TRADE" | "HISTORY" | "SETTINGS"
   const [activeTab, setActiveTab] = useState<"QUOTES" | "CHART" | "TRADE" | "HISTORY" | "SETTINGS">("TRADE");
   
-  // Ekran Görünüm Modu: "PHONE" (Akıllı telefon çerçevesi) vs "FULL" (Geniş ekran)
-  const [deviceFrame, setDeviceFrame] = useState<boolean>(true);
-  
   // Kotasyon Görünüm Modu: "ADVANCED" (Gelişmiş) vs "SIMPLE" (Basit)
   const [quotesMode, setQuotesMode] = useState<"ADVANCED" | "SIMPLE">("ADVANCED");
   
@@ -369,74 +366,19 @@ export default function MetaMobilePage() {
   }, [filteredClosedTrades]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-start py-2 sm:py-6 px-1 sm:px-4 font-sans select-none antialiased">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-[#0c1017] text-slate-100 flex flex-col overflow-hidden font-sans select-none antialiased z-50">
       
-      {/* ÜST MASAÜSTÜ BİLGİLENDİRME & KONTROL ÇUBUĞU */}
-      <div className="w-full max-w-5xl flex items-center justify-between pb-3 px-2 border-b border-slate-800 text-xs">
-        <div className="flex items-center gap-2">
-          <Link
-            href="/"
-            className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all font-semibold flex items-center gap-1.5"
-          >
-            <span>←</span>
-            <span>Dashboard</span>
-          </Link>
-          <div className="flex items-center gap-1.5 font-bold text-slate-300">
-            <span className="text-base">📱</span>
-            <span className="tracking-wide">MetaMobil · MetaTrader 5 Mobil Klonu</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Cihaz Çerçevesi Aç/Kapat Butonu */}
-          <button
-            type="button"
-            onClick={() => setDeviceFrame((p) => !p)}
-            className={`px-3 py-1 rounded-lg font-bold border transition-all flex items-center gap-1.5 ${
-              deviceFrame
-                ? "bg-blue-600/20 text-blue-400 border-blue-500/40"
-                : "bg-slate-900 text-slate-400 border-slate-800 hover:text-white"
-            }`}
-          >
-            <span>{deviceFrame ? "📱 Telefon Kasası" : "🖥️ Geniş Ekran"}</span>
-          </button>
-
-          {/* Hızlı Yenile Butonu */}
-          <button
-            type="button"
-            onClick={refreshAllData}
-            className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors"
-            title="Verileri Yenile"
-          >
-            🔄
-          </button>
-        </div>
-      </div>
-
-      {/* METATRADER 5 MOBİL ANA CİHAZ KONTEYNERİ */}
-      <div
-        className={`w-full transition-all duration-300 relative flex flex-col overflow-hidden ${
-          deviceFrame
-            ? "max-w-[420px] h-[860px] my-4 rounded-[44px] border-[10px] border-slate-800 shadow-[0_25px_70px_rgba(0,0,0,0.8)] ring-1 ring-slate-700/50 bg-[#0c1017]"
-            : "max-w-4xl h-[860px] my-2 rounded-2xl border border-slate-800 bg-[#0c1017] shadow-2xl"
-        }`}
-      >
-
-        {/* 1. AKILLI TELEFON DİNAMİK ADA / HOPARLÖR ÇELTİĞİ (Yalnızca telefon kasasında) */}
-        {deviceFrame && (
-          <div className="w-full flex justify-center pt-2 pb-1 shrink-0 bg-[#0c1017] z-30">
-            <div className="w-28 h-4 bg-slate-900 rounded-full flex items-center justify-between px-3 border border-slate-800/80">
-              <span className="w-2 h-2 rounded-full bg-slate-800" />
-              <span className="w-8 h-1 rounded-full bg-slate-800" />
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 animate-pulse" />
-            </div>
-          </div>
-        )}
-
-        {/* 2. METATRADER 5 ÜST BAŞLIK ÇUBUĞU (TOP BAR) */}
-        <header className="h-12 bg-[#121722] border-b border-slate-800/80 flex items-center justify-between px-3.5 shrink-0 z-20">
-          {/* Sol: Menü & Hesap No */}
+      {/* 1. METATRADER 5 ÜST BAŞLIK ÇUBUĞU (TOP BAR - NATIVE APP HEADER) */}
+      <header className="h-12 bg-[#121722] border-b border-slate-800/80 flex items-center justify-between px-3 shrink-0 z-20 pt-[env(safe-area-inset-top,0px)]">
+          {/* Sol: Geri Çıkış & Hesap No */}
           <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-xs font-bold border border-slate-700/60"
+              title="Dashboard'a Dön"
+            >
+              ←
+            </Link>
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
             <div className="leading-tight">
               <div className="text-[12px] font-bold text-slate-100 flex items-center gap-1.5">
@@ -1028,7 +970,10 @@ export default function MetaMobilePage() {
         </div>
 
         {/* 4. METATRADER 5 SABİT ALT MENÜ ÇUBUĞU (BOTTOM NAVIGATION BAR - 5 TAB) */}
-        <nav className="h-14 bg-[#101520] border-t border-slate-800 flex items-center justify-around px-1 shrink-0 z-20">
+        <nav
+          className="h-14 bg-[#101520] border-t border-slate-800 flex items-center justify-around px-1 shrink-0 z-20"
+          style={{ paddingBottom: "max(0.2rem, env(safe-area-inset-bottom, 0px))" }}
+        >
           {/* TAB 1: KOTASYONLAR */}
           <button
             type="button"
@@ -1373,8 +1318,6 @@ export default function MetaMobilePage() {
             </div>
           </div>
         )}
-
-      </div>
 
     </div>
   );

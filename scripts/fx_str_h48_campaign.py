@@ -79,7 +79,8 @@ def build_cmd(mode_name, mode, tf, cfg, grp, wname):
     out_path = os.path.join(OUTDIR, f"{grp}__{cfg}__{mode}__{tf}__{wname}.json")
     cmd = [PY, REPLAY, "--entry-mode", entry_mode, "--tag", f"{grp}|{cfg}|{mode}|{tf}|{wname}",
            "--out", out_path, "--skip-old", "--cache", TFS[tf],
-           "--add-symbols", GROUPS[grp], "--max-open", "99", "--spread-profile", SPREAD,
+           "--add-symbols", GROUPS[grp], "--symbols", GROUPS[grp],
+           "--max-open", "99", "--spread-profile", SPREAD,
            "--start", start, "--end", end]
     if tf == "15m":
         cmd += ["--interval", "15m"]

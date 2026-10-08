@@ -831,3 +831,108 @@ html.light .section-tabs button.active {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
 }
 
+/* 8. SVG GAUGE (İBRE KADRANLARI) VE GRAFİK ÇİZGİLERİ (BEYAZDA ASLA KAYBOLMAZ) */
+html.light svg text {
+  fill: #1e293b !important; /* Kadran min/max yazıları koyu ve belirgin */
+  font-weight: 800 !important;
+}
+
+html.light svg line[stroke="#334155"] {
+  stroke: #64748b !important; /* Kadran tik çizgileri açık modda net görünür */
+  stroke-width: 1.5px !important;
+}
+
+html.light svg path[stroke="#1e293b"] {
+  stroke: #cbd5e1 !important; /* Kadranın boş gri taban halkası açık gri olur */
+}
+
+html.light svg path[fill="#ffffff"].drop-shadow-\[0_0_3px_rgba\(255\,255\,255\,0\.6\)\] {
+  fill: #0f172a !important; /* Kadran ibresi beyaz arka planda simsiyah şık bir ibre olur */
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.4)) !important;
+}
+
+html.light svg circle[fill="#0f172a"] {
+  fill: #0f172a !important;
+  stroke: #cbd5e1 !important;
+}
+
+/* 9. CHAT MERKEZİ & MODEL AKIŞ PANELLERİ (AÇIK MOD ZORLAMASI) */
+html.light .chat-page,
+html.light .chat-conversation,
+html.light .chat-controls,
+html.light .chat-composer {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.light .chat-bubble {
+  background: #f1f5f9 !important; /* Açık ve temiz gri zemin */
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;      /* Koyu simsiyah yazı */
+}
+
+html.light .chat-message.user .chat-bubble {
+  background: #e0f2fe !important; /* Açık mavi kullanıcı balonu */
+  border-color: #7dd3fc !important;
+  color: #0369a1 !important;
+}
+
+html.light .chat-quick-prompts button {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+  font-weight: 700 !important;
+}
+
+html.light .chat-quick-prompts button:hover {
+  background: #e0f2fe !important;
+  border-color: #38bdf8 !important;
+  color: #0284c7 !important;
+}
+
+html.light .chat-composer textarea {
+  background: #ffffff !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+html.light .chat-composer textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.light .chat-footer {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+/* 10. SİDEBAR ALT PANEL & SİSTEM SAĞLIĞI ETİKETLERİ */
+html.light .app-sidebar .bg-bunker-950\/70,
+html.light .app-sidebar .bg-bunker-950\/40 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light .app-sidebar [class*="text-cyan-400"] {
+  color: #0284c7 !important; /* Açık modda okunaklı canlı gök mavisi */
+  font-weight: 700 !important;
+}
+
+html.light .app-sidebar [class*="text-cyan-500"] {
+  color: #0369a1 !important;
+  font-weight: 700 !important;
+}
+
+/* 11. SCROLLBAR VE İNCE GÖSTERGELER */
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
