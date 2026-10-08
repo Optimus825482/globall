@@ -4740,8 +4740,8 @@ def _resolve_report_window(
     """
     if period not in _FOREX_REPORT_PERIODS:
         period = "all"
-    now_utc = datetime.datetime.fromtimestamp(now_ts, datetime.timezone.utc)
-    midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    now3 = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
+    midnight = now3.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if period == "all":
         return None, None
