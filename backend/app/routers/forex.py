@@ -3419,11 +3419,16 @@ async def _forex_auto_paper_loop():
                                 if mp.get("direction", "").upper() in opposite_dirs:
                                     t_id = mp.get("ticket")
                                     if t_id:
-                                        _MT5_STATE["pending_commands"].append({
-                                            "id": f"CMD-CLOSE-{t_id}-FLIP",
-                                            "action": "CLOSE_ORDER",
-                                            "ticket": t_id,
-                                        })
+                                        already_closing = any(
+                                            c.get("ticket") == t_id and c.get("action") == "CLOSE_ORDER"
+                                            for c in _MT5_STATE.get("pending_commands", [])
+                                        )
+                                        if not already_closing:
+                                            _MT5_STATE["pending_commands"].append({
+                                                "id": f"CMD-CLOSE-{t_id}-FLIP",
+                                                "action": "CLOSE_ORDER",
+                                                "ticket": t_id,
+                                            })
 
                             # Eski ZIT yöndeki bekleyen emirler varsa temizle
                             _MT5_STATE["pending_commands"] = [

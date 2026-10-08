@@ -151,6 +151,37 @@ JPY_CONFIGS = {
                       desc="Donchian ADX TP4×ATR (yalnız JPY — canlı kapsam)"),
     "jp_classic": _cfg("jp_classic", "classic", [], scope="jpy2",
                        desc="klasik motor (yalnız JPY — kapsam-dışı referans)"),
+
+    # --- squeeze rafinasyonu (kısa taramanın tek pozitif ailesi) ---
+    # Persentil: sıkışma ne kadar sıkı tanımlanırsa işlem azalır; TP/trail çıkış varyantları
+    "sq_r2_t25": _cfg("sq_r2_t25", "squeeze", ["--chandelier", "2.5", "--squeeze-bb-pct", "30"],
+                      desc="Squeeze pct30 (daha gevşek) + chand2.5"),
+    "sq_r3_t25": _cfg("sq_r3_t25", "squeeze", ["--chandelier", "2.5", "--squeeze-bb-pct", "40"],
+                      desc="Squeeze pct40 (gevşek) + chand2.5"),
+    "sq_r3_tp2": _cfg("sq_r3_tp2", "squeeze", ["--squeeze-bb-pct", "40", "--mode-tp-atr", "2.0"],
+                      desc="Squeeze pct40 + sabit TP2R"),
+    "sq_tp3": _cfg("sq_tp3", "squeeze", ["--mode-tp-atr", "3.0"],
+                   desc="Squeeze + sabit TP3R"),
+    "sq_tp25_t15": _cfg("sq_tp25_t15", "squeeze", ["--mode-tp-atr", "2.5", "--mode-sl-atr", "1.5"],
+                        desc="Squeeze TP2.5R + SL1.5ATR"),
+    "sq_pct10_t12": _cfg("sq_pct10_t12", "squeeze", ["--chandelier", "1.2", "--squeeze-bb-pct", "10"],
+                         desc="Squeeze pct10 + chand1.2 (motor varsayılanı)"),
+    "sq_pct10_tp2": _cfg("sq_pct10_tp2", "squeeze", ["--squeeze-bb-pct", "10", "--mode-tp-atr", "2.0"],
+                         desc="Squeeze pct10 + sabit TP2R"),
+    "sq_pct10_t35": _cfg("sq_pct10_t35", "squeeze", ["--chandelier", "3.5", "--squeeze-bb-pct", "10"],
+                         desc="Squeeze pct10 + chand3.5 (5m için geniş trail)"),
+    "sq_bb14_t25": _cfg("sq_bb14_t25", "squeeze", ["--chandelier", "2.5", "--squeeze-bb-period", "14"],
+                        desc="Squeeze BB14 (daha kısa) + chand2.5"),
+    "sq_bb50_t25": _cfg("sq_bb50_t25", "squeeze", ["--chandelier", "2.5", "--squeeze-bb-period", "50"],
+                        desc="Squeeze BB50 (daha uzun) + chand2.5"),
+    "sq_adx20_t25": _cfg("sq_adx20_t25", "squeeze", ["--chandelier", "2.5", "--adx-min", "20"],
+                         desc="Squeeze + ADX20 kapısı + chand2.5"),
+    "sq_st_t25": _cfg("sq_st_t25", "squeeze", ["--chandelier", "2.5", "--st-filter"],
+                      desc="Squeeze + SuperTrend teyit + chand2.5"),
+    "jp_sq_pct10": _cfg("jp_sq_pct10", "squeeze", ["--chandelier", "2.5", "--squeeze-bb-pct", "10"],
+                        scope="jpy2", desc="Squeeze pct10 + chand2.5 (yalnız JPY)"),
+    "jp_sq_tp2": _cfg("jp_sq_tp2", "squeeze", ["--mode-tp-atr", "2.0"], scope="jpy2",
+                      desc="Squeeze TP2R (yalnız JPY)"),
 }
 CONFIGS.update(JPY_CONFIGS)
 
@@ -168,6 +199,25 @@ SCREEN_SET = [
     "lb_tp15", "lb_t25", "pb_tp2", "pb_t25",
     "da_tp4", "da_t25", "da_adx15_t25", "da_tp3",
     "jp_dp_t25", "jp_nr7_t25", "jp_da_t25", "jp_da_tp4", "jp_classic",
+]
+
+# Squeeze rafinasyon seti (kısa taramanın tek pozitif ailesi derinleştirilir)
+SQREF_SET = [
+    "sq_t25", "sq_pct10_t25", "sq_tp2", "sq_pct10_t12", "sq_pct10_tp2", "sq_pct10_t35",
+    "sq_r2_t25", "sq_r3_t25", "sq_r3_tp2", "sq_tp3", "sq_tp25_t15",
+    "sq_bb14_t25", "sq_bb50_t25", "sq_adx20_t25", "sq_st_t25",
+    "jp_sq_t25", "jp_sq_pct10", "jp_sq_tp2",
+]
+
+# 30 günlük OOS doğrulama seti (kısa taramada parlayan adaylar + referanslar)
+LONG_SET = [
+    "classic_is",
+    "dp_t12", "dp_t25", "dp_tp2",
+    "nr7_t12", "nr7_t25", "nr7_tp2",
+    "sq_tp2", "sq_t25", "sq_pct10_t12", "sq_pct10_tp2", "sq_pct10_t25",
+    "da_tp4", "da_t25",
+    "lb_tp15", "pb_tp2", "orb_tp15",
+    "jp_da_tp4", "jp_sq_t25", "jp_classic",
 ]
 
 
@@ -266,7 +316,7 @@ def print_leaderboard(results):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--configs", default="", help="Virgüllü konfig adları (boş = --phase)")
-    ap.add_argument("--phase", default="", choices=["", "is", "all", "screen", "long"])
+    ap.add_argument("--phase", default="", choices=["", "is", "all", "screen", "long", "sqref"])
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--start", default="")
     ap.add_argument("--end", default="")
@@ -283,8 +333,10 @@ def main():
         names = [x.strip() for x in args.configs.split(",") if x.strip()]
     elif args.phase == "screen":
         names = SCREEN_SET
+    elif args.phase == "sqref":
+        names = SQREF_SET
     elif args.phase == "long":
-        names = SCREEN_SET
+        names = LONG_SET
     elif args.phase:
         names = PHASES[args.phase]
     else:

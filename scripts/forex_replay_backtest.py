@@ -87,7 +87,7 @@ REPLAY_PIP_VAL_OVERRIDE: Dict[str, float] = {}
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
                 "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS",
-                "HTF", "IRAD", "YAS", "SERI")
+                "HTF", "IRAD", "YAS", "SERI", "H1TREND", "RELATR")
 
 
 def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -> Tuple[int, bool]:
@@ -234,6 +234,15 @@ TUN_ORB_MIN_ATR = 0.0           # kutu yüksekliği / ATR alt sınırı (0 = kap
 TUN_ORB_MAX_ATR = 0.0           # kutu yüksekliği / ATR üst sınırı (0 = kapalı)
 TUN_ORB_SL_FRAC = 0.5           # SL = kutu yüksekliği × bu oran
 TUN_ORB_TP_R = 1.5              # TP = SL × bu R katı
+# 2026-10-08 araştırma: MTF trend kapısı (H1 EMA200 durumu, yalnız kapanmış saat barları).
+# En çok tekrarlanan risk-ayarlı iyileştirme; PF'i değil drawdown'ı düşürür.
+TUN_HTF_EMA200_GATE = False     # True: 5m giriş yalnız H1 EMA200 trend yönüyle uyumluysa
+TUN_HTF_EMA200_PCT = 0          # 0 = 5m tüm modalar; >0 = mod seçiliyse yalnız bu moda uygula (kullanılmıyor)
+# Göreli-ATR bandı (araştırma: mutlak pip tabanı yerine ATR'nin kendi medyanına göre bandı)
+TUN_REL_ATR_BAND = False        # True: 0.8×medyan ≤ ATR ≤ 3.0×medyan değilse giriş yok
+TUN_REL_ATR_LO = 0.8
+TUN_REL_ATR_HI = 3.0
+TUN_REL_ATR_LOOKBACK = 576      # ~2 gün 5m bar (medyan penceresi)
 TUN_MODE_FLAT16 = False         # 16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma ADAY 5)
 MODE_DAY_STATE: Dict[Tuple[str, int, str], int] = {}  # (sembol, gün, yön) → gün içi giriş sayısı
 MODE_SYMBOLS: set = set()       # boş = mod tüm sembollerde; dolu = yalnız bu sembollerde
@@ -1177,6 +1186,42 @@ def _htf_st_map(bars: List[Tuple], period: int = 10, mult: float = 3.0) -> Dict[
     return out
 
 
+def _htf_ema200_map(bars: List[Tuple], tf_sec: int = 3600, period: int = 200) -> Dict[int, int]:
+    """Yüksek-zaman-dilimi EMA200 trend durumu: ts//tf_sec anahtarı → o an yürürlükte olan
+    yön (+1 fiyat EMA üstü & EMA yükseliyor / -1 altı & düşüyor / 0 nötr).
+
+    Look-ahead YOK: kova k'nin içindeyken yalnız k'dan küçük TAMAMLANMIŞ kovalar kullanılır.
+    Araştırma (2026-10-08): MTF trend kapısı en çok tekrarlanan iyileştirme — PF'i değil
+    ama drawdown'ı belirgin düşürür; 5m→H1 (12×) ideal orandır.
+    """
+    by_bucket: Dict[int, float] = {}
+    for b in bars:
+        by_bucket[int(b[0] // tf_sec)] = b[4]  # kova içi son kapanış = kova kapanışı
+    keys = sorted(by_bucket)
+    ema = None
+    k_alpha = 2.0 / (period + 1.0)
+    state_by_key: Dict[int, int] = {}
+    prev_ema = None
+    for k in keys:
+        c = by_bucket[k]
+        prev_ema = ema
+        ema = c if ema is None else ema + k_alpha * (c - ema)
+        if prev_ema is None:
+            state_by_key[k] = 0
+        elif c > ema and ema >= prev_ema:
+            state_by_key[k] = 1
+        elif c < ema and ema <= prev_ema:
+            state_by_key[k] = -1
+        else:
+            state_by_key[k] = 0
+    out: Dict[int, int] = {}
+    last = 0
+    for k in keys:
+        out[k] = last          # bu kovaya girerken önceki TAMAMLANMIŞ durum geçerli
+        last = state_by_key[k]
+    return out
+
+
 def _st_age_map(bars: List[Tuple], period: int = 10, mult: float = 3.0) -> Dict[float, Tuple[int, int]]:
     """5M SuperTrend yönü ve yaşı (flip'ten beri geçen bar) — ts → (yön, yaş)."""
     dirs = _st_dir_series(bars, period, mult)
@@ -1593,6 +1638,31 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         for s in symbols:
             div_maps[s] = _rsi_div_map(data[s], 12, TUN_DIV_GATE)
 
+    # H1 EMA200 MTF trend kapısı (2026-10-08 araştırma): sembol başına bir kez hesaplanır
+    h1_ema_maps: Dict[str, Dict[int, int]] = {}
+    if TUN_HTF_EMA200_GATE:
+        for s in symbols:
+            h1_ema_maps[s] = _htf_ema200_map(data[s], 3600, 200)
+    # Göreli-ATR bandı: sembol başına ATR(14) medyan serisi. Medyan saatlik (12 bar)
+    # çözünürlükte yenilenir — her barda tam pencere sıralaması O(n²) olurdu.
+    rel_atr_lookup: Dict[str, Dict[float, float]] = {}
+    if TUN_REL_ATR_BAND:
+        for s in symbols:
+            bars_s = data[s]
+            atr_s = _mini_atr_series(bars_s, 14)
+            med_by_ts: Dict[float, float] = {}
+            cur_med = 0.0
+            for i, b in enumerate(bars_s):
+                if i % 12 == 0:
+                    lo = max(0, i - TUN_REL_ATR_LOOKBACK)
+                    seg = sorted(x for x in atr_s[lo:i + 1] if x > 0)
+                    if len(seg) >= 30:
+                        cur_med = seg[len(seg) // 2]
+                    else:
+                        cur_med = 0.0
+                med_by_ts[b[0]] = cur_med
+            rel_atr_lookup[s] = med_by_ts
+
     # Seri-SL sigortası durumu: kapanış tüketimi + sembol soğuma penceresi
     loss_streak: Dict[str, int] = {}
     loss_cd_until: Dict[str, float] = {}
@@ -1833,6 +1903,20 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
                         blocked_events.append(("SUPERTREND", cand("SUPERTREND")))
                         continue
+                # MTF trend kapısı (2026-10-08 araştırma): H1 EMA200 durumu tersse giriş yok
+                if vname == "NEW" and TUN_HTF_EMA200_GATE:
+                    h1s = h1_ema_maps.get(sym, {}).get(int(ts // 3600), 0)
+                    if h1s != 0 and ((action == "BUY" and h1s < 0) or (action == "SELL" and h1s > 0)):
+                        blocked_events.append(("H1TREND", cand("H1TREND")))
+                        continue
+                # Göreli-ATR bandı (2026-10-08 araştırma): ölü piyasa (düşük) ve kaos (yüksek) elenir
+                if vname == "NEW" and TUN_REL_ATR_BAND and atr_pips > 0:
+                    med = rel_atr_lookup.get(sym, {}).get(ts, 0.0)
+                    if med > 0:
+                        atr_price_now = atr_pips * pip_size
+                        if atr_price_now < TUN_REL_ATR_LO * med or atr_price_now > TUN_REL_ATR_HI * med:
+                            blocked_events.append(("RELATR", cand("RELATR")))
+                            continue
                 # "Trend bitti" dedektör kapıları (yalnız NEW):
                 # HTF  — 15M SuperTrend yönü tersse 5M sıçraması sayaç-trend girişidir
                 if vname == "NEW" and TUN_HTF_ALIGN:
@@ -2098,6 +2182,11 @@ def main():
     parser.add_argument("--orb-max-atr", type=float, default=0.0, help="ORB kutu yüksekliği / ATR üst sınırı (0 = kapalı)")
     parser.add_argument("--orb-sl-frac", type=float, default=0.5, help="ORB SL = kutu yüksekliği × bu oran")
     parser.add_argument("--orb-tp-r", type=float, default=1.5, help="ORB TP = SL × bu R katı")
+    parser.add_argument("--htf-ema200-gate", action="store_true", help="H1 EMA200 MTF trend kapısı: ters yönde 5m girişi engelle (2026-10-08 araştırma)")
+    parser.add_argument("--rel-atr-band", action="store_true", help="Göreli-ATR bandı: ATR kendi medyanının [LO,HI] katı dışındaysa giriş yok")
+    parser.add_argument("--rel-atr-lo", type=float, default=0.8, help="Göreli-ATR alt sınırı (× medyan)")
+    parser.add_argument("--rel-atr-hi", type=float, default=3.0, help="Göreli-ATR üst sınırı (× medyan)")
+    parser.add_argument("--rel-atr-lookback", type=int, default=576, help="Göreli-ATR medyan penceresi (bar)")
     parser.add_argument("--flat-16", action="store_true", help="16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma: NY öğleden sonrası negatif) — yalnız FX çiftleri")
     parser.add_argument("--mode-symbols", default="", help="Giriş modunun uygulanacağı semboller (virgüllü; boş = tümüne). Diğer semboller classic motorla kalır — ör. XAU/BTC bozulmadan yalnız denenen çiftlerde mod")
     parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
@@ -2236,6 +2325,12 @@ def main():
     TUN_ORB_MAX_ATR = args.orb_max_atr
     TUN_ORB_SL_FRAC = args.orb_sl_frac
     TUN_ORB_TP_R = args.orb_tp_r
+    global TUN_HTF_EMA200_GATE, TUN_REL_ATR_BAND, TUN_REL_ATR_LO, TUN_REL_ATR_HI, TUN_REL_ATR_LOOKBACK
+    TUN_HTF_EMA200_GATE = args.htf_ema200_gate
+    TUN_REL_ATR_BAND = args.rel_atr_band
+    TUN_REL_ATR_LO = args.rel_atr_lo
+    TUN_REL_ATR_HI = args.rel_atr_hi
+    TUN_REL_ATR_LOOKBACK = args.rel_atr_lookback
 
     TUN_MIN_SCORE = args.min_score
     TUN_SL_ATR_MULT = args.sl_mult

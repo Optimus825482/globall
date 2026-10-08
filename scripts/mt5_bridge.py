@@ -46,6 +46,7 @@ HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 LAST_GOLD_EXIT_TIME = 0.0
 LAST_BTC_EXIT_TIME = 0.0
 KNOWN_DEAL_TICKETS: set = set()
+RECENTLY_CLOSED_TICKETS: dict = {}
 INITIALIZED_DEALS = False
 TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 
@@ -597,6 +598,11 @@ def execute_market_order(cmd: dict) -> dict:
 def execute_close_order(cmd: dict) -> dict:
     """Belirli bir MT5 açık pozisyonunu kapatır."""
     ticket = int(cmd.get("ticket", 0))
+    now_t = time.time()
+    if ticket in RECENTLY_CLOSED_TICKETS or ticket in KNOWN_DEAL_TICKETS:
+        print(f"  ℹ️ [MÜKERRER EMİR ATLANDI]: Bilet #{ticket} zaten az önce kapatılmış.")
+        return {"success": True, "ticket": ticket, "already_closed": True}
+
     positions = mt5.positions_get(ticket=ticket)
     if not positions:
         return {"success": False, "error": f"Pozisyon #{ticket} bulunamadı veya kapalı"}
@@ -635,6 +641,7 @@ def execute_close_order(cmd: dict) -> dict:
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"  🏁 [POZİSYON KAPATILDI]: Bilet #{ticket} | {symbol} Kapatıldı @ {price}")
+        RECENTLY_CLOSED_TICKETS[ticket] = time.time()
         if "XAU" in symbol or "GOLD" in symbol:
             global LAST_GOLD_EXIT_TIME
             LAST_GOLD_EXIT_TIME = time.time()
