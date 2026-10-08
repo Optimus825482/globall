@@ -227,7 +227,7 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
   if (status === "Açıklandı" || isPassed || diffSec <= 0) {
     return (
       <span
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 ${className}`}
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 ${className}`}
         title="Olay açıklandı veya saati geçti"
       >
         <span>✓</span>
@@ -246,7 +246,7 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
 
     return (
       <span
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-sm ${className}`}
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/40 shadow-sm ${className}`}
         title={`${days} gün ${hours} saat ${minutes} dakika kaldı`}
       >
         <span>⏳</span>
@@ -266,7 +266,7 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
 
     return (
       <span
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-sm ${className}`}
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-400/50 shadow-sm ${className}`}
         title={`${hours} saat ${minutes} dakika kaldı`}
       >
         <span>⏱️</span>
@@ -283,10 +283,10 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-black font-mono bg-rose-500/25 text-rose-200 border border-rose-500/70 shadow-[0_0_12px_rgba(244,63,94,0.35)] animate-pulse ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-black font-mono bg-rose-100 dark:bg-rose-500/25 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-500/70 shadow-[0_0_12px_rgba(244,63,94,0.35)] animate-pulse ${className}`}
       title="KRİTİK: Açıklanmaya 1 saatten az süre kaldı!"
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0" />
+      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping shrink-0" />
       <span className="tabular-nums tracking-wider font-extrabold">{formatted} kaldı</span>
     </span>
   );
@@ -607,19 +607,19 @@ export default function HomePage() {
       {/* 1. ÜST BAŞLIK VE CANLI DURUM ÇUBUĞU */}
       <header className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-blue-950/60 via-bunker-900/90 to-cyan-950/40 border border-blue-500/40 backdrop-blur-md shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(0,240,255,0.35)] shrink-0">
+          <div className="w-14 h-14 rounded-2xl bg-cyan-100 dark:bg-gradient-to-br dark:from-blue-500/30 dark:to-cyan-500/20 border border-cyan-300 dark:border-cyan-400/40 flex items-center justify-center text-3xl shadow-sm dark:shadow-[0_0_20px_rgba(0,240,255,0.35)] shrink-0">
             📊
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                 GÜNLÜK FOREX PERFORMANSI
               </h1>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 dark:bg-cyan-400/20 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-400/30">
                 BUGÜN
               </span>
             </div>
-            <p className="text-xs text-bunker-muted mt-1">
+            <p className="text-xs text-slate-600 dark:text-bunker-muted mt-1">
               Otonom scalper işlemlerinin anlık başarı oranı, net kârlılık karnesi ve ekonomik takvim analizleri
             </p>
           </div>
@@ -627,8 +627,8 @@ export default function HomePage() {
 
         <div className="flex items-center gap-3 self-end md:self-auto">
           <div className="flex flex-col text-right">
-            <span className="text-[10px] text-bunker-muted">Son Güncelleme</span>
-            <span className="text-xs font-bold text-cyan-400">
+            <span className="text-[10px] text-slate-500 dark:text-bunker-muted">Son Güncelleme</span>
+            <span className="text-xs font-bold text-cyan-700 dark:text-cyan-400">
               {lastUpdated ? lastUpdated.toLocaleTimeString("tr-TR") : "Yükleniyor…"}
             </span>
           </div>
@@ -637,7 +637,7 @@ export default function HomePage() {
             type="button"
             onClick={() => fetchData(false)}
             disabled={refreshing}
-            className="px-3 py-2 rounded-xl bg-bunker-950/80 border border-cyan-500/30 hover:border-cyan-400 text-cyan-300 text-xs font-bold transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-bunker-950/80 border border-slate-300 dark:border-cyan-500/30 hover:border-cyan-500 text-slate-800 dark:text-cyan-300 text-xs font-bold transition-all shadow-xs dark:shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
           >
             <span className={refreshing ? "animate-spin" : ""}>🔄</span>
             <span>Yenile</span>
@@ -648,15 +648,15 @@ export default function HomePage() {
       {/* 2. GÜNÜN KARNESİ: ANA METRİKLER (KPI CARDS) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <h2 className="text-sm font-bold uppercase tracking-wider text-white">Günün Başarı Metrikleri</h2>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-semibold">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-white">Günün Başarı Metrikleri</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-950/80 border border-cyan-300 dark:border-cyan-500/30 text-cyan-800 dark:text-cyan-300 font-semibold">
             Her Gece 00:00'da Otomatik Sıfırlanır (UTC+3)
           </span>
         </div>
         <Link
           href="/forex/reports"
-          className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold transition-colors"
+          className="text-xs text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold transition-colors"
         >
           <span>📅 Geçmiş Tarihli Kayıtları İncele</span>
           <span>→</span>
@@ -667,20 +667,20 @@ export default function HomePage() {
         {/* KART 1: GÜNLÜK NET PNL */}
         <div className={`p-4 sm:p-5 rounded-2xl border backdrop-blur-md shadow-xl transition-all ${
           isNetProfit
-            ? "border-emerald-500/40 bg-gradient-to-br from-emerald-950/40 via-bunker-900/80 to-bunker-950/90 shadow-[0_4px_20px_rgba(16,185,129,0.15)]"
-            : "border-rose-500/40 bg-gradient-to-br from-rose-950/40 via-bunker-900/80 to-bunker-950/90 shadow-[0_4px_20px_rgba(244,63,94,0.15)]"
+            ? "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/80 dark:bg-gradient-to-br dark:from-emerald-950/40 dark:via-bunker-900/80 dark:to-bunker-950/90 shadow-[0_4px_20px_rgba(16,185,129,0.15)]"
+            : "border-rose-300 dark:border-rose-500/40 bg-rose-50/80 dark:bg-gradient-to-br dark:from-rose-950/40 dark:via-bunker-900/80 dark:to-bunker-950/90 shadow-[0_4px_20px_rgba(244,63,94,0.15)]"
         }`}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-bunker-muted">Günün Net Kârı</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-bunker-muted">Günün Net Kârı</span>
             <span className="text-lg">{isNetProfit ? "💰" : "📉"}</span>
           </div>
           <div className="mt-2.5">
-            <div className={`text-2xl sm:text-3xl font-black tracking-tight ${isNetProfit ? "text-emerald-400" : "text-rose-400"}`}>
+            <div className={`text-2xl sm:text-3xl font-black tracking-tight ${isNetProfit ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
               {kpi.total_pnl_usd >= 0 ? `+$${kpi.total_pnl_usd.toFixed(2)}` : `-$${Math.abs(kpi.total_pnl_usd).toFixed(2)}`}
             </div>
-            <div className="mt-1 flex items-center justify-between text-[11px] text-bunker-muted">
+            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-bunker-muted">
               <span>Toplam Pip:</span>
-              <span className={`font-bold ${((kpi.total_pnl_pips ?? 0) >= 0) ? "text-emerald-300" : "text-rose-300"}`}>
+              <span className={`font-bold ${((kpi.total_pnl_pips ?? 0) >= 0) ? "text-emerald-800 dark:text-emerald-300" : "text-rose-800 dark:text-rose-300"}`}>
                 {(kpi.total_pnl_pips ?? 0) >= 0 ? `+${(kpi.total_pnl_pips ?? 0).toFixed(1)}` : (kpi.total_pnl_pips ?? 0).toFixed(1)} pip
               </span>
             </div>
@@ -688,53 +688,53 @@ export default function HomePage() {
         </div>
 
         {/* KART 2: BAŞARI ORANI (WIN RATE) */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-cyan-500/40 bg-gradient-to-br from-cyan-950/30 via-bunker-900/80 to-bunker-950/90 shadow-xl shadow-[0_4px_20px_rgba(6,182,212,0.1)]">
+        <div className="p-4 sm:p-5 rounded-2xl border border-cyan-300 dark:border-cyan-500/40 bg-cyan-50/60 dark:bg-gradient-to-br dark:from-cyan-950/30 dark:via-bunker-900/80 dark:to-bunker-950/90 shadow-xl dark:shadow-[0_4px_20px_rgba(6,182,212,0.1)]">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">Başarı Oranı (Win Rate)</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-800 dark:text-cyan-300">Başarı Oranı (Win Rate)</span>
             <span className="text-lg">🎯</span>
           </div>
           <div className="mt-2.5">
-            <div className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-baseline gap-1.5">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-baseline gap-1.5">
               <span>%{winRate.toFixed(1)}</span>
             </div>
-            <div className="mt-1 flex items-center justify-between text-[11px] text-bunker-muted">
-              <span className="text-emerald-400 font-bold">{kpi.wins} Kazanılan</span>
-              <span className="text-bunker-500">/</span>
-              <span className="text-rose-400 font-bold">{kpi.losses} Kayıp</span>
+            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-bunker-muted">
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold">{kpi.wins} Kazanılan</span>
+              <span className="text-slate-400 dark:text-bunker-500">/</span>
+              <span className="text-rose-700 dark:text-rose-400 font-bold">{kpi.losses} Kayıp</span>
             </div>
           </div>
         </div>
 
         {/* KART 3: KÂR FAKTÖRÜ (PROFIT FACTOR) */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-purple-500/40 bg-gradient-to-br from-purple-950/30 via-bunker-900/80 to-bunker-950/90 shadow-xl">
+        <div className="p-4 sm:p-5 rounded-2xl border border-purple-300 dark:border-purple-500/40 bg-purple-50/70 dark:bg-gradient-to-br dark:from-purple-950/30 dark:via-bunker-900/80 dark:to-bunker-950/90 shadow-xl">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-purple-300">Kâr Faktörü (PF)</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">Kâr Faktörü (PF)</span>
             <span className="text-lg">⚡</span>
           </div>
           <div className="mt-2.5">
-            <div className="text-2xl sm:text-3xl font-black text-purple-200 tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-purple-950 dark:text-purple-200 tracking-tight">
               {kpi.profit_factor_infinite ? "∞ (Kayıpsız)" : (kpi.profit_factor && kpi.profit_factor > 0 ? kpi.profit_factor.toFixed(2) : "—")}
             </div>
-            <div className="mt-1 flex items-center justify-between text-[11px] text-bunker-muted">
+            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-bunker-muted">
               <span>Toplam İşlem:</span>
-              <span className="text-white font-bold">{kpi.total_trades} adet</span>
+              <span className="text-slate-900 dark:text-white font-bold">{kpi.total_trades} adet</span>
             </div>
           </div>
         </div>
 
         {/* KART 4: BAKİYE VE CANLI VARLIK (EQUITY) */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-950/25 via-bunker-900/80 to-bunker-950/90 shadow-xl">
+        <div className="p-4 sm:p-5 rounded-2xl border border-amber-300 dark:border-amber-500/40 bg-amber-50/70 dark:bg-gradient-to-br dark:from-amber-950/25 dark:via-bunker-900/80 dark:to-bunker-950/90 shadow-xl">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-300">Varlık (Equity) &amp; Bakiye</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">Varlık (Equity) &amp; Bakiye</span>
             <span className="text-lg">💼</span>
           </div>
           <div className="mt-2.5">
-            <div className="text-2xl sm:text-3xl font-black text-amber-200 tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-amber-950 dark:text-amber-200 tracking-tight">
               ${kpi.equity ? kpi.equity.toFixed(2) : kpi.balance.toFixed(2)}
             </div>
-            <div className="mt-1 flex items-center justify-between text-[11px] text-bunker-muted">
+            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-bunker-muted">
               <span>Bakiye:</span>
-              <span className="text-white font-bold">${kpi.balance ? kpi.balance.toFixed(2) : "10,000.00"}</span>
+              <span className="text-slate-900 dark:text-white font-bold">${kpi.balance ? kpi.balance.toFixed(2) : "10,000.00"}</span>
             </div>
           </div>
         </div>
@@ -743,25 +743,25 @@ export default function HomePage() {
       {/* 3. BAŞARI ÇUBUĞU VE GÜNÜN ÖNE ÇIKANLARI */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* BAŞARI ÇUBUĞU & İŞLEM DAĞILIMI */}
-        <div className="lg:col-span-2 p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl space-y-4">
+        <div className="lg:col-span-2 p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-base">📈</span>
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                 Günün İşlem Başarısı Dağılımı
               </h2>
             </div>
-            <span className="text-xs text-bunker-muted">
+            <span className="text-xs text-slate-600 dark:text-bunker-muted">
               Toplam {kpi.total_trades} Kapanan İşlem
             </span>
           </div>
 
           {/* İlerleme Çubuğu */}
           <div className="space-y-1.5">
-            <div className="w-full h-4 rounded-full bg-bunker-950 overflow-hidden flex border border-bunker-800">
+            <div className="w-full h-4 rounded-full bg-slate-200 dark:bg-bunker-950 overflow-hidden flex border border-slate-300 dark:border-bunker-800">
               <div
                 style={{ width: `${kpi.total_trades > 0 ? (kpi.wins / kpi.total_trades) * 100 : 0}%` }}
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-black"
+                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-slate-900"
                 title={`${kpi.wins} Kazanılan İşlem`}
               >
                 {kpi.wins > 0 && `${kpi.wins}`}
@@ -775,44 +775,44 @@ export default function HomePage() {
               </div>
             </div>
             <div className="flex justify-between text-[11px]">
-              <span className="text-emerald-400 font-bold">
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                 ✓ %{winRate.toFixed(1)} Kazanma (WIN)
               </span>
-              <span className="text-rose-400 font-bold">
+              <span className="text-rose-700 dark:text-rose-400 font-bold">
                 ✕ %{(100 - winRate).toFixed(1)} Kayıp (LOSS)
               </span>
             </div>
           </div>
 
           {/* Hızlı Aksiyon Bağlantıları */}
-          <div className="pt-3 border-t border-bunker-800 flex flex-wrap gap-2.5">
+          <div className="pt-3 border-t border-slate-200 dark:border-bunker-800 flex flex-wrap gap-2.5">
             <Link
               href="/forex/portfolio"
-              className="px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs hover:bg-blue-500/20 transition-all font-bold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl bg-blue-100 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/30 text-blue-900 dark:text-blue-300 text-xs hover:bg-blue-200 dark:hover:bg-blue-500/20 transition-all font-bold flex items-center gap-1.5"
             >
               <span>💼</span> Forex Portföy
             </Link>
             <Link
               href="/forex/btc-gold"
-              className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs hover:bg-amber-500/20 transition-all font-bold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all font-bold flex items-center gap-1.5"
             >
               <span>🥇</span> BTC + Altın
             </Link>
             <Link
               href="/forex"
-              className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs hover:bg-cyan-500/20 transition-all font-bold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/30 text-cyan-900 dark:text-cyan-300 text-xs hover:bg-cyan-200 dark:hover:bg-cyan-500/20 transition-all font-bold flex items-center gap-1.5"
             >
               <span>📡</span> Radar
             </Link>
             <Link
               href="/forex/reports"
-              className="px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs hover:bg-purple-500/20 transition-all font-bold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-500/10 border border-purple-300 dark:border-purple-500/30 text-purple-900 dark:text-purple-300 text-xs hover:bg-purple-200 dark:hover:bg-purple-500/20 transition-all font-bold flex items-center gap-1.5"
             >
               <span>📋</span> Detaylı Raporlar
             </Link>
             <Link
               href="/settings"
-              className="px-3 py-1.5 rounded-xl bg-bunker-800/80 border border-bunker-700 text-bunker-muted hover:text-white text-xs transition-all font-bold flex items-center gap-1.5 ml-auto"
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-bunker-800/80 border border-slate-300 dark:border-bunker-700 text-slate-700 dark:text-bunker-muted hover:text-slate-900 dark:hover:text-white text-xs transition-all font-bold flex items-center gap-1.5 ml-auto"
             >
               <span>⚙️</span> Ayarlar
             </Link>
@@ -820,46 +820,46 @@ export default function HomePage() {
         </div>
 
         {/* GÜNÜN ÖNE ÇIKAN İŞLEMLERİ */}
-        <div className="p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl space-y-3">
+        <div className="p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-base">🏆</span>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
               Günün Öne Çıkanları
             </h2>
           </div>
 
           <div className="space-y-2.5 text-xs">
             {/* EN İYİ İŞLEM */}
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
-              <div className="flex justify-between items-center text-[10px] text-emerald-400 font-bold uppercase">
+            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-emerald-800 dark:text-emerald-400 font-bold uppercase">
                 <span>Günün En İyi İşlemi</span>
                 <span>{bestTrade?.symbol || "—"}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-white font-bold">{bestTrade?.direction || "—"} {bestTrade?.lots ? `${bestTrade.lots} Lot` : ""}</span>
-                <span className="text-emerald-400 font-black text-sm">
+                <span className="text-slate-900 dark:text-white font-bold">{bestTrade?.direction || "—"} {bestTrade?.lots ? `${bestTrade.lots} Lot` : ""}</span>
+                <span className="text-emerald-700 dark:text-emerald-400 font-black text-sm">
                   {bestTrade ? `+$${(bestTrade.pnl_usd ?? 0).toFixed(2)}` : "—"}
                 </span>
               </div>
-              <div className="text-[10px] text-bunker-muted flex justify-between">
+              <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
                 <span>{bestTrade?.pnl_pips ? `+${bestTrade.pnl_pips.toFixed(1)} pip` : ""}</span>
                 <span>{formatClockTime(bestTrade?.exit_time || bestTrade?.close_time)}</span>
               </div>
             </div>
 
             {/* EN BÜYÜK KAYIP */}
-            <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1">
-              <div className="flex justify-between items-center text-[10px] text-rose-400 font-bold uppercase">
+            <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-300 dark:border-rose-500/30 space-y-1">
+              <div className="flex justify-between items-center text-[10px] text-rose-800 dark:text-rose-400 font-bold uppercase">
                 <span>Günün En Büyük Kaybı</span>
                 <span>{worstTrade?.symbol || "—"}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-white font-bold">{worstTrade?.direction || "—"} {worstTrade?.lots ? `${worstTrade.lots} Lot` : ""}</span>
-                <span className="text-rose-400 font-black text-sm">
+                <span className="text-slate-900 dark:text-white font-bold">{worstTrade?.direction || "—"} {worstTrade?.lots ? `${worstTrade.lots} Lot` : ""}</span>
+                <span className="text-rose-700 dark:text-rose-400 font-black text-sm">
                   {worstTrade ? `-$${Math.abs(worstTrade.pnl_usd ?? 0).toFixed(2)}` : "—"}
                 </span>
               </div>
-              <div className="text-[10px] text-bunker-muted flex justify-between">
+              <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
                 <span>{worstTrade?.pnl_pips ? `${worstTrade.pnl_pips.toFixed(1)} pip` : ""}</span>
                 <span>{formatClockTime(worstTrade?.exit_time || worstTrade?.close_time)}</span>
               </div>
@@ -869,26 +869,26 @@ export default function HomePage() {
       </section>
 
       {/* 4. EKONOMİK TAKVİM VE MAKRO AÇIKLAMA ANALİZİ (INVESTING.COM 2 & 3 YILDIZ) */}
-      <section className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900/90 via-bunker-900/95 to-indigo-950/60 border border-indigo-500/30 shadow-2xl space-y-4">
+      <section className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-gradient-to-r dark:from-slate-900/90 dark:via-bunker-900/95 dark:to-indigo-950/60 border border-slate-300 dark:border-indigo-500/30 shadow-2xl space-y-4">
         {/* Başlık ve Aksiyon Barı */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-bunker-800 pb-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 dark:border-bunker-800 pb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-xl shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/20 border border-indigo-300 dark:border-indigo-400/40 flex items-center justify-center text-xl shrink-0">
               📅
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-sm sm:text-base font-black text-white tracking-wide uppercase">
+                <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-wide uppercase">
                   Ekonomik Takvim (Investing.com 2 &amp; 3 Yıldız)
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                   ⭐⭐ / ⭐⭐⭐ Kritik Volatilite
                 </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40">
                   ⚡ Veritabanı Önbelleği (3 Saatte Bir Otomatik)
                 </span>
               </div>
-              <p className="text-[11px] text-bunker-muted mt-0.5">
+              <p className="text-[11px] text-slate-600 dark:text-bunker-muted mt-0.5">
                 Investing.com 2 ve 3 yıldızlı makro açıklamalar günde bir ve gün içerisinde 3 saatte bir arka planda çekilir; veritabanından anında sunulur.
               </p>
             </div>
@@ -899,7 +899,7 @@ export default function HomePage() {
               href="https://www.investing.com/economic-calendar"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/25 transition-all flex items-center gap-1.5 shadow-sm"
             >
               <span>🌐</span> Investing.com Takvimi ↗
             </a>
@@ -907,7 +907,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => triggerTestCalendarNotification()}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-100 dark:bg-rose-500/15 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 hover:bg-rose-200 dark:hover:bg-rose-500/25 transition-all flex items-center gap-1.5 shadow-sm"
               title="5 dakika kala çıkacak acil uyarı modalini ve sesini test edin"
             >
               <span>⚡</span> 5 Dk Uyarısını Test Et
@@ -917,14 +917,14 @@ export default function HomePage() {
               type="button"
               onClick={() => fetchCalendar(true)}
               disabled={refreshingCalendar}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-100 dark:bg-indigo-500/20 text-indigo-950 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-500/40 hover:bg-indigo-200 dark:hover:bg-indigo-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
             >
               <span className={refreshingCalendar ? "animate-spin" : ""}>🔄</span>
               <span>{refreshingCalendar ? "Yenileniyor…" : "Takvimi Yenile"}</span>
             </button>
 
             {calendarLastUpdated && (
-              <span className="text-[10px] text-bunker-muted hidden md:inline">
+              <span className="text-[10px] text-slate-500 dark:text-bunker-muted hidden md:inline">
                 {calendarLastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
@@ -935,14 +935,14 @@ export default function HomePage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
           {/* Yıldız Filtreleri */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[11px] text-bunker-muted font-bold mr-1">Önem:</span>
+            <span className="text-[11px] text-slate-700 dark:text-bunker-muted font-bold mr-1">Önem:</span>
             <button
               type="button"
               onClick={() => setCalendarFilterStars("ALL")}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 calendarFilterStars === "ALL"
-                  ? "bg-cyan-500/30 text-cyan-200 border border-cyan-400"
-                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-white"
+                  ? "bg-cyan-600 text-white border border-cyan-600 shadow-sm"
+                  : "bg-slate-100 dark:bg-bunker-900 text-slate-700 dark:text-bunker-muted border border-slate-300 dark:border-bunker-800 hover:text-slate-900 dark:hover:text-white"
               }`}
             >
               Tümü ({calendarEvents.length})
@@ -952,8 +952,8 @@ export default function HomePage() {
               onClick={() => setCalendarFilterStars(3)}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 calendarFilterStars === 3
-                  ? "bg-rose-500/30 text-rose-200 border border-rose-400"
-                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-rose-300"
+                  ? "bg-rose-600 text-white border border-rose-600 shadow-sm"
+                  : "bg-slate-100 dark:bg-bunker-900 text-slate-700 dark:text-bunker-muted border border-slate-300 dark:border-bunker-800 hover:text-rose-700 dark:hover:text-rose-300"
               }`}
             >
               ⭐⭐⭐ 3 Yıldız ({calendarEvents.filter((x) => (x.stars || (x.impact === "High" ? 3 : 2)) === 3).length})
@@ -963,8 +963,8 @@ export default function HomePage() {
               onClick={() => setCalendarFilterStars(2)}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 calendarFilterStars === 2
-                  ? "bg-amber-500/30 text-amber-200 border border-amber-400"
-                  : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:text-amber-300"
+                  ? "bg-amber-600 text-white border border-amber-600 shadow-sm"
+                  : "bg-slate-100 dark:bg-bunker-900 text-slate-700 dark:text-bunker-muted border border-slate-300 dark:border-bunker-800 hover:text-amber-700 dark:hover:text-amber-300"
               }`}
             >
               ⭐⭐ 2 Yıldız ({calendarEvents.filter((x) => (x.stars || (x.impact === "High" ? 3 : 2)) === 2).length})
@@ -983,8 +983,8 @@ export default function HomePage() {
                     onClick={() => setCalendarFilterCurrency(code)}
                     className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
                       calendarFilterCurrency === code
-                        ? "bg-indigo-500 text-white"
-                        : "bg-bunker-900/80 text-bunker-muted hover:text-white"
+                        ? "bg-indigo-600 text-white font-black shadow-sm"
+                        : "bg-slate-100 dark:bg-bunker-900/80 text-slate-700 dark:text-bunker-muted hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-transparent"
                     }`}
                   >
                     {label}
@@ -998,14 +998,14 @@ export default function HomePage() {
               value={calendarSearch}
               onChange={(e) => setCalendarSearch(e.target.value)}
               placeholder="Olay, parite veya ülke ara..."
-              className="px-2.5 py-1 rounded-lg bg-bunker-950 border border-bunker-800 text-xs text-white placeholder-bunker-muted focus:border-cyan-400 focus:outline-none w-36 sm:w-44"
+              className="px-2.5 py-1 rounded-lg bg-white dark:bg-bunker-950 border border-slate-300 dark:border-bunker-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-bunker-muted focus:border-cyan-500 focus:outline-none w-36 sm:w-44"
             />
           </div>
         </div>
 
         {/* İçerik Kartları */}
         {loadingCalendar && calendarEvents.length === 0 ? (
-          <div className="p-8 text-center text-xs text-bunker-muted animate-pulse font-mono rounded-xl bg-bunker-950/50 border border-bunker-800">
+          <div className="p-8 text-center text-xs text-slate-600 dark:text-bunker-muted animate-pulse font-mono rounded-xl bg-slate-50 dark:bg-bunker-950/50 border border-slate-300 dark:border-bunker-800">
             Investing.com 2 ve 3 yıldızlı ekonomik takvim verileri ve senaryoları yükleniyor…
           </div>
         ) : filteredCalendarEvents.length === 0 ? (
@@ -1177,19 +1177,19 @@ export default function HomePage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
               Canlı Açık Pozisyonlar ({openPositions.length})
             </h2>
           </div>
           {openPositions.length > 0 && (
-            <div className="text-xs font-bold">
+            <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
               Anlık Açık PnL:{" "}
-              <span className={openPnlTotal >= 0 ? "text-emerald-400" : "text-rose-400"}>
+              <span className={openPnlTotal >= 0 ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-rose-700 dark:text-rose-400 font-black"}>
                 {openPnlTotal >= 0 ? `+$${openPnlTotal.toFixed(2)}` : `-$${Math.abs(openPnlTotal).toFixed(2)}`}
               </span>
               {" · "}
-              <span className={openPipsTotal >= 0 ? "text-emerald-300" : "text-rose-300"}>
+              <span className={openPipsTotal >= 0 ? "text-emerald-800 dark:text-emerald-300 font-bold" : "text-rose-800 dark:text-rose-300 font-bold"}>
                 {openPipsTotal >= 0 ? `+${openPipsTotal.toFixed(1)}` : openPipsTotal.toFixed(1)} pip
               </span>
             </div>
@@ -1197,7 +1197,7 @@ export default function HomePage() {
         </div>
 
         {openPositions.length === 0 ? (
-          <div className="p-6 text-center text-bunker-muted text-xs rounded-2xl bg-bunker-900/50 border border-bunker-800">
+          <div className="p-6 text-center text-slate-600 dark:text-bunker-muted text-xs rounded-2xl bg-white dark:bg-bunker-900/50 border border-slate-300 dark:border-bunker-800 shadow-sm">
             Şu anda açık Forex pozisyonu bulunmuyor. Scalper motoru yeni giriş sinyali gözlemliyor.
           </div>
         ) : (
@@ -1207,19 +1207,19 @@ export default function HomePage() {
               return (
                 <div
                   key={pos.id}
-                  className={`p-4 rounded-xl border backdrop-blur-md transition-all ${
+                  className={`p-4 rounded-xl border backdrop-blur-md transition-all shadow-sm ${
                     isProfit
-                      ? "border-emerald-500/40 bg-emerald-950/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
-                      : "border-rose-500/40 bg-rose-950/20 shadow-[0_0_12px_rgba(244,63,94,0.1)]"
+                      ? "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/70 dark:bg-emerald-950/20 dark:shadow-[0_0_12px_rgba(16,185,129,0.1)]"
+                      : "border-rose-300 dark:border-rose-500/40 bg-rose-50/70 dark:bg-rose-950/20 dark:shadow-[0_0_12px_rgba(244,63,94,0.1)]"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-white">{pos.symbol}</span>
+                    <span className="font-bold text-sm text-slate-900 dark:text-white">{pos.symbol}</span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-black ${
                         pos.direction === "BUY"
-                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                          : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                          ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40"
+                          : "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40"
                       }`}
                     >
                       {pos.direction} {pos.lots} Lot
@@ -1227,15 +1227,15 @@ export default function HomePage() {
                   </div>
 
                   <div className="mt-3 flex items-baseline justify-between">
-                    <div className="text-[11px] text-bunker-muted">
+                    <div className="text-[11px] text-slate-600 dark:text-bunker-muted">
                       <div>Giriş: {formatPrice(pos.entry_price, pos.symbol)}</div>
                       <div>Anlık: {formatPrice(pos.current_price, pos.symbol)}</div>
                     </div>
                     <div className="text-right">
-                      <div className={`text-lg font-black ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+                      <div className={`text-lg font-black ${isProfit ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
                         {pos.pnl_usd >= 0 ? `+$${pos.pnl_usd.toFixed(2)}` : `-$${Math.abs(pos.pnl_usd).toFixed(2)}`}
                       </div>
-                      <div className={`text-[10px] font-bold ${pos.pnl_pips >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      <div className={`text-[10px] font-bold ${pos.pnl_pips >= 0 ? "text-emerald-800 dark:text-emerald-300" : "text-rose-800 dark:text-rose-300"}`}>
                         {pos.pnl_pips >= 0 ? `+${pos.pnl_pips.toFixed(1)}` : pos.pnl_pips.toFixed(1)} pip
                       </div>
                     </div>
@@ -1249,10 +1249,10 @@ export default function HomePage() {
 
       {/* 6. PARİTE BAZINDA GÜNLÜK KÂR / ZARAR DAĞILIMI */}
       {symbolStats.length > 0 && (
-        <section className="p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl space-y-3">
+        <section className="p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-base">🪙</span>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
               Parite Bazında Günlük Kâr / Zarar Katkısı
             </h2>
           </div>
@@ -1263,18 +1263,18 @@ export default function HomePage() {
               return (
                 <div
                   key={item.symbol}
-                  className="p-3 rounded-xl bg-bunker-950/70 border border-bunker-800 hover:border-cyan-500/40 transition-all space-y-1"
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-bunker-950/70 border border-slate-200 dark:border-bunker-800 hover:border-cyan-500/40 transition-all space-y-1"
                 >
-                  <div className="flex justify-between items-center text-xs font-bold text-white">
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-900 dark:text-white">
                     <span>{item.symbol}</span>
-                    <span className="text-[10px] text-bunker-muted">{item.trades} işlem</span>
+                    <span className="text-[10px] text-slate-500 dark:text-bunker-muted">{item.trades} işlem</span>
                   </div>
-                  <div className={`text-sm font-black ${pos ? "text-emerald-400" : "text-rose-400"}`}>
+                  <div className={`text-sm font-black ${pos ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
                     {pos ? `+$${item.pnl_usd.toFixed(2)}` : `-$${Math.abs(item.pnl_usd).toFixed(2)}`}
                   </div>
-                  <div className="text-[10px] text-bunker-muted flex justify-between">
+                  <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
                     <span>%{item.trades > 0 ? ((item.wins / item.trades) * 100).toFixed(0) : 0} Win</span>
-                    <span className={item.pnl_pips >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                    <span className={item.pnl_pips >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}>
                       {item.pnl_pips >= 0 ? `+${item.pnl_pips.toFixed(0)}` : item.pnl_pips.toFixed(0)}p
                     </span>
                   </div>
@@ -1286,21 +1286,21 @@ export default function HomePage() {
       )}
 
       {/* 7. KAPANAN İŞLEMLER RAPOR YÖNLENDİRMESİ & GÜNLÜK ÖZET */}
-      <section className="p-4 sm:p-5 rounded-2xl bg-bunker-900/80 border border-bunker-800 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-xl shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-400/30 flex items-center justify-center text-xl shrink-0">
             📜
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                 Geçmiş ve Kapanan İşlem Raporları
               </h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-bunker-950 text-cyan-300 border border-bunker-800 font-mono font-bold">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-bunker-950 text-cyan-900 dark:text-cyan-300 border border-cyan-300 dark:border-bunker-800 font-mono font-bold">
                 Bugün {closedTrades.length} İşlem Kapandı
               </span>
             </div>
-            <p className="text-xs text-bunker-muted mt-1">
+            <p className="text-xs text-slate-600 dark:text-bunker-muted mt-1">
               Kapanan işlemlerin tam dökümü, kâr faktörü, PnL detayları ve filtrelemeleri Raporlar sayfasında listelenmektedir.
             </p>
           </div>
@@ -1308,14 +1308,14 @@ export default function HomePage() {
 
         <div className="flex items-center gap-3 shrink-0">
           <div className="hidden md:flex flex-col text-right font-mono text-xs">
-            <span className="text-[10px] text-bunker-muted">Bugün Net K/Z:</span>
-            <span className={`font-bold ${kpi.total_pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+            <span className="text-[10px] text-slate-500 dark:text-bunker-muted">Bugün Net K/Z:</span>
+            <span className={`font-bold ${kpi.total_pnl_usd >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
               {kpi.total_pnl_usd >= 0 ? `+$${kpi.total_pnl_usd.toFixed(2)}` : `-$${Math.abs(kpi.total_pnl_usd).toFixed(2)}`}
             </span>
           </div>
           <Link
             href="/forex/reports"
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-2 transition-all shadow-sm active:scale-95"
+            className="px-4 py-2.5 rounded-xl bg-cyan-100 hover:bg-cyan-200 dark:bg-gradient-to-r dark:from-cyan-500/20 dark:to-blue-500/20 dark:hover:from-cyan-500/30 dark:hover:to-blue-500/30 border border-cyan-400 dark:border-cyan-400/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center gap-2 transition-all shadow-sm active:scale-95"
           >
             <span>Tüm Kapanan İşlem Raporları</span>
             <span>→</span>
@@ -1476,12 +1476,12 @@ export default function HomePage() {
             </div>
 
             {/* Alt Butonlar */}
-            <div className="pt-3 border-t border-bunker-800 flex items-center justify-between gap-3">
+            <div className="pt-3 border-t border-slate-200 dark:border-bunker-800 flex items-center justify-between gap-3">
               <a
                 href="https://www.investing.com/economic-calendar"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-all flex items-center gap-1"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all flex items-center gap-1"
               >
                 <span>🌐</span> Investing.com Takvimine Git ↗
               </a>
@@ -1489,7 +1489,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="px-5 py-2 rounded-xl bg-bunker-900 border border-bunker-700 hover:border-cyan-400 text-white text-xs font-bold transition-all"
+                className="px-5 py-2 rounded-xl bg-slate-100 dark:bg-bunker-900 border border-slate-300 dark:border-bunker-700 hover:border-slate-400 dark:hover:border-cyan-400 text-slate-800 dark:text-white text-xs font-bold transition-all shadow-xs"
               >
                 Kapat
               </button>

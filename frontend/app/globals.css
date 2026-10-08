@@ -622,24 +622,35 @@ html.light body {
 }
 
 /* Koyu bunker zeminleri temiz beyaz ve açık slate'e dönüştürülür */
+html.light .card,
+html.light .ui-card,
+html.light .panel,
 html.light .bg-bunker-950,
 html.light [class*="bg-bunker-950"] {
   background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
 html.light .bg-bunker-900,
 html.light [class*="bg-bunker-900"] {
   background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
 html.light .bg-bunker-800,
 html.light [class*="bg-bunker-800"] {
   background-color: #f1f5f9 !important; /* slate-100 */
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
 html.light .bg-slate-900,
 html.light .bg-slate-950 {
   background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
 /* Koyu degrade zeminler açık modda temiz ve ferah hale getirilir */
@@ -704,38 +715,96 @@ html.light table td {
 /* 4. CANLI VE ZIT VURGU RENKLERİ (BEYAZDA ASLA PARLAMAZ, NET OKUNUR) */
 
 /* Yeşil / Kazanç: Açık fosfor yerine zengin zümrüt yeşili */
+html.light .text-emerald-500,
 html.light .text-emerald-400,
 html.light .text-emerald-300,
-html.light .text-neon-green {
+html.light .text-emerald-200,
+html.light .text-emerald-100,
+html.light .text-neon-green,
+html.light [class*="text-emerald-"] {
   color: #047857 !important; /* emerald-700 */
   font-weight: 700 !important;
 }
 
 /* Kırmızı / Kayıp: Açık pembe yerine canlı yakut kırmızısı */
+html.light .text-rose-500,
 html.light .text-rose-400,
 html.light .text-rose-300,
+html.light .text-rose-200,
+html.light .text-rose-100,
 html.light .text-neon-red,
-html.light .text-red-400 {
+html.light .text-red-500,
+html.light .text-red-400,
+html.light .text-red-300,
+html.light .text-red-200,
+html.light [class*="text-rose-"],
+html.light [class*="text-red-"] {
   color: #b91c1c !important; /* red-700 */
   font-weight: 700 !important;
 }
 
-/* Mavi / Cyan: Açık turkuaz yerine derin kobalt mavisi */
+/* Mavi / Cyan / Sky: Açık turkuaz yerine derin kobalt mavisi */
+html.light .text-cyan-500,
 html.light .text-cyan-400,
 html.light .text-cyan-300,
+html.light .text-cyan-200,
+html.light .text-cyan-100,
+html.light .text-sky-500,
 html.light .text-sky-400,
-html.light .text-blue-400 {
+html.light .text-sky-300,
+html.light .text-sky-200,
+html.light .text-blue-500,
+html.light .text-blue-400,
+html.light .text-blue-300,
+html.light .text-blue-200,
+html.light [class*="text-cyan-"],
+html.light [class*="text-sky-"] {
   color: #0369a1 !important; /* sky-700 */
   font-weight: 700 !important;
 }
 
 /* Sarı / Kehribar: Beyazda kaybolan sarı yerine ZENGİN KOYU KEHRİBAR */
+html.light .text-yellow-500,
 html.light .text-yellow-400,
 html.light .text-yellow-300,
+html.light .text-yellow-200,
+html.light .text-amber-500,
 html.light .text-amber-400,
-html.light .text-amber-300 {
+html.light .text-amber-300,
+html.light .text-amber-200,
+html.light .text-amber-100,
+html.light [class*="text-amber-"],
+html.light [class*="text-yellow-"] {
   color: #b45309 !important; /* amber-700: %100 okunabilir koyu kehribar */
   font-weight: 700 !important;
+}
+
+/* Mor / Lila / İndigo / Violet / Fuşya: BEYAZDA ASLA KAYBOLMAYAN KOYU ASİL MOR */
+html.light .text-purple-500,
+html.light .text-purple-400,
+html.light .text-purple-300,
+html.light .text-purple-200,
+html.light .text-purple-100,
+html.light [class*="text-purple-"],
+html.light .text-indigo-500,
+html.light .text-indigo-400,
+html.light .text-indigo-300,
+html.light .text-indigo-200,
+html.light .text-indigo-100,
+html.light [class*="text-indigo-"],
+html.light .text-violet-500,
+html.light .text-violet-400,
+html.light .text-violet-300,
+html.light .text-violet-200,
+html.light .text-violet-100,
+html.light [class*="text-violet-"],
+html.light .text-fuchsia-500,
+html.light .text-fuchsia-400,
+html.light .text-fuchsia-300,
+html.light .text-fuchsia-200,
+html.light [class*="text-fuchsia-"] {
+  color: #581c87 !important; /* purple-900: Derin, net, asil koyu mor */
+  font-weight: 800 !important;
 }
 
 /* 5. CANLI VE TEMİZ ROZETLER (BADGES) */
@@ -754,18 +823,65 @@ html.light [class*="bg-rose-600/"] {
 }
 
 html.light [class*="bg-blue-500/"],
+html.light [class*="bg-blue-600/"],
 html.light [class*="bg-cyan-500/"],
+html.light [class*="bg-cyan-950"],
 html.light [class*="bg-sky-500/"] {
-  background-color: #eff6ff !important; /* açık mavi zemin */
-  color: #1d4ed8 !important;            /* koyu mavi yazı */
-  border-color: #bfdbfe !important;
+  background-color: #dbeafe !important; /* belirgin açık mavi zemin */
+  color: #1e40af !important;            /* koyu lacivert yazı */
+  border-color: #93c5fd !important;
+  font-weight: 700 !important;
 }
 
 html.light [class*="bg-amber-500/"],
+html.light [class*="bg-amber-600/"],
 html.light [class*="bg-yellow-500/"] {
-  background-color: #fffbeb !important; /* açık kehribar zemin */
-  color: #b45309 !important;            /* koyu kehribar yazı */
-  border-color: #fde68a !important;
+  background-color: #fef3c7 !important; /* açık kehribar zemin */
+  color: #92400e !important;            /* koyu kehribar yazı */
+  border-color: #fcd34d !important;
+  font-weight: 700 !important;
+}
+
+/* Mor / İndigo Rozetler: Açık lila zemin, koyu mor yazı ve ince mor kenarlık */
+html.light [class*="bg-purple-500/"],
+html.light [class*="bg-purple-400/"],
+html.light [class*="bg-purple-950"],
+html.light [class*="bg-purple-900"],
+html.light [class*="bg-violet-500/"],
+html.light [class*="bg-violet-950"],
+html.light [class*="bg-indigo-500/"],
+html.light [class*="bg-indigo-400/"],
+html.light [class*="bg-indigo-950"] {
+  background-color: #f3e8ff !important; /* purple-100 */
+  color: #581c87 !important;            /* purple-900 */
+  border-color: #d8b4fe !important;     /* purple-300 */
+  font-weight: 700 !important;
+}
+
+/* Katı / Dolgulu renkli aktif filtre butonları açık modda beyaz yazısını korur */
+html.light .bg-indigo-600,
+html.light .bg-indigo-500,
+html.light .bg-cyan-600,
+html.light .bg-cyan-500,
+html.light .bg-rose-600,
+html.light .bg-rose-500,
+html.light .bg-emerald-600,
+html.light .bg-emerald-500,
+html.light .bg-amber-600,
+html.light .bg-amber-500 {
+  color: #ffffff !important;
+}
+html.light .bg-indigo-600 *,
+html.light .bg-indigo-500 *,
+html.light .bg-cyan-600 *,
+html.light .bg-cyan-500 *,
+html.light .bg-rose-600 *,
+html.light .bg-rose-500 *,
+html.light .bg-emerald-600 *,
+html.light .bg-emerald-500 *,
+html.light .bg-amber-600 *,
+html.light .bg-amber-500 * {
+  color: #ffffff !important;
 }
 
 /* 6. ÜST ÇUBUK (TOPBAR) & YAN ÇUBUK (SIDEBAR) */
