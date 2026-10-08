@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme";
+import EVShieldModal, { EVShieldStatusResponse } from "../components/EVShieldModal";
 
 interface OpenPosition {
   id: string;
@@ -189,6 +190,10 @@ export default function ForexIslemlerPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
+  // Sembol EV Kalkanı Modalı & Durumu
+  const [evShieldModalOpen, setEvShieldModalOpen] = useState<boolean>(false);
+  const [evShieldStatus, setEvShieldStatus] = useState<EVShieldStatusResponse | null>(null);
+
   // Veri Yükleme (Günün 00:01 Sonrası İşlemleri ve Canlı Pozisyonlar)
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setRefreshing(true);
@@ -254,6 +259,10 @@ export default function ForexIslemlerPage() {
           balance: statusRes.balance ?? prev.balance,
           equity: statusRes.equity ?? prev.equity,
         }));
+      }
+
+      if (statusRes?.ev_shield) {
+        setEvShieldStatus(statusRes.ev_shield);
       }
 
       setLastUpdated(new Date());
@@ -478,6 +487,26 @@ export default function ForexIslemlerPage() {
         <div className="flex items-center gap-2 text-xs">
           <button
             type="button"
+            onClick={() => setEvShieldModalOpen(true)}
+            className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+              (evShieldStatus?.blocked_count ?? 0) > 0
+                ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/50 ring-2 ring-rose-500/40 animate-pulse"
+                : isLightMode
+                ? "bg-white text-slate-800 border-slate-300 hover:bg-slate-50"
+                : "bg-bunker-800 text-white border-bunker-700 hover:bg-bunker-750"
+            }`}
+            title="Sembol EV Kalkanı ve Muafiyet Listesi"
+          >
+            <span>🛡️ EV Kalkanı</span>
+            {(evShieldStatus?.blocked_count ?? 0) > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-black">
+                {evShieldStatus?.blocked_count}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={toggleTheme}
             className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition-all shadow-sm ${
               isLightMode
@@ -511,6 +540,45 @@ export default function ForexIslemlerPage() {
           )}
         </div>
       </div>
+
+      {/* EV KALKANI UYARI BANNERI */}
+      {evShieldStatus && evShieldStatus.blocked_count > 0 && (
+        <div
+          className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md ${
+            isLightMode
+              ? "bg-rose-50 border-rose-300 ring-1 ring-rose-200"
+              : "bg-rose-950/30 border-rose-800/80 ring-1 ring-rose-900/40"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-lg shrink-0 animate-pulse">
+              🛡️
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-rose-700 dark:text-rose-300">
+                  Sembol EV Kalkanı: {evShieldStatus.blocked_count} Sembol Dinlenmede
+                </span>
+              </div>
+              <p className="text-xs mt-0.5 text-slate-700 dark:text-slate-300 font-medium">
+                {evShieldStatus.symbols
+                  .filter((s) => s.is_blocked)
+                  .map((s) => `${s.display} (${s.net_usd < 0 ? `-$${Math.abs(s.net_usd).toFixed(2)}` : `$${s.net_usd}`})`)
+                  .join(", ")}{" "}
+                akut kayıp nedeniyle yeni girişlere kapatıldı.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEvShieldModalOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-auto active:scale-95"
+          >
+            <span>🛡️ Kalkanı İncele &amp; İptal Et</span>
+            <span>↗</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. EN ÜST DASHBOARD & GÜNLÜK BAŞARI KARTLARI (4'LÜ GRID) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
@@ -1358,6 +1426,12 @@ export default function ForexIslemlerPage() {
       </div>
       )}
 
+      {/* EV KALKANI VE MUAFİYET MODALI */}
+      <EVShieldModal
+        isOpen={evShieldModalOpen}
+        onClose={() => setEvShieldModalOpen(false)}
+        onUpdated={() => fetchData(true)}
+      />
     </div>
   );
 }

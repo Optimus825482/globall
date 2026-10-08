@@ -37,7 +37,16 @@ OUTDIR = os.path.join(ROOT, "outputs", "str_h24")
 
 FXBTC = "EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,NZDUSD,EURJPY,GBPJPY," \
         "EURCHF,GBPCHF,EURNZD,GBPNZD,BTCUSD"
-GROUPS = {"FX": FXBTC, "XAU": "XAUUSD"}
+GROUPS = {"FX": FXBTC, "XAU": "XAUUSD", "IDX": "US30,USTEC"}
+IDX_CACHE5 = os.path.join(ROOT, "outputs", "replay_cache_60d_idx_5m.json")
+IDX_CACHE15 = os.path.join(ROOT, "outputs", "replay_cache_60d_idx_15m.json")
+TFS = {"5m": CACHE5, "15m": CACHE15}
+
+
+def _cache_for(grp: str, tf: str) -> str:
+    if grp == "IDX":
+        return IDX_CACHE5 if tf == "5m" else IDX_CACHE15
+    return TFS[tf]
 
 # H24 = kullanıcının istediği 24 saat (en taze tam gün: 2026-10-06)
 # L30 = 30 günlük doğrulama penceresi (protokol OOS) — CLI ile --window L30 seçilir
@@ -47,8 +56,6 @@ WINDOWS = {
     "L15": ("2026-09-22", "2026-10-07"),
 }
 WINDOW = WINDOWS["H24"]
-
-TFS = {"5m": CACHE5, "15m": CACHE15}
 
 # Strateji #3 TP varyantları + BE kolu (kullanıcı: BE istismarını kaldır)
 SRP_CONFIGS = {
@@ -78,7 +85,7 @@ def build_cmd(mode_name, mode, tf, cfg, grp, wname):
     entry_mode = "supertrend_rsi" if cfg.startswith("S_") else "bb_bandwalk"
     out_path = os.path.join(OUTDIR, f"{grp}__{cfg}__{mode}__{tf}__{wname}.json")
     cmd = [PY, REPLAY, "--entry-mode", entry_mode, "--tag", f"{grp}|{cfg}|{mode}|{tf}|{wname}",
-           "--out", out_path, "--skip-old", "--cache", TFS[tf],
+           "--out", out_path, "--skip-old", "--cache", _cache_for(grp, tf),
            "--add-symbols", GROUPS[grp], "--symbols", GROUPS[grp],
            "--max-open", "99", "--spread-profile", SPREAD,
            "--start", start, "--end", end]

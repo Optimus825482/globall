@@ -644,6 +644,24 @@ export default function HomePage() {
 
           <button
             type="button"
+            onClick={() => setEvShieldModalOpen(true)}
+            className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-xs active:scale-95 flex items-center gap-1.5 ${
+              (evShieldStatus?.blocked_count ?? 0) > 0
+                ? "bg-rose-500/20 border-rose-500/50 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/40 animate-pulse"
+                : "bg-slate-100 dark:bg-bunker-950/80 border-slate-300 dark:border-cyan-500/30 hover:border-cyan-500 text-slate-800 dark:text-cyan-300"
+            }`}
+            title="Sembol EV Kalkanı Listesi ve Muafiyet Yönetimi"
+          >
+            <span>🛡️ EV Kalkanı</span>
+            {(evShieldStatus?.blocked_count ?? 0) > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-black">
+                {evShieldStatus?.blocked_count}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => fetchData(false)}
             disabled={refreshing}
             className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-bunker-950/80 border border-slate-300 dark:border-cyan-500/30 hover:border-cyan-500 text-slate-800 dark:text-cyan-300 text-xs font-bold transition-all shadow-xs dark:shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
@@ -653,6 +671,42 @@ export default function HomePage() {
           </button>
         </div>
       </header>
+
+      {/* EV KALKANI UYARI BANNERI */}
+      {evShieldStatus && evShieldStatus.blocked_count > 0 && (
+        <div className="p-4 rounded-2xl border border-rose-400 dark:border-rose-500/50 bg-rose-50/95 dark:bg-gradient-to-r dark:from-rose-950/60 dark:via-bunker-900/95 dark:to-amber-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl ring-1 ring-rose-400/40 transition-all">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-xl shrink-0 animate-pulse shadow-inner">
+              🛡️
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-rose-800 dark:text-rose-300">
+                  Sembol EV Kalkanı Devrede
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-600 text-white shadow-xs">
+                  {evShieldStatus.blocked_count} Sembol Dinlenmede
+                </span>
+              </div>
+              <p className="text-xs text-slate-800 dark:text-slate-200 font-medium mt-0.5">
+                {evShieldStatus.symbols
+                  .filter((s) => s.is_blocked)
+                  .map((s) => `${s.display} (${s.net_usd < 0 ? `-$${Math.abs(s.net_usd).toFixed(2)}` : `$${s.net_usd}`})`)
+                  .join(", ")}{" "}
+                akut zarar nedeniyle korumaya alındı. Dilerseniz bugün için muaf tutabilirsiniz.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEvShieldModalOpen(true)}
+            className="px-4 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-500 text-white shadow-md transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-auto active:scale-95"
+          >
+            <span>🛡️ Kalkanı İncele &amp; Bugün İzin Ver</span>
+            <span>↗</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. GÜNÜN KARNESİ: ANA METRİKLER (KPI CARDS) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
@@ -1506,6 +1560,13 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      {/* EV KALKANI VE MUAFİYET MODALI */}
+      <EVShieldModal
+        isOpen={evShieldModalOpen}
+        onClose={() => setEvShieldModalOpen(false)}
+        onUpdated={() => fetchData(true)}
+      />
     </div>
   );
 }

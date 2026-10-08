@@ -60,7 +60,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
   const fetchStatus = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await apiFetch<EVShieldStatusResponse>("/api/forex/ev-shield");
+      const res = (await apiFetch("/api/forex/ev-shield")) as EVShieldStatusResponse;
       if (res && Array.isArray(res.symbols)) {
         setData(res);
       }
@@ -89,10 +89,10 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
       setActionLoadingSymbol(symbol);
       setFeedback(null);
 
-      const res = await apiFetch<{ success: boolean; message: string }>("/api/forex/ev-shield/override", {
+      const res = (await apiFetch("/api/forex/ev-shield/override", {
         method: "POST",
         body: JSON.stringify({ symbol, action }),
-      });
+      })) as { success: boolean; message: string };
 
       if (res && res.success) {
         setFeedback({
@@ -125,9 +125,9 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
     try {
       setLoading(true);
       setFeedback(null);
-      const res = await apiFetch<{ success: boolean; message: string }>("/api/forex/ev-shield/reset-all", {
+      const res = (await apiFetch("/api/forex/ev-shield/reset-all", {
         method: "POST",
-      });
+      })) as { success: boolean; message: string };
       if (res && res.success) {
         setFeedback({
           type: "success",
