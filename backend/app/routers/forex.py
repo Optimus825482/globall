@@ -214,6 +214,17 @@ FOREX_SYMBOLS = [
 # döngüsünde okunmaz (yalnızca kayıt/geri dönüş amaçlı); mevcut kayıtlara
 # dokunulmadı — açık pozisyon varsa normal SL/TP kurallarıyla kendiliğinden
 # kapanır. Geri almak için ilgili blok `FOREX_SYMBOLS` içine geri taşınır.
+
+# Radar tarama evreni (2026-10-08): L30 replay'de (33 sembol, klasik profil,
+# gerçek p95 spread) pozitif çıkan 7 sembol. FX majör/kros'ta Radar 30 gün
+# boyunca spread maliyetiyle zararda olduğu için taramadan çıkarıldı; grafik,
+# teknik rapor ve emekli kayıt uyumluluğu FOREX_SYMBOLS üzerinden sürer.
+# Motora sinyal üretilen liste budur — işlem kapısı (allowed_symbols) ayrıca
+# devrede olduğundan buradaki genişlik tek başına risk açmaz.
+RADAR_SCAN_SYMBOLS = {
+    "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD",
+}
+
 _RETIRED_FOREX_SYMBOLS = [
     # XAGUSD 2026-10-07'de kullanıcı kararıyla emekliye ayrıldı (radar/panel temizliği);
     # spec ve arşiv uyumluluğu yukarıdaki gibi korunur.
@@ -2599,6 +2610,12 @@ async def get_forex_radar():
     Kritik ayrım: `score` yönlü bir güç puanıdır ve HOLD durumunda da 50-58
     bandında döner. Bu yüzden "güçlü" etiketi skora değil, kapıların geçilmesine
     bağlanır — aksi halde yönsüz piyasada 20 sembol "güçlü sinyal" gibi listelenir.
+
+    Tarama evreni (RADAR_SCAN_SYMBOLS): 2026-10-08 L30 Radar replay'i (33 sembol,
+    klasik profil PF 0.99) sembol bazına indirildiğinde yalnız 7 sembol pozitif
+    çıktı (XAUUSD +$1374, US30 +$501, BTCUSD +$165, GBPUSD +$43, AUDUSD +$26,
+    NZDJPY +$26, AUDNZD +$10); 24+ FX majör/kros sistematik negatifti. Bu yüzden
+    radar yalnız kanıtlı evrende döner.
     """
     ticks = await _generate_realistic_ticks()
     dxy_regime = get_dxy_regime()
@@ -2617,6 +2634,8 @@ async def get_forex_radar():
     candidates = []
     for sym, t in ticks.items():
         sym_u = sym.upper()
+        if sym_u not in RADAR_SCAN_SYMBOLS:
+            continue
         score = t.get("score", 45.0)
         trend = t.get("trend", "NEUTRAL")
         action = t.get("action", "BUY" if trend == "BULLISH" else ("SELL" if trend == "BEARISH" else "HOLD"))
@@ -2734,7 +2753,8 @@ def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
 
     return (
         f"Şu an giriş kalitesinde sinyal yok — en yaygın engel: "
-        f"{_GATE_LABELS.get(top_key, top_key)} ({top_n} sembol)."
+        f"{_GATE_LABELS.get(top_key, top_key)} ({top_n} sembol). "
+        f"Tarama evreni {len(candidates)} kanıtlı sembol (L30 replay pozitifleri)."
     )
 
 
