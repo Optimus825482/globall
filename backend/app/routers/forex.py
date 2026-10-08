@@ -414,6 +414,18 @@ YAHOO_SYMBOL_MAP = {
     # 2026-10-08 Radar-evreni replay pozitifleri (S3 akışı + köprü mum izleme)
     "NZDJPY": "NZDJPY=X",
     "AUDNZD": "AUDNZD=X",
+    # 2026-10-08 London Breakout replay pozitifleri (L30; Asya kutusu kırılımı)
+    "GBPCHF": "GBPCHF=X",
+    "EURCAD": "EURCAD=X",
+    "CHFJPY": "CHFJPY=X",
+    "CADJPY": "CADJPY=X",
+    "GBPNZD": "GBPNZD=X",
+    "GBPAUD": "GBPAUD=X",
+    "GBPCAD": "GBPCAD=X",
+    "AUDCAD": "AUDCAD=X",
+    "EURAUD": "EURAUD=X",
+    "CADCHF": "CADCHF=X",
+    "AUDCHF": "AUDCHF=X",
     "NAS100": "^NDX",
     "US30": "^DJI",
     "BTCUSD": "BTC-USD",
@@ -779,6 +791,8 @@ def donchian_adx_entry(prev_close: Optional[float], prev_mid: Optional[float], c
 #   de pozitif. Kayıtta `EMA_ADX_PULLBACK_M5`, logda "EMA+ADX Geri Çekilme (M5)".
 EMA_ADX_PULLBACK_STRATEGY = "EMA_ADX_PULLBACK_M5"
 EMA_ADX_PULLBACK_LABEL = "EMA+ADX Geri Çekilme (M5)"
+LONDON_BREAKOUT_STRATEGY = "LONDON_BREAKOUT"
+LONDON_BREAKOUT_LABEL = "London Breakout (Asya Kutusu)"
 # S3 = Supertrend+RSI pullback (goose AI strateji #3; L30 replay: XAU 5m +90/PF 2.09,
 # XAU 15m +58/PF 3.08, BTC 15m +59/PF 6.63 — 2026-10-08 kullanıcı kararı canlıya alındı)
 S3_PULLBACK_STRATEGY = "S3_SUPERTREND_RSI"
@@ -798,6 +812,8 @@ def strategy_name_for(entry_source: Any) -> str:
         return S3_PULLBACK_STRATEGY
     if src == "donchian":
         return "DONCHIAN_ADX"
+    if src == "london_breakout":
+        return LONDON_BREAKOUT_STRATEGY
     return "M1_M5_RADAR_SCALPER"
 
 
@@ -814,6 +830,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
         return "S3" if src == "s3_5m" else "S3F"  # S3=5m, S3F=15m (flip/four-hour değil!)
     if src == "donchian":
         return "DONCH"
+    if src == "london_breakout":
+        return "LBRK"
     return "RADAR"
 
 
@@ -829,6 +847,8 @@ def strategy_display_label(code_or_source: Any) -> str:
         return "S3 SuperTrend+RSI (M5)"
     if u in ("DONCHIAN_ADX", "DONCHIAN", "DONCH") or "DONCH" in u:
         return "Donchian ADX Kırılımı"
+    if u in ("LONDON_BREAKOUT", "LBRK", "LB") or "LONDON" in u:
+        return "London Breakout"
     if u in ("M1_M5_RADAR_SCALPER", "RADAR", "RADAR_SCALPER") or "RADAR" in u:
         return "M1/M5 Çoklu Radar"
     if u == "MANUAL":
@@ -854,6 +874,8 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
         return S3_PULLBACK_STRATEGY
     if "DONCH" in raw_tag:
         return "DONCHIAN_ADX"
+    if "LBRK" in raw_tag or "LONDON" in raw_tag:
+        return LONDON_BREAKOUT_STRATEGY
     if "RADAR" in raw_tag:
         return "M1_M5_RADAR_SCALPER"
     return "IC_MARKETS_MT5"
@@ -1037,6 +1059,35 @@ def ema_adx_pullback_entry(
     if ema8 > ema21 > ema50 and close > ema21 and close > open_:
         action = "BUY"
     elif ema8 < ema21 < ema50 and close < ema21 and close < open_:
+        action = "SELL"
+    else:
+        return None
+    if max_per_day > 0 and day_counts.get(action, 0) >= max_per_day:
+        return None
+    return action
+
+
+def london_breakout_entry(
+    close: float,
+    box_hi: float, box_lo: float,
+    hour_utc: int,
+    box_end_utc: int, entry_end_utc: int,
+    day_counts: Dict[str, int], max_per_day: int,
+) -> Optional[str]:
+    """London Breakout giriş kararı (saf fonksiyon — replay ile birebir).
+
+    Kural (2026-10-08 replay kazananı): Asya kutusu (00:00→box_end UTC) high/low'unun
+    DIŞINA tetik penceresinde (box_end→entry_end UTC) kapanış = kırılım yönünde giriş.
+    Gün içi yön başına max_per_day limiti (replay spec: 1).
+    Döner: "BUY" / "SELL" / None.
+    """
+    if box_hi <= 0 or box_lo <= 0 or box_hi <= box_lo or close <= 0:
+        return None
+    if hour_utc < box_end_utc or hour_utc >= entry_end_utc:
+        return None
+    if close > box_hi:
+        action = "BUY"
+    elif close < box_lo:
         action = "SELL"
     else:
         return None
@@ -3069,8 +3120,10 @@ class ForexAutoPaperSettings(BaseModel):
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
-                                 "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"],
-        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam: XAU+BTC klasik, GBPJPY/EURJPY donchian modu; US30 S3 15m — 2026-10-08 L30 +$133.54 PF 4.82; GBPUSD/AUDUSD/NZDJPY/AUDNZD 2026-10-08 Radar-evreni L30 replay pozitifleri — S3 akışıyla birlikte canlıda; diğer 24 FX çifti klasik sinyalde negatif, genişleme replay kanıtı ister)",
+                                 "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD", "USDJPY",
+                                 "GBPCHF", "EURCAD", "CHFJPY", "CADJPY", "GBPNZD",
+                                 "GBPAUD", "GBPCAD", "AUDCAD", "EURAUD", "USDCHF", "CADCHF", "AUDCHF"],
+        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam + 2026-10-08 Radar-evreni replay pozitifleri + London Breakout replay pozitifleri — LBRK sembolleri yalnız LB akışıyla işlenir, klasik radar sinyalleri bu çiftlerde yine replay'de negatif olduğundan skor kapısından geçmez)",
     )
     mode_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
@@ -3098,6 +3151,18 @@ class ForexAutoPaperSettings(BaseModel):
     s3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="S3: SL (× ATR(14)) — replay spec")
     s3_tp_atr_15m: float = Field(2.0, ge=0.0, le=6.0, description="S3 15m kol: TP (× ATR(14)); 5m kolu TP'sizdir (ST-flip + BE/trailing)")
     s3_max_per_day: int = Field(0, ge=0, le=20, description="S3: sembol+TF+yön başına günde azami giriş (0 = sınırsız)")
+    lb_enabled: bool = Field(True, description="London Breakout akışı: Asya kutusu (00:00→box_end UTC) high/low kırılımı, Londra penceresinde tetik. L30 replay pozitif 19 sembolde açık (2026-10-08)")
+    lb_symbols: List[str] = Field(
+        default_factory=lambda: ["XAUUSD", "GBPUSD", "USDJPY", "GBPCHF", "EURCAD", "BTCUSD",
+                                 "CHFJPY", "GBPNZD", "CADJPY", "GBPAUD", "GBPCAD", "AUDCAD",
+                                 "EURAUD", "USDCHF", "US30", "CADCHF", "AUDCHF"],
+        description="London Breakout sembolleri (2026-10-08 L30 replay pozitifleri; GBPJPY −$11 hariç tutuldu — çift donchian-exclusive; EURJPY +$19.6 mevcut donchian kapsamında olduğu için eklenmedi)",
+    )
+    lb_box_end_utc: int = Field(7, ge=0, le=12, description="London Breakout: Asya kutusu bitiş saati (UTC); 00:00'dan bu saate kadar high/low")
+    lb_entry_end_utc: int = Field(11, ge=1, le=18, description="London Breakout: tetik penceresi bitiş saati (UTC); box_end'den bu saate kadar kutu dışına kapanış arar")
+    lb_sl_box_frac: float = Field(0.5, ge=0.1, le=1.0, description="London Breakout: SL = kutu yüksekliği × bu oran (süpürme: 0.4 en iyi PF ama 0.5 default spec)")
+    lb_tp_r: float = Field(1.5, ge=0.5, le=5.0, description="London Breakout: TP = SL × bu R katı")
+    lb_max_per_day: int = Field(1, ge=1, le=5, description="London Breakout: sembol+yön başına günde azami giriş (replay spec: 1)")
 
 
 class ClosePositionRequest(BaseModel):
@@ -3158,6 +3223,9 @@ _S3_STATE: Dict[str, Dict[str, Any]] = {}
 # S3 gün içi giriş sayaçları — `_S3_STATE`'ten AYRI: `_refresh_s3_state` gösterge
 # dict'ini her turda değiştirdiği için sayaçlar aynı dict'te tutulursa silinir.
 _S3_DAY_STATE: Dict[str, Dict[str, Any]] = {}
+# London Breakout mod durumu: sembol → {"day", "box_hi", "box_lo", "counts"}.
+# Kutu, tetik penceresine girişte (00:00→box_end) bir kez hesaplanır; gün değişince sıfırlanır.
+_LB_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -4182,6 +4250,89 @@ async def _forex_auto_paper_loop():
                                         symbol=_s_sym,
                                     )
 
+            # London Breakout akışı (2026-10-08 canlıya alım — kullanıcı kararı):
+            # Asya kutusu (00:00→box_end UTC) high/low kırılımı, tetik penceresinde
+            # kutu-dışı kapanışta giriş. SL = kutu × frac, TP = SL × R. L30 replay:
+            # 19 sembol pozitif; XAU +$39, GBPCHF +$31, EURCAD +$30 (BE'li profil).
+            # Kutu/mum köprü broker verisinden (fallback Yahoo) — S3 bar kaynağı ortak.
+            if _AUTO_SETTINGS.lb_enabled:
+                _lb_now = datetime.datetime.now(datetime.timezone.utc)
+                _lb_day = _lb_now.toordinal()
+                _lb_hour = _lb_now.hour
+                _lb_allowed = {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                for _lb_sym in {s.upper() for s in (_AUTO_SETTINGS.lb_symbols or [])}:
+                    _lb_t = ticks.get(_lb_sym)
+                    _lb_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _lb_sym), None)
+                    if not _lb_t or not _lb_item:
+                        continue
+                    _lb_pip = _lb_item["pip_size"]
+                    _lb_disp = _lb_t.get("display", _lb_sym)
+                    _lb_st = _LB_STATE.setdefault(_lb_sym, {"day": _lb_day, "box_hi": 0.0, "box_lo": 0.0, "counts": {}})
+                    if _lb_st["day"] != _lb_day:
+                        _lb_st["day"] = _lb_day
+                        _lb_st["box_hi"] = 0.0
+                        _lb_st["box_lo"] = 0.0
+                        _lb_st["counts"] = {}
+                    # Tetik penceresi dışında sinyal üretilmez; kutu pencerede ilk kez doldurulur.
+                    if _lb_hour < _AUTO_SETTINGS.lb_box_end_utc:
+                        _lb_bars = _s3_bars_for(_lb_sym, "5m", limit=220)
+                        if _lb_bars and len(_lb_bars) >= 10:
+                            _lb_box = [b for b in _lb_bars
+                                       if datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).toordinal() == _lb_day
+                                       and datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).hour < _AUTO_SETTINGS.lb_box_end_utc]
+                            if len(_lb_box) >= 6:
+                                _lb_st["box_hi"] = max(float(b["high"]) for b in _lb_box)
+                                _lb_st["box_lo"] = min(float(b["low"]) for b in _lb_box)
+                        continue
+                    _lb_action = london_breakout_entry(
+                        close=float(_lb_t.get("ask", 0.0)),
+                        box_hi=float(_lb_st.get("box_hi") or 0.0),
+                        box_lo=float(_lb_st.get("box_lo") or 0.0),
+                        hour_utc=_lb_hour,
+                        box_end_utc=int(_AUTO_SETTINGS.lb_box_end_utc),
+                        entry_end_utc=int(_AUTO_SETTINGS.lb_entry_end_utc),
+                        day_counts=_lb_st["counts"],
+                        max_per_day=int(_AUTO_SETTINGS.lb_max_per_day),
+                    )
+                    if _lb_action:
+                        _lb_st["counts"][_lb_action] = _lb_st["counts"].get(_lb_action, 0) + 1
+                        _lb_box_h = float(_lb_st["box_hi"]) - float(_lb_st["box_lo"])
+                        _lb_sl_pips = (_lb_box_h * float(_AUTO_SETTINGS.lb_sl_box_frac)) / _lb_pip if _lb_pip > 0 else 10.0
+                        _lb_tp_pips = _lb_sl_pips * float(_AUTO_SETTINGS.lb_tp_r)
+                        _lb_atr = float((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("atr", 0.0))
+                        candidates = [c for c in candidates if not (
+                            str(c.get("symbol", "")).upper() == _lb_sym and str(c.get("entry_source", "")) == "london_breakout")] + [{
+                            "symbol": _lb_sym,
+                            "display": _lb_disp,
+                            "action": _lb_action,
+                            "score": 200.0,
+                            "spread_pips": _LIVE_SPREAD_PIPS.get(_lb_sym, 2.0),
+                            "atr_pips": round(_lb_atr / _lb_pip, 1) if _lb_pip > 0 else 15.0,
+                            "adx": float((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("adx", 25.0)),
+                            "supertrend_dir": int((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("supertrend_dir", 0)),
+                            "entry_source": "london_breakout",
+                            "strategy": LONDON_BREAKOUT_STRATEGY,
+                            "sl_pips_override": round(_lb_sl_pips, 1),
+                            "tp_pips_override": round(_lb_tp_pips, 1),
+                        }]
+                        _log_auto_decision(
+                            "SCAN",
+                            f"🌅 [{_lb_disp}] {LONDON_BREAKOUT_LABEL}: {_lb_action} adayı — Asya kutusu "
+                            f"{float(_lb_st['box_lo']):.5g}–{float(_lb_st['box_hi']):.5g} kırıldı "
+                            f"(SL {_lb_sl_pips:.1f} pip, TP {_lb_tp_pips:.1f} pip) — değerlendiriliyor.",
+                            symbol=_lb_sym,
+                            strategy=LONDON_BREAKOUT_STRATEGY,
+                            strategy_label=LONDON_BREAKOUT_LABEL,
+                        )
+                    elif _lb_sym not in _lb_allowed:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_lb_sym}_lb_wait", 0.0) > 1800.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{_lb_sym}_lb_wait"] = now_ts
+                            _log_auto_decision(
+                                "SCAN",
+                                f"⚠️ [{_lb_disp}] {LONDON_BREAKOUT_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                symbol=_lb_sym,
+                            )
+
             # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
                 _LAST_SCAN_PULSE_TIME = now_ts
@@ -4704,6 +4855,12 @@ async def _forex_auto_paper_loop():
                     else:
                         tp_pips = 0.0
                     first_target_pips = 0.0
+                if str(cand.get("entry_source", "")) == "london_breakout":
+                    # London Breakout çıkışları (replay ile birebir): SL = kutu × frac,
+                    # TP = SL × R — aday üretilirken hesaplanıp taşındı (kutu başına sabit).
+                    sl_pips = float(cand.get("sl_pips_override") or sl_pips)
+                    tp_pips = float(cand.get("tp_pips_override") or tp_pips)
+                    first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
@@ -5057,8 +5214,7 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
         # açmak, 30g replay'de 28/28 negatif çıkan çiftleri motor başlangıcında sessizce
         # devreye alırdı. Kapsam genişletmesi bilinçli panel seçimi gerektirir.
         if not _AUTO_SETTINGS.allowed_symbols:
-            _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY",
-                                              "US30", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]
+            _AUTO_SETTINGS.allowed_symbols = ForexAutoPaperSettings().allowed_symbols
         # İlk start verildiğinde soğuma kalkanını dikkate almaması için sıfırla
         _LAST_GOLD_EXIT_TIME = 0.0
         _LAST_BTC_EXIT_TIME = 0.0
@@ -5087,8 +5243,7 @@ def start_forex_auto_paper():
     _AUTO_SETTINGS.enabled = True
     _MT5_STATE["auto_trade"] = True
     if not _AUTO_SETTINGS.allowed_symbols:
-        _AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY",
-                                          "US30", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]
+        _AUTO_SETTINGS.allowed_symbols = ForexAutoPaperSettings().allowed_symbols
     _LAST_GOLD_EXIT_TIME = 0.0
     _LAST_BTC_EXIT_TIME = 0.0
     _LAST_SYMBOL_ENTRY_TIME.clear()

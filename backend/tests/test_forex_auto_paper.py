@@ -896,6 +896,38 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AUDUSD", cfg.allowed_symbols)
         self.assertIn("NZDJPY", cfg.allowed_symbols)
         self.assertIn("AUDNZD", cfg.allowed_symbols)
+        # London Breakout akışı (2026-10-08): ayarlar + saf kural + strateji kimliği
+        self.assertTrue(cfg.lb_enabled)
+        self.assertIn("XAUUSD", cfg.lb_symbols)
+        self.assertIn("GBPCHF", cfg.lb_symbols)
+        self.assertNotIn("GBPJPY", cfg.lb_symbols)  # donchian-exclusive çift LB'ye girmez
+        self.assertEqual(cfg.lb_box_end_utc, 7)
+        self.assertEqual(cfg.lb_entry_end_utc, 11)
+        self.assertEqual(cfg.lb_sl_box_frac, 0.5)
+        self.assertEqual(cfg.lb_tp_r, 1.5)
+        # LB sembolleri işlem kapısında olmalı (yoksa aday üretilir ama işlem açılmaz)
+        for _lb_s in cfg.lb_symbols:
+            self.assertIn(_lb_s, cfg.allowed_symbols)
+        self.assertEqual(forex.london_breakout_entry(
+            close=1.1010, box_hi=1.1000, box_lo=1.0950, hour_utc=8,
+            box_end_utc=7, entry_end_utc=11, day_counts={}, max_per_day=1), "BUY")
+        self.assertEqual(forex.london_breakout_entry(
+            close=1.0940, box_hi=1.1000, box_lo=1.0950, hour_utc=8,
+            box_end_utc=7, entry_end_utc=11, day_counts={}, max_per_day=1), "SELL")
+        self.assertIsNone(forex.london_breakout_entry(
+            close=1.0970, box_hi=1.1000, box_lo=1.0950, hour_utc=8,
+            box_end_utc=7, entry_end_utc=11, day_counts={}, max_per_day=1))  # kutu içi
+        self.assertIsNone(forex.london_breakout_entry(
+            close=1.1010, box_hi=1.1000, box_lo=1.0950, hour_utc=12,
+            box_end_utc=7, entry_end_utc=11, day_counts={}, max_per_day=1))  # pencere-dışı
+        self.assertIsNone(forex.london_breakout_entry(
+            close=1.1010, box_hi=1.1000, box_lo=1.0950, hour_utc=8,
+            box_end_utc=7, entry_end_utc=11, day_counts={"BUY": 1}, max_per_day=1))  # gün limiti
+        self.assertEqual(forex.strategy_name_for("london_breakout"), forex.LONDON_BREAKOUT_STRATEGY)
+        self.assertEqual(forex.strategy_comment_tag("london_breakout"), "LBRK")
+        self.assertEqual(forex.strategy_display_label("LONDON_BREAKOUT"), "London Breakout")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "LBRK 91"}),
+                         forex.LONDON_BREAKOUT_STRATEGY)
         self.assertEqual(cfg.s3_adx_min, 25.0)
         self.assertEqual(cfg.s3_rsi_lo, 40.0)
         self.assertEqual(cfg.s3_sl_atr, 1.5)
@@ -1065,8 +1097,8 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("donchian_adx_entry", src)
         self.assertIn("entry_source", src)
         # Motor başlangıcı yalnız kalibre odak setini doldurmalı (geniş FX evrenini DEĞİL).
-        self.assertIn('_AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY",\n                                              "US30", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD"]', src,
-                      "motor başlangıcı kalibre 9'lu seti doldurmalı")
+        self.assertIn("_AUTO_SETTINGS.allowed_symbols = ForexAutoPaperSettings().allowed_symbols", src,
+                      "motor başlangıcı kalibre default seti doldurmalı")
         self.assertNotIn('"NAS100", "US30", "BTCUSD"', src,
                          "motor başlangıcı geniş FX evrenini otomatik yüklüyor")
 
