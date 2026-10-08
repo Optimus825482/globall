@@ -367,12 +367,12 @@ export default function MetaMobilePage() {
     <div className="fixed inset-0 w-full h-[100dvh] bg-bunker-950 text-slate-100 flex flex-col overflow-hidden font-sans select-none antialiased z-50">
       
       {/* 1. METATRADER 5 ÜST BAŞLIK ÇUBUĞU (TOP BAR - NATIVE APP HEADER) */}
-      <header className="h-12 bg-bunker-900 border-b border-slate-800/80 flex items-center justify-between px-3 shrink-0 z-20 pt-[env(safe-area-inset-top,0px)]">
+      <header className="h-12 bg-bunker-900 border-b border-bunker-800/80 flex items-center justify-between px-3 shrink-0 z-20 pt-[env(safe-area-inset-top,0px)]">
           {/* Sol: Geri Çıkış & Hesap No */}
           <div className="flex items-center gap-2">
             <Link
               href="/"
-              className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-xs font-bold border border-slate-700/60"
+              className="w-7 h-7 rounded-lg bg-bunker-800 hover:bg-bunker-700 text-slate-300 hover:text-white flex items-center justify-center text-xs font-bold border border-bunker-700/60"
               title="Dashboard'a Dön"
             >
               ←
@@ -397,7 +397,7 @@ export default function MetaMobilePage() {
               <button
                 type="button"
                 onClick={() => setQuotesMode((m) => (m === "ADVANCED" ? "SIMPLE" : "ADVANCED"))}
-                className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:text-white"
+                className="px-2 py-0.5 rounded text-[10px] font-bold bg-bunker-800 text-slate-300 border border-bunker-700 hover:text-white"
               >
                 {quotesMode === "ADVANCED" ? "Gelişmiş" : "Basit"}
               </button>
@@ -445,7 +445,7 @@ export default function MetaMobilePage() {
                       playClickSound();
                       setActionSheetSymbol(q);
                     }}
-                    className="p-3 hover:bg-slate-900/60 active:bg-slate-800/80 cursor-pointer transition-colors flex items-center justify-between"
+                    className="p-3 hover:bg-bunker-950 active:bg-bunker-800 cursor-pointer transition-colors flex items-center justify-between"
                   >
                     {/* Sol Bilgiler: Sembol, Saat, Spread */}
                     <div className="space-y-0.5">
@@ -522,12 +522,12 @@ export default function MetaMobilePage() {
           {activeTab === "CHART" && (
             <div className="h-full flex flex-col pb-16">
               {/* Grafik Üst Araç Çubuğu: Sembol, Zaman Dilimi, One-Click Trading */}
-              <div className="p-2 bg-bunker-900 border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
+              <div className="p-2 bg-bunker-900 border-b border-bunker-800 flex items-center justify-between text-xs shrink-0">
                 <div className="flex items-center gap-2">
                   <select
                     value={selectedSymbol}
                     onChange={(e) => setSelectedSymbol(e.target.value)}
-                    className="bg-slate-900 text-white font-bold px-2 py-1 rounded border border-slate-700 outline-none"
+                    className="bg-bunker-950 text-white font-bold px-2 py-1 rounded border border-bunker-700 outline-none"
                   >
                     {quotes.map((q) => (
                       <option key={q.symbol} value={q.symbol}>
@@ -546,7 +546,7 @@ export default function MetaMobilePage() {
                         className={`px-1.5 py-0.5 rounded font-bold transition-colors ${
                           selectedTimeframe === tf
                             ? "bg-blue-600 text-white"
-                            : "bg-slate-800 text-slate-400 hover:text-white"
+                            : "bg-bunker-800 text-slate-400 hover:text-white"
                         }`}
                       >
                         {tf}
@@ -568,7 +568,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* MT5 ONE-CLICK HIZLI AL-SAT ÇUBUĞU */}
-              <div className="grid grid-cols-3 gap-1 p-2 bg-bunker-800 border-b border-slate-800/80 text-xs shrink-0">
+              <div className="grid grid-cols-3 gap-1 p-2 bg-bunker-800 border-b border-bunker-800/80 text-xs shrink-0">
                 {/* Hızlı Sell */}
                 <button
                   type="button"
@@ -580,7 +580,7 @@ export default function MetaMobilePage() {
                 </button>
 
                 {/* Lot Seçici */}
-                <div className="flex flex-col items-center justify-center bg-slate-900 rounded border border-slate-800 py-1">
+                <div className="flex flex-col items-center justify-center bg-bunker-950 rounded border border-bunker-800 py-1">
                   <span className="text-[9px] text-slate-400 font-bold uppercase">HIZLI LOT</span>
                   <div className="flex items-center gap-1 font-mono font-bold text-white text-xs">
                     <button
@@ -658,14 +658,14 @@ export default function MetaMobilePage() {
                 </div>
 
                 {/* Alt Osilatör Göstergesi (RSI) */}
-                <div className="h-16 border-t border-slate-800/80 pt-1 flex flex-col justify-between font-mono text-[9px] text-slate-500">
+                <div className="h-16 border-t border-bunker-800/80 pt-1 flex flex-col justify-between font-mono text-[9px] text-slate-500">
                   <div className="flex justify-between">
                     <span>RSI (14)</span>
                     <span className="text-slate-400">70.0 (Aşırı Alım)</span>
                   </div>
-                  <div className="w-full h-8 bg-slate-900/50 rounded relative overflow-hidden flex items-center">
-                    <div className="absolute w-full border-b border-slate-800 top-2" />
-                    <div className="absolute w-full border-b border-slate-800 bottom-2" />
+                  <div className="w-full h-8 bg-bunker-950 rounded relative overflow-hidden flex items-center">
+                    <div className="absolute w-full border-b border-bunker-800 top-2" />
+                    <div className="absolute w-full border-b border-bunker-800 bottom-2" />
                     <svg className="w-full h-full text-blue-400" preserveAspectRatio="none" viewBox="0 0 100 30">
                       <polyline
                         fill="none"
@@ -711,7 +711,7 @@ export default function MetaMobilePage() {
                   <span className="font-bold text-emerald-400">%{account.margin_level.toFixed(1)}</span>
                 </div>
 
-                <div className="flex items-center justify-between pt-1 border-t border-slate-800">
+                <div className="flex items-center justify-between pt-1 border-t border-bunker-800">
                   <span className="text-slate-300 font-sans font-bold">Toplam Kâr / Zarar:</span>
                   <span
                     className={`font-black text-sm ${
@@ -755,7 +755,7 @@ export default function MetaMobilePage() {
                     <div
                       key={pos.id || pos.ticket}
                       onClick={() => setClosingPosition(pos)}
-                      className="p-3 hover:bg-slate-900/60 active:bg-slate-800/80 cursor-pointer transition-colors flex items-center justify-between"
+                      className="p-3 hover:bg-bunker-950 active:bg-bunker-800 cursor-pointer transition-colors flex items-center justify-between"
                     >
                       {/* Sol: Sembol, buy/sell lot, giriş -> güncel */}
                       <div className="space-y-0.5">
@@ -856,7 +856,7 @@ export default function MetaMobilePage() {
                   return (
                     <div
                       key={t.id || t.ticket}
-                      className="p-3 hover:bg-slate-900/40 transition-colors flex items-center justify-between text-xs"
+                      className="p-3 hover:bg-bunker-950 transition-colors flex items-center justify-between text-xs"
                     >
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-1.5">
@@ -902,8 +902,8 @@ export default function MetaMobilePage() {
           {activeTab === "SETTINGS" && (
             <div className="p-4 space-y-4 pb-20 text-xs">
               {/* Hesap Bilgisi Kartı */}
-              <div className="p-3.5 rounded-xl bg-bunker-900 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="p-3.5 rounded-xl bg-bunker-900 border border-bunker-800 space-y-2">
+                <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
                   <div className="font-bold text-white text-sm">Hesap Bilgileri</div>
                   <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
                     BAĞLI
@@ -930,7 +930,7 @@ export default function MetaMobilePage() {
               </div>
 
               {/* Otonom Bot Durumu */}
-              <div className="p-3.5 rounded-xl bg-bunker-900 border border-slate-800 space-y-2">
+              <div className="p-3.5 rounded-xl bg-bunker-900 border border-bunker-800 space-y-2">
                 <div className="font-bold text-white text-sm">Otonom Bot Entegrasyonu</div>
                 <p className="text-slate-400 text-[11px]">
                   MetaMobil arayüzü doğrudan canlı otonom motor ve MT5 köprüsü ile eşzamanlı çalışır. Açılan işlemler otonom motora aktarılır.
@@ -949,14 +949,14 @@ export default function MetaMobilePage() {
               <div className="space-y-1.5 pt-2">
                 <Link
                   href="/forex/reports"
-                  className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 hover:text-white"
+                  className="w-full flex items-center justify-between p-3 rounded-lg bg-bunker-950 border border-bunker-800 text-slate-200 hover:text-white"
                 >
                   <span>📊 Detaylı K/Z ve İşlem Raporları</span>
                   <span>→</span>
                 </Link>
                 <Link
                   href="/forex"
-                  className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 hover:text-white"
+                  className="w-full flex items-center justify-between p-3 rounded-lg bg-bunker-950 border border-bunker-800 text-slate-200 hover:text-white"
                 >
                   <span>📡 Forex Radar Ekranı</span>
                   <span>→</span>
@@ -969,7 +969,7 @@ export default function MetaMobilePage() {
 
         {/* 4. METATRADER 5 SABİT ALT MENÜ ÇUBUĞU (BOTTOM NAVIGATION BAR - 5 TAB) */}
         <nav
-          className="h-14 bg-bunker-900 border-t border-slate-800 flex items-center justify-around px-1 shrink-0 z-20"
+          className="h-14 bg-bunker-900 border-t border-bunker-800 flex items-center justify-around px-1 shrink-0 z-20"
           style={{ paddingBottom: "max(0.2rem, env(safe-area-inset-bottom, 0px))" }}
         >
           {/* TAB 1: KOTASYONLAR */}
@@ -1053,8 +1053,8 @@ export default function MetaMobilePage() {
         {/* ========================================================= */}
         {actionSheetSymbol && (
           <div className="absolute inset-0 bg-black/60 z-40 flex flex-col justify-end animate-in fade-in duration-150">
-            <div className="bg-bunker-900 rounded-t-2xl p-4 border-t border-slate-700 space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="bg-bunker-900 rounded-t-2xl p-4 border-t border-bunker-700 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
                 <div>
                   <div className="font-bold text-base text-white">{actionSheetSymbol.symbol}</div>
                   <div className="text-xs text-slate-400">{actionSheetSymbol.name}</div>
@@ -1062,7 +1062,7 @@ export default function MetaMobilePage() {
                 <button
                   type="button"
                   onClick={() => setActionSheetSymbol(null)}
-                  className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm"
+                  className="w-7 h-7 rounded-full bg-bunker-800 text-slate-400 hover:text-white flex items-center justify-center text-sm"
                 >
                   ✕
                 </button>
@@ -1089,7 +1089,7 @@ export default function MetaMobilePage() {
                     setActionSheetSymbol(null);
                     setActiveTab("CHART");
                   }}
-                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm flex items-center gap-2"
+                  className="w-full py-2.5 px-4 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-slate-200 font-bold text-sm flex items-center gap-2"
                 >
                   <span>📈</span>
                   <span>Grafik Aç</span>
@@ -1112,9 +1112,9 @@ export default function MetaMobilePage() {
         {/* ========================================================= */}
         {newOrderModalOpen && (
           <div className="absolute inset-0 bg-black/75 z-50 flex flex-col justify-end animate-in fade-in duration-150">
-            <div className="bg-bunker-900 rounded-t-3xl p-4 border-t border-slate-700 space-y-4 max-h-[90%] overflow-y-auto">
+            <div className="bg-bunker-900 rounded-t-3xl p-4 border-t border-bunker-700 space-y-4 max-h-[90%] overflow-y-auto">
               {/* Başlık */}
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
                 <div>
                   <div className="font-bold text-base text-white flex items-center gap-2">
                     <span>{newOrderSymbol}</span>
@@ -1127,7 +1127,7 @@ export default function MetaMobilePage() {
                 <button
                   type="button"
                   onClick={() => setNewOrderModalOpen(false)}
-                  className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm"
+                  className="w-7 h-7 rounded-full bg-bunker-800 text-slate-400 hover:text-white flex items-center justify-center text-sm"
                 >
                   ✕
                 </button>
@@ -1136,18 +1136,18 @@ export default function MetaMobilePage() {
               {/* Lot Seçim Çubuğu */}
               <div className="space-y-1.5">
                 <span className="text-[11px] font-bold text-slate-400 uppercase">İşlem Hacmi (Lot)</span>
-                <div className="flex items-center justify-between bg-slate-900 rounded-xl p-1.5 border border-slate-800">
+                <div className="flex items-center justify-between bg-bunker-950 rounded-xl p-1.5 border border-bunker-800">
                   <button
                     type="button"
                     onClick={() => setOrderLots((l) => Math.max(0.01, Number((l - 0.1).toFixed(2))))}
-                    className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-mono font-bold text-xs"
+                    className="px-2.5 py-1 rounded bg-bunker-800 text-slate-300 font-mono font-bold text-xs"
                   >
                     -0.1
                   </button>
                   <button
                     type="button"
                     onClick={() => setOrderLots((l) => Math.max(0.01, Number((l - 0.01).toFixed(2))))}
-                    className="px-2 py-1 rounded bg-slate-800 text-slate-300 font-mono font-bold text-xs"
+                    className="px-2 py-1 rounded bg-bunker-800 text-slate-300 font-mono font-bold text-xs"
                   >
                     -0.01
                   </button>
@@ -1157,14 +1157,14 @@ export default function MetaMobilePage() {
                   <button
                     type="button"
                     onClick={() => setOrderLots((l) => Number((l + 0.01).toFixed(2)))}
-                    className="px-2 py-1 rounded bg-slate-800 text-slate-300 font-mono font-bold text-xs"
+                    className="px-2 py-1 rounded bg-bunker-800 text-slate-300 font-mono font-bold text-xs"
                   >
                     +0.01
                   </button>
                   <button
                     type="button"
                     onClick={() => setOrderLots((l) => Number((l + 0.1).toFixed(2)))}
-                    className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-mono font-bold text-xs"
+                    className="px-2.5 py-1 rounded bg-bunker-800 text-slate-300 font-mono font-bold text-xs"
                   >
                     +0.1
                   </button>
@@ -1197,7 +1197,7 @@ export default function MetaMobilePage() {
                     placeholder="İsteğe Bağlı"
                     value={orderSl}
                     onChange={(e) => setOrderSl(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 font-mono text-xs text-white outline-none focus:border-rose-500"
+                    className="w-full bg-bunker-950 border border-bunker-800 rounded-lg p-2 font-mono text-xs text-white outline-none focus:border-rose-500"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1208,7 +1208,7 @@ export default function MetaMobilePage() {
                     placeholder="İsteğe Bağlı"
                     value={orderTp}
                     onChange={(e) => setOrderTp(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 font-mono text-xs text-white outline-none focus:border-emerald-500"
+                    className="w-full bg-bunker-950 border border-bunker-800 rounded-lg p-2 font-mono text-xs text-white outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -1249,8 +1249,8 @@ export default function MetaMobilePage() {
         {/* ========================================================= */}
         {closingPosition && (
           <div className="absolute inset-0 bg-black/75 z-50 flex flex-col justify-end animate-in fade-in duration-150">
-            <div className="bg-bunker-900 rounded-t-3xl p-4 border-t border-slate-700 space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="bg-bunker-900 rounded-t-3xl p-4 border-t border-bunker-700 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
                 <div>
                   <div className="font-bold text-base text-white">
                     Pozisyonu Kapat: #{closingPosition.ticket || closingPosition.id}
@@ -1262,13 +1262,13 @@ export default function MetaMobilePage() {
                 <button
                   type="button"
                   onClick={() => setClosingPosition(null)}
-                  className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm"
+                  className="w-7 h-7 rounded-full bg-bunker-800 text-slate-400 hover:text-white flex items-center justify-center text-sm"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="p-3 bg-slate-900 rounded-xl space-y-1 font-mono text-xs">
+              <div className="p-3 bg-bunker-950 rounded-xl space-y-1 font-mono text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-sans">Giriş Fiyatı:</span>
                   <span className="text-white font-bold">{formatPrice(closingPosition.entry_price, closingPosition.symbol)}</span>
@@ -1277,7 +1277,7 @@ export default function MetaMobilePage() {
                   <span className="text-slate-400 font-sans">Güncel Fiyat:</span>
                   <span className="text-white font-bold">{formatPrice(closingPosition.current_price, closingPosition.symbol)}</span>
                 </div>
-                <div className="flex justify-between pt-1 border-t border-slate-800">
+                <div className="flex justify-between pt-1 border-t border-bunker-800">
                   <span className="text-slate-300 font-sans font-bold">Kâr / Zarar:</span>
                   <span
                     className={`font-black ${

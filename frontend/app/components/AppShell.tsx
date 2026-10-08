@@ -50,7 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (isMetaMobil) {
     return (
       <ExchangeContext.Provider value={exchange}>
-        <main className="min-h-screen w-full bg-[#0c1017]">
+        <main className="min-h-screen w-full bg-bunker-950">
           {children}
           <ForexRadarModal />
           <ForexCalendarAlertModal />
