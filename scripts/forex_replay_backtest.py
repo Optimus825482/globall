@@ -47,6 +47,8 @@ TRADES_PER_BAR_CAP = 3
 SHADOW_MAX_CONCURRENT = 60
 BASE_BE_PIPS = 14.0         # canlı ayar varsayılanları (Motorla aynı)
 TUN_BE_PIPS_OVERRIDE = 0.0     # >0: spec BE tetik mesafesini (pip) ez - zaman-dilimi merdiveni testi
+TUN_BE_USD_FX = 1.0            # FX BE dolar-kurali esigi (1.0 = canli). 0 = dolar-kurali BE KAPALI
+TUN_MAX_SPREAD_FX = 3.0        # FX giris kapisi: spread bu pip degerini asarsa giris yok (3.0 = canli)
 TUN_TRAIL_PIPS_OVERRIDE = 0.0  # >0: spec trailing mesafesini (pip) ez - zaman-dilimi merdiveni testi
 BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
@@ -211,6 +213,16 @@ LB_STATE: Dict[Tuple[str, int, str], bool] = {}  # (sembol, gün, yön) → bug�
 TUN_PB_ADX_MIN = 20.0
 TUN_PB_TOUCH_ATR = 0.25
 TUN_PB_MAX_PER_DAY = 2
+
+# ema_adx_pullback modu (kullanıcı spesifikasyonu, 2026-10-08):
+#   EMA8 > EMA21 > EMA50 -> yalnız LONG ; EMA8 < EMA21 < EMA50 -> yalnız SHORT
+#   ADX(14) > 25 ; fiyat EMA21'e geri çekilir ve trend yönünde kapanışla döner (onay barı)
+#   SL = 1.5 x ATR(14) ; TP = 2.0 x ATR(14)  (0 -> sabit TP yok, --chandelier ile ATR trailing)
+TUN_EAP_ADX_MIN = 25.0
+TUN_EAP_TOUCH_ATR = 0.30      # barın EMA21'e "değmiş" sayılma toleransı (x ATR) / bar aralığı kesişimi
+TUN_EAP_SL_ATR = 1.5
+TUN_EAP_TP_ATR = 2.0
+TUN_EAP_MAX_PER_DAY = 0       # 0 = sınırsız (spesifikasyona sadık)
 # donchian_adx modu (araştırma ADAY 3+4 hibrit): Donchian-mid çaprazı + ADX + 2×ATR SL / 4×ATR TP
 TUN_DA_ADX_MIN = 18.0
 TUN_DA_DONCH = 20
@@ -257,9 +269,9 @@ TUN_SKIP_OLD = False
 TUN_TOD_LONG_HOURS = "12-16"    # EURUSD long (USD saatleri) UTC aralığı
 TUN_TOD_SHORT_HOURS = "7-11"    # EURUSD short (EUR saatleri) UTC aralığı
 TUN_ORB15_BOX_MIN = 15          # filtreli ORB kutu uzunluğu (dakika)
-TUN_ORB15_OR_ADR_LO = 0.25      # OR/ADR(14) alt sınır
-TUN_ORB15_OR_ADR_HI = 0.60      # OR/ADR(14) üst sınır
-TUN_ORB15_MIN_ADR_PIPS = 60.0   # ADR tabanı (EURUSD ~60, GBPJPY ~110)
+TUN_ORB15_OR_ADR_LO = 0.05      # OR/ADR alt sınır (Yahoo 5m'de ADR sıkışık: ampirik med ~0.10)
+TUN_ORB15_OR_ADR_HI = 0.25      # OR/ADR üst sınır (araştırma 0.25-0.60 24s-ADR içindi; burada kaydırıldı)
+TUN_ORB15_MIN_ADR_PIPS = 25.0   # ADR tabanı (pip; ampirik EURUSD ~38, GBPJPY ~102)
 TUN_ORB15_SESSIONS = "7,13"     # seans açılış saatleri (UTC): London 07, NY 13
 TUN_ORB15_MAX_HOLD_H = 4.0      # time-exit (saat)
 TUN_SQX_COMP_PCT = 20.0         # ATR%/BBW sıkışma persentili
@@ -436,6 +448,45 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
             sl_pips = ((hi8 - c) / pip_size) + 0.3 * atr_price / pip_size
         sl_pips = max(0.8 * atr_price / pip_size, min(2.5 * atr_price / pip_size, sl_pips))
         return {"action": action, "exits": {"sl_pips": round(sl_pips, 1), "tp_pips": round(2.0 * sl_pips, 1)}}
+
+    if TUN_ENTRY_MODE == "ema_adx_pullback":
+        # Kullanıcı spesifikasyonu (2026-10-08) — deterministik EMA+ADX geri-çekilme skalpi:
+        #   (1) EMA dizilimi: 8>21>50 yalnız LONG, 8<21<50 yalnız SHORT
+        #   (2) ADX(14) > 25 (trend rejimi)
+        #   (3) geri çekilme: bar EMA21'i keser (low<=e21<=high) veya kapanış EMA21'e 0.30xATR mesafede
+        #   (4) onay: kapanış EMA21'in trend tarafında ve bar trend yönünde (BUY: c>o, SELL: c<o)
+        # Seans kapısı/spesifikasyon dışı filtre UYGULANMAZ (kural seti birebir).
+        adx = float(tech.get("adx") or 0.0)
+        if adx < TUN_EAP_ADX_MIN:
+            return None
+        atr_price = float(tech.get("atr") or 0.0)
+        e8 = float(tech.get("ema8") or 0.0)
+        e21 = float(tech.get("ema21") or 0.0)
+        e50 = float(tech.get("ema50") or 0.0)
+        if atr_price <= 0 or e8 <= 0 or e21 <= 0 or e50 <= 0 or pip_size <= 0:
+            return None
+        c = bars[ci - 1][4]
+        o = bars[ci - 1][1]
+        h = bars[ci - 1][2]
+        l = bars[ci - 1][3]
+        touch = (l <= e21 <= h) or (abs(c - e21) <= TUN_EAP_TOUCH_ATR * atr_price)
+        if not touch:
+            return None
+        if e8 > e21 > e50 and c > e21 and c > o:
+            action = "BUY"
+        elif e8 < e21 < e50 and c < e21 and c < o:
+            action = "SELL"
+        else:
+            return None
+        if TUN_EAP_MAX_PER_DAY > 0:
+            day = int(ts // 86400)
+            key = (sym, day, action)
+            if MODE_DAY_STATE.get(key, 0) >= TUN_EAP_MAX_PER_DAY:
+                return None
+            MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        return {"action": action,
+                "exits": {"sl_pips": round(TUN_EAP_SL_ATR * atr_price / pip_size, 1),
+                          "tp_pips": round(TUN_EAP_TP_ATR * atr_price / pip_size, 1)}}
 
     if TUN_ENTRY_MODE == "donchian_adx":
         if not _mode_session_ok(sym, hour):
@@ -1087,6 +1138,14 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
         pips_be = max(0.5, round(TUN_BE_USD_GOLD / max(0.0001, pos.lots * pos.pip_val), 1))
     else:
         pips_be = pips_for_1usd
+    # Tetik esigi (kilit tabanindan AYRI): FX'te canli varsayilan $1 + headroom.
+    # --be-usd-fx 0 verilirse dolar-kurali BE tamamen kapanir (yalniz pip-kurali/trailing).
+    if is_gold_pos:
+        be_trigger_pips = pips_be
+    elif TUN_BE_USD_FX > 0:
+        be_trigger_pips = max(0.5, round(TUN_BE_USD_FX / max(0.0001, pos.lots * pos.pip_val), 1))
+    else:
+        be_trigger_pips = float("inf")
     lock_ratio = TUN_BE_RATIO_GOLD if is_gold_pos else 0.40
 
     # MFE takibi (girişten beri en iyi fiyat, pip) — chandelier trailing için
@@ -1095,7 +1154,7 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
 
     # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi) — sepet üyesinde atlanır
     if not pos.be_locked and not dca_mode:
-        is_dollar_be = pnl_extreme_pips >= (pips_be + headroom)
+        is_dollar_be = pnl_extreme_pips >= (be_trigger_pips + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
         if (is_dollar_be or is_pip_be) and pnl_extreme_pips >= min_be_pips:
             locked = max(pips_be, round(pnl_extreme_pips * lock_ratio, 1))
@@ -2097,7 +2156,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 base_req = TUN_FX_MIN_SCORE
             else:
                 base_req = TUN_MIN_SCORE
-            max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else 3.0
+            max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else TUN_MAX_SPREAD_FX
             close_now = closes[-1]
 
             for vname in (("NEW",) if TUN_SKIP_OLD else ("OLD", "NEW")):
@@ -2484,12 +2543,17 @@ def main():
     parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
-    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
+    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
     parser.add_argument("--lb-entry-end", type=int, default=11, help="London breakout tetik penceresi bitiş saati (UTC)")
     parser.add_argument("--lb-sl-frac", type=float, default=0.5, help="LB SL = kutu yüksekliği × bu oran")
     parser.add_argument("--lb-tp-r", type=float, default=1.5, help="LB TP = SL × bu R katı")
     parser.add_argument("--lb-min-box-atr", type=float, default=0.0, help="Min kutu yüksekliği (×ATR; 0 = kapalı)")
+    parser.add_argument("--eap-adx-min", type=float, default=25.0, help="ema_adx_pullback: ADX(14) esigi (spesifikasyon 25)")
+    parser.add_argument("--eap-touch-atr", type=float, default=0.30, help="ema_adx_pullback: EMA21'e degme toleransi (x ATR)")
+    parser.add_argument("--eap-sl-atr", type=float, default=1.5, help="ema_adx_pullback: SL (x ATR(14))")
+    parser.add_argument("--eap-tp-atr", type=float, default=2.0, help="ema_adx_pullback: TP (x ATR(14)); 0 = sabit TP yok (trailing)")
+    parser.add_argument("--eap-max-per-day", type=int, default=0, help="ema_adx_pullback: gun basina azami giris (0 = sinirsiz)")
     parser.add_argument("--pb-adx-min", type=float, default=20.0, help="Pullback modu ADX eşiği")
     parser.add_argument("--da-adx-min", type=float, default=18.0, help="Donchian+ADX modu ADX eşiği")
     parser.add_argument("--da-sl-atr", type=float, default=2.0, help="Donchian+ADX modu SL (× ATR)")
@@ -2511,9 +2575,9 @@ def main():
     # ---- Dalga-2 aday parametreleri ----
     parser.add_argument("--tod-long-hours", default="12-16", help="eurusd_tod: long (USD saatleri) UTC aralığı")
     parser.add_argument("--tod-short-hours", default="7-11", help="eurusd_tod: short (EUR saatleri) UTC aralığı")
-    parser.add_argument("--orb15-or-adr-lo", type=float, default=0.25, help="orb_filtered: OR/ADR alt sınır")
-    parser.add_argument("--orb15-or-adr-hi", type=float, default=0.60, help="orb_filtered: OR/ADR üst sınır")
-    parser.add_argument("--orb15-min-adr", type=float, default=60.0, help="orb_filtered: ADR tabanı (pip)")
+    parser.add_argument("--orb15-or-adr-lo", type=float, default=0.05, help="orb_filtered: OR/ADR alt sınır")
+    parser.add_argument("--orb15-or-adr-hi", type=float, default=0.25, help="orb_filtered: OR/ADR üst sınır")
+    parser.add_argument("--orb15-min-adr", type=float, default=25.0, help="orb_filtered: ADR tabanı (pip)")
     parser.add_argument("--orb15-sessions", default="7,13", help="orb_filtered: seans açılış saatleri UTC")
     parser.add_argument("--orb15-max-hold", type=float, default=4.0, help="orb_filtered: time-exit (saat)")
     parser.add_argument("--sqx-comp-pct", type=float, default=20.0, help="squeeze_exp: sıkışma persentili")
@@ -2598,6 +2662,10 @@ def main():
     parser.add_argument("--loss-streak", type=int, default=0, help="N ardışık tam-SL kaybında sembol yeni giriş almaz (0 = kapalı; kullanıcı önerisi: 3)")
     parser.add_argument("--loss-streak-cd", type=float, default=300.0, help="Seri-SL tetiklenince sembol soğuma penceresi (saniye; kullanıcı önerisi: 300)")
     parser.add_argument("--max-open", type=int, default=0, help="Maksimum açık pozisyon cap'i (0 = varsayılan 6; kullanıcı testi: 99 = slot rekabeti yok)")
+    parser.add_argument("--max-spread", type=float, default=3.0,
+                        help="FX spread kapisi (pip). 3.0 = canli. Maliyet stresini IZOLE etmek icin yuksek deger verin.")
+    parser.add_argument("--be-usd-fx", type=float, default=1.0,
+                        help="FX BE dolar-kurali esigi (varsayilan 1.0 = canli davranis). 0 = dolar-kurali BE kapali.")
     parser.add_argument("--be-pips", type=float, default=0.0,
                         help="BE tetik mesafesini pip cinsinden ez (0 = spec varsayilan 14). Zaman-dilimi merdiveni testi.")
     parser.add_argument("--trail-pips", type=float, default=0.0,
@@ -2643,6 +2711,12 @@ def main():
     LB_STATE.clear()
     MODE_DAY_STATE.clear()
     global TUN_PB_ADX_MIN, TUN_DA_ADX_MIN, TUN_MODE_FLAT16
+    global TUN_EAP_ADX_MIN, TUN_EAP_TOUCH_ATR, TUN_EAP_SL_ATR, TUN_EAP_TP_ATR, TUN_EAP_MAX_PER_DAY
+    TUN_EAP_ADX_MIN = args.eap_adx_min
+    TUN_EAP_TOUCH_ATR = args.eap_touch_atr
+    TUN_EAP_SL_ATR = args.eap_sl_atr
+    TUN_EAP_TP_ATR = args.eap_tp_atr
+    TUN_EAP_MAX_PER_DAY = args.eap_max_per_day
     TUN_PB_ADX_MIN = args.pb_adx_min
     TUN_DA_ADX_MIN = args.da_adx_min
     TUN_MODE_FLAT16 = args.flat_16
@@ -2703,8 +2777,10 @@ def main():
     TUN_HEADROOM_FOREX = args.headroom
     TUN_ADX_MIN = args.adx_min
     TUN_ST_FILTER = args.st_filter
-    global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE
+    global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     TUN_SPEC_ATR = args.spec_atr
+    TUN_BE_USD_FX = args.be_usd_fx
+    TUN_MAX_SPREAD_FX = args.max_spread
     TUN_BE_PIPS_OVERRIDE = args.be_pips
     TUN_TRAIL_PIPS_OVERRIDE = args.trail_pips
     EV_GUARD = not args.no_ev_guard
@@ -2805,7 +2881,7 @@ def main():
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
                f"ev_guard={EV_GUARD} ev_win={args.ev_window}h ev_wr={args.ev_wr} fx_min_score={TUN_FX_MIN_SCORE or '-'} "
-               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) chandelier={TUN_CHANDLIER or '-'} bePips={TUN_BE_PIPS_OVERRIDE or '-'} trailPips={TUN_TRAIL_PIPS_OVERRIDE or '-'} "
+               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) chandelier={TUN_CHANDLIER or '-'} beUsdFX={TUN_BE_USD_FX} maxSpread={TUN_MAX_SPREAD_FX} bePips={TUN_BE_PIPS_OVERRIDE or '-'} trailPips={TUN_TRAIL_PIPS_OVERRIDE or '-'} "
                f"stP={args.st_period} stM={args.st_mult} goldSession={TUN_GOLD_SESSION} btcEMA200={TUN_BTC_EMA200} "
                f"btcVWAP={TUN_BTC_VWAP} cryptoSL={TUN_CRYPTO_SL_MULT or '-'} btcScore={TUN_BTC_MIN_SCORE or '-'} "
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "

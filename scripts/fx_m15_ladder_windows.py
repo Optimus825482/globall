@@ -95,44 +95,82 @@ JPY15 = [
 ]
 
 EXIT15 = [
-    ("X1_M1_olcekli_cikis", "orb_ny",
+    ("Y1_orb15_dolarBE_kapali", "orb_ny",
+     ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate", "--be-usd-fx", "0"], "fx12",
+     "M1, dolar-kurali BE KAPALI (saf trail)"),
+    ("Y2_orb15_pipBE24", "orb_ny",
      ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate",
-      "--be-pips", BE15, "--trail-pips", TRAIL15], "fx12",
-     "M1 + x1.7 olcekli BE/trail"),
-    ("X2_M4_olcekli_cikis", "orb_ny",
+      "--be-usd-fx", "0", "--be-pips", BE15], "fx12",
+     "M1, dolar BE kapali + pip-BE 24 (x1.7 olcekli)"),
+    ("Y3_orb15_flat16_pipBE24", "orb_ny",
      ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate", "--flat-16",
-      "--rel-atr-band", "--rel-atr-lookback", RATR15,
-      "--be-pips", BE15, "--trail-pips", TRAIL15], "fx12",
-     "M4 + x1.7 olcekli BE/trail"),
-    ("X3_M7_olcekli_cikis", "donchian_adx",
+      "--be-usd-fx", "0", "--be-pips", BE15], "fx12",
+     "M3 (flat16) + olcekli pip-BE"),
+    ("Y4_jp15_dolarBE_kapali", "donchian_adx",
      ["--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15,
-      "--be-pips", BE15, "--trail-pips", TRAIL15], "jpy2",
-     "M7 + x1.7 olcekli BE/trail"),
-    ("X4_M8_olcekli_cikis", "donchian_pure",
-     ["--chandelier", "2.5", "--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15,
-      "--be-pips", BE15, "--trail-pips", TRAIL15], "jpy2",
-     "M8 + x1.7 olcekli BE/trail"),
+      "--be-usd-fx", "0"], "jpy2",
+     "M7, dolar-kurali BE KAPALI"),
+    ("Y5_jp15_pipBE24", "donchian_adx",
+     ["--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15,
+      "--be-usd-fx", "0", "--be-pips", BE15], "jpy2",
+     "M7, dolar BE kapali + pip-BE 24"),
 ]
 
 # m15stress: 2x spread altinda barajdan gecen adaylar (sonuclara gore doldurulur)
 STRESS15 = [
     ("S1_M1_2x", "orb_ny", ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate"], "fx12",
      "M1, 2x maliyet"),
-    ("S2_M4_2x", "orb_ny",
-     ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate", "--flat-16",
-      "--rel-atr-band", "--rel-atr-lookback", RATR15], "fx12", "M4, 2x maliyet"),
+    ("S2_M3_2x", "orb_ny",
+     ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate", "--flat-16"], "fx12",
+     "M3 (flat16), 2x maliyet"),
     ("S3_M7_2x", "donchian_adx",
      ["--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15], "jpy2",
      "M7, 2x maliyet"),
     ("S4_M8_2x", "donchian_pure",
      ["--chandelier", "2.5", "--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15], "jpy2",
      "M8, 2x maliyet"),
+    ("S5_M10_2x", "donchian_adx", ["--htf-ema200-gate"], "jpy2", "M10 (bantsiz), 2x maliyet"),
+]
+
+# Maliyet stresini IZOLE eden kol: motorun 3.0-pip spread kapisi 2x profilde
+# EURNZD/GBPNZD girislerini tamamen kesiyor (islem kumesi degisir -> kiyas bozulur).
+# --max-spread 99 ile kapi devre disi birakilir; 1x ve 2x AYNI islem kumesini gorur.
+# En iyi iki adayin CJKIS MIMARISI kolunun 2x maliyet stresi (izole kapi ile)
+COST3 = [
+    ("Z1_orb15_flat16_pipBE24", "orb_ny",
+     ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate", "--flat-16",
+      "--be-usd-fx", "0", "--be-pips", BE15, "--max-spread", "99"], "fx12",
+     "Y3 (en iyi ORB cikis mimarisi)"),
+    ("Z2_jp15_dolarBE_kapali", "donchian_adx",
+     ["--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15,
+      "--be-usd-fx", "0", "--max-spread", "99"], "jpy2", "Y4 (JPY, dolar BE kapali)"),
+    ("Z3_jp15_pipBE24", "donchian_adx",
+     ["--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15,
+      "--be-usd-fx", "0", "--be-pips", BE15, "--max-spread", "99"], "jpy2", "Y5 (JPY, pipBE24)"),
+]
+
+COST15 = [
+    ("C1_orb15_flat16", "orb_ny",
+     ["--chandelier", "2.5", "--mode-tp-atr", "0", "--htf-ema200-gate", "--flat-16", "--max-spread", "99"],
+     "fx12", "M3 (baraj adayi)"),
+    ("C2_jp15_da_h1_band", "donchian_adx",
+     ["--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15, "--max-spread", "99"],
+     "jpy2", "M7 (baraj adayi)"),
+    ("C3_jp15_dp_h1_band", "donchian_pure",
+     ["--chandelier", "2.5", "--htf-ema200-gate", "--rel-atr-band", "--rel-atr-lookback", RATR15,
+      "--max-spread", "99"], "jpy2", "M8 (baraj adayi)"),
+    ("C4_jp15_da_h1", "donchian_adx",
+     ["--htf-ema200-gate", "--max-spread", "99"], "jpy2", "M10 (bantsiz)"),
 ]
 
 WAVE_MAP = {
     "m15":       ("orbjpy", SPREAD1),
     "m15exit":   ("exit", SPREAD1),
+    "m15exit2":  ("exit", SPREAD1),
     "m15stress": ("stress", SPREAD2),
+    "m15cost1":  ("cost", SPREAD1),
+    "m15cost2":  ("cost", SPREAD2),
+    "m15cost3":  ("cost3", SPREAD2),
 }
 
 
@@ -209,6 +247,12 @@ def main():
     elif kind == "exit":
         for w in WINDOWS:
             jobs += [(c[0], c[1], c[2], c[3], w, spread) for c in EXIT15]
+    elif kind == "cost":
+        for w in WINDOWS:
+            jobs += [(c[0], c[1], c[2], c[3], w, spread) for c in COST15]
+    elif kind == "cost3":
+        for w in WINDOWS:
+            jobs += [(c[0], c[1], c[2], c[3], w, spread) for c in COST3]
     else:
         for w in WINDOWS:
             jobs += [(c[0], c[1], c[2], c[3], w, spread) for c in STRESS15]

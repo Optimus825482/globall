@@ -90,20 +90,65 @@ function formatPrice(v?: number | null, symbol: string = ""): string {
   return v.toFixed(5);
 }
 
-function formatClockTime(timeStr?: string): string {
-  if (!timeStr) return "—";
-  try {
-    const d = new Date(timeStr);
+function formatClockTime(timeStr?: string | number, closedAtTs?: number): string {
+  if (closedAtTs && typeof closedAtTs === "number" && closedAtTs > 0) {
+    const ms = closedAtTs > 1e11 ? closedAtTs : closedAtTs * 1000;
+    const d = new Date(ms);
     if (!isNaN(d.getTime())) {
       return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
-    if (timeStr.includes(" ")) {
-      return timeStr.split(" ")[1] || timeStr;
-    }
-    return timeStr;
-  } catch {
-    return timeStr;
   }
+  if (!timeStr) return "—";
+  try {
+    const s = String(timeStr).replace(/\s+UTC\+3/i, "+03:00").replace(/\s+UTC/i, "Z");
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+    const str = String(timeStr);
+    if (str.includes(" ")) {
+      return str.split(" ")[1] || str;
+    }
+    return str;
+  } catch {
+    return String(timeStr);
+  }
+}
+
+// Bulunulan tarihteki işlem zaman damgasını milisaniyeye çevirir
+function parseTradeTime(t: ClosedTrade | any): number {
+  if (typeof t.closed_at_ts === "number" && t.closed_at_ts > 0) {
+    return t.closed_at_ts > 1e11 ? t.closed_at_ts : t.closed_at_ts * 1000;
+  }
+  const rawStr = t.close_time || t.exit_time || t.time || t.open_time;
+  if (!rawStr) return 0;
+
+  let s = String(rawStr).trim();
+  s = s.replace(/\s+UTC\+3/i, "+03:00").replace(/\s+UTC/i, "Z");
+
+  const parsed = new Date(s).getTime();
+  if (!isNaN(parsed)) return parsed;
+
+  const parts = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
+  if (parts) {
+    const d = new Date(
+      Number(parts[1]),
+      Number(parts[2]) - 1,
+      Number(parts[3]),
+      Number(parts[4]),
+      Number(parts[5]),
+      parts[6] ? Number(parts[6]) : 0
+    );
+    return d.getTime();
+  }
+  return 0;
+}
+
+// Bulunulan tarihteki saat 00:01:00 eşiğini verir (Milisaniye)
+function getToday0001Cutoff(): number {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 1, 0, 0);
+  return d.getTime();
 }
 
 export default function ForexIslemlerPage() {
@@ -155,7 +200,7 @@ export default function ForexIslemlerPage() {
     });
   };
 
-  // Veri Yükleme (Günün İşlemleri ve 00:00 Sıfırlaması Uyumlu)
+  // Veri Yükleme (Günün 00:01 Sonrası İşlemleri ve Canlı Pozisyonlar)
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setRefreshing(true);
     try {
@@ -165,25 +210,49 @@ export default function ForexIslemlerPage() {
       ]);
 
       if (reportRes) {
+        // Canlı açık pozisyonlar
         if (Array.isArray(reportRes.open_positions)) {
           setOpenPositions(reportRes.open_positions);
         }
+
+        // Bulunulan tarihteki saat 00:01'den sonraki kapanan işlemleri filtrele
+        const cutoff0001 = getToday0001Cutoff();
+        let validTrades: ClosedTrade[] = [];
         if (Array.isArray(reportRes.trades)) {
-          setClosedTrades(reportRes.trades);
+          validTrades = reportRes.trades.filter((t: ClosedTrade) => {
+            const ts = parseTradeTime(t);
+            return ts >= cutoff0001;
+          });
+          setClosedTrades(validTrades);
         }
-        const k = reportRes.kpi || statusRes?.today_kpi;
-        if (k) {
-          setKpi((prev) => ({
-            ...prev,
-            total_trades: k.total_trades ?? 0,
-            wins: k.won_trades ?? k.wins ?? 0,
-            losses: k.lost_trades ?? k.losses ?? 0,
-            win_rate: k.win_rate_pct ?? k.win_rate ?? 0,
-            total_pnl_usd: statusRes?.daily_pnl ?? k.total_pnl_usd ?? 0,
-            balance: statusRes?.balance ?? k.balance ?? prev.balance,
-            equity: statusRes?.equity ?? k.equity ?? prev.equity,
-          }));
+
+        // Günün 00:01 sonrası başarı metriklerini (KPI) hesapla
+        let winsCount = 0;
+        let lossesCount = 0;
+        let totalPnl = 0;
+        for (const t of validTrades) {
+          const pnl = Number(t.pnl_usd ?? 0);
+          totalPnl += pnl;
+          if (pnl > 0 || t.outcome === "WIN") {
+            winsCount += 1;
+          } else if (pnl < 0 || t.outcome === "LOSS") {
+            lossesCount += 1;
+          }
         }
+        const totalTradesCount = validTrades.length;
+        const winRatePct = totalTradesCount > 0 ? (winsCount / totalTradesCount) * 100 : 0;
+
+        setKpi((prev) => ({
+          ...prev,
+          total_trades: totalTradesCount,
+          wins: winsCount,
+          losses: lossesCount,
+          win_rate: winRatePct,
+          total_pnl_usd: totalPnl,
+          balance: statusRes?.balance ?? reportRes.kpi?.balance ?? prev.balance,
+          equity: statusRes?.equity ?? reportRes.kpi?.equity ?? prev.equity,
+          open_positions_count: Array.isArray(reportRes.open_positions) ? reportRes.open_positions.length : prev.open_positions_count,
+        }));
       } else if (statusRes) {
         const k = statusRes.today_kpi;
         setKpi((prev) => ({
@@ -298,21 +367,24 @@ export default function ForexIslemlerPage() {
       item.totalPips += pips;
     }
 
-    // 3. Oranları hesapla
-    const list = Array.from(map.values()).map((item) => {
-      const winRate =
-        item.closedTrades > 0
-          ? (item.wins / item.closedTrades) * 100
-          : item.openPnlUsd >= 0
-          ? 100
-          : 0;
-      const netPnlUsd = item.realizedPnlUsd + item.openPnlUsd;
-      return {
-        ...item,
-        winRate,
-        netPnlUsd,
-      };
-    });
+    // 3. Oranları hesapla - YALNIZCA İŞLEM AÇILMIŞ SEMBOLLER (totalTrades > 0)
+    // İşlem açılmamış sembollerin kartları tamamen gizlenir
+    const list = Array.from(map.values())
+      .filter((item) => item.totalTrades > 0 && (item.closedTrades > 0 || item.openTrades > 0))
+      .map((item) => {
+        const winRate =
+          item.closedTrades > 0
+            ? (item.wins / item.closedTrades) * 100
+            : item.openPnlUsd >= 0
+            ? 100
+            : 0;
+        const netPnlUsd = item.realizedPnlUsd + item.openPnlUsd;
+        return {
+          ...item,
+          winRate,
+          netPnlUsd,
+        };
+      });
 
     // En çok kâr getiren sembolden düşüğe doğru sırala
     return list.sort((a, b) => b.netPnlUsd - a.netPnlUsd);
@@ -400,7 +472,7 @@ export default function ForexIslemlerPage() {
               </span>
             </div>
             <p className={`text-xs mt-0.5 ${theme.textSecondary}`}>
-              Açık ve Kapanan Forex İşlemleri · Anlık Dinamik K/Z (PnL) &amp; Sembol Bazlı Başarı
+              Açık ve 00:01 Sonrası Kapanan Forex İşlemleri · Anlık Dinamik K/Z (PnL) &amp; Sembol Başarıları
             </p>
           </div>
         </div>
@@ -451,7 +523,7 @@ export default function ForexIslemlerPage() {
             Günün Başarı Metrikleri
           </h2>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-semibold">
-            Her Gece 00:00'da Otomatik Sıfırlanır (UTC+3)
+            Günün İşlemleri (00:01 Sonrası) · Canlı Akış (UTC+3)
           </span>
         </div>
         <Link
@@ -800,18 +872,23 @@ export default function ForexIslemlerPage() {
                 Günün İşlem Gören Sembolleri &amp; Başarı Oranları
               </h2>
               <p className={`text-[11px] ${theme.textSecondary}`}>
-                Bugün işlem yapılan paritelerin tekil başarı yüzdeleri ve net kârlılık durumları
+                Bugün saat 00:01'den sonra işlem açılan paritelerin başarı oranları ve net kârlılık durumları (İşlem açılmamış semboller gizlenir)
               </p>
             </div>
           </div>
           <span className={`px-2 py-0.5 rounded text-xs font-bold ${theme.badgeBg}`}>
-            {symbolPerformanceList.length} Aktif Sembol
+            {symbolPerformanceList.length} İşlem Gören Sembol
           </span>
         </div>
 
         {symbolPerformanceList.length === 0 ? (
-          <div className="p-6 text-center text-xs">
-            <p className={theme.textSecondary}>Bugün henüz herhangi bir sembolde işlem kaydı bulunmamaktadır.</p>
+          <div className="p-8 text-center text-xs rounded-xl border border-dashed border-slate-200 dark:border-bunker-800">
+            <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+              Bugün 00:01'den sonra henüz işlem açılmış sembol bulunmamaktadır.
+            </p>
+            <p className={`mt-1 ${theme.textSecondary}`}>
+              Yeni bir pozisyon açıldığında veya işlem tamamlandığında o sembole ait performans kartı otomatik olarak burada görünecektir.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -907,7 +984,7 @@ export default function ForexIslemlerPage() {
           <div className="flex items-center gap-2">
             <span className="text-lg">📋</span>
             <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
-              Kapanan Forex İşlemleri ({filteredClosedTrades.length} İşlem)
+              Kapanan Forex İşlemleri (00:01 Sonrası - {filteredClosedTrades.length} İşlem)
             </h2>
           </div>
 
@@ -971,7 +1048,7 @@ export default function ForexIslemlerPage() {
         {closedTrades.length === 0 ? (
           <div className="p-10 text-center space-y-1">
             <p className={`text-sm font-bold ${theme.textPrimary}`}>
-              Bugün henüz kapanan forex işlemi bulunmuyor.
+              Bugün saat 00:01'den sonra henüz kapanan forex işlemi bulunmuyor.
             </p>
             <p className={`text-xs ${theme.textSecondary}`}>
               Açık pozisyonlar kâr/stop seviyelerine ulaştığında burada listelenecektir.

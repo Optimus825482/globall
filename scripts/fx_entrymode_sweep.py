@@ -28,6 +28,7 @@ REPLAY = os.path.join(ROOT, "scripts", "forex_replay_backtest.py")
 CACHE60 = os.path.join(ROOT, "outputs", "replay_cache_60d_fxwide.json")
 CACHE15 = os.path.join(ROOT, "outputs", "replay_cache_60d_fxwide_15m.json")
 SPREAD = "outputs/fx_spread_p95.json"
+SPREAD_2X = "outputs/fx_spread_p95_2x.json"   # 2× maliyet stress (Dalga-2 kill-gate)
 OUTDIR = os.path.join(ROOT, "outputs", "fxsweep")
 
 FX12 = "EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,NZDUSD,EURJPY,GBPJPY,EURCHF,GBPCHF,EURNZD,GBPNZD"
@@ -54,9 +55,9 @@ PX_WIN = ["--start", SCREEN_START, "--end", SCREEN_END]
 LONG_WIN = ["--start", LONG_START, "--end", LONG_END]
 
 
-def _cfg(name, entry_mode, extra, scope="fx12", window="is", desc=""):
+def _cfg(name, entry_mode, extra, scope="fx12", window="is", desc="", symbols=""):
     return {"name": name, "entry_mode": entry_mode, "extra": extra,
-            "scope": scope, "window": window, "desc": desc}
+            "scope": scope, "window": window, "desc": desc, "symbols": symbols}
 
 
 # ---------------------------------------------------------------------------
@@ -205,11 +206,85 @@ JPY_CONFIGS = {
     "sq_tp2_h1_x": _cfg("sq_tp2_h1_x", "squeeze", ["--mode-tp-atr", "2.0", "--htf-ema200-gate"],
                         desc="Squeeze TP2R + H1 EMA200 (tüm FX12)"),
 }
+
+# ===========================================================================
+# DALGA-2 adayları (2026-10-08 kodlamaya değer 6 aday) — her biri kendi scope'unda
+# ===========================================================================
+WAVE2 = {
+    # C1 — EURUSD saat-günü sezonsallığı (yalnız EURUSD)
+    "tod_base": _cfg("tod_base", "eurusd_tod", [], scope="one", symbols="EURUSD",
+                     desc="EURUSD TOD: EUR saatleri short / USD saatleri long (base)"),
+    "tod_wide": _cfg("tod_wide", "eurusd_tod", ["--tod-short-hours", "7-12", "--tod-long-hours", "12-17"],
+                     scope="one", symbols="EURUSD", desc="EURUSD TOD geniş pencereler"),
+    "tod_narrow": _cfg("tod_narrow", "eurusd_tod", ["--tod-short-hours", "8-11", "--tod-long-hours", "13-16"],
+                       scope="one", symbols="EURUSD", desc="EURUSD TOD dar pencereler (çekirdek saatler)"),
+
+    # C2 — filtreli seans-open ORB (EURUSD + GBPJPY, 15m kutu)
+    "orb15_eur": _cfg("orb15_eur", "orb_filtered", [], scope="one", symbols="EURUSD",
+                      desc="Filtreli ORB 15m kutu (EURUSD, London+NY)"),
+    "orb15_gj": _cfg("orb15_gj", "orb_filtered", ["--orb15-min-adr", "80"], scope="one", symbols="GBPJPY",
+                     desc="Filtreli ORB 15m kutu (GBPJPY, London+NY, ADR>=80)"),
+    "orb15_gbp": _cfg("orb15_gbp", "orb_filtered", ["--orb15-min-adr", "45"], scope="one", symbols="GBPUSD",
+                      desc="Filtreli ORB 15m kutu (GBPUSD, ADR>=45)"),
+    "orb15_london": _cfg("orb15_london", "orb_filtered", ["--orb15-sessions", "7"],
+                         scope="one", symbols="EURUSD", desc="Filtreli ORB yalnız London açılışı (EURUSD)"),
+    "orb15_ny": _cfg("orb15_ny", "orb_filtered", ["--orb15-sessions", "13"],
+                     scope="one", symbols="EURUSD", desc="Filtreli ORB yalnız NY açılışı (EURUSD)"),
+    "orb15_band": _cfg("orb15_band", "orb_filtered", ["--orb15-or-adr-lo", "0.08", "--orb15-or-adr-hi", "0.18"],
+                       scope="one", symbols="EURUSD", desc="Filtreli ORB sıkı OR/ADR bandı 0.08-0.18"),
+
+    # C3 — 15m sıkışma-armed genişleme barı
+    "sqx_eur": _cfg("sqx_eur", "squeeze_exp", [], scope="one", symbols="EURUSD",
+                    desc="Sıkışma-armed genişleme (EURUSD)"),
+    "sqx_gj": _cfg("sqx_gj", "squeeze_exp", [], scope="one", symbols="GBPJPY",
+                   desc="Sıkışma-armed genişleme (GBPJPY)"),
+    "sqx_pct10": _cfg("sqx_pct10", "squeeze_exp", ["--sqx-comp-pct", "10"], scope="one", symbols="EURUSD",
+                      desc="Sıkışma pct10 (daha sıkı) EURUSD"),
+    "sqx_nohtf": _cfg("sqx_nohtf", "squeeze_exp", ["--sqx-no-htf"], scope="one", symbols="EURUSD",
+                      desc="Sıkışma-armed genişleme HTF yön filtresiz (EURUSD)"),
+
+    # C4 — günlük reopen gap-fade
+    "reopen_eur": _cfg("reopen_eur", "reopen_fade", [], scope="one", symbols="EURUSD",
+                       desc="Günlük reopen gap-fade (EURUSD, min gap 1p)"),
+    "reopen_eur_g2": _cfg("reopen_eur_g2", "reopen_fade", ["--reopen-min-gap", "2.0"], scope="one",
+                          symbols="EURUSD", desc="Reopen gap-fade min gap 2p (EURUSD)"),
+    "reopen_gbp": _cfg("reopen_gbp", "reopen_fade", [], scope="one", symbols="GBPUSD",
+                       desc="Günlük reopen gap-fade (GBPUSD)"),
+    "reopen_jpy": _cfg("reopen_jpy", "reopen_fade", [], scope="one", symbols="USDJPY",
+                       desc="Günlük reopen gap-fade (USDJPY)"),
+
+    # C5 — Tokyo fix tevriti
+    "tfix_uj": _cfg("tfix_uj", "tokyo_fix", [], scope="one", symbols="USDJPY",
+                    desc="Tokyo fix tevriti (USDJPY, 00:55 UTC ±5dk)"),
+    "tfix_uj_gotobi": _cfg("tfix_uj_gotobi", "tokyo_fix", ["--tfix-gotobi-only"], scope="one",
+                           symbols="USDJPY", desc="Tokyo fix yalnız gotobi/ay-sonu (USDJPY)"),
+    "tfix_uj_w10": _cfg("tfix_uj_w10", "tokyo_fix", ["--tfix-window", "10"], scope="one", symbols="USDJPY",
+                        desc="Tokyo fix penceresi ±10dk (USDJPY)"),
+
+    # C6 — JPY krosları + Donchian ailesi + H1 EMA200 kapısı (önceki turdan)
+    "jp_da_h1_v2": _cfg("jp_da_h1_v2", "donchian_adx", ["--htf-ema200-gate"], scope="jpy2",
+                        desc="Donchian ADX + H1 EMA200 (JPY krosları)"),
+    "jp_dp_h1_v2": _cfg("jp_dp_h1_v2", "donchian_pure", ["--chandelier", "2.5", "--htf-ema200-gate"],
+                        scope="jpy2", desc="Donchian saf + chand2.5 + H1 EMA200 (JPY krosları)"),
+}
+CONFIGS.update(WAVE2)
 CONFIGS.update(JPY_CONFIGS)
+
+WAVE2_SET = list(WAVE2.keys())
 
 PHASES = {
     "is": [n for n in CONFIGS if CONFIGS[n]["window"] == "is"],
     "all": list(CONFIGS.keys()),
+    "wave2": WAVE2_SET,
+    # Dalga-2 dalga-1 ile çakışmasın diye ayrı fazlar (paralel subagent iş bölümü)
+    "w2_tod": ["tod_base", "tod_wide", "tod_narrow"],
+    "w2_orb": ["orb15_eur", "orb15_gj", "orb15_gbp", "orb15_london", "orb15_ny", "orb15_band"],
+    "w2_sqx": ["sqx_eur", "sqx_gj", "sqx_pct10", "sqx_nohtf"],
+    "w2_reopen": ["reopen_eur", "reopen_eur_g2", "reopen_gbp", "reopen_jpy"],
+    "w2_tfix": ["tfix_uj", "tfix_uj_gotobi", "tfix_uj_w10"],
+    "w2_jpy": ["jp_da_h1_v2", "jp_dp_h1_v2"],
+    "w2_best": ["tod_base", "orb15_eur", "orb15_gj", "sqx_eur", "sqx_gj",
+                "reopen_eur", "tfix_uj", "jp_da_h1_v2", "jp_dp_h1_v2"],
 }
 
 # Kısa-tarama fazı: ayırt edici adaylar (hızlı eleme); sonra 30g doğrulama
@@ -255,15 +330,28 @@ def long_window_args(cfg):
     return ["--start", LONG_START, "--end", LONG_END]
 
 
-def build_cmd(cfg, out_path, window_override=None, days_label=None):
+def build_cmd(cfg, out_path, window_override=None, days_label=None, spread=None):
+    sp = spread or SPREAD
     cmd = [PY, REPLAY, "--entry-mode", cfg["entry_mode"],
            "--tag", cfg["name"], "--out", out_path, "--skip-old"]
     if cfg["scope"] == "jpy2":
         # GBPJPY/EURJPY canlı allowed sette olduğundan --symbols ile doğrudan süzülür
         cmd += ["--cache", CACHE60, "--symbols", JPY2, "--max-open", "99",
-                "--spread-profile", SPREAD]
+                "--spread-profile", sp]
+    elif cfg["scope"] == "one":
+        # Tek sembol (Dalga-2 adayları kendi scope'unda): hedefi EKLE, diğer tüm FX'i DIŞLA.
+        # --symbols kullanılamaz (canlı allowed ile KESİŞİR → boş kalır); ekle/dışla kullanılır.
+        target = cfg.get("symbols", "EURUSD")
+        others = [s for s in FX12.split(",") if s.strip() != target]
+        cmd += ["--cache", CACHE60, "--add-symbols", target,
+                "--exclude-symbols", EXCL + ("," + ",".join(others) if others else ""),
+                "--max-open", "99", "--spread-profile", sp]
     else:
         cmd += list(BASE)
+        if spread:
+            # BASE zaten SPREAD taşıyor; override için sondaki değeri değiştir
+            i = cmd.index("--spread-profile")
+            cmd[i + 1] = sp
     if window_override:
         cmd += window_override
     elif cfg["window"] == "is":
@@ -301,12 +389,12 @@ def parse_metrics(out_path, log_text):
     }
 
 
-def run_one(name, window_override=None, label=None, quiet=False):
+def run_one(name, window_override=None, label=None, quiet=False, spread=None):
     cfg = CONFIGS[name]
     os.makedirs(OUTDIR, exist_ok=True)
     tag = label or name
     out_path = os.path.join(OUTDIR, f"{tag}.json")
-    cmd = build_cmd(cfg, out_path, window_override)
+    cmd = build_cmd(cfg, out_path, window_override, spread=spread)
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
     log = (proc.stdout or "") + (proc.stderr or "")
@@ -345,12 +433,15 @@ def print_leaderboard(results):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--configs", default="", help="Virgüllü konfig adları (boş = --phase)")
-    ap.add_argument("--phase", default="", choices=["", "is", "all", "screen", "long", "sqref", "final"])
+    ap.add_argument("--phase", default="", choices=["", "is", "all", "screen", "long", "sqref", "final",
+                                                    "wave2", "w2_tod", "w2_orb", "w2_sqx", "w2_reopen",
+                                                    "w2_tfix", "w2_jpy", "w2_best"])
     ap.add_argument("--window", default="", choices=["", "60g"], help="final fazı için: 60g = tüm cache (pencere yok)")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--start", default="")
     ap.add_argument("--end", default="")
     ap.add_argument("--label-suffix", default="")
+    ap.add_argument("--spread-2x", action="store_true", help="2× maliyet stress profili kullan (kill-gate)")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
 
@@ -393,13 +484,14 @@ def main():
 
     t0 = time.time()
     results = []
+    sp = SPREAD_2X if getattr(args, "spread_2x", False) else None
     if args.workers <= 1:
         for n in names:
-            results.append(run_one(n, win, label=(n + args.label_suffix) if args.label_suffix else None))
+            results.append(run_one(n, win, label=(n + args.label_suffix) if args.label_suffix else None, spread=sp))
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
             futs = {ex.submit(run_one, n, win,
-                              (n + args.label_suffix) if args.label_suffix else None): n for n in names}
+                              (n + args.label_suffix) if args.label_suffix else None, False, sp): n for n in names}
             for fut in concurrent.futures.as_completed(futs):
                 results.append(fut.result())
 
