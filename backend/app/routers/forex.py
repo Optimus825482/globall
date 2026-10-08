@@ -3275,6 +3275,9 @@ _AUTO_STATE: Dict[str, Any] = {
 }
 
 
+_LAST_LOG_MSG_TIME: Dict[str, float] = {}
+
+
 def _log_auto_decision(
     category: str,
     message: str,
@@ -3284,16 +3287,42 @@ def _log_auto_decision(
     strategy_label: Optional[str] = None,
 ):
     """Kayıt defterine otonom karar gerekçesi ekler (şeffaf izleme)."""
+    now_ts = time.time()
     # Mükerrer ardışık logları engelle
     if _AUTO_STATE["decision_logs"]:
         if _AUTO_STATE["decision_logs"][0].get("message") == message:
             return
 
-    now_ts = time.time()
+    # Çok sık tekrarlanan birebir aynı tarama mesajlarını engelle (en az 12 sn)
+    if category == "SCAN":
+        if now_ts - _LAST_LOG_MSG_TIME.get(message, 0.0) < 12.0:
+            return
+        _LAST_LOG_MSG_TIME[message] = now_ts
+
     now_dt = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
     meta = dict(metadata or {})
     strat = strategy or meta.get("strategy")
     strat_lbl = strategy_label or meta.get("strategy_label")
+
+    # Strateji belirtilmemişse mesaj içeriğinden otomatik tespit et
+    if not strat:
+        msg_u = message.upper()
+        if "LONDON" in msg_u or "LBRK" in msg_u or "ASYA KUTUSU" in msg_u or "LONDRA" in msg_u:
+            strat = LONDON_BREAKOUT_STRATEGY
+            strat_lbl = LONDON_BREAKOUT_LABEL
+        elif "S3" in msg_u or "SUPERTREND" in msg_u:
+            strat = S3_PULLBACK_STRATEGY
+            strat_lbl = S3_PULLBACK_LABEL
+        elif "EMA_ADX" in msg_u or "EMA+ADX" in msg_u or "EAP" in msg_u or "EMA8" in msg_u:
+            strat = EMA_ADX_PULLBACK_STRATEGY
+            strat_lbl = EMA_ADX_PULLBACK_LABEL
+        elif "DONCHIAN" in msg_u or "DONCH" in msg_u:
+            strat = "DONCHIAN_ADX"
+            strat_lbl = "Donchian ADX Kırılımı"
+        elif "RADAR" in msg_u or "TARAMASI" in msg_u or "PARİTE" in msg_u:
+            strat = "M1_M5_RADAR_SCALPER"
+            strat_lbl = "M1/M5 Çoklu Radar"
+
     if strat and not strat_lbl:
         strat_lbl = strategy_display_label(strat)
 
@@ -3309,8 +3338,8 @@ def _log_auto_decision(
         "metadata": meta,
     }
     _AUTO_STATE["decision_logs"].insert(0, log_item)
-    if len(_AUTO_STATE["decision_logs"]) > 120:
-        _AUTO_STATE["decision_logs"] = _AUTO_STATE["decision_logs"][:120]
+    if len(_AUTO_STATE["decision_logs"]) > 500:
+        _AUTO_STATE["decision_logs"] = _AUTO_STATE["decision_logs"][:500]
 
 
 def get_all_symbol_ev_status(now_ts: Optional[float] = None) -> Dict[str, Any]:
@@ -4036,10 +4065,10 @@ async def _forex_auto_paper_loop():
                     )
                     _m_st["prev_close"] = _m_price
                     _m_st["prev_mid"] = float(_m_tech["donch_mid"])
-                    # Görünürlük: mod ne beklediğini 30 dk'da bir insan-okur cümleyle söyler;
+                    # Görünürlük: mod ne beklediğini 25 sn'de bir insan-okur cümleyle söyler;
                     # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
                     _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
-                    _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 1800.0
+                    _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 25.0
                     if _m_wait_throttled:
                         _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
                         _m_disp = _m_t["display"] if _m_t else _m_sym
@@ -4049,14 +4078,18 @@ async def _forex_auto_paper_loop():
                                 "SCAN",
                                 f"⚠️ [{_m_disp}] Donchian modu aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
                                 symbol=_m_sym,
+                                strategy="DONCHIAN_ADX",
+                                strategy_label="Donchian ADX Kırılımı",
                             )
                         else:
                             _m_adx_txt = f"ADX {float(_m_tech.get('adx', 0)):.0f}"
                             _m_wait = ("fiyat orta hattın üstüne dönüp yeniden kırılınca SAT" if _m_price <= float(_m_tech["donch_mid"]) else "fiyat orta hattın altına sarkıp yeniden kırılınca AL")
                             _log_auto_decision(
                                 "SCAN",
-                                f"🎯 [{_m_disp}] Donchian modu bekliyor: fiyat orta hattın {_m_side} ({_m_price:.3f} / orta {float(_m_tech['donch_mid']):.3f}), {_m_adx_txt} → {_m_wait}. Klasik sinyaller bu çiftte yok sayılır.",
+                                f"🎯 [{_m_disp}] Donchian modu bekliyor: fiyat orta hattın {_m_side} ({_m_price:.3f} / orta {float(_m_tech['donch_mid']):.3f}), {_m_adx_txt} → {_m_wait}.",
                                 symbol=_m_sym,
+                                strategy="DONCHIAN_ADX",
+                                strategy_label="Donchian ADX Kırılımı",
                             )
                     if _m_action:
                         _m_st["counts"][_m_action] = _m_st["counts"].get(_m_action, 0) + 1
@@ -4077,6 +4110,8 @@ async def _forex_auto_paper_loop():
                             "SCAN",
                             f"🎯 [{_m_item['display'] if _m_item else _m_sym}] Donchian kırılımı: {_m_action} adayı (ADX {_m_tech.get('adx', 0):.0f}) — değerlendiriliyor.",
                             symbol=_m_sym,
+                            strategy="DONCHIAN_ADX",
+                            strategy_label="Donchian ADX Kırılımı",
                         )
 
             # EMA+ADX geri-çekilme (M5) akışı (2026-10-08 canlıya alım — XAUUSD):
@@ -4136,16 +4171,20 @@ async def _forex_auto_paper_loop():
                             f"(ADX {_e_tech.get('adx', 0):.0f}, EMA dizilimi "
                             f"{'boğa' if _e_action == 'BUY' else 'ayı'}, EMA21 geri çekilmesi onaylı) — değerlendiriliyor.",
                             symbol=_e_sym,
+                            strategy=EMA_ADX_PULLBACK_STRATEGY,
+                            strategy_label=EMA_ADX_PULLBACK_LABEL,
                         )
                     else:
-                        # Görünürlük: akış ne beklediğini 30 dk'da bir insan-okur cümleyle söyler.
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_e_sym}_eap_wait", 0.0) > 1800.0:
+                        # Görünürlük: akış ne beklediğini 25 sn'de bir insan-okur cümleyle söyler.
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_e_sym}_eap_wait", 0.0) > 25.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{_e_sym}_eap_wait"] = now_ts
                             if not _e_allowed:
                                 _log_auto_decision(
                                     "SCAN",
                                     f"⚠️ [{_e_disp}] {EMA_ADX_PULLBACK_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
                                     symbol=_e_sym,
+                                    strategy=EMA_ADX_PULLBACK_STRATEGY,
+                                    strategy_label=EMA_ADX_PULLBACK_LABEL,
                                 )
                             else:
                                 _e8 = float(_e_tech.get("ema8", 0.0)); _e21 = float(_e_tech.get("ema21", 0.0)); _e50 = float(_e_tech.get("ema50", 0.0))
@@ -4160,6 +4199,8 @@ async def _forex_auto_paper_loop():
                                     f"📐 [{_e_disp}] {EMA_ADX_PULLBACK_LABEL} bekliyor: {_e_trend_txt}, "
                                     f"ADX {_e_tech.get('adx', 0):.0f} (eşik {_AUTO_SETTINGS.ema_adx_adx_min:.0f}) → {_e_wait}.",
                                     symbol=_e_sym,
+                                    strategy=EMA_ADX_PULLBACK_STRATEGY,
+                                    strategy_label=EMA_ADX_PULLBACK_LABEL,
                                 )
 
             # S3 (Supertrend+RSI pullback) akışı (2026-10-08 canlıya alım — kullanıcı kararı):
@@ -4233,13 +4274,15 @@ async def _forex_auto_paper_loop():
                                 strategy_label=strategy_display_label(_s_src),
                             )
                         else:
-                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_s_key}_s3_wait", 0.0) > 1800.0:
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_s_key}_s3_wait", 0.0) > 25.0:
                                 _LAST_CANDIDATE_LOG_TIME[f"{_s_key}_s3_wait"] = now_ts
                                 if not _s_allowed:
                                     _log_auto_decision(
                                         "SCAN",
                                         f"⚠️ [{_s_disp}] {S3_PULLBACK_LABEL} ({_s_tf}) aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
                                         symbol=_s_sym,
+                                        strategy=S3_PULLBACK_STRATEGY,
+                                        strategy_label=strategy_display_label(_s_src),
                                     )
                                 else:
                                     _s_dir_txt = "BOĞA" if int(_s_tech.get("st_dir", 0)) > 0 else ("AYI" if int(_s_tech.get("st_dir", 0)) < 0 else "tanımsız")
@@ -4248,6 +4291,8 @@ async def _forex_auto_paper_loop():
                                         f"🧭 [{_s_disp}] {S3_PULLBACK_LABEL} ({_s_tf}) bekliyor: ST {_s_dir_txt}, "
                                         f"RSI {float(_s_tech.get('rsi_now') or 0):.1f} → {'50 üstüne yeşil kapanışta AL' if int(_s_tech.get('st_dir', 0)) > 0 else '50 altına kapanışta SAT' if int(_s_tech.get('st_dir', 0)) < 0 else 'ST yönü netleşmeli'}.",
                                         symbol=_s_sym,
+                                        strategy=S3_PULLBACK_STRATEGY,
+                                        strategy_label=strategy_display_label(_s_src),
                                     )
 
             # London Breakout akışı (2026-10-08 canlıya alım — kullanıcı kararı):
@@ -4324,25 +4369,60 @@ async def _forex_auto_paper_loop():
                             strategy=LONDON_BREAKOUT_STRATEGY,
                             strategy_label=LONDON_BREAKOUT_LABEL,
                         )
-                    elif _lb_sym not in _lb_allowed:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_lb_sym}_lb_wait", 0.0) > 1800.0:
+                    else:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_lb_sym}_lb_wait", 0.0) > 25.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{_lb_sym}_lb_wait"] = now_ts
-                            _log_auto_decision(
-                                "SCAN",
-                                f"⚠️ [{_lb_disp}] {LONDON_BREAKOUT_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
-                                symbol=_lb_sym,
-                            )
+                            if _lb_sym not in _lb_allowed:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚠️ [{_lb_disp}] {LONDON_BREAKOUT_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                    symbol=_lb_sym,
+                                    strategy=LONDON_BREAKOUT_STRATEGY,
+                                    strategy_label=LONDON_BREAKOUT_LABEL,
+                                )
+                            else:
+                                _lb_box_h_pips = ((float(_lb_st.get("box_hi", 0)) - float(_lb_st.get("box_lo", 0))) / _lb_pip) if _lb_pip > 0 else 0.0
+                                if _lb_hour < _AUTO_SETTINGS.lb_box_end_utc:
+                                    _lb_status = f"Asya kutusu oluşuyor (00:00–{_AUTO_SETTINGS.lb_box_end_utc:02d}:00 UTC, kutu: {_lb_box_h_pips:.1f}p)"
+                                elif _lb_hour < _AUTO_SETTINGS.lb_entry_end_utc:
+                                    _lb_status = f"Kutu [{float(_lb_st.get('box_lo', 0)):.5g}–{float(_lb_st.get('box_hi', 0)):.5g}] ({_lb_box_h_pips:.1f}p) kırılımı taranıyor"
+                                else:
+                                    _lb_status = f"Günün tetik penceresi kapandı ({_AUTO_SETTINGS.lb_entry_end_utc:02d}:00 UTC)"
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"🌅 [{_lb_disp}] {LONDON_BREAKOUT_LABEL} bekliyor: Fiyat {float(_lb_t.get('bid', 0)):.5g} | {_lb_status}.",
+                                    symbol=_lb_sym,
+                                    strategy=LONDON_BREAKOUT_STRATEGY,
+                                    strategy_label=LONDON_BREAKOUT_LABEL,
+                                )
 
-            # Periyodik Canlı Tarama Özeti (Her 15 saniyede bir Decision Stream'e düşer)
-            if now_ts - _LAST_SCAN_PULSE_TIME > 15.0 and candidates:
+            # Periyodik Canlı Tarama Özeti (Her 20 saniyede bir Decision Stream'e düşer)
+            if now_ts - _LAST_SCAN_PULSE_TIME > 20.0:
                 _LAST_SCAN_PULSE_TIME = now_ts
                 active_str = ", ".join(active_names) if active_names else "24/5 Açık"
-                top_3 = ", ".join([f"{c['display']} ({strategy_display_label(c.get('entry_source'))} Skor:{c['score']:.0f} {c['action']})" for c in candidates[:3]])
-                unique_strats = list(dict.fromkeys([strategy_display_label(c.get("entry_source")) for c in candidates]))
-                strat_summary = " · ".join(unique_strats) if unique_strats else "Radar"
+                if candidates:
+                    top_3 = ", ".join([f"{c['display']} ({strategy_display_label(c.get('entry_source'))} Skor:{c['score']:.0f} {c['action']})" for c in candidates[:3]])
+                    unique_strats = list(dict.fromkeys([strategy_display_label(c.get("entry_source")) for c in candidates]))
+                    strat_summary = " · ".join(unique_strats) if unique_strats else "Radar"
+                    scan_msg = f"🔍 Piyasa Taraması: {len(candidates)} parite sinyali | Taranan Stratejiler: [{strat_summary}] [Öncü: {top_3}] (Seanslar: {active_str})"
+                else:
+                    active_strats = []
+                    if _AUTO_SETTINGS.s3_enabled:
+                        active_strats.append("S3 SuperTrend")
+                    if _AUTO_SETTINGS.lb_enabled:
+                        active_strats.append("London Breakout")
+                    if _AUTO_SETTINGS.ema_adx_enabled:
+                        active_strats.append("EMA+ADX M5")
+                    if _AUTO_SETTINGS.mode_symbols:
+                        active_strats.append("Donchian ADX")
+                    active_strats.append("M1/M5 Çoklu Radar")
+                    scan_msg = f"🔍 Piyasa Taraması: {len(_AUTO_SETTINGS.allowed_symbols)} parite taranıyor | Aktif Stratejiler: [{' · '.join(active_strats)}] (Seanslar: {active_str})"
+
                 _log_auto_decision(
                     "SCAN",
-                    f"🔍 Piyasa Taraması: {len(candidates)} parite analiz edildi | Taranan Stratejiler: [{strat_summary}] [Öncü: {top_3}] (Seanslar: {active_str})",
+                    scan_msg,
+                    strategy="M1_M5_RADAR_SCALPER",
+                    strategy_label="M1/M5 Çoklu Radar",
                 )
                 # XAU/USD tarama özeti: her taramada altının durumu tek temiz cümleyle stream'e düşer
                 gold_tick = ticks.get("XAUUSD")
@@ -4362,7 +4442,13 @@ async def _forex_auto_paper_loop():
                             f"HTF: {tech_gold.get('htf_trend', '-')} | SuperTrend: {gold_st} | "
                             f"Durum: {_gold_scan_note(gold_tick, now_ts)}"
                         )
-                    _log_auto_decision("SCAN", gold_msg, symbol="XAUUSD")
+                    _log_auto_decision(
+                        "SCAN",
+                        gold_msg,
+                        symbol="XAUUSD",
+                        strategy="M1_M5_RADAR_SCALPER",
+                        strategy_label="M1/M5 Çoklu Radar",
+                    )
 
                 # BTC/USD tarama özeti: her taramada BTC durumu da Altın gibi detaylı stream'e düşer
                 btc_tick = ticks.get("BTCUSD")
@@ -4382,7 +4468,13 @@ async def _forex_auto_paper_loop():
                             f"HTF: {tech_btc.get('htf_trend', '-')} | SuperTrend: {btc_st} | "
                             f"Durum: {_btc_scan_note(btc_tick, now_ts)}"
                         )
-                    _log_auto_decision("SCAN", btc_msg, symbol="BTCUSD")
+                    _log_auto_decision(
+                        "SCAN",
+                        btc_msg,
+                        symbol="BTCUSD",
+                        strategy="M1_M5_RADAR_SCALPER",
+                        strategy_label="M1/M5 Çoklu Radar",
+                    )
 
             # Veri hattı görünürlüğü: mum verisi alınamayan semboller HOLD'da sessizce kalır.
             # Sessiz arıza olmasın — panelde sembol başına 5 dk'da bir görünür yapılır.
@@ -5185,7 +5277,7 @@ async def get_forex_auto_paper_status():
         "settings": _AUTO_SETTINGS.model_dump(),
         "open_positions": normalized_positions,
         "closed_trades": normalized_deals,
-        "decision_logs": _AUTO_STATE["decision_logs"][:60],
+        "decision_logs": _AUTO_STATE["decision_logs"][:300],
         "sessions": _get_market_sessions(),
         "dxy": get_dxy_regime(),
         "correlations": _FX_CORR.snapshot(),

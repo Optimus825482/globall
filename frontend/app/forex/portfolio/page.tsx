@@ -48,6 +48,8 @@ interface DecisionLog {
   created_at_ts?: number;
   category: "ENTRY" | "EXIT" | "PROTECT" | "GATE" | "SYSTEM" | "SCAN";
   symbol?: string;
+  strategy?: string;
+  strategy_label?: string;
   message: string;
   metadata?: any;
 }
@@ -148,6 +150,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [decisionLogs, setDecisionLogs] = useState<DecisionLog[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [logFilter, setLogFilter] = useState<string>("ALL");
+  const [strategyFilter, setStrategyFilter] = useState<string>("ALL");
 
   // Parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı —
   // bu sayfa yalnızca izler, motor ayarlarını düzenlemez.
@@ -811,7 +814,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       {/* KARAR GÜNLÜĞÜ (DECISION STREAM) VE GEÇMİŞ İŞLEMLER */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Canlı Otonom Karar & Tarama Günlüğü */}
-        <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 p-4 shadow-sm dark:shadow-xl flex flex-col h-[420px]">
+        <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 p-4 shadow-sm dark:shadow-xl flex flex-col h-[460px]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-bunker-800 pb-2.5 mb-2 gap-2">
             <div className="flex items-center gap-2">
               <span className="text-base">📜</span>
@@ -825,7 +828,10 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           </div>
 
           {/* Kategori Filtre Butonları */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 border-b border-slate-200 dark:border-bunker-800/60 scrollbar-none text-[10px]">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-1.5 border-b border-slate-200 dark:border-bunker-800/60 scrollbar-none text-[10px]">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-bunker-muted whitespace-nowrap pl-0.5">
+              Akış:
+            </span>
             {[
               { id: "ALL", label: "Tümü", icon: "🌐" },
               { id: "SCAN", label: "Taramalar", icon: "🔍" },
@@ -843,7 +849,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   key={tab.id}
                   type="button"
                   onClick={() => setLogFilter(tab.id)}
-                  className={`px-2 py-1 rounded-md transition-all font-bold whitespace-nowrap flex items-center gap-1 ${
+                  className={`px-2 py-0.5 rounded-md transition-all font-bold whitespace-nowrap flex items-center gap-1 ${
                     logFilter === tab.id
                       ? "bg-blue-600 text-white shadow-sm"
                       : "bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 dark:bg-bunker-950/60 dark:text-bunker-muted dark:hover:text-white dark:border-transparent"
@@ -857,17 +863,69 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             })}
           </div>
 
+          {/* Strateji Filtre Butonları (Tüm Stratejiler Tarama Filtresi) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 border-b border-slate-200 dark:border-bunker-800/60 scrollbar-none text-[10px]">
+            <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 whitespace-nowrap pl-0.5">
+              Strateji:
+            </span>
+            {[
+              { id: "ALL", label: "Tüm Stratejiler", icon: "🌐", match: [] },
+              { id: "RADAR", label: "M1/M5 Radar", icon: "🛰️", match: ["RADAR", "M1_M5", "ÇOKLU"] },
+              { id: "S3", label: "S3 SuperTrend", icon: "🧭", match: ["S3", "SUPERTREND"] },
+              { id: "LONDON", label: "London Breakout", icon: "🌅", match: ["LONDON", "LBRK", "ASYA"] },
+              { id: "EMA_ADX", label: "EMA+ADX M5", icon: "📐", match: ["EMA_ADX", "EMA+ADX", "EAP"] },
+              { id: "DONCHIAN", label: "Donchian ADX", icon: "🎯", match: ["DONCHIAN", "DONCH"] },
+            ].map((stTab) => {
+              const count =
+                stTab.id === "ALL"
+                  ? decisionLogs.length
+                  : decisionLogs.filter((l) => {
+                      const sKey = ((l.strategy || "") + " " + (l.strategy_label || "") + " " + (l.message || "")).toUpperCase();
+                      return stTab.match.some((m) => sKey.includes(m));
+                    }).length;
+              return (
+                <button
+                  key={stTab.id}
+                  type="button"
+                  onClick={() => setStrategyFilter(stTab.id)}
+                  className={`px-2 py-0.5 rounded-md transition-all font-bold whitespace-nowrap flex items-center gap-1 ${
+                    strategyFilter === stTab.id
+                      ? "bg-purple-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 dark:bg-bunker-950/60 dark:text-bunker-muted dark:hover:text-white dark:border-transparent"
+                  }`}
+                >
+                  <span>{stTab.icon}</span>
+                  <span>{stTab.label}</span>
+                  <span className="opacity-80 text-[9px]">({count})</span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
             {(() => {
-              const filtered =
+              const categoryFiltered =
                 logFilter === "ALL"
                   ? decisionLogs
                   : decisionLogs.filter((l) => l.category === logFilter);
 
+              const filtered =
+                strategyFilter === "ALL"
+                  ? categoryFiltered
+                  : categoryFiltered.filter((l) => {
+                      const sKey = ((l.strategy || "") + " " + (l.strategy_label || "") + " " + (l.message || "")).toUpperCase();
+                      if (strategyFilter === "RADAR") return sKey.includes("RADAR") || sKey.includes("M1_M5") || sKey.includes("PİYASA TARAMASI");
+                      if (strategyFilter === "S3") return sKey.includes("S3") || sKey.includes("SUPERTREND");
+                      if (strategyFilter === "LONDON") return sKey.includes("LONDON") || sKey.includes("LBRK") || sKey.includes("ASYA");
+                      if (strategyFilter === "EMA_ADX") return sKey.includes("EMA_ADX") || sKey.includes("EMA+ADX") || sKey.includes("EAP");
+                      if (strategyFilter === "DONCHIAN") return sKey.includes("DONCHIAN") || sKey.includes("DONCH");
+                      return true;
+                    });
+
               if (filtered.length === 0) {
                 return (
                   <div className="text-center py-14 text-bunker-muted text-xs">
-                    Bu filtreye ait bir kayıt henüz bulunmuyor.
+                    Bu filtre kriterlerine ait bir kayıt henüz bulunmuyor.
                   </div>
                 );
               }
@@ -898,27 +956,45 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 SYSTEM: "⚙️",
               };
 
+              const getStratBadgeColor = (lbl: string) => {
+                const u = lbl.toUpperCase();
+                if (u.includes("S3")) return "bg-indigo-100 text-indigo-900 border-indigo-300 dark:bg-indigo-950/70 dark:text-indigo-300 dark:border-indigo-600/60";
+                if (u.includes("LONDON") || u.includes("ASYA")) return "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-600/60";
+                if (u.includes("EMA")) return "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-600/60";
+                if (u.includes("DONCHIAN")) return "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 dark:bg-fuchsia-950/70 dark:text-fuchsia-300 dark:border-fuchsia-600/60";
+                return "bg-sky-100 text-sky-900 border-sky-300 dark:bg-sky-950/70 dark:text-sky-300 dark:border-sky-600/60";
+              };
+
               return sorted.map((log) => {
                 const icon = catIcons[log.category] || "•";
+                const stratLbl = log.strategy_label || (log as any).metadata?.strategy_label || "";
                 return (
                   <div
                     key={log.id}
-                    className={`p-2 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 transition-all ${
+                    className={`p-2.5 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 transition-all ${
                       catColors[log.category] || "border-bunker-800 bg-bunker-900"
                     }`}
                   >
-                    <div>
-                      <span className="font-bold mr-1.5 uppercase tracking-wider text-[10px]">
-                        {icon} [{log.category}]
-                      </span>
-                      {((log as any).strategy_label || (log as any).metadata?.strategy_label) && (
-                        <span className="mr-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-600/50 whitespace-nowrap inline-block">
-                          🎯 {(log as any).strategy_label || (log as any).metadata?.strategy_label}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="font-bold uppercase tracking-wider text-[10px]">
+                          {icon} [{log.category}]
                         </span>
-                      )}
-                      <span>{log.message}</span>
+                        {log.symbol && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-slate-200 text-slate-800 dark:bg-bunker-800 dark:text-slate-200 border border-slate-300 dark:border-bunker-700">
+                            {log.symbol}
+                          </span>
+                        )}
+                        {stratLbl && (
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border whitespace-nowrap inline-flex items-center gap-1 ${getStratBadgeColor(stratLbl)}`}>
+                            <span>🎯</span>
+                            <span>{stratLbl}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-slate-800 dark:text-slate-200 font-medium">{log.message}</div>
                     </div>
-                    <span className="text-[10px] opacity-70 whitespace-nowrap">{formatUtc3(log.time)}</span>
+                    <span className="text-[10px] opacity-70 whitespace-nowrap font-mono">{formatUtc3(log.time)}</span>
                   </div>
                 );
               });
@@ -927,7 +1003,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         </div>
 
         {/* Kapanan İşlemler Geçmişi */}
-        <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 p-4 shadow-sm dark:shadow-xl flex flex-col h-[420px]">
+        <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 p-4 shadow-sm dark:shadow-xl flex flex-col h-[460px]">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-bunker-800 pb-3 mb-2">
             <div className="flex items-center gap-2">
               <span className="text-base">🏁</span>
