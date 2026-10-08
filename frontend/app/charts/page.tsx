@@ -1,0 +1,2225 @@
+"use client";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { API_BASE, apiRequest } from "../lib/api";
+import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
+import { useUiMode } from "../lib/ui-mode";
+import { useVisibleInterval } from "../lib/useVisibleInterval";
+import SymbolLink from "../components/SymbolLink";
+import { formatSignedTL, formatTL, toMs } from "../lib/format";
+import { scoreToneClass } from "../lib/scoreTone";
+import { netOpenPnlPct, netOpenPnlTry, applyCommissionPct } from "../lib/pnl";
+import {
+    createChart, createSeriesMarkers, CandlestickSeries, LineSeries, HistogramSeries,
+    IChartApi, ISeriesApi, IPriceLine, UTCTimestamp, Time
+} from "lightweight-charts";
+import { filterIndicatorInstances, findIndicatorEntry } from "./IndicatorPicker";
+// Ağır modal bileşenleri ayrı chunk'a al: yalnızca kullanıcı picker'ı açınca
+// yüklenir. Senkron yardımcılar (filter/find) yukarıdaki statik import'tan gelir.
+const IndicatorPicker = dynamic(() => import("./IndicatorPicker").then((m) => m.default), { ssr: false });
+const IndicatorSettings = dynamic(() => import("./IndicatorSettings"), { ssr: false });
+const ChartAssistantDrawer = dynamic(() => import("./ChartAssistantDrawer"), { ssr: false });
+import type { IndicatorInstance, IndicatorStyle, RegistryEntry } from "./types";
+import {
+    FALLBACK_SYMBOLS, INTERVALS, INTERVAL_MS, PALETTE, TOTAL_HEIGHT, MAIN_MIN,
+    uid, clamp, LS_SYMBOL, LS_INTERVAL, LS_INDICATORS, LS_PANE_HEIGHTS, API,
+    paneMinimumHeight, preferredChartHeight, computePaneLayout,
+    formatPrice, chartPriceFormat, loadPersisted,
+    DEFAULT_STYLE, DEFAULT_INSTANCES, DEFAULT_SLING_SHOT, loadIndicators,
+    strategyLabelFor, macdHistogramColor,
+    type DisplaySettings, type EditTarget, type LivePortfolio, type PortfolioMetrics, type TimeframeTrend,
+} from "./chartShared";
+import {
+    strongCandlestickPatterns, patternDescriptions, emaPullbackSignals,
+    vwapMacdSignals, cmoCrsiSignals, rsiLast, mfiLast, obvLast, spotExecutionSignals,
+    strategySignalFns, strategyColors, strategyLabels, type Bar, type PatternMarker,
+} from "./signals";
+
+/* H-02: null/NaN K/Z NÖTR renkte olmalı (proje kuralı: yeşil=kâr, kırmızı=zarar,
+ * veri yok=nötr). `?? 0` ile 0'a çevirip yeşile boyamak yasak. */
+const pnlToneClass = (v?: number | null) =>
+    v == null || !Number.isFinite(v) ? "text-bunker-muted" : v >= 0 ? "text-neon-green" : "text-red-400";
+const pnlPctText = (v?: number | null) =>
+    v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+const pnlTryText = (v?: number | null) => {
+    if (v == null || !Number.isFinite(v)) return "—";
+    const abs = Math.abs(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return v < 0 ? `-₺${abs}` : `+₺${abs}`;
+};
+
+
+/**
+ * H-08: mum kapanış geri sayımı. Sayacın kendi state'i vardır ve 250 ms
+ * tazeleme YALNIZCA bu küçük bileşeni yeniden render eder. Eskiden sayaç
+ * `ChartsPage` state'iydi: 1700 satırlık sayfa ağacının tamamı saniyede 4 kez
+ * diff ediliyordu (mobilde jank + pil).
+ */
+function CandleCountdown({ intervalMs }: { intervalMs: number }) {
+    const [remaining, setRemaining] = useState(0);
+    const ms = intervalMs > 0 ? intervalMs : 60_000;
+    const tick = useCallback(() => {
+        const now = Date.now();
+        setRemaining(Math.max(0, Math.ceil(now / ms) * ms - now));
+    }, [ms]);
+    // `useVisibleInterval`: sekme arka plandayken 250 ms'lik sayaç döngüsü
+    // durur (görünmeyen bir saniye sayacı saniyede 4 kez render ediyordu).
+    useEffect(() => { tick(); }, [tick]);
+    useVisibleInterval(tick, 250);
+    return (
+        <span className="text-neon-green font-bold tabular-nums">
+            {String(Math.floor(remaining / 60000)).padStart(2, "0")}:{String(Math.floor((remaining % 60000) / 1000)).padStart(2, "0")}
+        </span>
+    );
+}
+
+
+
+/**
+ * PERFORMANS (2026-09-26): ufuk geri sayımı kendi 1 sn interval'ine sahip İZOLE
+ * bileşene alındı. Eskiden saniyelik `setMonitorRemainingSec` ana sayfa
+ * state'iydi → tüm 2000+ satırlık sayfa (grafik, tablolar, paneller) HER SANİYE
+ * yeniden render ediliyordu. Artık yalnız bu bileşen tık başına render olur.
+ */
+const CountdownSec = memo(function CountdownSec({ expiresAtSec }: { expiresAtSec: number | null }) {
+    const [remaining, setRemaining] = useState<number | null>(() =>
+        expiresAtSec ? Math.max(0, Math.floor(expiresAtSec - Date.now() / 1000)) : null);
+    useEffect(() => {
+        if (!expiresAtSec) { setRemaining(null); return; }
+        const tick = () => setRemaining(Math.max(0, Math.floor(expiresAtSec - Date.now() / 1000)));
+        tick();
+        const t = setInterval(tick, 1000);
+        return () => clearInterval(t);
+    }, [expiresAtSec]);
+    return (
+        <span className={`font-mono text-lg font-bold tabular-nums ${remaining == null ? "text-bunker-muted" : remaining <= 60 ? "text-yellow-300 animate-pulse" : "text-neon-green"}`}>
+            {remaining != null
+                ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+                : "—"}
+        </span>
+    );
+});
+
+export default function ChartsPage() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const [symbol, setSymbol] = useState<string>("EURUSD");
+    const [symbols, setSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
+    const [analysisOpen, setAnalysisOpen] = useState(false);
+    const [assistantOpen, setAssistantOpen] = useState(false);
+    const [interval, setTf] = useState<string>("5m");
+    const [loading, setLoading] = useState(true);
+    const [mode] = useUiMode();
+    const isAdvanced = mode === "advanced";
+    const [bars, setBars] = useState<Bar[]>([]);
+    const [instances, setInstances] = useState<IndicatorInstance[]>(DEFAULT_INSTANCES);
+    const [picking, setPicking] = useState(false);
+    const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+    const [volumeVisible, setVolumeVisible] = useState(false);
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+    const [showPositions, setShowPositions] = useState(true);
+    const [showStopTakeProfit, setShowStopTakeProfit] = useState(true);
+    const [showPatterns, setShowPatterns] = useState(false);
+    const [showPressure, setShowPressure] = useState(true);
+    const [forecast, setForecast] = useState<any>(null);
+    const [forecastHistory, setForecastHistory] = useState<any>(null);
+    const [forecastLoading, setForecastLoading] = useState(false);
+    // Denetim: ML tahmin/radar panellerinde "backend kapalı" ile "veri yok"
+    // ayrımı — hata durumunda panel bayatlık şeridi gösterir (sessiz yutma yok).
+    const [forecastError, setForecastError] = useState<string | null>(null);
+    const [monitorNotifError, setMonitorNotifError] = useState<string | null>(null);
+    // Denetim: portföy özeti HTTP/network hatasında bayat veriyle "canlı"
+    // görünmesin — şeridin üstünde görünür uyarı.
+    const [portfolioStale, setPortfolioStale] = useState(false);
+    const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
+    const [patternTooltip, setPatternTooltip] = useState<{ x: number; y: number; pattern: PatternMarker } | null>(null);
+    const [positions, setPositions] = useState<any[]>([]);
+    const [autoPaperPositions, setAutoPaperPositions] = useState<any[]>([]);
+    // WS durumu: HTTP yedek-yol frekansını seçmek için (WS sağlıklıyken seyreltilir).
+    const liveStatus = useLiveStatus();
+    // Radar bildirimi paneli: sembol için ufku dolmamış son monitoring bildirimi
+    // (fiyat/hedef/skor/ufuk + geri sayım) ve grafik çizgisi göstergesi.
+    const [monitorNotif, setMonitorNotif] = useState<any | null>(null);
+    // (monitorRemainingSec state'i KALDIRILDI — geri sayım izole CountdownSec bileşeninde)
+    const [showMonitoringLines, setShowMonitoringLines] = useState(true);
+    const [monitorDisplayReady, setMonitorDisplayReady] = useState(false); // DB display yüklendi mi (ilk yazımda sıfırları ezmesin)
+    const [livePortfolio, setLivePortfolio] = useState<LivePortfolio | null>(null);
+    const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
+    const [timeframeTrends, setTimeframeTrends] = useState<TimeframeTrend[]>([]);
+    const chartHeightRef = useRef(TOTAL_HEIGHT);
+    const positionLinesRef = useRef<Map<string, IPriceLine[]>>(new Map());
+    const monitorLinesRef = useRef<IPriceLine[]>([]);
+    const positionMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
+    const utBotMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
+    const patternMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
+
+    // localStorage yükleme: hydration uyumluluğu için client tarafında yap
+    useEffect(() => {
+        const querySymbol = searchParams.get("symbol")?.replace(/_/g, "").toUpperCase() || "";
+        const savedSymbol = querySymbol || loadPersisted(LS_SYMBOL, "EURUSD");
+        const savedInterval = querySymbol ? "5m" : loadPersisted(LS_INTERVAL, "5m");
+        setSymbol(savedSymbol);
+        setTf(savedInterval);
+        // Binance TR'deki tüm aktif TRY işlem çiftlerini al (ör. SAGATRY)
+        apiRequest(`${API_BASE}/api/market-symbols`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+                const marketList = d?.symbols;
+                if (Array.isArray(marketList) && marketList.length > 0) {
+                    setSymbols((currentList) => {
+                        const merged = new Set<string>([...currentList, ...marketList]);
+                        if (querySymbol) merged.add(querySymbol);
+                        if (savedSymbol) merged.add(savedSymbol);
+                        return [...merged].sort((a, b) => a.localeCompare(b));
+                    });
+                }
+            })
+            .catch(() => { });
+
+        apiRequest(`${API_BASE}/api/config`).then((r) => {
+            if (!r.ok) throw new Error(`config HTTP ${r.status}`);
+            return r.json();
+        }).then((d) => {
+            // H-01: komisyon oranını backend'den al — açık pozisyon K/Z'si
+            // böylece env değişse bile backend ile aynı kalır.
+            applyCommissionPct(d.commission_pct);
+            const active = Array.isArray(d.symbols) && d.symbols.length ? d.symbols : FALLBACK_SYMBOLS;
+            // SEMBOL KAÇIRMA DÜZELTMESİ (2026-09-16): kullanıcı ne seçtiyse O KALIR.
+            // Artık `symbol` state'ine DOKUNULMAZ; yalnız dropdown listesi
+            // BİRLEŞTİRİLİR (config + mevcut seçim + ?symbol= değeri).
+            setSymbols((currentList) => {
+                const merged = new Set<string>([...currentList, ...active]);
+                if (querySymbol) merged.add(querySymbol);
+                if (savedSymbol) merged.add(savedSymbol);
+                return [...merged].sort((a, b) => a.localeCompare(b));
+            });
+            setInstances(filterIndicatorInstances(loadIndicators()));
+            loadFromDb(savedSymbol);
+        }).catch(() => {
+            // Config alınamadı: yine seçime dokunma, yalnız minimum listeyi birleştir.
+            setSymbols((currentList) => {
+                const merged = new Set<string>([...currentList, ...FALLBACK_SYMBOLS]);
+                if (querySymbol) merged.add(querySymbol);
+                if (savedSymbol) merged.add(savedSymbol);
+                return [...merged].sort((a, b) => a.localeCompare(b));
+            });
+            setInstances(filterIndicatorInstances(loadIndicators()));
+            loadFromDb(savedSymbol);
+        });
+    // İlk yüklemede query değeri kullanılır; sonraki Link yönlendirmeleri
+    // aşağıdaki effect tarafından state'e aktarılır.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Görünüm tercihleri artık localStorage'dan YÜKLENMEZ: kaynak DB'dir
+    // (loadFromDb display bloklarını uygular). Bu effectin rolü bitti —
+    // monitorDisplayReady loadFromDb'de true yapilir.
+
+    // Görünüm tercihleri DB'de (sembol bazlı) saklanır: toggle değişince yazılır —
+    // localStorage/cache eski değer göstermez (2026-09-04).
+    // 2026-09-16: yazım DEBOUNCE edildi. Eskiden her toggle'da ANINDA PATCH
+    // gidiyordu; panelde art arda toggle açmak istek patlaması üretiyordu.
+    // 600 ms debounce ile tek istek yazılır. Unmount'ta bekleyen yazım iptal
+    // edilir, ama mount sırasında flush edilir (son değişiklik kaybolmaz).
+    const displaySaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (!symbol || !monitorDisplayReady) return;
+        if (displaySaveTimer.current) clearTimeout(displaySaveTimer.current);
+        const body = JSON.stringify({ display: { showPositions, showStopTakeProfit, showPatterns, showPressure, showMonitoringLines } satisfies DisplaySettings });
+        displaySaveTimer.current = setTimeout(() => {
+            try {
+                void apiRequest(`${API}/${encodeURIComponent(symbol)}/display`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body,
+                }).catch(() => undefined);
+            } catch { /* otomatik kayıt hatası görünmez */ }
+        }, 600);
+    }, [symbol, showPositions, showStopTakeProfit, showPatterns, showPressure, showMonitoringLines, monitorDisplayReady]);
+    useEffect(() => () => {
+        if (displaySaveTimer.current) clearTimeout(displaySaveTimer.current);
+    }, []);
+
+    // Sembol rozeti /charts?symbol=...&timeframe=5m ile istemci içi
+    // yönlendirme yapar. Sayfa unmount olmadığı için URL değişimini ayrıca
+    // dinlemek gerekir; aksi halde yalnız tam sayfa yenilemesinde çalışırdı.
+    useEffect(() => {
+        const requestedSymbol = searchParams.get("symbol")?.replace(/_/g, "").toUpperCase();
+        if (!requestedSymbol) return;
+        const requestedTimeframe = searchParams.get("timeframe");
+        const targetTimeframe = requestedTimeframe && INTERVAL_MS[requestedTimeframe] ? requestedTimeframe : "5m";
+        setSymbols((current) => current.includes(requestedSymbol)
+            ? current
+            : [...current, requestedSymbol].sort((left, right) => left.localeCompare(right)));
+        setSymbol(requestedSymbol);
+        setTf(targetTimeframe);
+        localStorage.setItem(LS_SYMBOL, JSON.stringify(requestedSymbol));
+        localStorage.setItem(LS_INTERVAL, JSON.stringify(targetTimeframe));
+        loadFromDb(requestedSymbol, targetTimeframe);
+        // loadFromDb is intentionally invoked only when the route query changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
+
+    // mum kapanış geri sayımı: seçili TF'ye göre kalan süre.
+    // H-08: state artık <CandleCountdown/> içinde — 250 ms tazeleme tüm
+    // sayfayı yeniden render etmez.
+
+    const containerRef = useRef<HTMLDivElement>(null);
+    const chartRef = useRef<IChartApi | null>(null);
+    const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+    // MUM AYNASI (2026-09-16): `bars` state'inin anlık yansıması. Canlı WS akışı
+    // saniyede bir mum basar; `setBars((prev) => ...)` updater'ının İÇİNDE
+    // `series.update()` çağırmak React 18'de GÜVENSZİZDİR (updater StrictMode'da
+    // ve eşzamanlı render'da birden çok kez çalıştırılabilir) → aynı mum için
+    // birden çok update ve sıra bozulunca lightweight-charts "Cannot update
+    // oldest data" fırlatırdı. Artık karar `barsRef` üzerinden yapılır, updater
+    // YOK; yan etki updater dışında, tam bir kez çalışır.
+    const barsRef = useRef<Bar[]>([]);
+    // BAYAT YANIT KORUMASI (2026-09-16): `reloadKlines` için istek sırası.
+    // Sayfa `symbol="BTCTRY"` (useState varsayılanı) ile ilk render olur ve BTC
+    // fetch'i BAŞLAR; mount efekti sembolü gerçek değere (ör. NEARTRY) çevirir.
+    // BTC yanıtı NEARTRY'den SONRA dönerse, koruma olmadığında `setData` BTC'yi
+    // NEARTRY'nin ÜZERİNE yazardı → "grafik ilk açılışta BTC gösteriyor". Bu sayaç
+    // yalnızca EN SON isteğin verisini uygular.
+    const klineReqIdRef = useRef(0);
+    // GÖRÜNÜM KİLİDİ (2026-09-16): `fitContent()` 10 sn'lik her HTTP turunda
+    // çağrılıyordu → kullanıcının kaydırması/yakınlaştırması sürekli sıfırlanıyor
+    // ve canlı güncellemeler "grafik zıplıyor" gibi görünüyordu. Artık yalnızca
+    // sembol/ufuk DEĞİŞTİĞİNDE bir kez sığdırılır; sonrası kullanıcının görünümünde
+    // tazelenir (canlı mum akmaya devam eder, görünüm kaymaz).
+    const fittedForRef = useRef<string>("");
+    const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+    const overlaySeries = useRef<Map<string, ISeriesApi<"Line">[]>>(new Map());
+    const paneSeries = useRef<Map<string, (ISeriesApi<"Line"> | ISeriesApi<"Histogram">)[]>>(new Map());
+    const volumePaneIndexRef = useRef<number | null>(null);
+    // pane yükseklikleri: "main" | "volume" | indikatör uid anahtarıyla saklanır — index bazlı değil,
+    // böylece hacim kapatılıp paneler kayınca yükseklikler doğru pane'e uygulanır
+    const paneHeightsRef = useRef<Record<string, number>>(
+        typeof window === "undefined" ? {} : loadPersisted<Record<string, number>>(LS_PANE_HEIGHTS, {})
+    );
+    const paneKeyByIndexRef = useRef<Map<number, string>>(new Map());
+
+    /**
+     * Pane yüksekliklerini localStorage'a yazar (yalnız değiştiyse).
+     * Ayrı bir `useVisibleInterval` ile 1 sn'de bir çağrılır: sekme gizliyken
+     * grafik zaten görünmüyor, `chartRef.current` da null olduğu için bu tur
+     * tamamen boşa çalışıyordu.
+     */
+    const savePaneHeights = useCallback(() => {
+        if (!chartRef.current) return;
+        // render henüz pane key'lerini doldurmadıysa yazma — yoksa gerçek ama küçük
+        // değerler ilk render öncesi DOM boyutları localStorage'a kaydedilip
+        // chart'ı kalıcı olarak küçültür.
+        if (paneKeyByIndexRef.current.size === 0) return;
+        const heights: Record<string, number> = {};
+        chartRef.current.panes().forEach((p, i) => {
+            const key = paneKeyByIndexRef.current.get(i) || String(i);
+            heights[key] = p.getHeight();
+        });
+        const key = JSON.stringify(heights);
+        if (key !== JSON.stringify(paneHeightsRef.current)) {
+            paneHeightsRef.current = heights;
+            try { localStorage.setItem(LS_PANE_HEIGHTS, key); } catch { }
+        }
+    }, []);
+    useVisibleInterval(savePaneHeights, 1000);
+
+    // ana grafik kurulumu (bir kez)
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const chart = createChart(containerRef.current, {
+            width: containerRef.current.clientWidth,
+            height: chartHeightRef.current,
+            layout: { background: { color: "#000000" }, textColor: "#6b7280", fontFamily: "JetBrains Mono, monospace" },
+            grid: {
+                vertLines: { color: "rgba(55, 65, 81, 0.2)" },
+                horzLines: { color: "rgba(55, 65, 81, 0.2)" }
+            },
+            crosshair: { mode: 0, vertLine: { color: "#10b981" }, horzLine: { color: "#10b981" } },
+            timeScale: { timeVisible: true, secondsVisible: false },
+            // Mobilde chart dikey kaydırmayı yutmasın: parmak dikeyde sayfayı
+            // kaydırır, yatayda chart'ı. Touch tuzak UX hatasını önler.
+            handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true }
+        });
+        chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
+        const series = chart.addSeries(CandlestickSeries, {
+            upColor: "#10b981", downColor: "#ef4444", borderVisible: false,
+            wickUpColor: "#10b981", wickDownColor: "#ef4444"
+        });
+        chartRef.current = chart;
+        candleRef.current = series;
+
+        // Pane yüksekliklerini izle ve kaydet → bileşen düzeyindeki
+        // `savePaneHeights` + `useVisibleInterval` (chart ömründen bağımsız ve
+        // sekme görünürlüğüne duyarlı).
+
+        // pencere boyutu değişince grafiği yeniden boyutlandır (autoSize yerine manuel — pane yükseklikleri sabit)
+        const ro = new ResizeObserver(() => {
+            if (!chartRef.current || !containerRef.current) return;
+            const compact = window.innerWidth < 768;
+            const keys = [...paneKeyByIndexRef.current.entries()]
+                .sort(([left], [right]) => left - right)
+                .map(([, key]) => key);
+            if (!keys.length) {
+                chartHeightRef.current = preferredChartHeight(MAIN_MIN, compact);
+            } else {
+                // mevcut pane yüksekliklerini koruyarak ekran bütçesine göre yeniden dağıt
+                const current: Record<string, number> = {};
+                chartRef.current.panes().forEach((p, i) => { current[keys[i] || String(i)] = p.getHeight(); });
+                const layout = computePaneLayout(keys, current, compact);
+                chartHeightRef.current = layout.total;
+                layout.heights.forEach((h, i) => chartRef.current!.panes()[i]?.setHeight(h));
+            }
+            chartRef.current.applyOptions({ width: containerRef.current.clientWidth, height: chartHeightRef.current });
+        });
+        ro.observe(containerRef.current);
+
+        return () => {
+            ro.disconnect();
+            chart.remove();
+            chartRef.current = null;
+            candleRef.current = null;
+        };
+    }, []);
+
+    // Mum verisi AKIŞ MANTIĞI (2026-09-16, grafik-canlı-düzeltmesi):
+    //
+    // SORUN: Grafik mum verisini YALNIZCA doğrudan tarayıcı→Binance WS'ine
+    // (`wss://stream-cloud.binance.tr/...`) bağlıyordu. Bu adres browser'dan
+    // ERİŞİLEMEZ (backend aynı adrese sunucudan bağlanabiliyor ve "WS istemcisi
+    // bağlı" görünüyor; browser'dan TCP/TLS bağlantısı kurulamıyor → "WebSocket
+    // connection failed"). Sonuç: grafik ASLINDA hiç canlı güncellenmiyordu,
+    // benim önceki fallback'ım 120 sn sonra 30 sn'de bir HTTP tazeleyecekti.
+    //
+    // ÇÖZÜM: HTTP'yi BİRİNCİL ve GÜVENİLİR kaynak yap, WS'yi İSTEĞE BAĞLI
+    // İYİLEŞTİRME olarak ekle.
+    //   • HTTP her 10 sn'de tazelenir (güvenilir; WS erişilebilirliğinden bağımsız).
+    //   • WS açıksa mevcut mumu anlık `update()` ile çizer (state'i sıfırlamaz,
+    //     indikatörleri sökmez → jank yok) ve yeni mum açıldında ekler.
+    //   • WS kapalıysa/ölüyse grafik donmaz; HTTP ile her 10 sn tazelenir.
+    // Bu sayede WS'in erişilebilir olduğu ağlarda (ev/ofis) grafik gerçek anlık
+    // olur, erişilemediği ağlarda (bulut sunucu/VPN) en az 10 sn'de bir güncellenir.
+    const reloadKlines = useCallback(async () => {
+        if (!symbol) { setLoading(false); return; }
+        // BAYAT YANIT KORUMASI: yalnız EN SON isteğin yanıtı uygulanır.
+        const requestId = ++klineReqIdRef.current;
+        try {
+            const cleanSym = symbol.replace(/[\/_]/g, "").toUpperCase();
+            const res = await apiRequest(`${API_BASE}/api/market-klines/${cleanSym}?interval=${interval}&limit=200`);
+            if (!res.ok) throw new Error(`kline HTTP ${res.status}`);
+            const payload = await res.json();
+            if (requestId !== klineReqIdRef.current) return;   // bayat yanıt → uygulama
+            const data = payload.candles || [];
+            if (!candleRef.current) return;
+            if (!data.length) {
+                // BOŞ YANIT KORUMASI (2026-09-16): `setData([])` BÜTÜN MUMLARI SİLER.
+                // Yukarı akış (Binance) kısa süreliğine boş dönerse grafiğin tamamen
+                // silinmesi yerine MEVCUT mumlar korunur; bir sonraki tur (10 sn)
+                // doldurur. Eskiden koruma yoktu → ara sıra "mumlar kayboldu".
+                console.warn(`kline: ${symbol}/${interval} boş yanıt — mevcut mumlar korundu`);
+                return;
+            }
+            const candles: Bar[] = data.map((k: number[]) => ({
+                time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5]
+            }));
+            setBars(candles);
+            // Ayna, state ile AYNI anda güncellenir: canlı akışın `barsRef` üzerinden
+            // verdiği karar, serideki gerçek son mumla tutarlı kalır.
+            barsRef.current = candles;
+            candleRef.current.setData(candles.map((c) => ({ ...c, time: c.time as UTCTimestamp })));
+            const last = candles[candles.length - 1]?.close ?? 0;
+            candleRef.current.applyOptions({ priceFormat: chartPriceFormat(last) });
+            chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
+            // GÖRÜNÜM KİLİDİ: yalnızca sembol/ufuk değişince sığdır (yukarıya bak).
+            const viewKey = `${symbol}|${interval}`;
+            if (fittedForRef.current !== viewKey) {
+                fittedForRef.current = viewKey;
+                chartRef.current?.timeScale().fitContent();
+            }
+        } catch (e) {
+            console.error("kline hatası:", e);
+        } finally {
+            // PERDE KİLİDİ (2026-09-16): `loading` true ile doğuyordu ve `setLoading`
+            // HİÇBİR yerde çağrılmıyordu → "YÜKLENİYOR..." perdesi (absolute inset-0
+            // z-10, %70 opak) grafiği KALICI olarak örtüyordu. Mum verisi aslında
+            // 10 sn'de bir `setData` ile geliyordu ama kullanıcı loş/donuk bir grafik
+            // görüyordu ("grafik güncellenmiyor"). Perde artık İLK tur bitince kalkar;
+            // başarısız ilk turda da kalkar (hatayı console'a bırakıp grafiği
+            // gizlemek yerine gösterir, sonraki tur 10 sn içinde doldurur).
+            setLoading(false);
+        }
+    }, [symbol, interval]);
+
+    // BİRİNCİL: HTTP ile tazelama (WS erişilebilirliğinden bağımsız, güvenilir).
+    // Sekme gizliyken durur. PERFORMANS (2026-09-26): WS açıkken backend mum
+    // başına canlı günceller; 10 sn'de bir 200 mumluk tam seri çekip `setData`
+    // ile sıfırdan basmak gereksiz ağ + gösterge yeniden hesabıydı → HTTP
+    // fallback aralığı WS sağlıklıyken 60 sn'e seyreltilir. WS kapalıysa 10 sn
+    // kalır (grafik donmaz).
+    useVisibleInterval(reloadKlines, liveStatus === "open" ? 60_000 : 10_000);
+    useEffect(() => { void reloadKlines(); }, [reloadKlines]);
+
+    // İSTEĞE BAĞLI İYİLEŞTİRME: Binance WS — yalnız erişilebilir ağlarda çalışır.
+    // Amaç: mevcut mumu anlık çizmek (state sıfırlanmaz → indikatör jank yok).
+    // WS erişilemezse (çoğu bulut/kurumsal ağ) bağlantı hatası retry eder; bu
+    // durumda grafik HTTP ile tazelenmeye devam eder, WS sadece "yeşil rozet"le
+    // canlı moduna geçer. Kullanıcı donuk grafik GÖRMEZ.
+    // CANLI AKIS (2026-09-16): Binance WS KALDIRILDI. Grafik mum verisini artık
+    // doğrudan Binance'ye bağlanarak değil, backend'in sağlıklı WS kanalından
+    // (`kline` mesajları) ve HTTP fallback'ıyla (~10 sn) alır. WS açıkken backend
+    // mum başına canlı günceller; kapalıysa HTTP güvencesi vardır — grafik donmaz.
+    // Sembol/TF değişince taze çek; yenile butonu fresh=1 ile yeni tahmin üretir.
+    const loadForecast = useCallback(async (fresh: boolean) => {
+        if (!symbol) { setForecast(null); return; }
+        setForecastLoading(true);
+        try {
+            const res = await apiRequest(`${API}/${encodeURIComponent(symbol)}/forecast`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ timeframe: interval, fresh })
+            });
+            const data = await res.json();
+            if (res.ok) { setForecast(data); setForecastError(null); }
+            else setForecastError(`Üst tahmin alınamadı (HTTP ${res.status}) — panel bayat olabilir.`);
+        } catch {
+            setForecast(null);
+            setForecastError("Üst tahmin alınamadı (bağlantı hatası) — panel bayat olabilir.");
+        } finally {
+            setForecastLoading(false);
+        }
+    }, [symbol, interval]);
+
+    const loadForecastHistory = useCallback(async () => {
+        if (!symbol) { setForecastHistory(null); return; }
+        try {
+            const res = await apiRequest(`${API}/${encodeURIComponent(symbol)}/forecast-history`);
+            const data = await res.json();
+            if (res.ok) { setForecastHistory(data); setForecastError(null); }
+        } catch {
+            setForecastHistory(null);
+        }
+    }, [symbol]);
+
+    useEffect(() => {
+        loadForecast(false);
+        loadForecastHistory();
+    }, [loadForecast, loadForecastHistory]);
+
+    // Radar bildirimi: sembol için ufku dolmamış son monitoring bildirimi.
+    // 15 sn'de bir yenilenir; ufuk dolduğunda backend active=False döner ve
+    // panel + grafik çizgileri kendiliğinden söner.
+    const loadMonitorNotif = useCallback(async () => {
+        if (!symbol) return;
+        try {
+            const res = await apiRequest(`${API_BASE}/api/monitoring/active-notification/${encodeURIComponent(symbol)}`, { cache: "no-store" });
+            const data = await res.json();
+            setMonitorNotif(res.ok && data?.active ? data : null);
+            setMonitorNotifError(null);
+        } catch {
+            setMonitorNotif(null);
+            setMonitorNotifError("Radar bildirimi alınamadı (bağlantı hatası) — panel bayat olabilir.");
+        }
+    }, [symbol]);
+    useEffect(() => {
+        setMonitorNotif(null);
+        loadMonitorNotif();
+    }, [loadMonitorNotif]);
+    // 15 sn'lik yoklama: sekme gizliyken durur (2026-09-16).
+    useVisibleInterval(loadMonitorNotif, 15_000);
+    // (geri sayım tick'i CountdownSec bileşenine taşındı — sayfa geneli re-render etmesin)
+    // Binance WS canlı akış durumu (2026-09-16): grafik canlı verisini yalnızca
+    // WS'e bağlıyordu; WS tutarsa grafik donar ve kullanıcı bunu göremezdi.
+    // Bu durum hem fallback'ın tetiklenmesini hem de aşağıdaki rozeti besler.
+    // CANLI AKIS (2026-09-16): backend'den kline mesajı alındı mı? Rozet için.
+    // P2-9: rozet eskiden TEK YÖNLÜYDÜ — ilk kline gelince true'ya dönüyor ve WS
+    // ölse/varsayılan sembolde hiç mum gelmese bile bir daha false olmuyordu.
+    // Artık son canlı mumun duvar-saati zamanı tutulur; 5 sn'lik bir tik onu
+    // tazeler ve `canli` yalnızca son mum `CANLI_TAZELIK_MS` içindeyse true kalır.
+    const lastBarAtRef = useRef(0);
+    const [canli, setCanli] = useState(false);
+    const CANLI_TAZELIK_MS = 15_000;
+    useEffect(() => {
+        const t = setInterval(() => {
+            setCanli(Date.now() - lastBarAtRef.current <= CANLI_TAZELIK_MS);
+        }, 5_000);
+        return () => clearInterval(t);
+    }, []);
+    // WebSocket anlık portföyü taşır; HTTP yalnızca bağlantı kopması için
+    // düşük frekanslı geri dönüş yoludur. Manuel kapatma sonrası da buradan
+    // tazelenir.
+    const fetchPositions = useCallback(async () => {
+        try {
+            const res = await apiRequest(`${API_BASE}/api/positions`);
+            // Hata yanıtı (401/5xx) pozisyon listesini SIFIRLAMAMALI: daha
+            // önce `data.positions || []` her yanıtta uygulandığı için bir
+            // başarısız REST çağrısı WS'ten gelen listeyi siliyor ve tablo
+            // "Açık pozisyon yok" gösteriyordu. Başarılı yanıtta da yalnızca
+            // positions alanı gerçekten dizi ise güncelle; aksi halde mevcut
+            // liste korunur.
+            if (!res.ok) return;
+            const data = await res.json();
+            if (Array.isArray(data?.positions)) setPositions(data.positions);
+        } catch { /* backend yoksa sessiz geç; mevcut liste korunur */ }
+    }, []);
+
+    const fetchAutoPaper = useCallback(async () => {
+        try {
+            const res = await apiRequest(`${API_BASE}/api/auto-paper/trades?status=open`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (Array.isArray(data?.trades)) setAutoPaperPositions(data.trades);
+        } catch { /* sessiz */ }
+    }, []);
+
+    // Ana + otonom pozisyonları birleştir. Otonom pozisyonlar YALNIZ
+    // autoPaperPositions'tan gelir: /api/positions ve WS portfolio da AUTO_PAPER
+    // satırları taşıyabildiğinden (farklı zamanlarda) aynı pozisyon iki kez
+    // listeleniyordu — burada filtrelenir.
+    const allPositions = useMemo(() => {
+        const result = positions.filter((p) => String(p.strategy || "").toUpperCase() !== "AUTO_PAPER");
+        const seenIds = new Set<number>();
+        for (const ap of autoPaperPositions) {
+            const id = Number(ap.id || 0);
+            if (id && seenIds.has(id)) continue;
+            if (id) seenIds.add(id);
+            // H-01: otonom pozisyonlar da NET (gidiş-dönüş komisyonlu) — ana
+            // pozisyonlarla aynı kolonda brüt/net karışıklığı böylece biter.
+            const entry = Number(ap.entry_price || 0);
+            const current = Number(ap.current_price) > 0 ? Number(ap.current_price) : null;
+            const pnl = netOpenPnlTry(ap.entry_price, ap.current_price, ap.quantity);
+            const pnlPct = netOpenPnlPct(ap.entry_price, ap.current_price, ap.quantity);
+            result.push({
+                symbol: ap.symbol,
+                entry,
+                current,
+                pnl_pct: pnlPct,
+                pnl_try: pnl,
+                side: ap.side,
+                quantity: ap.quantity,
+                entry_time: ap.entry_time,
+                strategy: "AUTO_PAPER",
+                take_profit: ap.take_profit,
+                stop_loss: ap.stop_loss,
+                _auto_paper_id: ap.id,
+                notification_price: ap.notification_price,
+                notification_expected_price: ap.notification_expected_price,
+                notification_target_pct: ap.notification_target_pct,
+                notification_score: ap.notification_score,
+            });
+        }
+        return result.sort((a, b) => Number(b.entry_time || 0) - Number(a.entry_time || 0));
+    }, [positions, autoPaperPositions]);
+
+    const currentAutoTrade = useMemo(() => {
+        return autoPaperPositions.find((p) => p.symbol === symbol && p.status === "open") || null;
+    }, [autoPaperPositions, symbol]);
+
+    useEffect(() => {
+        fetchPositions();
+        fetchAutoPaper();
+    }, [fetchPositions, fetchAutoPaper]);
+    // 2026-09-16 denetimi: yukarıdaki yorum "HTTP yalnızca bağlantı kopması için
+    // DÜŞÜK FREKANSLI geri dönüş yoludur" diyordu ama kod koşulsuz 3 sn poll
+    // yapıyordu. Artık WS SAĞLIKLIYKEN yedek yol seyreltilir (30 sn), WS kapalıyken
+    // hızlı kalır (3 sn) — davranış korunur, gereksiz istek gider. Ayrıca sekme
+    // gizliyken aralık durur (`useVisibleInterval`).
+    const positionsPollMs = liveStatus === "open" ? 30_000 : 3_000;
+    useVisibleInterval(fetchPositions, positionsPollMs);
+    useVisibleInterval(fetchAutoPaper, positionsPollMs);
+
+    const loadPortfolioSummary = useCallback(async () => {
+        try {
+            const response = await apiRequest(`${API_BASE}/api/portfolio/summary`);
+            if (!response.ok) { setPortfolioStale(true); return; }
+            const result = await response.json();
+            if (result.portfolio && Object.keys(result.portfolio).length) setLivePortfolio(result.portfolio as LivePortfolio);
+            if (result.metrics) setPortfolioMetrics(result.metrics as PortfolioMetrics);
+            setPortfolioStale(false);
+        } catch { setPortfolioStale(true); }
+    }, []);
+
+    useEffect(() => {
+        loadPortfolioSummary();
+    }, [loadPortfolioSummary]);
+    // 30 sn'lik portföy özeti: sekme gizliyken durur (2026-09-16).
+    useVisibleInterval(loadPortfolioSummary, 30_000);
+
+    // Zaman dilimi trendleri: sembole bağlı. Eski efekt hem `cancelled` bayrağı
+    // hem `setInterval` taşıyordu; aralık artık görünürlük-farkında yardımcıya
+    // taşındı ve bayat yanıt koruması SİMBOLE göre yapılıyor (hızlı sembol
+    // değişiminde eski yanıtın yenisini ezmesini engeller).
+    const symbolRef = useRef(symbol);
+    useEffect(() => { symbolRef.current = symbol; }, [symbol]);
+    const loadTimeframeTrends = useCallback(async () => {
+        const requested = symbol;
+        if (!requested) return;
+        try {
+            const response = await apiRequest(`${API_BASE}/api/chart/${encodeURIComponent(requested)}/timeframe-trends`);
+            const result = await response.json();
+            if (symbolRef.current !== requested) return; // sembol değişti → bayat yanıt
+            setTimeframeTrends(Array.isArray(result.timeframes) ? result.timeframes : []);
+        } catch {
+            if (symbolRef.current !== requested) return;
+            setTimeframeTrends([]);
+        }
+    }, [symbol]);
+    useEffect(() => {
+        setTimeframeTrends([]);
+        loadTimeframeTrends();
+    }, [loadTimeframeTrends]);
+    // 20 sn'lik trend yoklaması: sekme gizliyken durur (2026-09-16).
+    useVisibleInterval(loadTimeframeTrends, 20_000);
+
+    useLiveMessages(useCallback((message: any) => {
+        // CANLI AKIS (2026-09-16, grafik-canlı-düzeltmesi): backend'den gelen mum
+        // mesajlarını işle. Grafik doğrudan Binance'ye bağlanmaz; backend'in sağlıklı
+        // WS'inden gelen klineleri kullanır (browser'dan Binance'ye erişilemez).
+        //
+        // KRİTİK (2026-09-16): Bu callback identity'si sembol/ufuk DEĞİŞTİĞİNDE
+        // değişmelidir, yoksa canlı akış bozulur. Üç yardımcı fonksiyon boş [] ile
+        // memoize olduğundan callback identity'si sabit kalır → useLiveMessages
+        // içindeki `listenerRef.current = listener` efekti YENİDEN TETİKLENMEZ → ref
+        // ilk mount'taki closure'u (symbol="BTCTRY" varsayılanı) tutar. Kullanıcı
+        // başka bir sembole client-side navigasyonla gittiğinde sembol/interval
+        // state'i değişir ama WS handler hâlâ eski sembolü filtreler → canlı
+        // güncellemeler ÖLÜR (yalnızca 10 sn HTTP çalışır). symbol/interval
+        // bağımlılığa eklenince her değişimde yeni listener yayılanır ve ref güncellenir.
+        if (message.type === "kline") {
+            const d = message.data || {};
+            if (!d || typeof d !== "object") return;
+            if (String(d.symbol).toUpperCase() !== symbol.toUpperCase()
+                    || String(d.timeframe) !== interval) {
+                return;
+            }
+            const bar: Bar = {
+                time: Math.floor((d.time || 0) / 1000),
+                open: +d.open, high: +d.high, low: +d.low, close: +d.close, volume: +d.volume,
+            };
+            if (!Number.isFinite(bar.close) || bar.close <= 0 || !candleRef.current) return;
+            // Backend'den canlı mum geldi → rozeti yeşile çevir ve TAZELİK zamanını
+            // damgala (rozet bu damga eskimeyene kadar CANLI kalır; P2-9).
+            lastBarAtRef.current = Date.now();
+            setCanli(true);
+            candleRef.current.applyOptions({ priceFormat: chartPriceFormat(bar.close) });
+
+            // ZAMAN KAPISI (2026-09-16): karar `barsRef` üzerinden, setBars updater'ı YOK.
+            //   bar.time <  last → ESKİ mum (kapanmış tick)  → yok say
+            //   bar.time == last → OLUŞAN mum               → series.update() canlı tazele
+            //   bar.time >  last → YENİ bar açıldı          → serive state'e ekle
+            // ESKİDEN `update()` `setBars` updater'ının İÇİNDEYDİ. React 18 bir updater'ı
+            // birden çok kez çalıştırabilir (StrictMode'da iki kez, eşzamanlı render'da
+            // yeniden) → aynı mum için birden çok update ve sıra bozulunca
+            // lightweight-charts istisna fırlatırdı; updater render sırasında koştuğu
+            // için bu istisna BÜTÜN sayfayı patlatabilirdi (mumlar kaybolur).
+            const prev = barsRef.current;
+            const last = prev.length ? prev[prev.length - 1] : null;
+            if (!last || bar.time < last.time) return;
+            let ok = true;
+            try {
+                candleRef.current.update(bar as any);
+            } catch (err) {
+                // Seri/state kilidi bozulduysa sayfayı patlatmak yerine bu mumu atla;
+                // 10 sn'lik HTTP turu seriyi zaten `setData` ile yeniden kurar.
+                ok = false;
+                console.warn("kline update atlandı:", err);
+            }
+            if (!ok) return;
+            const next = bar.time === last.time ? prev : [...prev.slice(-199), bar];
+            barsRef.current = next;
+            setBars(next);
+            return;
+        }
+        if (message.type === "portfolio") {
+            if (typeof document !== "undefined" && document.hidden) return;
+            setLivePortfolio(message.data as LivePortfolio);
+            // Backend WS portfolio mesajı hem `positions` (ana paper) hem
+            // `auto_paper_positions` (otonom) alanlarını taşır. Her saniye
+            // yeni bir nesne geldiğinden (current/pnl_try WS tarafında
+            // hesaplanır) bu iki set ile açık pozisyonlar tablosu gerçek
+            // zamanlı güncel fiyat/PnL göstermeye başlar. Alanlar dizi
+            // değilse mevcut REST listesini boşaltmayız.
+            if (Array.isArray(message.data?.positions)) {
+                setPositions(message.data.positions);
+            }
+            if (Array.isArray(message.data?.auto_paper_positions)) {
+                const ap = message.data.auto_paper_positions.map((t: any) => ({
+                    id: Number(t.auto_paper_id || 0),
+                    symbol: t.symbol,
+                    side: t.side,
+                    entry_price: Number(t.entry || 0),
+                    current_price: Number(t.current || 0),
+                    quantity: Number(t.quantity || 0),
+                    take_profit: t.take_profit,
+                    stop_loss: t.stop,
+                    entry_time: t.entry_time,
+                    notification_price: t.notification_price,
+                    notification_expected_price: t.notification_expected_price,
+                    notification_target_pct: t.notification_target_pct,
+                    notification_score: t.notification_score,
+                }));
+                // Kapalı pozisyon WS'te boş liste olarak gelir; boş set
+                // atlanırsa kapanan pozisyon tabloda "açık" kalırdı.
+                setAutoPaperPositions(ap);
+            }
+        }
+        if (["trade_updated", "signal", "reset"].includes(message.type)) loadPortfolioSummary();
+        // H-20: LLM pozisyon yönetimi ve portföy mutabakatı olaylarının tüketicisi
+        // yoktu → pozisyon tablosu ve özet 3-30 sn'ye kadar bayat kalıyordu.
+        if (["llm_position_management", "portfolio_reconciled"].includes(message.type)) {
+            loadPortfolioSummary();
+            fetchPositions();
+            fetchAutoPaper();
+        }
+    }, [loadPortfolioSummary, fetchPositions, fetchAutoPaper, symbol, interval]));
+
+    // mum serisi ilk yüklemede load() içinde setData ile kurulur,
+    // canlı güncelleme WebSocket handler'ında update() ile yapılır (görünüm sıfırlanmaz)
+
+    // indikatörleri çiz: sadece yapı değişince (indikatör/hacim) yeniden inşa et
+    const buildLayout = useCallback((skipHeight: boolean) => {
+        const chart = chartRef.current;
+        if (!chart) return;
+
+        // Önce tüm eski serileri ve pane'leri temizle
+        overlaySeries.current.forEach((arr) => arr.forEach((s) => {
+            try { chart.removeSeries(s); } catch { }
+        }));
+        overlaySeries.current.clear();
+
+        paneSeries.current.forEach((arr) => arr.forEach((s) => {
+            try { chart.removeSeries(s); } catch { }
+        }));
+        paneSeries.current.clear();
+
+        if (volumeRef.current) {
+            try { chart.removeSeries(volumeRef.current); } catch { }
+        }
+        volumeRef.current = null;
+        volumePaneIndexRef.current = null;
+
+        while (chart.panes().length > 1) chart.removePane(1);
+        chart.chartElement().querySelectorAll(".pane-title").forEach((n) => n.remove());
+
+        const instPanes = new Map<string, number>(); // uid -> pane index
+        let paneIdx = 1;
+
+        // HACİM pane'i (isteğe bağlı)
+        if (volumeVisible) {
+            const volData = bars.map((b) => ({
+                time: b.time as UTCTimestamp,
+                value: b.volume,
+                color: b.close >= b.open ? "rgba(16,185,129,0.45)" : "rgba(239,68,68,0.45)"
+            }));
+            const volumeSeries = chart.addSeries(HistogramSeries, {
+                priceLineVisible: false, lastValueVisible: false
+            }, paneIdx);
+            volumeSeries.setData(volData);
+            volumeRef.current = volumeSeries;
+            volumePaneIndexRef.current = paneIdx;
+            chart.priceScale("right", paneIdx).applyOptions({ scaleMargins: { top: 0.25, bottom: 0.02 } });
+            paneIdx++;
+        }
+        for (const inst of instances) {
+            const entry = findIndicatorEntry(inst.registryId);
+            if (!entry) continue;
+            let result;
+            try {
+                result = entry.calculate(bars, inst.params);
+            } catch {
+                // Eksik/uyumsuz parametre tek bir indikatörün tüm grafiği bozmasını engeller.
+                continue;
+            }
+            // Bazı community/pattern indikatörleri çizim primitive'i döndürür;
+            // bu renderer yalnızca numeric plot serilerini destekler.
+            // Böyle bir sonuç tüm grafik akışını kırmadan marker/primitive katmanına bırakılır.
+            const plots = result?.plots
+                ? Object.values(result.plots).filter((p) => Array.isArray(p) && p.some((pt) => pt.value != null && !Number.isNaN(pt.value)))
+                : [];
+            if (!plots.length) continue;
+
+            const style = inst.style;
+            const isHisto = plots.length >= 3;
+
+            if (inst.overlay) {
+                // çizgi başına stil: lineWidths yoksa tüm çizgiler lineWidth kullanır
+                const widthFor = (pi: number) =>
+                    (style.lineWidths?.[pi] ?? style.lineWidth) as 1 | 2 | 3 | 4;
+                const arr: ISeriesApi<"Line">[] = [];
+                // Kernel çizgisi için segment bazlı renk değişimi
+                const isKernel = inst.registryId === "sling_shot";
+                if (isKernel && plots.length > 0) {
+                    // Her renk değişiminde yeni bir segment oluştur
+                    const plot = plots[0];
+                    let currentSegment: { time: number; value: number }[] = [];
+                    let currentColor: string = style.colors[0] || PALETTE[0];
+                    const segments: { color: string; data: { time: number; value: number }[] }[] = [];
+                    for (const point of plot) {
+                        if (point.value == null || Number.isNaN(point.value)) continue;
+                        const pointColor: string = (point as any).color || style.colors[0] || PALETTE[0];
+                        if (pointColor !== currentColor) {
+                            // Renk değişti — mevcut segmenti kaydet, yenisini başlat
+                            if (currentSegment.length > 0) segments.push({ color: currentColor, data: [...currentSegment] });
+                            currentColor = pointColor;
+                            currentSegment = [{ time: point.time, value: point.value }];
+                        } else {
+                            currentSegment.push({ time: point.time, value: point.value });
+                        }
+                    }
+                    if (currentSegment.length > 0) {
+                        segments.push({ color: currentColor, data: currentSegment });
+                    }
+                    // Her segmenti ayrı bir seri olarak çiz
+                    for (const seg of segments) {
+                        const s = chart.addSeries(LineSeries, {
+                            color: seg.color,
+                            lineWidth: widthFor(0),
+                            priceLineVisible: false,
+                            lastValueVisible: false,
+                        });
+                        s.setData(seg.data.map((d) => ({ time: d.time as UTCTimestamp, value: d.value })));
+                        arr.push(s);
+                    }
+                } else {
+                    // Normal indikatörler için standart çizim
+                    arr.push(...plots.map((plot, pi) => {
+                        const lastPoint = [...plot].reverse().find((p) => p.value != null && !Number.isNaN(p.value));
+                        const s = chart.addSeries(LineSeries, {
+                            color: style.colors[pi] || PALETTE[pi % PALETTE.length],
+                            lineWidth: widthFor(pi),
+                            priceLineVisible: style.showPriceLine,
+                            lastValueVisible: style.showPriceLine
+                        });
+                        const data = plot
+                            .filter((p) => p.value != null && !Number.isNaN(p.value))
+                            .map((p) => ({ time: p.time as UTCTimestamp, value: p.value as number }));
+                        s.setData(data);
+                        if (lastPoint && style.showPriceLine) {
+                            s.applyOptions({ priceLineVisible: true, lastValueVisible: true });
+                            try {
+                                (s as any).setData(data);
+                            } catch {
+                                // ignore
+                            }
+                        }
+                        return s;
+                    }));
+                }
+                overlaySeries.current.set(inst.uid, arr);
+            } else {
+                instPanes.set(inst.uid, paneIdx);
+                const isMacd = inst.registryId === "macd";
+                // min/max bantları: 3+ plotlu indikatörlerde son plotlar banttır (RSI 30/70 gibi)
+                const boundStart = isHisto ? 3 : Math.min(plots.length, 2);
+                const arr: (ISeriesApi<"Line"> | ISeriesApi<"Histogram">)[] = [];
+                const manualBounds = [
+                    ...(style.minValue != null ? [{ value: style.minValue, color: style.colors[1] || PALETTE[1] }] : []),
+                    ...(style.maxValue != null ? [{ value: style.maxValue, color: style.colors[2] || PALETTE[2] }] : [])
+                ];
+                plots.forEach((plot, pi) => {
+                    const widthFor = (idx: number) =>
+                        (style.lineWidths?.[idx] ?? style.lineWidth) as 1 | 2 | 3 | 4;
+                    const numericPoints = plot.filter((p) => p.value != null && !Number.isNaN(p.value));
+                    const data = numericPoints.map((p, index) => {
+                        const value = p.value as number;
+                        const color = isMacd && isHisto && pi === 0
+                            ? macdHistogramColor(value, numericPoints[index - 1]?.value as number | undefined)
+                            : p.color; // plot kendi semantik rengini veriyorsa (eşik altı yeşil vb.) ona öncelik ver
+                        return {
+                            time: p.time as UTCTimestamp,
+                            value,
+                            ...(color ? { color } : {})
+                        };
+                    });
+                    if (!data.length) return;
+                    if (isHisto && pi === 0) {
+                        const s = chart.addSeries(HistogramSeries, {
+                            color: style.colors[0] || PALETTE[0], base: 0,
+                            priceLineVisible: false, lastValueVisible: false
+                        }, paneIdx);
+                        s.setData(data);
+                        arr.push(s);
+                    } else if (pi >= boundStart) {
+                        // bant çizgisi: göster/gizle stile bağlı
+                        if (!style.showBounds) return;
+                        const s = chart.addSeries(LineSeries, {
+                            color: style.colors[pi] || PALETTE[pi % PALETTE.length],
+                            lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false
+                        }, paneIdx);
+                        s.setData(data);
+                        arr.push(s);
+                    } else {
+                        const s = chart.addSeries(LineSeries, {
+                            color: style.colors[pi] || PALETTE[pi % PALETTE.length],
+                            lineWidth: widthFor(pi), priceLineVisible: style.showPriceLine, lastValueVisible: style.showPriceLine
+                        }, paneIdx);
+                        s.setData(data);
+                        if (style.showPriceLine) {
+                            s.applyOptions({ priceLineVisible: true, lastValueVisible: true });
+                        }
+                        arr.push(s);
+                    }
+                });
+                paneSeries.current.set(inst.uid, arr);
+                // Tüm gösterge panellerinde çizginin pane'e yapışmasını engellemek
+                // için üst/alt boşluk bırak; MACD ayrıca sıfır merkezli düzen alır.
+                chart.priceScale("right", paneIdx).applyOptions({
+                    autoScale: true,
+                    scaleMargins: { top: 0.12, bottom: 0.12 }
+                });
+                if (isMacd && arr.length) {
+                    // MACD histogram sıfır merkezli olmalı. Varsayılan fiyat
+                    // ölçeği küçük histogram değerlerini düzleştirebildiği
+                    // için pane'e belirgin bir sıfır çizgisi ve dengeli marj
+                    // uygula.
+                    chart.priceScale("right", paneIdx).applyOptions({
+                        autoScale: true,
+                        scaleMargins: { top: 0.12, bottom: 0.12 }
+                    });
+                    arr[0].createPriceLine({
+                        price: 0,
+                        color: "rgba(148,163,184,0.65)",
+                        lineWidth: 1,
+                        lineStyle: 2,
+                        axisLabelVisible: false,
+                        title: "0"
+                    });
+                }
+                paneIdx++;
+            }
+        }
+
+        // manuel min/max bant değerleri varsa bunları da çiz
+        instances.forEach((inst) => {
+            const entry = findIndicatorEntry(inst.registryId);
+            if (!entry || inst.overlay) return;
+            const style = inst.style;
+            if (!style.showBounds) return;
+            const paneIndex = instPanes.get(inst.uid);
+            if (!paneIndex || style.minValue == null && style.maxValue == null) return;
+
+            const bounds = [
+                ...(style.minValue != null ? [{ value: style.minValue, color: style.colors[1] || PALETTE[1] }] : []),
+                ...(style.maxValue != null ? [{ value: style.maxValue, color: style.colors[2] || PALETTE[2] }] : [])
+            ];
+
+            // bantları pane serisine fiyat çizgisi olarak ekle → tüm pane genişliğine, sağ fiyat eksenine kadar uzar
+            const paneSeriesArr = paneSeries.current.get(inst.uid);
+            const anchor = paneSeriesArr?.[0];
+            if (!anchor) return;
+            bounds.forEach((bound) => {
+                anchor.createPriceLine({
+                    price: bound.value,
+                    color: bound.color,
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    axisLabelVisible: true,
+                    title: String(bound.value)
+                });
+            });
+        });
+
+        // pane yükseklikleri: key bazlı eşleştirme — main/volume/uid
+        // paneKeyByIndexRef'e her pane'in anahtarını yaz (observer bunu kullanır)
+        paneKeyByIndexRef.current.clear();
+        // Anahtarları GERÇEKTEN oluşturulan pane'lerden türet: hesaplanamayan
+        // (plot üretemeyen) indikatörler pane açmaz; hepsi için anahtar üretmek
+        // kayıtlı yüksekliklerin yanlış pane'lere uygulanmasına yol açar.
+        const paneKeys: string[] = ["main"];
+        if (volumeVisible) paneKeys.push("volume");
+        [...instPanes.entries()].sort(([, a], [, b]) => a - b).forEach(([key]) => paneKeys.push(key));
+        // Kaydedilmiş yükseklikleri koru, ancak eski 44/56px kayıtları okunabilir
+        // minimumun altına inemesin. Gerekirse canvas büyür; panel sıkışmaz.
+        // skipHeight: bars canlı güncellenirken kullanıcı sürüklemesi korunur.
+        if (!skipHeight) {
+            const compact = typeof window !== "undefined" && window.innerWidth < 768;
+            const layout = computePaneLayout(paneKeys, paneHeightsRef.current, compact);
+            chartHeightRef.current = layout.total;
+            chart.applyOptions({ height: layout.total });
+            chart.panes().forEach((p, i) => {
+                const key = paneKeys[i] || `pane${i}`;
+                paneKeyByIndexRef.current.set(i, key);
+                p.setHeight(layout.heights[i] ?? paneMinimumHeight(key, compact));
+            });
+        }
+
+        // pane başlıkları: TradingView gibi pane'in sol üst KÖŞESİNİN İÇİNDE
+        // başlık pane TR'sinin (table tr[2i]) ilk hücresine gömülür → pane resize edilince otomatik takip eder
+        requestAnimationFrame(() => {
+            const el = chart.chartElement();
+            el.querySelectorAll(".pane-title").forEach((n) => n.remove());
+            const rows = Array.from(el.querySelectorAll("table tr"));
+            const paneCount = chart.panes().length;
+            if (!volumeVisible) {
+                const toggle = document.createElement("div");
+                toggle.className = "pane-title";
+                toggle.style.cssText = `position:absolute;top:4px;left:8px;z-index:5;display:flex;align-items:center;gap:5px;background:rgba(11,15,20,0.9);border:1px solid #1f2937;border-radius:6px;padding:2px 7px;font-family:JetBrains Mono,monospace;font-size:11px;color:#9ca3af;cursor:pointer;pointer-events:auto;`;
+                const label = document.createElement("span");
+                label.innerText = "HACİM KAPALI";
+                const open = document.createElement("button");
+                open.innerText = "＋";
+                open.style.cssText = "background:none;border:none;color:#34d399;cursor:pointer;font-size:11px;padding:0 2px;";
+                open.title = "Aç";
+                open.onclick = () => setVolumeVisible(true);
+                toggle.append(label, open);
+                el.appendChild(toggle);
+            }
+            for (let i = 1; i < paneCount; i++) {
+                const tr = rows[2 * i];
+                if (!tr) continue;
+                const td = tr.querySelector("td") as HTMLElement | null;
+                if (!td) continue;
+                td.style.position = "relative";
+
+                let bar: HTMLDivElement;
+                if (volumeVisible && i === 1) {
+                    // HACİM başlığı (kapama butonu ile)
+                    bar = document.createElement("div");
+                    bar.className = "pane-title";
+                    bar.style.cssText = `position:absolute;top:4px;left:8px;z-index:5;display:flex;align-items:center;gap:5px;background:rgba(11,15,20,0.9);border:1px solid #1f2937;border-radius:6px;padding:2px 7px;font-family:JetBrains Mono,monospace;font-size:11px;color:#9ca3af;cursor:default;pointer-events:auto;`;
+                    const name = document.createElement("span");
+                    name.innerText = "HACİM";
+                    const close = document.createElement("button");
+                    close.innerText = "✕";
+                    close.style.cssText = "background:none;border:none;color:#9ca3af;cursor:pointer;font-size:11px;padding:0 2px;";
+                    close.title = "Kapat";
+                    close.onclick = () => setVolumeVisible(false);
+                    bar.append(name, close);
+                } else {
+                    const inst = [...instances].find((x) => instPanes.get(x.uid) === i);
+                    if (!inst) continue;
+                    bar = document.createElement("div");
+                    bar.className = "pane-title";
+                    bar.style.cssText = `position:absolute;top:4px;left:8px;z-index:5;display:flex;align-items:center;gap:5px;background:rgba(11,15,20,0.9);border:1px solid #1f2937;border-radius:6px;padding:2px 7px;font-family:JetBrains Mono,monospace;font-size:11px;color:#34d399;cursor:default;pointer-events:auto;`;
+                    const name = document.createElement("span");
+                    name.innerText = inst.name;
+                    const gear = document.createElement("button");
+                    gear.innerText = "⚙";
+                    gear.style.cssText = "background:none;border:none;color:#9ca3af;cursor:pointer;font-size:11px;padding:0 2px;";
+                    gear.title = "Ayarlar";
+                    gear.onclick = () => {
+                        const entry = findIndicatorEntry(inst.registryId);
+                        if (entry) setEditTarget({ entry, editUid: inst.uid });
+                    };
+                    const x = document.createElement("button");
+                    x.innerText = "✕";
+                    x.style.cssText = "background:none;border:none;color:#9ca3af;cursor:pointer;font-size:11px;padding:0 2px;";
+                    x.title = "Kaldır";
+                    x.onclick = () => removeIndicator(inst.uid);
+                    bar.append(name, gear, x);
+                }
+                td.appendChild(bar);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bars, instances, volumeVisible]);
+
+    // yapı değişince (indikatör/hacim) yeniden inşa et + yükseklik uygula
+    useEffect(() => {
+        buildLayout(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [instances, volumeVisible]);
+
+    // bars canlı güncellenince sadece veriyi yeniden çiz — yükseklikleri EZME
+    useEffect(() => {
+        buildLayout(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bars]);
+
+    // Açık pozisyon (otonom paper veya manuel) ve bildirim çizgileri:
+    // Seçili sembolün açık otonom paper işlemi varsa; giriş noktası, stop noktası,
+    // kâr alma noktası ile bildirimin gönderildiği nokta ve bildirimdeki hedef grafiğe yansıtılır.
+    useEffect(() => {
+        const chart = chartRef.current;
+        const series = candleRef.current;
+        if (!chart || !series) return;
+
+        // eski çizgileri temizle
+        positionLinesRef.current.forEach((lines) => lines.forEach((l) => {
+            try { series.removePriceLine(l); } catch { }
+        }));
+        positionLinesRef.current.clear();
+        // P2-9: eski marker primitive'ini SERİDEN SÖK. `setMarkers([])` yalnız
+        // marker'ları boşaltır, primitive bağlı kalırdı → her re-render'da bir
+        // primitive sızıyordu (charts v5 plugin API). `detach()` bağlı primitive'i
+        // tamamen kaldırır (zaten bağlı değilse no-op).
+        positionMarkersRef.current?.detach();
+        positionMarkersRef.current = null;
+
+        const autoPos = autoPaperPositions.find((p) => p.symbol === symbol && p.status === "open");
+        const standardPos = positions.find((p) => p.symbol === symbol);
+        const pos = autoPos || standardPos;
+        if (!pos) return;
+
+        const lines: IPriceLine[] = [];
+        const addLine = (price: number | null | undefined, color: string, title: string, lineStyle: number = 2, lineWidth: number = 2) => {
+            if (price == null || !Number.isFinite(price) || price <= 0) return;
+            try {
+                const pl = series.createPriceLine({
+                    price, color, lineWidth: lineWidth as 1 | 2 | 3 | 4, lineStyle: lineStyle as any,
+                    axisLabelVisible: true, title
+                });
+                lines.push(pl);
+            } catch { }
+        };
+
+        const isAuto = !!autoPos;
+        const entryPrice = isAuto ? Number(autoPos.entry_price) : Number(standardPos?.entry);
+        const stopPrice = isAuto ? autoPos.stop_loss : (standardPos?.llm_stop_price ?? standardPos?.stop);
+        const tpPrice = isAuto ? autoPos.take_profit : (standardPos?.llm_take_profit_price ?? standardPos?.take_profit);
+
+        // Bildirim verileri: otonom işlem nesnesinden veya monitorNotif'ten
+        const notifPrice = Number(autoPos?.notification_price ?? monitorNotif?.price ?? 0);
+        const notifTarget = Number(autoPos?.notification_expected_price ?? monitorNotif?.expected_price ?? 0);
+        const notifTargetPct = Number(autoPos?.notification_target_pct ?? monitorNotif?.target_pct ?? 0);
+
+        // 1. Giriş Fiyatı Çizgisi (Yeşil #10b981)
+        if (showPositions || isAuto) {
+            addLine(entryPrice, "#10b981", isAuto ? `OTONOM GİRİŞ ${formatPrice(entryPrice)}` : `GİRİŞ ${formatPrice(entryPrice)}`, 0, 2);
+
+            // 2. Bildirimin Gönderildiği Nokta (Sarı #eab308)
+            if (notifPrice > 0) {
+                addLine(notifPrice, "#eab308", `BİLDİRİM / SİNYAL ${formatPrice(notifPrice)}`, 1, 2);
+            }
+
+            // 3. Bildirimde Belirtilen Hedef (Mor #a855f7)
+            if (notifTarget > 0) {
+                const pctLabel = notifTargetPct > 0 ? ` (+%${notifTargetPct.toFixed(1)})` : "";
+                addLine(notifTarget, "#a855f7", `BİLDİRİM HEDEFİ ${formatPrice(notifTarget)}${pctLabel}`, 2, 2);
+            }
+        }
+
+        // 4. Stop Loss ve Kâr Alma Çizgileri
+        if (showStopTakeProfit || isAuto) {
+            if (stopPrice != null && Number(stopPrice) > 0) {
+                addLine(Number(stopPrice), "#ef4444", `STOP LOSS ${formatPrice(Number(stopPrice))}`, 2, 2);
+            }
+            if (tpPrice != null && Number(tpPrice) > 0) {
+                addLine(Number(tpPrice), "#3b82f6", `KÂR AL (TP) ${formatPrice(Number(tpPrice))}`, 2, 2);
+            }
+        }
+
+        if (lines.length) positionLinesRef.current.set(symbol, lines);
+
+        // Giriş noktasına mum altına/üstüne marker ekle
+        if (!showPositions && !isAuto) return;
+        try {
+            const markers = createSeriesMarkers(series, []);
+            positionMarkersRef.current = markers;
+            const ms = INTERVAL_MS[interval] || 60_000;
+            const entrySec = pos.entry_time ?? Math.floor(Date.now() / 1000);
+            const barTime = Math.floor(entrySec / (ms / 1000)) * (ms / 1000);
+            markers.setMarkers([{
+                time: barTime as UTCTimestamp,
+                position: pos.side === "LONG" || isAuto ? "belowBar" : "aboveBar",
+                color: pos.side === "LONG" || isAuto ? "#10b981" : "#ef4444",
+                shape: pos.side === "LONG" || isAuto ? "arrowUp" : "arrowDown",
+                text: isAuto ? "OTONOM AL" : (pos.side === "LONG" ? "LONG" : "SHORT"),
+                size: 1
+            }]);
+        } catch { /* marker zamanı veri aralığında değilse sessiz geç */ }
+    }, [showPositions, showStopTakeProfit, positions, autoPaperPositions, monitorNotif, symbol, bars, interval]);
+
+    // Radar bildirimi çizgileri: Pozisyonu olmayan semboller için gelen canlı radar bildirimleri
+    // (fiyat + hedef), "Grafikte göster" açıkken mor ve sarı renkle çizilir.
+    useEffect(() => {
+        const series = candleRef.current;
+        if (!series) return;
+        monitorLinesRef.current.forEach((l) => {
+            try { series.removePriceLine(l); } catch { }
+        });
+        monitorLinesRef.current = [];
+
+        // Açık otonom işlem zaten bu sembolde varsa çizgileri positionLinesRef çizer, çakışmayı önle
+        const hasOpenAutoTrade = autoPaperPositions.some((p) => p.symbol === symbol && p.status === "open");
+        if (hasOpenAutoTrade) return;
+
+        if (!showMonitoringLines || !monitorNotif?.active) return;
+        const addMonitorLine = (price: number | null | undefined, color: string, title: string, lineStyle: number = 2) => {
+            // Hedef/bildirim fiyatı NULL gelebilir; "0" bir fiyat değil, o yüzden
+            // çizgi üretilmez (grafik ekseni 0'a çekilmez).
+            if (price == null || !Number.isFinite(price) || price <= 0) return;
+            try {
+                monitorLinesRef.current.push(series.createPriceLine({
+                    price: price as number, color, lineWidth: 2, lineStyle: lineStyle as any,
+                    axisLabelVisible: true, title
+                }));
+            } catch { }
+        };
+        const notifRaw = monitorNotif.price;
+        const notifPrice = notifRaw == null ? null : Number(notifRaw);
+        const targetRaw = monitorNotif.expected_price;
+        const targetPrice = targetRaw == null ? null : Number(targetRaw);
+        addMonitorLine(notifPrice, "#eab308", `BİLDİRİM ${notifPrice != null ? formatPrice(notifPrice) : "—"}`, 1);
+        addMonitorLine(targetPrice, "#a855f7", `HEDEF ${targetPrice != null ? formatPrice(targetPrice) : "—"}`, 2);
+    }, [showMonitoringLines, monitorNotif, autoPaperPositions, symbol, bars]);
+
+    // Eklenen strateji kategorisi indikatörlerin (EMA Pullback, VWAP+MACD, CMO+CRSI,
+    // SlingShot) buy/sell sinyalleri marker olarak gösterilir.
+
+    useEffect(() => {
+        const series = candleRef.current;
+        if (!series) return;
+
+        // eski marker'ları temizle (P2-9: primitive'i söküp sızıntıyı önle)
+        utBotMarkersRef.current?.detach();
+        utBotMarkersRef.current = null;
+
+        // SlingShot ve diğer strateji indikatörlerini topla
+        const slingShotInsts = instances.filter((i) => i.registryId === "sling_shot");
+        const otherStratInsts = instances.filter((i) => i.registryId in strategySignalFns && i.registryId !== "sling_shot");
+        if ((!slingShotInsts.length && !otherStratInsts.length) || bars.length === 0) return;
+
+        try {
+            const markers = createSeriesMarkers(series, []);
+            utBotMarkersRef.current = markers;
+            const all: { time: UTCTimestamp; position: "belowBar" | "aboveBar"; color: string; shape: "arrowUp" | "arrowDown"; text: string; size: number }[] = [];
+
+            // Sinyal toplama yardımcı fonksiyonu
+            // useShortText=true ise "B"/"S" harfleri kullanılır (TradingView SlingShot stili)
+            const collectSignals = (instList: typeof instances, useSpotExec: boolean, useShortText: boolean) => {
+                for (const inst of instList) {
+                    const fn = strategySignalFns[inst.registryId];
+                    const colors = strategyColors[inst.registryId];
+                    const label = strategyLabels[inst.registryId];
+                    // showSignals parametresi false isa sinyal gösterme
+                    const showSignals = inst.params.showSignals !== false;
+                    if (!showSignals) continue;
+                    const raw = fn(bars, inst.params);
+                    const signals = useSpotExec ? spotExecutionSignals(bars, raw) : raw;
+                    for (const s of signals) {
+                        all.push({
+                            time: s.time as UTCTimestamp,
+                            position: s.type === "buy" ? "belowBar" : "aboveBar",
+                            color: s.type === "buy" ? colors.buy : colors.sell,
+                            shape: s.type === "buy" ? "arrowUp" : "arrowDown",
+                            text: useShortText
+                                ? (s.type === "buy" ? "B" : "S")
+                                : (s.type === "buy" ? `${label} BUY` : `${label} SELL`),
+                            size: 1
+                        });
+                    }
+                }
+            };
+
+            // SlingShot için doğrudan sinyal kullan (spot execution değil, kısa B/S metin)
+            collectSignals(slingShotInsts, false, true);
+            // Diğer stratejiler için spot execution modeli
+            collectSignals(otherStratInsts, true, false);
+
+            // Zamana göre sırla ve marker'ları ayarla
+            all.sort((a, b) => a.time - b.time);
+            markers.setMarkers(all);
+        } catch { /* marker hatası sessiz geç */ }
+    }, [instances, bars, symbol]);
+
+    // Güçlü mum formasyonlarını seçili timeframe üzerinde marker olarak göster.
+    useEffect(() => {
+        // P2-9: primitive'i sök (yalnız marker'ları boşaltmak sızıntı bırakırdı).
+        patternMarkersRef.current?.detach();
+        patternMarkersRef.current = null;
+        if (!showPatterns || !bars.length || !candleRef.current) return;
+        try {
+            const markers = createSeriesMarkers(candleRef.current, []);
+            patternMarkersRef.current = markers;
+            markers.setMarkers(strongCandlestickPatterns(bars).map((p) => ({
+                time: p.time as UTCTimestamp,
+                position: p.type === "buy" ? "belowBar" : "aboveBar",
+                // Boğa/yükseliş yeşil, ayı/düşüş kırmızı.
+                color: p.type === "buy" ? "#10b981" : "#ef4444",
+                shape: p.type === "buy" ? "arrowUp" : "arrowDown",
+                text: p.type === "buy" ? "↑" : "↓",
+                size: 1
+            })));
+        } catch { /* marker zamanı veri aralığı dışındaysa sessiz geç */ }
+    }, [showPatterns, bars, symbol, interval]);
+
+    useEffect(() => {
+        const chart = chartRef.current;
+        if (!chart || !showPatterns) { setPatternTooltip(null); return; }
+        const patterns = new Map(strongCandlestickPatterns(bars).map((p) => [p.time, p]));
+        const onMove = (param: any) => {
+            const time = typeof param.time === "number" ? param.time : null;
+            const point = param.point;
+            const pattern = time == null ? null : patterns.get(time);
+            if (!pattern || !point) { setPatternTooltip(null); return; }
+            setPatternTooltip({ x: point.x, y: point.y, pattern });
+        };
+        chart.subscribeCrosshairMove(onMove);
+        return () => chart.unsubscribeCrosshairMove(onMove);
+    }, [showPatterns, bars, symbol, interval]);
+
+    const addIndicator = (entry: RegistryEntry, params: Record<string, any>, style: IndicatorStyle) => {
+        const next = [...instances, { uid: uid(), registryId: entry.id, name: entry.shortName, overlay: entry.overlay, params, style }];
+        setInstances(next);
+        localStorage.setItem(LS_INDICATORS, JSON.stringify(next));
+        setEditTarget(null);
+        setPicking(false);
+    };
+
+    const updateIndicator = (editUid: string, params: Record<string, any>, style: IndicatorStyle) => {
+        const next = instances.map((i) => (i.uid === editUid ? { ...i, params, style } : i));
+        setInstances(next);
+        localStorage.setItem(LS_INDICATORS, JSON.stringify(next));
+        setEditTarget(null);
+    };
+
+    const removeIndicator = (u: string) => {
+        const next = instances.filter((i) => i.uid !== u);
+        setInstances(next);
+        localStorage.setItem(LS_INDICATORS, JSON.stringify(next));
+    };
+
+    const [clearingIndicators, setClearingIndicators] = useState(false);
+    const [clearMsg, setClearMsg] = useState<{ ok: boolean; text: string } | null>(null);
+    // Server-side toplu temizlik: TÜM sembollerin eski indikatör yerleşimlerini atar.
+    const clearAllIndicators = async () => {
+        if (!confirm("Tüm sembollerin kayıtlı indikatör yerleşimleri temizlensin mi? (varsayılan SlingShot kalır)")) return;
+        setClearingIndicators(true);
+        setClearMsg(null);
+        try {
+            const res = await apiRequest(`${API}/_clear-indicators`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                setClearMsg({ ok: true, text: `✓ ${data?.message ?? "temizlendi"}` });
+                // aktif sembolü varsayılana düşür
+                const def = [DEFAULT_SLING_SHOT];
+                setInstances(def);
+                localStorage.setItem(LS_INDICATORS, JSON.stringify(def));
+                await loadFromDb(symbol);
+            } else {
+                setClearMsg({ ok: false, text: data?.message || "temizlik hatası" });
+            }
+        } catch {
+            setClearMsg({ ok: false, text: "bağlantı hatası" });
+        } finally {
+            setClearingIndicators(false);
+        }
+    };
+
+    const changeSymbol = (s: string) => {
+        setSymbol(s);
+        localStorage.setItem(LS_SYMBOL, JSON.stringify(s));
+        loadFromDb(s);
+    };
+
+    const changeInterval = (i: string) => {
+        setTf(i);
+        localStorage.setItem(LS_INTERVAL, JSON.stringify(i));
+    };
+
+    // seçili sembolün grafik ayarlarını veritabanına kaydet (indikatör, TF, pane yükseklikleri, hacim)
+    const saveToDb = async () => {
+        setSaveState("saving");
+        const payload = {
+            interval,
+            indicators: instances,
+            paneHeights: paneHeightsRef.current,
+            volumeVisible,
+            display: { showPositions, showStopTakeProfit, showPatterns, showPressure, showMonitoringLines } satisfies DisplaySettings
+        };
+        try {
+            const res = await apiRequest(`${API}/${symbol}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            // P0-4 sınıfı: `apiRequest` non-ok'da throw etmez. `res.ok` bakılmazsa
+            // kayıt başarısızken (401/5xx) "✓ KAYDEDİLDİ" yanardı — kullanıcı
+            // ayarının kalıcı olduğunu sanırdı. Artık yalnız gerçek 2xx'te yeşil.
+            if (!res.ok) { setSaveState("failed"); return; }
+            setSaveState("saved");
+            setTimeout(() => setSaveState((s) => (s === "saved" ? "idle" : s)), 2000);
+        } catch {
+            setSaveState("failed");
+        }
+    };
+
+    // veritabanından sembol ayarlarını yükle — kaynak DB'dir (localStorage değil)
+    const loadFromDb = async (s: string, forcedInterval?: string) => {
+        try {
+            const res = await apiRequest(`${API}/${s}`);
+            const data = await res.json();
+            const st = data?.settings;
+            // Kayıt yoksa da display yazımına hazırız: ilk toggle DB'ye PATCH ile gider.
+            if (!st) { setMonitorDisplayReady(true); return; }
+            const resolvedInterval = forcedInterval || st.interval || "5m";
+            setTf(resolvedInterval);
+            localStorage.setItem(LS_INTERVAL, JSON.stringify(resolvedInterval));
+            if (st.indicators?.length) {
+                const filteredIndicators = filterIndicatorInstances(st.indicators as IndicatorInstance[]);
+                setInstances(filteredIndicators);
+                localStorage.setItem(LS_INDICATORS, JSON.stringify(filteredIndicators));
+            } else if (st.indicators != null) {
+                // DB'de hiç indikatör yoksa (temizlenmiş) varsayılan SlingShot
+                const def = [DEFAULT_SLING_SHOT];
+                setInstances(def);
+                localStorage.setItem(LS_INDICATORS, JSON.stringify(def));
+            }
+            if (st.paneHeights) {
+                paneHeightsRef.current = st.paneHeights;
+                try { localStorage.setItem(LS_PANE_HEIGHTS, JSON.stringify(st.paneHeights)); } catch { }
+            }
+            if (typeof st.volumeVisible === "boolean") setVolumeVisible(st.volumeVisible);
+            if (typeof st.display?.showPositions === "boolean") setShowPositions(st.display.showPositions);
+            if (typeof st.display?.showStopTakeProfit === "boolean") setShowStopTakeProfit(st.display.showStopTakeProfit);
+            if (typeof st.display?.showPatterns === "boolean") setShowPatterns(st.display.showPatterns);
+            if (typeof st.display?.showPressure === "boolean") setShowPressure(st.display.showPressure);
+            if (typeof st.display?.showMonitoringLines === "boolean") setShowMonitoringLines(st.display.showMonitoringLines);
+            // DB display yüklendi: toggle-anlık PATCH artık güvenle yazabilir
+            setMonitorDisplayReady(true);
+        } catch { /* backend yoksa varsayılanlar kalır */ }
+    };
+
+    const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
+    const closePositionManually = async (sym: string, autoPaperId?: number) => {
+        if (closingSymbol) return;
+        setClosingSymbol(sym);
+        try {
+            // Otonom pozisyonlar analyzer'da değil auto_paper_trades'te yaşar;
+            // kapatma kendi endpoint'ine gider.
+            const url = autoPaperId
+                ? `${API_BASE}/api/auto-paper/trades/${autoPaperId}/close`
+                : `${API_BASE}/api/positions/${encodeURIComponent(sym)}/close`;
+            const res = await apiRequest(url, { method: "POST" });
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data?.message || data?.detail || "kapatma başarısız");
+            // pozisyon listesi WS "signal" yayınıyla da tazelenir; burada emin olmak için çek
+            await Promise.all([fetchPositions(), fetchAutoPaper()]);
+            loadPortfolioSummary();
+        } catch (err: any) {
+            console.error("manuel kapatma hatası:", err);
+            alert(`${sym} kapatılamadı: ${err?.message || "bilinmeyen hata"}`);
+        } finally {
+            setClosingSymbol(null);
+        }
+    };
+
+    // H-02: pnl_try `null` olan pozisyon toplama 0 olarak girmez (aksi halde
+    // "veri yok" ile "başabaş" ayırt edilemezdi). Hiç ölçüm yoksa toplam `null`.
+    const openPnl = (() => {
+        if (livePortfolio?.unrealized_pnl != null && Number.isFinite(Number(livePortfolio.unrealized_pnl))) {
+            return Number(livePortfolio.unrealized_pnl);
+        }
+        const values = allPositions
+            .map((position) => position.pnl_try)
+            .filter((v): v is number => v != null && Number.isFinite(Number(v)))
+            .map((v) => Number(v));
+        return values.length === 0 ? null : values.reduce((total, v) => total + v, 0);
+    })();
+    // H-02: metrikler yüklenmeden `0` göstermek sahte "başabaş yeşil" üretirdi.
+    const netPnl = portfolioMetrics?.net_pnl == null ? null : Number(portfolioMetrics.net_pnl);
+    // H-04/H-15: TL biçimi tek kaynaktan (`lib/format.ts`) — ₺ önek, 2 ondalık.
+    const money = formatTL;
+    const pnlClass = (value: number | null) => pnlToneClass(value);
+    const signedMoney = formatSignedTL;
+    const pressure = (() => {
+        const recent = bars.slice(-8);
+        if (recent.length < 2) return 0;
+        const weighted = recent.reduce((sum, bar) => {
+            const range = Math.max(bar.high - bar.low, Number.EPSILON);
+            return sum + (((bar.close - bar.low) / range) * 2 - 1) * bar.volume;
+        }, 0);
+        const volume = recent.reduce((sum, bar) => sum + bar.volume, 0);
+        return clamp(volume ? (weighted / volume) * 100 : 0, -100, 100);
+    })();
+
+    // Grafik altı gösterge şeridi: seçili zaman diliminin son mumlarından
+    // hesaplanır. bars WebSocket ile güncellendikçe bu memo da yeniden çalışır,
+    // böylece değerler mumla birlikte canlı tazelenir.
+    const strip = useMemo(() => ({
+        rsi: rsiLast(bars, 14),
+        mfi: mfiLast(bars, 14),
+        obv: obvLast(bars)
+    }), [bars]);
+
+    const obvCompact = (value: number) => {
+        const abs = Math.abs(value);
+        if (abs >= 1e9) return `${(value / 1e9).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} Mr`;
+        if (abs >= 1e6) return `${(value / 1e6).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} Mn`;
+        if (abs >= 1e3) return `${(value / 1e3).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} B`;
+        return value.toLocaleString("tr-TR", { maximumFractionDigits: 0 });
+    };
+    const num1 = (value: number | null) => value == null ? "—" : value.toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    // radar bildirim zamanı (unix sn) -> saat:dakika:saniye
+    // H-24: elle `* 1000` yerine `toMs` (saniye/ms karışık girdi güvenli).
+    const fmtClock = (ts: number | null | undefined) => (ts ? new Date(toMs(ts)).toLocaleTimeString("tr-TR") : "—");
+    // RSI/MFI bölge etiketi: aşırı bölgelerde renk değişir, nötrde beyaz kalır.
+    const zoneClass = (value: number | null, oversold: number, overbought: number) =>
+        value == null ? "text-bunker-muted" : value <= oversold ? "text-neon-green" : value >= overbought ? "text-red-400" : "text-white";
+    const zoneLabel = (value: number | null, oversold: number, overbought: number) =>
+        value == null ? "VERİ YOK" : value <= oversold ? "AŞIRI SATIM" : value >= overbought ? "AŞIRI ALIM" : "NÖTR";
+
+    // Radar bildirimi canlı takip: WS mumunun son kapanışı (15sn'lik endpoint
+    // ticker'ından taze); hedef kontrolü hem endpoint hem istemci tarafından
+    // anlık yapılır — panel SON ufuk dolana kadar kalır, hedefe ulaşıldığında
+    // durum rozeti belirir.
+    // Denetim #56: `Number(x) || 0` deseni "hedef yok (null)" ile "hedef = 0"
+    // ayrımını siliyordu; backend `expected_price` NULL dönebiliyor
+    // (`monitoring.py:2486` de `or 0` ile çeviriyor) ve hedef çizgisi 0'a
+    // çizilerek grafik ekseni bozuluyordu. Artık `null` = "hedef yok" ve
+    // çizgi/etiket hiç üretilmiyor; `monitorTargetHit` koruması da
+    // `> 0` kontrolü sayesinde aynı kalıyor.
+    const expectedRaw = monitorNotif?.expected_price;
+    const monitorExpected = (() => {
+        if (!monitorNotif?.active || expectedRaw == null || expectedRaw === "") return null;
+        const n = Number(expectedRaw);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    })();
+    const monitorLivePrice = monitorNotif?.active
+        ? (bars.length ? (Number(bars[bars.length - 1].close) || Number(monitorNotif.current_price) || 0) : (Number(monitorNotif.current_price) || 0))
+        : 0;
+    const monitorTargetHit = Boolean(monitorNotif?.active && monitorNotif.target_hit) ||
+        (monitorLivePrice > 0 && monitorExpected != null && monitorLivePrice >= monitorExpected);
+
+    return (
+        <div className="max-w-7xl mx-auto space-y-5">
+            <header className="chart-page-header flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                    <button
+                        type="button"
+                        onClick={() => { if (typeof window !== "undefined" && window.history.length > 1) router.back(); else router.push("/monitoring"); }}
+                        className="shrink-0 rounded-lg border border-bunker-700 bg-bunker-900/60 px-3 py-2 font-mono text-xs text-bunker-muted transition-colors hover:border-bunker-500 hover:text-white"
+                        title="Önceki sayfaya dön"
+                    >
+                        ← GERİ
+                    </button>
+                    <div className="min-w-0">
+                        <h1 className="font-mono text-xl font-bold tracking-tight">
+                            <span className="text-neon-green">GRAFİK</span> TERMİNALİ
+                        </h1>
+                        <p className="eyebrow mt-1">Binance public API · son 200 mum</p>
+                    </div>
+                </div>
+            </header>
+
+            {portfolioStale && (
+                <div className="flex items-center gap-2 rounded-lg border border-yellow-400/40 bg-yellow-400/5 px-3 py-1.5">
+                    <span className="font-mono text-[11px] text-yellow-300">Portföy özeti güncellenemedi (bayat)</span>
+                    <button type="button" onClick={() => { setPortfolioStale(false); loadPortfolioSummary(); }} className="rounded border border-bunker-700 px-2 py-0.5 font-mono text-[11px] text-bunker-muted hover:text-white">YENİDEN DENE</button>
+                </div>
+            )}
+            {/* PERFORMANS/UX (2026-09-27): 6 hücreli portföy şeridi grafiği ilk
+                ekrandan çıkarıyordu ve /portfolio ile tekrarlıydı → tek satırlık
+                kompakt rozet. Ayrıntı /portfolio sayfasında. */}
+            <section aria-label="Portföy özeti" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-bunker-800 bg-bunker-950/80 px-3 py-1.5 font-mono text-xs">
+                <span className="text-bunker-muted">Portföy: <b className="text-white">{livePortfolio?.total_value == null ? "—" : money(livePortfolio.total_value)}</b></span>
+                <span className="text-bunker-muted">Serbest: <b className="text-white">{livePortfolio?.try == null ? "—" : money(livePortfolio.try)}</b></span>
+                <span className="text-bunker-muted">Açık PnL: <b className={pnlClass(openPnl)}>{openPnl == null ? "—" : signedMoney(openPnl)}</b></span>
+                <span className="text-bunker-muted">Pozisyon: <b className="text-white">{allPositions.length}</b></span>
+                <span className="text-bunker-muted">Net PnL: <b className={pnlClass(netPnl)}>{netPnl == null ? "—" : signedMoney(netPnl)}</b></span>
+                <Link href="/portfolio" className="ml-auto text-[11px] text-bunker-muted hover:text-neon-green">detay ↗</Link>
+            </section>
+
+            <section aria-label="Zaman dilimi trend durumu" className="flex flex-wrap items-stretch gap-2 rounded-xl border border-bunker-800 bg-bunker-950/80 p-3">
+                <p className="flex items-center pr-1 font-mono text-[10px] font-bold tracking-wider text-bunker-muted">TF YÖNÜ<br />KAPANMIŞ MUM</p>
+                {INTERVALS.map(({ v, l }) => {
+                    const trend = timeframeTrends.find((item) => item.timeframe === v);
+                    const direction = trend?.alignment ?? "unknown";
+                    const tone = direction === "bullish" ? "border-neon-green/40 bg-neon-green/10 text-neon-green" : direction === "bearish" ? "border-red-400/40 bg-red-400/10 text-red-400" : direction === "mixed" ? "border-yellow-400/35 bg-yellow-400/10 text-yellow-300" : "border-bunker-700 bg-bunker-900/60 text-bunker-muted";
+                    const arrow = direction === "bullish" ? "↑" : direction === "bearish" ? "↓" : "—";
+                    const label = direction === "bullish" ? "BULLISH" : direction === "bearish" ? "BEARISH" : direction === "mixed" ? "KARIŞIK" : "VERİ YOK";
+                    // UX (2026-09-27): TF şeridi artık tıklanabilir — MTF MACD
+                    // taraması için doğal giriş noktası (tık = o TF'e geç).
+                    const active = interval === v;
+                    return (
+                        <button
+                            key={v}
+                            type="button"
+                            onClick={() => changeInterval(v)}
+                            title={`${l}: ${label}${active ? " (geçerli TF)" : " — bu TF'e geç"}`}
+                            className={`min-w-[58px] rounded-lg border px-2 py-1.5 text-center font-mono transition-all ${tone} ${active ? "ring-1 ring-neon-green/60" : "hover:border-neon-green/40 cursor-pointer"}`}
+                        >
+                            <p className="text-[10px] font-bold">{l}</p>
+                            <p className="mt-0.5 text-lg font-bold leading-5" aria-label={label}>{arrow}</p>
+                        </button>
+                    );
+                })}
+            </section>
+
+            {/* Sembol seçimi, analiz ve zaman dilimi — grafiğin hemen üstünde */}
+            {!isAdvanced && (
+              <div className="flex items-center gap-2">
+                <select
+                    value={symbol}
+                    onChange={(e) => changeSymbol(e.target.value)}
+                    aria-label="Sembol seç"
+                    className="chart-symbol-select bg-bunker-900 border border-bunker-700 rounded-lg px-3 py-2 font-mono text-sm text-white focus:border-neon-green/50 outline-none"
+                >
+                    {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
+            {isAdvanced && (
+            <div className="chart-toolbar flex flex-wrap items-center gap-2 sm:gap-3">
+                <select
+                    value={symbol}
+                    onChange={(e) => changeSymbol(e.target.value)}
+                    aria-label="Sembol seç"
+                    className="chart-symbol-select bg-bunker-900 border border-bunker-700 rounded-lg px-3 py-2 font-mono text-sm text-white focus:border-neon-green/50 outline-none"
+                >
+                    {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <button
+                    type="button"
+                    onClick={() => setAnalysisOpen(true)}
+                    className="px-3 py-2 rounded-lg border border-yellow-400/50 bg-yellow-400/10 font-mono text-xs text-yellow-300 hover:bg-yellow-400/20"
+                    title="Sembol analizi"
+                >
+                    🔬 ANALİZ
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setAssistantOpen((prev) => !prev)}
+                    className={`px-3 py-2 rounded-lg border font-mono text-xs transition-all flex items-center gap-1.5 shadow-sm ${
+                        assistantOpen
+                            ? "border-cyan-400 bg-cyan-500/25 text-cyan-300 ring-2 ring-cyan-400/40"
+                            : "border-cyan-500/50 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-400"
+                    }`}
+                    title="Grafik Asistanı (Sade Dille Sembol ve Tahmin Yorumu)"
+                >
+                    🤖 ASİSTAN
+                </button>
+                <div className="chart-intervals max-w-full overflow-x-auto flex rounded-lg border border-bunker-700">
+                    {INTERVALS.map((i) => (
+                        <button
+                            key={i.v}
+                            onClick={() => changeInterval(i.v)}
+                            className={`chart-interval-button px-3 py-2 font-mono text-xs transition-colors ${interval === i.v ? "bg-neon-green/15 text-neon-green" : "bg-bunker-900 text-bunker-muted hover:text-white"}`}
+                        >
+                            {i.l}
+                        </button>
+                    ))}
+                </div>
+                {/* CANLI AKIS DURUMU (2026-09-16): grafik mum verisini Binance'den
+                    değil backend'den alır. Son 15 sn içinde backend'den canlı mum
+                    geldiyse CANLI (yeşil) rozeti; aksi halde (WS ölü / varsayılan
+                    sembolde mum üretilmiyor) TAZELEMEDE. P2-9: rozet artık gerçek
+                    duruma geri döner (tek yönlü değil). */}
+                <span className={`rounded border px-2 py-1 font-mono text-[10px] font-bold ${
+                    canli ? "border-neon-green/40 bg-neon-green/10 text-neon-green"
+                    : "border-yellow-400/40 bg-yellow-400/10 text-yellow-300"
+                }`}>
+                    {canli ? `● CANLI · ${interval}` : "◌ TAZELEMEDE"}
+                </span>
+                <button
+                    onClick={() => setPicking(true)}
+                    className="px-4 py-2 min-h-10 rounded-lg border border-neon-green/40 bg-neon-green/10 font-mono text-sm text-neon-green hover:bg-neon-green/20 active:scale-[0.98] transition-transform"
+                    title="Standart indikatör ekle"
+                >
+                    + İNDİKATÖR
+                </button>
+                <button
+                    onClick={saveToDb}
+                    disabled={saveState === "saving"}
+                    className={`px-4 py-2 rounded-lg border font-mono text-sm transition-colors ${saveState === "saved"
+                        ? "border-neon-green bg-neon-green/20 text-neon-green"
+                        : saveState === "failed"
+                        ? "border-red-400/50 bg-red-400/10 text-red-400 hover:bg-red-400/20"
+                        : "border-neon-yellow/40 bg-neon-yellow/10 text-neon-yellow hover:bg-neon-yellow/20"
+                        }`}
+                >
+                    {saveState === "saving" ? "KAYDEDİLİYOR..." : saveState === "saved" ? "✓ KAYDEDİLDİ" : saveState === "failed" ? "✕ KAYDEDİLEMEDİ" : "KAYDET"}
+                </button>
+            </div>
+            )}
+
+            {/* Aktif indikatörler + hacim + ekle — grafiğin hemen üstünde */}
+            <div className="flex flex-wrap items-center gap-2">
+                <span className="eyebrow">AKTİF:</span>
+                {instances.length === 0 && (
+                    <span className="font-mono text-[11px] text-bunker-muted">hiçbiri</span>
+                )}
+                {instances.map((o) => (
+                    <span
+                        key={o.uid}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs ${o.overlay
+                            ? "border-neon-yellow/30 bg-neon-yellow/10 text-neon-yellow"
+                            : "border-neon-green/30 bg-neon-green/10 text-neon-green"
+                            }`}
+                    >
+                        {o.name}
+                        <button onClick={() => removeIndicator(o.uid)} className="hover:text-white">✕</button>
+                    </span>
+                ))}
+                <span className="mx-1 h-5 w-px bg-bunker-800" aria-hidden="true" />
+                {/* Hacim aç/kapa — grafiğin üst kısmında, artı butonunun yanında */}
+                <button
+                    type="button"
+                    role="switch"
+                    aria-checked={volumeVisible}
+                    onClick={() => setVolumeVisible((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs transition-colors ${volumeVisible
+                        ? "border-neon-green/40 bg-neon-green/10 text-neon-green"
+                        : "border-bunker-700 bg-bunker-900 text-bunker-muted hover:text-white"
+                        }`}
+                    title="Hacim panelini aç/kapat"
+                >
+                    <span className="text-[11px]">◧</span> HACİM {volumeVisible ? "AÇIK" : "KAPALI"}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setPicking(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-bunker-700 bg-bunker-900 px-2 py-1 font-mono text-xs text-bunker-muted transition-colors hover:text-neon-green"
+                    title="İndikatör ekle"
+                >
+                    ＋ EKLE
+                </button>
+            </div>
+
+            {analysisOpen && <div className="fixed inset-0 z-[90] grid place-items-center bg-black/75 p-3 sm:p-6 overflow-y-auto" onClick={() => setAnalysisOpen(false)}>
+                <section className="w-full max-w-7xl h-[92vh] max-h-[92vh] overflow-hidden rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl flex flex-col" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="symbol-analysis-modal-title">
+                    <div className="flex items-center justify-between border-b border-bunker-800 px-4 py-3 shrink-0">
+                        <h2 id="symbol-analysis-modal-title" className="font-mono text-sm font-bold text-white"><SymbolLink symbol={symbol} className="text-neon-green hover:text-white" /> · SEMBOL ANALİZİ</h2>
+                        <button type="button" onClick={() => setAnalysisOpen(false)} className="min-h-11 min-w-11 px-3 py-1 flex items-center justify-center text-bunker-muted hover:text-white rounded-lg" aria-label="Sembol analizini kapat">✕</button>
+                    </div>
+                    <iframe title={`${symbol} sembol analizi`} src={`/symbol-analysis?symbol=${encodeURIComponent(symbol)}&embedded=1`} className="flex-1 w-full border-0" />
+                </section>
+            </div>}
+
+            {chartSettingsOpen && <div className="fixed inset-0 z-[90] grid place-items-center bg-black/75 p-3 sm:p-6 overflow-y-auto" onClick={() => setChartSettingsOpen(false)}>
+                <section className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="chart-settings-modal-title">
+                    <div className="flex shrink-0 items-center justify-between border-b border-bunker-800 px-4 py-2.5">
+                        <div>
+                            <h2 id="chart-settings-modal-title" className="font-mono text-sm font-bold text-white">GRAFİK AYARLARI</h2>
+                            <p className="mt-1 text-xs text-bunker-muted"><SymbolLink symbol={symbol} className="text-neon-green" /> · görünüm tercihleri</p>
+                        </div>
+                        <button type="button" onClick={() => setChartSettingsOpen(false)} className="min-h-11 min-w-11 touch-target rounded-lg flex items-center justify-center text-bunker-muted hover:bg-bunker-900 hover:text-white" aria-label="Grafik ayarlarını kapat">✕</button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
+                        {[
+                            { checked: volumeVisible, setChecked: setVolumeVisible, title: "Hacim paneli", description: "Hacim mumlarını göster." },
+                            { checked: showPositions, setChecked: setShowPositions, title: "Pozisyonlar", description: "Giriş çizgisi ve işareti." },
+                            { checked: showStopTakeProfit, setChecked: setShowStopTakeProfit, title: "SL / TP", description: "Kayıtlı hedef ve stop seviyeleri." },
+                            { checked: showPatterns, setChecked: setShowPatterns, title: "Formasyonlar", description: "Teyitli mum formasyonları." },
+                            { checked: showPressure, setChecked: setShowPressure, title: "Alıcı / satıcı basıncı", description: "Merkez-sıfırlı canlı basınç bandı." },
+                        ].map((setting) => (
+                            <button
+                                key={setting.title}
+                                type="button"
+                                role="switch"
+                                aria-checked={setting.checked}
+                                onClick={() => setting.setChecked(!setting.checked)}
+                                className="flex w-full items-center gap-2.5 rounded-lg border border-bunker-800 bg-bunker-900/50 p-2.5 text-left transition-colors hover:border-bunker-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-green/70"
+                            >
+                                <span className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${setting.checked ? "bg-neon-green" : "bg-bunker-700"}`} aria-hidden="true">
+                                    <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${setting.checked ? "translate-x-6" : "translate-x-1"}`} />
+                                </span>
+                                <span className="min-w-0"><span className="block font-mono text-xs font-bold text-white">{setting.title}</span><span className="mt-0.5 block text-[11px] leading-4 text-bunker-muted">{setting.description}</span></span>
+                            </button>
+                        ))}
+                    </div>
+                    <div className="border-t border-bunker-800 p-3">
+                        <button
+                            type="button"
+                            onClick={clearAllIndicators}
+                            disabled={clearingIndicators}
+                            className="w-full rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 font-mono text-xs font-bold text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                        >
+                            {clearingIndicators ? "TEMİZLENİYOR..." : "TÜM SEMBOL İNDİKATÖRLERİNİ TEMİZLE"}
+                        </button>
+                        {clearMsg && (
+                            <p className={`mt-2 text-center font-mono text-[11px] ${clearMsg.ok ? "text-neon-green" : "text-red-400"}`}>{clearMsg.text}</p>
+                        )}
+                    </div>
+                </section>
+            </div>}
+
+            {/* Üst bildirim paneli: sembol için ufku dolmamış radar bildirimi varken
+                ML tahmininin yerine geçer; geri sayım ve grafik çizgisi toggle'ı içerir */}
+            {monitorNotif?.active && (
+                <section className="rounded-xl border border-neon-green/40 bg-neon-green/5 px-3 py-2.5 sm:px-4" aria-label="Radar bildirimi">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <p className="eyebrow text-neon-green">RADAR BİLDİRİMİ · {symbol}</p>
+                            {monitorTargetHit && (
+                                <span className="rounded border border-neon-green/50 bg-neon-green/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green animate-pulse">✓ HEDEFE ULAŞILDI</span>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={showMonitoringLines}
+                            onClick={() => setShowMonitoringLines((v) => !v)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs transition-colors ${showMonitoringLines
+                                ? "border-neon-green/40 bg-neon-green/10 text-neon-green"
+                                : "border-bunker-700 bg-bunker-900 text-bunker-muted hover:text-white"
+                                }`}
+                            title="Bildirim anındaki fiyat ve hedef çizgilerini grafikte göster/gizle"
+                        >
+                            <span className={`relative inline-flex h-3.5 w-7 shrink-0 rounded-full transition-colors ${showMonitoringLines ? "bg-neon-green" : "bg-bunker-700"}`} aria-hidden="true">
+                                <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow transition-transform ${showMonitoringLines ? "translate-x-4" : "translate-x-0.5"}`} />
+                            </span>
+                            GRAFİKTE GÖSTER {showMonitoringLines ? "AÇIK" : "KAPALI"}
+                        </button>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                        <div className="rounded-lg border border-yellow-400/30 bg-yellow-400/5 p-2 text-center">
+                            <p className="font-mono text-[10px] uppercase tracking-wider text-bunker-muted">Anlık (bildirim)</p>
+                            <p className="mt-1 font-mono text-sm font-bold text-yellow-300">{Number(monitorNotif.price) > 0 ? formatPrice(Number(monitorNotif.price)) : "—"}</p>
+                        </div>
+                        <div className="rounded-lg border border-neon-green/30 bg-neon-green/5 p-2 text-center">
+                            <p className="font-mono text-[10px] uppercase tracking-wider text-bunker-muted">Hedef</p>
+                            <p className={`mt-1 font-mono text-sm font-bold ${Number(monitorNotif.expected_price) > 0 ? "text-neon-green" : "text-bunker-muted"}`}>{Number(monitorNotif.expected_price) > 0 ? formatPrice(Number(monitorNotif.expected_price)) : "—"}</p>
+                        </div>
+                        <div className="rounded-lg border border-neon-green/30 bg-neon-green/5 p-2 text-center">
+                            <p className="font-mono text-[10px] uppercase tracking-wider text-bunker-muted">Hedef artış</p>
+                            <p className={`mt-1 font-mono text-sm font-bold ${(monitorNotif.target_gain_pct ?? monitorNotif.target_pct) == null ? "text-bunker-muted" : "text-neon-green"}`}>{(monitorNotif.target_gain_pct ?? monitorNotif.target_pct) == null ? "—" : `+${Number(monitorNotif.target_gain_pct ?? monitorNotif.target_pct).toFixed(1)}%`}</p>
+                        </div>
+                        <div className="rounded-lg border border-bunker-800 bg-bunker-900/60 p-2 text-center">
+                            <p className="font-mono text-[10px] uppercase tracking-wider text-bunker-muted">Skor</p>
+                            {/* R4-05 (FE yarısı): skor PANEL (0-100) ölçeğinde backend'den
+                                geldiği gibi gösterilir — yeniden ham ölçeğe çevrilmez.
+                                Veri yoksa "—" + nötr (eski `|| 0` yeşil/sarı sapması yok). */}
+                            <p
+                                title="Panel skoru (0-100, backend normalize)"
+                                className={`mt-1 font-mono text-sm font-bold ${scoreToneClass(Number(monitorNotif.score))}`}
+                            >
+                                {monitorNotif.score == null || !Number.isFinite(Number(monitorNotif.score)) ? "—" : Number(monitorNotif.score).toFixed(1)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-sky-400/30 bg-sky-400/5 p-2 text-center">
+                            <p className="font-mono text-[10px] uppercase tracking-wider text-bunker-muted">Ufuk</p>
+                            <p className="mt-1 font-mono text-sm font-bold text-sky-300">{monitorNotif.horizon_minutes ? `${monitorNotif.horizon_minutes}dk` : "—"}</p>
+                        </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-neon-green/20 pt-2">
+                        {monitorTargetHit ? (
+                            <span className="font-mono text-xs font-bold text-neon-green">✓ HEDEFE ULAŞILDI</span>
+                        ) : (
+                            <span className="font-mono text-[11px] text-bunker-muted">ufuk dolmasına kalan (bildirim: {fmtClock(monitorNotif.detected_at)})</span>
+                        )}
+                        <span className="font-mono text-[11px] text-bunker-muted">
+                            canlı: <b className={monitorLivePrice > 0 ? (monitorTargetHit ? "text-neon-green" : "text-white") : "text-bunker-muted"}>{monitorLivePrice > 0 ? formatPrice(monitorLivePrice) : "—"}</b>
+                        </span>
+                        <CountdownSec expiresAtSec={monitorNotif?.active && monitorNotif.expires_at ? monitorNotif.expires_at : null} />
+                    </div>
+                </section>
+            )}
+
+            {/* Üst tahmin paneli: ML model çıktısı (LLM yok) + geçmiş başarı + yenile —
+                aktif radar bildirimi yokken gösterilir */}
+            {!monitorNotif?.active && (
+            <section className="rounded-xl border border-bunker-800 bg-bunker-950/95 px-3 py-2.5 sm:px-4" aria-label="ML fiyat tahmini">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="eyebrow">ML TAHMİN · {symbol}</p>
+                        <div className="flex items-center gap-2">
+                            {forecast?.cache?.hit && forecast.cache.age_sec != null && (
+                                <span className="font-mono text-[10px] text-bunker-muted">cache {forecast.cache.age_sec}s</span>
+                            )}
+                            <button
+                                onClick={() => loadForecast(true)}
+                                disabled={forecastLoading}
+                                className="inline-flex items-center gap-1 rounded-lg border border-bunker-700 px-2 py-1 font-mono text-[11px] text-bunker-muted hover:text-white disabled:opacity-50"
+                                title="Yeni tahmin üret"
+                            >⟳</button>
+                        </div>
+                    </div>
+                    {forecastLoading ? (
+                        <p className="mt-2 font-mono text-xs text-neon-green animate-pulse">hedef hesaplanıyor...</p>
+                    ) : forecast?.forecasts?.length ? (
+                        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {forecast.forecasts.map((f: any) => (
+                                <div key={f.horizon_minutes} className="rounded-lg border border-bunker-800 bg-bunker-900/60 p-2">
+                                    <div className="flex items-center justify-between font-mono text-[10px] text-bunker-muted uppercase">
+                                        <span>{f.horizon_minutes}dk hedef</span>
+                                        <span>{f.hit_probability != null ? `%${(f.hit_probability * 100).toFixed(0)} olasılık` : ""}</span>
+                                    </div>
+                                    <div className="mt-1 flex items-center gap-3">
+                                        <span className={`font-mono text-sm font-bold ${f.target_pct != null ? "text-neon-green" : "text-bunker-muted"}`}>{f.target_pct != null ? `+%${f.target_pct.toFixed(2)}` : "—"}</span>
+                                        <span className="font-mono text-sm text-white">{f.target_price != null ? formatPrice(f.target_price) : "—"}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : forecastError ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-2 py-1.5">
+                            <p className="font-mono text-xs text-red-400">{forecastError}</p>
+                            <button
+                                onClick={() => loadForecast(false)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-bunker-700 px-2 py-1 font-mono text-[11px] text-bunker-muted hover:text-white"
+                                title="Yeniden dene"
+                            >YENİDEN DENE</button>
+                        </div>
+                    ) : (
+                        <p className="mt-2 font-mono text-xs text-bunker-muted">tahmin yok (model eğitilmedi / veri yok)</p>
+                    )}
+                    {forecastHistory && (forecastHistory.evaluated ?? 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-bunker-muted border-t border-bunker-800 pt-2">
+                            <span>ölçülen: <b className="text-white">{forecastHistory.evaluated}</b></span>
+                            <span>yön doğruluğu: <b className={forecastHistory.direction_correct_rate == null ? "text-bunker-muted" : forecastHistory.direction_correct_rate >= 0.5 ? "text-neon-green" : "text-red-400"}>{forecastHistory.direction_correct_rate == null ? "—" : `%${(forecastHistory.direction_correct_rate * 100).toFixed(0)}`}</b></span>
+                            <span>hedef dokunma: <b className="text-neon-yellow">%{((forecastHistory.target_hit_rate ?? 0) * 100).toFixed(0)}</b></span>
+                        </div>
+                    )}
+                </section>
+            )}
+
+            <div className="chart-card card bg-bunker-950 p-0 overflow-hidden relative">
+                {currentAutoTrade && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-bunker-900/95 border-b border-bunker-800 text-xs font-mono">
+                        <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-neon-green/10 border border-neon-green/30 text-neon-green font-bold text-[11px]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse" />
+                                AÇIK OTONOM İŞLEM
+                            </span>
+                            {currentAutoTrade.entry_time && (
+                                <span className="text-bunker-muted text-[10px]">
+                                    {new Date(toMs(currentAutoTrade.entry_time)).toLocaleTimeString("tr-TR")}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                            <span className="flex items-center gap-1 text-[#10b981] font-semibold" title="Otonom Giriş Noktası">
+                                <span className="w-2.5 h-0.5 bg-[#10b981] rounded-full inline-block" />
+                                Giriş: ₺{formatPrice(currentAutoTrade.entry_price)}
+                            </span>
+                            {currentAutoTrade.stop_loss != null && (
+                                <span className="flex items-center gap-1 text-[#ef4444] font-semibold" title="Stop Loss Noktası">
+                                    <span className="w-2.5 h-0.5 bg-[#ef4444] rounded-full inline-block" />
+                                    Stop: ₺{formatPrice(currentAutoTrade.stop_loss)}
+                                </span>
+                            )}
+                            {currentAutoTrade.take_profit != null && (
+                                <span className="flex items-center gap-1 text-[#3b82f6] font-semibold" title="Kâr Alma (TP) Noktası">
+                                    <span className="w-2.5 h-0.5 bg-[#3b82f6] rounded-full inline-block" />
+                                    TP: ₺{formatPrice(currentAutoTrade.take_profit)}
+                                </span>
+                            )}
+                            {Number(currentAutoTrade.notification_price || monitorNotif?.price || 0) > 0 && (
+                                <span className="flex items-center gap-1 text-[#eab308] font-semibold" title="Bildirimin Gönderildiği Nokta (Sinyal Fiyatı)">
+                                    <span className="w-2.5 h-0.5 bg-[#eab308] rounded-full inline-block" />
+                                    Bildirim: ₺{formatPrice(Number(currentAutoTrade.notification_price || monitorNotif?.price))}
+                                </span>
+                            )}
+                            {Number(currentAutoTrade.notification_expected_price || monitorNotif?.expected_price || 0) > 0 && (
+                                <span className="flex items-center gap-1 text-[#a855f7] font-semibold" title="Bildirimde Belirtilen Hedef Fiyat">
+                                    <span className="w-2.5 h-0.5 bg-[#a855f7] rounded-full inline-block" />
+                                    Hedef: ₺{formatPrice(Number(currentAutoTrade.notification_expected_price || monitorNotif?.expected_price))}
+                                    {Number(currentAutoTrade.notification_target_pct || monitorNotif?.target_pct || 0) > 0 && (
+                                        <span className="text-[10px] text-purple-300">
+                                            (+%{Number(currentAutoTrade.notification_target_pct || monitorNotif?.target_pct).toFixed(1)})
+                                        </span>
+                                    )}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+                {loading && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10 bg-bunker-950/70">
+                        <p className="font-mono text-sm text-neon-green animate-pulse">YÜKLENİYOR...</p>
+                    </div>
+                )}
+                <div ref={containerRef} className="w-full" />
+                {/* Alıcı/satıcı basınç bandı — grafiğin hemen altı, gösterge şeridinin üstü */}
+                {showPressure && (
+                    <div className="border-t border-bunker-800 bg-bunker-950 px-3 py-2 sm:px-4">
+                        <div className="mb-1 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider">
+                            <span className={pressure < 0 ? "text-red-400" : "text-bunker-muted"}>SATICI %{Math.max(0, 50 - pressure / 2).toFixed(0)}</span>
+                            <span className="text-bunker-muted">BASINÇ</span>
+                            <span className={pressure >= 0 ? "text-neon-green" : "text-bunker-muted"}>ALICI %{Math.max(0, 50 + pressure / 2).toFixed(0)}</span>
+                        </div>
+                        <div className="relative h-2 overflow-hidden rounded-full bg-bunker-800">
+                            <div className="absolute inset-y-0 left-1/2 w-px bg-white/60" />
+                            <div className={`absolute top-0 h-full transition-[width] duration-150 ease-out ${pressure >= 0 ? "left-1/2 bg-neon-green" : "right-1/2 bg-red-400"}`} style={{ width: `${Math.abs(pressure) / 2}%` }} />
+                        </div>
+                    </div>
+                )}
+                {/* gösterge şeridi: grafiğin altına sabitlenmiş, seçili TF'den canlı hesaplanan değerler */}
+                <div className="grid grid-cols-3 divide-x divide-bunker-800 border-t border-bunker-800 bg-bunker-950">
+                    {([
+                        { key: "RSI", value: strip.rsi, text: num1(strip.rsi), zone: zoneLabel(strip.rsi, 30, 70), cls: zoneClass(strip.rsi, 30, 70), hint: "14 periyot · 30/70 eşik" },
+                        { key: "MFI", value: strip.mfi, text: num1(strip.mfi), zone: zoneLabel(strip.mfi, 20, 80), cls: zoneClass(strip.mfi, 20, 80), hint: "14 periyot · 20/80 eşik" },
+                        { key: "OBV", value: strip.obv.value, text: strip.obv.value == null ? "—" : obvCompact(strip.obv.value), zone: strip.obv.deltaPct == null ? "VERİ YOK" : `${strip.obv.deltaPct >= 0 ? "+" : ""}${strip.obv.deltaPct.toFixed(2)} OBV Δ / ort. vol`, cls: strip.obv.deltaPct == null ? "text-bunker-muted" : strip.obv.deltaPct >= 0 ? "text-neon-green" : "text-red-400", hint: "birikimli hacim farkı" },
+                    ]).map((item) => (
+                        <div key={item.key} title={item.hint} className="px-2 py-2 sm:px-4 sm:py-2.5 min-w-0 text-center">
+                            <p className="font-mono text-[10px] font-bold tracking-wider text-bunker-muted">{item.key}</p>
+                            <p className={`mt-0.5 truncate font-mono text-sm font-bold tabular-nums ${item.cls}`}>{item.text}</p>
+                            <p className={`mt-0.5 hidden truncate font-mono text-[10px] tracking-wide sm:block ${item.cls}`}>{item.zone}</p>
+                            <p className="mt-0.5 truncate font-mono text-[10px] text-bunker-muted">{interval}</p>
+                        </div>
+                    ))}
+                </div>
+                {patternTooltip && (
+                    <div
+                        className={`absolute z-30 w-64 rounded-xl border p-3 shadow-[0_12px_35px_rgba(0,0,0,0.45)] backdrop-blur pointer-events-none ${patternTooltip.pattern.type === "buy" ? "border-emerald-300/60 bg-emerald-950/95" : "border-red-300/60 bg-red-950/95"}`}
+                        style={{ left: Math.min(Math.max(patternTooltip.x + 16, 12), 360), top: Math.max(patternTooltip.y - 24, 12) }}
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className={`flex h-6 w-6 items-center justify-center rounded-full border font-mono text-xs font-bold ${patternTooltip.pattern.type === "buy" ? "border-emerald-200 bg-emerald-500/30 text-emerald-50" : "border-red-200 bg-red-500/30 text-red-50"}`}>{patternTooltip.pattern.type === "buy" ? "↑" : "↓"}</span>
+                            <span className="font-mono text-xs font-bold text-white">{patternTooltip.pattern.text}</span>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-white/85">{patternDescriptions[patternTooltip.pattern.text]}</p>
+                        <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-white/70">{patternTooltip.pattern.type === "buy" ? "↑ Boğa / bullish" : "↓ Ayı / bearish"} · {interval}</p>
+                    </div>
+                )}
+                {/* mum kapanış geri sayımı ve görünüm ayarları: grafiğin sağ üst köşesi */}
+                <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-bunker-700 bg-bunker-900/90 backdrop-blur font-mono text-xs text-bunker-muted pointer-events-none">
+                        <span className="w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse" />
+                        <span className="hidden sm:inline">MUM KAPANIŞ: </span>
+                        <CandleCountdown intervalMs={INTERVAL_MS[interval] || 60_000} />
+                    </div>
+                    <button type="button" onClick={() => setChartSettingsOpen(true)} aria-label="Grafik ayarlarını aç" title="Grafik ayarları" className="grid h-8 w-8 place-items-center rounded-lg border border-bunker-700 bg-bunker-900/90 text-bunker-muted backdrop-blur transition-colors hover:border-neon-green/50 hover:text-neon-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-green/70">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="2"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" /><path d="m19.4 15 .1.1 1.4 1.1-2 3.4-1.7-.7a7.5 7.5 0 0 1-2.3 1.3L14.6 22h-4l-.3-1.8a7.5 7.5 0 0 1-2.3-1.3l-1.7.7-2-3.4 1.4-1.1.1-.1a7.4 7.4 0 0 1 0-2l-.1-.1-1.4-1.1 2-3.4 1.7.7a7.5 7.5 0 0 1 2.3-1.3l.3-1.8h4l.3 1.8a7.5 7.5 0 0 1 2.3 1.3l1.7-.7 2 3.4-1.4 1.1-.1.1a7.4 7.4 0 0 1 0 2Z" /></svg>
+                    </button>
+                </div>
+            </div>
+
+            {/* tüm açık pozisyonlar: giriş zamanı, fiyatı ve dinamik PnL */}
+            <div className="card bg-bunker-950 border border-bunker-800">
+                <div className="flex items-center justify-between px-4 py-2 border-b border-bunker-800">
+                    <h2 className="font-mono text-sm font-bold text-neon-green">AÇIK POZİSYONLAR</h2>
+                    <span className="font-mono text-xs text-bunker-muted">{allPositions.length} pozisyon</span>
+                </div>
+                <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm font-mono">
+                        <thead>
+                            <tr className="text-left text-bunker-muted text-xs border-b border-bunker-800">
+                                <th className="px-4 py-2">SEMBOL</th>
+                                <th className="px-4 py-2">GİRİŞ ZAMANI</th>
+                                <th className="px-4 py-2">GİRİŞ</th>
+                                <th className="px-4 py-2">GÜNCEL</th>
+                                <th className="px-4 py-2">TUTAR (TL)</th>
+                                <th className="px-4 py-2 text-right">PnL</th>
+                                <th className="px-3 py-2 text-right" aria-label="Manuel kapatma"><span className="sr-only">Kapat</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {allPositions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="px-4 py-5 text-center text-bunker-muted">Açık pozisyon yok</td>
+                                </tr>
+                            ) : (
+                                allPositions.map((p) => {
+                                    const pnl = p.pnl_pct ?? null;
+                                    const pnlTry = p.pnl_try ?? null;
+                                    const time = p.entry_time
+                                        ? new Date(toMs(p.entry_time)).toLocaleTimeString("tr-TR")
+                                        : "-";
+                                    const entryValue = Number(p.entry || 0) * Number(p.quantity || 0);
+                                    return (
+                                        <tr key={p._auto_paper_id ? `ap-${p._auto_paper_id}` : `main-${p.symbol}`} className="border-b border-bunker-800/50 hover:bg-bunker-900/50">
+                                            <td className="px-4 py-2 text-white font-bold"><SymbolLink symbol={p.symbol} className="text-white hover:text-neon-green" />
+                                                <div className="mt-1 text-[10px] font-mono text-bunker-muted">{strategyLabelFor(p)}</div>
+                                            </td>
+                                            <td className="px-4 py-2 text-bunker-muted">{time}</td>
+                                            <td className="px-4 py-2 text-bunker-muted">{formatPrice(p.entry)}</td>
+                                            <td className="px-4 py-2 text-white">{p.current == null ? "—" : formatPrice(p.current)}</td>
+                                            <td className="px-4 py-2 text-bunker-muted">{entryValue > 0 ? money(entryValue) : "—"}</td>
+                                            <td className={`px-4 py-2 text-right font-bold ${pnlToneClass(pnlTry ?? pnl)}`}>
+                                                <div>{pnlPctText(pnl)}</div>
+                                                <div className="text-xs mt-1">{pnlTryText(pnlTry)}</div>
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => closePositionManually(p.symbol, p._auto_paper_id)}
+                                                    disabled={closingSymbol != null}
+                                                    title={`${p.symbol} pozisyonunu güncel fiyatla kapat`}
+                                                    className={`min-h-9 px-3 rounded-lg border font-mono text-xs transition-colors ${closingSymbol === p.symbol
+                                                        ? "border-bunker-600 bg-bunker-900 text-bunker-muted animate-pulse"
+                                                        : "border-red-400/50 bg-red-400/10 text-red-400 hover:bg-red-400/20 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
+                                                        }`}
+                                                >
+                                                    {closingSymbol === p.symbol ? "KAPATILIYOR…" : "KAPAT"}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                {/* Mobil: 680px'lik yatay kaydırmalı tablo yerine kart listesi */}
+                <div className="md:hidden divide-y divide-bunker-800/50">
+                    {allPositions.length === 0 ? (
+                        <p className="px-4 py-5 text-center text-bunker-muted text-sm">Açık pozisyon yok</p>
+                    ) : (
+                        allPositions.map((p) => {
+                            const pnl = p.pnl_pct ?? null;
+                            const pnlTry = p.pnl_try ?? null;
+                            const time = p.entry_time
+                                ? new Date(toMs(p.entry_time)).toLocaleTimeString("tr-TR")
+                                : "-";
+                            const entryValue = Number(p.entry || 0) * Number(p.quantity || 0);
+                            return (
+                                <div key={p._auto_paper_id ? `ap-${p._auto_paper_id}` : `main-${p.symbol}`} className="px-3 py-3 flex items-center gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <SymbolLink symbol={p.symbol} className="text-white font-bold hover:text-neon-green" />
+                                            <span className="font-mono text-[10px] text-bunker-muted">{time}</span>
+                                        </div>
+                                        <div className="mt-1 text-[10px] font-mono text-bunker-muted truncate">{strategyLabelFor(p)}</div>
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs">
+                                            <span className="text-bunker-muted">G {formatPrice(p.entry)}</span>
+                                            <span className="text-white">GÜ {p.current == null ? "—" : formatPrice(p.current)}</span>
+                                            {entryValue > 0 && <span className="text-bunker-muted">{money(entryValue)}</span>}
+                                            <span className={`font-bold ${pnlToneClass(pnlTry ?? pnl)}`}>
+                                                {pnlPctText(pnl)} {pnlTryText(pnlTry)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => closePositionManually(p.symbol, p._auto_paper_id)}
+                                        disabled={closingSymbol != null}
+                                        title={`${p.symbol} pozisyonunu güncel fiyatla kapat`}
+                                        className={`shrink-0 min-h-11 px-3 rounded-lg border font-mono text-xs transition-colors ${closingSymbol === p.symbol
+                                            ? "border-bunker-600 bg-bunker-900 text-bunker-muted animate-pulse"
+                                            : "border-red-400/50 bg-red-400/10 text-red-400 hover:bg-red-400/20 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
+                                            }`}
+                                    >
+                                        {closingSymbol === p.symbol ? "…" : "KAPAT"}
+                                    </button>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+
+            <p className="text-xs text-bunker-muted font-mono">
+                <SymbolLink symbol={symbol} className="text-bunker-muted hover:text-neon-green" /> · {interval} periyodu · mumlar UTC — bot 1m kline kullanır, analiz zaman dilimiyle birebir uyumlu
+            </p>
+
+            {picking && <IndicatorPicker onSelect={(e) => { setPicking(false); setEditTarget({ entry: e }); }} onClose={() => setPicking(false)} />}
+            {editTarget && (
+                <IndicatorSettings
+                    entry={editTarget.entry}
+                    initialParams={editTarget.editUid ? instances.find((i) => i.uid === editTarget.editUid)?.params : undefined}
+                    initialStyle={editTarget.editUid ? instances.find((i) => i.uid === editTarget.editUid)?.style : undefined}
+                    editing={!!editTarget.editUid}
+                    onAdd={(params, style) =>
+                        editTarget.editUid
+                            ? updateIndicator(editTarget.editUid, params, style)
+                            : addIndicator(editTarget.entry, params, style)
+                    }
+                    onClose={() => setEditTarget(null)}
+                />
+            )}
+
+            {/* Grafik Asistanı Çekmecesi / Penceresi */}
+            <ChartAssistantDrawer
+                isOpen={assistantOpen}
+                onClose={() => setAssistantOpen(false)}
+                symbol={symbol}
+                currentPrice={bars.length ? bars[bars.length - 1].close : null}
+            />
+
+            {/* Asistan Kapalıyken Sağ Alttaki Hızlı Açma Butonu (Floating FAB) */}
+            {!assistantOpen && (
+                <button
+                    type="button"
+                    onClick={() => setAssistantOpen(true)}
+                    className="fixed bottom-20 md:bottom-5 right-4 md:right-5 z-[80] flex items-center gap-2 rounded-full border border-cyan-400/60 bg-cyan-600/90 hover:bg-cyan-500 text-white px-4 py-2.5 shadow-xl shadow-cyan-950/60 transition-all hover:scale-105 active:scale-95 font-sans font-bold text-xs"
+                    title={`${symbol} Grafik Asistanını Aç`}
+                >
+                    <span className="text-base">🤖</span>
+                    <span>Asistan</span>
+                </button>
+            )}
+        </div>
+    );
+}

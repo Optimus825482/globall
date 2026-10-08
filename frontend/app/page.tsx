@@ -137,6 +137,125 @@ function formatClockTime(timeStr?: string): string {
   }
 }
 
+interface EventCountdownBadgeProps {
+  dateIso?: string;
+  dateStr?: string;
+  status?: string;
+  isPassed?: boolean;
+  className?: string;
+}
+
+const EventCountdownBadge = React.memo(function EventCountdownBadge({
+  dateIso,
+  dateStr,
+  status,
+  isPassed,
+  className = "",
+}: EventCountdownBadgeProps) {
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  const targetMs = useMemo(() => {
+    if (dateIso) {
+      const parsed = new Date(dateIso).getTime();
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    if (dateStr) {
+      const timeMatch = dateStr.match(/(\d{1,2}):(\d{2})/);
+      if (timeMatch) {
+        const h = parseInt(timeMatch[1], 10);
+        const m = parseInt(timeMatch[2], 10);
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        if (dateStr.toLowerCase().includes("yarın")) {
+          d.setDate(d.getDate() + 1);
+        }
+        return d.getTime();
+      }
+    }
+    return null;
+  }, [dateIso, dateStr]);
+
+  useEffect(() => {
+    if (!targetMs) return;
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [targetMs]);
+
+  if (!targetMs) return null;
+
+  const diffSec = Math.floor((targetMs - now) / 1000);
+
+  // Açıklanmış veya geçmiş olaylar
+  if (status === "Açıklandı" || isPassed || diffSec <= 0) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 ${className}`}
+        title="Olay açıklandı veya saati geçti"
+      >
+        <span>✓</span>
+        <span>Açıklandı</span>
+      </span>
+    );
+  }
+
+  // 1. Durum: 24 saatten fazla (> 86400 sn)
+  // "1 gün 4 saat 37 dk kaldı" gibi
+  if (diffSec > 86400) {
+    const days = Math.floor(diffSec / 86400);
+    const rem = diffSec % 86400;
+    const hours = Math.floor(rem / 3600);
+    const minutes = Math.floor((rem % 3600) / 60);
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-sm ${className}`}
+        title={`${days} gün ${hours} saat ${minutes} dakika kaldı`}
+      >
+        <span>⏳</span>
+        <span>
+          {days} gün {hours} saat {minutes} dk kaldı
+        </span>
+      </span>
+    );
+  }
+
+  // 2. Durum: 24 saatten az ama 1 saat veya daha fazla (3600 <= diffSec <= 86400)
+  // "SS:DD" formatında
+  if (diffSec >= 3600) {
+    const hours = Math.floor(diffSec / 3600);
+    const minutes = Math.floor((diffSec % 3600) / 60);
+    const formatted = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-sm ${className}`}
+        title={`${hours} saat ${minutes} dakika kaldı`}
+      >
+        <span>⏱️</span>
+        <span className="tabular-nums tracking-wide">{formatted} kaldı</span>
+      </span>
+    );
+  }
+
+  // 3. Durum: 1 saatten az (< 3600 sn)
+  // "DD:SANİYE" formatında DİNAMİK (saniyelik canlı geri sayım)
+  const minutes = Math.floor(diffSec / 60);
+  const seconds = diffSec % 60;
+  const formatted = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-black font-mono bg-rose-500/25 text-rose-200 border border-rose-500/70 shadow-[0_0_12px_rgba(244,63,94,0.35)] animate-pulse ${className}`}
+      title="KRİTİK: Açıklanmaya 1 saatten az süre kaldı!"
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0" />
+      <span className="tabular-nums tracking-wider font-extrabold">{formatted} kaldı</span>
+    </span>
+  );
+});
+
 export default function HomePage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -824,12 +943,18 @@ export default function HomePage() {
                       : "border-amber-500/35 bg-gradient-to-b from-amber-950/15 via-bunker-900/90 to-bunker-950 hover:border-amber-400 hover:shadow-[0_0_20px_rgba(245,158,11,0.2)]"
                   }`}
                 >
-                  {/* Kart Üst Barı: Zaman ve Yıldız */}
-                  <div className="flex items-center justify-between gap-2 border-b border-bunker-800/80 pb-2">
-                    <div className="flex items-center gap-2">
+                  {/* Kart Üst Barı: Zaman, Geri Sayım ve Yıldız */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bunker-800/80 pb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-black text-cyan-300 flex items-center gap-1.5">
                         <span>⏰</span> {item.date_str}
                       </span>
+                      <EventCountdownBadge
+                        dateIso={item.date_iso}
+                        dateStr={item.date_str}
+                        status={item.status}
+                        isPassed={item.is_passed}
+                      />
                       <span
                         className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
                           item.status === "Açıklandı"
@@ -844,7 +969,7 @@ export default function HomePage() {
                     </div>
 
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
                         is3Stars
                           ? "bg-rose-500/25 text-rose-300 border border-rose-500/50"
                           : "bg-amber-500/25 text-amber-300 border border-amber-500/50"
@@ -1302,6 +1427,12 @@ export default function HomePage() {
                   <span className="text-xs text-cyan-400 font-bold">
                     ⏰ {selectedEvent.date_str}
                   </span>
+                  <EventCountdownBadge
+                    dateIso={selectedEvent.date_iso}
+                    dateStr={selectedEvent.date_str}
+                    status={selectedEvent.status}
+                    isPassed={selectedEvent.is_passed}
+                  />
                   {selectedEvent.status && (
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/30">
                       {selectedEvent.status}

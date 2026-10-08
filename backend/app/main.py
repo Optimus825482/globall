@@ -1682,7 +1682,10 @@ async def get_market_symbols():
     # Artık 502 + sabit error_code döner; detay yalnız sunucu logunda kalır.
     # Quote, deployment'ın borsasından gelir (TR→TRY, Global→USDT).
     try:
-        return {"symbols": await trading_symbols(), "quote_asset": config.QUOTE_ASSET,
+        symbols = await trading_symbols()
+        forex_syms = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "NAS100", "US30", "BTCUSD"]
+        merged = sorted(list(set(symbols + forex_syms)))
+        return {"symbols": merged, "quote_asset": config.QUOTE_ASSET,
                 "exchange": config.EXCHANGE, "exchange_label": config.EXCHANGE_LABEL}
     except Exception as exc:
         logger.error("/api/market-symbols: sembol listesi alınamadı: %s:%s", type(exc).__name__, exc,
@@ -1751,7 +1754,18 @@ async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200)
     inflight_fut = loop.create_future()
     _market_klines_inflight[cache_key] = inflight_fut
     try:
-        rows = await fetch_klines(clean_sym, interval, limit=candle_limit)
+        is_forex = any(fx in clean_sym for fx in ["EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "XAU", "XAG", "NAS", "US30", "OIL"]) and not clean_sym.endswith("TRY") and not clean_sym.endswith("USDT")
+        if is_forex:
+            from app.routers.forex import _fetch_forex_klines
+            fx_candles = await asyncio.to_thread(_fetch_forex_klines, clean_sym, interval, candle_limit)
+            rows = [[int(c["time"]) * 1000, c["open"], c["high"], c["low"], c["close"], c.get("volume", 0.0)] for c in fx_candles]
+        else:
+            try:
+                rows = await fetch_klines(clean_sym, interval, limit=candle_limit)
+            except Exception:
+                from app.routers.forex import _fetch_forex_klines
+                fx_candles = await asyncio.to_thread(_fetch_forex_klines, clean_sym, interval, candle_limit)
+                rows = [[int(c["time"]) * 1000, c["open"], c["high"], c["low"], c["close"], c.get("volume", 0.0)] for c in fx_candles]
         _market_klines_cache[cache_key] = (time.monotonic() + _MARKET_KLINES_CACHE_TTL_SEC, rows)
         if not inflight_fut.done():
             inflight_fut.set_result(rows)

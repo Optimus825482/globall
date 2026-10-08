@@ -46,6 +46,8 @@ BALANCE = 10000.0
 TRADES_PER_BAR_CAP = 3
 SHADOW_MAX_CONCURRENT = 60
 BASE_BE_PIPS = 14.0         # canlı ayar varsayılanları (Motorla aynı)
+TUN_BE_PIPS_OVERRIDE = 0.0     # >0: spec BE tetik mesafesini (pip) ez - zaman-dilimi merdiveni testi
+TUN_TRAIL_PIPS_OVERRIDE = 0.0  # >0: spec trailing mesafesini (pip) ez - zaman-dilimi merdiveni testi
 BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
@@ -243,6 +245,31 @@ TUN_REL_ATR_BAND = False        # True: 0.8×medyan ≤ ATR ≤ 3.0×medyan değ
 TUN_REL_ATR_LO = 0.8
 TUN_REL_ATR_HI = 3.0
 TUN_REL_ATR_LOOKBACK = 576      # ~2 gün 5m bar (medyan penceresi)
+# Süpürme hızlandırması: OLD defterini atla (yalnız NEW koşulur) — teknik göstergeler bar
+# başına tek kez hesaplanır, ~2× hız. Referans karşılaştırması gereken koşularda KAPALI tut.
+TUN_SKIP_OLD = False
+# ---- 2026-10-08 Dalga-2 araştırma adayları (kodlamaya değer 6 aday) ----
+#   eurusd_tod   — EURUSD saat-günü sezonsallığı: EUR saatleri short / USD saatleri long (günde 1)
+#   orb_filtered — filtreli seans-open ORB: 15m kutu + OR/ADR bandı + gün-trend onayı + time-exit
+#   squeeze_exp  — 15m sıkışma-armed genişleme barı (yön HTF trendinden; 5m yürütme)
+#   reopen_fade  — günlük reopen gap-fade (broker günü ilk saat; spread-filtreli)
+#   tokyo_fix    — Tokyo 09:55 (00:55 UTC) fix tevriti (USDJPY, gotobi/ay-sonu)
+TUN_TOD_LONG_HOURS = "12-16"    # EURUSD long (USD saatleri) UTC aralığı
+TUN_TOD_SHORT_HOURS = "7-11"    # EURUSD short (EUR saatleri) UTC aralığı
+TUN_ORB15_BOX_MIN = 15          # filtreli ORB kutu uzunluğu (dakika)
+TUN_ORB15_OR_ADR_LO = 0.25      # OR/ADR(14) alt sınır
+TUN_ORB15_OR_ADR_HI = 0.60      # OR/ADR(14) üst sınır
+TUN_ORB15_MIN_ADR_PIPS = 60.0   # ADR tabanı (EURUSD ~60, GBPJPY ~110)
+TUN_ORB15_SESSIONS = "7,13"     # seans açılış saatleri (UTC): London 07, NY 13
+TUN_ORB15_MAX_HOLD_H = 4.0      # time-exit (saat)
+TUN_SQX_COMP_PCT = 20.0         # ATR%/BBW sıkışma persentili
+TUN_SQX_HTF_TREND = True        # yön: H1 trend yönünde genişleme barı (True), yoksa bar yönü
+TUN_REOPEN_LOOKBACK_MIN = 5     # gap ölçümü: önceki kapanış penceresi (dk)
+TUN_REOPEN_MIN_GAP_PIPS = 1.0   # fade için min gap (pip)
+TUN_REOPEN_SPREAD_MULT = 2.5    # spread bu kat ×ortalamanın üstündeyse girme (rollover koruması)
+TUN_TFIX_SYM = "USDJPY"         # Tokyo fix tevrit sembolü
+TUN_TFIX_WINDOW_MIN = 5         # fix öncesi/sonrası pencere (dk)
+TUN_TFIX_GOTOBI_ONLY = False    # True: yalnız 5/10/15/20/25/ay-sonu günleri
 TUN_MODE_FLAT16 = False         # 16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma ADAY 5)
 MODE_DAY_STATE: Dict[Tuple[str, int, str], int] = {}  # (sembol, gün, yön) → gün içi giriş sayısı
 MODE_SYMBOLS: set = set()       # boş = mod tüm sembollerde; dolu = yalnız bu sembollerde
@@ -277,6 +304,53 @@ def _bb_bandwidth_series(closes: List[float], period: int = 20, mult: float = 2.
 
 # Squeeze modu bandwidth serisi önbelleği: sembol → tam seri (her barda yeniden hesaplamayı önler)
 _BB_BW_CACHE: Dict[str, List[float]] = {}
+# Dalga-2: H1 EMA200 trend durumu önbelleği (squeeze_exp yön filtresi + H1 kapısı paylaşır)
+_HTF_EMA_STATE: Dict[str, Dict[int, int]] = {}
+# Dalga-2: ADR (avg daily range) serisi önbelleği — sembol → {ts: adr_pips}
+_ADR_CACHE: Dict[str, List[float]] = {}
+
+
+def _parse_hour_span(span: str) -> Tuple[int, int]:
+    """'7-11' → (7, 11). Geçersizse (0,0) döner."""
+    try:
+        a, b = span.split("-")
+        return int(a), int(b)
+    except (ValueError, AttributeError):
+        return (0, 0)
+
+
+def _adr_pips(bars: List[Tuple], ci: int, days: int = 14) -> Optional[float]:
+    """Son `days` tam günün ortalama gün-içi aralığı (high-low), pip cinsinden fiyat ölçeğiyle.
+    Dönüş fiyat cinsindendir (pip değil); çağıran pip_size'a böler."""
+    if ci < 30:
+        return None
+    day_hi: Dict[int, float] = {}
+    day_lo: Dict[int, float] = {}
+    start = max(0, ci - 12 * 24 * days)
+    for b in bars[start:ci]:
+        d = int(b[0] // 86400)
+        hi = day_hi.get(d)
+        if hi is None or b[2] > hi:
+            day_hi[d] = b[2]
+        lo = day_lo.get(d)
+        if lo is None or b[3] < lo:
+            day_lo[d] = b[3]
+    spans = [day_hi[d] - day_lo[d] for d in day_hi if d in day_lo]
+    if len(spans) < 5:
+        return None
+    return sum(spans) / len(spans)
+
+
+def _slope_sign(vals: List[float]) -> int:
+    """Basit eğim işareti: son değer − ilk değer."""
+    if len(vals) < 2:
+        return 0
+    d = vals[-1] - vals[0]
+    if d > 0:
+        return 1
+    if d < 0:
+        return -1
+    return 0
 
 
 def _mode_session_ok(sym: str, hour: int) -> bool:
@@ -560,6 +634,226 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
         return {"action": action, "exits": {"sl_pips": round(sl_pips, 1),
                                             "tp_pips": round(sl_pips * TUN_ORB_TP_R, 1)}}
 
+    # ==== 2026-10-08 Dalga-2 adayları ====
+
+    if TUN_ENTRY_MODE == "eurusd_tod":
+        # EURUSD saat-günü sezonsallığı (Breedon-Ranaldo): para birimi KENDİ seansında değer
+        # kaybeder → EUR saatlerinde (07-11 UTC) SHORT, USD saatlerinde (12-16 UTC) LONG.
+        # Günde 1 yön; kanıtlanmış TEK net-pozitif intraday FX ailesi. Yalnız EURUSD.
+        if sym != "EURUSD":
+            return None
+        lh = _parse_hour_span(TUN_TOD_LONG_HOURS)
+        sh = _parse_hour_span(TUN_TOD_SHORT_HOURS)
+        day = int(ts // 86400)
+        if lh[0] <= hour < lh[1]:
+            action, key_h = "BUY", lh[0]
+        elif sh[0] <= hour < sh[1]:
+            action, key_h = "SELL", sh[0]
+        else:
+            return None
+        key = (sym, day, key_h)
+        if LB_STATE.get(key):
+            return None
+        LB_STATE[key] = True
+        # SL: giriş saat-penceresinin tipik aralığı ~1.5×ATR; TP trend-penceresi sonuna kadar koşar
+        ap = float(tech.get("atr") or 0.0)
+        if ap <= 0 or pip_size <= 0:
+            return None
+        return {"action": action,
+                "exits": {"sl_pips": round(1.5 * ap / pip_size, 1),
+                          "tp_pips": round(3.0 * ap / pip_size, 1)}}
+
+    if TUN_ENTRY_MODE == "orb_filtered":
+        # Filtreli seans-open ORB: seans açılışında (London 07 / NY 13 UTC) ilk 15 dk kutu;
+        # OR/ADR(14) ∈ [LO,HI] (dar=gürültü, geniş=tükenmiş) ve ADR tabanı; kırılım tüm-gövde
+        # kapanışla; gün-trend onayı (H1 EMA200 yok ise 20-bar kapanış eğimi); tek işlem/seans;
+        # time-exit (TUN_ORB15_MAX_HOLD_H) trailing/BE YOK (araştırma: range-expansion'da zararlı).
+        ap = float(tech.get("atr") or 0.0)
+        if ap <= 0 or pip_size <= 0:
+            return None
+        day = int(ts // 86400)
+        minute_of_day = int(ts % 86400)
+        sess_ok = False
+        box = []
+        for s_h in [int(x) for x in TUN_ORB15_SESSIONS.split(",") if x.strip()]:
+            box_start = s_h * 3600
+            box_end = box_start + TUN_ORB15_BOX_MIN * 60
+            if box_start <= minute_of_day < box_end:
+                sess_ok = True                       # kutu oluşuyor: bu barda giriş yok
+            elif box_end <= minute_of_day < box_start + 4 * 3600:
+                pass                                 # tetik penceresi adayı
+        if sess_ok:
+            return None
+        # Kutu barlarını topla (aktif seans açılışlarından biri)
+        for s_h in [int(x) for x in TUN_ORB15_SESSIONS.split(",") if x.strip()]:
+            box_start = s_h * 3600
+            box_end = box_start + TUN_ORB15_BOX_MIN * 60
+            if box_end <= minute_of_day < box_start + 4 * 3600:
+                seg = [b for b in bars[max(0, ci - 60):ci]
+                       if int(b[0] // 86400) == day and box_start <= int(b[0] % 86400) < box_end]
+                if len(seg) >= 2:
+                    box = seg
+                    break
+        if not box:
+            return None
+        box_hi = max(b[2] for b in box)
+        box_lo = min(b[3] for b in box)
+        box_h = box_hi - box_lo
+        if box_h <= 0:
+            return None
+        # ADR(14) = son 14 günün ortalama gün-içi aralığı (fiyat cinsinden)
+        adr = _adr_pips(bars, ci, 14)
+        if adr is None or adr / pip_size < TUN_ORB15_MIN_ADR_PIPS:
+            return None
+        or_frac = box_h / adr
+        if or_frac < TUN_ORB15_OR_ADR_LO or or_frac > TUN_ORB15_OR_ADR_HI:
+            return None
+        c = bars[ci - 1][4]
+        o = bars[ci - 1][1]
+        body_ok_up = c > box_hi and c > o
+        body_ok_dn = c < box_lo and c < o
+        # gün-trend onayı: 20-bar kapanış eğimi
+        trend = _slope_sign([b[4] for b in bars[max(0, ci - 20):ci]])
+        if body_ok_up and trend >= 0:
+            action = "BUY"
+        elif body_ok_dn and trend <= 0:
+            action = "SELL"
+        else:
+            return None
+        key = (sym, day, int(minute_of_day // 3600))
+        if LB_STATE.get(key):
+            return None
+        LB_STATE[key] = True
+        sl_pips = box_h / pip_size
+        return {"action": action,
+                "exits": {"sl_pips": round(sl_pips, 1), "tp_pips": round(1.5 * sl_pips, 1)},
+                "time_stop_bars": int(TUN_ORB15_MAX_HOLD_H * 12)}
+
+    if TUN_ENTRY_MODE == "squeeze_exp":
+        # 15m sıkışma-armed genişleme barı: kutu 15m'de sıkışma (ATR% ve BBW alt persentil),
+        # 5m'de genişleme barı (önceki bar aralığının dışına kapanış + gövde üst/alt 1/3'te),
+        # yön HTF trendinden (varsa) yoksa bar yönünden. Asla sıkışmadan yön tahmin edilmez.
+        if ci < 60:
+            return None
+        ap = float(tech.get("atr") or 0.0)
+        if ap <= 0 or pip_size <= 0:
+            return None
+        atr_s = _mini_atr_series(bars, 14)
+        cur_atr = atr_s[ci - 1]
+        seg_atr = [x for x in atr_s[max(0, ci - 200):ci] if x > 0]
+        if len(seg_atr) < 50 or cur_atr <= 0:
+            return None
+        atr_pct_rank = 100.0 * sum(1 for x in seg_atr if x <= cur_atr) / len(seg_atr)
+        if atr_pct_rank > TUN_SQX_COMP_PCT:
+            return None
+        bw = _BB_BW_CACHE.get(sym)
+        if bw is None or len(bw) < ci:
+            bw = _bb_bandwidth_series([b[4] for b in bars], 20, 2.0)
+            _BB_BW_CACHE[sym] = bw
+        seg_bw = [x for x in bw[max(0, ci - 125):ci] if x > 0]
+        if len(seg_bw) < 50:
+            return None
+        cur_bw = bw[ci - 1]
+        if cur_bw <= 0:
+            return None
+        bw_rank = 100.0 * sum(1 for x in seg_bw if x <= cur_bw) / len(seg_bw)
+        if bw_rank > TUN_SQX_COMP_PCT:
+            return None
+        pb = bars[ci - 2]
+        c = bars[ci - 1][4]
+        o = bars[ci - 1][1]
+        h = bars[ci - 1][2]
+        l = bars[ci - 1][3]
+        rng = h - l
+        if rng <= 0:
+            return None
+        if TUN_SQX_HTF_TREND:
+            h1s = _HTF_EMA_STATE.get(sym, {}).get(int(ts // 3600), 0)
+        else:
+            h1s = 0
+        up = c > pb[2] and (c - l) / rng >= 0.66 and (h1s >= 0 or h1s == 0)
+        dn = c < pb[3] and (h - c) / rng >= 0.66 and (h1s <= 0 or h1s == 0)
+        if up:
+            action = "BUY"
+        elif dn:
+            action = "SELL"
+        else:
+            return None
+        day = int(ts // 86400)
+        key = (sym, day, action)
+        if MODE_DAY_STATE.get(key, 0) >= 2:
+            return None
+        MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        return {"action": action,
+                "exits": {"sl_pips": round(1.5 * ap / pip_size, 1),
+                          "tp_pips": round(3.0 * ap / pip_size, 1)}}
+
+    if TUN_ENTRY_MODE == "reopen_fade":
+        # Günlük reopen gap-fade (Tolusic): broker günü ilk saatinde fiyat önceki kapanıştan
+        # ort. ~4.8 pip açılır; ≥min gap ise fade; 1 saat tut. Spread filtreli (rollover cezası).
+        # Yalnız broker-günü ilk saatinde (00:00 UTC civarı) ve yalnız spread normal iken.
+        day = int(ts // 86400)
+        minute_of_day = int(ts % 86400)
+        if minute_of_day >= TUN_REOPEN_LOOKBACK_MIN * 60:
+            return None
+        prev = bars[max(0, ci - 30):ci - 1]
+        if len(prev) < 3:
+            return None
+        prior_close = prev[-1][4]
+        c = bars[ci - 1][4]
+        gap_pips = (c - prior_close) / pip_size
+        if abs(gap_pips) < TUN_REOPEN_MIN_GAP_PIPS:
+            return None
+        spreads = [CATEGORY_SPREAD_PIPS.get("major", 1.2)]
+        if sym in SPREAD_PROFILE:
+            spreads = [SPREAD_PROFILE[sym]]
+        if spreads[0] > TUN_REOPEN_SPREAD_MULT * 1.2:
+            return None
+        key = (sym, day, 0)
+        if LB_STATE.get(key):
+            return None
+        LB_STATE[key] = True
+        ap = float(tech.get("atr") or 0.0)
+        if ap <= 0:
+            return None
+        action = "SELL" if gap_pips > 0 else "BUY"
+        return {"action": action,
+                "exits": {"sl_pips": round(1.2 * ap / pip_size, 1),
+                          "tp_pips": round(1.2 * ap / pip_size, 1)},
+                "time_stop_bars": 12}
+
+    if TUN_ENTRY_MODE == "tokyo_fix":
+        # Tokyo 09:55 JST fix (00:55 UTC): USDJPY'de düzenli USD-alım dengesizliği → fix öncesi
+        # short, sonrası long (long-then-short, ~1.8 bp). Yalnız USDJPY; gotobi/ay-sonu opsiyonel.
+        if sym != TUN_TFIX_SYM:
+            return None
+        day = int(ts // 86400)
+        minute_of_day = int(ts % 86400)
+        fix_min = 55  # 00:55 UTC
+        pre_lo, pre_hi = (fix_min - TUN_TFIX_WINDOW_MIN) * 60, fix_min * 60
+        post_lo, post_hi = fix_min * 60, (fix_min + TUN_TFIX_WINDOW_MIN) * 60
+        if TUN_TFIX_GOTOBI_ONLY:
+            dom = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).day
+            if dom % 5 != 0 and dom < 27:
+                return None
+        ap = float(tech.get("atr") or 0.0)
+        if ap <= 0 or pip_size <= 0:
+            return None
+        if pre_lo <= minute_of_day < pre_hi:
+            action, phase = "SELL", "pre"
+        elif post_lo <= minute_of_day < post_hi:
+            action, phase = "BUY", "post"
+        else:
+            return None
+        key = (sym, day, phase)
+        if LB_STATE.get(key):
+            return None
+        LB_STATE[key] = True
+        return {"action": action,
+                "exits": {"sl_pips": round(1.0 * ap / pip_size, 1),
+                          "tp_pips": round(1.5 * ap / pip_size, 1)},
+                "time_stop_bars": TUN_TFIX_WINDOW_MIN}
+
     return None
 
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
@@ -684,6 +978,7 @@ class SimPos:
     dca_group: bool = False     # sepet yönetimi altında (TP/BE/trail bireysel çalışmaz)
     basket_armed: bool = False  # lead'te: sepet P/L tamponu geçti (BE kilidi arm)
     no_fixed_tp: bool = False   # sabit TP yok (tp_pips<=0) — çıkış chandelier trailing'e bırakılır
+    time_stop_bars: int = 0     # >0: bu bar sayısı dolunca zorla kapat (Dalga-2 ORB/reopen/fix)
 
 
 class Book:
@@ -745,6 +1040,7 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         pip_val=cand["pip_val"], digits=cand["digits"], opened_bar=idx,
         partial_target_pips=partial_pips, fill_adjust=half_spread,
         entry_atr_pips=cand.get("atr_pips", 0.0), no_fixed_tp=no_fixed_tp,
+        time_stop_bars=int(cand.get("time_stop_bars", 0) or 0),
     )
 
 
@@ -1049,11 +1345,25 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
             # trailing mesafesi ve BE tetik tabanı o işlemin volatilitesine ölçeklenir.
             eff_trail = max(TUN_VOL_TRAIL_FLOOR, TUN_VOL_TRAIL_MULT * pos.entry_atr_pips)
             min_be = TUN_VOL_BE_MULT * pos.entry_atr_pips
-        res = manage_position(pos, bar, eff_trail, spec["be_pips"], chandelier_mult, tp_mode, min_be,
+        # Zaman-dilimi merdiveni: bar boyu buyudukce ATR olcegi buyur; 5m icin kalibre edilmis
+        # sabit BE/trail 15m'de ORANSAL olarak cok dar kalir. CLI ile ezilebilir.
+        eff_be = TUN_BE_PIPS_OVERRIDE if TUN_BE_PIPS_OVERRIDE > 0 else spec["be_pips"]
+        if TUN_TRAIL_PIPS_OVERRIDE > 0:
+            eff_trail = TUN_TRAIL_PIPS_OVERRIDE
+        res = manage_position(pos, bar, eff_trail, eff_be, chandelier_mult, tp_mode, min_be,
                               dca_mode=pos.dca_group)
         if res and res[0] in ("SL", "BE", "TP"):
             close_position(book, pos, res[0], res[1], closed_ts=ts)
             continue
+        # Time-stop (Dalga-2): ORB/reopen/tokyo_fix modları — bar sayısı dolunca bar kapanışıyla kapat.
+        # Araştırma: range-expansion'da zaman-çıkışı sabit-R/trailing'den iyi.
+        if pos.time_stop_bars > 0:
+            i = exit_maps["ts_idx"].get(pos.symbol, {}).get(bar[0]) if exit_maps else None
+            if i is not None and i - pos.opened_bar >= pos.time_stop_bars:
+                ex = (round(bar[4] - pos.fill_adjust, pos.digits) if pos.direction == "BUY"
+                      else round(bar[4] + pos.fill_adjust, pos.digits))
+                close_position(book, pos, "TIME", ex, closed_ts=ts)
+                continue
         # (6) Erken momentum-dönüş tepkisi — SL/BE/trail/TP bu barda tetiklenmediyse:
         #     a) TUN_ST_FLIP_TIGHTEN > 0: kapatma, kâr varsa stopu bu pip mesafeye sıkılaştır
         #     b) aksi halde TUN_ST_FLIP_EXIT / TUN_EMA_FLIP_EXIT: bar kapanışında kapat (MOMFLIP)
@@ -1559,6 +1869,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     warmup = INDICATOR_WINDOW
 
     books = {"OLD": Book("OLD"), "NEW": Book("NEW")}
+    if TUN_SKIP_OLD:
+        # Süpürme hızlandırması: OLD defteri yalnız referanstır — atlanınca teknik göstergeler
+        # bar başına TEK kez hesaplanır (yaklaşık 2× hız).
+        books.pop("OLD", None)
     shadow_book: Dict[str, Dict[str, Any]] = {}
     corr = FXCorrelationMonitor()
     closes_cache: Dict[str, List[float]] = {}
@@ -1612,7 +1926,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     # Erken momentum-dönüş çıkışı (MOMFLIP) serileri: sembol başına tüm seri bir kez hesaplanır,
     # ts→index haritasıyla bar bazında okunur (look-ahead yok: i. değer yalnız i ve öncesi barlardan).
     exit_maps: Optional[Dict[str, Any]] = None
-    if TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0:
+    _time_stop_mode = TUN_ENTRY_MODE in ("orb_filtered", "reopen_fade", "tokyo_fix")
+    if TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0 or _time_stop_mode:
         exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}}
         for s in symbols:
             bars_s = data[s]
@@ -1643,6 +1958,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     if TUN_HTF_EMA200_GATE:
         for s in symbols:
             h1_ema_maps[s] = _htf_ema200_map(data[s], 3600, 200)
+    # squeeze_exp yön filtresi için H1 trend durumu (kapıdan bağımsız; yalnız o modda hesaplanır)
+    if TUN_ENTRY_MODE == "squeeze_exp":
+        for s in symbols:
+            _HTF_EMA_STATE[s] = _htf_ema200_map(data[s], 3600, 200)
     # Göreli-ATR bandı: sembol başına ATR(14) medyan serisi. Medyan saatlik (12 bar)
     # çözünürlükte yenilenir — her barda tam pencere sıralaması O(n²) olurdu.
     rel_atr_lookup: Dict[str, Dict[float, float]] = {}
@@ -1747,7 +2066,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
 
         # 3) Aday üretimi + kapılar (her iki varyant) — yalnız taze barı ve işlem penceresi içinde
         in_window = (entry_start_ts is None or ts >= entry_start_ts) and (entry_end_ts is None or ts < entry_end_ts)
-        candidates: Dict[str, List[Dict]] = {"OLD": [], "NEW": []}
+        candidates: Dict[str, List[Dict]] = {"OLD": [], "NEW": []} if not TUN_SKIP_OLD else {"NEW": []}
         blocked_events: List[Tuple[str, Dict]] = []
 
         for sym in symbols:
@@ -1781,7 +2100,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             max_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else 3.0
             close_now = closes[-1]
 
-            for vname in ("OLD", "NEW"):
+            for vname in (("NEW",) if TUN_SKIP_OLD else ("OLD", "NEW")):
                 book = books[vname]
                 tech = forex._compute_technical_indicators(closes, highs, lows, opens, sym,
                                                            include_momentum=(vname == "NEW"))
@@ -1851,11 +2170,16 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 # --gate-extras ile eklenen adaylar, --gold-session ile altın da kapsanır.
                 _gate_syms = sym in FX_MAJORS or sym in GATED_EXTRAS or (TUN_GOLD_SESSION and ("XAU" in sym or "GOLD" in sym))
                 _ext_syms = _gate_syms or (TUN_EXT_GATE_XG and ("XAU" in sym or "GOLD" in sym or "BTC" in sym))
+                # Dalga-2 modları KENDİ zaman/volatilite filtresini taşır (tokyo_fix 00:55,
+                # reopen 00:00, eurusd_tod saat-blokları, orb_filtered OR/ADR, squeeze_exp sıkışma)
+                # → majör saat + mutlak min-ATR kapıları bunları budamasın.
+                _mode_own_clock = TUN_ENTRY_MODE in ("eurusd_tod", "reopen_fade", "tokyo_fix",
+                                                     "orb_filtered", "squeeze_exp")
                 if vname == "NEW" and _gate_syms:
-                    if TUN_MAJOR_HOURS and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
+                    if TUN_MAJOR_HOURS and not _mode_own_clock and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
                         blocked_events.append(("SEANS", cand("SEANS")))
                         continue
-                    if TUN_MAJOR_MIN_ATR > 0 and atr_pips < TUN_MAJOR_MIN_ATR:
+                    if TUN_MAJOR_MIN_ATR > 0 and not _mode_own_clock and atr_pips < TUN_MAJOR_MIN_ATR:
                         blocked_events.append(("VOLATİLİTE", cand("VOLATİLİTE")))
                         continue
                 if vname == "NEW" and _ext_syms and TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
@@ -2008,7 +2332,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 sh["book"].positions.append(spos)
 
         if idx % 300 == 0:
-            print(f"  ... bar {idx}/{len(common_ts)} | OLD: {len(books['OLD'].closed)} işlem ${books['OLD'].balance:+.2f} | "
+            old_txt = (f"OLD: {len(books['OLD'].closed)} işlem ${books['OLD'].balance:+.2f} | "
+                       if "OLD" in books else "")
+            print(f"  ... bar {idx}/{len(common_ts)} | {old_txt}"
                   f"NEW: {len(books['NEW'].closed)} işlem ${books['NEW'].balance:+.2f}")
 
     # 6) Kalan pozisyonları kapat — pencere tanımlıysa pencere içi son bar fiyatıyla
@@ -2158,7 +2484,7 @@ def main():
     parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
-    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
+    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
     parser.add_argument("--lb-entry-end", type=int, default=11, help="London breakout tetik penceresi bitiş saati (UTC)")
     parser.add_argument("--lb-sl-frac", type=float, default=0.5, help="LB SL = kutu yüksekliği × bu oran")
@@ -2182,6 +2508,19 @@ def main():
     parser.add_argument("--orb-max-atr", type=float, default=0.0, help="ORB kutu yüksekliği / ATR üst sınırı (0 = kapalı)")
     parser.add_argument("--orb-sl-frac", type=float, default=0.5, help="ORB SL = kutu yüksekliği × bu oran")
     parser.add_argument("--orb-tp-r", type=float, default=1.5, help="ORB TP = SL × bu R katı")
+    # ---- Dalga-2 aday parametreleri ----
+    parser.add_argument("--tod-long-hours", default="12-16", help="eurusd_tod: long (USD saatleri) UTC aralığı")
+    parser.add_argument("--tod-short-hours", default="7-11", help="eurusd_tod: short (EUR saatleri) UTC aralığı")
+    parser.add_argument("--orb15-or-adr-lo", type=float, default=0.25, help="orb_filtered: OR/ADR alt sınır")
+    parser.add_argument("--orb15-or-adr-hi", type=float, default=0.60, help="orb_filtered: OR/ADR üst sınır")
+    parser.add_argument("--orb15-min-adr", type=float, default=60.0, help="orb_filtered: ADR tabanı (pip)")
+    parser.add_argument("--orb15-sessions", default="7,13", help="orb_filtered: seans açılış saatleri UTC")
+    parser.add_argument("--orb15-max-hold", type=float, default=4.0, help="orb_filtered: time-exit (saat)")
+    parser.add_argument("--sqx-comp-pct", type=float, default=20.0, help="squeeze_exp: sıkışma persentili")
+    parser.add_argument("--sqx-no-htf", action="store_true", help="squeeze_exp: HTF trend yön filtresi kapalı")
+    parser.add_argument("--reopen-min-gap", type=float, default=1.0, help="reopen_fade: min gap (pip)")
+    parser.add_argument("--tfix-gotobi-only", action="store_true", help="tokyo_fix: yalnız gotobi/ay-sonu günleri")
+    parser.add_argument("--tfix-window", type=int, default=5, help="tokyo_fix: fix öncesi/sonrası pencere (dk)")
     parser.add_argument("--htf-ema200-gate", action="store_true", help="H1 EMA200 MTF trend kapısı: ters yönde 5m girişi engelle (2026-10-08 araştırma)")
     parser.add_argument("--rel-atr-band", action="store_true", help="Göreli-ATR bandı: ATR kendi medyanının [LO,HI] katı dışındaysa giriş yok")
     parser.add_argument("--rel-atr-lo", type=float, default=0.8, help="Göreli-ATR alt sınırı (× medyan)")
@@ -2238,6 +2577,7 @@ def main():
     parser.add_argument("--index-hours", default="", help="ABD endeksleri (NAS100/US30) giriş penceresi '1330-2000' UTC dakika (boş = kapalı)")
     parser.add_argument("--index-open-drive", action="store_true", help="ABD açılış ilk 5m mumu yönü 13:35-15:00 arası yön teyidi zorunlu")
     parser.add_argument("--mini-only", action="store_true", help="Ana replay'i atla; yalnız mini-motorları koş (hızlı test)")
+    parser.add_argument("--skip-old", action="store_true", help="OLD defterini atla (yalnız NEW) — giriş-modu süpürmelerinde ~2× hız")
     parser.add_argument("--rsi2", action="store_true", help="Connors RSI(2) mini-motorunu koş (NAS100/US30)")
     parser.add_argument("--rsi2-entry", type=float, default=10.0, help="RSI(2) giriş eşiği (long)")
     parser.add_argument("--rsi2-exit", type=float, default=65.0, help="RSI(2) çıkış eşiği (long)")
@@ -2258,6 +2598,10 @@ def main():
     parser.add_argument("--loss-streak", type=int, default=0, help="N ardışık tam-SL kaybında sembol yeni giriş almaz (0 = kapalı; kullanıcı önerisi: 3)")
     parser.add_argument("--loss-streak-cd", type=float, default=300.0, help="Seri-SL tetiklenince sembol soğuma penceresi (saniye; kullanıcı önerisi: 300)")
     parser.add_argument("--max-open", type=int, default=0, help="Maksimum açık pozisyon cap'i (0 = varsayılan 6; kullanıcı testi: 99 = slot rekabeti yok)")
+    parser.add_argument("--be-pips", type=float, default=0.0,
+                        help="BE tetik mesafesini pip cinsinden ez (0 = spec varsayilan 14). Zaman-dilimi merdiveni testi.")
+    parser.add_argument("--trail-pips", type=float, default=0.0,
+                        help="Trailing mesafesini pip cinsinden ez (0 = spec varsayilan 20). Zaman-dilimi merdiveni testi.")
     parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -2326,11 +2670,31 @@ def main():
     TUN_ORB_SL_FRAC = args.orb_sl_frac
     TUN_ORB_TP_R = args.orb_tp_r
     global TUN_HTF_EMA200_GATE, TUN_REL_ATR_BAND, TUN_REL_ATR_LO, TUN_REL_ATR_HI, TUN_REL_ATR_LOOKBACK
+    global TUN_SKIP_OLD
+    TUN_SKIP_OLD = bool(getattr(args, "skip_old", False))
     TUN_HTF_EMA200_GATE = args.htf_ema200_gate
     TUN_REL_ATR_BAND = args.rel_atr_band
     TUN_REL_ATR_LO = args.rel_atr_lo
     TUN_REL_ATR_HI = args.rel_atr_hi
     TUN_REL_ATR_LOOKBACK = args.rel_atr_lookback
+    global TUN_TOD_LONG_HOURS, TUN_TOD_SHORT_HOURS, TUN_ORB15_OR_ADR_LO, TUN_ORB15_OR_ADR_HI
+    global TUN_ORB15_MIN_ADR_PIPS, TUN_ORB15_SESSIONS, TUN_ORB15_MAX_HOLD_H
+    global TUN_SQX_COMP_PCT, TUN_SQX_HTF_TREND, TUN_REOPEN_MIN_GAP_PIPS
+    global TUN_TFIX_GOTOBI_ONLY, TUN_TFIX_WINDOW_MIN
+    TUN_TOD_LONG_HOURS = args.tod_long_hours
+    TUN_TOD_SHORT_HOURS = args.tod_short_hours
+    TUN_ORB15_OR_ADR_LO = args.orb15_or_adr_lo
+    TUN_ORB15_OR_ADR_HI = args.orb15_or_adr_hi
+    TUN_ORB15_MIN_ADR_PIPS = args.orb15_min_adr
+    TUN_ORB15_SESSIONS = args.orb15_sessions
+    TUN_ORB15_MAX_HOLD_H = args.orb15_max_hold
+    TUN_SQX_COMP_PCT = args.sqx_comp_pct
+    TUN_SQX_HTF_TREND = not args.sqx_no_htf
+    TUN_REOPEN_MIN_GAP_PIPS = args.reopen_min_gap
+    TUN_TFIX_GOTOBI_ONLY = args.tfix_gotobi_only
+    TUN_TFIX_WINDOW_MIN = args.tfix_window
+    _HTF_EMA_STATE.clear()
+    _BB_BW_CACHE.clear()
 
     TUN_MIN_SCORE = args.min_score
     TUN_SL_ATR_MULT = args.sl_mult
@@ -2339,8 +2703,10 @@ def main():
     TUN_HEADROOM_FOREX = args.headroom
     TUN_ADX_MIN = args.adx_min
     TUN_ST_FILTER = args.st_filter
-    global TUN_SPEC_ATR
+    global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE
     TUN_SPEC_ATR = args.spec_atr
+    TUN_BE_PIPS_OVERRIDE = args.be_pips
+    TUN_TRAIL_PIPS_OVERRIDE = args.trail_pips
     EV_GUARD = not args.no_ev_guard
     TUN_FX_MIN_SCORE = args.fx_min_score
     TUN_GOLD_DXY_SOFT = args.gold_dxy_soft
@@ -2439,7 +2805,7 @@ def main():
     cfg_str = (f"{args.tag} | min_score={TUN_MIN_SCORE} sl_mult={TUN_SL_ATR_MULT} tp_mult={TUN_TP_ATR_MULT} "
                f"rr_floor={TUN_RR_FLOOR} headroom={TUN_HEADROOM_FOREX} adx_min={TUN_ADX_MIN} st={TUN_ST_FILTER} "
                f"ev_guard={EV_GUARD} ev_win={args.ev_window}h ev_wr={args.ev_wr} fx_min_score={TUN_FX_MIN_SCORE or '-'} "
-               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) chandelier={TUN_CHANDLIER or '-'} "
+               f"goldDXYsoft={TUN_GOLD_DXY_SOFT}(+{TUN_GOLD_DXY_BUMP}) chandelier={TUN_CHANDLIER or '-'} bePips={TUN_BE_PIPS_OVERRIDE or '-'} trailPips={TUN_TRAIL_PIPS_OVERRIDE or '-'} "
                f"stP={args.st_period} stM={args.st_mult} goldSession={TUN_GOLD_SESSION} btcEMA200={TUN_BTC_EMA200} "
                f"btcVWAP={TUN_BTC_VWAP} cryptoSL={TUN_CRYPTO_SL_MULT or '-'} btcScore={TUN_BTC_MIN_SCORE or '-'} "
                f"majorHours={args.major_hours or '-'} majorMinAtr={TUN_MAJOR_MIN_ATR or '-'} majorMaxExt={TUN_MAJOR_MAX_EXT or '-'} "

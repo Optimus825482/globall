@@ -182,6 +182,28 @@ JPY_CONFIGS = {
                         scope="jpy2", desc="Squeeze pct10 + chand2.5 (yalnız JPY)"),
     "jp_sq_tp2": _cfg("jp_sq_tp2", "squeeze", ["--mode-tp-atr", "2.0"], scope="jpy2",
                       desc="Squeeze TP2R (yalnız JPY)"),
+    # H1 EMA200 MTF kapısı + göreli-ATR bandı varyantları (2026-10-08 araştırma)
+    "jp_da_h1": _cfg("jp_da_h1", "donchian_adx", ["--htf-ema200-gate"], scope="jpy2",
+                     desc="Donchian ADX TP4 (JPY) + H1 EMA200 kapısı"),
+    "jp_sq_h1": _cfg("jp_sq_h1", "squeeze", ["--chandelier", "2.5", "--htf-ema200-gate"], scope="jpy2",
+                     desc="Squeeze (JPY) + H1 EMA200 kapısı"),
+    "jp_da_relatr": _cfg("jp_da_relatr", "donchian_adx", ["--rel-atr-band"], scope="jpy2",
+                         desc="Donchian ADX TP4 (JPY) + göreli-ATR bandı"),
+    "jp_dp_h1": _cfg("jp_dp_h1", "donchian_pure", ["--chandelier", "2.5", "--htf-ema200-gate"],
+                     scope="jpy2", desc="Donchian saf (JPY) + H1 EMA200 kapısı"),
+    "sq_tp2_h1": _cfg("sq_tp2_h1", "squeeze", ["--mode-tp-atr", "2.0", "--htf-ema200-gate"],
+                      desc="Squeeze TP2R (fx12) + H1 EMA200 kapısı"),
+    "da_tp4_h1": _cfg("da_tp4_h1", "donchian_adx", ["--htf-ema200-gate"],
+                      desc="Donchian ADX TP4 (fx12) + H1 EMA200 kapısı"),
+    # H1 kapısı geniş FX evreninde + ek JPY adayları (çapraz pencere doğrulaması)
+    "dp_h1": _cfg("dp_h1", "donchian_pure", ["--chandelier", "2.5", "--htf-ema200-gate"],
+                  desc="Donchian saf + H1 EMA200 kapısı (tüm FX12)"),
+    "dp_h1_t12": _cfg("dp_h1_t12", "donchian_pure", ["--chandelier", "1.2", "--htf-ema200-gate"],
+                      desc="Donchian saf + chand1.2 + H1 EMA200 kapısı (tüm FX12)"),
+    "nr7_h1": _cfg("nr7_h1", "nr7", ["--chandelier", "2.5", "--htf-ema200-gate"],
+                   desc="NR7 + chand2.5 + H1 EMA200 kapısı (tüm FX12)"),
+    "sq_tp2_h1_x": _cfg("sq_tp2_h1_x", "squeeze", ["--mode-tp-atr", "2.0", "--htf-ema200-gate"],
+                        desc="Squeeze TP2R + H1 EMA200 (tüm FX12)"),
 }
 CONFIGS.update(JPY_CONFIGS)
 
@@ -221,6 +243,13 @@ LONG_SET = [
 ]
 
 
+# 60 günlük tam pencere + H1 kapısı belirleyici set
+FINAL_SET = [
+    "jp_da_tp4", "jp_da_h1", "jp_da_relatr", "jp_sq_t25", "jp_sq_h1", "jp_sq_pct10", "jp_dp_h1",
+    "da_tp4", "da_tp4_h1", "sq_tp2", "sq_tp2_h1", "lb_tp15", "jp_classic",
+]
+
+
 def long_window_args(cfg):
     """30 günlük doğrulama penceresi (cfg['window']'dan bağımsız)."""
     return ["--start", LONG_START, "--end", LONG_END]
@@ -228,7 +257,7 @@ def long_window_args(cfg):
 
 def build_cmd(cfg, out_path, window_override=None, days_label=None):
     cmd = [PY, REPLAY, "--entry-mode", cfg["entry_mode"],
-           "--tag", cfg["name"], "--out", out_path]
+           "--tag", cfg["name"], "--out", out_path, "--skip-old"]
     if cfg["scope"] == "jpy2":
         # GBPJPY/EURJPY canlı allowed sette olduğundan --symbols ile doğrudan süzülür
         cmd += ["--cache", CACHE60, "--symbols", JPY2, "--max-open", "99",
@@ -316,7 +345,8 @@ def print_leaderboard(results):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--configs", default="", help="Virgüllü konfig adları (boş = --phase)")
-    ap.add_argument("--phase", default="", choices=["", "is", "all", "screen", "long", "sqref"])
+    ap.add_argument("--phase", default="", choices=["", "is", "all", "screen", "long", "sqref", "final"])
+    ap.add_argument("--window", default="", choices=["", "60g"], help="final fazı için: 60g = tüm cache (pencere yok)")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--start", default="")
     ap.add_argument("--end", default="")
@@ -337,6 +367,8 @@ def main():
         names = SQREF_SET
     elif args.phase == "long":
         names = LONG_SET
+    elif args.phase == "final":
+        names = FINAL_SET
     elif args.phase:
         names = PHASES[args.phase]
     else:
@@ -357,6 +389,7 @@ def main():
         win = list(PX_WIN)
     elif args.phase == "long":
         win = list(LONG_WIN)
+    # final: pencere verilmezse tam cache (60g) koşulur
 
     t0 = time.time()
     results = []
