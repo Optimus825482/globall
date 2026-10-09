@@ -487,12 +487,76 @@ def translate_title(title: str, country_code: str) -> str:
     return f"{c_name} {orig}" if c_name and not orig.startswith(c_name) else orig
 
 
+# ============================================================================
+# OLAY KOVASI (BUCKET) SINIFLANDIRMASI — TEK DOĞRULUK KAYNAĞI
+# ============================================================================
+
+# Kova adı -> anahtar kelime listesi. SIRA ANLAMLIDIR: "Fed ... Inflation" gibi
+# başlıklar `rate` kovasına düşmelidir, `inflation` kovasına değil. Bu sözlük hem
+# `generate_event_scenario` (gösterilecek senaryo metni) hem de
+# `evaluate_event_outcome` (hangi dalın gerçekleştiği) tarafından kullanılır —
+# böylece gösterilen metin ile seçilen dal ASLA çelişmez.
+_EVENT_BUCKET_KEYWORDS: List[tuple] = [
+    ("rate", ["rate", "faiz", "fomc", "fed", "monetary", "beyanat", "statement", "powell", "lagarde", "ueda"]),
+    ("inflation", ["cpi", "tüfe", "inflation", "enflasyon", "pce", "ppi", "üfe"]),
+    ("employment", ["employment", "nfp", "istihdam", "payrolls", "işsizlik", "claims", "adp"]),
+    ("oil_stocks", ["oil", "petrol", "crude", "inventories", "stok"]),
+    ("gdp", ["gdp", "gsyh", "büyüme"]),
+    ("pmi", ["pmi", "ism", "imalat", "hizmet"]),
+]
+
+# İşsizlik/başvuru serileri AYNI istihdam kovasında ama AYNI yön kuralını paylaşmaz:
+# istihdam artışı güçlü ekonomidir, işsizlik/başvuru artışı ise zayıflıktır.
+_EMPLOYMENT_INVERTED_KEYWORDS = ["işsizlik", "unemployment", "claims", "jobless"]
+
+# Petrol dışı "Business Inventories" gibi başlıklar stok kovasına girip yanlış
+# yorumlanmasın diye ters çevirme YALNIZ gerçek petrol belirteci taşıyan olaylara
+# uygulanır. "Inventories"/"stok" tek başına YETMEZ — petrol belirteci şarttır.
+# (Mevcut `generate_event_scenario` `inventories`/`stok` anahtarını geniş tutuyor;
+# bu daraltma YALNIZ yön kuralına uygulanır, gösterilen metne dokunulmaz.)
+_OIL_STOCK_HINTS = ["crude", "oil", "petrol", "eia", "ham petrol"]
+
+
+def classify_event_bucket(title: str) -> str:
+    """Olay başlığını senaryo kovasına haritalar.
+
+    Dönen değerler: `rate`, `inflation`, `employment`, `oil_stocks`, `gdp`,
+    `pmi`, `generic`. `_EVENT_BUCKET_KEYWORDS` sırası korunur.
+    """
+    t = (title or "").lower()
+    for bucket, keywords in _EVENT_BUCKET_KEYWORDS:
+        if any(k in t for k in keywords):
+            return bucket
+    return "generic"
+
+
+def higher_is_bullish_for_event(title: str) -> bool:
+    """Açıklanan veri taban değerden YÜKSEK geldiğinde dalın 🟢 (bullish) olup olmadığını döner.
+
+    Varsayılan kural: beklenti üstü veri = 🟢 (olayın `bullish_trigger`'ı). İki istisna
+    ters çevrilir:
+
+    * **İşsizlik / başvuru** (`işsizlik`, `unemployment`, `claims`, `jobless`): yüksek
+      işsizlik zayıflıktır → 🔴.
+    * **Ham petrol stokları** (`crude`/`oil`/`petrol`/`eia` + `inventories`/`stok`):
+      stok artışı arz bolluğudur → 🔴.
+
+    Enflasyon ailesi (TÜFE/ÜFE/PCE) **ters çevrilmez**: yüksek enflasyon şahin duruşu
+    gerektirir ve olayın senaryosunda zaten `bullish_trigger` olarak yazılıdır.
+    """
+    t = (title or "").lower()
+    if any(k in t for k in _EMPLOYMENT_INVERTED_KEYWORDS):
+        return False
+    if classify_event_bucket(t) == "oil_stocks" and any(k in t for k in _OIL_STOCK_HINTS):
+        return False
+    return True
+
+
 def generate_event_scenario(title: str, country: str, currency: str, symbols: List[str]) -> Dict[str, str]:
     """Her ekonomik olay için 'Ne Olursa Ne Olur?' senaryosu üretir."""
     sym_str = ", ".join(symbols[:3])
-    t = title.lower()
 
-    if any(k in t for k in ["rate", "faiz", "fomc", "fed", "monetary", "beyanat", "statement", "powell", "lagarde", "ueda"]):
+    if classify_event_bucket(title) == "rate":
         return {
             "title": f"{currency} Faiz & Para Politikası Senaryosu",
             "bullish_trigger": "Faiz Beklenti Üzeri Kalırsa / Şahin Açıklama",
@@ -502,7 +566,7 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
             "scalper_tip": "Açıklanma dakikasında spread 2-3 katına çıkabilir; fitil oluştuktan 30 saniye sonra kırılımla girin.",
             "summary_short": f"Şahin/Yüksek: {currency}↑ / Altın↓ | Güvercin/Düşük: Altın↑ / {currency}↓",
         }
-    elif any(k in t for k in ["cpi", "tüfe", "inflation", "enflasyon", "pce", "ppi", "üfe"]):
+    elif classify_event_bucket(title) == "inflation":
         return {
             "title": f"{currency} Enflasyon Verisi Senaryosu",
             "bullish_trigger": "Enflasyon Beklenti Üstü Çıkarsa (Sıcak Veri)",
@@ -512,7 +576,7 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
             "scalper_tip": "Veri anında ters yöne emir yazmayın; ilk 1 dakikalık mum kapanış yönünde momentum scalping yapın.",
             "summary_short": f"Sıcak Veri (>): {currency}↑ / Altın↓ | Soğuk Veri (<): Altın↑ / {currency}↓",
         }
-    elif any(k in t for k in ["employment", "nfp", "istihdam", "payrolls", "işsizlik", "claims", "adp"]):
+    elif classify_event_bucket(title) == "employment":
         return {
             "title": f"{currency} İstihdam & İş Gücü Senaryosu",
             "bullish_trigger": "İstihdam Beklenti Üstü / Düşük İşsizlik",
@@ -522,7 +586,7 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
             "scalper_tip": "İstihdam dalgası 10-15 dakika sürebilir; stop mesafesini normalin 1.5 katı tutun.",
             "summary_short": f"Güçlü İstihdam: {currency}↑ / Altın↓ | Zayıf İstihdam: Altın↑ / {currency}↓",
         }
-    elif any(k in t for k in ["oil", "petrol", "crude", "inventories", "stok"]):
+    elif classify_event_bucket(title) == "oil_stocks":
         return {
             "title": "Ham Petrol Stok Senaryosu",
             "bullish_trigger": "Stoklarda Beklenmedik Düşüş (Arz Kısıtı)",
@@ -532,7 +596,7 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
             "scalper_tip": "Stok verisi açıklandıktan 30 saniye sonra trend yönüne stoplu katılın.",
             "summary_short": "Stok Düşüşü: USOIL↑ / USDCAD↓ | Stok Artışı: USOIL↓ / USDCAD↑",
         }
-    elif any(k in t for k in ["gdp", "gsyh", "büyüme"]):
+    elif classify_event_bucket(title) == "gdp":
         return {
             "title": f"{currency} Büyüme (GSYH) Senaryosu",
             "bullish_trigger": "GSYH Beklenti Üzeri Çıkarsa",
@@ -542,7 +606,7 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
             "scalper_tip": "Öncü veriler nihai verilerden daha yüksek oynaklık yaratır.",
             "summary_short": f"Güçlü GSYH: {currency}↑ | Zayıf GSYH: {currency}↓",
         }
-    elif any(k in t for k in ["pmi", "ism", "imalat", "hizmet"]):
+    elif classify_event_bucket(title) == "pmi":
         return {
             "title": f"{currency} PMI Satın Alma Yöneticileri Senaryosu",
             "bullish_trigger": "PMI > 50 ve Beklenti Üzeri (Genişleme)",
@@ -562,6 +626,150 @@ def generate_event_scenario(title: str, country: str, currency: str, symbols: Li
             "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
             "summary_short": f"Beklenti Üzeri: {currency}↑ | Beklenti Altı: {currency}↓",
         }
+
+
+# ============================================================================
+# AÇIKLANAN VERİ KIYASI — HANGİ SENARYO GERÇEKLEŞTİ?
+# ============================================================================
+#
+# Takvim değerleri `_fmt_val` ile "0.2%", "145K", "-1.5M" gibi METİN olarak
+# saklanıyor (kaynak TradingView sayı + `unit` gönderiyor). Aşağıdaki iki
+# fonksiyon bu metinleri kıyaslanabilir sayıya çevirir ve `actual` ile taban
+# değeri karşılaştırıp olayın hangi senaryo dalının gerçekleştiğini söyler.
+
+# Ayrıştırılamayan / veri yok anlamına gelen metinler.
+_MISSING_VALUE_TOKENS = {"", "—", "-", "–", "n/a", "na", "null", "none", "nan", "--"}
+
+# Sondaki çarpan ekleri (TradingView 145K / -1.5M biçimini üretir).
+_SUFFIX_MULTIPLIERS = {"k": 1e3, "m": 1e6, "b": 1e9, "t": 1e12}
+
+
+def parse_calendar_value(value: Any) -> Optional[float]:
+    """Takvim değerini kıyaslanabilir sayıya çevirir; çevrilemezse `None`.
+
+    Örnekler: `"0.2%"` → 0.2, `"145K"` → 145000.0, `"-1.5M"` → -1500000.0,
+    `"3.50%"` → 3.5. Yüzde işareti SADECE atılır, 100'e bölünmez — `actual` ile
+    `forecast` aynı birimi taşıdığı için kıyas yine doğrudur.
+
+    Ondalık virgül yalnız NOKTA yokken ayraç sayılır (`"2,2%"` → 2.2); nokta varsa
+    virgüller binlik ayraçtır (`"1,234.5"` → 1234.5). Binlik ayraç olarak virgül
+    kullanılan `"1,234"` de doğru okunur.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+
+    raw = str(value).strip()
+    if raw.lower() in _MISSING_VALUE_TOKENS:
+        return None
+
+    text = raw.replace("%", "").replace(" ", "").replace(" ", "")
+    # Para birimi simgeleri ve harf kalıntıları (₺ $ € £ ¥) baştaki/sondaki.
+    text = re.sub(r"^[^\d+\-.,]+", "", text)
+
+    multiplier = 1.0
+    if text and text[-1].lower() in _SUFFIX_MULTIPLIERS:
+        multiplier = _SUFFIX_MULTIPLIERS[text[-1].lower()]
+        text = text[:-1]
+
+    # Kalan harfleri at (birim eki vb.); yalnız sayısal gövde kalsın.
+    text = re.sub(r"[^\d+\-.,]", "", text)
+    if not text:
+        return None
+
+    if "." in text:
+        # Nokta ondalık ayraç: virgüller binlik ayraçtır.
+        text = text.replace(",", "")
+    elif "," in text:
+        # Virgül var, nokta yok. "1,234" binlik, "2,2" ondalık olabilir.
+        head, _, tail = text.rpartition(",")
+        if len(tail) == 3 and head.lstrip("+-").isdigit():
+            text = text.replace(",", "")  # "1,234" -> 1234
+        else:
+            text = text.replace(",", ".")  # "2,2" -> 2.2
+
+    try:
+        return float(text) * multiplier
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_comparison_value(number: float, unit: str) -> str:
+    """Kıyas metninde kullanılacak okunabilir sayı biçimi."""
+    if unit:
+        return f"{number:g}{unit}"
+    return f"{number:g}"
+
+
+def evaluate_event_outcome(
+    title: str,
+    forecast: Any,
+    previous: Any,
+    actual: Any,
+) -> Optional[Dict[str, Any]]:
+    """Açıklanan veriyi taban değerle kıyaslayıp gerçekleşen senaryo dalını bulur.
+
+    Taban önceliği **forecast**, yoksa **previous**'dur. Canlı TradingView akışında
+    olayların çoğunda `forecast` boş, `previous` doludur — bu yüzden previous tabanı
+    istisna değil ana yoldur ve rozet metni tabana göre değişir.
+
+    Dönen sözlük: `side` ("bullish"/"bearish"/None), `bucket`, `basis`,
+    `actual_num`, `baseline_num`, `comparison_tr`, `label_tr`.
+    `actual` yok/ayrıştırılamıyor ya da **her iki taban da** yok ise `None` döner
+    (asla tahmin edilmez). Eşitlikte `side=None` — dal gizlenmez.
+    """
+    actual_num = parse_calendar_value(actual)
+    if actual_num is None:
+        return None
+
+    forecast_num = parse_calendar_value(forecast)
+    previous_num = parse_calendar_value(previous)
+
+    if forecast_num is not None:
+        baseline_num, basis = forecast_num, "forecast"
+    elif previous_num is not None:
+        baseline_num, basis = previous_num, "previous"
+    else:
+        return None
+
+    higher_is_bullish = higher_is_bullish_for_event(title)
+
+    if abs(actual_num - baseline_num) < 1e-9:
+        side: Optional[str] = None
+        label_tr = "Beklentiye Uygun"
+    else:
+        is_higher = actual_num > baseline_num
+        side = "bullish" if (is_higher == higher_is_bullish) else "bearish"
+        if basis == "forecast":
+            label_tr = "Beklenti Üzeri" if is_higher else "Beklenti Altı"
+        else:
+            label_tr = "Önceki'ye Göre Artış" if is_higher else "Önceki'ye Göre Azalış"
+
+    # Birim ekini kıyas metninde koruyabilmek için ham metinlerden çıkarılır.
+    unit = ""
+    for raw in (actual, baseline_num):
+        if isinstance(raw, str):
+            match = re.search(r"([%A-Za-z]*)\s*$", raw.strip())
+            if match and match.group(1):
+                unit = match.group(1)
+                break
+
+    actual_text = _format_comparison_value(actual_num, unit) if unit else str(actual).strip()
+    baseline_text = _format_comparison_value(baseline_num, unit) if unit else f"{baseline_num:g}"
+
+    operator = "=" if side is None else (">" if actual_num > baseline_num else "<")
+    comparison_tr = f"{actual_text} {operator} {baseline_text} ({label_tr})"
+
+    return {
+        "side": side,
+        "bucket": classify_event_bucket(title),
+        "basis": basis,
+        "actual_num": actual_num,
+        "baseline_num": baseline_num,
+        "comparison_tr": comparison_tr,
+        "label_tr": label_tr,
+    }
 
 
 # ============================================================================
@@ -947,9 +1155,33 @@ def _save_disk_cache(items: List[Dict[str, Any]]) -> None:
 # ============================================================================
 
 def _update_event_dynamic_fields(items: List[Dict[str, Any]]) -> None:
-    """Olayların dakikasını, 5 dakika uyarısını ve durumunu dinamik günceller."""
+    """Olayların dakikasını, 5 dakika uyarısını, durumunu ve veri sonucunu günceller.
+
+    Bu fonksiyon **her okuma yolunda** (bellek önbelleği, veritabanı, disk önbelleği,
+    yedek olaylar) çağrılır; bu yüzden `outcome`/`has_data` alanları da burada
+    hesaplanır — veritabanına yeni sütun eklemeye gerek kalmaz, eski satırlar ilk
+    okumada bu alanları kazanır.
+    """
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     for ev in items:
+        # `outcome`/`has_data` VERİ türevlidir, ZAMAN türevli değil: `if date_iso:`
+        # bloğunun DIŞINDA hesaplanmalıdır, aksi halde `date_iso`'su olmayan
+        # önbellek satırları hiç sonuç alamaz.
+        has_forecast = bool(str(ev.get("forecast") or "").strip()) and ev.get("forecast") != "—"
+        has_previous = bool(str(ev.get("previous") or "").strip()) and ev.get("previous") != "—"
+        has_actual = bool(str(ev.get("actual") or "").strip()) and ev.get("actual") != "—"
+        ev["has_data"] = bool(has_forecast or has_previous)
+        ev["outcome"] = (
+            evaluate_event_outcome(
+                str(ev.get("original_title") or ev.get("title") or ""),
+                ev.get("forecast"),
+                ev.get("previous"),
+                ev.get("actual"),
+            )
+            if has_actual
+            else None
+        )
+
         date_iso = ev.get("date_iso")
         if date_iso:
             try:
@@ -959,7 +1191,7 @@ def _update_event_dynamic_fields(items: List[Dict[str, Any]]) -> None:
                 ev["minutes_until"] = mins
                 ev["is_within_5m"] = bool(0 <= mins <= 5.5)
                 ev["is_passed"] = bool(diff_sec < 0)
-                if ev.get("actual") and ev["actual"] != "—":
+                if has_actual:
                     ev["status"] = "Açıklandı"
                 elif ev["is_passed"]:
                     ev["status"] = "Geçti"

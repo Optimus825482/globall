@@ -13,6 +13,16 @@ import Link from "next/link";
 import { apiFetch } from "./lib/api";
 import { usePolling } from "./lib/usePolling";
 import { triggerTestCalendarNotification } from "./lib/notificationSettings";
+import {
+  outcomeSide,
+  comparisonText,
+  labelText,
+  basisText,
+  isOutcomeVisibleNow,
+  selectScenarioBranches,
+  selectTodaysPublished,
+  type CalendarOutcome,
+} from "./lib/calendarOutcome";
 import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 
 interface OpenPosition {
@@ -96,6 +106,11 @@ interface EconomicEvent {
   status?: string;
   comment?: string;
   is_passed?: boolean;
+  // Veri açıklaması olup olmadığı ve gerçekleşen senaryo dalı — backend
+  // `_update_event_dynamic_fields` her okuma yolunda doldurur. Eski önbellek
+  // satırlarında bulunmayabilir (o yüzden opsiyonel).
+  has_data?: boolean;
+  outcome?: CalendarOutcome | null;
   affected_symbols: string[];
   scenario: {
     title: string;
@@ -606,6 +621,30 @@ export default function HomePage() {
   const hasPendingEvents = filteredCalendarEvents.length > 0;
   const nowSec = useSharedNowSec(hasPendingEvents);
 
+  // BUGÜN AÇIKLANAN VERİLER: veri içeren, sonucu belirlenmiş ve penceresi açık
+  // (aynı UTC+3 günü) olaylar — her biri için ayrı kart. Kaynak `calendarEvents`
+  // (filtrelenmemiş): amaç "günün sonuçları", filtrelenmiş tablo değil.
+  // Pencere `nowSec` ile değerlendirilir; gün dönümünde YENİ İNTERVAL KURULMAZ,
+  // kartlar kendiliğinden düşer (2026-10-08'de kaldırılan satır-başına interval
+  // hatasının tekrarını önlemek için bilinçli olarak mevcut sayaç kullanılıyor).
+  const nowMs = nowSec * 1000;
+  const todaysPublishedEvents = useMemo(
+    () => selectTodaysPublished(calendarEvents, nowMs),
+    [calendarEvents, nowMs],
+  );
+
+  // MODAL TEK DAL: seçili olayın sonucu penceresi içindeyse yalnız gerçekleşen
+  // senaryo gösterilir. Karar verilemediğinde (henüz açıklanmadı / eşitlik /
+  // ayrıştırılamayan değer) `selectScenarioBranches` iki dalı da geri verir —
+  // bilgi gizlenmez, eski davranış korunur.
+  const selectedOutcomeSide = outcomeSide(selectedEvent);
+  const selectedOutcomeVisible = isOutcomeVisibleNow(
+    selectedEvent?.date_iso,
+    nowMs,
+    selectedEvent?.actual,
+  );
+  const scenarioBranches = selectScenarioBranches(selectedOutcomeSide, selectedOutcomeVisible);
+
   return (
     <div className="space-y-6 pb-16 font-mono text-white">
       {/* 1. ÜST BAŞLIK VE CANLI DURUM ÇUBUĞU */}
@@ -1061,6 +1100,132 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* BUGÜN AÇIKLANAN VERİLER VİTRİNİ ─────────────────────────────────────
+            Filtre kontrollerinin ÜSTÜNDE, filtrelerden BAĞIMSIZ durur: amaç
+            "kullanıcının o an filtrelediği satırlar" değil, "bugün açıklanan
+            sonuçlar"dır. Veri yoksa blok hiç render edilmez (gürültü yok). */}
+        {todaysPublishedEvents.length > 0 && (
+          <div className="rounded-xl border border-emerald-400 dark:border-emerald-500/40 bg-emerald-50/70 dark:bg-emerald-500/[0.07] p-3 space-y-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-base">📣</span>
+              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                Bugün Açıklanan Veriler
+              </h3>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40">
+                {todaysPublishedEvents.length} olay · gerçekleşen senaryo işaretli
+              </span>
+              <span className="text-[10px] text-emerald-800/80 dark:text-emerald-300/70">
+                Gece yarısına (TSİ) kadar görünür.
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+              {todaysPublishedEvents.map((item) => {
+                const side = outcomeSide(item);
+                const isBull = side === "bullish";
+                const cmp = comparisonText(item);
+                const label = labelText(item);
+                const basis = basisText(item);
+                const branchOutcome = isBull
+                  ? item.scenario?.bullish_outcome
+                  : item.scenario?.bearish_outcome;
+                return (
+                  <div
+                    key={`published-${item.id}`}
+                    className={`p-3 rounded-xl border shadow-sm space-y-2 ${
+                      isBull
+                        ? "bg-white dark:bg-bunker-900/80 border-emerald-400 dark:border-emerald-500/40"
+                        : "bg-white dark:bg-bunker-900/80 border-rose-400 dark:border-rose-500/40"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-bold">
+                          <span>{item.flag || "🌐"}</span>
+                          <span>{item.country_name || item.country}</span>
+                          {item.currency && (
+                            <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-black">
+                              ({item.currency})
+                            </span>
+                          )}
+                          {item.date_str && (
+                            <span className="text-[10px] text-slate-500 dark:text-bunker-muted font-mono">
+                              ⏰ {item.date_str}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-extrabold text-slate-900 dark:text-white text-xs leading-snug">
+                          {item.title}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap border ${
+                          isBull
+                            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
+                            : "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/40"
+                        }`}
+                        title={label || undefined}
+                      >
+                        {isBull ? "🟢" : "🔴"} {label || (isBull ? "Olumlu" : "Olumsuz")}
+                      </span>
+                    </div>
+
+                    {/* ÜÇ DEĞER YAN YANA: beklenti · önceki · açıklanan.
+                        Beklenti çoğu olayda boş gelir (kaynak kısıtı) — o zaman
+                        "—" gösterilir ve kıyas `basis` üzerinden Önceki'ye yapılır. */}
+                    <div className="grid grid-cols-3 gap-2 text-xs pt-0.5">
+                      <div className={basis === "Beklenti" ? "opacity-100" : "opacity-80"}>
+                        <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Beklenti:</div>
+                        <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{item.forecast || "—"}</strong>
+                      </div>
+                      <div className={basis === "Önceki" ? "opacity-100" : "opacity-80"}>
+                        <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Önceki:</div>
+                        <strong className="text-slate-800 dark:text-white font-bold">{item.previous || "—"}</strong>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Açıklanan:</div>
+                        <strong
+                          className={`font-black ${
+                            isBull
+                              ? "text-emerald-700 dark:text-emerald-400"
+                              : "text-rose-700 dark:text-rose-400"
+                          }`}
+                        >
+                          {item.actual || "—"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {cmp && (
+                      <div className="text-[10px] font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-bunker-950/60 rounded-lg px-2 py-1 border border-slate-200 dark:border-bunker-800">
+                        {cmp}
+                        {basis && (
+                          <span className="text-slate-500 dark:text-bunker-muted"> · kıyas: {basis}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {branchOutcome && (
+                      <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-2">
+                        {branchOutcome}
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(item)}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-bunker-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-bunker-700 hover:bg-slate-200 dark:hover:bg-bunker-700 transition-all"
+                      title="Yalnızca gerçekleşen senaryo dalıyla birlikte kartı aç"
+                    >
+                      Kart İncele →
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* İçerik Kartları */}
         {loadingCalendar && calendarEvents.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-600 dark:text-bunker-muted animate-pulse font-mono rounded-xl bg-slate-50 dark:bg-bunker-950/50 border border-slate-300 dark:border-bunker-800">
@@ -1496,37 +1661,66 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* "NE OLURSA NE OLUR?" SENARYO MATRİSİ */}
+            {/* "NE OLURSA NE OLUR?" SENARYO MATRİSİ
+                Karar verilebildiğinde (veri açıklandı + dal belirli) yalnız
+                gerçekleşen dal render edilir; diğeri tamamen gizlenir. */}
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-base">⚡</span>
                 <h3 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">
                   {selectedEvent.scenario?.title || "Ne Olursa Ne Olur? Senaryo Analizi"}
                 </h3>
+                {selectedOutcomeVisible && selectedOutcomeSide && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-black border whitespace-nowrap ${
+                      selectedOutcomeSide === "bullish"
+                        ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
+                        : "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/40"
+                    }`}
+                  >
+                    ✅ Gerçekleşen Senaryo
+                  </span>
+                )}
               </div>
 
               <div className="space-y-2.5 text-xs">
                 {/* OLUMLU / BEKLENTİ ÜZERİ */}
-                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/30 space-y-1 shadow-sm">
-                  <div className="font-black text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
-                    <span>🟢</span>
-                    <span>{selectedEvent.scenario?.bullish_trigger}</span>
+                {scenarioBranches.showBullish && (
+                  <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/30 space-y-1 shadow-sm">
+                    <div className="font-black text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                      <span>🟢</span>
+                      <span>{selectedEvent.scenario?.bullish_trigger}</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-900 dark:text-emerald-200/90 font-medium leading-relaxed pl-5">
+                      {selectedEvent.scenario?.bullish_outcome}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-emerald-900 dark:text-emerald-200/90 font-medium leading-relaxed pl-5">
-                    {selectedEvent.scenario?.bullish_outcome}
-                  </p>
-                </div>
+                )}
 
                 {/* OLUMSUZ / BEKLENTİ ALTI */}
-                <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-400 dark:border-rose-500/30 space-y-1 shadow-sm">
-                  <div className="font-black text-rose-800 dark:text-rose-400 flex items-center gap-1.5">
-                    <span>🔴</span>
-                    <span>{selectedEvent.scenario?.bearish_trigger}</span>
+                {scenarioBranches.showBearish && (
+                  <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-400 dark:border-rose-500/30 space-y-1 shadow-sm">
+                    <div className="font-black text-rose-800 dark:text-rose-400 flex items-center gap-1.5">
+                      <span>🔴</span>
+                      <span>{selectedEvent.scenario?.bearish_trigger}</span>
+                    </div>
+                    <p className="text-[11px] text-rose-900 dark:text-rose-200/90 font-medium leading-relaxed pl-5">
+                      {selectedEvent.scenario?.bearish_outcome}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-rose-900 dark:text-rose-200/90 font-medium leading-relaxed pl-5">
-                    {selectedEvent.scenario?.bearish_outcome}
+                )}
+
+                {/* KARAR VERİLEMEDİ: bilgi gizlenmez, nedenini söyle. */}
+                {!selectedOutcomeVisible && (
+                  <p className="text-[10px] text-slate-500 dark:text-bunker-muted">
+                    Veri henüz açıklanmadı — iki senaryo da olasıdır.
                   </p>
-                </div>
+                )}
+                {selectedOutcomeVisible && !selectedOutcomeSide && (
+                  <p className="text-[10px] text-slate-500 dark:text-bunker-muted">
+                    Açıklanan değer beklenti/önceki ile ayrıştırılamadı — iki senaryo da gösteriliyor.
+                  </p>
+                )}
 
                 {/* SCALPER İPUCU */}
                 {selectedEvent.scenario?.scalper_tip && (

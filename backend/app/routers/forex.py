@@ -3600,6 +3600,9 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             metadata={"pnl_usd": pnl_usd, "pnl_pips": pnl_pips, "reason": reason, "strategy": _strat, "strategy_label": _strat_lbl},
         )
 
+        # Pozisyon kapandı: durum değişti, `/status` önbelleği bayat kalmasın.
+        _invalidate_status_cache()
+
         # Altın veya BTC pozisyonu kapandığında 60 saniye soğuma sayacını başlat
         sym_closed = target.get("symbol", "").upper()
         if "XAU" in sym_closed or "GOLD" in sym_closed:
@@ -5182,6 +5185,7 @@ async def _forex_auto_paper_loop():
                     }
                     async with _AUTO_PAPER_LOCK:
                         _AUTO_STATE["open_positions"].append(pos_item)
+                    _invalidate_status_cache()
 
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
 
@@ -5220,6 +5224,18 @@ async def _forex_auto_paper_loop():
 
     _AUTO_STATE["last_status"] = "Durduruldu"
     logger.info("Forex Otonom Scalper Döngüsü Durduruldu.")
+
+
+def _invalidate_status_cache() -> None:
+    """`/auto-paper/status` önbelleğini geçersiz kılar.
+
+    Önbellek 1 sn TTL taşır; pozisyon kapatma, emir gönderme, panel açma/kapama ve
+    sıfırlama gibi DURUMU DEĞİŞTİREN uçlardan sonra çağrılmalıdır. Aksi halde istemci
+    bir sonraki saniyeye kadar bayat veri görür (ör. elle kapatılan pozisyon hâlâ
+    "açık" görünür).
+    """
+    global _STATUS_CACHE
+    _STATUS_CACHE = None
 
 
 @router.get("/auto-paper/status")
@@ -5339,7 +5355,7 @@ async def get_forex_auto_paper_status():
     }
     pnl_pips_mixed_scale = len({s for s in all_pip_symbols if s}) > 1
 
-    return {
+    response = {
         "status": _AUTO_STATE["last_status"],
         "enabled": _AUTO_STATE["enabled"],
         "balance": balance,
@@ -5425,6 +5441,7 @@ async def toggle_forex_auto_paper(req: ToggleAutoPaperRequest):
         _AUTO_STATE["last_status"] = "Durduruldu"
         _log_auto_decision("SYSTEM", "IC Markets MT5 Otonom Scalper kullanıcı tarafından DURDURULDU.")
 
+    _invalidate_status_cache()
     return {
         "enabled": _AUTO_STATE["enabled"],
         "status": _AUTO_STATE["last_status"],
@@ -5438,6 +5455,7 @@ def start_forex_auto_paper():
     _AUTO_STATE["enabled"] = True
     _AUTO_SETTINGS.enabled = True
     _MT5_STATE["auto_trade"] = True
+    _invalidate_status_cache()
     if not _AUTO_SETTINGS.allowed_symbols:
         _AUTO_SETTINGS.allowed_symbols = ForexAutoPaperSettings().allowed_symbols
     _LAST_GOLD_EXIT_TIME = 0.0
@@ -5473,6 +5491,7 @@ async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings)
         "SYSTEM",
         f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p, Trailing: {new_settings.trailing_stop_pips}p, Min Skor: {new_settings.min_score}",
     )
+    _invalidate_status_cache()
     return {"status": "ok", "settings": _AUTO_SETTINGS.model_dump()}
 
 
@@ -5944,6 +5963,7 @@ async def close_forex_position_manually(req: ClosePositionRequest):
     res = await _close_position_internal(req.id, "MANUAL")
     if not res:
         raise HTTPException(status_code=404, detail="Pozisyon bulunamadı veya zaten kapalı.")
+    _invalidate_status_cache()
     return {"status": "closed", "position": res}
 
 
@@ -5961,6 +5981,7 @@ async def reset_forex_auto_paper():
         _AUTO_STATE["balance"] = 10000.0
 
     _log_auto_decision("SYSTEM", "IC Markets MT5 Scalper günlükleri ve karar akışı sıfırlandı.")
+    _invalidate_status_cache()
     bal = float(_MT5_STATE.get("account", {}).get("balance", 1000.0)) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
     return {"status": "reset", "balance": bal}
 
@@ -6715,6 +6736,7 @@ async def send_mt5_order(req: MT5ManualOrderRequest):
     }
     _MT5_STATE["pending_commands"].append(cmd)
     _log_auto_decision("ENTRY", f"🚀 [MT5 Manuel Emir Kuyruğa Alındı]: {actual_lots} Lot {req.direction} {req.symbol} (Limit: {lot_cap})", symbol=req.symbol)
+    _invalidate_status_cache()
     return {"status": "queued", "command": cmd}
 
 
@@ -6729,6 +6751,7 @@ async def close_mt5_position(req: MT5CloseRequest):
     }
     _MT5_STATE["pending_commands"].append(cmd)
     _log_auto_decision("EXIT", f"🛑 [MT5 Kapatma Kuyruğa Alındı]: Bilet #{req.ticket}")
+    _invalidate_status_cache()
     return {"status": "queued", "ticket": req.ticket}
 
 
@@ -6742,6 +6765,7 @@ async def close_all_mt5_positions():
     }
     _MT5_STATE["pending_commands"].append(cmd)
     _log_auto_decision("EXIT", "🛑 [MT5 Toplu Kapatma Kuyruğa Alındı]: Tüm açık MT5 pozisyonları kapatılıyor")
+    _invalidate_status_cache()
     return {"status": "queued", "command_id": cmd_id}
 
 
