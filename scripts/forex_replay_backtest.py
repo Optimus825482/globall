@@ -164,6 +164,22 @@ TUN_BTC_MIN_SCORE = 0.0     # BTC özel skor eşiği (0 = global min_score)
 # 2026-10-06 "kazananı koştur" testi (kullanıcı sorusu: trailing devreye girince sabit TP kalksa?)
 TUN_TP_MODE = "tp"          # "tp" | "no_tp_on_trail" (trailing aktiflenince TP çekilir) | "no_tp" (TP hiç yok)
 
+# 2026-10-09 ADX-rejimli dinamik trailing (kullanıcı hipotez 2: takip mesafesi TREND GÜCÜNE göre).
+# Rejim tespiti bar-bazlı ADX(14) ile yapılır (look-ahead yok: i. bar yalnız i ve öncesinden).
+# ADX > eşik → güçlü trend → trailing GENİŞ (trend koşusunu taşı); ADX ≤ eşik → chop → NORMAL/sıkı.
+# ADX hiçbir zaman çıkış kapısı DEĞİL; yalnız trailing mesafesinin çarpanı (kullanıcı bunu istedi).
+TUN_ADX_TRAIL = False       # True: trailing mesafesi ADX rejimine göre ölçeklenir
+TUN_ADX_TREND_LEVEL = 25.0  # ADX eşiği (üstü = trend rejimi)
+TUN_ADX_TREND_MULT = 2.0    # trend rejiminde trail mesafesi çarpanı (geniş = koştur)
+TUN_ADX_CHOP_MULT = 1.0     # chop rejiminde çarpan (1.0 = spec varsayılanı)
+TUN_ADX_PERIOD = 14         # ADX periyodu (motorla aynı)
+
+# 2026-10-09 TP-RATCHET (kullanıcı alternatifi): TP hiç silinmez; trailing yükseldikçe TP de
+# yukarı ratchet'lenir → hedef asla korunan seviyenin altında kalmaz. Fiyat hedefe GERİ dönerse
+# kapanır (yukarı koşarken değil), böylece trend koşusu kesilmez ama kâr da geri verilmez.
+TUN_TP_RATCHET = False      # True: TP, trailing tepesini takip ederek yukarı kayar
+TUN_TP_RATCHET_GAP_ATR = 0.0  # ratchet hedefi trail seviyesinin bu ATR-katı ÜSTÜNDE tutulur
+
 # 2026-10-06 altın volatilite-adaptif BE/trailing (kullanıcı isteği: BE/SL/TP/trail her işlemde
 # o işlemin giriş ATR'ine göre ölçeklensin). SL/TP zaten ATR çıkış motorunda; burada BE tetiği
 # (min_be_pips tabanı) ve trailing mesafesi giriş ATR'ine bağlanır (XAUUSD'ye özel).
@@ -1339,9 +1355,35 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
     )
 
 
+def _apply_tp_ratchet(pos: SimPos, close_px: float, eff_trail_pips: float, trail_mult: float) -> None:
+    """TP-RATCHET (look-ahead YOK): bar KAPANIŞINA göre TP'yi yukarı kaydır.
+
+    TP silinmez; trailing yükseldikçe hedef de yükselir → kâr geri verilmez ama trend
+    koşusu da kesilmez (fiyat hedefe GERİ dönerse kapanır). Değer bu barın kapanışından
+    türetilir; etkisi SONRAKİ bardaki TP tetiklemesinde görülür (trailing ile aynı model;
+    aynı barın high/low'una karşı uygulanmaz → look-ahead yok).
+    """
+    if not TUN_TP_RATCHET or pos.dca_group or pos.no_fixed_tp or pos.tp_price >= 90000.0:
+        return
+    if not (pos.be_locked and pos.trail_active):
+        return
+    dist = eff_trail_pips * trail_mult * pos.pip_size
+    if TUN_TP_RATCHET_GAP_ATR > 0 and pos.entry_atr_pips > 0:
+        dist += TUN_TP_RATCHET_GAP_ATR * pos.entry_atr_pips * pos.pip_size
+    if pos.direction == "BUY":
+        cand = round(close_px + dist, pos.digits)
+        if cand > pos.tp_price:
+            pos.tp_price = cand
+    else:
+        cand = round(close_px - dist, pos.digits)
+        if cand < pos.tp_price:
+            pos.tp_price = cand
+
+
 def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips: float,
                     chandelier_mult: float = 0.0, tp_mode: str = "tp",
-                    min_be_pips: float = 0.0, dca_mode: bool = False) -> Optional[Tuple[str, float, float]]:
+                    min_be_pips: float = 0.0, dca_mode: bool = False,
+                    adx_now: float = 0.0, trail_mult: float = 1.0) -> Optional[Tuple[str, float, float]]:
     """Bir bar'da pozisyonu yönetir. Dönüş: (reason, exit_price, partial_realized) veya None.
 
     Sıra (muhafazakâr): SL önce → BE kilidi → kısmi kâr → trailing → TP.
@@ -1354,6 +1396,9 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
              için kullanılır (0 = kapalı; $1 dolar kuralı yine kendi eşikte çalışır).
     dca_mode: pozisyon DCA sepet yönetiminde (manage_dca_groups) — bireysel BE/kısmi/
              trail/TP atlanır, yalnız SL çalışır; sepet eşikleri grup yöneticisinde.
+    adx_now: bu barın ADX(14) değeri (0 = veri yok; ADX-rejimli trailing bu durumda nötr).
+    trail_mult: ADX rejiminden türeyen trailing mesafe çarpanı (1.0 = nötr/spec).
+    (TP-ratchet bu fonksiyonda DEĞİL, manage_book'ta bar kapanışında uygulanır — look-ahead yok.)
     """
     ts, o, h, l, c = bar
     pip = pos.pip_size
@@ -1455,7 +1500,7 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = cand
                     pos.trail_active = True
         elif eff_trail_pips > 0:
-            trail_dist = eff_trail_pips * pip
+            trail_dist = eff_trail_pips * trail_mult * pip
             if direction == "BUY":
                 cand = round(c - trail_dist, pos.digits)
                 min_safe = round(entry + pips_1usd_now * pip, pos.digits)
@@ -1653,11 +1698,25 @@ def manage_book(book: Book, by_ts: Dict[str, Dict[float, Tuple]], ts: float, cha
         eff_be = TUN_BE_PIPS_OVERRIDE if TUN_BE_PIPS_OVERRIDE > 0 else spec["be_pips"]
         if TUN_TRAIL_PIPS_OVERRIDE > 0:
             eff_trail = TUN_TRAIL_PIPS_OVERRIDE
+        # ADX-rejimli dinamik trailing (2026-10-09): rejim bar-bazlı ADX(14) ile; look-ahead YOK
+        # (bar[0] anında bilinen ADX). ADX yoksa/0 ise çarpan nötr (1.0) → spec davranışı aynı.
+        adx_now = 0.0
+        trail_mult = 1.0
+        if TUN_ADX_TRAIL and exit_maps:
+            adx_series = exit_maps.get("adx", {}).get(pos.symbol)
+            ts_idx = exit_maps["ts_idx"].get(pos.symbol, {})
+            if adx_series is not None and bar[0] in ts_idx:
+                adx_now = adx_series[ts_idx[bar[0]]]
+                if adx_now > 0:
+                    trail_mult = TUN_ADX_TREND_MULT if adx_now > TUN_ADX_TREND_LEVEL else TUN_ADX_CHOP_MULT
         res = manage_position(pos, bar, eff_trail, eff_be, chandelier_mult, tp_mode, min_be,
-                              dca_mode=pos.dca_group)
+                              dca_mode=pos.dca_group, adx_now=adx_now, trail_mult=trail_mult)
         if res and res[0] in ("SL", "BE", "TP"):
             close_position(book, pos, res[0], res[1], closed_ts=ts)
             continue
+        # TP-RATCHET (bar kapanışında uygulanır; look-ahead yok — bir sonraki barın TP'sini kaydırır)
+        if TUN_TP_RATCHET:
+            _apply_tp_ratchet(pos, bar[4], eff_trail, trail_mult)
         # Time-stop (Dalga-2): ORB/reopen/tokyo_fix modları — bar sayısı dolunca bar kapanışıyla kapat.
         # Araştırma: range-expansion'da zaman-çıkışı sabit-R/trailing'den iyi.
         if pos.time_stop_bars > 0:
@@ -1755,6 +1814,55 @@ def _ema_series(vals: List[float], period: int) -> List[float]:
     for v in vals[1:]:
         e += k * (v - e)
         out.append(e)
+    return out
+
+
+def _wilder_series_local(values: List[float], period: int) -> List[float]:
+    """Wilder smoothing (motorun technical_analysis._wilder_series'iyle birebir)."""
+    if len(values) < period:
+        return []
+    out = [sum(values[:period]) / period]
+    for v in values[period:]:
+        out.append((out[-1] * (period - 1) + v) / period)
+    return out
+
+
+def _adx_series(bars: List[Tuple], period: int = 14) -> List[float]:
+    """Bar-bazlı ADX(14) serisi (motorun technical_analysis._adx ile BİREBİR matematik).
+
+    Look-ahead YOK: out[i] yalnız bars[0..i]'den türetilir (o barın kapanışında bilinen ADX).
+    İlk 2·period−1 bar için ADX tanımsızdır (0.0 döner → ADX-rejimli trailing nötr kalır).
+    """
+    n = len(bars)
+    out = [0.0] * n
+    if n < period * 2 + 1:
+        return out
+    highs = [b[2] for b in bars]
+    lows = [b[3] for b in bars]
+    closes = [b[4] for b in bars]
+    tr, plus, minus = [], [], []
+    for i in range(1, n):
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+        up, down = highs[i] - highs[i - 1], lows[i - 1] - lows[i]
+        plus.append(up if up > down and up > 0 else 0.0)
+        minus.append(down if down > up and down > 0 else 0.0)
+    tr_w = _wilder_series_local(tr, period)
+    plus_w = _wilder_series_local(plus, period)
+    minus_w = _wilder_series_local(minus, period)
+    if not tr_w:
+        return out
+    dx: List[float] = []
+    for a, p, m in zip(tr_w, plus_w, minus_w):
+        pdi = 100 * p / a if a else 0.0
+        mdi = 100 * m / a if a else 0.0
+        dx.append(100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) else 0.0)
+    adx_w = _wilder_series_local(dx, period)
+    # Hizalama: adx_w[k], (2·period−1+k). barın kapanışında bilinir → out[i] nokta-zaman ADX'i.
+    offset = 2 * period - 1
+    for k, val in enumerate(adx_w):
+        bi = offset + k
+        if bi < n:
+            out[bi] = float(val)
     return out
 
 
@@ -2258,8 +2366,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     exit_maps: Optional[Dict[str, Any]] = None
     _time_stop_mode = TUN_ENTRY_MODE in ("orb_filtered", "reopen_fade", "tokyo_fix")
     if (TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0 or _time_stop_mode
-            or TUN_ENTRY_MODE == "bb_bandwalk"):
-        exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}, "bb_closes": {}}
+            or TUN_ENTRY_MODE == "bb_bandwalk" or TUN_ADX_TRAIL):
+        exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}, "bb_closes": {}, "adx": {}}
         for s in symbols:
             bars_s = data[s]
             exit_maps["ts_idx"][s] = {b[0]: i for i, b in enumerate(bars_s)}
@@ -2271,6 +2379,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 exit_maps["ema21"][s] = _ema_series(closes_s, 21)
             if TUN_ENTRY_MODE == "bb_bandwalk":
                 exit_maps["bb_closes"][s] = [b[4] for b in bars_s]
+            if TUN_ADX_TRAIL:
+                exit_maps["adx"][s] = _adx_series(bars_s, TUN_ADX_PERIOD)
 
     # "Trend bitti" dedektör haritaları (giriş kapıları): HTF 15M ST yönü, 5M ST yaşı, RSI uyumsuzluk
     htf_maps: Dict[str, Dict[int, int]] = {}
@@ -2798,6 +2908,8 @@ def main():
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
     global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
     global TUN_GOLD_VOL_EXITS, TUN_VOL_BE_MULT, TUN_VOL_TRAIL_MULT, TUN_VOL_TRAIL_FLOOR
+    global TUN_ADX_TRAIL, TUN_ADX_TREND_LEVEL, TUN_ADX_TREND_MULT, TUN_ADX_CHOP_MULT
+    global TUN_TP_RATCHET, TUN_TP_RATCHET_GAP_ATR
     global TUN_BE_USD_GOLD, TUN_BE_RATIO_GOLD, TUN_BE_PIP_FIXED_GOLD
     global TUN_INDEX_HOURS, TUN_INDEX_OPEN_DRIVE
     global TUN_DCA, TUN_DCA_DIST_FRAC, TUN_DCA_LOT_MULT, TUN_DCA_TP_USD, TUN_DCA_SL_USD
@@ -2911,6 +3023,12 @@ def main():
     parser.add_argument("--no-tp-on-trail-live", action="store_true", help="Trailing aktiflenince TP çekilir — canlıya yakın model (aktifleşen barda da geçersiz; MODIFY_SLTP saniyeler içinde etkili olur)")
     parser.add_argument("--no-tp-crypto", action="store_true", help="TP yalnız BTC/ETH'de kapalı")
     parser.add_argument("--no-tp", action="store_true", help="Sabit TP tamamen kapalı (aşırı uç kontrolü)")
+    parser.add_argument("--adx-trail", action="store_true", help="ADX-rejimli dinamik trailing: ADX>eşik → trail×trend-mult (geniş), altı → chop-mult")
+    parser.add_argument("--adx-trend-level", type=float, default=25.0, help="ADX trend eşiği (üstü = trend rejimi)")
+    parser.add_argument("--adx-trend-mult", type=float, default=2.0, help="Trend rejiminde trail mesafe çarpanı (geniş = koştur)")
+    parser.add_argument("--adx-chop-mult", type=float, default=1.0, help="Chop rejiminde trail mesafe çarpanı (1.0 = spec)")
+    parser.add_argument("--tp-ratchet", action="store_true", help="TP-ratchet: trailing yükseldikçe TP yukarı kayar (silinmez)")
+    parser.add_argument("--tp-ratchet-gap-atr", type=float, default=0.0, help="Ratchet hedefi trail seviyesinin üstüne ek ATR-katı (0 = trail seviyesi)")
     parser.add_argument("--gold-vol-exits", action="store_true", help="Altında BE tetiği ve trailing mesafesi giriş-ATR'ine göre ölçeklenir")
     parser.add_argument("--vol-be-mult", type=float, default=0.8, help="BE tetik tabanı çarpanı (× giriş-ATR, pip)")
     parser.add_argument("--vol-trail-mult", type=float, default=1.5, help="Trailing mesafe çarpanı (× giriş-ATR, pip)")
@@ -3126,6 +3244,12 @@ def main():
     elif args.no_tp_on_trail:
         TUN_TP_MODE = "no_tp_on_trail"
     TUN_GOLD_VOL_EXITS = args.gold_vol_exits
+    TUN_ADX_TRAIL = args.adx_trail
+    TUN_ADX_TREND_LEVEL = args.adx_trend_level
+    TUN_ADX_TREND_MULT = args.adx_trend_mult
+    TUN_ADX_CHOP_MULT = args.adx_chop_mult
+    TUN_TP_RATCHET = args.tp_ratchet
+    TUN_TP_RATCHET_GAP_ATR = args.tp_ratchet_gap_atr
     TUN_VOL_BE_MULT = args.vol_be_mult
     TUN_VOL_TRAIL_MULT = args.vol_trail_mult
     TUN_VOL_TRAIL_FLOOR = args.vol_trail_floor
