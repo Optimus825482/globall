@@ -6,6 +6,20 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
+import ForexNativeChart, { type Timeframe } from "../components/ForexNativeChart";
+
+// MetaMobil grafik periyot etiketleri (MT5 mobil) → ForexNativeChart aralıkları.
+// Gerçek mum verisi `/api/forex/klines`'ten gelir; bileşen oluşan mumu 2.5 sn'de
+// bir canlı ticker ile yerinde günceller (lightweight-charts `series.update`).
+const METAMOBIL_TF: Record<string, Timeframe> = {
+  M1: "1m",
+  M5: "5m",
+  M15: "15m",
+  M30: "30m",
+  H1: "1h",
+  H4: "4h",
+  D1: "1d",
+};
 
 function formatPrice(v?: number | null, symbol: string = ""): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return "—";
@@ -520,7 +534,11 @@ export default function MetaMobilePage() {
           {/* SEKME 2: GRAFİK (CHARTS)                                  */}
           {/* ========================================================= */}
           {activeTab === "CHART" && (
-            <div className="h-full flex flex-col pb-16">
+            // `min-h-full` (h-full DEĞİL) + kaydırma YOK: indikatör paneli
+            // eklendikçe grafik tuvali büyür (MT5 mobildeki gibi) ve sekme
+            // içeriği üstteki ortak kaydırma alanına taşar. Burada ikinci bir
+            // `overflow-y-auto` açmak iç içe kaydırma yaratıp grafiği kırpıyordu.
+            <div className="min-h-full flex flex-col pb-16">
               {/* Grafik Üst Araç Çubuğu: Sembol, Zaman Dilimi, One-Click Trading */}
               <div className="p-2 bg-bunker-900 border-b border-bunker-800 flex items-center justify-between text-xs shrink-0">
                 <div className="flex items-center gap-2">
@@ -536,9 +554,9 @@ export default function MetaMobilePage() {
                     ))}
                   </select>
 
-                  {/* Zaman Dilimleri */}
-                  <div className="flex items-center gap-1 font-mono text-[10px]">
-                    {["M1", "M5", "M15", "H1", "D1"].map((tf) => (
+                  {/* Zaman Dilimleri (MT5 mobil periyotları) */}
+                  <div className="flex items-center gap-0.5 font-mono text-[10px] overflow-x-auto">
+                    {Object.keys(METAMOBIL_TF).map((tf) => (
                       <button
                         key={tf}
                         type="button"
@@ -612,75 +630,21 @@ export default function MetaMobilePage() {
                 </button>
               </div>
 
-              {/* Gerçekçi Grafik Alanı (TradingView / SVG Simülasyonu) */}
-              <div className="flex-1 relative bg-bunker-950 p-3 flex flex-col justify-between overflow-hidden">
-                {/* Üst Bilgi Rozeti */}
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 z-10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-bold">{selectedSymbol}</span>
-                    <span>{selectedTimeframe}</span>
-                    <span className="text-emerald-400">RSI(14): 54.2</span>
-                  </div>
-                  <div className="text-right">
-                    <span>A: {formatPrice(activeQuote.ask, activeQuote.symbol)}</span>
-                  </div>
-                </div>
-
-                {/* Simüle Edilmiş Mum Çubukları & Fiyat Çizgileri */}
-                <div className="flex-1 relative flex items-center justify-center my-2">
-                  <div className="w-full h-full flex items-end justify-between px-2 gap-1.5 opacity-80">
-                    {[42, 48, 45, 52, 58, 54, 60, 68, 62, 70, 75, 71, 79, 85, 82, 88, 92, 89, 94, 91, 96].map((h, i) => {
-                      const isUp = i % 3 !== 0;
-                      return (
-                        <div key={i} className="flex-1 flex flex-col items-center h-full justify-end">
-                          <div className={`w-[1px] ${isUp ? "bg-emerald-400" : "bg-rose-400"}`} style={{ height: `${h + 12}%` }} />
-                          <div
-                            className={`w-full rounded-xs ${isUp ? "bg-emerald-500" : "bg-rose-500"}`}
-                            style={{ height: `${Math.max(10, h)}%` }}
-                          />
-                          <div className={`w-[1px] ${isUp ? "bg-emerald-400" : "bg-rose-400"}`} style={{ height: `${Math.max(4, h - 15)}%` }} />
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Anlık Fiyat Çizgisi (Kırmızı Bid / Mavi Ask) */}
-                  <div className="absolute w-full top-1/3 left-0 border-b border-dashed border-rose-500 flex justify-end">
-                    <span className="bg-rose-600 text-white text-[9px] font-mono font-bold px-1 rounded-l">
-                      Bid {formatPrice(activeQuote.bid, activeQuote.symbol)}
-                    </span>
-                  </div>
-                  <div className="absolute w-full top-[31%] left-0 border-b border-dashed border-blue-500 flex justify-end">
-                    <span className="bg-blue-600 text-white text-[9px] font-mono font-bold px-1 rounded-l">
-                      Ask {formatPrice(activeQuote.ask, activeQuote.symbol)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Alt Osilatör Göstergesi (RSI) */}
-                <div className="h-16 border-t border-bunker-800/80 pt-1 flex flex-col justify-between font-mono text-[9px] text-slate-500">
-                  <div className="flex justify-between">
-                    <span>RSI (14)</span>
-                    <span className="text-slate-400">70.0 (Aşırı Alım)</span>
-                  </div>
-                  <div className="w-full h-8 bg-bunker-950 rounded relative overflow-hidden flex items-center">
-                    <div className="absolute w-full border-b border-bunker-800 top-2" />
-                    <div className="absolute w-full border-b border-bunker-800 bottom-2" />
-                    <svg className="w-full h-full text-blue-400" preserveAspectRatio="none" viewBox="0 0 100 30">
-                      <polyline
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        points="0,15 10,18 20,12 30,10 40,16 50,22 60,14 70,8 80,12 90,9 100,11"
-                      />
-                    </svg>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>30.0 (Aşırı Satım)</span>
-                    <span className="text-emerald-400">Son: 54.2</span>
-                  </div>
-                </div>
-              </div>
+              {/* GERÇEK CANLI GRAFİK (lightweight-charts) — MT5 mobil tarzı.
+                  Eskiden sabit bir yükseklik dizisiyle çizilen sahte mumlar vardı
+                  ([42, 48, 45, ...]) ve RSI sabit koordinatlardı. Artık gerçek mum
+                  verisi `/api/forex/klines`'ten gelir ve oluşan mum 2.5 sn'de bir
+                  canlı ticker ile yerinde güncellenir. `compact` üst başlığı gizler:
+                  sembol/periyot/one-click barı zaten bu sayfada. */}
+              {/* `min-h-0` YOK: o sınıf kökü içeriğinin altına kısıp paneli
+                  kırpıyordu. Yükseklik artık grafik kutusunun `minHeight`'ından
+                  gelir ve sekme kaydırılır. */}
+              <ForexNativeChart
+                symbol={selectedSymbol}
+                initialTimeframe={METAMOBIL_TF[selectedTimeframe] ?? "5m"}
+                compact
+                className="flex-1"
+              />
             </div>
           )}
 

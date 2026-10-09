@@ -76,17 +76,25 @@ function ParamInput({
 
 // Göstergenin kaç çizgi/histogram çizeceğini gerçek veri olmadan bilmek
 // mümkün değil; sentetik örnek mumlarla bir kez hesaplatıp plot sayısını ölç.
+// `display: "none"` plotlar (RSI'ın 70/30 bantları gibi) grafikte çizilmediği
+// için sayılmaz — yoksa kullanıcı karşılığı olmayan renk satırları görürdü.
 // Hesap patlarsa tek çizgi varsay — kullanıcı yine de rengi/kalınlığı değiştirebilir.
 function usePlotCount(entry: RegistryEntry): number {
     return useMemo(() => {
         try {
+            const hidden = new Set(
+                (((entry as any).plotConfig ?? []) as any[])
+                    .filter((c) => c?.display === "none" || c?.visible === false)
+                    .map((c) => c.id)
+            );
             const sample = Array.from({ length: 60 }, (_, i) => ({
                 time: 1_700_000_000 + i * 60,
                 open: 100 + i, high: 105 + i, low: 95 + i, close: 102 + i, volume: 1000 + i * 10
             }));
             const result = entry.calculate(sample as any, {});
-            const count = Object.values(result?.plots || {}).filter(
-                (p: any) => Array.isArray(p) && p.some((pt: any) => pt.value != null && !Number.isNaN(pt.value))
+            const count = Object.entries(result?.plots || {}).filter(
+                ([key, p]: [string, any]) =>
+                    !hidden.has(key) && Array.isArray(p) && p.some((pt: any) => pt.value != null && !Number.isNaN(pt.value))
             ).length;
             return Math.max(1, Math.min(6, count));
         } catch {

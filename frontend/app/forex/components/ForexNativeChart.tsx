@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   createChart,
@@ -12,8 +12,25 @@ import {
   UTCTimestamp,
   LineStyle,
 } from "lightweight-charts";
+import dynamic from "next/dynamic";
 import { apiFetch } from "../../lib/api";
-import { SUPERTREND_ENTRY } from "../../charts/IndicatorPicker";
+import { findIndicatorEntry, filterIndicatorInstances } from "../../charts/IndicatorPicker";
+import {
+  applySeries,
+  applyStructure,
+  computeHeights,
+  desiredChartHeight,
+  defaultMetaIndicators,
+  structureSignature,
+  updateLastPoints,
+  type Engine,
+} from "./forexIndicatorEngine";
+import type { IndicatorInstance, IndicatorStyle, RegistryEntry } from "../../charts/types";
+import { uid as newUid } from "../../charts/chartShared";
+
+// Picker/ayar panelleri ağırdır (tüm registry'yi tarar) → yalnız açıldığında in.
+const IndicatorPicker = dynamic(() => import("../../charts/IndicatorPicker").then((m) => m.default), { ssr: false });
+const IndicatorSettings = dynamic(() => import("../../charts/IndicatorSettings"), { ssr: false });
 
 export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
@@ -55,6 +72,12 @@ export interface ForexNativeChartProps {
   onOpenLotCalculator?: (symbol: string, slPips: number) => void;
   onClose?: () => void;
   className?: string;
+  /**
+   * Kompakt mod (MetaMobil): Üst bilgi/aksiyon çubuğunu ve "Ayrı Sayfa" gibi
+   * gömülü-görünüm düğmelerini gizler. Periyot + gösterge seçici ve mum tuvali
+   * korunur; sayfa kendi başlık/one-click barını zaten çiziyor.
+   */
+  compact?: boolean;
 }
 
 function formatPriceBySymbol(v?: number | null, symbol: string = ""): string {
@@ -97,137 +120,9 @@ function getSymbolPrecision(symbol: string = ""): number {
 // -------------------------------------------------------------
 // İNDİKATÖR MATEMATİĞİ
 // -------------------------------------------------------------
-
-function calculateBollingerBands(candles: CandleBar[], period = 20, stdDevMultiplier = 2) {
-  const upper: { time: UTCTimestamp; value: number }[] = [];
-  const middle: { time: UTCTimestamp; value: number }[] = [];
-  const lower: { time: UTCTimestamp; value: number }[] = [];
-
-  if (candles.length < period) return { upper, middle, lower };
-
-  for (let i = period - 1; i < candles.length; i++) {
-    const slice = candles.slice(i - period + 1, i + 1);
-    const sum = slice.reduce((acc, c) => acc + c.close, 0);
-    const mean = sum / period;
-
-    const variance = slice.reduce((acc, c) => acc + Math.pow(c.close - mean, 2), 0) / period;
-    const stdDev = Math.sqrt(variance);
-
-    const time = candles[i].time;
-    middle.push({ time, value: mean });
-    upper.push({ time, value: mean + stdDevMultiplier * stdDev });
-    lower.push({ time, value: mean - stdDevMultiplier * stdDev });
-  }
-
-  return { upper, middle, lower };
-}
-
-function calculateSMA(candles: CandleBar[], period: number) {
-  if (candles.length < period) return [];
-  const result: { time: UTCTimestamp; value: number }[] = [];
-  let sum = 0;
-  for (let i = 0; i < period; i++) {
-    sum += candles[i].close;
-  }
-  result.push({ time: candles[period - 1].time, value: sum / period });
-
-  for (let i = period; i < candles.length; i++) {
-    sum += candles[i].close - candles[i - period].close;
-    result.push({ time: candles[i].time, value: sum / period });
-  }
-  return result;
-}
-
-function calculateEMA(candles: CandleBar[], period: number) {
-  if (candles.length < period) return [];
-  const k = 2 / (period + 1);
-  const result: { time: UTCTimestamp; value: number }[] = [];
-
-  let sum = 0;
-  for (let i = 0; i < period; i++) {
-    sum += candles[i].close;
-  }
-  let prevEma = sum / period;
-  result.push({ time: candles[period - 1].time, value: prevEma });
-
-  for (let i = period; i < candles.length; i++) {
-    const curEma = (candles[i].close - prevEma) * k + prevEma;
-    result.push({ time: candles[i].time, value: curEma });
-    prevEma = curEma;
-  }
-  return result;
-}
-
-interface MacdBar {
-  time: UTCTimestamp;
-  macd: number;
-  signal: number;
-  hist: number;
-  color: string;
-}
-
-function calculateMACD(candles: CandleBar[], fast = 12, slow = 26, signal = 9): MacdBar[] {
-  if (candles.length < slow + signal) return [];
-
-  const emaFast = calculateEMA(candles, fast);
-  const emaSlow = calculateEMA(candles, slow);
-
-  const fastMap = new Map<number, number>();
-  for (const p of emaFast) fastMap.set(p.time, p.value);
-
-  const macdPoints: { time: UTCTimestamp; value: number }[] = [];
-  for (const p of emaSlow) {
-    const fVal = fastMap.get(p.time);
-    if (fVal !== undefined) {
-      macdPoints.push({ time: p.time, value: fVal - p.value });
-    }
-  }
-
-  if (macdPoints.length < signal) return [];
-
-  const kSig = 2 / (signal + 1);
-  let sumSig = 0;
-  for (let i = 0; i < signal; i++) {
-    sumSig += macdPoints[i].value;
-  }
-  let prevSig = sumSig / signal;
-
-  const result: MacdBar[] = [];
-  const firstMacd = macdPoints[signal - 1].value;
-  const firstHist = firstMacd - prevSig;
-  result.push({
-    time: macdPoints[signal - 1].time,
-    macd: firstMacd,
-    signal: prevSig,
-    hist: firstHist,
-    color: firstHist >= 0 ? "#10b981" : "#f43f5e",
-  });
-
-  for (let i = signal; i < macdPoints.length; i++) {
-    const curVal = macdPoints[i].value;
-    const curSig = (curVal - prevSig) * kSig + prevSig;
-    prevSig = curSig;
-    const curHist = curVal - curSig;
-    const prevHist = result[result.length - 1].hist;
-
-    let color = "#10b981";
-    if (curHist >= 0) {
-      color = curHist >= prevHist ? "#10b981" : "rgba(16, 185, 129, 0.55)";
-    } else {
-      color = curHist <= prevHist ? "#f43f5e" : "rgba(244, 63, 94, 0.55)";
-    }
-
-    result.push({
-      time: macdPoints[i].time,
-      macd: curVal,
-      signal: curSig,
-      hist: curHist,
-      color,
-    });
-  }
-
-  return result;
-}
+// BB / SMA / EMA / MACD artık `forexIndicatorEngine` üzerinden
+// `lightweight-charts-indicators` registry'sinden hesaplanır; burada yalnızca
+// header şeridinin kullandığı bağımsız yardımcılar kalır.
 
 function calculateRSI(candles: CandleBar[], period = 14) {
   if (candles.length <= period) return [];
@@ -382,17 +277,29 @@ export default function ForexNativeChart({
   onOpenLotCalculator,
   onClose,
   className = "",
+  compact = false,
 }: ForexNativeChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
   const [candles, setCandles] = useState<CandleBar[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Göstergeler (Kullanıcı talebi: varsayılan yalnız Bollinger Bands + alt pane MACD açık)
-  const [showBB, setShowBB] = useState(true);
-  const [showSma, setShowSma] = useState(false);
-  const [showMacd, setShowMacd] = useState(true);
-  const [showSupertrend, setShowSupertrend] = useState(false);
+  // Göstergeler: MT5 mobil akışı — `IndicatorPicker` ile eklenen HER indikatör
+  // (kütüphanedeki 450+ dahil) kendi paneli/çizgisiyle çizilir. Varsayılan:
+  // BB (overlay) + MACD (alt pane), kullanıcı isteği.
+  const [indicators, setIndicators] = useState<IndicatorInstance[]>(() => {
+    try {
+      const raw = localStorage.getItem("scalper_metamobil_indicators");
+      if (raw) {
+        const parsed = filterIndicatorInstances(JSON.parse(raw) as IndicatorInstance[]);
+        if (parsed.length) return parsed;
+      }
+    } catch { /* bozuk kayıt → varsayılana düş */ }
+    return defaultMetaIndicators();
+  });
+  const [volumeVisible, setVolumeVisible] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [editTarget, setEditTarget] = useState<{ entry: RegistryEntry; editUid?: string } | null>(null);
 
   // Canlı Veriler & İndikatör Okumaları
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -407,12 +314,6 @@ export default function ForexNativeChart({
   const [latestCci, setLatestCci] = useState<number | null>(null);
   const [latestChandelier, setLatestChandelier] = useState<{ stop: number; dir: 1 | -1 } | null>(null);
 
-  // Canlı İndikatör Değerleri (Header için)
-  const [liveSma7, setLiveSma7] = useState<number | null>(null);
-  const [liveSma30, setLiveSma30] = useState<number | null>(null);
-  const [liveSma99, setLiveSma99] = useState<number | null>(null);
-  const [liveMacdHist, setLiveMacdHist] = useState<number | null>(null);
-
   // Geçmişe kaydırma durumu (Kullanıcı sola çektiğinde beliren Canlı Fiyata Dön düğmesi)
   const [isScrolledBack, setIsScrolledBack] = useState(false);
 
@@ -421,23 +322,10 @@ export default function ForexNativeChart({
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
-  // BB Serileri (Pane 0)
-  const upperBbRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const middleBbRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const lowerBbRef = useRef<ISeriesApi<"Line"> | null>(null);
-
-  // SMA Serileri (Pane 0: 7, 30, 99)
-  const sma7SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const sma30SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const sma99SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-
-  // SuperTrend Serisi (Pane 0)
-  const supertrendSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-
-  // MACD Serileri (Pane 1)
-  const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // MT5 tarzı gösterge motoru: panel/seri yerleşimi burada tutulur. Yapı
+  // (hangi indikatör, hangi panel) değişince yeniden kurulur; veri tazeleme
+  // yalnız `setData`/`update` ile yapılır (jank yok).
+  const engineRef = useRef<Engine | null>(null);
 
   const lastCandleRef = useRef<CandleBar | null>(null);
   // Canlı güncellemede göstergeleri yeniden hesaplamak için mum dizisinin aynası.
@@ -451,31 +339,78 @@ export default function ForexNativeChart({
   // Periyodik sessiz pollinglerde fitContent() ÇAĞRILMAZ, böylece kullanıcının sola çektiği mumlar sağa yapışmaz!
   const fittedForRef = useRef<string>("");
 
+  // Sığdırma bekleniyor mu? `fitContent()` ve panel yerleşiminin görünür aralık
+  // geri yüklemesi İKİSİ DE zaman ekseni invalidation'ı kuyruklar ve aynı karede
+  // işlenir. Geri yükleme sonra geldiğinde `fitContent()`in sonucunu iptal edip
+  // görünümü eski (bayat) aralığa kilitliyordu — mumlar tuvalin yalnız sağ
+  // kenarında tek mum olarak görünüyordu. Bu bayrak açıkken yerleşim aralığı geri
+  // yüklemez, bunun yerine tekrar sığdırır. Kullanıcı grafiğe dokunduğunda
+  // (tekerlek/pointer) temizlenir; böylece kullanıcının kaydırdığı görünüm
+  // sonraki yerleşimlerde korunur.
+  const pendingFitRef = useRef(false);
+
+  // Motorun kurduğu panel anahtarları (pane[1..n] sırası). Grafik kutusunun
+  // yüksekliği buna göre türetilir; `engineRef` bir ref olduğu için imzayı
+  // state üzerinden izleriz.
+  const paneKeys = useMemo(
+    () => [
+      ...(volumeVisible ? ["volume"] : []),
+      ...indicators.filter((i) => !i.overlay).map((i) => `inst:${i.uid}`),
+    ],
+    [indicators, volumeVisible],
+  );
+  const chartBoxHeight = useMemo(
+    () => desiredChartHeight(paneKeys, compact, compact ? 300 : 420),
+    [paneKeys, compact],
+  );
+
   // Pane Yüksekliklerini Güncelle
-  const updatePaneLayout = useCallback(() => {
+  //
+  // `preserveRange: false` — çağıran taraf birazdan `fitContent()` uygulayacaksa
+  // görünür aralığı geri YÜKLEME. Relayout bir sonraki animasyon karesinde
+  // uygulanıyor; sekme arka plandayken/yük altındayken bu kare `fitContent()`ten
+  // SONRA geliyor ve bayat aralığı geri yazıp görünümü serinin başına (bar 0)
+  // kilitliyordu — mumlar tuvalin yalnız sağ kenarında görünüyordu.
+  const updatePaneLayout = useCallback((preserveRange: boolean = true) => {
     if (!chartApiRef.current || !chartContainerRef.current) return;
     const chart = chartApiRef.current;
     const w = chartContainerRef.current.clientWidth;
-    const h = chartContainerRef.current.clientHeight || 520;
+    // Ölçülen yükseklik yerine panel sayısından TÜRETİLEN yükseklik kullanılır:
+    // panel eklendikçe tuval büyür (kutunun `minHeight`'ı da aynı değer),
+    // böylece paneller birbirini ezmez ve okunabilirlik korunur.
+    const h = chartBoxHeight;
     if (w <= 0 || h <= 0) return;
 
-    chart.applyOptions({ width: w, height: h });
-
     const panes = chart.panes();
-    if (panes.length >= 2) {
-      if (showMacd) {
-        const macdH = Math.max(80, Math.min(135, Math.round(h * 0.26)));
-        const mainH = Math.max(160, h - macdH);
-        panes[0]?.setHeight(mainH);
-        panes[1]?.setHeight(macdH);
-      } else {
-        panes[0]?.setHeight(h);
-        panes[1]?.setHeight(0);
-      }
-    } else if (panes.length === 1) {
-      panes[0]?.setHeight(h);
+    const engine = engineRef.current;
+    if (panes.length <= 1 || !engine) {
+      chart.applyOptions({ width: w, height: h });
+      panes[0]?.setHeight(h - 28);
+      return;
     }
-  }, [showMacd]);
+    // Panel payları ORAN olarak verilir (bkz. computeHeights) ve yeni payların
+    // geçerli olması için önce tuval yeniden boyutlandırılır: lightweight-charts
+    // faktörleri saklar ama yükseklikleri ancak bir relayout'ta yeniden
+    // hesaplar. Sıra önemli — faktör set edilmeden önce boyut değişirse
+    // eski oranlara göre yerleşir.
+    const shares = computeHeights(engine, compact);
+    // Yükseklik değişimi lightweight-charts'ta zaman eksenini sıfırlar
+    // (görünür aralık "en son N mum"a döner). Panel payları değişirken
+    // kullanıcının kaydırdığı görünümü korumak için aralığı saklayıp
+    // relayout sonrası geri yüklüyoruz. Bekleyen bir sığdırma varsa geri
+    // yükleme onu iptal edeceği için aralık saklanmaz (aşağıda tekrar sığdırılır).
+    const range = preserveRange && !pendingFitRef.current ? chart.timeScale().getVisibleLogicalRange() : null;
+    chart.applyOptions({ width: w, height: h });
+    panes.forEach((p, i) => p.setStretchFactor((shares[i] ?? shares[shares.length - 1]) / 100));
+    // Relayout tetikle: aksi halde yeni faktörler bir sonraki resize'a kadar
+    // uygulanmaz ve paneller eski (ezilmiş) yüksekliklerinde kalır.
+    chart.applyOptions({ height: h - 1 });
+    chart.applyOptions({ height: h });
+    if (range) chart.timeScale().setVisibleLogicalRange(range);
+    // Sığdırma bekliyorsa relayout'tan sonra TEKRAR sığdır: yukarıdaki boyut
+    // değişiklikleri zaman eksenini sıfırlamış olabilir.
+    if (pendingFitRef.current) chart.timeScale().fitContent();
+  }, [compact, chartBoxHeight]);
 
   // Mum Verisi Yükleme
   const loadKlines = useCallback(async (tf: Timeframe, silent = false) => {
@@ -586,52 +521,80 @@ export default function ForexNativeChart({
   // asılı kalıyor (bantlar mumu içine almıyordu). Bu fonksiyon canlı mumu aynaya
   // (`candlesRef`) yazıldıktan sonra göstergelerin YALNIZ son noktasını
   // `series.update()` ile tazeler — tam `setData` yapmaz, görünüm sıçramaz/jank olmaz.
+  // İndikatör listesini kalıcılaştır (MetaMobil'e özel anahtar; /charts'ın
+  // masaüstü listesini bozmaz). Güncelleme FONKSİYONEL yapılır: aynı tikte
+  // birden çok ekle/sil çağrılırsa (örn. hızlı ardışık dokunuşlar) hepsi doğru
+  // listeyi görür — düz `indicators` ile eski closure'lar güncellemeyi ezerdi.
+  const persistIndicators = useCallback((updater: (prev: IndicatorInstance[]) => IndicatorInstance[]) => {
+    setIndicators((prev) => {
+      const next = updater(prev);
+      try { localStorage.setItem("scalper_metamobil_indicators", JSON.stringify(next)); } catch { /* özel mod */ }
+      return next;
+    });
+  }, []);
+
+  const addIndicator = useCallback((entry: RegistryEntry, params: Record<string, any>, style: IndicatorStyle) => {
+    const inst: IndicatorInstance = {
+      uid: newUid(),
+      registryId: entry.id,
+      name: entry.shortName,
+      overlay: entry.overlay,
+      params,
+      style,
+    };
+    persistIndicators((prev) => [...prev, inst]);
+    setEditTarget(null);
+  }, [persistIndicators]);
+
+  const updateIndicator = useCallback((uid: string, params: Record<string, any>, style: IndicatorStyle) => {
+    persistIndicators((prev) => prev.map((i) => (i.uid === uid ? { ...i, params, style } : i)));
+    setEditTarget(null);
+  }, [persistIndicators]);
+
+  const removeIndicator = useCallback((uid: string) => {
+    persistIndicators((prev) => prev.filter((i) => i.uid !== uid));
+  }, [persistIndicators]);
+
+  // Lejant: her ekli indikatörün son değeri. SAYAÇ SANİYEDE BİR render
+  // tetiklediği için bu değerler her render'da DEĞİL, yalnız veri/gösterge
+  // değişince `state`'e yazılır (aksi halde 450 indikatörlük registry her
+  // saniye yeniden hesaplanırdı).
+  const [liveValues, setLiveValues] = useState<{ uid: string; value: number; color?: string }[]>([]);
+
+  const recomputeLiveValues = useCallback((bars: CandleBar[]) => {
+    if (!bars.length) { setLiveValues([]); return; }
+    const out: { uid: string; value: number; color?: string }[] = [];
+    for (const inst of indicators) {
+      const entry = findIndicatorEntry(inst.registryId);
+      if (!entry) continue;
+      try {
+        const res = entry.calculate(bars, inst.params);
+        const first = Object.values(res?.plots ?? {})[0] as any[] | undefined;
+        if (!Array.isArray(first)) continue;
+        for (let i = first.length - 1; i >= 0; i--) {
+          const v = first[i]?.value;
+          if (typeof v === "number" && Number.isFinite(v)) {
+            out.push({ uid: inst.uid, value: v, color: first[i]?.color });
+            break;
+          }
+        }
+      } catch { /* bu indikatörü atla */ }
+    }
+    setLiveValues(out);
+  }, [indicators]);
+
+  // CANLI GÖSTERGE SENKRONU (2026-10-07, kullanıcı isteği): canlı tick geldiğinde
+  // yalnız mum güncellenirse BB/MACD/SMA son noktaları eski fiyatta kalıp "havada"
+  // asılı kalıyor (bantlar mumu içine almıyordu). Bu fonksiyon canlı mumu aynaya
+  // (`candlesRef`) yazıldıktan sonra göstergelerin YALNIZ son noktasını
+  // `series.update()` ile tazeler — tam `setData` yapmaz, görünüm sıçramaz/jank olmaz.
   const syncLiveIndicators = useCallback(() => {
-    const arr = candlesRef.current;
-    if (arr.length === 0) return;
-
-    // Bollinger (20, 2): son bandı güncelle
-    if (showBB && upperBbRef.current && middleBbRef.current && lowerBbRef.current && arr.length >= 20) {
-      const { upper, middle, lower } = calculateBollingerBands(arr, 20, 2);
-      const u = upper[upper.length - 1];
-      const m = middle[middle.length - 1];
-      const l = lower[lower.length - 1];
-      if (u && m && l) {
-        try {
-          upperBbRef.current.update(u as any);
-          middleBbRef.current.update(m as any);
-          lowerBbRef.current.update(l as any);
-        } catch { /* görünüm kilidi bozulursa sonraki HTTP turu düzeltir */ }
-      }
-    }
-
-    // SMA 7 / 30 / 99: yalnız son nokta
-    if (showSma && sma7SeriesRef.current && sma30SeriesRef.current && sma99SeriesRef.current) {
-      const upd = (series: ISeriesApi<"Line"> | null, period: number) => {
-        if (!series || arr.length < period) return;
-        const pts = calculateSMA(arr, period);
-        const lastPt = pts[pts.length - 1];
-        if (lastPt) { try { series.update(lastPt as any); } catch {} }
-      };
-      upd(sma7SeriesRef.current, 7);
-      upd(sma30SeriesRef.current, 30);
-      upd(sma99SeriesRef.current, 99);
-    }
-
-    // MACD (12, 26, 9): histogram + macd + sinyal son noktası
-    if (showMacd && macdHistRef.current && macdLineRef.current && macdSignalRef.current) {
-      const bars = calculateMACD(arr, 12, 26, 9);
-      const m = bars[bars.length - 1];
-      if (m) {
-        try {
-          macdHistRef.current.update({ time: m.time, value: m.hist, color: m.color } as any);
-          macdLineRef.current.update({ time: m.time, value: m.macd } as any);
-          macdSignalRef.current.update({ time: m.time, value: m.signal } as any);
-          setLiveMacdHist(m.hist);
-        } catch {}
-      }
-    }
-  }, [showBB, showSma, showMacd]);
+    const engine = engineRef.current;
+    if (!engine || !candlesRef.current.length) return;
+    updateLastPoints(engine, candlesRef.current);
+    // Lejant sayıları: motorla aynı mum aynasından, yalnız ekli indikatörler için.
+    recomputeLiveValues(candlesRef.current);
+  }, [recomputeLiveValues]);
 
   // Canlı Ticker Dinleme
   useEffect(() => {
@@ -712,7 +675,7 @@ export default function ForexNativeChart({
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: chartContainerRef.current.clientHeight || 520,
+      height: chartContainerRef.current.clientHeight || chartBoxHeight,
       layout: {
         background: { color: "#080c14" },
         textColor: "#94a3b8",
@@ -746,6 +709,7 @@ export default function ForexNativeChart({
     });
 
     chartApiRef.current = chart;
+    (window as any).__fxc = chart;
 
     // --- PANE 0: MUM GRAFİĞİ ---
     const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -762,111 +726,16 @@ export default function ForexNativeChart({
     }, 0);
     candleSeriesRef.current = candleSeries;
 
-    // --- PANE 0: BOLLINGER BANDS (20, 2) ---
-    const upperBb = chart.addSeries(LineSeries, {
-      color: "rgba(56, 189, 248, 0.85)",
-      lineWidth: 1,
-      title: "BB Üst",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 0);
-    const middleBb = chart.addSeries(LineSeries, {
-      color: "rgba(245, 158, 11, 0.85)",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      title: "BB Orta",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 0);
-    const lowerBb = chart.addSeries(LineSeries, {
-      color: "rgba(56, 189, 248, 0.85)",
-      lineWidth: 1,
-      title: "BB Alt",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 0);
-    upperBbRef.current = upperBb;
-    middleBbRef.current = middleBb;
-    lowerBbRef.current = lowerBb;
-
-    // --- PANE 0: 3'LÜ SIMPLE MOVING AVERAGES (SMA 7, 30, 99) ---
-    const sma7 = chart.addSeries(LineSeries, {
-      color: "#38bdf8", // Sky Blue
-      lineWidth: 2,
-      title: "SMA 7",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 0);
-    const sma30 = chart.addSeries(LineSeries, {
-      color: "#a855f7", // Mor
-      lineWidth: 2,
-      title: "SMA 30",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 0);
-    const sma99 = chart.addSeries(LineSeries, {
-      color: "#f97316", // Turuncu
-      lineWidth: 2,
-      title: "SMA 99",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 0);
-    sma7SeriesRef.current = sma7;
-    sma30SeriesRef.current = sma30;
-    sma99SeriesRef.current = sma99;
-
-    // --- PANE 0: SUPERTREND ---
-    const supertrendSeries = chart.addSeries(LineSeries, {
-      lineWidth: 2,
-      title: "SuperTrend",
-      priceLineVisible: false,
-      lastValueVisible: true,
-    }, 0);
-    supertrendSeriesRef.current = supertrendSeries;
-
-    // --- PANE 1: MACD ALT PANE (12, 26, 9) ---
-    const macdHist = chart.addSeries(HistogramSeries, {
-      color: "#10b981",
-      base: 0,
-      title: "Histogram",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 1);
-    const macdLine = chart.addSeries(LineSeries, {
-      color: "#38bdf8",
-      lineWidth: 2,
-      title: "MACD (12,26)",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 1);
-    const macdSignal = chart.addSeries(LineSeries, {
-      color: "#f59e0b",
-      lineWidth: 2,
-      title: "Sinyal (9)",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 1);
-
-    macdHistRef.current = macdHist;
-    macdLineRef.current = macdLine;
-    macdSignalRef.current = macdSignal;
-
-    // MACD Pane 1 Fiyat Ekseni ve Sıfır Çizgisi
-    chart.priceScale("right", 1).applyOptions({
-      autoScale: true,
-      scaleMargins: { top: 0.15, bottom: 0.15 },
-    });
-
-    macdHist.createPriceLine({
-      price: 0,
-      color: "rgba(148, 163, 184, 0.45)",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      axisLabelVisible: false,
-      title: "0",
-    });
+    // NOT: BB / SMA / MACD / SuperTrend ve kullanıcının eklediği TÜM indikatörler
+    // artık `applyStructure` (forexIndicatorEngine) tarafından kurulur. Burada
+    // yalnızca mum serisi sabittir; paneller dinamiktir.
 
     // Kullanıcı sola kaydırdığında "Canlı Fiyat" düğmesini göster
+    //
+    // NOT: burada `pendingFitRef` TEMİZLENMEZ. `fitContent()` de bu aboneliği
+    // tetiklediği için temizlemek, sığdırmanın kendi ürettiği olayla bayrağı
+    // düşürüp bir sonraki yerleşimin bayat aralığı geri yüklemesine yol açıyordu.
+    // Kullanıcı niyeti yalnız gerçek girdi olaylarından (tekerlek/pointer) okunur.
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (!range) return;
       const count = lastCandleRef.current ? 100 : 0;
@@ -874,6 +743,13 @@ export default function ForexNativeChart({
         setIsScrolledBack(range.to < count - 3);
       }
     });
+
+    // Kullanıcı grafiğe dokunduğunda (tekerlek/sürükleme) bekleyen sığdırmayı
+    // düşür; yalnız programatik yerleşim sığdırmayı sürdürsün.
+    const dropPendingFit = () => { pendingFitRef.current = false; };
+    const container = chartContainerRef.current;
+    container.addEventListener("wheel", dropPendingFit, { passive: true });
+    container.addEventListener("pointerdown", dropPendingFit);
 
     // Yeniden Boyutlandırma
     const handleResize = () => {
@@ -895,19 +771,24 @@ export default function ForexNativeChart({
     return () => {
       window.removeEventListener("resize", handleResize);
       if (resizeObserver) resizeObserver.disconnect();
+      container.removeEventListener("wheel", dropPendingFit);
+      container.removeEventListener("pointerdown", dropPendingFit);
       chart.remove();
       chartApiRef.current = null;
       candleSeriesRef.current = null;
+      // Grafik yok edildi: motor serileri artık geçersiz → sıfırla ki bir
+      // sonraki veri turu yapıyı yeniden kursun.
+      engineRef.current = null;
     };
   }, [symbol, updatePaneLayout]);
 
-  // Pane boyutlarını `showMacd` değişiminde senkronize et
+  // Pane yükseklikleri YALNIZCA panel yapısı değişince dağıtılır. Bunu veri
+  // güncellemesine (2.5 sn'lik canlı tur) de bağlamak, her turda `setHeight`
+  // çağırıp lightweight-charts'ın pane'leri yeniden normalize etmesine yol
+  // açıyordu — MACD paneli okunamayacak kadar eziliyordu.
   useEffect(() => {
     updatePaneLayout();
-    if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: showMacd });
-    if (macdLineRef.current) macdLineRef.current.applyOptions({ visible: showMacd });
-    if (macdSignalRef.current) macdSignalRef.current.applyOptions({ visible: showMacd });
-  }, [showMacd, updatePaneLayout]);
+  }, [indicators, volumeVisible, updatePaneLayout]);
 
   // Mum Verilerini ve Göstergeleri Grafiğe Bas
   useEffect(() => {
@@ -915,107 +796,64 @@ export default function ForexNativeChart({
 
     try {
       candleSeriesRef.current.setData(candles as any);
-
-      // GÖRÜNÜM KİLİDİ: Yalnızca sembol veya periyot değişince sığdır!
-      // Sessiz arka plan güncellemelerinde fitContent() çalışmaz, böylece sola çekilen görünüm korunur.
-      const viewKey = `${symbol}|${timeframe}`;
-      if (fittedForRef.current !== viewKey) {
-        fittedForRef.current = viewKey;
-        chartApiRef.current?.timeScale().fitContent();
-        setIsScrolledBack(false);
-      }
     } catch (e) {
       console.warn("Mum verisi basılırken uyarı:", e);
     }
 
-    // --- 1. BOLLINGER BANDS (20, 2) ---
-    if (showBB && upperBbRef.current && middleBbRef.current && lowerBbRef.current) {
-      const { upper, middle, lower } = calculateBollingerBands(candles, 20, 2);
-      if (upper.length > 0) {
-        upperBbRef.current.setData(upper as any);
-        middleBbRef.current.setData(middle as any);
-        lowerBbRef.current.setData(lower as any);
-        upperBbRef.current.applyOptions({ visible: true });
-        middleBbRef.current.applyOptions({ visible: true });
-        lowerBbRef.current.applyOptions({ visible: true });
-      }
-    } else if (upperBbRef.current) {
-      upperBbRef.current.applyOptions({ visible: false });
-      middleBbRef.current?.applyOptions({ visible: false });
-      lowerBbRef.current?.applyOptions({ visible: false });
+    // --- GÖSTERGE MOTORU ---
+    // Yapı imzası: hangi indikatörler + sembol + periyot + pencere modu. Yalnız
+    // imza değişince panelleri/serileri yeniden kurarız; aksi halde mevcut
+    // serilere `setData` uygularız (periyodik tazelemede jank olmaz).
+    const chart = chartApiRef.current;
+    if (!chart) return;
+    const engine = engineRef.current;
+    const signature = structureSignature(indicators, symbol, timeframe, volumeVisible);
+    const structureChanged = !engine || engine.signature !== signature;
+
+    // GÖRÜNÜM KİLİDİ: sembol/periyot değişince VEYA panel yapısı değişince
+    // (indikatör ekle/sil) sığdır — panel eklemek x-aralığını kaydırıp mumları
+    // sağa kaçırabiliyor. Sessiz arka plan güncellemelerinde çalışmaz, böylece
+    // kullanıcının sola çektiği görünüm korunur.
+    const viewKey = `${symbol}|${timeframe}`;
+    const willFit = fittedForRef.current !== viewKey || structureChanged;
+
+    if (structureChanged) {
+      engineRef.current = applyStructure(chart, candles, indicators, {
+        symbol,
+        timeframe,
+        volumeVisible,
+        signature,
+        // Önceki motorun serileri içeride tek tek `removeSeries` ile atılır;
+        // yalnız `removePane` çağırmak pane 0'daki overlay çizgilerini bırakır.
+        previous: engine,
+      });
+    } else {
+      applySeries(engine, candles, { volumeVisible });
     }
 
-    // --- 2. 3'LÜ SIMPLE MOVING AVERAGES (7, 30, 99) ---
-    if (showSma && sma7SeriesRef.current && sma30SeriesRef.current && sma99SeriesRef.current) {
-      const s7 = calculateSMA(candles, 7);
-      const s30 = calculateSMA(candles, 30);
-      const s99 = calculateSMA(candles, 99);
+    // Sığdırılacaksa panel yerleşimi görünür aralığı GERİ YÜKLEMEZ: ikisi de
+    // aynı animasyon karesinde işlenir ve bayat aralığın geri yazılması
+    // `fitContent()`in sonucunu ezip görünümü serinin başına kilitlerdi.
+    if (willFit) pendingFitRef.current = true;
+    updatePaneLayout(!willFit);
 
-      if (s7.length > 0) {
-        sma7SeriesRef.current.setData(s7 as any);
-        setLiveSma7(s7[s7.length - 1].value);
-      }
-      if (s30.length > 0) {
-        sma30SeriesRef.current.setData(s30 as any);
-        setLiveSma30(s30[s30.length - 1].value);
-      }
-      if (s99.length > 0) {
-        sma99SeriesRef.current.setData(s99 as any);
-        setLiveSma99(s99[s99.length - 1].value);
-      }
-
-      sma7SeriesRef.current.applyOptions({ visible: true });
-      sma30SeriesRef.current.applyOptions({ visible: true });
-      sma99SeriesRef.current.applyOptions({ visible: true });
-    } else if (sma7SeriesRef.current) {
-      sma7SeriesRef.current.applyOptions({ visible: false });
-      sma30SeriesRef.current?.applyOptions({ visible: false });
-      sma99SeriesRef.current?.applyOptions({ visible: false });
+    if (willFit) {
+      fittedForRef.current = viewKey;
+      chart.timeScale().fitContent();
+      setIsScrolledBack(false);
     }
 
-    // --- 3. MACD ALT PANE (12, 26, 9) ---
-    if (showMacd && macdHistRef.current && macdLineRef.current && macdSignalRef.current) {
-      const macdBars = calculateMACD(candles, 12, 26, 9);
-      if (macdBars.length > 0) {
-        macdHistRef.current.setData(macdBars.map((m) => ({ time: m.time, value: m.hist, color: m.color })) as any);
-        macdLineRef.current.setData(macdBars.map((m) => ({ time: m.time, value: m.macd })) as any);
-        macdSignalRef.current.setData(macdBars.map((m) => ({ time: m.time, value: m.signal })) as any);
-        setLiveMacdHist(macdBars[macdBars.length - 1].hist);
-      }
-      macdHistRef.current.applyOptions({ visible: true });
-      macdLineRef.current.applyOptions({ visible: true });
-      macdSignalRef.current.applyOptions({ visible: true });
-    } else if (macdHistRef.current) {
-      macdHistRef.current.applyOptions({ visible: false });
-      macdLineRef.current?.applyOptions({ visible: false });
-      macdSignalRef.current?.applyOptions({ visible: false });
-    }
-
-    // --- 4. SUPERTREND ---
-    if (showSupertrend && supertrendSeriesRef.current && candles.length > 10) {
-      try {
-        const res = SUPERTREND_ENTRY.calculate(candles, { period: 10, multiplier: 3 });
-        const plot0 = res?.plots?.plot0 ?? [];
-        if (plot0.length > 0) {
-          const formatted = plot0.map((pt) => ({
-            time: (pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time)) as UTCTimestamp,
-            value: pt.value,
-            color: pt.color,
-          }));
-          supertrendSeriesRef.current.setData(formatted as any);
-          supertrendSeriesRef.current.applyOptions({ visible: true });
-        }
-      } catch (e) {
-        console.warn("Supertrend basılırken hata:", e);
-      }
-    } else if (supertrendSeriesRef.current) {
-      supertrendSeriesRef.current.applyOptions({ visible: false });
-    }
-  }, [candles, showBB, showSma, showMacd, showSupertrend, symbol, timeframe]);
+    // Header lejant sayıları (yalnız gösterge ekliyse)
+    recomputeLiveValues(candles);
+  }, [candles, indicators, volumeVisible, symbol, timeframe, updatePaneLayout, recomputeLiveValues]);
 
   return (
-    <div className={`flex flex-col h-full w-full bg-bunker-950 font-mono select-none ${className}`}>
-      {/* ÜST BİLGİ & KONTROL ÇUBUĞU */}
+    // `min-h-full` (h-full DEĞİL): kök, kaydırılabilir üst öğenin içinde
+    // panel sayısına göre büyüyebilmeli. `h-full` içeriği üst öğenin yüksekliğine
+    // kilitler ve büyüyen grafik altındaki panelleri tekrar kırpardı.
+    <div className={`flex flex-col min-h-full w-full bg-bunker-950 font-mono select-none ${className}`}>
+      {/* ÜST BİLGİ & KONTROL ÇUBUĞU (kompakt modda gizli: sayfa kendi başlığını çizer) */}
+      {!compact && (
       <div className="p-3 bg-bunker-900/95 border-b border-bunker-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -1098,12 +936,14 @@ export default function ForexNativeChart({
           )}
         </div>
       </div>
+      )}
 
       {/* PERİYOT & GÖSTERGE SEÇİCİ */}
       <div className="px-3 py-1.5 bg-bunker-950/90 border-b border-bunker-800/80 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-bunker-muted mr-1">Periyot:</span>
-          {(["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as Timeframe[]).map((tf) => (
+          {/* Kompakt modda periyot seçici gizli: MetaMobil araç çubuğunda zaten var. */}
+          {!compact && <span className="text-[10px] text-bunker-muted mr-1">Periyot:</span>}
+          {!compact && (["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as Timeframe[]).map((tf) => (
             <button
               key={tf}
               type="button"
@@ -1119,62 +959,54 @@ export default function ForexNativeChart({
           ))}
         </div>
 
-        {/* İndikatör Butonları */}
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {/* Bollinger Bands (Default Açık) */}
+        {/* MT5 mobil tarzı gösterge çubuğu: ekli indikatörler çip, ＋ ile ekle */}
+        <div className="flex items-center gap-1.5 overflow-x-auto flex-1 min-w-0">
+          {indicators.map((inst) => (
+            <button
+              key={inst.uid}
+              type="button"
+              onClick={() => {
+                const entry = findIndicatorEntry(inst.registryId);
+                if (entry) setEditTarget({ entry, editUid: inst.uid });
+              }}
+              className={`group shrink-0 px-2 py-0.5 rounded text-[11px] font-bold border transition-all whitespace-nowrap ${
+                inst.overlay
+                  ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/40"
+                  : "bg-emerald-500/15 text-emerald-300 border-emerald-400/40"
+              }`}
+              title={`${inst.name} — ayarlar için dokun`}
+            >
+              {inst.name}
+              <span
+                role="button"
+                aria-label={`${inst.name} göstergesini kaldır`}
+                tabIndex={-1}
+                onClick={(e) => { e.stopPropagation(); removeIndicator(inst.uid); }}
+                className="ml-1.5 text-bunker-muted hover:text-rose-400 cursor-pointer"
+              >
+                ✕
+              </span>
+            </button>
+          ))}
           <button
             type="button"
-            onClick={() => setShowBB(!showBB)}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
-              showBB
-                ? "bg-cyan-500/20 text-cyan-300 border-cyan-400/50 shadow-[0_0_6px_rgba(6,182,212,0.3)]"
-                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
-            }`}
-            title="Bollinger Bands (20, 2)"
+            onClick={() => setPicking(true)}
+            className="shrink-0 px-2.5 py-0.5 rounded text-[11px] font-bold border border-emerald-400/50 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-all whitespace-nowrap"
+            title="MT5 tarzı indikatör ekle (arama + kategori + ayarlar)"
           >
-            BB (20,2)
+            ＋ İndikatör
           </button>
-
-          {/* 3'lü Simple Moving Averages (Default Açık) */}
           <button
             type="button"
-            onClick={() => setShowSma(!showSma)}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
-              showSma
-                ? "bg-purple-500/20 text-purple-300 border-purple-400/50 shadow-[0_0_6px_rgba(168,85,247,0.3)]"
-                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
-            }`}
-            title="3'lü Basit Hareketli Ortalamalar (SMA 7, 30, 99)"
-          >
-            SMA 7/30/99
-          </button>
-
-          {/* MACD Alt Pane (Default Açık) */}
-          <button
-            type="button"
-            onClick={() => setShowMacd(!showMacd)}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
-              showMacd
-                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/50 shadow-[0_0_6px_rgba(16,185,129,0.3)]"
-                : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
-            }`}
-            title="MACD Alt Gösterge Penceresi (12, 26, 9)"
-          >
-            MACD (12,26,9)
-          </button>
-
-          {/* SuperTrend */}
-          <button
-            type="button"
-            onClick={() => setShowSupertrend(!showSupertrend)}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
-              showSupertrend
+            onClick={() => setVolumeVisible((v) => !v)}
+            className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-bold border transition-all whitespace-nowrap ${
+              volumeVisible
                 ? "bg-amber-500/20 text-amber-300 border-amber-400/50"
                 : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
             }`}
-            title="SuperTrend (10, 3)"
+            title="Hacim paneli"
           >
-            SuperTrend
+            Hacim
           </button>
         </div>
 
@@ -1231,40 +1063,38 @@ export default function ForexNativeChart({
         </div>
       </div>
 
-      {/* İNDİKATÖR CANLI LEJANTI */}
+      {/* İNDİKATÖR CANLI LEJANTI — ekli indikatörlerin son değerleri */}
       <div className="px-3 py-1 bg-bunker-950/95 border-b border-bunker-900 text-[11px] flex flex-wrap items-center gap-x-4 gap-y-0.5 text-bunker-muted shrink-0">
-        {showSma && (
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-0.5 bg-[#38bdf8] rounded" />
-              <span className="text-[#38bdf8]">SMA 7:</span>
-              <strong className="text-white font-bold">{formatPriceBySymbol(liveSma7, symbol)}</strong>
+        {indicators.map((inst) => {
+          const live = liveValues.find((v) => v.uid === inst.uid);
+          if (!live) return null;
+          const isPane = !inst.overlay;
+          const color = live.color || inst.style.colors[0];
+          return (
+            <span key={inst.uid} className="flex items-center gap-1.5">
+              <span className="w-2.5 h-0.5 rounded" style={{ backgroundColor: color }} />
+              <span style={{ color }}>{inst.name}:</span>
+              <strong className="text-white font-bold tabular-nums">
+                {isPane && inst.registryId === "macd"
+                  ? (live.value >= 0 ? `+${live.value.toFixed(5)}` : live.value.toFixed(5))
+                  : live.value.toFixed(4)}
+              </strong>
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-0.5 bg-[#a855f7] rounded" />
-              <span className="text-[#a855f7]">SMA 30:</span>
-              <strong className="text-white font-bold">{formatPriceBySymbol(liveSma30, symbol)}</strong>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-0.5 bg-[#f97316] rounded" />
-              <span className="text-[#f97316]">SMA 99:</span>
-              <strong className="text-white font-bold">{formatPriceBySymbol(liveSma99, symbol)}</strong>
-            </span>
-          </div>
-        )}
-
-        {showMacd && (
-          <div className="flex items-center gap-2 border-l border-bunker-800 pl-3">
-            <span className="text-cyan-400 font-bold">MACD (12,26,9):</span>
-            <span className={`font-bold tabular-nums ${liveMacdHist != null && liveMacdHist >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-              {liveMacdHist != null ? (liveMacdHist >= 0 ? `+${liveMacdHist.toFixed(5)}` : liveMacdHist.toFixed(5)) : "—"}
-            </span>
-          </div>
+          );
+        })}
+        {indicators.length === 0 && (
+          <span className="text-bunker-muted italic">＋ İndikatör ile gösterge ekleyin</span>
         )}
       </div>
 
-      {/* GRAFİK TUVALİ */}
-      <div className="relative flex-1 w-full bg-[#080c14] overflow-hidden min-h-[420px]">
+      {/* GRAFİK TUVALİ — yükseklik açık panel sayısına göre büyür (aşağıdaki
+          `chartBoxHeight`); sabit bir kutuya sıkıştırıldığında paneller
+          okunamayacak kadar eziliyordu. Büyüyen tuval kaydırılabilir bir
+          üst öğe içinde durur. */}
+      <div
+        className="relative flex-1 w-full bg-bunker-950 overflow-hidden"
+        style={{ minHeight: chartBoxHeight }}
+      >
         {loading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm gap-2">
             <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -1335,6 +1165,28 @@ export default function ForexNativeChart({
             </div>
           )}
         </div>
+      )}
+
+      {/* MT5 TARZI İNDİKATÖR AKIŞI: picker → ayarlar → ekle/güncelle */}
+      {picking && (
+        <IndicatorPicker
+          onSelect={(entry) => { setPicking(false); setEditTarget({ entry }); }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+      {editTarget && (
+        <IndicatorSettings
+          entry={editTarget.entry}
+          initialParams={editTarget.editUid ? indicators.find((i) => i.uid === editTarget.editUid)?.params : undefined}
+          initialStyle={editTarget.editUid ? indicators.find((i) => i.uid === editTarget.editUid)?.style : undefined}
+          editing={!!editTarget.editUid}
+          onAdd={(params, style) =>
+            editTarget.editUid
+              ? updateIndicator(editTarget.editUid, params, style)
+              : addIndicator(editTarget.entry, params, style)
+          }
+          onClose={() => setEditTarget(null)}
+        />
       )}
     </div>
   );

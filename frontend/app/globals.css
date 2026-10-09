@@ -774,7 +774,11 @@ html.light .text-amber-300,
 html.light .text-amber-200,
 html.light .text-amber-100,
 html.light [class*="text-amber-"],
-html.light [class*="text-yellow-"] {
+html.light [class*="text-yellow-"],
+/* tailwind.config `neon.yellow` (#f0b90b) — `text-neon-yellow` sınıfı yukarıdaki
+   amber kuralına takılmıyordu; beyaz zeminde kayboluyordu (IndicatorPicker
+   "GRAFİK" rozeti). Aynı koyu kehribara bağla. */
+html.light .text-neon-yellow {
   color: #b45309 !important; /* amber-700: %100 okunabilir koyu kehribar */
   font-weight: 700 !important;
 }

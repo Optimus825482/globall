@@ -269,13 +269,18 @@ export default function IndicatorPicker({ onSelect, onClose }: Props) {
     const [q, setQ] = useState("");
     const [cat, setCat] = useState("Tümü");
 
-    const indicators = useMemo(
-        () => [
+    const indicators = useMemo(() => {
+        // Özel kayıt (CUSTOM_INDICATOR_ENTRIES) ile paket registry'si aynı id'yi
+        // taşıyabiliyor (örn. `supertrend`); eskiden ikisi de listeye girip aynı
+        // React key'i üretiyor ve satır çiftleniyordu. Özel kayıt kazanır.
+        const customIds = new Set(CUSTOM_INDICATOR_ENTRIES.map((e) => e.id));
+        return [
             ...CUSTOM_INDICATOR_ENTRIES,
-            ...indicatorRegistry.filter((i: any) => i.group !== "candlestick-port"),
-        ] as RegistryEntry[],
-        []
-    );
+            ...indicatorRegistry.filter(
+                (i: any) => i.group !== "candlestick-port" && !customIds.has(i.id)
+            ),
+        ] as RegistryEntry[];
+    }, []);
     const cats = useMemo(
         () => ["Tümü", ...Array.from(new Set(indicators.map((i) => i.category)))],
         [indicators]
