@@ -3971,13 +3971,18 @@ async def _forex_auto_paper_loop():
                                     updated_trail = True
 
                         # (b2) TP İPTALİ — trailing devreye girdiğinde sabit TP emri çekilir
-                        # (V03 "no_tp_on_trail_live" mekanizması; opt-in, varsayılan KAPALI).
+                        # (V03 "no_tp_on_trail_live" mekanizması; canlı VARSAYILAN AÇIK).
                         # Neden: TP kazananı erken kesiyordu; TP silinince trend koşusu
-                        # trailing/BE kilidiyle taşınır (2026-10-09 2 pencere A/B: net ve maxDD iyi).
+                        # trailing/BE kilidiyle taşınır (2026-10-09 4 pencere A/B IS/OOS/OOS2/F1:
+                        # +$201/+$215/+$65/+$170, işaret-tutarlı tek mekanizma; ADX-trail ve
+                        # TP-ratchet pencereler arası işaret değiştirdiği için EKLENMEDİ).
                         # tp_price=0 yapılınca (c) TP_HIT dalı bir daha ateşlemez (kripto TP'siz
                         # moduyla aynı semantik). Beklemede olan bir tur önce kuyruğa girmiş MT5
                         # MODIFY_SLTP komutunda hâlâ eski tp duruyorsa, aşağıdaki cancel komutu onu
-                        # sırayla geçersiz kılar.
+                        # sırayla geçersiz kılar. Kapsam: forex/MT5 motorundaki TÜM semboller
+                        # (chandelier VE sabit-pip trail, ikisi de `updated_trail` set eder).
+                        # Kripto (BTCUSD/ETHUSD) zaten TP'siz açılır (crypto_tp_enabled=False)
+                        # → etkisiz; ayrı auto_paper motoru TP-ratchet kullanır, dokunulmadı.
                         if (updated_trail and _AUTO_SETTINGS.tp_cancel_on_trail
                                 and float(pos.get("tp_price", 0.0) or 0.0) > 0):
                             pos["tp_price"] = 0.0
