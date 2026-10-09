@@ -18,8 +18,10 @@ import logging
 import os
 import re
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
+from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -32,9 +34,46 @@ except ImportError:
     except ImportError:
         database = None  # type: ignore
 
+# Investing.com kaynağının tek harici bağımlılığı `curl_cffi`. Korumalı import
+# kasıtlıdır: paket eksikse modülün TAMAMI çökmemeli (takvim hattının geri kalanı
+# çalışır), ama durum da sessiz kalmamalı — `fetch_investing_com_events` bunu
+# ERROR ile bildirir. 2026-10-10'a kadar bu paket hiçbir requirements dosyasında
+# yoktu ve kaynak üretimde sessizce ölüydü; bu bayrak o gerilemeyi görünür kılar.
+#
+# HTML ayrıştırma (`extract_economic_calendar_store_json`) standart kütüphaneyle
+# yapıldığı için `beautifulsoup4` bağımlılığı GEREKMEZ.
+try:
+    import curl_cffi
+
+    _INVESTING_DEPS_AVAILABLE = True
+except Exception:
+    _INVESTING_DEPS_AVAILABLE = False
+
 # Önbellek ve Senkronizasyon Ayarları
 _CACHE_TTL_SEC = 300  # 5 dakika bellek tazeleme
 CALENDAR_REFRESH_INTERVAL_SEC = 3 * 3600  # 3 saatte bir arka planda kontrol ve DB güncelleme
+
+# Takvimde tutulacak en fazla olay. DB okuma limiti
+# (`database.get_economic_calendar_events`) bu değerle hizalanır.
+#
+# Tavan ÖLÇÜME dayanır, tahmine değil — ve asıl mesele sayı değil, kırpmanın
+# KİMİ attığıdır. `sort_key` açıklanmış olayları sona atar ve tavan KUYRUKTAN
+# kırpar; yani kırpılanlar hep GEÇMİŞ olaylardır. 30'luk eski tavanla canlı
+# ölçüm (2026-10-10): 102 olay → 60 kalıyor, atılan 42'nin 39'u **bugün
+# açıklanmış** olay (11'i dün, 28'i bugün). Bu tam olarak vitrinin
+# ("Bugün Açıklanan Veriler") gösterdiği kümedir: eski tavan, Investing
+# katmanının eklediği `actual` verisini kaydettikten hemen sonra siliyordu.
+# 60 da yetmedi (60 < 102-39 future + 39 published).
+#
+# 150 = haftalık TradingView 2/3 yıldız zirvesi (~82, ağır veri haftalarında
+# daha yüksek) + Investing'in tam bir günü (~23-49) + pay. Kaynak penceresi
+# zaten haftalık olduğundan bu bant doğal olarak sınırlıdır; tavan yalnız
+# anormal bir büyümeye karşı emniyet supabıdır.
+#
+# Bilinen artık risk: pencere bu bandı aşarsa yine kuyruktan (en eski) kırpılır.
+# Sıralamayı değiştirmek tablonun okuma sırasını da değiştirirdi; bu turda
+# istenmediği için tavan yükseltildi, sıra korundu.
+CALENDAR_MAX_EVENTS = 150
 
 _CALENDAR_CACHE: Dict[str, Any] = {
     "timestamp": 0,
@@ -491,6 +530,33 @@ def translate_title(title: str, country_code: str) -> str:
 # OLAY KOVASI (BUCKET) SINIFLANDIRMASI — TEK DOĞRULUK KAYNAĞI
 # ============================================================================
 
+# Petrol ÜRÜN belirteçleri. Kova sınıflandırması da yön kuralı da YALNIZ bu
+# listeyi kullanır — böylece "hangi kovada" ile "yön nasıl çevrilir" yapısal
+# olarak AYRIŞAMAZ.
+#
+# Eskiden iki ayrı liste vardı: kova listesi `inventories`/`stok` içeriyordu ve
+# bu yüzden "Business Inventories" gibi petrol DIŞI olayları ham petrol kovasına
+# sokup senaryo metnini "Ham Petrol Stok Senaryosu" yapıyordu; yön kuralı ise
+# ayrı bir `_OIL_STOCK_HINTS` listesiyle daraltılmıştı. İki kavram, iki liste —
+# zamanla çelişebilirlerdi. Artık tek liste, tek fonksiyon.
+#
+# `eia` bilerek YOK: "EIA Natural Gas Storage" içinde petrol kelimesi geçmez,
+# `eia` eklenirse o olay yanlışlıkla ham petrol senaryosuna düşerdi.
+# "EIA Crude Oil Inventories" zaten `crude`/`oil` ile eşleşir.
+_OIL_STOCK_MARKERS = ["oil", "petrol", "crude", "ham petrol"]
+
+
+def is_oil_stock_event(title: str) -> bool:
+    """Başlık gerçek bir petrol/ham petrol olayı mı?
+
+    Tek doğruluk kaynağı: `classify_event_bucket` bu fonksiyonla `oil_stocks`
+    kovasını tanımlar, `higher_is_bullish_for_event` de ters çevirmeyi aynı
+    fonksiyona bağlar. İkisi ayrışamaz.
+    """
+    t = (title or "").lower()
+    return any(k in t for k in _OIL_STOCK_MARKERS)
+
+
 # Kova adı -> anahtar kelime listesi. SIRA ANLAMLIDIR: "Fed ... Inflation" gibi
 # başlıklar `rate` kovasına düşmelidir, `inflation` kovasına değil. Bu sözlük hem
 # `generate_event_scenario` (gösterilecek senaryo metni) hem de
@@ -500,7 +566,7 @@ _EVENT_BUCKET_KEYWORDS: List[tuple] = [
     ("rate", ["rate", "faiz", "fomc", "fed", "monetary", "beyanat", "statement", "powell", "lagarde", "ueda"]),
     ("inflation", ["cpi", "tüfe", "inflation", "enflasyon", "pce", "ppi", "üfe"]),
     ("employment", ["employment", "nfp", "istihdam", "payrolls", "işsizlik", "claims", "adp"]),
-    ("oil_stocks", ["oil", "petrol", "crude", "inventories", "stok"]),
+    ("oil_stocks", _OIL_STOCK_MARKERS),
     ("gdp", ["gdp", "gsyh", "büyüme"]),
     ("pmi", ["pmi", "ism", "imalat", "hizmet"]),
 ]
@@ -508,13 +574,6 @@ _EVENT_BUCKET_KEYWORDS: List[tuple] = [
 # İşsizlik/başvuru serileri AYNI istihdam kovasında ama AYNI yön kuralını paylaşmaz:
 # istihdam artışı güçlü ekonomidir, işsizlik/başvuru artışı ise zayıflıktır.
 _EMPLOYMENT_INVERTED_KEYWORDS = ["işsizlik", "unemployment", "claims", "jobless"]
-
-# Petrol dışı "Business Inventories" gibi başlıklar stok kovasına girip yanlış
-# yorumlanmasın diye ters çevirme YALNIZ gerçek petrol belirteci taşıyan olaylara
-# uygulanır. "Inventories"/"stok" tek başına YETMEZ — petrol belirteci şarttır.
-# (Mevcut `generate_event_scenario` `inventories`/`stok` anahtarını geniş tutuyor;
-# bu daraltma YALNIZ yön kuralına uygulanır, gösterilen metne dokunulmaz.)
-_OIL_STOCK_HINTS = ["crude", "oil", "petrol", "eia", "ham petrol"]
 
 
 def classify_event_bucket(title: str) -> str:
@@ -538,8 +597,9 @@ def higher_is_bullish_for_event(title: str) -> bool:
 
     * **İşsizlik / başvuru** (`işsizlik`, `unemployment`, `claims`, `jobless`): yüksek
       işsizlik zayıflıktır → 🔴.
-    * **Ham petrol stokları** (`crude`/`oil`/`petrol`/`eia` + `inventories`/`stok`):
-      stok artışı arz bolluğudur → 🔴.
+    * **Ham petrol / petrol ürünü** (`is_oil_stock_event`): stok artışı arz bolluğudur → 🔴.
+      "Business Inventories" gibi petrol DIŞI stok olayları artık buraya girmez —
+      kovada `generic` olurlar ve ters çevrilmezler.
 
     Enflasyon ailesi (TÜFE/ÜFE/PCE) **ters çevrilmez**: yüksek enflasyon şahin duruşu
     gerektirir ve olayın senaryosunda zaten `bullish_trigger` olarak yazılıdır.
@@ -547,7 +607,7 @@ def higher_is_bullish_for_event(title: str) -> bool:
     t = (title or "").lower()
     if any(k in t for k in _EMPLOYMENT_INVERTED_KEYWORDS):
         return False
-    if classify_event_bucket(t) == "oil_stocks" and any(k in t for k in _OIL_STOCK_HINTS):
+    if is_oil_stock_event(t):
         return False
     return True
 
@@ -710,6 +770,69 @@ def _format_comparison_value(raw: Any, parsed: float) -> str:
     return text or f"{parsed:g}"
 
 
+# Para birimi simgeleri. Aile tespiti HAM metinden yapılır çünkü
+# `parse_calendar_value` birim ekini atar ("3.0%" -> 3.0) ve geriye birim bilgisi
+# kalmaz; oysa kıyasın geçerli olup olmadığı tam olarak birime bağlıdır.
+_CURRENCY_SYMBOLS = "₺$€£¥₹₽₩₪₫₴₦₱฿"
+
+
+def calendar_value_unit_family(value: Any) -> Optional[str]:
+    """Takvim değerinin **ham metninden** birim ailesini türetir.
+
+    Dönen değerler:
+
+    * `"percent"` — içinde `%` var (`"3.0%"`).
+    * `"currency"` — para birimi simgesi var (`"19.5€"`, `"60.33$"`).
+    * `"count"` — sondaki `K`/`M`/`B`/`T` çarpanı var (`"145K"`, `"-1.5M"`).
+    * `"index"` — çıplak sayı, tanınan birim yok (`"148.2"`, `"0.3"`).
+    * `None` — değer yok, ayrıştırılamıyor ya da **tanınmayan** harf içeriyor
+      (`"—"`, `"85cf"`). `None` "bilinmiyor" demektir, "uyumsuz" değil.
+
+    Tanınmayan harf içeren değerin `None` (bilinmiyor) sayılması kasıtlıdır:
+    aile tespiti yanlış pozitif üretmektense sessiz kalmalı, aksi halde geçerli
+    bir kıyas haksız yere reddedilirdi.
+    """
+    if parse_calendar_value(value) is None:
+        return None
+
+    raw = str(value).strip()
+    if "%" in raw:
+        return "percent"
+    if any(sym in raw for sym in _CURRENCY_SYMBOLS):
+        return "currency"
+
+    # Ayrıştırıcıyla aynı sıra: baştaki simgeyi/parayı at, sonra çarpan ekini bak.
+    text = raw.replace(" ", "").replace(" ", "")
+    text = re.sub(r"^[^\d+\-.,]+", "", text)
+    if text and text[-1].lower() in _SUFFIX_MULTIPLIERS:
+        return "count"
+
+    # Geriye tanımadığımız bir harf kaldıysa birim belirsizdir.
+    if re.search(r"[^\W\d_]", text, flags=re.UNICODE):
+        return None
+    return "index"
+
+
+def units_compatible(a: Any, b: Any) -> bool:
+    """İki takvim değeri AYNI birim ailesinde mi (kıyas geçerli mi)?
+
+    * Bir taraf bilinmiyorsa (`None`) engelleme — bilinmezlik kanıt değildir.
+    * `"index"` (çıplak sayı) **joker**tir: TradingView'in `unit` alanı güvenilmez
+      (canlı probda `€` bozuk karakter olarak geldi), joker olmasaydı
+      `forecast="0.3"` + `actual="0.2%"` gibi gerçek TV satırları haksız yere
+      reddedilirdi.
+    * Aksi halde aileler birebir eşleşmelidir: `"3.0%"` ↔ `"145K"` **uyumsuzdur**
+      ve kıyas reddedilir.
+    """
+    fa = calendar_value_unit_family(a)
+    fb = calendar_value_unit_family(b)
+    if fa is None or fb is None:
+        return True
+    if fa == "index" or fb == "index":
+        return True
+    return fa == fb
+
+
 def evaluate_event_outcome(
     title: str,
     forecast: Any,
@@ -739,10 +862,18 @@ def evaluate_event_outcome(
     previous_num = parse_calendar_value(previous)
 
     if forecast_num is not None:
-        baseline_num, basis = forecast_num, "forecast"
+        baseline_num, baseline_raw, basis = forecast_num, forecast, "forecast"
     elif previous_num is not None:
-        baseline_num, basis = previous_num, "previous"
+        baseline_num, baseline_raw, basis = previous_num, previous, "previous"
     else:
+        return None
+
+    # BİRİM KAPISI — kıyas yalnız aynı birim ailesindeyse geçerlidir. Kaynaklar
+    # arası nadir bir sapmada ("3.0%" beklenti, "145K" açıklanan) sayılar körlemesine
+    # kıyaslanırsa 3.0 < 145000 çıkar ve olay **kesin bir yön** kazanır; oysa doğru
+    # cevap "bilinmiyor"dur. Tahmin etme sözleşmesi gereği `None` döner: olay vitrine
+    # girmez, modal iki dalı da gösterir. Frontend değişikliği gerekmez.
+    if not units_compatible(actual, baseline_raw):
         return None
 
     higher_is_bullish = higher_is_bullish_for_event(title)
@@ -761,9 +892,8 @@ def evaluate_event_outcome(
     # Kıyas metni HAM kaynak metinlerden kurulur — birim eki ("%", "K", "M")
     # böylece ayrıca çıkarılmak zorunda kalmaz. Ayrıştırma çarpanı uyguladığı
     # için (`145K` → 145000.0) sayıyı yeniden basmak "145000K" gibi çift birim
-    # üretirdi.
-    baseline_raw = forecast if basis == "forecast" else previous
-
+    # üretirdi. `baseline_raw` taban seçiminde zaten tutuldu (birim kapısı da
+    # onu kullanır).
     actual_text = _format_comparison_value(actual, actual_num)
     baseline_text = _format_comparison_value(baseline_raw, baseline_num)
 
@@ -988,46 +1118,211 @@ async def fetch_tradingview_events() -> List[Dict[str, Any]]:
     return parsed
 
 
-async def fetch_investing_com_events() -> List[Dict[str, Any]]:
-    """Investing.com HTML / JSON verisinden 2 ve 3 yıldızlı olayları çeker."""
-    def _fetch() -> Optional[str]:
-        try:
-            from curl_cffi import requests
-            headers = {
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            }
-            # tr.investing.com veya www.investing.com
-            for target_url in ["https://tr.investing.com/economic-calendar/", "https://www.investing.com/economic-calendar"]:
-                try:
-                    r = requests.get(target_url, headers=headers, impersonate="chrome120", timeout=7)
-                    if r.status_code == 200 and "economicCalendarStore" in r.text:
-                        return r.text
-                except Exception:
-                    continue
-        except Exception as exc:
-            logger.debug("Investing.com fetch exception: %s", exc)
+# ============================================================================
+# KAYNAK BİRLEŞTİRME — TradingView (liste/kapsam) + Investing (değer)
+# ============================================================================
+#
+# İki kaynak aynı olayı farklı başlıklarla ve farklı dakika yuvarlamalarıyla
+# verebilir. Aşağısı Tamamen SAFtır (ağ yok, `datetime.now()` yok) — bu yüzden
+# birim testiyle doğrulanabilir ve davranışı ortama göre değişmez.
+
+# Başlık sonundaki "nitelik" belirteçleri. Investing "Sentiment Prel" derken
+# TradingView "Sentiment" diyebiliyor; bunlar AYNI olaydır ve eşleşmelidir.
+# Yalnız SONDAKİ belirteç atılır — ortadaki bir kelime atılırsa farklı olaylar
+# eşleşir ("CPI Final vs Prel" tuzağı).
+_TITLE_QUALIFIER_SUFFIXES = (
+    "prel", "prelim", "preliminary", "flash", "adv", "advanced",
+    "final", "revised", "provisional", "est", "estimate",
+)
+
+
+def normalize_event_title(title: Any) -> str:
+    """Başlığı eşleştirme için kanonikleştirir — **aksan duyarsız**.
+
+    `NFKD` ayrıştırma + birleşen işaretlerin (`Mn`) atılması → küçük harf →
+    alfanümerik olmayan her dizi tek boşluk → kırp → sondaki nitelik belirtecini
+    at. Boş/`None` girdide `""` döner.
+
+    Aksan atma adımı şarttır, süsleme değil: `NFKC` Türkçe `İ`'yi `I` + birleşen
+    nokta olarak ayrıştırır ve birleşen işaretler `\\w` SINIFINA GİRMEZ. Onları
+    önce atmazsak aşağıdaki `re.sub` işareti ayraç sanıp boşluğa çevirir ve
+    "İşsizlik" → `"i şsizlik"` gibi bozuk bir anahtar üretir (sessiz, sinsi bir
+    eşleşme kaybı). İki kaynağın aynı başlığı aksanlı/aksansız yazması durumu da
+    bu adım kapatır.
+    """
+    if title is None:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", str(title))
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    text = stripped.lower()
+    text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE).strip()
+    if not text:
+        return ""
+    parts = text.split(" ")
+    while len(parts) > 1 and parts[-1] in _TITLE_QUALIFIER_SUFFIXES:
+        parts.pop()
+    return " ".join(parts)
+
+
+def _event_minute(date_iso: Any) -> Optional[int]:
+    """ISO zaman damgasını epoch DAKİKASINA çevirir; ayrıştırılamazsa `None`.
+
+    Dakika çözünürlüğü kasıtlı: iki kaynak aynı olayı birkaç saniye farkla
+    damgalayabiliyor. Ayrıştırılamayan değer `None` döner ve o olay
+    **indekslenemez** — birleştirme yerine ayrı satır olur (güvenli taraf).
+    """
+    if not date_iso:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(date_iso).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return int(dt.timestamp()) // 60
+
+
+def _calendar_match_key(event: Dict[str, Any]) -> Optional[tuple]:
+    """Birleştirme anahtarı: `(para birimi, UTC dakikası, kanonik başlık)`.
+
+    ÜÇÜ DE eşleşmelidir. Yalnız para birimi+dakika YETMEZ: canlı veride CAD
+    için 12:30'da hem "Unemployment Rate" hem "Employment Change" var — iki
+    farklı olay aynı anahtara düşerdi.
+    """
+    currency = str(event.get("currency") or event.get("country") or "").strip().upper()
+    minute = _event_minute(event.get("date_iso"))
+    title_key = normalize_event_title(event.get("original_title") or event.get("title"))
+    if not currency or minute is None or not title_key:
+        return None
+    return (currency, minute, title_key)
+
+
+def merge_calendar_sources(
+    primary: List[Dict[str, Any]],
+    overlay: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """TradingView listesini Investing değerleriyle birleştirir (SAF).
+
+    Sözleşme: **değer üçlüsü** (`forecast`/`previous`/`actual`) Investing'ten
+    **üçlü olarak** alınır — asla alan alan karıştırılmaz. Kaynaklar arasında
+    alan karıştırmak birim uyuşmazlığı üretirdi ("%3,2" beklenti + "145K"
+    açıklanan) ve "değer bazında Investing önceliklidir" kararının tam olarak
+    önlediği şey budur. TradingView'in kimlik/kapsam alanları (`id`, `title`,
+    `stars`, `date_iso`, `scenario`, `country_name`) korunur.
+
+    Belirsizlik politikası: **yanlış birleştirme yerine görünür kopya.**
+
+    * Tam 1 aday → birleştir.
+    * 0 aday → Investing olayı kendi satırı olarak eklenir.
+    * ≥2 aday ya da aday zaten tüketilmiş → birleştirme YOK; Investing olayı
+      ayrı satır olur. Operatör iki satır görür — yanlış sayı taşıyan tek satır
+      görmekten iyidir.
+
+    Girdiler mutasyona uğratılmaz (her sözlük kopyalanır).
+    """
+    merged: List[Dict[str, Any]] = [dict(ev) for ev in primary]
+
+    # Anahtar -> indeks listesi. Aynı anahtar birden çok kez geçebilir.
+    index: Dict[tuple, List[int]] = {}
+    for pos, ev in enumerate(merged):
+        key = _calendar_match_key(ev)
+        if key is not None:
+            index.setdefault(key, []).append(pos)
+
+    consumed: set = set()
+
+    for inv_ev in overlay:
+        if not isinstance(inv_ev, dict):
+            continue
+        key = _calendar_match_key(inv_ev)
+        candidates = [p for p in index.get(key, []) if p not in consumed] if key is not None else []
+
+        if len(candidates) != 1:
+            if len(candidates) > 1:
+                logger.warning(
+                    "[EconomicCalendar] Belirsiz eşleşme (%s): %d aday — birleştirme yok, kopya satır eklendi.",
+                    key, len(candidates),
+                )
+            merged.append(dict(inv_ev))
+            continue
+
+        target = merged[candidates[0]]
+        target["forecast"] = inv_ev.get("forecast", target.get("forecast"))
+        target["previous"] = inv_ev.get("previous", target.get("previous"))
+        target["actual"] = inv_ev.get("actual", target.get("actual"))
+        target["source"] = "investing"
+        target["matched_source_id"] = inv_ev.get("id")
+        consumed.add(candidates[0])
+
+    return merged
+
+
+def extract_economic_calendar_store_json(html_text: str) -> Optional[str]:
+    """Sayfadaki `<script>` gövdelerinden `economicCalendarStore` JSON metnini çıkarır.
+
+    Standart kütüphane (`html.parser`) kullanılır — **harici bağımlılık yok**. Bu
+    kasıtlıdır: ayrıştırıcı ancak bağımlılıksız olduğunda her ortamda (CI, sistem
+    Python'u, Docker) birim testiyle koşulabilir. `BeautifulSoup`'a bağlı kalsaydı
+    paket bulunmayan bir ortamda testler **sessizce atlanır** ve kaynağın gerçekten
+    çalışıp çalışmadığı yine görünmez olurdu — bu değişikliğin düzeltmeye çalıştığı
+    hatanın ta kendisi.
+
+    `HTMLParser` `<script>` gövdesini ham metin olarak verir; içindeki JSON ayrıca
+    HTML olarak yorumlanmaz, dolayısıyla kaçış karakteri sorunu doğmaz.
+    """
+    if not html_text:
         return None
 
-    loop = asyncio.get_running_loop()
-    html_text = await loop.run_in_executor(None, _fetch)
+    class _ScriptCollector(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=False)
+            self.depth = 0
+            self.buffer: List[str] = []
+            self.found: Optional[str] = None
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "script":
+                self.depth += 1
+                self.buffer = []
+
+        def handle_data(self, data):
+            if self.depth and self.found is None:
+                self.buffer.append(data)
+
+        def handle_endtag(self, tag):
+            if tag == "script" and self.depth:
+                self.depth -= 1
+                body = "".join(self.buffer)
+                if self.found is None and "economicCalendarStore" in body:
+                    self.found = body
+
+    collector = _ScriptCollector()
+    collector.feed(html_text)
+    return collector.found
+
+
+def parse_investing_payload(html_text: str, now_utc: Optional[datetime.datetime] = None) -> List[Dict[str, Any]]:
+    """Investing.com sayfasının gömülü `economicCalendarStore` yükünü ayrıştırır (SAF).
+
+    Ağ yok; `now_utc` verilmezse `is_passed` hesabı için `datetime.datetime.now(UTC)`
+    kullanılır (testte sabitlenebilsin diye parametre). Yalnız 2 ve 3 yıldızlı olaylar
+    döner. Ayrıştırılamayan yük `[]` döner — istisna fırlatmaz, çağıran karar verir.
+
+    `now_utc` verilmezse ve zaman damgası çözülemezse `is_passed=False` kalır
+    (olay "geçti" sayılmaz; kullanıcı yanlışlıkla veri kaçırmasın).
+    """
     if not html_text:
         return []
 
-    try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_text, "html.parser")
-        script_tag = None
-        for s in soup.find_all("script"):
-            if s.string and "economicCalendarStore" in s.string:
-                script_tag = s
-                break
+    if now_utc is None:
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-        if not script_tag:
+    try:
+        store_json = extract_economic_calendar_store_json(html_text)
+        if not store_json:
             return []
 
-        data = json.loads(script_tag.string)
+        data = json.loads(store_json)
         store = data.get("props", {}).get("pageProps", {}).get("state", {}).get("economicCalendarStore", {})
         events_by_date = store.get("calendarEventsByDate", {})
 
@@ -1040,21 +1335,41 @@ async def fetch_investing_com_events() -> List[Dict[str, Any]]:
 
                 stars = int(imp)
                 orig_title = str(ev.get("event") or ev.get("eventLong") or "").strip()
+                if not orig_title:
+                    continue
                 currency = str(ev.get("currency") or "").strip().upper()
                 country = str(ev.get("country") or "").strip()
-                time_iso = str(ev.get("time") or ev.get("date") or "")
+                time_iso = str(ev.get("time") or ev.get("date") or "").strip()
 
-                c_info = COUNTRY_MAP.get(currency) or {"code": currency or "USD", "name": country or currency, "flag": "🌐"}
+                c_info = COUNTRY_MAP.get(currency) or {"code": currency or "USD", "name": country or currency or "USD", "flag": "🌐"}
                 affected_symbols = map_symbols_for_event(currency, orig_title)
                 scenario = generate_event_scenario(orig_title, c_info["name"], currency or "USD", affected_symbols)
+
+                # Arayüz Türkçe; çevrilmemiş İngilizce ham başlık eklenen satırlarda
+                # hemen göze batardı. `original_title` eşleştirme için İngilizce KALIR.
+                tr_title = translate_title(orig_title, currency)
 
                 actual = str(ev.get("actual") or "—")
                 forecast = str(ev.get("forecast") or "—")
                 previous = str(ev.get("previous") or "—")
 
+                is_passed = False
+                try:
+                    ev_dt = datetime.datetime.fromisoformat(time_iso.replace("Z", "+00:00"))
+                    if ev_dt.tzinfo is None:
+                        ev_dt = ev_dt.replace(tzinfo=datetime.timezone.utc)
+                    is_passed = ev_dt < now_utc
+                except Exception:
+                    pass
+
+                event_id = ev.get("eventId")
                 parsed.append({
-                    "id": f"cal-inv-{ev.get('eventId') or abs(hash(orig_title + time_iso)) % 1000000}",
-                    "title": orig_title,
+                    # Kararlı kimlik. Eskiden `abs(hash(...)) % 1000000` kullanılıyordu;
+                    # Python `str` hash'i PYTHONHASHSEED ile süreçten sürece değişir, yani
+                    # her restart DB'de YENİ satırlar üretiyordu (upsert kimlik üzerinden
+                    # yapılıyor). `eventId` kaynağın kendi kalıcı anahtarıdır.
+                    "id": f"cal-inv-{event_id}" if event_id else f"cal-inv-{abs(hash(orig_title + time_iso)) % 1000000}",
+                    "title": tr_title,
                     "original_title": orig_title,
                     "country": currency or "USD",
                     "currency": currency or "USD",
@@ -1069,16 +1384,83 @@ async def fetch_investing_com_events() -> List[Dict[str, Any]]:
                     "forecast": forecast,
                     "previous": previous,
                     "actual": actual,
-                    "status": "Açıklandı" if actual != "—" else "Bekleniyor",
-                    "comment": get_turkish_comment(str(ev.get("comment") or ""), orig_title, orig_title),
+                    "status": "Açıklandı" if actual != "—" else ("Geçti" if is_passed else "Bekleniyor"),
+                    "comment": get_turkish_comment(str(ev.get("comment") or ""), orig_title, tr_title),
                     "affected_symbols": affected_symbols,
                     "scenario": scenario,
+                    "is_passed": is_passed,
+                    "source": "investing",
                 })
 
         return parsed
     except Exception as exc:
-        logger.debug("Investing.com parse error: %s", exc)
+        logger.warning("[EconomicCalendar] Investing.com ayrıştırma hatası: %s", exc)
         return []
+
+
+async def fetch_investing_com_events() -> List[Dict[str, Any]]:
+    """Investing.com takvimini çeker ve ayrıştırır.
+
+    **Yalnız İngilizce host** (`www.investing.com`). Eski kod önce
+    `tr.investing.com` deniyordu; o host **Türkçe başlık** veriyor. Eşleştirme
+    TradingView'in İngilizce `original_title`'ına karşı yapıldığı için Türkçe
+    başlık her eşleşmeyi kaçırır ve %100 kopya satır üretirdi.
+
+    Başarısızlık **gürültülüdür**: eksik bağımlılık `RuntimeError` ile bildirilir
+    (kaynak sessizce ölü kalmasın — 2026-10-10'a kadar tam olarak bu oluyordu),
+    engelleme/limit (403/429) `logger.warning` ile durum koduyla raporlanır.
+    """
+    if not _INVESTING_DEPS_AVAILABLE:
+        logger.error(
+            "[EconomicCalendar] Investing.com kaynağı DEVRE DIŞI: `curl_cffi` kurulu "
+            "değil. Bu paket `backend/requirements.txt`'te bildirilmelidir; eksikse "
+            "kaynak üretimde sessizce ölür ve `actual` verisi yalnız TradingView'e kalır."
+        )
+        raise RuntimeError("Investing.com bağımlılığı eksik (curl_cffi)")
+
+    def _fetch() -> Optional[str]:
+        from curl_cffi import requests
+
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        }
+        try:
+            r = requests.get(
+                "https://www.investing.com/economic-calendar/",
+                headers=headers,
+                impersonate="chrome120",
+                timeout=7,
+            )
+        except Exception as exc:
+            logger.warning("[EconomicCalendar] Investing.com bağlantı hatası: %s", exc)
+            return None
+
+        if r.status_code in (403, 429):
+            logger.warning(
+                "[EconomicCalendar] Investing.com engelledi: HTTP %s (%s). "
+                "İstek sıklığı düşük tutulmalı (3 saatlik senkron + 5 dk önbellek).",
+                r.status_code, "rate limit" if r.status_code == 429 else "forbidden",
+            )
+            return None
+        if r.status_code != 200:
+            logger.warning("[EconomicCalendar] Investing.com beklenmeyen durum: HTTP %s", r.status_code)
+            return None
+        if "economicCalendarStore" not in r.text:
+            logger.debug(
+                "[EconomicCalendar] Investing.com gövdesi beklenen `economicCalendarStore` "
+                "yükünü taşımıyor (sayfa yapısı değişmiş olabilir)."
+            )
+            return None
+        return r.text
+
+    loop = asyncio.get_running_loop()
+    html_text = await loop.run_in_executor(None, _fetch)
+    if not html_text:
+        return []
+
+    return parse_investing_payload(html_text)
 
 
 async def fetch_forexfactory_events() -> List[Dict[str, Any]]:
@@ -1234,6 +1616,7 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     items: List[Dict[str, Any]] = []
 
     # 1. TradingView API'den çekmeyi dene (Hızlı, engelsiz, 2 ve 3 yıldız filtreli)
+    tv_items: List[Dict[str, Any]] = []
     try:
         tv_items = await fetch_tradingview_events()
         if tv_items:
@@ -1242,17 +1625,22 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     except Exception as exc:
         logger.warning("[EconomicCalendar] TradingView takvim çekme hatası: %s", exc)
 
-    # 2. Eğer az geldiyse Investing.com'u dene
-    if len(items) < 10:
-        try:
-            inv_items = await fetch_investing_com_events()
-            if inv_items:
-                for inv in inv_items:
-                    if not any(x.get("original_title") == inv.get("original_title") for x in items):
-                        items.append(inv)
-                logger.info("[EconomicCalendar] Investing.com'dan ek olaylar eklendi. Toplam: %d", len(items))
-        except Exception as exc:
-            logger.debug("[EconomicCalendar] Investing.com ekleme hatası: %s", exc)
+    # 2. Investing.com katmanı KOŞULSUZ denenir.
+    #
+    # Eski kapı `if len(items) < 10` idi; TradingView normalde 10'un çok üzerinde
+    # olay döndürdüğü için Investing neredeyse hiç çağrılmıyordu — kaynak yalnız
+    # bağımlılık eksiğiyle değil, bu kapıyla da fiilen ölüydü. Ayrıca Investing
+    # burada "son çare" değil **değer otoritesi**: aynı olayın Beklenti/Önceki/
+    # Açıklanan üçlüsü ondan gelir (bkz. `merge_calendar_sources`).
+    inv_items: List[Dict[str, Any]] = []
+    try:
+        inv_items = await fetch_investing_com_events()
+        if inv_items:
+            logger.info("[EconomicCalendar] Investing.com'dan %d adet 2/3 yıldızlı olay çekildi.", len(inv_items))
+    except Exception as exc:
+        logger.warning("[EconomicCalendar] Investing.com çekme hatası: %s", exc)
+
+    items = merge_calendar_sources(items, inv_items)
 
     # 3. Hala az geldiyse ForexFactory akışını dene
     if len(items) < 6:
@@ -1290,7 +1678,7 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
         return (passed, stars_priority, date_sort)
 
     filtered_items.sort(key=sort_key)
-    final_items = filtered_items[:30]
+    final_items = filtered_items[:CALENDAR_MAX_EVENTS]
 
     # Bellek ve disk önbelleğini güncelle
     _CALENDAR_CACHE["timestamp"] = now
@@ -1305,6 +1693,23 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
             logger.info("[EconomicCalendar] %d adet takvim olayı veritabanına başarıyla kaydedildi.", saved_cnt)
         except Exception as exc:
             logger.warning("[EconomicCalendar] Veritabanına kaydetme hatası: %s", exc)
+
+    # Bayat satır temizliği — YALNIZ sağlayıcı destekli senkron sonrası.
+    #
+    # Kaynaklar çöküp `FALLBACK_EVENTS`'e düşüldüğünde takvimi silmek felaket
+    # olurdu; o yüzden iki bağımsız koşul: en az bir GERÇEK sağlayıcı yanıt verdi
+    # (`provider_ok`) VE elimizde makul sayıda olay var (`floor`). Ayrıca temizlik
+    # zaman tabanlıdır: `save_economic_calendar_events` hayatta kalan her satırın
+    # `updated_at`'ini tazeler, dolayısıyla başarısız bir çekim görmediği iyi
+    # satırı asla silemez.
+    provider_ok = bool(tv_items or inv_items)
+    if database and provider_ok and len(final_items) >= database.CALENDAR_PRUNE_FLOOR:
+        try:
+            pruned = await database.prune_economic_calendar_events(fresh_count=len(final_items))
+            if pruned:
+                logger.info("[EconomicCalendar] %d adet bayat takvim satırı temizlendi.", pruned)
+        except Exception as exc:
+            logger.warning("[EconomicCalendar] Bayat satır temizleme hatası: %s", exc)
 
     _update_event_dynamic_fields(final_items)
     return final_items
@@ -1336,7 +1741,9 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
     db_items: List[Dict[str, Any]] = []
     if database:
         try:
-            db_items = await database.get_economic_calendar_events(min_stars=min_stars)
+            db_items = await database.get_economic_calendar_events(
+                min_stars=min_stars, limit=CALENDAR_MAX_EVENTS
+            )
         except Exception as exc:
             logger.debug("[EconomicCalendar] Veritabanından okuma hatası: %s", exc)
 

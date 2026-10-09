@@ -43,6 +43,9 @@ export interface CalendarEventLike {
   date_iso?: string;
   has_data?: boolean;
   outcome?: CalendarOutcome | null;
+  /** Yalnız `selectPriorityAlertEvents` kullanır (uyarı önceliği). */
+  stars?: number;
+  impact?: string;
 }
 
 /** Veri yok anlamına gelen metinler (backend `_MISSING_VALUE_TOKENS` ile aynı sözleşme). */
@@ -216,4 +219,62 @@ export function selectTodaysPublished<T extends CalendarEventLike>(
       const tb = b.date_iso ? Date.parse(b.date_iso) : 0;
       return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
     });
+}
+
+/**
+ * Uyarı popup'ı için "aynı dakikada açıklanan olaylardan en önemlisi"ni seçer.
+ *
+ * Sorun: bir olay kümesi (ör. ABD perakende satışları: manşet + "Ex Autos")
+ * AYNI dakikada açıklanır. Uyarı döngüsü `item.id` ile tekilleştirme yaptığı için
+ * kümedeki her olay AYRI bir popup üretir — ses üst üste çalar, modal yer
+ * değiştirir. Bu davranış TradingView tek başınayken de vardı, ancak Investing
+ * katmanı küme sayısını artırdı.
+ *
+ * ÖNEMLİ: `(para birimi, dakika)` ile naif bir tekilleştirme YANLIŞ olurdu —
+ * EIA Crude vs Gasoline, Retail Sales manşet vs Ex Autos gibi GERÇEKTEN FARKLI
+ * olayları da bastırırdı. Bu fonksiyon hiçbir olayı GİZLEMEZ; yalnızca hangi
+ * olayın popup'ı hak ettiğine karar verir. Tablo ve vitrin etkilenmez.
+ *
+ * Küme anahtarı `date_iso`'nun tam zaman damgasıdır (para birimi + an). Sıralama
+ * `stars` (yüksek önce), eşitlikte `impact` ("High" önce), sonra girdi sırası —
+ * yani kararlıdır ve girdi mutasyona uğratılmaz.
+ */
+export function selectPriorityAlertEvents<T extends CalendarEventLike>(events: readonly T[]): T[] {
+  const best = new Map<string, T>();
+  const order: string[] = [];
+
+  for (const ev of events) {
+    if (!ev.date_iso) {
+      // Küme anahtarı yoksa olay kendi başına değerlendirilir; asla düşürülmez.
+      const key = `\u0000${order.length}`;
+      order.push(key);
+      best.set(key, ev);
+      continue;
+    }
+    const key = String(ev.date_iso);
+    const current = best.get(key);
+    if (current === undefined) {
+      best.set(key, ev);
+      order.push(key);
+      continue;
+    }
+    const evStars = starsOf(ev);
+    const curStars = starsOf(current);
+    if (evStars > curStars || (evStars === curStars && impactRank(ev) < impactRank(current))) {
+      best.set(key, ev);
+    }
+  }
+
+  return order.map((k) => best.get(k)).filter((ev): ev is T => ev !== undefined);
+}
+
+function impactRank(ev: CalendarEventLike): number {
+  if (ev.impact === "High") return 0;
+  if (ev.impact === "Medium") return 1;
+  return 2;
+}
+
+function starsOf(ev: CalendarEventLike): number {
+  if (typeof ev.stars === "number") return ev.stars;
+  return impactRank(ev) === 0 ? 3 : 2;
 }

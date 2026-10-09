@@ -16,6 +16,7 @@ import {
   getInAppNotificationSettings,
   InAppNotificationSettings,
 } from "../../lib/notificationSettings";
+import { selectPriorityAlertEvents } from "../../lib/calendarOutcome";
 
 export interface CalendarEventAlert {
   id: string;
@@ -153,7 +154,17 @@ export default function ForexCalendarAlertModal() {
 
       const nowMs = Date.now();
 
-      for (const item of res.news) {
+      // `apiFetch` JSON'u `any` döndürür; olayların gerçek şekli bu bileşenin
+      // kendi sözleşmesidir (`CalendarEventAlert`). Seçiciye tipli geçmek için
+      // burada bir kez daraltılır.
+      const news = (res.news ?? []) as CalendarEventAlert[];
+
+      // Aynı dakikada açıklanan olay kümesinden (ör. perakende satışlar manşet +
+      // "Ex Autos", EIA Crude + Gasoline) YALNIZ en önemlisi uyarı hakkı kazanır.
+      // Aksi halde kümedeki her olay AYRI popup üretir; `id` tabanlı tekilleştirme
+      // bunları yakalayamaz çünkü id'ler farklıdır. Hiçbir olay GİZLENMEZ —
+      // tablo ve vitrin tüm olayları göstermeye devam eder.
+      for (const item of selectPriorityAlertEvents(news)) {
         const stars = item.stars || (item.impact === "High" ? 3 : 2);
         // Yalnızca 2 ve 3 Yıldızlı Olaylar
         if (stars < 2) continue;

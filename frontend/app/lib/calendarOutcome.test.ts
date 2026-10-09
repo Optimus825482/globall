@@ -20,6 +20,7 @@ import {
   selectScenarioBranches,
   branchFallbackReason,
   selectTodaysPublished,
+  selectPriorityAlertEvents,
   type CalendarEventLike,
 } from "./calendarOutcome";
 
@@ -246,5 +247,93 @@ describe("selectTodaysPublished", () => {
     const late = { ...base, date_iso: "2026-10-09T18:00:00Z" };
     const ordered = selectTodaysPublished([early, late], now);
     expect(ordered[0].date_iso).toBe("2026-10-09T18:00:00Z");
+  });
+});
+
+// ============================================================================
+// UYARI ÖNCELİĞİ — aynı dakikada açıklanan kümeden tek popup
+// ============================================================================
+
+describe("selectPriorityAlertEvents", () => {
+  const ISO = "2026-10-16T12:30:00.000Z";
+
+  it("aynı dakikada açıklanan kümeden yalnız en önemlisini bırakır", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "a", date_iso: ISO, stars: 2, impact: "Medium" },
+      { id: "b", date_iso: ISO, stars: 3, impact: "High" },
+      { id: "c", date_iso: ISO, stars: 2, impact: "Medium" },
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["b"]);
+  });
+
+  it("hiçbir olayı GİZLEMEZ — farklı dakikalar hepsi kalır", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "a", date_iso: "2026-10-16T12:30:00.000Z", stars: 3 },
+      { id: "b", date_iso: "2026-10-16T14:00:00.000Z", stars: 2 },
+      { id: "c", date_iso: "2026-10-16T15:30:00.000Z", stars: 3 },
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("eşit yıldızda impact ile karar verir", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "a", date_iso: ISO, stars: 2, impact: "Medium" },
+      { id: "b", date_iso: ISO, stars: 2, impact: "High" },
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["b"]);
+  });
+
+  it("yıldız yoksa impact'ten türetir (3 yıldız varsayılanı)", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "a", date_iso: ISO, impact: "Medium" },
+      { id: "b", date_iso: ISO, impact: "High" },
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["b"]);
+  });
+
+  it("tam eşitlikte GİRDİ SIRASINI korur (kararlı)", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "ilk", date_iso: ISO, stars: 3, impact: "High" },
+      { id: "ikinci", date_iso: ISO, stars: 3, impact: "High" },
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["ilk"]);
+    expect(out).toHaveLength(1);
+  });
+
+  it("date_iso yoksa olay düşürülmez, kendi başına değerlendirilir", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "tarihsiz-1", stars: 2 },
+      { id: "tarihsiz-2", stars: 3 },
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["tarihsiz-1", "tarihsiz-2"]);
+  });
+
+  it("girdi mutasyona uğratılmaz", () => {
+    const input = [
+      { id: "a", date_iso: ISO, stars: 2 },
+      { id: "b", date_iso: ISO, stars: 3 },
+    ];
+    const snapshot = JSON.stringify(input);
+    selectPriorityAlertEvents(input);
+    expect(JSON.stringify(input)).toBe(snapshot);
+  });
+
+  it("gerçek vaka: Retail Sales manşet + Ex Autos tek popup'a iner", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "tv-retail", date_iso: ISO, stars: 3, impact: "High" },
+      { id: "tv-retail-ex", date_iso: ISO, stars: 2, impact: "Medium" },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe("tv-retail");
+  });
+
+  it("gerçek vaka: EIA Crude + Gasoline (ikisi de 2 yıldız) tek popup'a iner", () => {
+    const out = selectPriorityAlertEvents([
+      { id: "tv-eia-crude", date_iso: ISO, stars: 2, impact: "Medium" },
+      { id: "tv-eia-gasoline", date_iso: ISO, stars: 2, impact: "Medium" },
+    ]);
+    expect(out).toHaveLength(1);
+    // İkisi de aynı önemde: girdi sırası korunur, ama POPUP TEKTİR.
+    expect(out[0].id).toBe("tv-eia-crude");
   });
 });

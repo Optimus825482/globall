@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from app.forex_news import get_forex_news, FALLBACK_EVENTS, FALLBACK_NEWS, translate_title, map_symbols_for_event, generate_event_scenario
 
@@ -310,6 +312,411 @@ def test_classify_bucket_order_and_oil_narrowing():
     assert higher_is_bullish_for_event("Business Inventories") is True
     assert higher_is_bullish_for_event("EIA Crude Oil Inventories") is False
     assert higher_is_bullish_for_event("Unemployment Rate") is False
+
+
+def test_business_inventories_is_no_longer_oil_bucket():
+    """`inventories`/`stok` çıplak anahtar kelimesi kovadan ÇIKARILDI.
+
+    Eskiden "Business Inventories" ham petrol kovasına düşüyordu ve senaryo metni
+    ona "Ham Petrol Stok Senaryosu" diyordu — petrolle ilgisi olmayan bir olay için
+    yanlış yorum. Artık `generic`'e düşer.
+    """
+    from app.forex_news import classify_event_bucket, is_oil_stock_event
+
+    assert classify_event_bucket("Business Inventories") == "generic"
+    assert is_oil_stock_event("Business Inventories") is False
+
+    scenario = generate_event_scenario("Business Inventories", "ABD", "USD", ["XAUUSD"])
+    assert "Ham Petrol" not in scenario["title"]
+
+    # Gerçek petrol olayları kovada ve ters çevrilmiş kalır.
+    assert classify_event_bucket("EIA Crude Oil Inventories") == "oil_stocks"
+    assert is_oil_stock_event("EIA Crude Oil Inventories") is True
+    assert is_oil_stock_event("USOIL Petrol Stokları") is True
+
+
+def test_eia_gas_storage_is_not_oil_bucket():
+    """`eia` bilerek petrol belirtecinden çıkarıldı: "EIA Natural Gas Storage"
+    içinde petrol kelimesi GEÇMEZ, `eia` belirteç olsaydı o olay yanlışlıkla ham
+    petrol senaryosuna düşerdi."""
+    from app.forex_news import classify_event_bucket, higher_is_bullish_for_event, is_oil_stock_event
+
+    assert is_oil_stock_event("EIA Natural Gas Storage") is False
+    assert classify_event_bucket("EIA Natural Gas Storage") == "generic"
+    # Ters çevrilmez: doğal gaz depolama artışı ham petrol yön kuralını almaz.
+    assert higher_is_bullish_for_event("EIA Natural Gas Storage") is True
+
+
+def test_bucket_and_direction_cannot_diverge():
+    """YAPISAL garanti: kova `is_oil_stock_event` ile TANIMLANDIĞI için
+    'hangi kovada' ile 'yön nasıl çevrilir' ayrışamaz."""
+    from app.forex_news import classify_event_bucket, higher_is_bullish_for_event
+
+    titles = [
+        "EIA Crude Oil Inventories", "USOIL Petrol Stokları", "Business Inventories",
+        "EIA Natural Gas Storage", "Unemployment Rate", "CPI YoY", "Totally Unknown",
+    ]
+    for t in titles:
+        in_oil_bucket = classify_event_bucket(t) == "oil_stocks"
+        inverted = higher_is_bullish_for_event(t) is False
+        # Petrol kovasındaki her olay ters, petrol kovası dışındaki hiçbir olay
+        # YALNIZ petrol nedeniyle ters değil (işsizlik ailesi ayrı bir gerekçedir).
+        if in_oil_bucket:
+            assert inverted, t
+
+
+# ============================================================================
+# BİRİM UYUMLULUK KAPISI — "%" ile "K" körlemesine kıyaslanmaz
+# ============================================================================
+
+def test_calendar_value_unit_family():
+    from app.forex_news import calendar_value_unit_family
+
+    assert calendar_value_unit_family("3.0%") == "percent"
+    assert calendar_value_unit_family("-1.5M") == "count"
+    assert calendar_value_unit_family("145K") == "count"
+    assert calendar_value_unit_family("19.5€") == "currency"
+    assert calendar_value_unit_family("60.33$") == "currency"
+    assert calendar_value_unit_family("148.2") == "index"
+
+    # Bilinmiyor: veri yok ya da tanınmayan harf taşıyor.
+    assert calendar_value_unit_family("—") is None
+    assert calendar_value_unit_family(None) is None
+    assert calendar_value_unit_family("85cf") is None
+
+
+def test_units_compatible_gate():
+    from app.forex_news import units_compatible
+
+    # Aynı aile -> geçerli.
+    assert units_compatible("3.2%", "3.0%") is True
+    assert units_compatible("145K", "-1.5M") is True
+
+    # Farklı aile -> kıyas REDDEDİLİR (hedef hata).
+    assert units_compatible("3.0%", "145K") is False
+    assert units_compatible("2.5%", "19.5€") is False
+
+    # Bilinmezlik engellemez.
+    assert units_compatible("—", "3.2%") is True
+
+    # `index` jokerdir: TradingView'in `unit` alanı güvenilmez (canlı probda `€`
+    # bozuk karakter geldi), joker olmasaydı gerçek TV satırları haksız yere düşerdi.
+    assert units_compatible("148.2", "3.2%") is True
+    assert units_compatible("0.3", "0.2%") is True
+
+
+def test_outcome_rejects_unit_mismatch():
+    from app.forex_news import evaluate_event_outcome
+
+    # "%" beklentiye "K" açıklanan: sayısal kıyas 3.0 < 145000 verirdi ve olay
+    # KESİN bir yön kazanırdı; doğru cevap "bilinmiyor"dur.
+    assert evaluate_event_outcome("CPI YoY", "3.0%", "2.9%", "145K") is None
+
+    # Aynı ailede kıyas yine çalışır — kapı aşırı geniş değil.
+    ok = evaluate_event_outcome("CPI YoY", "3.0%", "2.9%", "3.2%")
+    assert ok is not None and ok["side"] == "bullish"
+
+
+def test_outcome_unit_rejection_keeps_has_data_true():
+    """Reddin kullanıcıya görünen sonucu: `outcome=None` ama `has_data=True`.
+    Olay vitrine GİRMEZ, modalda iki dal + 'ayrıştırılamadı' mesajı görünür."""
+    from app.forex_news import _update_event_dynamic_fields
+
+    ev = {
+        "id": "unit-mismatch-1",
+        "title": "ABD TÜFE",
+        "original_title": "CPI YoY",
+        "date_iso": "2026-10-10T12:30:00Z",
+        "forecast": "3.0%",
+        "previous": "2.9%",
+        "actual": "145K",
+    }
+    _update_event_dynamic_fields([ev])
+    assert ev["has_data"] is True
+    assert ev["outcome"] is None
+    # Veri var olduğu için durum "Açıklandı" kalır — değerler görünür, yön yok.
+    assert ev["status"] == "Açıklandı"
+
+
+# ============================================================================
+# KAYNAK BİRLEŞTİRME — TradingView (kapsam) + Investing (değer)
+# ============================================================================
+
+def test_normalize_event_title_strips_qualifiers():
+    from app.forex_news import normalize_event_title
+
+    assert normalize_event_title("CB Consumer Confidence Prel") == "cb consumer confidence"
+    assert normalize_event_title("CB Consumer Confidence") == "cb consumer confidence"
+    assert normalize_event_title("  Manufacturing   PMI  Flash ") == "manufacturing pmi"
+    assert normalize_event_title("CPI Final") == "cpi"
+
+    # Yalnız SONDAKİ belirteç atılır. Baştaki/ortadaki kelime ATILMAZ: "Final CPI"
+    # ile "CPI" farklı dizelere düşer ve eşleşmez (kopya satır — kabul edilen bedel).
+    # Baştan da atsaydık "Advanced Retail Sales" gibi başlıklar beklenmedik biçimde
+    # birleşebilirdi; yanlış birleştirme, kopya satırdan daha kötüdür.
+    assert normalize_event_title("Final CPI") == "final cpi"
+    assert normalize_event_title("Flash Manufacturing PMI") == "flash manufacturing pmi"
+
+    # Aksan duyarsız: birleşen işaretler atılır, harfin kendisi kalır.
+    # (NFKC kullanılsaydı Türkçe `İ` birleşen nokta bırakır, `\w` sınıfına
+    # girmeyen o işaret ayraç sanılıp boşluğa çevrilir ve "i şsizlik" gibi bozuk
+    # bir anahtar üretilirdi — sessiz eşleşme kaybı.)
+    assert normalize_event_title("İşsizlik") == "issizlik"
+    assert normalize_event_title("Café PMI") == "cafe pmi"
+    # Kısmi ayrışma: `ş` (U+015F) -> `s` + birleşen sedil, sedil atılır -> `s`;
+    # ama `ı` (U+0131) ayrışmayan AYRI bir harftir, korunur. Kod noktalarıyla
+    # yazıldı — kaynak dosyanın kodlamasından bağımsız kesin olsun.
+    assert normalize_event_title("Dış Ticaret Dengesi") == "dıs ticaret dengesi"
+
+    # SINIR — Türkçe `ı` (noktasız i) bir aksan değil, AYRI bir harftir ve
+    # korunur; bu yüzden "Oranı" != "Orani". Eşleştirme pratikte İngilizce
+    # `original_title` üzerinden yapıldığı için bu kayıp gerçekleşmez; not
+    # burada, çünkü davranış bilinçli olsun.
+    assert normalize_event_title("Oranı") == "oranı"
+
+    # Boş girdi.
+    assert normalize_event_title("") == ""
+    assert normalize_event_title(None) == ""
+
+
+def test_event_minute_parsing():
+    from app.forex_news import _event_minute
+
+    assert _event_minute("2026-10-10T12:30:00Z") == _event_minute("2026-10-10T12:30:00+00:00")
+    assert _event_minute("2026-10-10T12:30:45Z") == _event_minute("2026-10-10T12:30:00Z")
+
+    # Ayrıştırılamaz ya da eksik -> None (indekslenemez -> güvenli taraf).
+    assert _event_minute(None) is None
+    assert _event_minute("") is None
+    assert _event_minute("bugün") is None
+
+
+def _tv_event(ev_id, title, currency, date_iso, **values):
+    ev = {
+        "id": ev_id,
+        "title": f"TR {title}",
+        "original_title": title,
+        "currency": currency,
+        "country": currency,
+        "country_name": "Test",
+        "stars": 3,
+        "date_iso": date_iso,
+        "forecast": "—",
+        "previous": "—",
+        "actual": "—",
+        "scenario": {"title": "Test Senaryo"},
+    }
+    ev.update(values)
+    return ev
+
+
+def _inv_event(ev_id, title, currency, date_iso, **values):
+    ev = _tv_event(ev_id, title, currency, date_iso, **values)
+    ev.pop("scenario", None)
+    ev["source"] = "investing"
+    return ev
+
+
+def test_merge_single_candidate_takes_investing_triple():
+    """Tam 1 aday -> Investing üçlüsü kazanır, TradingView kimlik/kapsam alanları korunur."""
+    from app.forex_news import merge_calendar_sources
+
+    tv = [_tv_event("cal-tv-1", "CB Consumer Confidence", "USD", "2026-10-10T14:00:00Z",
+                    previous="97.4", stars=3)]
+    inv = [_inv_event("cal-inv-1", "CB Consumer Confidence Prel", "USD", "2026-10-10T14:00:00Z",
+                      forecast="98.0", previous="97.4", actual="99.2")]
+
+    merged = merge_calendar_sources(tv, inv)
+    assert len(merged) == 1
+    row = merged[0]
+    assert (row["forecast"], row["previous"], row["actual"]) == ("98.0", "97.4", "99.2")
+    # Kimlik ve kapsam TradingView'den.
+    assert row["id"] == "cal-tv-1"
+    assert row["scenario"] == {"title": "Test Senaryo"}
+    assert row["stars"] == 3
+    assert row["source"] == "investing"
+    assert row["matched_source_id"] == "cal-inv-1"
+
+
+def test_merge_unmatched_overlay_is_appended():
+    from app.forex_news import merge_calendar_sources
+
+    tv = [_tv_event("cal-tv-1", "CPI YoY", "USD", "2026-10-10T12:30:00Z")]
+    inv = [_inv_event("cal-inv-9", "German Industrial Production", "EUR", "2026-10-10T06:00:00Z",
+                      actual="1.2%")]
+
+    merged = merge_calendar_sources(tv, inv)
+    assert len(merged) == 2
+    assert merged[1]["id"] == "cal-inv-9"
+    assert merged[1]["actual"] == "1.2%"
+
+
+def test_merge_ambiguous_key_does_not_merge():
+    """Aynı para birimi + dakika YETMEZ: CAD'de 12:30'da hem 'Unemployment Rate'
+    hem 'Employment Change' var. Farklı başlık -> eşleşme yok -> kopya satır."""
+    from app.forex_news import merge_calendar_sources
+
+    tv = [
+        _tv_event("cal-tv-1", "Unemployment Rate", "CAD", "2026-10-10T12:30:00Z"),
+        _tv_event("cal-tv-2", "Employment Change", "CAD", "2026-10-10T12:30:00Z"),
+    ]
+    inv = [_inv_event("cal-inv-1", "Unemployment Rate", "CAD", "2026-10-10T12:30:00Z",
+                      forecast="7.1%", actual="7.2%")]
+
+    merged = merge_calendar_sources(tv, inv)
+    assert len(merged) == 2  # birleşti, üçüncü satır yok
+    assert merged[0]["actual"] == "7.2%"
+
+    # Aynı başlıktan İKİ TradingView satırı varsa belirsizlik oluşur -> birleştirme yok.
+    dup_tv = [
+        _tv_event("cal-tv-a", "Unemployment Rate", "CAD", "2026-10-10T12:30:00Z"),
+        _tv_event("cal-tv-b", "Unemployment Rate", "CAD", "2026-10-10T12:30:00Z"),
+    ]
+    merged_dup = merge_calendar_sources(dup_tv, inv)
+    assert len(merged_dup) == 3
+    assert merged_dup[2]["id"] == "cal-inv-1"
+
+
+def test_merge_consumed_candidate_produces_copy():
+    """İki Investing olayı aynı anahtara düşerse ikincisi birleşmez (aday tüketilmiş)
+    — yanlış birleştirme yerine görünür kopya."""
+    from app.forex_news import merge_calendar_sources
+
+    tv = [_tv_event("cal-tv-1", "CPI YoY", "USD", "2026-10-10T12:30:00Z")]
+    inv = [
+        _inv_event("cal-inv-1", "CPI YoY", "USD", "2026-10-10T12:30:00Z", actual="3.2%"),
+        _inv_event("cal-inv-2", "CPI YoY", "USD", "2026-10-10T12:30:00Z", actual="3.3%"),
+    ]
+
+    merged = merge_calendar_sources(tv, inv)
+    assert len(merged) == 2
+    assert merged[0]["actual"] == "3.2%"
+    assert merged[1]["id"] == "cal-inv-2"
+
+
+def test_merge_does_not_mutate_inputs():
+    from app.forex_news import merge_calendar_sources
+
+    tv = [_tv_event("cal-tv-1", "CPI YoY", "USD", "2026-10-10T12:30:00Z", actual="—")]
+    inv = [_inv_event("cal-inv-1", "CPI YoY", "USD", "2026-10-10T12:30:00Z", actual="3.2%")]
+
+    merge_calendar_sources(tv, inv)
+    assert tv[0]["actual"] == "—"
+    assert "source" not in tv[0]
+
+
+def test_merge_unindexable_overlay_is_appended():
+    """Ayrıştırılamayan `date_iso` ya da boş para birimi indekslenemez -> 0 eşleşme -> eklenir."""
+    from app.forex_news import merge_calendar_sources
+
+    tv = [_tv_event("cal-tv-1", "CPI YoY", "USD", "2026-10-10T12:30:00Z")]
+    inv = [
+        _inv_event("cal-inv-1", "CPI YoY", "USD", "bugün", actual="3.2%"),
+        _inv_event("cal-inv-2", "CPI YoY", "", "2026-10-10T12:30:00Z", actual="3.3%"),
+    ]
+
+    merged = merge_calendar_sources(tv, inv)
+    assert len(merged) == 3
+    assert merged[0]["actual"] == "—"
+
+
+# ============================================================================
+# INVESTING AYRIŞTIRICI (saf, ağsız)
+# ============================================================================
+
+def test_parse_investing_payload_extracts_mid_high_events():
+    import datetime as dt
+    from app.forex_news import parse_investing_payload
+
+    store = {
+        "props": {"pageProps": {"state": {"economicCalendarStore": {
+            "calendarEventsByDate": {
+                "2026-10-10": [
+                    {"importance": "3", "eventId": 111, "event": "CB Consumer Confidence",
+                     "currency": "USD", "country": "United States",
+                     "time": "2026-10-10T14:00:00Z", "forecast": "98.0",
+                     "previous": "97.4", "actual": "99.2"},
+                    {"importance": "2", "eventId": 222, "event": "German Industrial Production",
+                     "currency": "EUR", "country": "Germany",
+                     "time": "2026-10-10T06:00:00Z", "actual": "1.2%"},
+                    # 1 yıldız -> elenir.
+                    {"importance": "1", "eventId": 333, "event": "Some Low Impact",
+                     "currency": "USD", "time": "2026-10-10T09:00:00Z", "actual": "5"},
+                    # Başlıksız -> elenir.
+                    {"importance": "3", "eventId": 444, "event": "",
+                     "currency": "USD", "time": "2026-10-10T10:00:00Z"},
+                ]
+            }
+        }}}}
+    }
+    html = (
+        '<html><body><script type="application/json">'
+        + json.dumps(store)
+        + "</script></body></html>"
+    )
+
+    now = dt.datetime(2026, 10, 10, 20, 0, tzinfo=dt.timezone.utc)
+    events = parse_investing_payload(html, now_utc=now)
+
+    assert len(events) == 2
+    ids = {e["id"] for e in events}
+    # Kararlı kimlik kaynağın `eventId`'sinden gelir (hash() DEĞİL).
+    assert ids == {"cal-inv-111", "cal-inv-222"}
+
+    conf = next(e for e in events if e["id"] == "cal-inv-111")
+    assert conf["original_title"] == "CB Consumer Confidence"
+    assert (conf["forecast"], conf["previous"], conf["actual"]) == ("98.0", "97.4", "99.2")
+    assert conf["stars"] == 3
+    assert conf["status"] == "Açıklandı"
+    assert conf["is_passed"] is True
+    assert conf["source"] == "investing"
+    assert "scenario" in conf and "bullish_trigger" in conf["scenario"]
+
+    ind = next(e for e in events if e["id"] == "cal-inv-222")
+    assert ind["forecast"] == "—"
+    assert ind["is_passed"] is True
+    assert ind["stars"] == 2
+
+
+def test_parse_investing_payload_handles_bad_input():
+    from app.forex_news import parse_investing_payload
+
+    assert parse_investing_payload("") == []
+    assert parse_investing_payload("<html><body>yük yok</body></html>") == []
+    assert parse_investing_payload("<html><body><script>bozuk json{</script></body></html>") == []
+
+
+def test_parse_investing_payload_future_event_not_passed():
+    import datetime as dt
+    from app.forex_news import parse_investing_payload
+
+    store = {"props": {"pageProps": {"state": {"economicCalendarStore": {
+        "calendarEventsByDate": {"2026-10-10": [
+            {"importance": "3", "eventId": 555, "event": "Fed Interest Rate Decision",
+             "currency": "USD", "time": "2026-10-10T23:00:00Z", "actual": "—"},
+        ]}
+    }}}}}
+    html = "<script>" + json.dumps(store) + "</script>"
+
+    now = dt.datetime(2026, 10, 10, 12, 0, tzinfo=dt.timezone.utc)
+    events = parse_investing_payload(html, now_utc=now)
+    assert len(events) == 1
+    assert events[0]["is_passed"] is False
+    assert events[0]["status"] == "Bekleniyor"
+
+
+# ============================================================================
+# BAYAT DB SATIRI TEMİZLİĞİ (saf karar fonksiyonu)
+# ============================================================================
+
+def test_should_prune_economic_calendar_floor():
+    from app.database import _should_prune_economic_calendar, CALENDAR_PRUNE_FLOOR
+
+    assert _should_prune_economic_calendar(CALENDAR_PRUNE_FLOOR) is True
+    assert _should_prune_economic_calendar(CALENDAR_PRUNE_FLOOR + 10) is True
+    # Eşik altı -> temizlik YOK (sağlayıcı kısmen çökmüşken takvimi silme).
+    assert _should_prune_economic_calendar(CALENDAR_PRUNE_FLOOR - 1) is False
+    assert _should_prune_economic_calendar(0) is False
 
 
 def test_dynamic_fields_fill_outcome_for_legacy_row():

@@ -14,3 +14,12 @@ edge-tts==7.2.7
 scikit-learn==1.6.1
 joblib==1.4.2
 urllib3>=2.2.0
+# Investing.com takvim kaynağı (`forex_news.fetch_investing_com_events`).
+# Bu paket 2026-10-10'a kadar HİÇBİR requirements dosyasında yoktu: kod
+# yalnız yerel venv'de çalışıyordu, Docker imajında ve CI'da `ImportError`
+# verip kaynak SESSİZCE devre dışı kalıyordu (dosya başlığındaki
+# "Multi-provider resilience" iddiası fiilen gerçek değildi).
+# `curl_cffi` gerekli: düz `urllib` investing.com'dan 403 alıyor, TLS parmak
+# izi taklidi (impersonate="chrome120") şart. Gömülü `economicCalendarStore`
+# JSON'u standart `html.parser` ile çıkarıldığı için `beautifulsoup4` GEREKMEZ.
+curl_cffi==0.16.0

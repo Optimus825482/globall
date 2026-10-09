@@ -89,15 +89,20 @@ Artış/Azalış"**. Aksi halde boş bir Beklenti alanına atıfla yanlış bilg
 
 ## Bilinçli kabul edilenler
 
-- **Kaynak kısıtı:** `actual` yalnız TradingView akışından gelir. Investing / ForexFactory /
-  yerleşik `FALLBACK_EVENTS` yolunda `actual` boş olduğu için o olaylar vitrine hiç girmez ve
-  modalları eskisi gibi iki dal gösterir. Bu kaynak kısıtıdır, bu değişiklikle giderilmez.
-- **Hassas olmayan karşılaştırma:** `%` ile `K` farklı birimlerse (kaynaklar arası nadir
-  sapma) yine sayısal kıyaslanır; birim uyuşmazlığı ayrıca kontrol edilmez.
-- **Mevcut bir latent hata korunuyor:** `generate_event_scenario`'daki `inventories`/`stok`
-  anahtarı "Business Inventories" gibi petrol dışı olayları da yakalar ve ters yorumlar.
-  Yeni yön kuralı bu tuzağı **büyütmez** (`_OIL_STOCK_HINTS` petrol/stok eşleşmesini
-  daraltır) ama mevcut senaryo metnini düzeltmez — ayrı bir iş.
+> **GÜNCELLEME (2026-10-10):** Aşağıdaki ilk üç madde artık **geçerli değildir** —
+> Investing.com gerçek kaynak olarak eklendi, birim uyumsuzluğu kıyası reddediyor ve
+> `inventories`/`stok` hatası düzeltildi. Ayrıntı:
+> `docs/FX_INVESTING_KAYNAK_2026-10-10.md`. Maddeler tarihsel kayıt olarak bırakıldı.
+
+- ~~**Kaynak kısıtı:** `actual` yalnız TradingView akışından gelir.~~ → **Düzeltildi
+  (2026-10-10).** Investing.com katmanı eklendi (`actual` taşıyan 21 olay/gün). Kalan
+  kısıt yalnız ForexFactory ve `FALLBACK_EVENTS` yolundadır; onlarda `actual` yoktur.
+- ~~**Hassas olmayan karşılaştırma:** `%` ile `K` yine sayısal kıyaslanır.~~ → **Düzeltildi
+  (2026-10-10).** `units_compatible` kapısı uyumsuz birimde `outcome=None` döner; kıyas
+  reddedilir. (`index`-joker artığı bilinçli olarak sürüyor.)
+- ~~**Mevcut bir latent hata korunuyor:** `inventories`/`stok` petrol dışı olayları yakalar.~~
+  → **Düzeltildi (2026-10-10).** Kova girdisi `_OIL_STOCK_MARKERS` oldu; "Business
+  Inventories" artık `generic` ve senaryo metni ham petrol değil.
 - **Modal anlık görüntüsü:** `selectedEvent` açık modalda dondurulmuş bir nesnedir; arka plan
   fetch'i açık modalın `outcome`'unu tazelemez. `status`/geri sayım için de mevcut davranış
   budur.

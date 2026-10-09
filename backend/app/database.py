@@ -6041,8 +6041,14 @@ async def save_economic_calendar_events(events: List[Dict[str, Any]]) -> int:
     return await _run_db(op)
 
 
-async def get_economic_calendar_events(min_stars: int = 2) -> List[Dict[str, Any]]:
-    """Veritabanından önbelleklenmiş ekonomik takvim olaylarını getirir."""
+async def get_economic_calendar_events(min_stars: int = 2, limit: int = 50) -> List[Dict[str, Any]]:
+    """Veritabanından önbelleklenmiş ekonomik takvim olaylarını getirir.
+
+    `limit` varsayılanı 50'dir ve **değişmemiştir** — mevcut çağrılar aynı davranışı
+    görür. `forex_news` bunu `CALENDAR_MAX_EVENTS` (60) ile geçer; yazma tarafındaki
+    tavan ile okuma tavanı böylece hizalanır, aksi halde kaydedilen olayların bir
+    kısmı hiç okunamazdı.
+    """
     def op(conn):
         _ensure_economic_calendar_schema(conn)
         rows = conn.execute(
@@ -6050,9 +6056,9 @@ async def get_economic_calendar_events(min_stars: int = 2) -> List[Dict[str, Any
             SELECT raw_data FROM economic_calendar
             WHERE stars >= ?
             ORDER BY date_iso ASC
-            LIMIT 50
+            LIMIT ?
             """,
-            (min_stars,)
+            (min_stars, limit)
         ).fetchall()
         items = []
         for r in rows:
@@ -6064,6 +6070,57 @@ async def get_economic_calendar_events(min_stars: int = 2) -> List[Dict[str, Any
             except Exception:
                 continue
         return items
+
+    return await _run_db(op)
+
+
+# Bayat takvim satırı temizliği (aşağıdaki iki fonksiyon).
+#
+# Bu eşiğin altında taze veri varsa temizlik **yapılmaz**: sağlayıcılar kısmen
+# çökmüşken elde kalan birkaç satırla takvimi silmek, eski satırları tutmaktan
+# çok daha kötüdür.
+CALENDAR_PRUNE_FLOOR = 5
+
+
+def _should_prune_economic_calendar(fresh_count: int, floor: int = CALENDAR_PRUNE_FLOOR) -> bool:
+    """Temizlik yapılmalı mı? Yalnız taze veri eşiği aşarsa **evet**. SAF."""
+    return fresh_count >= floor
+
+
+async def prune_economic_calendar_events(
+    max_age_days: int = 2,
+    fresh_count: int = 0,
+    floor: int = CALENDAR_PRUNE_FLOOR,
+) -> int:
+    """`max_age_days`'ten eski takvim satırlarını siler; silinen satır sayısını döner.
+
+    Zaman tabanlıdır (kimlik listesi tabanlı DEĞİL). Bu kasıtlıdır:
+    `save_economic_calendar_events` hayatta kalan her olayın `updated_at`'ini
+    tazeler, dolayısıyla **başarısız bir çekim görmediği iyi satırı silemez**.
+    Bir kimlik listesine göre silen bir tasarımda ise sağlayıcı çöktüğünde
+    listede olmayan tüm geçerli satırlar silinirdi.
+
+    `fresh_count` eşiğin (`floor`) altındaysa hiçbir şey silinmez — çağıran
+    zaten yalnız sağlayıcı destekli senkron sonrası çağırır; bu ikinci koruma
+    yanlış bir çağrıya karşı son savunmadır.
+    """
+    if not _should_prune_economic_calendar(fresh_count, floor):
+        return 0
+
+    def op(conn):
+        _ensure_economic_calendar_schema(conn)
+        # `updated_at` sütunu `time.time()` float'ı olarak yazılır (bkz.
+        # `save_economic_calendar_events`); eşik de aynı ölçekte üretilmeli.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).timestamp()
+        cur = conn.execute(
+            "DELETE FROM economic_calendar WHERE updated_at < ?",
+            (cutoff,)
+        )
+        conn.commit()
+        try:
+            return int(cur.rowcount or 0)
+        except Exception:
+            return 0
 
     return await _run_db(op)
 
