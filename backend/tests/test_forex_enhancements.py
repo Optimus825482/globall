@@ -905,6 +905,20 @@ class TestTpCancelOnTrail(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[0]["tp"], 0.0)
         self.assertEqual(sent[0]["sl"], self._TRAILED_SL, "Korunan SL aynen geri yazılmalı")
 
+    def test_bridge_cancels_tp_when_sl_already_in_profit_without_map(self):
+        """REGRESYON (2026-10-09 canlı US30): köprü yeniden başlayınca POSITION_PROTECTION_MAP
+        sıfırlanır; SL bu turda hareket etmezse map boş kalır. Eski koşul yalnız map'e
+        baktığı için kârda SL taşıyan pozisyonun TP'si ASLA iptal edilmiyordu. Koruma
+        durumu artık doğrudan pozisyondan türetilir → map boş olsa da iptal edilmeli."""
+        sent = self._run_bridge_with_settings(
+            {"tp_cancel_on_trail": True, "partial_tp_enabled": False},
+            self._fake_position(sl=self._TRAILED_SL),  # SL girişin ÜSTÜNDE (kârda)
+            preseed_trailing=False,                     # map boş → restart senaryosu
+        )
+        self.assertEqual(len(sent), 1, "Map boş olsa da kârda SL → TP iptal edilmeli")
+        self.assertEqual(sent[0]["tp"], 0.0)
+        self.assertEqual(sent[0]["sl"], self._TRAILED_SL, "SL aynen geri yazılmalı")
+
     def test_bridge_keeps_tp_when_setting_off(self):
         """Ayar kapalı → trailing aktif olsa bile TP korunur; SL güncel olduğundan emir YOK."""
         sent = self._run_bridge_with_settings(

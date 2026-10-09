@@ -934,12 +934,23 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                         target_sl = cand_sl
                         POSITION_PROTECTION_MAP[ticket] = "TRAILING"
 
-        # TP İPTALİ (opt-in `tp_cancel_on_trail`): trailing bu pozisyonda devreye girdiyse
-        # ve pozisyonun hâlâ sabit TP emri varsa, TP çekilir — kazanan trend TP'ye
-        # takılmadan trailing/BE kilidiyle koşar. Motor (`forex.py`) ile aynı mekanizma:
-        # orada paper tarafı tp_price=0 yapar, burada gerçek MT5 emri kaldırılır.
+        # TP İPTALİ (`tp_cancel_on_trail`, canlı VARSAYILAN AÇIK): kâr koruması (BE/trailing)
+        # devreye girdiyse ve pozisyonda hâlâ sabit TP varsa TP çekilir — kazanan trend
+        # TP'ye takılmadan trailing/BE kilidiyle koşar. Motor (`forex.py`) ile aynı mekanizma.
+        #
+        # ÖNEMLİ (2026-10-09 canlı bulgu — US30): koşul "bu turda SL hareket etti"ye bağlı
+        # OLMAMALI. Eski hâli yalnız `POSITION_PROTECTION_MAP == "TRAILING"` iken iptal
+        # ediyordu; (a) fiyat duraklayınca SL sabit kalır → map güncellenmez, (b) köprü
+        # yeniden başlayınca map sıfırlanır → kârda SL taşıyan pozisyonun TP'si asla
+        # iptal edilmezdi. Koruma durumu artık DOĞRUDAN pozisyondan türetilir (restart-safe).
+        sl_in_profit = (cur_sl > entry_p) if direction == "BUY" else (cur_sl > 0 and cur_sl < entry_p)
+        protection_active = (
+            POSITION_PROTECTION_MAP.get(ticket) in ("BREAKEVEN", "TRAILING")
+            or sl_in_profit                    # SL zaten başabaş üstü (trailing başlamış)
+            or pnl_pips >= min_trigger_pips    # BE/koruma eşiği aşıldı
+        )
         cancel_tp = (
-            POSITION_PROTECTION_MAP.get(ticket) == "TRAILING"
+            protection_active
             and bool(CURRENT_SETTINGS.get("tp_cancel_on_trail", False))
             and cur_tp > 0
         )
