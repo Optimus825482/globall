@@ -694,10 +694,19 @@ def execute_close_partial(cmd: dict) -> dict:
 
 
 def execute_modify_sltp(cmd: dict) -> dict:
-    """Açık pozisyonun SL veya TP seviyesini günceller (Breakeven & Trailing)."""
+    """Açık pozisyonun SL veya TP seviyesini günceller (Breakeven & Trailing).
+
+    `tp` semantiği:
+      - `tp > 0`        → TP bu seviyeye ayarlanır,
+      - `tp == 0`       → MEVCUT TP KORUNUR (`pos.tp`) — eski davranış, aynen korunur,
+      - `tp_action == "cancel"` → TP EMRİ SİLİNİR (mt5'te TP=0.0 gönderilir). Motor
+        `tp_cancel_on_trail` ayarı açıkken trailing devreye girince bu sinyali yollar;
+        `tp=0` bunu ifade EDEMEZDİ (0 zaten "koru" demek).
+    """
     ticket = int(cmd.get("ticket", 0))
     sl = float(cmd.get("sl", 0.0))
     tp = float(cmd.get("tp", 0.0))
+    cancel_tp = str(cmd.get("tp_action", "") or "").strip().lower() == "cancel"
     positions = mt5.positions_get(ticket=ticket)
     if not positions:
         return {"success": False, "error": f"Pozisyon #{ticket} bulunamadı"}
@@ -707,11 +716,14 @@ def execute_modify_sltp(cmd: dict) -> dict:
     s_info = mt5.symbol_info(symbol)
     digits = s_info.digits if s_info else 5
     sl = round(sl, digits)
-    tp = round(tp, digits) if tp > 0 else pos.tp
+    tp = 0.0 if cancel_tp else (round(tp, digits) if tp > 0 else pos.tp)
 
     spec = get_symbol_trading_specs(symbol)
     pip_size = spec["pip_size"]
-    if abs(sl - pos.sl) < (0.3 * pip_size) and (tp == 0.0 or abs(tp - pos.tp) < (0.3 * pip_size)):
+    # "Değişiklik yok" kısayolu: iptal isteğinde TP'nin ZATEN olmaması değişiklik yokluğudur;
+    # aksi hâlde `tp == 0.0` burada yanlışlıkla "dokunma" sayılır ve iptal hiç uygulanmazdı.
+    tp_unchanged = (pos.tp == 0.0) if cancel_tp else (tp == 0.0 or abs(tp - pos.tp) < (0.3 * pip_size))
+    if abs(sl - pos.sl) < (0.3 * pip_size) and tp_unchanged:
         return {"success": True, "ticket": ticket, "message": "no changes"}
 
     req = {
@@ -724,7 +736,11 @@ def execute_modify_sltp(cmd: dict) -> dict:
 
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-        print(f"  🛡️ [DİNAMİK SL GÜNCELLENDİ]: Bilet #{ticket} ({symbol}) -> Yeni SL: {sl} (BE/Trailing)")
+        if cancel_tp:
+            print(f"  🎯 [TP İPTAL EDİLDİ]: Bilet #{ticket} ({symbol}) -> Sabit TP kaldırıldı, "
+                  f"kazanç trailing/BE kilidiyle taşınacak (Yeni SL: {sl})")
+        else:
+            print(f"  🛡️ [DİNAMİK SL GÜNCELLENDİ]: Bilet #{ticket} ({symbol}) -> Yeni SL: {sl} (BE/Trailing)")
         return {"success": True, "ticket": ticket}
     else:
         err_msg = res.comment if res else str(mt5.last_error())
@@ -918,19 +934,33 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                         target_sl = cand_sl
                         POSITION_PROTECTION_MAP[ticket] = "TRAILING"
 
+        # TP İPTALİ (opt-in `tp_cancel_on_trail`): trailing bu pozisyonda devreye girdiyse
+        # ve pozisyonun hâlâ sabit TP emri varsa, TP çekilir — kazanan trend TP'ye
+        # takılmadan trailing/BE kilidiyle koşar. Motor (`forex.py`) ile aynı mekanizma:
+        # orada paper tarafı tp_price=0 yapar, burada gerçek MT5 emri kaldırılır.
+        cancel_tp = (
+            POSITION_PROTECTION_MAP.get(ticket) == "TRAILING"
+            and bool(CURRENT_SETTINGS.get("tp_cancel_on_trail", False))
+            and cur_tp > 0
+        )
+
         # Eğer yeni bir SL seviyesi belirlendiyse ve mevcut SL'den farklıysa emri MT5'e gönder
-        if target_sl is not None and abs(target_sl - cur_sl) >= (0.3 * pip_size):
+        if (target_sl is not None and abs(target_sl - cur_sl) >= (0.3 * pip_size)) or cancel_tp:
             req = {
                 "action": mt5.TRADE_ACTION_SLTP,
                 "position": ticket,
                 "symbol": sym,
-                "sl": target_sl,
-                "tp": cur_tp,
+                "sl": target_sl if target_sl is not None else cur_sl,
+                "tp": 0.0 if cancel_tp else cur_tp,
             }
             res = mt5.order_send(req)
             if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                label = "İz Süren Stop" if (trail_pips > 0 and pnl_pips >= trail_pips) else "Başabaş (BE)"
-                print(f"  🛡️ [{label.upper()} KİLİTLENDİ]: Bilet #{ticket} ({sym} {direction}) | Yeni SL: {target_sl} (Kâr: +{pnl_pips:.1f}p)")
+                if cancel_tp:
+                    print(f"  🎯 [TP İPTAL EDİLDİ]: Bilet #{ticket} ({sym} {direction}) — trailing aktif "
+                          f"(+{pnl_pips:.1f}p), sabit TP kaldırıldı, kazanç trailing kilidiyle taşınacak")
+                else:
+                    label = "İz Süren Stop" if (trail_pips > 0 and pnl_pips >= trail_pips) else "Başabaş (BE)"
+                    print(f"  🛡️ [{label.upper()} KİLİTLENDİ]: Bilet #{ticket} ({sym} {direction}) | Yeni SL: {target_sl} (Kâr: +{pnl_pips:.1f}p)")
 
 
 def sync_with_server(api_base: str):

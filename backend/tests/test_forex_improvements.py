@@ -666,6 +666,9 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         # seans+minATR+EV kapıları chop kontrolünü devraldı)
         self.assertFalse(cfg.adx_filter_enabled)
         self.assertTrue(cfg.supertrend_filter_enabled)
+        # TP-iptal canlı VARSAYILAN AÇIK (2026-10-09 kararı: IS/OOS/OOS2/F1 dört pencerede
+        # işaret-tutarlı tek kazanan, net + maxDD iyi). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false
+        self.assertTrue(cfg.tp_cancel_on_trail)
         # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
         self.assertEqual(list(cfg.blocked_hours_utc), [])
         # EV kalkanı varsayılanları (WR 45: 2026-10-06 30g replay A/B kararı; 35 → 45)
@@ -932,7 +935,8 @@ class TestADXAndSuperTrend(unittest.IsolatedAsyncioTestCase):
         try:
             res = await forex.sync_mt5_bridge(req)
             settings = res["settings"]
-            for key in ("atr_exit_enabled", "partial_tp_enabled", "dxy_filter_enabled", "correlation_guard"):
+            for key in ("atr_exit_enabled", "partial_tp_enabled", "dxy_filter_enabled", "correlation_guard",
+                        "tp_cancel_on_trail"):
                 self.assertIn(key, settings)
         finally:
             forex._MT5_STATE["connected"] = False

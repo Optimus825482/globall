@@ -355,6 +355,17 @@ _TECH_STALE_SEC = 180.0
 # Replay'de A/B için: `--wilder-atr` (True) / bayraksız (script bunu False'a
 # çeker, bkz. forex_replay_backtest.py --wilder-atr dalı).
 ATR_USE_WILDER = True
+
+# TP-İPTAL CANLI VARSAYILANI (2026-10-09 kararı): Dört bağımsız replay penceresinde
+# (IS/OOS/OOS2/F1) net kazancı artıran (+$65…+$215/pencere) ve maxDD'yi düşüren TEK
+# işaret-tutarlı mekanizma "trailing aktifken sabit TP'yi çek" (V03) çıktı. ADX-rejimli
+# dinamik trailing ve TP-ratchet pencereler arası işaret değiştirdiği için EKLENMEDİ.
+# Bu yüzden canlı için VARSAYILAN AÇIK. Geri almak: FOREX_TP_CANCEL_ON_TRAIL=false.
+# Kanıt: outputs/exit_sweep/FINDINGS.md + PREREG_V18_F1.md.
+FOREX_TP_CANCEL_ON_TRAIL_DEFAULT = (
+    os.getenv("FOREX_TP_CANCEL_ON_TRAIL", "true").strip().lower() == "true"
+)
+
 _LAST_GOLD_EXIT_TIME = 0.0
 _LAST_BTC_EXIT_TIME = 0.0
 _LAST_CLOSED_DEAL_IDS: set = set()
@@ -3144,6 +3155,7 @@ class ForexAutoPaperSettings(BaseModel):
     loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
     loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
+    tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
@@ -3747,6 +3759,29 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
 
 
 
+def _build_modify_sltp_cmd(cmd_id: str, ticket: int, pos: Dict[str, Any],
+                           mirror_tp: float) -> Dict[str, Any]:
+    """Paper SL güncellemesini MT5 MODIFY_SLTP komutuna çevirir (tek yol, tek semantik).
+
+    Kural: paper tarafında `tp_price=0` ise (TP iptal edilmiş/tp'siz mod) köprüye
+    explicit `tp_action="cancel"` gider — çıplak `tp=0` köprüde "mevcut TP'yi koru"
+    demektir ve iptal sessizce kaybolurdu. Aksi hâlde TP aynası (`mirror_tp`)
+    aynen taşınır. Bu fonksiyon, bir pozisyonun TP'si bir kez iptal edildikten
+    sonra sonraki SL güncellemelerinin TP'yi geri diriltmemesini de garanti eder.
+    """
+    tp_now = float(pos.get("tp_price", 0.0) or 0.0)
+    cmd: Dict[str, Any] = {
+        "id": cmd_id,
+        "action": "MODIFY_SLTP",
+        "ticket": ticket,
+        "sl": pos["sl_price"],
+        "tp": float(mirror_tp or 0.0) if tp_now > 0 else 0.0,
+    }
+    if tp_now <= 0:
+        cmd["tp_action"] = "cancel"
+    return cmd
+
+
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
     global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME, _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME, _LAST_BLOCKED_HOUR_LOG_TIME
@@ -3880,13 +3915,12 @@ async def _forex_auto_paper_loop():
                                     # Paper kaydı (mt5_ticket yok) MT5 biletiyle eşleşemez → dokunma (#7).
                                     if mt5_pos_id and m_t == mt5_pos_id:
                                         if m_t:
-                                            _MT5_STATE["pending_commands"].append({
-                                                "id": f"CMD-MODIFY-{m_t}-BE",
-                                                "action": "MODIFY_SLTP",
-                                                "ticket": m_t,
-                                                "sl": pos["sl_price"],
-                                                "tp": mpos.get("tp_price", 0.0),
-                                            })
+                                            _MT5_STATE["pending_commands"].append(
+                                                _build_modify_sltp_cmd(
+                                                    f"CMD-MODIFY-{m_t}-BE", m_t, pos,
+                                                    mpos.get("tp_price", 0.0),
+                                                )
+                                            )
                                             _log_auto_decision("PROTECT", f"🛡️ [MT5] {sym} Bilet #{m_t} Başabaş Stopu {pos['sl_price']} olarak kilitlendi.", symbol=sym)
 
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
@@ -3936,6 +3970,24 @@ async def _forex_auto_paper_loop():
                                     pos["trailing_activated"] = True
                                     updated_trail = True
 
+                        # (b2) TP İPTALİ — trailing devreye girdiğinde sabit TP emri çekilir
+                        # (V03 "no_tp_on_trail_live" mekanizması; opt-in, varsayılan KAPALI).
+                        # Neden: TP kazananı erken kesiyordu; TP silinince trend koşusu
+                        # trailing/BE kilidiyle taşınır (2026-10-09 2 pencere A/B: net ve maxDD iyi).
+                        # tp_price=0 yapılınca (c) TP_HIT dalı bir daha ateşlemez (kripto TP'siz
+                        # moduyla aynı semantik). Beklemede olan bir tur önce kuyruğa girmiş MT5
+                        # MODIFY_SLTP komutunda hâlâ eski tp duruyorsa, aşağıdaki cancel komutu onu
+                        # sırayla geçersiz kılar.
+                        if (updated_trail and _AUTO_SETTINGS.tp_cancel_on_trail
+                                and float(pos.get("tp_price", 0.0) or 0.0) > 0):
+                            pos["tp_price"] = 0.0
+                            _log_auto_decision(
+                                "PROTECT",
+                                f"{pos['display']} 🎯 Sabit TP iptal edildi — trailing aktif, kazanç "
+                                f"trailing/BE kilidiyle taşınacak (kâr +{pnl_pips:.1f} pip).",
+                                symbol=sym,
+                            )
+
                         # MT5 açık biletinde de Stop Loss seviyesini dinamik olarak yukarı sür
                         if updated_trail and _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
                             # Yalnız bu pozisyonun bağlı olduğu MT5 bileti güncellenir;
@@ -3945,13 +3997,14 @@ async def _forex_auto_paper_loop():
                                 if trail_ticket and mpos.get("ticket") == trail_ticket:
                                     t_id = mpos.get("ticket")
                                     if t_id:
-                                        _MT5_STATE["pending_commands"].append({
-                                            "id": f"CMD-MODIFY-{t_id}-TR",
-                                            "action": "MODIFY_SLTP",
-                                            "ticket": t_id,
-                                            "sl": pos["sl_price"],
-                                            "tp": mpos.get("tp_price", 0.0),
-                                        })
+                                        # TP iptal edildiyse ayna değeri (mpos tp_price) KULLANILMAZ;
+                                        # explicit cancel semantiği taşınır (bkz. _build_modify_sltp_cmd).
+                                        _MT5_STATE["pending_commands"].append(
+                                            _build_modify_sltp_cmd(
+                                                f"CMD-MODIFY-{t_id}-TR", t_id, pos,
+                                                mpos.get("tp_price", 0.0),
+                                            )
+                                        )
 
                     # (c) KÂR AL (TAKE PROFIT) KONTROLÜ — tp_price=0 (TP'siz mod, örn. kripto) asla tetiklenmez
                     # MT5'te TP bir LİMİT emridir: seviyeye ulaşınca o seviyeden
@@ -6561,6 +6614,9 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "gold_be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio,
             "dxy_filter_enabled": _AUTO_SETTINGS.dxy_filter_enabled,
             "correlation_guard": _AUTO_SETTINGS.correlation_guard,
+            # Trailing aktifleşince köprünün de sabit TP emrini çekmesi için (opt-in).
+            # Kapalıyken köprü hiçbir ek MODIFY_SLTP üretmez → canlı davranış aynı kalır.
+            "tp_cancel_on_trail": _AUTO_SETTINGS.tp_cancel_on_trail,
         },
     }
 

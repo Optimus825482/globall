@@ -819,6 +819,281 @@ class TestForexAccountingFixes(unittest.IsolatedAsyncioTestCase):
         forex._SYMBOL_EV_RESET_AT_TS.pop(sym, None)
 
 
+class TestTpCancelOnTrail(unittest.IsolatedAsyncioTestCase):
+    """`tp_cancel_on_trail` (V03 "no_tp_on_trail_live") — 2026-10-09 çıkış A/B kazananı.
+
+    Opt-in ayar: kapalıyken canlı davranış birebir aynı kalmalı; açıkken trailing
+    devreye girdiği an sabit TP emri çekilmeli (paper + MT5 köprüsü iki katmanda).
+    Kanıt: outputs/exit_sweep/FINDINGS.md — IS +$200.70 / OOS +$215.05, BTC belirgin
+    iyileşme, maxDD iki pencerede de düştü.
+    """
+
+    def setUp(self):
+        self._enabled = forex._AUTO_SETTINGS.tp_cancel_on_trail
+        self._orig_ticks = forex._generate_realistic_ticks
+        self._orig_partial = forex._AUTO_SETTINGS.partial_tp_enabled
+        self._orig_chand = forex._AUTO_SETTINGS.chandelier_atr_mult
+
+    def tearDown(self):
+        forex._AUTO_SETTINGS.tp_cancel_on_trail = self._enabled
+        forex._AUTO_SETTINGS.partial_tp_enabled = self._orig_partial
+        forex._AUTO_SETTINGS.chandelier_atr_mult = self._orig_chand
+        forex._generate_realistic_ticks = self._orig_ticks
+        forex._AUTO_STATE["open_positions"].clear()
+        forex._AUTO_STATE["closed_trades"].clear()
+        forex._AUTO_STATE["decision_logs"].clear()
+        forex._MT5_STATE["pending_commands"] = []
+        forex._MT5_STATE["open_positions"] = []
+        forex._MT5_STATE["connected"] = False
+        forex._MT5_STATE["auto_trade"] = False
+        forex._AUTO_STATE["enabled"] = False
+
+    # ---------------------------------------------------------------- MT5 köprüsü
+
+    def _fake_position(self, sl=1.07850, tp=1.09000):
+        """check_and_apply_dynamic_exits'in beklediği minimal MT5 pozisyonu (namedtuple).
+
+        +50 pip'te tutulur: BE kilidi (0.4×50=20p → SL 1.0820) ile trailing adayı
+        (1.0850−20p = 1.0830) kıyaslanabilsin ve trailing GERÇEKTEN devreye girsin
+        (daha küçük kârda BE kilidi traileden sıkı olur ve köprü haklı olarak
+        "trailing aktif" demez).
+        """
+        import collections
+        FakePos = collections.namedtuple(
+            "_FakePos",
+            "ticket symbol type price_open price_current sl tp volume profit",
+        )
+        return FakePos(
+            ticket=555001, symbol="EURUSD", type=0,          # 0 = POSITION_TYPE_BUY
+            price_open=1.08000, price_current=1.08500, sl=sl, tp=tp,
+            volume=0.5, profit=250.0,
+        )
+
+    # Trailing'in üreteceği SL (price_current − 20 pip). SL'i buraya sabitleyip
+    # korumayı önceden "TRAILING" işaretleyince SL'de taşıma olmaz → tek davranış
+    # farkı TP iptali olur (izole test).
+    _TRAILED_SL = 1.08300
+
+    def _run_bridge_with_settings(self, settings, pos, preseed_trailing=False):
+        from unittest import mock
+        mt5_bridge.POSITION_PROTECTION_MAP.clear()
+        mt5_bridge.POSITION_EXITS.clear()
+        mt5_bridge.CURRENT_SETTINGS.clear()
+        mt5_bridge.CURRENT_SETTINGS.update(settings)
+        if preseed_trailing:
+            mt5_bridge.POSITION_PROTECTION_MAP[pos.ticket] = "TRAILING"
+        sent = []
+
+        def fake_order_send(req):
+            sent.append(dict(req))
+            return mock.Mock(retcode=mt5_bridge.mt5.TRADE_RETCODE_DONE, comment="ok")
+
+        with mock.patch.object(mt5_bridge.mt5, "positions_get", return_value=[pos]), \
+             mock.patch.object(mt5_bridge.mt5, "symbol_info", return_value=mock.Mock(digits=5, volume_min=0.01)), \
+             mock.patch.object(mt5_bridge.mt5, "order_send", side_effect=fake_order_send):
+            mt5_bridge.check_and_apply_dynamic_exits(be_pips=14.0, trail_pips=20.0)
+        return sent
+
+    def test_bridge_sends_cancel_signal_when_setting_on(self):
+        """Ayar açık + trailing aktif → MODIFY_SLTP tp=0 ile gönderilir (gerçek iptal)."""
+        sent = self._run_bridge_with_settings(
+            {"tp_cancel_on_trail": True, "partial_tp_enabled": False},
+            self._fake_position(sl=self._TRAILED_SL),  # SL mevcut; tek sebep TP iptali
+            preseed_trailing=True,
+        )
+        self.assertEqual(len(sent), 1, "TP iptali için tam olarak bir MODIFY_SLTP beklenir")
+        self.assertEqual(sent[0]["tp"], 0.0)
+        self.assertEqual(sent[0]["sl"], self._TRAILED_SL, "Korunan SL aynen geri yazılmalı")
+
+    def test_bridge_keeps_tp_when_setting_off(self):
+        """Ayar kapalı → trailing aktif olsa bile TP korunur; SL güncel olduğundan emir YOK."""
+        sent = self._run_bridge_with_settings(
+            {"tp_cancel_on_trail": False, "partial_tp_enabled": False},
+            self._fake_position(sl=self._TRAILED_SL),
+            preseed_trailing=True,
+        )
+        self.assertEqual(sent, [], "Kapalı ayarda ek MODIFY_SLTP üretilmemeli (canlı davranış aynı)")
+
+    # ------------------------------------------------------- execute_modify_sltp
+
+    def test_execute_modify_sltp_cancel_removes_tp(self):
+        """`tp_action="cancel"` → tp gerçekten 0.0 gider (tp=0 "koru" demek olduğu için şart)."""
+        from unittest import mock
+        calls = []
+
+        def fake_order_send(req):
+            calls.append(dict(req))
+            return mock.Mock(retcode=mt5_bridge.mt5.TRADE_RETCODE_DONE, comment="ok")
+
+        with mock.patch.object(mt5_bridge.mt5, "positions_get", return_value=[self._fake_position(sl=1.07850)]), \
+             mock.patch.object(mt5_bridge.mt5, "symbol_info", return_value=mock.Mock(digits=5)), \
+             mock.patch.object(mt5_bridge.mt5, "order_send", side_effect=fake_order_send):
+            res = mt5_bridge.execute_modify_sltp(
+                {"ticket": 555001, "sl": 1.08000, "tp": 0.0, "tp_action": "cancel"}
+            )
+
+        self.assertTrue(res["success"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["tp"], 0.0)
+        self.assertEqual(calls[0]["sl"], 1.08000)
+
+    def test_execute_modify_sltp_zero_tp_still_means_keep(self):
+        """Regresyon: `tp_action` yokken `tp=0` ESKİ anlamını korur → mevcut TP yerinde kalır."""
+        from unittest import mock
+        calls = []
+
+        def fake_order_send(req):
+            calls.append(dict(req))
+            return mock.Mock(retcode=mt5_bridge.mt5.TRADE_RETCODE_DONE, comment="ok")
+
+        with mock.patch.object(mt5_bridge.mt5, "positions_get", return_value=[self._fake_position(sl=1.07850)]), \
+             mock.patch.object(mt5_bridge.mt5, "symbol_info", return_value=mock.Mock(digits=5)), \
+             mock.patch.object(mt5_bridge.mt5, "order_send", side_effect=fake_order_send):
+            res = mt5_bridge.execute_modify_sltp({"ticket": 555001, "sl": 1.08000, "tp": 0.0})
+
+        self.assertTrue(res["success"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["tp"], 1.09000, "tp=0 mevcut TP'yi korumalı (eski davranış)")
+
+    def test_execute_modify_sltp_cancel_is_noop_when_tp_already_absent(self):
+        """TP zaten yoksa iptal isteği 'değişiklik yok' döner — boşuna emir gönderilmez."""
+        from unittest import mock
+        with mock.patch.object(mt5_bridge.mt5, "positions_get", return_value=[self._fake_position(sl=1.08000, tp=0.0)]), \
+             mock.patch.object(mt5_bridge.mt5, "symbol_info", return_value=mock.Mock(digits=5)), \
+             mock.patch.object(mt5_bridge.mt5, "order_send", side_effect=AssertionError("emir gönderilmemeliydi")):
+            res = mt5_bridge.execute_modify_sltp(
+                {"ticket": 555001, "sl": 1.08000, "tp": 0.0, "tp_action": "cancel"}
+            )
+        self.assertTrue(res["success"])
+        self.assertEqual(res.get("message"), "no changes")
+
+    # ------------------------------------------------- moteur döngüsü (forex.py)
+
+    async def _run_one_loop_tick(self, enable, start_price, sl, tp, breakeven=False):
+        """`_forex_auto_paper_loop`'un bir turunu sahte tick'le koşturur."""
+        forex._AUTO_STATE["open_positions"].clear()
+        forex._AUTO_STATE["closed_trades"].clear()
+        forex._AUTO_STATE["decision_logs"].clear()
+        forex._MT5_STATE["pending_commands"] = []
+        forex._MT5_STATE["open_positions"] = []
+        forex._MT5_STATE["connected"] = False
+        forex._MT5_STATE["auto_trade"] = False
+        forex._AUTO_STATE["enabled"] = True
+        forex._AUTO_SETTINGS.partial_tp_enabled = False
+        forex._AUTO_SETTINGS.chandelier_atr_mult = 0.0    # sabit pip trail dalını test et
+        forex._AUTO_SETTINGS.trailing_stop_pips = 20.0
+        forex._AUTO_SETTINGS.tp_cancel_on_trail = enable
+        forex._AUTO_STATE["balance"] = 10000.0
+
+        forex._AUTO_STATE["open_positions"].append({
+            "id": "FX-TPC-1", "symbol": "EURUSD", "display": "EUR/USD", "direction": "BUY",
+            "lots": 0.5, "entry_price": 1.08000, "current_price": start_price,
+            "sl_price": sl, "tp_price": tp, "initial_sl_price": sl,
+            "breakeven_activated": breakeven, "trailing_activated": False,
+            "open_time": "12:00:00 UTC", "pnl_usd": 0.0, "pnl_pips": 0.0,
+            "pip_size": 0.0001, "digits": 5, "score": 90.0, "strategy": "TEST",
+        })
+
+        # İlk çağrı gerçek tick'i bir kez üretir (FOREX_SYMBOLS/ATR bağımlılıkları için),
+        # sonra istenen fiyata kaydırılmış TEK sembollü tick döner.
+        base = await self._orig_ticks()
+        tick = dict(base["EURUSD"])
+        shift = start_price - (tick["bid"] + tick["ask"]) / 2.0
+        tick["bid"] = round(tick["bid"] + shift, 5)
+        tick["ask"] = round(tick["ask"] + shift, 5)
+        tick["atr"] = 0.0004
+
+        async def fake_ticks():
+            return {"EURUSD": tick}
+
+        forex._generate_realistic_ticks = fake_ticks
+        task = asyncio.ensure_future(forex._forex_auto_paper_loop())
+        await asyncio.sleep(2.2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        live = forex._AUTO_STATE["open_positions"]
+        errs = [d for d in forex._AUTO_STATE["decision_logs"]
+                if "beklenmeyen hata" in str(d.get("message", ""))]
+        self.assertEqual(errs, [], f"döngü hata verdi: {errs[:1]}")
+        return live[0] if live else None
+
+    async def test_engine_loop_cancels_tp_when_trailing_activates(self):
+        """Ayar AÇIK: trailing devreye girince paper tp_price=0 olur → TP_HIT bir daha ateşlemez."""
+        pos = await self._run_one_loop_tick(
+            enable=True, start_price=1.08250, sl=1.08005, tp=1.09000, breakeven=True)
+        self.assertIsNotNone(pos, "pozisyon kapanmamalıydı (TP henüz uzak)")
+        self.assertTrue(pos.get("trailing_activated"))
+        self.assertEqual(pos.get("tp_price"), 0.0, "TP iptal edilmeliydi")
+        # SL bid üzerinden sürülür (spread kadar mid'in altında): 1.0825 − ~20 pip.
+        self.assertGreater(pos.get("sl_price"), 1.08005, "trailing SL, BE seviyesinin üstüne çıkmalı")
+        self.assertLess(pos.get("sl_price"), 1.08250)
+
+    async def test_engine_loop_keeps_tp_when_setting_off(self):
+        """Ayar KAPALI (varsayılan): trailing yine çalışır ama TP yerinde kalır — canlı davranış aynı."""
+        pos = await self._run_one_loop_tick(
+            enable=False, start_price=1.08250, sl=1.08005, tp=1.09000, breakeven=True)
+        self.assertIsNotNone(pos)
+        self.assertTrue(pos.get("trailing_activated"))
+        self.assertEqual(pos.get("tp_price"), 1.09000, "Ayar kapalıyken TP'ye dokunulmamalı")
+
+    async def test_engine_loop_keeps_tp_when_no_trailing_activation(self):
+        """Trailing tetiklenmediyse (kâr eşiği altında) TP iptal EDİLMEZ."""
+        pos = await self._run_one_loop_tick(
+            enable=True, start_price=1.08005, sl=1.07850, tp=1.09000, breakeven=False)
+        self.assertIsNotNone(pos)
+        self.assertFalse(pos.get("trailing_activated"))
+        self.assertEqual(pos.get("tp_price"), 1.09000, "Trailing yoksa TP korunur")
+
+
+class TestBridgeSettingsPayload(unittest.IsolatedAsyncioTestCase):
+    """Köprünün TP-iptal bayrağını görebilmesi için sync payload'ında taşınmalı."""
+
+    async def test_mt5_sync_payload_carries_tp_cancel_flag(self):
+        # `sync_mt5_bridge` paylaşılan _MT5_STATE'i yazar → anlık görüntü al, sonra geri koy
+        # (test sırası izolasyonu; bkz. test_forex_auto_paper.py'deki aynı desen).
+        snapshot = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v)
+                    for k, v in forex._MT5_STATE.items()}
+        try:
+            payload = await forex.sync_mt5_bridge(forex.MT5SyncRequest(
+                account={"balance": 1000.0, "equity": 1000.0}, positions=[], deals=[],
+            ))
+            self.assertIn("tp_cancel_on_trail", payload["settings"])
+            self.assertIsInstance(payload["settings"]["tp_cancel_on_trail"], bool)
+        finally:
+            forex._MT5_STATE.clear()
+            forex._MT5_STATE.update(snapshot)
+
+
+class TestTpRatchetAlternative(unittest.IsolatedAsyncioTestCase):
+    """Alternatif (daha güvenli) mekanizma: TP-ratchet — kripto modülünde kanıtlı.
+
+    `auto_paper.py` trailing TP'nin üzerine çıktığında TP'yi yukarı taşır (TP
+    silinmez). FX replay'inde V03 (TP iptal) kazandı; ratchet henüz FX replay'inde
+    test EDİLMEDİ — bu test yalnız referans uygulamanın hâlâ yerinde olduğunu
+    kilitler ki A/B karşılaştırması ileride aynı tabana yapılabilsin.
+    """
+
+    def test_auto_paper_ratchet_rule_is_present(self):
+        import inspect
+        from backend.app.routers import auto_paper
+        src = inspect.getsource(auto_paper)
+        self.assertIn("TP ratchet", src)
+        self.assertIn("trailing TP'nin üstüne çıktı", src)
+
+    async def test_default_is_true_and_env_gated(self):
+        """Canlı varsayılan AÇIK (2026-10-09 kararı: 4 pencere A/B'de işaret-tutarlı tek
+        mekanizma V03). Geri alma yolu env ile: FOREX_TP_CANCEL_ON_TRAIL=false."""
+        self.assertTrue(forex.ForexAutoPaperSettings().tp_cancel_on_trail)
+        self.assertTrue(forex._AUTO_SETTINGS.tp_cancel_on_trail)
+        # Geri-alma sözleşmesi yerinde mi (env anahtarı modülde tanımlı)
+        import inspect
+        src = inspect.getsource(forex)
+        self.assertIn("FOREX_TP_CANCEL_ON_TRAIL", src)
+
+
 if __name__ == "__main__":
     unittest.main()
 
