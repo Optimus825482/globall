@@ -695,11 +695,19 @@ def parse_calendar_value(value: Any) -> Optional[float]:
         return None
 
 
-def _format_comparison_value(number: float, unit: str) -> str:
-    """Kıyas metninde kullanılacak okunabilir sayı biçimi."""
-    if unit:
-        return f"{number:g}{unit}"
-    return f"{number:g}"
+def _format_comparison_value(raw: Any, parsed: float) -> str:
+    """Kıyas metninde kullanılacak okunabilir sayı biçimi.
+
+    Kaynak metin **kendi birimini zaten taşır** ("231K", "3.2%", "2.4M") ve
+    kıyaslanan iki değer aynı kaynaktan geldiği için tutarlıdır. Bu yüzden ham
+    metin olduğu gibi kullanılır.
+
+    Sayısal biçime düşmek (`f"{parsed:g}"`) yalnız ham metin yoksa/anlamsızsa
+    gerekir: bir kez `parse_calendar_value` içinde çarpılmış bir sayıyı
+    `:g` ile basmak `2400000 -> 2.4e+06` gibi okunmaz çıktı üretir.
+    """
+    text = str(raw).strip() if raw is not None else ""
+    return text or f"{parsed:g}"
 
 
 def evaluate_event_outcome(
@@ -715,9 +723,13 @@ def evaluate_event_outcome(
     istisna değil ana yoldur ve rozet metni tabana göre değişir.
 
     Dönen sözlük: `side` ("bullish"/"bearish"/None), `bucket`, `basis`,
-    `actual_num`, `baseline_num`, `comparison_tr`, `label_tr`.
+    `actual_num`, `baseline_num`, `comparison_tr`, `label_tr`, `direction_note_tr`.
     `actual` yok/ayrıştırılamıyor ya da **her iki taban da** yok ise `None` döner
     (asla tahmin edilmez). Eşitlikte `side=None` — dal gizlenmez.
+
+    `direction_note_tr` yalnız ters yorumlanan ailelerde doludur; orada sayısal
+    ilişki ile piyasa yönü ayrıştığı için ("231K > 220K" ama 🔴) arayüzün bunu
+    açıklayabilmesi gerekir.
     """
     actual_num = parse_calendar_value(actual)
     if actual_num is None:
@@ -746,20 +758,27 @@ def evaluate_event_outcome(
         else:
             label_tr = "Önceki'ye Göre Artış" if is_higher else "Önceki'ye Göre Azalış"
 
-    # Birim ekini kıyas metninde koruyabilmek için ham metinlerden çıkarılır.
-    unit = ""
-    for raw in (actual, baseline_num):
-        if isinstance(raw, str):
-            match = re.search(r"([%A-Za-z]*)\s*$", raw.strip())
-            if match and match.group(1):
-                unit = match.group(1)
-                break
+    # Kıyas metni HAM kaynak metinlerden kurulur — birim eki ("%", "K", "M")
+    # böylece ayrıca çıkarılmak zorunda kalmaz. Ayrıştırma çarpanı uyguladığı
+    # için (`145K` → 145000.0) sayıyı yeniden basmak "145000K" gibi çift birim
+    # üretirdi.
+    baseline_raw = forecast if basis == "forecast" else previous
 
-    actual_text = _format_comparison_value(actual_num, unit) if unit else str(actual).strip()
-    baseline_text = _format_comparison_value(baseline_num, unit) if unit else f"{baseline_num:g}"
+    actual_text = _format_comparison_value(actual, actual_num)
+    baseline_text = _format_comparison_value(baseline_raw, baseline_num)
 
     operator = "=" if side is None else (">" if actual_num > baseline_num else "<")
     comparison_tr = f"{actual_text} {operator} {baseline_text} ({label_tr})"
+
+    # Ters yorumlanan ailelerde (işsizlik/başvuru, petrol stoğu) sayısal ilişki
+    # ile piyasa yönü AYRIŞIR: "231K > 220K" ama sonuç 🔴. Rozetin yanında bu
+    # çelişkiyi açıklamayan bir "Beklenti Üzeri" metni, bu özelliğin önlemek için
+    # var olduğu yanlış okumayı bizzat üretir. `label_tr` kıyas satırının içinde
+    # de geçtiği için oraya uzun bir ek koymak yerine AYRI alan döndürülür;
+    # gösterip göstermemek görüntü katmanının kararıdır.
+    direction_note_tr = None
+    if side is not None and not higher_is_bullish:
+        direction_note_tr = "Yüksek değer bu olayda ayı yönlüdür"
 
     return {
         "side": side,
@@ -769,6 +788,7 @@ def evaluate_event_outcome(
         "baseline_num": baseline_num,
         "comparison_tr": comparison_tr,
         "label_tr": label_tr,
+        "direction_note_tr": direction_note_tr,
     }
 
 

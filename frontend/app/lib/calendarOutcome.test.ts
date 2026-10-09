@@ -14,9 +14,11 @@ import {
   comparisonText,
   labelText,
   basisText,
+  directionNoteText,
   endOfTrDayMs,
   isOutcomeVisibleNow,
   selectScenarioBranches,
+  branchFallbackReason,
   selectTodaysPublished,
   type CalendarEventLike,
 } from "./calendarOutcome";
@@ -71,6 +73,19 @@ describe("outcomeSide / metin okuyucular", () => {
     expect(basisText({ outcome: { basis: "forecast" } })).toBe("Beklenti");
     expect(basisText({ outcome: { basis: "previous" } })).toBe("Önceki");
     expect(basisText({ outcome: { basis: null } })).toBe(null);
+  });
+
+  it("ters aile uyarısını okur, yoksa null döner", () => {
+    // "231K > 220K" ama dal 🔴 — rozetin yanında açıklama şart.
+    expect(
+      directionNoteText({ outcome: { direction_note_tr: "Yüksek değer bu olayda ayı yönlüdür" } }),
+    ).toBe("Yüksek değer bu olayda ayı yönlüdür");
+    // Ters olmayan aile / eşitlik: uyarı basılmaz.
+    expect(directionNoteText({ outcome: { direction_note_tr: null } })).toBe(null);
+    expect(directionNoteText({ outcome: { direction_note_tr: "  " } })).toBe(null);
+    expect(directionNoteText({ outcome: {} })).toBe(null);
+    expect(directionNoteText({})).toBe(null);
+    expect(directionNoteText(null)).toBe(null);
   });
 });
 
@@ -138,6 +153,57 @@ describe("selectScenarioBranches", () => {
   it("sonuç görünmüyorsa mevcut davranışı korur", () => {
     expect(selectScenarioBranches("bullish", false)).toEqual({ showBullish: true, showBearish: true });
     expect(selectScenarioBranches("bearish", false)).toEqual({ showBullish: true, showBearish: true });
+  });
+});
+
+describe("branchFallbackReason", () => {
+  const now = Date.parse("2026-10-09T20:00:00Z");
+
+  it("dal belirliyse null döner (açıklama basılmaz)", () => {
+    expect(
+      branchFallbackReason(
+        { date_iso: "2026-10-09T12:30:00Z", actual: "3.2%", outcome: { side: "bullish" } },
+        now,
+      ),
+    ).toBe(null);
+  });
+
+  it("açıklanmadıysa 'pending'", () => {
+    expect(
+      branchFallbackReason(
+        { date_iso: "2026-10-09T22:00:00Z", actual: "—", outcome: null },
+        now,
+      ),
+    ).toBe("pending");
+  });
+
+  it("eşitlikte 'tie' — 'ayrıştırılamadı' ile KARIŞTIRILMAZ", () => {
+    // Operatör için kritik ayrım: veri geldi ve yönsüz (tie), veri gelmedi (pending),
+    // yoksa ayrıştırılamadı (unparsed). Yanlış mesaj veriyi hiç gelmemiş sanmaya yol açar.
+    expect(
+      branchFallbackReason(
+        {
+          date_iso: "2026-10-09T12:30:00Z",
+          actual: "2.1%",
+          outcome: { side: null, comparison_tr: "2.1% = 2.1% (Beklentiye Uygun)", label_tr: "Beklentiye Uygun" },
+        },
+        now,
+      ),
+    ).toBe("tie");
+  });
+
+  it("açıklandı ama eşitlik metni de yoksa 'unparsed'", () => {
+    expect(
+      branchFallbackReason(
+        { date_iso: "2026-10-09T12:30:00Z", actual: "3.2%", outcome: { side: null } },
+        now,
+      ),
+    ).toBe("unparsed");
+  });
+
+  it("olay yoksa null", () => {
+    expect(branchFallbackReason(null, now)).toBe(null);
+    expect(branchFallbackReason(undefined, now)).toBe(null);
   });
 });
 

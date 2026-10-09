@@ -18,8 +18,10 @@ import {
   comparisonText,
   labelText,
   basisText,
+  directionNoteText,
   isOutcomeVisibleNow,
   selectScenarioBranches,
+  branchFallbackReason,
   selectTodaysPublished,
   type CalendarOutcome,
 } from "./lib/calendarOutcome";
@@ -618,7 +620,12 @@ export default function HomePage() {
 
   // PERFORMANS: Takvim geri sayımları için tek paylaşımlı saniyelik sayaç.
   // Takvim listesi boşsa interval kurulmaz.
-  const hasPendingEvents = filteredCalendarEvents.length > 0;
+  //
+  // Ticker `filteredCalendarEvents` ile sınırlanamaz: vitrin (aşağıda) FİLTRELENMEMİŞ
+  // `calendarEvents` üzerinden çalışır, bu yüzden hiçbir şeyle eşleşmeyen bir filtre
+  // seçildiğinde sayaç durur ve vitrin gün dönümünde düşmezdi. İki listeden biri
+  // doluysa sayaç çalışır.
+  const hasPendingEvents = filteredCalendarEvents.length > 0 || calendarEvents.length > 0;
   const nowSec = useSharedNowSec(hasPendingEvents);
 
   // BUGÜN AÇIKLANAN VERİLER: veri içeren, sonucu belirlenmiş ve penceresi açık
@@ -644,6 +651,9 @@ export default function HomePage() {
     selectedEvent?.actual,
   );
   const scenarioBranches = selectScenarioBranches(selectedOutcomeSide, selectedOutcomeVisible);
+  // Dal seçilemediyse NEDEN: "henüz açıklanmadı" ile "açıklandı ama eşit"
+  // operatör için farklı şeylerdir, aynı mesajı basmak yanıltır.
+  const selectedFallbackReason = branchFallbackReason(selectedEvent, nowMs);
 
   return (
     <div className="space-y-6 pb-16 font-mono text-white">
@@ -1126,6 +1136,7 @@ export default function HomePage() {
                 const cmp = comparisonText(item);
                 const label = labelText(item);
                 const basis = basisText(item);
+                const dirNote = directionNoteText(item);
                 const branchOutcome = isBull
                   ? item.scenario?.bullish_outcome
                   : item.scenario?.bearish_outcome;
@@ -1202,6 +1213,13 @@ export default function HomePage() {
                         {basis && (
                           <span className="text-slate-500 dark:text-bunker-muted"> · kıyas: {basis}</span>
                         )}
+                      </div>
+                    )}
+
+                    {/* Ters aile uyarısı: "Beklenti Üzeri" + 🔴 çelişkisini açıklar. */}
+                    {dirNote && (
+                      <div className="text-[10px] text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg px-2 py-1 border border-rose-200 dark:border-rose-500/30">
+                        ⚠️ {dirNote}
                       </div>
                     )}
 
@@ -1636,6 +1654,31 @@ export default function HomePage() {
                     </strong>
                   </div>
                 </div>
+
+                {/* Gerçekleşen senaryo + ters aile uyarısı */}
+                {selectedOutcomeVisible && selectedOutcomeSide && (
+                  <div
+                    className={`mt-1.5 px-2 py-1 rounded-lg text-[10px] font-bold border ${
+                      selectedOutcomeSide === "bullish"
+                        ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30"
+                        : "bg-rose-50 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/30"
+                    }`}
+                  >
+                    {selectedOutcomeSide === "bullish" ? "🟢" : "🔴"}{" "}
+                    {labelText(selectedEvent) || (selectedOutcomeSide === "bullish" ? "Olumlu" : "Olumsuz")}
+                    {comparisonText(selectedEvent) && (
+                      <span className="font-mono font-medium opacity-90">
+                        {" · "}
+                        {comparisonText(selectedEvent)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {directionNoteText(selectedEvent) && (
+                  <div className="mt-1 px-2 py-1 rounded-lg text-[10px] text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30">
+                    ⚠️ {directionNoteText(selectedEvent)}
+                  </div>
+                )}
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-100/90 dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 space-y-1.5 shadow-sm">
@@ -1710,13 +1753,18 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* KARAR VERİLEMEDİ: bilgi gizlenmez, nedenini söyle. */}
-                {!selectedOutcomeVisible && (
+                {/* KARAR VERİLEMEDİ: bilgi gizlenmez, NEDENİNİ doğru söyle. */}
+                {selectedFallbackReason === "pending" && (
                   <p className="text-[10px] text-slate-500 dark:text-bunker-muted">
                     Veri henüz açıklanmadı — iki senaryo da olasıdır.
                   </p>
                 )}
-                {selectedOutcomeVisible && !selectedOutcomeSide && (
+                {selectedFallbackReason === "tie" && (
+                  <p className="text-[10px] text-slate-500 dark:text-bunker-muted">
+                    Açıklanan değer beklenti/önceki ile aynı — piyasa yönsüz, iki senaryo da gösteriliyor.
+                  </p>
+                )}
+                {selectedFallbackReason === "unparsed" && (
                   <p className="text-[10px] text-slate-500 dark:text-bunker-muted">
                     Açıklanan değer beklenti/önceki ile ayrıştırılamadı — iki senaryo da gösteriliyor.
                   </p>

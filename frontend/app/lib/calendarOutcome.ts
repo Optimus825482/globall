@@ -27,6 +27,12 @@ export interface CalendarOutcome {
   baseline_num?: number | null;
   comparison_tr?: string | null;
   label_tr?: string | null;
+  /**
+   * Yalnız ters yorumlanan ailelerde (işsizlik/başvuru, petrol stoğu) doludur:
+   * orada sayısal ilişki ile piyasa yönü ayrışır ("231K > 220K" ama 🔴) ve
+   * rozet tek başına çelişkili okunur.
+   */
+  direction_note_tr?: string | null;
 }
 
 /** Bu modülün ihtiyaç duyduğu olay alanları (page.tsx `EconomicEvent`'in alt kümesi). */
@@ -96,6 +102,18 @@ export function basisText(ev: CalendarEventLike): "Beklenti" | "Önceki" | null 
   return null;
 }
 
+/**
+ * Ters yorum uyarısı — yalnız ters ailelerde doludur.
+ *
+ * İşsizlik/başvuru ve petrol stoğu olaylarında yüksek değer ayı yönlüdür, yani
+ * "Beklenti Üzeri" rozeti ile 🔴 işareti YAN YANA doğrudur ama çelişkili görünür.
+ * Bu metin o çelişkiyi açıklar; boşsa rozet basılmaz.
+ */
+export function directionNoteText(ev: CalendarEventLike | null | undefined): string | null {
+  const text = ev?.outcome?.direction_note_tr;
+  return typeof text === "string" && text.trim() ? text : null;
+}
+
 const MS_PER_DAY = 86_400_000;
 /** Türkiye saati sabit dilim: UTC+3 (2016'dan beri DST yok). */
 const TR_OFFSET_MS = 3 * 3_600_000;
@@ -140,7 +158,6 @@ export function isOutcomeVisibleNow(
 
 /**
  * Modalda hangi senaryo dalları gösterilsin?
- *
  * - Sonuç görünür VE dal belirliyse: yalnız gerçekleşen dal (diğeri tamamen gizlenir).
  * - Aksi halde (henüz açıklanmadı / eşitlik / ayrıştırılamadı): iki dal da gösterilir.
  *   Karar verilemeyen durumda bilgi gizlenmez — eski davranış korunur.
@@ -153,6 +170,30 @@ export function selectScenarioBranches(
   if (side === "bullish") return { showBullish: true, showBearish: false };
   if (side === "bearish") return { showBullish: false, showBearish: true };
   return { showBullish: true, showBearish: true };
+}
+
+/**
+ * Dal neden seçilemedi? Modalda hangi açıklamanın basılacağını belirler.
+ *
+ * İki durum AYRI mesaj gerektirir: "henüz açıklanmadı" ile "açıklandı ama eşit"
+ * operatör için çok farklı şeylerdir — ikincisinde veri gelmiş ve piyasa yönsüz
+ * kalmıştır. Yanlış mesaj, operatörün veriyi hiç gelmemiş sanmasına yol açar.
+ *
+ * `"tie"` tespiti `comparison_tr` içindeki `=` işaretinden yapılır: backend
+ * eşitlikte operatörü `=` yapar (`evaluate_event_outcome`).
+ */
+export type BranchFallbackReason = "pending" | "tie" | "unparsed" | null;
+
+export function branchFallbackReason(
+  ev: CalendarEventLike | null | undefined,
+  nowMs: number,
+): BranchFallbackReason {
+  if (!ev || outcomeSide(ev) !== null) return null;
+  if (!isOutcomeVisibleNow(ev.date_iso, nowMs, ev.actual)) return "pending";
+  // `outcome` nesnesi VAR ama `side` yok: eşitlik ya da taban yok.
+  const cmp = comparisonText(ev);
+  if (cmp && cmp.includes("=")) return "tie";
+  return "unparsed";
 }
 
 /**

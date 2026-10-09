@@ -252,6 +252,50 @@ def test_outcome_undecidable_returns_none():
     assert tie["label_tr"] == "Beklentiye Uygun"
 
 
+def test_outcome_comparison_text_keeps_source_units():
+    """Kıyas metni HAM kaynak metni kullanmalı — sayıyı yeniden basmak çift birim
+    üretir (`145K` -> 145000.0 -> "145000K") ve `:g` ile üstel gösterime düşer
+    (`2.4M` -> 2400000.0 -> "2.4e+06M"). İkisi de operatörün okuduğu satırdır."""
+    from app.forex_news import evaluate_event_outcome
+
+    k = evaluate_event_outcome("US Unemployment Claims", "220K", "215K", "231K")
+    assert k["comparison_tr"] == "231K > 220K (Beklenti Üzeri)"
+
+    m = evaluate_event_outcome("EIA Crude Oil Inventories", "-1.2M", "-0.8M", "2.4M")
+    assert m["comparison_tr"] == "2.4M > -1.2M (Beklenti Üzeri)"
+
+    pct = evaluate_event_outcome("US CPI YoY", "3.0%", "2.9%", "3.2%")
+    assert pct["comparison_tr"] == "3.2% > 3.0% (Beklenti Üzeri)"
+
+    # previous tabanında da taban metni previous'ın kendi birimini taşır.
+    prev = evaluate_event_outcome("MBA Purchase Index", "—", "148.2", "145.1")
+    assert prev["comparison_tr"] == "145.1 < 148.2 (Önceki'ye Göre Azalış)"
+
+
+def test_outcome_inversion_carries_direction_note():
+    """Ters ailelerde sayısal ilişki ile piyasa yönü ayrışır. Rozet "Beklenti Üzeri"
+    derken dal 🔴 olur — arayüz bunu açıklayabilmeli, yoksa özelliğin önlemek için
+    var olduğu yanlış okuma bizzat üretilir."""
+    from app.forex_news import evaluate_event_outcome
+
+    claims = evaluate_event_outcome("Initial Jobless Claims", "230K", "225K", "250K")
+    assert claims["side"] == "bearish"
+    assert claims["label_tr"] == "Beklenti Üzeri"
+    assert claims["direction_note_tr"]
+
+    oil = evaluate_event_outcome("EIA Crude Oil Inventories", "+0.5M", "+0.2M", "+2.1M")
+    assert oil["direction_note_tr"]
+
+    # Ters OLMAYAN ailelerde not boş kalır — gereksiz uyarı basılmaz.
+    assert evaluate_event_outcome("CPI YoY", "3.0%", "2.9%", "3.2%")["direction_note_tr"] is None
+    assert evaluate_event_outcome("Non-Farm Payrolls", "180K", "170K", "200K")["direction_note_tr"] is None
+
+    # Eşitlikte yön yoktur -> açıklanacak bir ayrışma da yoktur.
+    tie = evaluate_event_outcome("Initial Jobless Claims", "230K", "225K", "230K")
+    assert tie["side"] is None
+    assert tie["direction_note_tr"] is None
+
+
 def test_classify_bucket_order_and_oil_narrowing():
     """Kova sırası korunur ('Fed ... Inflation' -> rate) ve 'Business Inventories'
     petrol dışı olduğu için ters çevrilmez."""
