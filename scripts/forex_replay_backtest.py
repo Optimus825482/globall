@@ -127,6 +127,8 @@ TUN_TP_ATR_MULT = 1.4
 TUN_RR_FLOOR = 1.5
 TUN_HEADROOM_FOREX = 3.5
 TUN_ADX_MIN = 0.0           # 0 = ADX kalkanı kapalı
+TUN_ADX_MIN_SYMS = ""       # Boş = ADX kalkanı TÜM sembollere; "BTCUSD,US30" gibi liste = yalnız bu sembollere (2026-10-10 sinyal kalitesi süpürmesi)
+TUN_ADX_HALFLOT = 0.0       # >0: ADX eşiği altındaki adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5 = yarım lot; A/B/C sinyal sınıflandırması)
 TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
 # 2026-10-06 köprü hizalama simülasyonu: --spec-atr ile spec BE/Trail'i işlem-bazlı giriş ATR'siyle
 # hesaplanır (= motorun cmd ile köprüye gönderdiği ATR'li değerler; canlıda artık cmd ile taşınıyor).
@@ -1345,6 +1347,8 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
     lots, risk_skip = forex.apply_risk_normalization(sym, lots, sl_pips, cand["pip_val"], BALANCE * RISK_PCT / 100.0)
     if risk_skip:
         return None
+    if cand.get("adx_halflot") and TUN_ADX_HALFLOT > 0:
+        lots = max(0.01, round(lots * TUN_ADX_HALFLOT, 2))  # düşük kalite sinyal → küçültülmüş lot (A/B/C lite)
     return SimPos(
         symbol=sym, direction=cand["action"], lots=lots,
         entry_price=entry, sl_price=sl, tp_price=tp, pip_size=cand["pip_size"],
@@ -2570,13 +2574,14 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     mode_exits = mode_c.get("exits")
                 atr_pips = tech["atr"] / pip_size if pip_size > 0 else 15.0
                 spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
+                adx_halflot = False  # ADX eşiği altına düşerse cand() işaretlenir (yarım lot modu)
 
                 def cand(gate_note: Optional[str] = None) -> Dict:
                     return {
                         "symbol": sym, "action": action, "score": score, "price": close_now,
                         "atr_pips": atr_pips, "pip_size": pip_size, "pip_val": spec["pip_val"],
                         "digits": spec["digits"], "spread_pips": spread_pips, "gate": gate_note,
-                        "exits": mode_exits,
+                        "exits": mode_exits, "adx_halflot": adx_halflot,
                     }
 
                 # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
@@ -2662,9 +2667,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 req = base_req + weak_bump
                 if score < req:
                     continue  # SKOR — sinyal taban eşiği, gölge izlenmez
-                if vname == "NEW" and TUN_ADX_MIN > 0 and float(tech.get("adx", 25.0)) < TUN_ADX_MIN:
-                    blocked_events.append(("ADX", cand("ADX")))
-                    continue
+                if vname == "NEW" and TUN_ADX_MIN > 0 and (not TUN_ADX_MIN_SYMS or sym in TUN_ADX_MIN_SYMS) and float(tech.get("adx", 25.0)) < TUN_ADX_MIN:
+                    if TUN_ADX_HALFLOT > 0:
+                        adx_halflot = True  # engelleme yok — lot çarpanı ile sınıflandır (A/B/C lite)
+                    else:
+                        blocked_events.append(("ADX", cand("ADX")))
+                        continue
                 if vname == "NEW" and TUN_ST_FILTER:
                     st_dir = int(tech.get("supertrend_dir", 0))
                     if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
@@ -2903,7 +2911,7 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
-    global TUN_ADX_MIN, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
+    global TUN_ADX_MIN, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
     global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
@@ -3001,6 +3009,8 @@ def main():
     parser.add_argument("--rr-floor", type=float, default=1.5)
     parser.add_argument("--headroom", type=float, default=3.5)
     parser.add_argument("--adx-min", type=float, default=0.0, help="ADX eşiği (0 = kapalı)")
+    parser.add_argument("--adx-syms", default="", help="ADX kalkanını yalnız bu sembollere uygula (virgüllü; boş = tümü)")
+    parser.add_argument("--adx-halflot", type=float, default=0.0, help=">0: ADX eşiği altı adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5)")
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
@@ -3208,6 +3218,8 @@ def main():
     TUN_RR_FLOOR = args.rr_floor
     TUN_HEADROOM_FOREX = args.headroom
     TUN_ADX_MIN = args.adx_min
+    TUN_ADX_MIN_SYMS = set(s.strip().upper() for s in args.adx_syms.split(",") if s.strip())
+    TUN_ADX_HALFLOT = args.adx_halflot
     TUN_ST_FILTER = args.st_filter
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE
