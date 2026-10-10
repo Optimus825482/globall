@@ -130,7 +130,15 @@ TUN_ADX_MIN = 0.0           # 0 = ADX kalkanı kapalı
 TUN_ADX_MIN_SYMS = ""       # Boş = ADX kalkanı TÜM sembollere; "BTCUSD,US30" gibi liste = yalnız bu sembollere (2026-10-10 sinyal kalitesi süpürmesi)
 TUN_ADX_HALFLOT = 0.0       # >0: ADX eşiği altındaki adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5 = yarım lot; A/B/C sinyal sınıflandırması)
 TUN_CLOSE_CONFIRM = False   # True: aday hemen açılmaz; SONRAKİ taze bar sinyal yönünde kapanırsa teyit barının kapanışından girilir (2026-10-10 kapanış-teyidi testi)
+TUN_SCORE_HALF_BELOW = 0.0  # >0: radar skoru bu eşiğin altındaki adaylar engellenmez, lot küçültülür (skor-bazlı A/B/C lite)
+TUN_SCORE_HALF_MULT = 0.5   # skor-bazlı yarım lot çarpanı
 TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
+# BTC net-negatif pencere freni (2026-10-10 denetim P0-3): canlı motor `btc_net_negative_*`
+# ayarlarının replay karşılığı. Sembolün son N saatteki net'i eşiğin altındaysa ve yeterli
+# işlem varsa yeni giriş yok. Ardışık-SL'e bağlı DEĞİL → SL,TP,SL,SL,TP salınımını yakalar.
+TUN_BTC_NETNEG_HOURS = 0.0  # 0 = kapalı (canlı varsayılan 6.0)
+TUN_BTC_NETNEG_MIN = 6      # pencerede gereken minimum işlem (canlı varsayılan 6)
+TUN_BTC_NETNEG_USD = 0.0    # pencere net'i bunun altındaysa BTC dinlenir (0.0 = herhangi bir net zarar)
 # 2026-10-06 köprü hizalama simülasyonu: --spec-atr ile spec BE/Trail'i işlem-bazlı giriş ATR'siyle
 # hesaplanır (= motorun cmd ile köprüye gönderdiği ATR'li değerler; canlıda artık cmd ile taşınıyor).
 # Kapalıyken replay ATR'siz spec kullanır (= köprünün ESKİ davranışı) → A/B bu ayrışmayı ölçer.
@@ -1350,6 +1358,8 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         return None
     if cand.get("adx_halflot") and TUN_ADX_HALFLOT > 0:
         lots = max(0.01, round(lots * TUN_ADX_HALFLOT, 2))  # düşük kalite sinyal → küçültülmüş lot (A/B/C lite)
+    if cand.get("score_halflot"):
+        lots = max(0.01, round(lots * TUN_SCORE_HALF_MULT, 2))  # düşük radar skorlu sinyal → küçültülmüş lot (skor-bazlı A/B/C lite)
     return SimPos(
         symbol=sym, direction=cand["action"], lots=lots,
         entry_price=entry, sl_price=sl, tp_price=tp, pip_size=cand["pip_size"],
@@ -2616,13 +2626,14 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 atr_pips = tech["atr"] / pip_size if pip_size > 0 else 15.0
                 spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
                 adx_halflot = False  # ADX eşiği altına düşerse cand() işaretlenir (yarım lot modu)
+                score_half_flag = False  # radar skoru eşiğin altındaysa cand() işaretlenir (skor-bazlı yarım lot)
 
                 def cand(gate_note: Optional[str] = None) -> Dict:
                     return {
                         "symbol": sym, "action": action, "score": score, "price": close_now,
                         "atr_pips": atr_pips, "pip_size": pip_size, "pip_val": spec["pip_val"],
                         "digits": spec["digits"], "spread_pips": spread_pips, "gate": gate_note,
-                        "exits": mode_exits, "adx_halflot": adx_halflot,
+                        "exits": mode_exits, "adx_halflot": adx_halflot, "score_halflot": score_half_flag,
                     }
 
                 # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
@@ -2637,6 +2648,15 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     ev_risk_floor = BALANCE * RISK_PCT / 100.0 * EV_LOSS_RISK_MULT
                     if forex.ev_guard_decision(ev_stats, EV_MIN_TRADES, EV_MAX_WIN_RATE, ev_risk_floor):
                         blocked_events.append(("EV", cand("EV")))
+                        continue
+                # BTC net-negatif pencere freni (canlı P0-3 ayarının replay karşılığı).
+                # EV kapısı kapalıyken de çalışır — BTC canlıda EV'den muaf tutulduğu için
+                # frenin tek başına etkisini ölçmek gerekiyor.
+                if vname == "NEW" and TUN_BTC_NETNEG_HOURS > 0 and sym == "BTCUSD":
+                    nn_rows = [c["pnl_usd"] for c in book.closed
+                               if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - TUN_BTC_NETNEG_HOURS * 3600.0]
+                    if len(nn_rows) >= TUN_BTC_NETNEG_MIN and sum(nn_rows) < TUN_BTC_NETNEG_USD:
+                        blocked_events.append(("BTCNEG", cand("BTCNEG")))
                         continue
                 if vname == "NEW" and BLOCKED_HOURS and forex.is_entry_hour_blocked(hour, BLOCKED_HOURS):
                     blocked_events.append(("SAAT", cand("SAAT")))
@@ -2714,6 +2734,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     else:
                         blocked_events.append(("ADX", cand("ADX")))
                         continue
+                if vname == "NEW" and TUN_SCORE_HALF_BELOW > 0 and score < TUN_SCORE_HALF_BELOW:
+                    score_half_flag = True  # engelleme yok — lot çarpanı ile sınıflandır (skor-bazlı A/B/C lite)
                 if vname == "NEW" and TUN_ST_FILTER:
                     st_dir = int(tech.get("supertrend_dir", 0))
                     if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
@@ -2958,6 +2980,7 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
     global TUN_ADX_MIN, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_CLOSE_CONFIRM, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
+    global TUN_SCORE_HALF_BELOW, TUN_SCORE_HALF_MULT
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
     global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
@@ -3058,6 +3081,11 @@ def main():
     parser.add_argument("--adx-syms", default="", help="ADX kalkanını yalnız bu sembollere uygula (virgüllü; boş = tümü)")
     parser.add_argument("--adx-halflot", type=float, default=0.0, help=">0: ADX eşiği altı adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5)")
     parser.add_argument("--close-confirm", action="store_true", help="Kapanış teyidi: aday sonraki barın yön onayı bekler, giriş onay barının kapanışından")
+    parser.add_argument("--score-half-below", type=float, default=0.0, help=">0: radar skoru bu eşiğin altındaki adayların lotu küçültülür (skor-bazlı A/B/C lite)")
+    parser.add_argument("--score-half-mult", type=float, default=0.5, help="skor-bazlı yarım lot çarpanı")
+    parser.add_argument("--btc-netneg-hours", type=float, default=0.0, help=">0: BTC net-negatif pencere freni (saat; canlı varsayılan 6.0)")
+    parser.add_argument("--btc-netneg-min", type=int, default=6, help="BTC net-negatif freni için pencerede gereken min işlem")
+    parser.add_argument("--btc-netneg-usd", type=float, default=0.0, help="BTC net-negatif freni eşiği (USD); pencere net'i bunun altındaysa dinlenir")
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
@@ -3268,6 +3296,12 @@ def main():
     TUN_ADX_MIN_SYMS = set(s.strip().upper() for s in args.adx_syms.split(",") if s.strip())
     TUN_ADX_HALFLOT = args.adx_halflot
     TUN_CLOSE_CONFIRM = bool(args.close_confirm)
+    TUN_SCORE_HALF_BELOW = args.score_half_below
+    TUN_SCORE_HALF_MULT = args.score_half_mult
+    global TUN_BTC_NETNEG_HOURS, TUN_BTC_NETNEG_MIN, TUN_BTC_NETNEG_USD
+    TUN_BTC_NETNEG_HOURS = args.btc_netneg_hours
+    TUN_BTC_NETNEG_MIN = args.btc_netneg_min
+    TUN_BTC_NETNEG_USD = args.btc_netneg_usd
     TUN_ST_FILTER = args.st_filter
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE

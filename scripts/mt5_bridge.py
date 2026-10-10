@@ -48,6 +48,14 @@ LAST_BTC_EXIT_TIME = 0.0
 KNOWN_DEAL_TICKETS: set = set()
 RECENTLY_CLOSED_TICKETS: dict = {}
 INITIALIZED_DEALS = False
+
+# ── Emir-sonuç kanalı (2026-10-10 denetim P0-1) ───────────────────────────────
+# Eskiden başarısız `order_send` sonucu YALNIZ konsola yazılıyordu; backend emri
+# "açıldı" sayıp bekleyen komutu koşulsuz temizliyordu → panelde hayalet pozisyon
+# ve sessizce kapanan soğuma. Artık her emrin sonucu bir sonraki sync yükünde
+# `command_results` olarak geri gönderilir; backend başarısızlıkta soğumayı geri açar.
+_COMMAND_RESULTS: list = []            # son sync'ten beri biriken emir sonuçları
+_COMMAND_RESULT_CAP = 50               # taşma koruması (backend'e yetişemezse en yeni 50)
 TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
 
 # ── Broker mum push'u (2026-10-07) ───────────────────────────────────────────
@@ -192,6 +200,33 @@ REVERSE_SYMBOL_ALIAS_MAP = {
     "XTIUSD": "USOIL",
     "XBRUSD": "UKOIL",
 }
+
+# Broker → uygulama adı tam eşleme tablosu (2026-10-10 P2-7). `SYMBOL_ALIAS_MAP`
+# uygulama→broker yönündedir; burada tersi kurulur ki broker'ın kendi kısa adları
+# ("GOLD", "BTC", "WTI") da uygulama adına dönsün. Öncelik: kimlik → elle yazılmış
+# REVERSE_SYMBOL_ALIAS_MAP → SYMBOL_ALIAS_MAP'in tersi.
+_BROKER_TO_APP_SYMBOL: Dict[str, str] = {k: k for k in SYMBOL_ALIAS_MAP}
+_BROKER_TO_APP_SYMBOL.update(REVERSE_SYMBOL_ALIAS_MAP)
+for _app, _brokers in SYMBOL_ALIAS_MAP.items():
+    for _b in _brokers:
+        _BROKER_TO_APP_SYMBOL.setdefault(_b, _app)
+
+
+def to_app_symbol(mt5_symbol: str) -> str:
+    """MT5 broker sembolünü (sonekli olabilir: BTCUSD.m, XAUUSD.a) UYGULAMA sembolüne çevirir.
+
+    2026-10-10 denetim P2-7: motor `sym == "BTCUSD"` gibi TAM eşitlik yolları kullanıyor.
+    Broker sonekli sembol gönderirse (`BTCUSD.m`) motor BTC'yi tanımaz: BTC soğuması,
+    btc_min_score, EV muafiyeti ve seri-SL hiç uygulanmaz — sessiz koruma kaybı.
+    """
+    raw = str(mt5_symbol or "").upper().strip()
+    if not raw:
+        return ""
+    if raw in _BROKER_TO_APP_SYMBOL:
+        return _BROKER_TO_APP_SYMBOL[raw]
+    # "BTCUSD.m" / "XAUUSD-ECN" / "US30.cash" → soneki at, bilinen köke bak
+    base = raw.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    return _BROKER_TO_APP_SYMBOL.get(base, base or raw)
 
 
 def resolve_mt5_symbol(symbol: str) -> str:
@@ -440,10 +475,22 @@ def execute_market_order(cmd: dict) -> dict:
     max_vol = float(s_info.volume_max) if s_info.volume_max > 0 else 50.0
 
     # Broker ve Yapılandırma Lot Kısıtları (Sunucu dinamik bakiye risk lotunu hesaplar)
-    configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT)) if is_gold else float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
+    # 2026-10-10 denetim P2-4: kripto ve petrol, FX `max_forex_lot` (=10) tavanına
+    # DÜŞMEMELİ. Motor kriptoda 50.0 tavan hesaplıyor; eski kod köprüde sessizce
+    # 10'a kırpıyordu → motor "$X risk" derken gerçek risk başka oluyordu.
+    if is_gold:
+        configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT))
+    elif is_crypto or is_oil:
+        configured_cap = HARD_MAX_FOREX_LOT
+    else:
+        configured_cap = float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
     lot_ceiling = min(max_vol, max(min_vol, configured_cap))
 
     lots = min(raw_lots, lot_ceiling)
+    if lots < raw_lots:
+        # Sessiz kırpma yok: motor lotu risk bütçesinden hesaplıyor, kırpma riski
+        # değiştirir → operatör bunu log'da görmeli.
+        print(f"  ⚠️ [LOT KIRPILDI]: Talep {raw_lots} lot → {lots} lot (tavan {lot_ceiling} = min(broker {max_vol}, config {configured_cap}), {symbol})")
     if lots < min_vol:
         print(f"  ℹ️ [LOT DÜZENLENDİ]: Talep edilen {raw_lots} lot sembol minimumu {min_vol} lotun altında! {min_vol} lot olarak ayarlandı ({symbol})")
         lots = min_vol
@@ -974,6 +1021,39 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                     print(f"  🛡️ [{label.upper()} KİLİTLENDİ]: Bilet #{ticket} ({sym} {direction}) | Yeni SL: {target_sl} (Kâr: +{pnl_pips:.1f}p)")
 
 
+def record_command_result(cmd: dict, res: "dict | None", error: "str | None" = None):
+    """Bir emrin sonucunu (başarı/başarısızlık + retcode) sonraki sync'e kuyruklar.
+
+    2026-10-10 P0-1: backend bu kanal olmadan reddedilen emri "açıldı" sanıyordu.
+    """
+    try:
+        ok = bool(res.get("success")) if isinstance(res, dict) else False
+        entry = {
+            "id": cmd.get("id"),
+            "action": str(cmd.get("action", "")).upper(),
+            "symbol": str(cmd.get("symbol", "")).upper(),
+            "ticket": cmd.get("ticket"),
+            "success": ok,
+            "retcode": (res or {}).get("retcode") if isinstance(res, dict) else None,
+            "error": error or ((res or {}).get("error") if isinstance(res, dict) else None),
+            "ts": time.time(),
+        }
+    except Exception as e:  # pragma: no cover - savunmacı
+        entry = {
+            "id": cmd.get("id") if isinstance(cmd, dict) else None,
+            "action": "UNKNOWN",
+            "symbol": "",
+            "success": False,
+            "error": f"sonuç paketlenemedi: {e}",
+            "ts": time.time(),
+        }
+    _COMMAND_RESULTS.append(entry)
+    if len(_COMMAND_RESULTS) > _COMMAND_RESULT_CAP:
+        # Backend'e ulaşamayan çok eski sonuçları düşür (yeni olanlar önemli)
+        del _COMMAND_RESULTS[:-_COMMAND_RESULT_CAP]
+    return entry
+
+
 def sync_with_server(api_base: str):
     """MT5 durumunu web sunucusuna raporlar ve bekleyen komutları çeker."""
     acc = mt5.account_info()
@@ -1047,7 +1127,9 @@ def sync_with_server(api_base: str):
             else ("Başabaş (BE)" if prot == "BREAKEVEN" else "Sabit SL")
         )
 
-        mapped_sym = REVERSE_SYMBOL_ALIAS_MAP.get(sym, sym)
+        # 2026-10-10 denetim P2-7: sonekli broker sembolü (BTCUSD.m) tam-eşitlik
+        # yollarını kırmasın → uygulama sembolüne normalize edilir.
+        mapped_sym = to_app_symbol(sym)
         pos_open_ts = int(p.time)
         positions.append({
             "ticket": ticket,
@@ -1129,7 +1211,9 @@ def sync_with_server(api_base: str):
         else:
             pips = round((entry_p - d.price) / pip_size, 1)
 
-        mapped_deal_sym = REVERSE_SYMBOL_ALIAS_MAP.get(d.symbol, d.symbol)
+        # P2-7: kapanan deal'in sembolü de normalize edilir (seri-SL / EV / rapor yolları
+        # `sym == "BTCUSD"` gibi tam-eşitlik kullanır; sonekli ad korumayı düşürürdü).
+        mapped_deal_sym = to_app_symbol(d.symbol)
         deals.append({
             "id": f"MT5-{pos_id}",
             "ticket": pos_id,
@@ -1199,6 +1283,9 @@ def sync_with_server(api_base: str):
         "ticks": ticks_data,
         "candles": _next_watch_candles(),
         "version": "1.0.1",
+        # 2026-10-10 P0-1: önceki turda çalıştırılan emirlerin sonuçları.
+        # Backend başarısız OPEN_ORDER'da soğumayı geri açar → hayalet pozisyon yok.
+        "command_results": list(_COMMAND_RESULTS),
     }
 
     req_url = f"{api_base.rstrip('/')}/api/forex/mt5/sync"
@@ -1217,6 +1304,8 @@ def sync_with_server(api_base: str):
             if isinstance(watch, list):
                 CANDLE_WATCH.clear()
                 CANDLE_WATCH.extend(watch)
+            # Sunucu sonuçları aldı → kuyruğu boşalt (yoksa her turda tekrar gönderilir)
+            _COMMAND_RESULTS.clear()
             return True, data.get("commands", []), data.get("settings", {}), None
     except urllib.error.HTTPError as he:
         return False, [], {}, f"HTTP {he.code}: {he.reason}"
@@ -1280,19 +1369,27 @@ def main():
                 action = cmd.get("action")
                 print(f"\n⚡ [WEB SİNYALİ ALINDI]: {action} -> {cmd}")
                 res = None
-                if action == "OPEN_ORDER":
-                    res = execute_market_order(cmd)
-                elif action == "CLOSE_ORDER":
-                    res = execute_close_order(cmd)
-                elif action == "CLOSE_PARTIAL":
-                    res = execute_close_partial(cmd)
-                elif action == "CLOSE_ALL":
-                    res = execute_close_all(cmd)
-                elif action == "MODIFY_SLTP":
-                    res = execute_modify_sltp(cmd)
+                try:
+                    if action == "OPEN_ORDER":
+                        res = execute_market_order(cmd)
+                    elif action == "CLOSE_ORDER":
+                        res = execute_close_order(cmd)
+                    elif action == "CLOSE_PARTIAL":
+                        res = execute_close_partial(cmd)
+                    elif action == "CLOSE_ALL":
+                        res = execute_close_all(cmd)
+                    elif action == "MODIFY_SLTP":
+                        res = execute_modify_sltp(cmd)
+                except Exception as cmd_exc:  # pragma: no cover - savunmacı
+                    res = {"success": False, "error": f"emir çalıştırma istisnası: {cmd_exc}"}
 
                 if res and not res.get("success"):
                     print(f"  ❌ [İŞLEM İPTAL/HATA]: {res.get('error')}")
+
+                # 2026-10-10 P0-1: sonucu backend'e geri bildir (hayalet pozisyon önleme).
+                # Bilinmeyen bir action için sonuç üretmeyiz (yanlış "başarısız" raporu olmasın).
+                if res is not None or action in ("OPEN_ORDER", "CLOSE_ORDER", "CLOSE_PARTIAL", "CLOSE_ALL", "MODIFY_SLTP"):
+                    record_command_result(cmd, res, None if res is not None else "köprüde işlenmeyen emir")
 
             time.sleep(1.5)
 

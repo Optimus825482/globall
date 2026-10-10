@@ -1103,5 +1103,138 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
                          "motor başlangıcı geniş FX evrenini otomatik yüklüyor")
 
 
+    async def test_mt5_command_result_clears_entry_cooldown(self):
+        """2026-10-10 denetim P0-1: broker reddettiği emri motor 'açıldı' sanmamalı.
+
+        Köprü `command_results` ile başarısız OPEN_ORDER bildirirse, motor 60 sn
+        giriş soğumasını GERİ AÇMALI ki aday yeniden denenebilsin. Aksi halde
+        panelde hayalet pozisyon kalır ve gerçek pozisyon hiç açılmaz.
+        """
+        mt5_snapshot = {
+            "state": {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v)
+                      for k, v in forex._MT5_STATE.items()},
+            "entry": dict(forex._LAST_SYMBOL_ENTRY_TIME),
+            "gold": forex._LAST_GOLD_EXIT_TIME,
+            "btc": forex._LAST_BTC_EXIT_TIME,
+        }
+        now = __import__("time").time()
+        try:
+            forex._LAST_SYMBOL_ENTRY_TIME["BTCUSD"] = now
+            forex._LAST_BTC_EXIT_TIME = now
+            forex._LAST_GOLD_EXIT_TIME = now
+
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(command_results=[
+                {"id": "CMD-1", "action": "OPEN_ORDER", "symbol": "BTCUSD",
+                 "success": False, "error": "Not enough money"},
+                {"id": "CMD-2", "action": "OPEN_ORDER", "symbol": "XAUUSD",
+                 "success": False, "error": "Invalid volume"},
+            ]))
+            # Başarısız giriş → soğuma geri açıldı
+            self.assertNotIn("BTCUSD", forex._LAST_SYMBOL_ENTRY_TIME)
+            self.assertNotIn("XAUUSD", forex._LAST_SYMBOL_ENTRY_TIME)
+            self.assertEqual(forex._LAST_BTC_EXIT_TIME, 0.0)
+            self.assertEqual(forex._LAST_GOLD_EXIT_TIME, 0.0)
+
+            # Başarılı emir soğumayı SIFIRLAMAMALI (yalnız hata yolu düzeltir)
+            forex._LAST_SYMBOL_ENTRY_TIME["BTCUSD"] = now
+            forex._LAST_BTC_EXIT_TIME = now
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(command_results=[
+                {"id": "CMD-3", "action": "OPEN_ORDER", "symbol": "BTCUSD",
+                 "success": True, "retcode": 10009},
+            ]))
+            self.assertEqual(forex._LAST_SYMBOL_ENTRY_TIME.get("BTCUSD"), now)
+            self.assertEqual(forex._LAST_BTC_EXIT_TIME, now)
+        finally:
+            forex._MT5_STATE.clear()
+            forex._MT5_STATE.update(mt5_snapshot["state"])
+            forex._LAST_SYMBOL_ENTRY_TIME.clear()
+            forex._LAST_SYMBOL_ENTRY_TIME.update(mt5_snapshot["entry"])
+            forex._LAST_GOLD_EXIT_TIME = mt5_snapshot["gold"]
+            forex._LAST_BTC_EXIT_TIME = mt5_snapshot["btc"]
+
+    async def test_settings_update_is_partial_merge(self):
+        """2026-10-10 denetim P1-5: kısmi gövde diğer ayarları SESSİZCE sıfırlamamalı."""
+        old_settings = forex._AUTO_SETTINGS
+        try:
+            forex._AUTO_SETTINGS = forex.ForexAutoPaperSettings(
+                **{**old_settings.model_dump(), "btc_min_score": 88.0,
+                   "crypto_sl_atr_mult": 2.2, "max_open_positions": 7})
+            await forex.update_forex_auto_paper_settings({"min_score": 79.0})
+            self.assertEqual(forex._AUTO_SETTINGS.min_score, 79.0)
+            # Dokunulmayan alanlar KORUNUR (eski tüm-nesne davranışında 76.0/1.5/99'a dönerdi)
+            self.assertEqual(forex._AUTO_SETTINGS.btc_min_score, 88.0)
+            self.assertEqual(forex._AUTO_SETTINGS.crypto_sl_atr_mult, 2.2)
+            self.assertEqual(forex._AUTO_SETTINGS.max_open_positions, 7)
+        finally:
+            forex._AUTO_SETTINGS = old_settings
+
+    def test_btc_not_in_donchian_mode_symbols(self):
+        """2026-10-10 denetim P0-2: BTC donchian kolu replay'de negatif (−$8.94/113).
+
+        BTC donchian `mode_symbols`'e geri eklenirse aynı A/B sonucu beklenmeli;
+        kanıt olmadan geri alma yasak.
+        """
+        self.assertNotIn("BTCUSD", forex.ForexAutoPaperSettings().mode_symbols)
+
+    def test_btc_net_negative_guard_default_off(self):
+        """2026-10-10 A/B: fren 32g replay'de net PnL'i düşürdü → varsayılan KAPALI.
+
+        Mekanizma kodda durur (ayarla açılabilir) ama varsayılan açılırsa
+        kanıtlanmamış bir kayıp kaynağı geri gelir.
+        """
+        self.assertFalse(forex.ForexAutoPaperSettings().btc_net_negative_guard_enabled)
+        self.assertFalse(forex.ForexAutoPaperSettings().btc_ev_exempt,
+                         "BTC EV muafiyeti geri açılmış (P0-3)")
+
+    def test_crypto_risk_clamp_enabled(self):
+        """P0-4: kripto/altında risk-skip bypass'ı lot tavanına çevrilmeli."""
+        self.assertTrue(forex.ForexAutoPaperSettings().crypto_risk_clamp_enabled)
+        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        self.assertIn("crypto_risk_clamp_enabled", src)
+        # Eski koşulsuz bypass deseni geri gelmemeli
+        self.assertNotIn("if risk_skip and (is_crypto or is_gold):\n                    risk_skip = False\n", src)
+
+    def test_canonical_symbol_normalizes_broker_suffixes(self):
+        """P2-7: sonekli broker sembolü (`BTCUSD.m`) tam-eşitlik dallarını kırmamalı.
+
+        Motor `sym == "BTCUSD"` kullanır; normalize edilmezse BTC soğuması,
+        btc_min_score, EV muafiyeti ve seri-SL sessizce düşer.
+        """
+        cases = {
+            "BTCUSD": "BTCUSD", "BTCUSD.m": "BTCUSD", "BTCUSD.micro": "BTCUSD",
+            "XAUUSD.a": "XAUUSD", "US30.cash": "US30", "EURUSD.pro": "EURUSD",
+            "USTEC": "NAS100", "XTIUSD": "USOIL", "GOLD": "XAUUSD", "BTC": "BTCUSD",
+            "WTI": "USOIL", "BRENT": "USOIL", "UKOUSD": "USOIL", "": "",
+        }
+        for raw, want in cases.items():
+            self.assertEqual(forex.canonical_symbol(raw), want, f"{raw!r} normalize edilmedi")
+
+    def test_canonical_symbol_never_escapes_universe(self):
+        """P2-7 invariant: kanonikleştirme spec'siz sembol sızdırmamalı.
+
+        Evren = aktif `FOREX_SYMBOLS` ∪ emekli `_RETIRED_FOREX_SYMBOLS` (spec/arşiv
+        uyumluluğu için duruyorlar; XAGUSD ve USOIL buradan gelir). Bir ara
+        XBRUSD→UKOIL eşlemesi vardı; UKOIL İKİ listede de YOK → panelde/spec'te
+        tanınmayan sembol doğardı.
+        """
+        universe = {s["symbol"].upper() for s in forex.FOREX_SYMBOLS}
+        universe |= {s["symbol"].upper() for s in forex._RETIRED_FOREX_SYMBOLS}
+        produced = {forex.canonical_symbol(k) for k in forex._MT5_TO_APP_SYMBOLS}
+        produced |= {forex.canonical_symbol(k) for k in
+                     ("BTCUSD", "BTCUSD.m", "XAUUSD.a", "US30.cash", "USTEC",
+                      "XTIUSD", "XBRUSD", "UKOIL", "UKOUSD", "GOLD", "BTC", "WTI", "BRENT")}
+        escaped = sorted(x for x in produced if x and x not in universe)
+        self.assertEqual(escaped, [], f"kanonikleştirme evren dışına sızdı: {escaped}")
+
+    def test_donchian_thresholds_come_from_settings(self):
+        """P2-9: donchian ADX/gün-limiti ayardan okunmalı (kodda sabit kalmamalı)."""
+        s = forex.ForexAutoPaperSettings()
+        self.assertEqual(s.donchian_adx_min, 18.0)
+        self.assertEqual(s.donchian_max_per_day, 2)
+        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("adx_min=18.0", src, "donchian ADX eşiği yine kodda sabit")
+        self.assertNotIn("max_per_day=2,", src, "donchian gün limiti yine kodda sabit")
+
+
 if __name__ == "__main__":
     unittest.main()

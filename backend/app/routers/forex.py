@@ -395,6 +395,12 @@ _LIVE_SPREAD_PIPS: Dict[str, float] = {}
 # Köprü MT5 sembol adı -> uygulama sembol adı (spread eşlemesi için)
 _MT5_TO_APP_SYMBOLS: Dict[str, str] = {
     "XTIUSD": "USOIL",
+    # XBRUSD (Brent) USOIL'a eşlenir. NOT (2026-10-10 denetim P2-7): köprü tarafı
+    # XBRUSD→UKOIL diyor, ama UKOIL uygulama evreninde YOK (FOREX_SYMBOLS'te girdisi
+    # yok, panelde display'i yok). UKOIL'a eşlemek, spec'i "OIL" alt-dizesiyle
+    # çalışsa bile display/rapor tarafında tanınmayan bir sembol üretirdi.
+    # Bu yüzden bilinçli olarak USOIL'a sabitlendi; evren invariant'ı korunur:
+    # bu haritanın ÜRETTİĞİ her ad FOREX_SYMBOLS'te bulunmalı.
     "XBRUSD": "USOIL",
     "USTEC": "NAS100",
     "US100": "NAS100",
@@ -406,7 +412,39 @@ _MT5_TO_APP_SYMBOLS: Dict[str, str] = {
     "XAU": "XAUUSD",
     "SILVER": "XAGUSD",
     "XAG": "XAGUSD",
+    # 2026-10-10 denetim P2-7: broker'ın kendi kısa adları. Köprü `to_app_symbol`
+    # bilinmeyen kısa adı olduğu gibi geçirir (eski davranış korunur); tam eşitlik
+    # kullanan motor yolları bu dörtlüyü burada kanonikleştirir.
+    "BTC": "BTCUSD",
+    "WTI": "USOIL",
+    "USOUSD": "USOIL",
+    "WTICRUDE": "USOIL",
+    "BRENT": "USOIL",
+    "CRUDE": "USOIL",
+    # Köprü XBRUSD/UKOUSD'yi UKOIL'a çevirir; UKOIL uygulama evreninde yok →
+    # bilinmeyen sembol sızmasın diye burada USOIL'a kanonikleştirilir.
+    "UKOIL": "USOIL",
+    "UKOUSD": "USOIL",
 }
+
+
+def canonical_symbol(symbol: str) -> str:
+    """Broker sembolünü uygulama sembolüne normalize eder (2026-10-10 denetim P2-7).
+
+    Motorun kritik dalları TAM eşitlik kullanır (`sym == "BTCUSD"`, `"BTC" in sym`).
+    Broker sonekli ad gönderirse (`BTCUSD.m`, `XAUUSD.a`, `US30.cash`) bu dallar
+    sessizce düşer: BTC soğuması, btc_min_score, EV muafiyeti, seri-SL ve spread
+    tavanı hiç uygulanmaz. Köprü artık normalize ediyor; burası da eski köprü
+    sürümleri ve doğrudan API çağrıları için aynı garantiyi verir.
+    """
+    s = str(symbol or "").upper().replace("/", "").strip()
+    if not s:
+        return ""
+    if s in _MT5_TO_APP_SYMBOLS:
+        return _MT5_TO_APP_SYMBOLS[s]
+    base = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    return _MT5_TO_APP_SYMBOLS.get(base, base or s)
+
 
 YAHOO_SYMBOL_MAP = {
     "EURUSD": "EURUSD=X",
@@ -3132,6 +3170,7 @@ class ForexAutoPaperSettings(BaseModel):
     max_forex_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı")
     max_gold_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
+    btc_cooldown_sec: float = Field(60.0, ge=0.0, le=900.0, description="BTCUSD kapanış sonrası soğuma süresi (sn). 2026-10-10 denetim P1-6: flip'te bu sayaç sıfırlanır; panelden ayarlanabilir hale getirildi (0 = kapalı)")
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
@@ -3149,9 +3188,16 @@ class ForexAutoPaperSettings(BaseModel):
     major_session_start_utc: int = Field(7, ge=0, le=23, description="Majör seans penceresi başlangıcı (UTC, dahil) — 07:00 London açık")
     major_session_end_utc: int = Field(20, ge=1, le=24, description="Majör seans penceresi bitişi (UTC, dahil değil) — 20:00 NY öğleden sonra")
     major_min_atr_pips: float = Field(2.5, ge=0.0, le=50.0, description="Majörler minimum ATR (pip) tabanı — ölü piyasa filtresi (0 = kapalı; 2026-10-08 kullanıcı kararı: 4.0 → 2.5 — GBPUSD 3.6p / AUDUSD 1.7p majörleri 'ölü piyasa' diye eliyordu, FX'te işlem açılmıyordu)")
-    crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142)")
-    crypto_tp_enabled: bool = Field(False, description="Kriptoda sabit TP emri (False = kapalı; 2026-10-06 30g replay: TP kapalıyken BTC −$55.70→−$18.02, kazanç trailing/BE ile koşturulur)")
+    crypto_sl_atr_mult: float = Field(1.5, ge=0.0, le=5.0, description="Kripto kategorisi özel SL ATR çarpanı (0 = global 1.1×ATR; 2026-10-06 replay: BTC −$30→+$58, maxDD $161→$142. 2026-10-10 denetim A/B teyidi: 32g izole BTC 1.5× = +$396 / 1.1× = +$298 → 1.5× KORUNUR)")
+    crypto_tp_enabled: bool = Field(False, description="Kriptoda sabit TP emri (False = kapalı; 2026-10-06 30g replay: TP kapalıyken BTC −$55.70→−$18.02. 2026-10-10 denetim A/B teyidi: TP kapalı +$396 / TP açık +$311 → KAPALI KORUNUR; kazanç BE/trailing ile koşturulur)")
     btc_min_score: float = Field(76.0, ge=0.0, le=98.0, description="BTCUSD özel giriş skor eşiği (0 = global min_score; süpürme: 76 noktası)")
+    # --- 2026-10-10 BTCUSD denetimi (P0-3): BTC'nin kayıp-uyarlamalı freni yoktu ---
+    btc_ev_exempt: bool = Field(False, description="BTCUSD'yi EV kalkanından MUAF tut (eski davranış). False = BTC de 24 saatlik EV penceresiyle dinlenir (2026-10-10 denetim P0-3: muafiyet kaldırıldı; XAU muafiyeti ayrıca korunur)")
+    btc_net_negative_guard_enabled: bool = Field(False, description="BTC'ye özel net-negatif pencere freni: son pencerede net zarar + yeterli işlem varsa BTC yeni giriş almaz (ardışık-SL'e bağlı değil). 2026-10-10 denetim A/B: 32g replay'de fren net PnL'i DÜŞÜRDÜ (+$373 → +$222) ve iki pencerede de negatif → varsayılan KAPALI; mekanizma korunuyor, kanıt gelirse açılır")
+    btc_net_negative_window_hours: float = Field(6.0, ge=1.0, le=48.0, description="BTC net-negatif freni geriye dönük pencere (saat)")
+    btc_net_negative_min_trades: int = Field(6, ge=3, le=50, description="BTC net-negatif freni için pencerede gereken minimum işlem sayısı")
+    btc_net_negative_usd: float = Field(0.0, ge=-1000.0, le=0.0, description="BTC net-negatif freni eşiği (USD): pencere net'i bunun altındaysa BTC dinlenir (0.0 = herhangi bir net zarar)")
+    crypto_risk_clamp_enabled: bool = Field(True, description="Kripto/altında risk-skip bypass'ı yerine lotu kategori tabanına SABİTLE (risk asla artmaz; eski davranış aşırı lotu kullanıyordu — 2026-10-10 denetim P0-4)")
     loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
     loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
     chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
@@ -3165,13 +3211,15 @@ class ForexAutoPaperSettings(BaseModel):
         description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam + 2026-10-08 Radar-evreni replay pozitifleri + London Breakout replay pozitifleri — LBRK sembolleri yalnız LB akışıyla işlenir, klasik radar sinyalleri bu çiftlerde yine replay'de negatif olduğundan skor kapısından geçmez)",
     )
     mode_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"],
-        description="Donchian+ADX giriş modunun AKTİF olduğu semboller",
+        default_factory=lambda: ["XAUUSD", "GBPJPY", "EURJPY"],
+        description="Donchian+ADX giriş modunun AKTİF olduğu semboller (2026-10-10 denetim P0-2: BTCUSD ÇIKARILDI — 32g izole replay'de BTC donchian −$27.50/113 işlem, klasik kol +$396; mod JPY krosları için kalibre edilmişti)",
     )
     mode_exclusive: List[str] = Field(
         default_factory=lambda: ["GBPJPY", "EURJPY"],
         description="YALNIZ donchian_adx moduyla işlem açılan semboller (klasik skor sinyali bu çiftlerde replay'de kanıtlanmış negatif beklentiye sahip — kapalı kalır)",
     )
+    donchian_adx_min: float = Field(18.0, ge=0.0, le=60.0, description="Donchian+ADX modu ADX(14) eşiği (2026-10-10 denetim P2-9: kodda sabitti, diğer akışlar ayardan okuyordu — kalibre değer 18.0 korunur)")
+    donchian_max_per_day: int = Field(2, ge=0, le=20, description="Donchian+ADX modu: yön başına günde azami giriş (2026-10-10 denetim P2-9: kodda sabitti — kalibre değer 2 korunur; 0 = sınırsız)")
     ema_adx_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD"],
         description="EMA+ADX geri-çekilme skalpi (M5) akışının AKTİF olduğu semboller (2026-10-08: XAUUSD 5m; 60g +$184.56 + Tem15 +$153.90 iki bağımsız pencerede pozitif). Klasik ve donchian akışları bu sembollerde KORUNUR (üç akış birlikte).",
@@ -3223,6 +3271,102 @@ _LAST_DATA_GAP_LOG: Dict[str, float] = {}
 _LAST_SYMBOL_ENTRY_TIME: Dict[str, float] = {}
 
 _AUTO_SETTINGS = ForexAutoPaperSettings()
+
+# --- 2026-10-10 denetim P1-5: ayar kalıcılığı + birleştirme (merge) -----------------
+# Eskiden _AUTO_SETTINGS yalnız bellekti (restart'ta panel config'i koda dönüyordu) ve
+# POST /auto-paper/settings TÜM nesneyi değiştiriyordu (eksik alan → sessiz varsayılan
+# sıfırlaması, ör. btc_min_score). Artık: (a) ayarlar diske yazılır ve startup'ta yüklenir,
+# (b) endpoint kısmi gövdeyi mevcut ayarların üzerine birleştirir.
+_FOREX_SETTINGS_FILE = os.environ.get("FOREX_SETTINGS_FILE") or ""
+
+
+def _settings_store_path() -> str:
+    """Ayar dosyası yolu: env → /data (Docker volume) → repo outputs → tmp."""
+    cands = [
+        _FOREX_SETTINGS_FILE,
+        "/data",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "outputs"),
+        tempfile.gettempdir(),
+    ]
+    for c in cands:
+        if not c:
+            continue
+        try:
+            os.makedirs(c, exist_ok=True)
+            return os.path.join(c, "forex_auto_settings.json")
+        except Exception:
+            continue
+    return os.path.join(tempfile.gettempdir(), "forex_auto_settings.json")
+
+
+def load_persisted_settings() -> Optional[Dict[str, Any]]:
+    """Diske yazılmış ayarları döner (yoksa None). Bilinmeyen anahtarlar yok sayılır."""
+    try:
+        p = _settings_store_path()
+        if not os.path.exists(p):
+            return None
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def persist_settings(settings: "ForexAutoPaperSettings") -> bool:
+    """Ayarları diske yazar (atomik). Başarısızlık motoru DURDURMAZ, yalnız loglanır."""
+    # Test koşumunda diske yazma/yükleme yapılmaz (testler arası durum sızmasını önler).
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("FOREX_SETTINGS_DISABLE_PERSIST"):
+        return False
+    try:
+        p = _settings_store_path()
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(settings.model_dump(), f, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+        return True
+    except Exception as exc:
+        try:
+            _log_auto_decision("SYSTEM", f"⚠️ Ayarlar diske yazılamadı (bellek-içi kalır): {exc}")
+        except Exception:
+            pass
+        return False
+
+
+def merge_settings_payload(payload: Dict[str, Any]) -> "ForexAutoPaperSettings":
+    """Kısmi ayar gövdesini mevcut ayarların üzerine birleştirir (P1-5).
+
+    - Bilinen alanlar mevcut değerin üzerine yazılır.
+    - Bilinmeyen anahtarlar yok sayılır (ileri/geri uyum).
+    - `enabled` çalışma durumundan gelir (toggle ile yönetilir), gövdeden EZİLMEZ.
+    - Eksik alanlar mevcut değeri KORUR (eski "tüm nesne değiştir" davranışının tersi).
+    """
+    cur = _AUTO_SETTINGS.model_dump()
+    fields = set(ForexAutoPaperSettings.model_fields.keys())
+    unknown = [k for k in payload.keys() if k not in fields]
+    for k, v in payload.items():
+        if k in fields and k != "enabled":
+            cur[k] = v
+    cur["enabled"] = _AUTO_STATE.get("enabled", cur.get("enabled", False))
+    merged = ForexAutoPaperSettings(**cur)
+    if unknown:
+        try:
+            _log_auto_decision("SYSTEM", f"ℹ️ Bilinmeyen ayar anahtarları yok sayıldı: {unknown}")
+        except Exception:
+            pass
+    return merged
+
+
+# Startup: kalıcı ayarları yükle (varsa). Başarısızsa varsayılanlarla devam.
+# Test ortamında atlanır (diskteki artık dosya testleri kirletmesin).
+try:
+    if not (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("FOREX_SETTINGS_DISABLE_PERSIST")):
+        _persisted = load_persisted_settings()
+        if _persisted:
+            _known = {k: v for k, v in _persisted.items()
+                      if k in ForexAutoPaperSettings.model_fields}
+            _AUTO_SETTINGS = ForexAutoPaperSettings(**_known)
+except Exception as _exc:  # pragma: no cover - savunmacı
+    _AUTO_SETTINGS = ForexAutoPaperSettings()
 
 # IC Markets MT5 Durumu (Global Köprü Paylaşımı)
 _MT5_STATE: Dict[str, Any] = {
@@ -3412,7 +3556,9 @@ def get_all_symbol_ev_status(now_ts: Optional[float] = None) -> Dict[str, Any]:
         stats = _collect_symbol_ev(sym, now_ts, window_sec, source=closed_source)
         override_until = _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
         is_overridden = now_ts < override_until
-        is_exempt_symbol = sym in ("XAUUSD", "BTCUSD")
+        # 2026-10-10 denetim P0-3: muafiyet gerçek kuralla hizalı — XAU her zaman muaf;
+        # BTC yalnız btc_ev_exempt=True ise muaf (varsayılan False → BTC EV penceresiyle dinlenir).
+        is_exempt_symbol = (sym == "XAUUSD") or (sym == "BTCUSD" and _AUTO_SETTINGS.btc_ev_exempt)
 
         raw_blocked = ev_guard_decision(
             stats,
@@ -3728,8 +3874,11 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
     if _LAST_BTC_EXIT_TIME > 0:
         if _LAST_BTC_EXIT_TIME > now_ts:
             _LAST_BTC_EXIT_TIME = now_ts
+        # 2026-10-10 denetim P2-6: 60 sn sabit kodluydu; panelden ayarlanan
+        # btc_cooldown_sec farklıysa panel yanlış süre gösteriyordu.
+        _btc_note_cd = float(_AUTO_SETTINGS.btc_cooldown_sec)
         time_since_btc = max(0.0, now_ts - _LAST_BTC_EXIT_TIME)
-        cd_left = max(0.0, min(60.0, 60.0 - time_since_btc))
+        cd_left = max(0.0, min(_btc_note_cd, _btc_note_cd - time_since_btc))
         if cd_left > 0:
             reasons.append(f"son kapanıştan sonra soğuma bekleniyor ({int(cd_left)} sn)")
     last_sym_btc = _LAST_SYMBOL_ENTRY_TIME.get("BTCUSD", 0.0)
@@ -4147,8 +4296,8 @@ async def _forex_auto_paper_loop():
                     _m_action = donchian_adx_entry(
                         prev_close=_m_st["prev_close"], prev_mid=_m_st["prev_mid"],
                         close=_m_price, mid=float(_m_tech["donch_mid"]),
-                        adx=float(_m_tech.get("adx", 25.0)), adx_min=18.0,
-                        day=_m_day, day_counts=_m_st["counts"], max_per_day=2,
+                        adx=float(_m_tech.get("adx", 25.0)), adx_min=float(_AUTO_SETTINGS.donchian_adx_min),
+                        day=_m_day, day_counts=_m_st["counts"], max_per_day=int(_AUTO_SETTINGS.donchian_max_per_day),
                         hour_utc=_m_now.hour, is_jpy=("JPY" in _m_sym.upper()),
                     )
                     _m_st["prev_close"] = _m_price
@@ -4170,8 +4319,23 @@ async def _forex_auto_paper_loop():
                                 strategy_label="Donchian ADX Kırılımı",
                             )
                         else:
-                            _m_adx_txt = f"ADX {float(_m_tech.get('adx', 0)):.0f}"
-                            _m_wait = ("fiyat orta hattın üstüne dönüp yeniden kırılınca SAT" if _m_price <= float(_m_tech["donch_mid"]) else "fiyat orta hattın altına sarkıp yeniden kırılınca AL")
+                            # 2026-10-10 denetim P2-1: log gerçek kapıyı söylemeli — eskiden
+                            # None dönüşü her zaman "orta hat kesişimi bekleniyor" diye yazılıyor,
+                            # ADX-altı/seans/gün-limiti gerçek sebepken yanıltıyordu.
+                            # Ayrıca log ADX varsayılanı (0) karar varsayılanıyla (25.0) çelişiyordu.
+                            _m_adx_val = float(_m_tech.get("adx", 25.0))
+                            _m_adx_txt = f"ADX {_m_adx_val:.0f}"
+                            _m_hour = datetime.datetime.now(datetime.timezone.utc).hour
+                            _m_is_jpy = ("JPY" in _m_sym.upper())
+                            _m_session_ok = (0 <= _m_hour < 16) if _m_is_jpy else (7 <= _m_hour < 16)
+                            if _m_adx_val < 18.0:
+                                _m_wait = f"ADX {_m_adx_val:.0f} < 18 eşiği — trend gücü yetersiz"
+                            elif not _m_session_ok:
+                                _m_wait = f"seans dışı (UTC {_m_hour}; pencere {'00-16' if _m_is_jpy else '07-16'})"
+                            elif _m_st["counts"].get("BUY", 0) >= 2 and _m_st["counts"].get("SELL", 0) >= 2:
+                                _m_wait = "günlük yön limiti doldu (2+2)"
+                            else:
+                                _m_wait = ("fiyat orta hattın üstüne dönüp yeniden kırılınca SAT" if _m_price <= float(_m_tech["donch_mid"]) else "fiyat orta hattın altına sarkıp yeniden kırılınca AL")
                             _log_auto_decision(
                                 "SCAN",
                                 f"🎯 [{_m_disp}] Donchian modu bekliyor: fiyat orta hattın {_m_side} ({_m_price:.3f} / orta {float(_m_tech['donch_mid']):.3f}), {_m_adx_txt} → {_m_wait}.",
@@ -4337,8 +4501,10 @@ async def _forex_auto_paper_loop():
                         _s_disp = _s_t.get("display", _s_sym)
                         _s_allowed = _s_sym in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
                         if _s_action:
-                            candidates = [c for c in candidates if not (
-                                str(c.get("symbol", "")).upper() == _s_sym and str(c.get("entry_source", "")).startswith("s3_"))] + [{
+                            # 2026-10-10 denetim P1-8: sembol-bazlı TAM dedup (donchian/EAP ile aynı).
+                            # Eskiden yalnız kendi s3_ adayı düşürülüyordu → aynı sembolde farklı
+                            # akış adayları (klasik/donchian/LB) yan yana kalıp çapraz-flip churn üretiyordu.
+                            candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _s_sym] + [{
                                 "symbol": _s_sym,
                                 "display": _s_disp,
                                 "action": _s_action,
@@ -4433,8 +4599,8 @@ async def _forex_auto_paper_loop():
                         _lb_sl_pips = (_lb_box_h * float(_AUTO_SETTINGS.lb_sl_box_frac)) / _lb_pip if _lb_pip > 0 else 10.0
                         _lb_tp_pips = _lb_sl_pips * float(_AUTO_SETTINGS.lb_tp_r)
                         _lb_atr = float((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("atr", 0.0))
-                        candidates = [c for c in candidates if not (
-                            str(c.get("symbol", "")).upper() == _lb_sym and str(c.get("entry_source", "")) == "london_breakout")] + [{
+                        # 2026-10-10 denetim P1-8: sembol-bazlı TAM dedup (donchian/EAP/S3 ile aynı).
+                        candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _lb_sym] + [{
                             "symbol": _lb_sym,
                             "display": _lb_disp,
                             "action": _lb_action,
@@ -4679,6 +4845,11 @@ async def _forex_auto_paper_loop():
                             _LAST_SYMBOL_ENTRY_TIME[sym] = 0.0
                             if "XAU" in sym or "GOLD" in sym:
                                 _LAST_GOLD_EXIT_TIME = 0.0
+                            # 2026-10-10 denetim P1-6: BTC ters-dönüşünde de çıkış soğumasını
+                            # sıfırla — yoksa flip karşı bacağı kapatıp 60 sn boyunca düz kalıyordu
+                            # (yorumun vaat ettiği "anında ters yön" BTC'de gerçekleşmiyordu).
+                            if "BTC" in sym:
+                                _LAST_BTC_EXIT_TIME = 0.0
 
                             # Döngü devam eder ve aşağıda yeni new_action (BUY/SELL) emrini açar!
                         else:
@@ -4691,7 +4862,9 @@ async def _forex_auto_paper_loop():
                                          sum(1 for p in matching_mt5 if p.get("direction", "").upper() == new_action) + \
                                          sum(1 for c in matching_pending if c.get("direction", "").upper() == new_action)
 
-                        max_pyr = _AUTO_SETTINGS.max_positions_per_symbol  # Varsayılan: 3
+                        # 2026-10-10 denetim P2-5: yorum "Varsayılan: 3" diyordu ama alan
+                        # varsayılanı 1 (tek güvenli scalper pozisyonu) — yanıltıcı yorum düzeltildi.
+                        max_pyr = _AUTO_SETTINGS.max_positions_per_symbol  # Varsayılan: 1 (ayarla 1-5)
                         if same_dir_count >= max_pyr:
                             if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_max_pyr", 0) > 40.0:
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_max_pyr"] = now_ts
@@ -4767,20 +4940,22 @@ async def _forex_auto_paper_loop():
                             )
                         continue
 
-                # 2b. Bitcoin (BTCUSD) Özel Soğuma Koruması (Kullanıcı kararı: 60 sn)
+                # 2b. Bitcoin (BTCUSD) Özel Soğuma Koruması (Kullanıcı kararı: 60 sn;
+                # 2026-10-10: süre artık panelden ayarlanır — btc_cooldown_sec)
                 # İlk start verildiğinde veya henüz kapanış olmadığında (<= 0) soğuma kalkanı dikkate alınmaz
                 is_btc = ("BTC" in sym)
-                if is_btc and _LAST_BTC_EXIT_TIME > 0:
+                _btc_cd_sec = float(_AUTO_SETTINGS.btc_cooldown_sec)
+                if is_btc and _btc_cd_sec > 0 and _LAST_BTC_EXIT_TIME > 0:
                     if _LAST_BTC_EXIT_TIME > now_ts:
                         _LAST_BTC_EXIT_TIME = now_ts
                     time_since_btc_exit = max(0.0, now_ts - _LAST_BTC_EXIT_TIME)
-                    if time_since_btc_exit < 60.0:
-                        remaining_btc_cd = int(min(60.0, max(0.0, 60.0 - time_since_btc_exit)))
+                    if time_since_btc_exit < _btc_cd_sec:
+                        remaining_btc_cd = int(min(_btc_cd_sec, max(0.0, _btc_cd_sec - time_since_btc_exit)))
                         if remaining_btc_cd > 0 and (now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_btc_cd", 0) > 20.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_btc_cd"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}][{_c_strat_lbl}] Bitcoin Soğuma Kalkanı: Kapanıştan sonra {remaining_btc_cd} sn bekleniyor (min 60 sn kuralı).",
+                                f"[{cand['display']}][{_c_strat_lbl}] Bitcoin Soğuma Kalkanı: Kapanıştan sonra {remaining_btc_cd} sn bekleniyor ({_btc_cd_sec:.0f} sn kuralı).",
                                 symbol=sym,
                                 strategy=_c_strat,
                                 strategy_label=_c_strat_lbl,
@@ -4808,8 +4983,11 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 3b. Sembol EV Kalkanı — son pencerede sermaye yakan semboller dinlenir
-                # (Kullanıcı kararı: XAUUSD ve BTCUSD özel modda 24 saatlik EV kilidi yerine 60 sn soğuma uygulanır)
-                if _AUTO_SETTINGS.ev_guard_enabled and sym not in ("XAUUSD", "BTCUSD"):
+                # (2026-10-10 denetim P0-3: BTCUSD artık VARSAYILAN olarak muaf DEĞİL — eski
+                #  "BTC/XAU 60 sn soğuma" muafiyeti BTC'yi kayıp-uyarlamalı frenden yoksun
+                #  bırakıyordu. XAU muafiyeti korunur; BTC istenirse btc_ev_exempt=True ile geri alınır.)
+                _ev_exempt = (sym == "XAUUSD") or (sym == "BTCUSD" and _AUTO_SETTINGS.btc_ev_exempt)
+                if _AUTO_SETTINGS.ev_guard_enabled and not _ev_exempt:
                     ev_override_until = _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
                     if now_ts < ev_override_until:
                         # Kullanıcı bu sembolü bugün/geçici olarak EV kalkanından muaf tuttu
@@ -4832,6 +5010,28 @@ async def _forex_auto_paper_loop():
                                     strategy_label=_c_strat_lbl,
                                 )
                             continue
+
+                # 3c. BTC net-negatif pencere freni (2026-10-10 denetim P0-3): ardışık-SL'e
+                # bağlı olmayan, kayıp-uyarlamalı koruma. BTC EV muafiyeti geri açılsa bile
+                # (btc_ev_exempt=True) salınan net-negatif seriyi yakalar.
+                if (sym == "BTCUSD" and _AUTO_SETTINGS.btc_net_negative_guard_enabled
+                        and now_ts >= _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)):
+                    _btc_ev = _collect_symbol_ev(
+                        sym, now_ts, float(_AUTO_SETTINGS.btc_net_negative_window_hours) * 3600.0)
+                    if (_btc_ev.get("n", 0) >= _AUTO_SETTINGS.btc_net_negative_min_trades
+                            and _btc_ev.get("net", 0.0) < _AUTO_SETTINGS.btc_net_negative_usd):
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_btcneg", 0) > 60.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_btcneg"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}][{_c_strat_lbl}] BTC Net-Negatif Freni: son "
+                                f"{_AUTO_SETTINGS.btc_net_negative_window_hours:.0f} saatte {_btc_ev['n']} işlem, net "
+                                f"${_btc_ev['net']:+.2f} (WR %{_btc_ev['win_rate']:.0f}) — BTC yeni giriş almıyor.",
+                                symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
+                            )
+                        continue
 
                 # 4. DXY (ABD Dolar Endeksi) Rejim Filtresi
                 # Pozisyon DXY rejimiyle çelişiyorsa veto; zayıf semboller nötr rejimde ekstra skor ister.
@@ -5015,6 +5215,22 @@ async def _forex_auto_paper_loop():
                     tp_pips = atr_levels["tp_pips"]
                     if _AUTO_SETTINGS.partial_tp_enabled:
                         first_target_pips = atr_levels["first_target_pips"]
+                elif _AUTO_SETTINGS.crypto_sl_atr_mult > 0 and ("BTC" in sym or "ETH" in sym):
+                    # 2026-10-10 denetim P2-10: `crypto_sl_atr_mult` yalnız ATR çıkış motoru
+                    # açıkken uygulanır. Kapatılırsa BTC sessizce `spec["sl_pips"]`'e döner —
+                    # kalibre edilmiş kripto stopu kaybolur ve kimse fark etmez. Sessizliği
+                    # kaldır: ayar açıkken motor kapalıysa karar akışına uyarı düşer.
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_atr_off", 0.0) > 300.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_atr_off"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] ⚠️ ATR çıkış motoru KAPALI ama "
+                            f"crypto_sl_atr_mult={_AUTO_SETTINGS.crypto_sl_atr_mult} ayarlı — kripto "
+                            f"stopu uygulanmıyor, spec SL ({spec['sl_pips']:.0f}p) kullanılıyor.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
                 if str(cand.get("entry_source", "")) == "donchian" and atr_pips > 0:
                     # Donchian modu çıkışları (replay ile birebir): SL 2×ATR, TP 4×ATR, kısmi kâr yok
                     sl_pips = round(2.0 * atr_pips, 1)
@@ -5081,9 +5297,19 @@ async def _forex_auto_paper_loop():
                 # Kripto+altın istisnası (2026-10-08 kullanıcı kararı): BTC/XAU'da lot
                 # zaten kategori minimumu — geniş ATR SL'i (ör. BTC 339p) skip kapısına
                 # takılıp adayları sürekli eziyordu; kripto ve altında pas yok.
+                # 2026-10-10 denetim P0-4: skip'i "pas geç" yerine lotu kategori TABANINA
+                # SABİTLE — eski davranış aşırı (yüksek-risk) lotu olduğu gibi kullanıyordu.
                 mt5_lots, risk_skip = apply_risk_normalization(sym, mt5_lots, sl_pips, pip_val, risk_usd)
                 if risk_skip and (is_crypto or is_gold):
-                    risk_skip = False
+                    if _AUTO_SETTINGS.crypto_risk_clamp_enabled:
+                        if is_crypto:
+                            _floor_lot = 0.01
+                        else:
+                            _floor_lot = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, 0.01)
+                        mt5_lots = max(0.01, _floor_lot)
+                        risk_skip = False
+                    else:
+                        risk_skip = False  # eski davranış (aşırı lot korunur)
                 if risk_skip:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_risk", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_risk"] = now_ts
@@ -5480,12 +5706,32 @@ def stop_forex_auto_paper():
 
 
 @router.post("/auto-paper/settings")
-async def update_forex_auto_paper_settings(new_settings: ForexAutoPaperSettings):
-    """Otonom scalper risk ve filtre parametrelerini günceller."""
+async def update_forex_auto_paper_settings(payload: Union[ForexAutoPaperSettings, Dict[str, Any]]):
+    """Otonom scalper risk ve filtre parametrelerini günceller (P1-5: kısmi birleştirme).
+
+    Gövde tam ya da KISMİ olabilir. Eksik alanlar mevcut değerini KORUR (eskiden tüm
+    nesne değiştirildiği için eksik alan sessizce varsayılana sıfırlanıyordu — ör.
+    btc_min_score/crypto_sl_atr_mult). Geçerli ayarlar diske yazılır (restart kalıcı).
+    """
     global _AUTO_SETTINGS
+    try:
+        if isinstance(payload, ForexAutoPaperSettings):
+            # Tam nesne gövdesi (geriye dönük uyum): mevcut ayarların üzerine birleştir.
+            body = payload.model_dump()
+            try:
+                provided = payload.model_fields_set
+            except Exception:
+                provided = set(body.keys())
+            body = {k: v for k, v in body.items() if k in provided}
+            new_settings = merge_settings_payload(body)
+        else:
+            new_settings = merge_settings_payload(payload if isinstance(payload, dict) else {})
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Ayarlar uygulanamadı: {exc}")
     # Çalışma durumunu koru (motorun durdurulup başlatılması toggle endpoint'iyle yönetilir)
     new_settings.enabled = _AUTO_STATE["enabled"]
     _AUTO_SETTINGS = new_settings
+    persist_settings(_AUTO_SETTINGS)
 
     _log_auto_decision(
         "SYSTEM",
@@ -5594,6 +5840,10 @@ async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
     if full_reset:
         _SYMBOL_LOSS_STREAK.clear()
         _SYMBOL_LOSS_COOLDOWN_UNTIL.clear()
+        # 2026-10-10 denetim P1-7: YÖN bazlı sayaçlar da temizlenmeli — yoksa
+        # "temiz sayfa" sonrası (sembol,yön) soğuması ayakta kalıp girişi reddediyordu.
+        _SYMBOL_DIR_LOSS_STREAK.clear()
+        _SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.clear()
         _SYMBOL_EV_OVERRIDE_UNTIL.clear()
         _SYMBOL_EV_RESET_AT_TS.clear()
     # Paper defteri: kesim sonrası kapananlar kalır, sayaçlar onlardan yeniden hesaplanır
@@ -5625,7 +5875,7 @@ async def reset_forex_symbol_guards(cutoff: Optional[str] = None):
         "archive_path": archive_meta["path"],
         "counters_before": counters_before,
         "note": ("EV kalkanı ve rapor/KPI'lar artık yalnız kesim sonrası kapanan işlemlerle hesaplanır; "
-                 + ("seri-SL sayaçları sıfırlandı; " if full_reset else "seri-SL sayaçlarına dokunulmadı; ")
+                 + ("seri-SL (sembol + yön) sayaçları sıfırlandı; " if full_reset else "seri-SL sayaçlarına dokunulmadı; ")
                  + "eski işlemler arşivde (bellek + JSON dosyası). Bakiye değişmedi."),
     }
 
@@ -5690,8 +5940,8 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
                 prev_close=_DONCHIAN_STATE.get(sym, {}).get("prev_close"),
                 prev_mid=_DONCHIAN_STATE.get(sym, {}).get("prev_mid"),
                 close=price, mid=mid,
-                adx=float(tech.get("adx", 25.0)), adx_min=18.0,
-                day=day, day_counts=st_copy["counts"], max_per_day=2,
+                adx=float(tech.get("adx", 25.0)), adx_min=float(_AUTO_SETTINGS.donchian_adx_min),
+                day=day, day_counts=st_copy["counts"], max_per_day=int(_AUTO_SETTINGS.donchian_max_per_day),
                 hour_utc=hour, is_jpy=("JPY" in sym),
             )
             if act:
@@ -6487,6 +6737,9 @@ class MT5SyncRequest(BaseModel):
     ticks: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     # Köprünün broker'dan çektiği mumlar: { "XAUUSD|5m": [ {time,open,high,low,close}, ... ] }
     candles: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    # 2026-10-10 denetim P0-1: köprü emir sonuçlarını (başarı/hata) geri bildirir.
+    # [{cmd_id, action, symbol, success, retcode, error}] — motor reddedilen emri artık görür.
+    command_results: List[Dict[str, Any]] = Field(default_factory=list)
     version: str = "1.0.0"
 
 
@@ -6510,6 +6763,7 @@ class MT5ToggleAutoRequest(BaseModel):
 @router.post("/mt5/sync")
 async def sync_mt5_bridge(req: MT5SyncRequest):
     """Windows MT5 köprüsünden gelen canlı veriyi alır ve bekleyen emirleri iletir."""
+    global _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME
     now_ts = time.time()
     _MT5_STATE["connected"] = True
     _MT5_STATE["last_ping"] = now_ts
@@ -6558,11 +6812,15 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             bid_v = tick_dict.get("bid")
             ask_v = tick_dict.get("ask")
             if bid_v and ask_v and float(ask_v) > float(bid_v) > 0:
-                app_sym = _MT5_TO_APP_SYMBOLS.get(sym_up, sym_up)
+                app_sym = canonical_symbol(sym_up)
                 pip_size = get_symbol_trading_specs(app_sym)["pip_size"]
                 if pip_size > 0:
                     spread_pips = (float(ask_v) - float(bid_v)) / pip_size
-                    if 0.0 < spread_pips <= 100.0:
+                    # 2026-10-10 denetim P2-3: sabit 100.0 tavanı BTC'de (pip_size=1.0)
+                    # gerçek >$100 spread'i reddedip sentetik 12.0'a düşürüyordu. Kripto
+                    # için tavanı genişlet; yine de bariz veri hatasını (>10.000) ele.
+                    _spread_ceiling = 10000.0 if ("BTC" in app_sym.upper() or "ETH" in app_sym.upper()) else 100.0
+                    if 0.0 < spread_pips <= _spread_ceiling:
                         _LIVE_SPREAD_PIPS[app_sym] = round(spread_pips, 2)
 
     if req.deals:
@@ -6612,6 +6870,42 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
                     _deal_net_pnl_usd(d),
                     d.get("direction"),
                 )
+
+    # 2026-10-10 denetim P0-1: köprü emir sonuçlarını işle. Eskiden başarısız emir
+    # yalnız köprü konsoluna yazılıyor, motor onu "açıldı" sanıyordu. Şimdi:
+    #   - başarısız OPEN_ORDER → 60 sn giriş soğumasını GERİ AÇ (yeniden denemeye izin ver)
+    #   - başarılı OPEN_ORDER → bekleyen komutları kesin temizle
+    #   - başarısız CLOSE_ORDER → sembolü aşırı soğutmamak için exit saatini geri al
+    # (Retcode/success alanları olmayan eski köprü sürümleriyle geriye dönük uyumlu.)
+    if req.command_results:
+        for _cr in req.command_results:
+            try:
+                _cr_action = str(_cr.get("action", "")).upper()
+                _cr_sym = str(_cr.get("symbol", "")).upper()
+                _cr_ok = bool(_cr.get("success", True))
+                _cr_err = _cr.get("error") or _cr.get("retcode")
+                if not _cr_ok:
+                    if _cr_action == "OPEN_ORDER" and _cr_sym:
+                        _LAST_SYMBOL_ENTRY_TIME.pop(_cr_sym, None)
+                        if "XAU" in _cr_sym or "GOLD" in _cr_sym:
+                            _LAST_GOLD_EXIT_TIME = 0.0
+                        if "BTC" in _cr_sym:
+                            _LAST_BTC_EXIT_TIME = 0.0
+                    _log_auto_decision(
+                        "SYSTEM",
+                        f"❌ MT5 emri BAŞARISIZ: {_cr_action} {_cr_sym} — {_cr_err} "
+                        f"(soğuma geri açıldı, yeniden denenecek).",
+                        symbol=_cr_sym or None,
+                    )
+                else:
+                    _log_auto_decision(
+                        "SYSTEM",
+                        f"✅ MT5 emri uygulandı: {_cr_action} {_cr_sym}"
+                        + (f" (retcode {_cr.get('retcode')})" if _cr.get("retcode") is not None else ""),
+                        symbol=_cr_sym or None,
+                    )
+            except Exception as _cr_exc:  # pragma: no cover - savunmacı
+                _log_auto_decision("SYSTEM", f"⚠️ Emir sonucu işlenemedi: {_cr_exc}")
 
     # Bekleyen emirleri al ve boşalt
     commands = list(_MT5_STATE["pending_commands"])

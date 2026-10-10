@@ -324,6 +324,73 @@ export default function AutoSettingsPanel({
         </div>
 
         <div>
+          <label className="text-[11px] text-bunker-muted block mb-1">₿ BTC Soğuma Süresi (sn):</label>
+          <input
+            type="number"
+            min="0"
+            max="900"
+            step="10"
+            value={form.btc_cooldown_sec ?? 60}
+            onChange={(e) => setNumField("btc_cooldown_sec", e.target.value)}
+            className={`${inputCls} text-orange-400`}
+          />
+          <span className="text-[10px] text-bunker-muted">Kapanıştan sonra bekleme (0 = kapalı)</span>
+        </div>
+
+        {/* BTC RİSK KALKANLARI (2026-10-10 denetimi) */}
+        <div className="col-span-2 md:col-span-4 pt-3 border-t border-bunker-800">
+          <label className="text-[11px] text-bunker-muted font-bold block mb-2">
+            ₿ BTCUSD Risk Kalkanları:
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="inline-flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(form.btc_ev_exempt)}
+                onChange={(e) => setField("btc_ev_exempt", e.target.checked)}
+                className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} focus:ring-0 w-4 h-4 mt-0.5`}
+              />
+              <span className="text-xs">
+                <span className="text-white font-semibold block">BTC&apos;yi EV Kalkanından Muaf Tut</span>
+                <span className="text-[10px] text-bunker-muted">
+                  KAPALI önerilir — BTC de kayıp-uyarlamalı EV penceresiyle dinlenir
+                </span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(form.btc_net_negative_guard_enabled)}
+                onChange={(e) => setField("btc_net_negative_guard_enabled", e.target.checked)}
+                className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} focus:ring-0 w-4 h-4 mt-0.5`}
+              />
+              <span className="text-xs">
+                <span className="text-white font-semibold block">BTC Net-Negatif Freni</span>
+                <span className="text-[10px] text-bunker-muted">
+                  KAPALI önerilir — 32g A/B&apos;de PnL&apos;i düşürdü
+                </span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(form.crypto_risk_clamp_enabled)}
+                onChange={(e) => setField("crypto_risk_clamp_enabled", e.target.checked)}
+                className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} focus:ring-0 w-4 h-4 mt-0.5`}
+              />
+              <span className="text-xs">
+                <span className="text-white font-semibold block">Kripto Lot Tavanı (Güvenli)</span>
+                <span className="text-[10px] text-emerald-400 font-bold">
+                  AÇIK önerilir — kapatılırsa aşırı lot riski
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div>
           <label className="text-[11px] text-bunker-muted block mb-1">Max. Spread Limiti:</label>
           <input
             type="number"
