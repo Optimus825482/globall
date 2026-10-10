@@ -129,6 +129,7 @@ TUN_HEADROOM_FOREX = 3.5
 TUN_ADX_MIN = 0.0           # 0 = ADX kalkanı kapalı
 TUN_ADX_MIN_SYMS = ""       # Boş = ADX kalkanı TÜM sembollere; "BTCUSD,US30" gibi liste = yalnız bu sembollere (2026-10-10 sinyal kalitesi süpürmesi)
 TUN_ADX_HALFLOT = 0.0       # >0: ADX eşiği altındaki adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5 = yarım lot; A/B/C sinyal sınıflandırması)
+TUN_CLOSE_CONFIRM = False   # True: aday hemen açılmaz; SONRAKİ taze bar sinyal yönünde kapanırsa teyit barının kapanışından girilir (2026-10-10 kapanış-teyidi testi)
 TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
 # 2026-10-06 köprü hizalama simülasyonu: --spec-atr ile spec BE/Trail'i işlem-bazlı giriş ATR'siyle
 # hesaplanır (= motorun cmd ile köprüye gönderdiği ATR'li değerler; canlıda artık cmd ile taşınıyor).
@@ -2319,6 +2320,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     corr = FXCorrelationMonitor()
     closes_cache: Dict[str, List[float]] = {}
     last_entry_bar: Dict[Tuple[str, str], int] = {}
+    pending_confirm: Dict[str, List[Dict]] = {"NEW": []} if TUN_SKIP_OLD else {"OLD": [], "NEW": []}
     cursors: Dict[str, int] = {s: 0 for s in symbols}
 
     # Açılış sürüşü önyargısı: her UTC gününün 13:30 ilk 5m mumunun yönü (Zarattini-Aziz 2023,
@@ -2515,6 +2517,45 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         in_window = (entry_start_ts is None or ts >= entry_start_ts) and (entry_end_ts is None or ts < entry_end_ts)
         candidates: Dict[str, List[Dict]] = {"OLD": [], "NEW": []} if not TUN_SKIP_OLD else {"NEW": []}
         blocked_events: List[Tuple[str, Dict]] = []
+
+        # 3-öncesi) Kapanış-teyidi bekleyenleri işle (yalnız NEW): sinyal barından sonraki taze
+        # barın kapanışı sinyal yönündeyse teyit barının kapanışından girilir; ters kapanışta
+        # aday düşer (gölge defter TEYIT reddini görür). Zaman aşımı sessizce düşer (kalite reddi değil).
+        if TUN_CLOSE_CONFIRM:
+            for vname_p in list(pending_confirm.keys()):
+                still_pending: List[Dict] = []
+                for p in pending_confirm[vname_p]:
+                    cd = p["cand"]
+                    sym_p = cd["symbol"]
+                    if cursors[sym_p] > p["ci_signal"] and p["ci_signal"] < len(data[sym_p]):
+                        c_close = float(data[sym_p][p["ci_signal"]][4])
+                        if (c_close > cd["price"]) if cd["action"] == "BUY" else (c_close < cd["price"]):
+                            cd2 = dict(cd, price=c_close, gate="TEYIT")
+                            book_p = books[vname_p]
+                            same_dir_p = [pp for pp in book_p.positions
+                                          if pp.symbol == sym_p and pp.direction == cd2["action"]]
+                            if len(book_p.positions) < MAX_OPEN_POSITIONS and len(same_dir_p) < MAX_PER_SYMBOL_DIR:
+                                spec_p = forex.get_symbol_trading_specs(sym_p, atr_pips=cd2["atr_pips"])
+                                mx_p = cd2.get("exits")
+                                if mx_p:
+                                    sl_p, tp_p, part_p = mx_p["sl_pips"], mx_p["tp_pips"], 0.0
+                                else:
+                                    sl_mult_eff = TUN_SL_ATR_MULT
+                                    if TUN_CRYPTO_SL_MULT > 0 and ("BTC" in sym_p or "ETH" in sym_p):
+                                        sl_mult_eff = TUN_CRYPTO_SL_MULT
+                                    levels_p = forex.get_atr_exit_levels(
+                                        cd2["atr_pips"], spec_p["sl_pips"], spec_p["tp_pips"],
+                                        sl_atr_mult=sl_mult_eff, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
+                                    sl_p, tp_p, part_p = levels_p["sl_pips"], levels_p["tp_pips"], levels_p["first_target_pips"]
+                                pos_p = open_position(cd2, sl_p, tp_p, part_p, idx)
+                                if pos_p is not None:
+                                    book_p.positions.append(pos_p)
+                                    last_entry_bar[(sym_p, cd2["action"])] = idx
+                        else:
+                            blocked_events.append(("TEYIT", dict(cd, gate="TEYIT")))
+                    elif idx - p["idx_signal"] < 3:
+                        still_pending.append(p)
+                pending_confirm[vname_p] = still_pending
 
         for sym in symbols:
             if not in_window or not fresh[sym]:
@@ -2759,6 +2800,11 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         partial = levels["first_target_pips"]
                 else:
                     sl_pips, tp_pips, partial = spec["sl_pips"], spec["tp_pips"], 0.0
+                if vname == "NEW" and TUN_CLOSE_CONFIRM:
+                    # Kapanış-teyidi modu: hemen açılmaz; sonraki taze barın kapanışı yönü
+                    # onaylarsa o barın kapanışından girilir (3-öncesi bloğu işler).
+                    pending_confirm[vname].append({"cand": cand_d, "idx_signal": idx, "ci_signal": cursors[cand_d["symbol"]]})
+                    continue
                 pos = open_position(cand_d, sl_pips, tp_pips, partial, idx)
                 if pos is None:
                     continue  # Risk kalkanı: en küçük mümkün lot bile sert risk sınırını aşıyor
@@ -2911,7 +2957,7 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
-    global TUN_ADX_MIN, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
+    global TUN_ADX_MIN, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_CLOSE_CONFIRM, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
     global TUN_GOLD_SESSION, TUN_BTC_EMA200, TUN_BTC_VWAP, TUN_CRYPTO_SL_MULT, TUN_BTC_MIN_SCORE, TUN_TP_MODE
@@ -3011,6 +3057,7 @@ def main():
     parser.add_argument("--adx-min", type=float, default=0.0, help="ADX eşiği (0 = kapalı)")
     parser.add_argument("--adx-syms", default="", help="ADX kalkanını yalnız bu sembollere uygula (virgüllü; boş = tümü)")
     parser.add_argument("--adx-halflot", type=float, default=0.0, help=">0: ADX eşiği altı adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5)")
+    parser.add_argument("--close-confirm", action="store_true", help="Kapanış teyidi: aday sonraki barın yön onayı bekler, giriş onay barının kapanışından")
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
@@ -3220,6 +3267,7 @@ def main():
     TUN_ADX_MIN = args.adx_min
     TUN_ADX_MIN_SYMS = set(s.strip().upper() for s in args.adx_syms.split(",") if s.strip())
     TUN_ADX_HALFLOT = args.adx_halflot
+    TUN_CLOSE_CONFIRM = bool(args.close_confirm)
     TUN_ST_FILTER = args.st_filter
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE
