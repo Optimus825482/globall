@@ -8,6 +8,7 @@ import { formatUtc3 } from "../../lib/format";
 // AutoSettings tipi kokpit kartlarının TP/SL/spread hedefleri için kullanılır;
 // parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı.
 import { type AutoSettings } from "../components/AutoSettingsPanel";
+import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
 
 // --- VERİ TİPLERİ ---
 interface AutoPosition {
@@ -126,6 +127,8 @@ interface TickerData {
   adx?: number;
   supertrend_dir?: number;
   atr?: number;
+  volatility?: string;
+  updated_at?: number;
 }
 
 interface RadarCandidate {
@@ -595,6 +598,28 @@ export default function BtcGoldForexPage() {
     }
   };
   usePolling(fetchComment, 60000);
+
+  // Kapısı anlık görünümü (2026-10-10): motorun KENDİ kapı zinciri durumunu
+  // kapı-kapı çeker. Ana döngüden ayrı çünkü snapshot ucu kendi 2 sn TTL
+  // önbelleğini taşır ve status akışından bağımsız yanıt verir.
+  const [gateSnapshots, setGateSnapshots] = useState<Record<string, GateSnapshot>>({});
+  const [gateLoading, setGateLoading] = useState<boolean>(true);
+  const fetchGateSnapshots = async () => {
+    try {
+      const results = await Promise.all(
+        allowedSymbols.map(async (sym) => {
+          const res = await apiFetch(`/api/forex/auto-paper/gate-snapshot/${sym}`);
+          return [sym, res] as const;
+        })
+      );
+      setGateSnapshots(Object.fromEntries(results.filter(([, r]) => r)));
+    } catch (err) {
+      console.error("Kapı görünümü hatası:", err);
+    } finally {
+      setGateLoading(false);
+    }
+  };
+  usePolling(fetchGateSnapshots, 3000);
 
   // Otomatik kaydırma
   useEffect(() => {
@@ -1068,6 +1093,45 @@ export default function BtcGoldForexPage() {
             const candidate = radarMap[sym];
             const tick = tickers[sym];
 
+            // ANLIK DURUM TAZELİĞİ (2026-10-10): eskiden canlı veri gelmediğinde
+            // bile kart varsayılan sayılarla (72.0 skor / 58.4 RSI / 68450 fiyat)
+            // "sağlıklı" görünüyordu; operatör bunları canlı sanıyordu. Artık
+            // canlı kaynak yoksa sayılar soluk gösterilir ve açıkça işaretlenir.
+            const hasLive = Boolean(tick || candidate);
+            const tickAgeSec =
+              typeof tick?.updated_at === "number"
+                ? Math.max(0, Math.floor(Date.now() / 1000 - tick.updated_at))
+                : null;
+            const dataStale = tickAgeSec !== null && tickAgeSec > 30;
+
+            // Motor kapı zinciri (aynı sayfadaki GateSnapshotCard ile aynı kaynak):
+            // "sinyal var" ile "emir açılacak" aynı şey değil — rozet bunu ayırır.
+            const gate = gateSnapshots[sym] || null;
+            const gateReady = gate?.verdict_level === "ready";
+            const gateHalted = gate?.verdict_level === "blocked" || gate?.verdict_level === "stopped";
+            const blockingLabel =
+              gate?.gates?.find((g) => g.key === gate.blocking_gate)?.label || null;
+
+            // Kapı kayıtlarını anahtarla indeksle — anlık durum şeridi bu veriyi
+            // tekrar hesaplamaz, motorun kendi ölçtüğü değeri gösterir.
+            const gateMap: Record<string, { status: string; detail: string }> = {};
+            for (const g of gate?.gates || []) gateMap[g.key] = { status: g.status, detail: g.detail };
+            const gs = gate?.settings;
+
+            // Eşik MOTORDAN gelir: skor kapısının detayı motorun kendi cümlesidir
+            // ("50.8 < 78 (min_score 78)"), bu yüzden eşiği oradan okuyoruz.
+            // XAU'nun eşiği motorda sabit 78.0 olduğu için ayardan okumak yanlış olurdu.
+            // İki biçim var: geçen kapı "96.0 ≥ 76 (...)" / engelleyen "50.8 < 78 (...)".
+            // Karşılaştırma işaretinden sonraki sayı iki durumda da eşiktir.
+            const scoreThreshold =
+              Number((gateMap["score"]?.detail || "").match(/[<>≥≤]\s*([\d.]+)/)?.[1]) || null;
+            // Soğuma süresi: ayardan; ayar alanı yoksa (eski backend) kapı
+            // cümlesindeki "… 60 sn kuralı" ifadesinden okunur — panel tire
+            // göstermek yerine motorun gerçekte uyguladığı kuralı yazar.
+            const cooldownSec =
+              (isGold ? gs?.gold_cooldown_sec : gs?.btc_cooldown_sec) ??
+              Number((gateMap["cooldown"]?.detail || "").match(/(\d+(?:\.\d+)?)\s*sn/)?.[1]);
+
             // Rakamlar & Değerler
             const curPrice = tick?.ask || candidate?.price || (isGold ? 2735.6 : 68450.0);
             const bidPrice = tick?.bid || candidate?.bid || curPrice;
@@ -1134,24 +1198,71 @@ export default function BtcGoldForexPage() {
                       </div>
                     </div>
 
-                    {/* Sinyal Rozeti */}
-                    <div className="text-right">
+                    {/* Sinyal Rozeti + Kapı Durumu (2026-10-10)
+                        Sinyal = göstergelerin yönü. Kapı = emrin gerçekten açılıp
+                        açılmayacağı. Eskiden yalnız sinyal rozeti vardı; operatör
+                        "GÜÇLÜ ALIŞ" görüp emir gelmeyince motoru bozuk sanıyordu.
+                        Artık ikisi ayrı gösterilir ve sinyal yeşilken kapı kırmızıysa
+                        bunun bir çelişki değil, engel olduğu tek bakışta anlaşılır. */}
+                    <div className="text-right space-y-1">
                       <span
                         className={`inline-block px-3 py-1 rounded-xl text-xs font-black border tracking-wider shadow-md ${
                           action === "BUY"
-                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse"
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
                             : action === "SELL"
-                            ? "bg-rose-500/20 text-rose-300 border-rose-400/50 shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse"
+                            ? "bg-rose-500/20 text-rose-300 border-rose-400/50 shadow-[0_0_12px_rgba(244,63,94,0.3)]"
                             : "bg-bunker-800 text-bunker-muted border-bunker-700"
                         }`}
                       >
                         {action === "BUY" ? "⚡ GÜÇLÜ ALIŞ (BUY)" : action === "SELL" ? "🔻 GÜÇLÜ SATIŞ (SELL)" : "⏸ BEKLEMEDE (HOLD)"}
                       </span>
+                      <div className="flex flex-col items-end gap-1">
+                        {gate ? (
+                          <span
+                            title={gate.verdict}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black border tracking-wide ${
+                              gateReady
+                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/40"
+                                : gateHalted
+                                ? "bg-rose-500/15 text-rose-300 border-rose-400/40"
+                                : "bg-slate-500/15 text-slate-300 border-slate-500/40"
+                            }`}
+                          >
+                            {gateReady
+                              ? "🟢 GİRİŞ HAZIR — EMİR AÇILABİLİR"
+                              : gateHalted
+                              ? `⛔ GİRİŞ ENGELLİ${blockingLabel ? ` — ${blockingLabel}` : ""}`
+                              : "⏸ SİNYAL YOK — BEKLEMEDE"}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-bunker-700 bg-bunker-950 text-bunker-muted">
+                            ◦ Kapı durumu okunuyor…
+                          </span>
+                        )}
+                        {/* Veri tazeliği: bayat/kopuk veride sayılar canlı sanılmasın */}
+                        {!hasLive ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300">
+                            ⚠ CANLI VERİ YOK — değerler örnek varsayılan
+                          </span>
+                        ) : dataStale ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300">
+                            🕐 VERİ {tickAgeSec}sn ESKİ
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                            ● CANLI ({tickAgeSec !== null ? `${tickAgeSec}sn` : "taze"})
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Fiyat Şeridi */}
-                  <div className="mt-4 p-3 rounded-xl bg-bunker-950/90 border border-bunker-800/80 flex items-center justify-between flex-wrap gap-2">
+                  <div
+                    className={`mt-4 p-3 rounded-xl bg-bunker-950/90 border border-bunker-800/80 flex items-center justify-between flex-wrap gap-2 ${
+                      hasLive && !dataStale ? "" : "opacity-60"
+                    }`}
+                  >
                     <div>
                       <span className="text-[10px] text-bunker-muted uppercase block">Canlı Piyasa Fiyatı</span>
                       <div className="flex items-baseline gap-2">
@@ -1186,10 +1297,98 @@ export default function BtcGoldForexPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* ANLIK MOTOR DURUM ŞERİDİ (2026-10-10)
+                      Motorun kendi ölçtüğü kapı verisinden tek satırlık özet:
+                      skor/eşik, seri-SL sayacı, soğuma süresi, pozisyon sayısı.
+                      Amaç: "sinyal 96 ama emir gelmiyor" sorusunun cevabını
+                      log akışına inmeden kartın üstünde görebilmek. Değerler
+                      UYDURULMAZ; kapı verisi yoksa tire gösterilir. */}
+                  {gate && (
+                    <div className="mt-2 flex items-stretch gap-1.5 text-center">
+                      {(() => {
+                        const gScore = gateMap["score"];
+                        const scoreHidden = gScore?.status === "off" || gScore?.status === "na";
+                        // Skor MOTORUN ölçtüğü değerdir (kapı detayının başındaki
+                        // sayı); ticker'daki kopya biraz geriden gelebiliyor.
+                        const engineScore = Number((gScore?.detail || "").match(/^\s*([\d.]+)/)?.[1]);
+                        const shownScore = Number.isFinite(engineScore) ? engineScore : score;
+                        const lossStreakDetail = gateMap["loss_streak"]?.detail || "";
+                        const streakNow = Number(lossStreakDetail.match(/(\d+)\s*\//)?.[1] ?? 0);
+                        const cdBlocked = gateMap["cooldown"]?.status === "block";
+                        const cells: Array<{ k: string; label: string; value: string; tone: string }> = [
+                          {
+                            k: "score",
+                            label: isGold ? "SKOR / EŞİK" : "SKOR / BTC EŞİĞİ",
+                            value:
+                              scoreThreshold !== null && !scoreHidden
+                                ? `${shownScore.toFixed(0)} / ${scoreThreshold.toFixed(0)}`
+                                : `${shownScore.toFixed(0)} / —`,
+                            tone:
+                              scoreThreshold !== null && shownScore >= scoreThreshold
+                                ? "text-emerald-300"
+                                : "text-rose-300",
+                          },
+                          {
+                            k: "sl",
+                            label: "SERİ-SL",
+                            value: `${streakNow} / ${gs?.loss_streak_limit ?? "—"}`,
+                            tone: streakNow > 0 ? "text-amber-300" : "text-emerald-300",
+                          },
+                          {
+                            k: "cd",
+                            label: isGold ? "SOĞUMA (ALTIN)" : "SOĞUMA (BTC)",
+                            value: cdBlocked
+                              ? "AKTİF"
+                              : !Number.isFinite(cooldownSec)
+                              ? "—"
+                              : cooldownSec === 0
+                              ? "kapalı"
+                              : `${(cooldownSec as number).toFixed(0)}sn`,
+                            tone: cdBlocked ? "text-rose-300" : "text-emerald-300",
+                          },
+                          {
+                            k: "pos",
+                            label: "POZİSYON",
+                            value: `${gate.open_positions.length} / ${gs?.max_positions_per_symbol ?? "—"}`,
+                            tone: (gateMap["position_limit"]?.status ?? "") === "block" ? "text-rose-300" : "text-emerald-300",
+                          },
+                          {
+                            k: "spread",
+                            label: "SPREAD KAPISI",
+                            value: (gateMap["spread"]?.detail || "—").split("/")[0].trim(),
+                            tone:
+                              gateMap["spread"]?.status === "block"
+                                ? "text-rose-300"
+                                : gateMap["spread"]?.status === "pass"
+                                ? "text-emerald-300"
+                                : "text-bunker-muted",
+                          },
+                        ];
+                        return cells.map((c) => (
+                          <div
+                            key={c.k}
+                            className="flex-1 min-w-0 px-1.5 py-1.5 rounded-lg bg-bunker-950/70 border border-bunker-800"
+                          >
+                            <span className="block text-[8px] text-bunker-muted uppercase tracking-wider truncate">
+                              {c.label}
+                            </span>
+                            <span className={`block text-[11px] font-black font-mono ${c.tone}`}>{c.value}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
                 </div>
 
-                {/* 2. GAUGELER BÖLÜMÜ (İbreli Yarım Daire SVG Göstergeler) */}
-                <div className="p-4 border-b border-bunker-800 bg-bunker-950/40">
+                {/* 2. GAUGELER BÖLÜMÜ (İbreli Yarım Daire SVG Göstergeler)
+                    Veri yokken/solukken bölüm soluklaştırılır: ibreler varsayılan
+                    sayıları gösterdiğinde canlı sanılmasın. */}
+                <div
+                  className={`p-4 border-b border-bunker-800 bg-bunker-950/40 ${
+                    hasLive && !dataStale ? "" : "opacity-60"
+                  }`}
+                >
                   <div className="text-[11px] font-bold text-white uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
                     <span>🧭</span>
                     <span>Hassas İbreli Göstergeler (Cockpit Gauges)</span>
@@ -1350,6 +1549,15 @@ export default function BtcGoldForexPage() {
                       <span className="text-[10px] opacity-80 font-mono">({quickLots[sym] || 0.1} Lot)</span>
                     </button>
                   </div>
+                </div>
+
+                {/* KAPISI ANLIK GÖRÜNÜMÜ — motorun kendi kapı zinciri durumu (2026-10-10) */}
+                <div className="px-4 pb-4">
+                  <GateSnapshotCard
+                    snapshot={gateSnapshots[sym] || null}
+                    loading={gateLoading}
+                    isBtc={!isGold}
+                  />
                 </div>
 
                 {/* OTOMATİK YORUM — motorun göstergelerinden sentezlenen insan-okur analiz (60 sn'de bir yenilenir) */}

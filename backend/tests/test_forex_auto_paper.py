@@ -1235,6 +1235,116 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("adx_min=18.0", src, "donchian ADX eşiği yine kodda sabit")
         self.assertNotIn("max_per_day=2,", src, "donchian gün limiti yine kodda sabit")
 
+    def test_gate_snapshot_readonly_and_gates_present(self):
+        """Kokpit kapı-görünümü: salt-okunur + kapı seti tam.
+
+        - Snapshot motordaki HİÇBİR sayacı/zaman damgasını değiştirmemeli (panel
+          3 sn'de bir çağırır; mutasyon olsaydı kapıları kendisi tetiklerdi).
+        - 12 kapının tamamı dönmeli; sıra döngüdeki zincirle aynı olmalı.
+        - Skor verisi yokken (tick boş) skor kapısı `na` olmalı, sahte `block`
+          veya `pass` üretmemeli.
+        """
+        before = {
+            "btc_exit": forex._LAST_BTC_EXIT_TIME,
+            "sym_entry": dict(forex._LAST_SYMBOL_ENTRY_TIME),
+            "loss_streak": dict(forex._SYMBOL_LOSS_STREAK),
+            "dir_loss": dict(forex._SYMBOL_DIR_LOSS_STREAK),
+        }
+        snap = forex.get_symbol_gate_snapshot("BTCUSD", tick={}, now_ts=1_000_000.0)
+        self.assertEqual(snap["symbol"], "BTCUSD")
+        self.assertEqual(
+            [g["key"] for g in snap["gates"]],
+            [k for k, _ in forex._GATE_ORDER],
+            "kapı sırası döngüdeki zincirle aynı olmalı",
+        )
+        self.assertEqual(before["btc_exit"], forex._LAST_BTC_EXIT_TIME)
+        self.assertEqual(before["sym_entry"], dict(forex._LAST_SYMBOL_ENTRY_TIME))
+        self.assertEqual(before["loss_streak"], dict(forex._SYMBOL_LOSS_STREAK))
+        self.assertEqual(before["dir_loss"], dict(forex._SYMBOL_DIR_LOSS_STREAK))
+        score_gate = next(g for g in snap["gates"] if g["key"] == "score")
+        self.assertEqual(score_gate["status"], "na", "tick boşken skor na olmalı")
+        # verdict seviyeleri tanımlı kümede kalmalı (frontend switch'i buna bağlı)
+        self.assertIn(snap["verdict_level"], ("ready", "blocked", "idle", "stopped"))
+
+    def test_gate_snapshot_blocks_on_low_score(self):
+        """Skor eşiği altındayken `blocking_gate=score` olmalı; motor ÇALIŞIRKEN
+        verdict `blocked`, DURURKEN `stopped` döner (panelde ikisi de engel görünür).
+
+        Not: önceki testler `allowed_symbols`/`enabled`'i değiştirebildiğinden
+        kapsam ve kapsam-blok bağımsızlığı bu test kendi başına kurar.
+        """
+        old_allowed = forex._AUTO_SETTINGS.allowed_symbols
+        forex._AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD"]
+        try:
+            tick = {"action": "HOLD", "score": 50.0, "spread_pips": 12.0, "adx": 30.0, "supertrend_dir": 1}
+            snap = forex.get_symbol_gate_snapshot("BTCUSD", tick=dict(tick), now_ts=1_000_000.0)
+            self.assertEqual(snap["blocking_gate"], "score")
+            if forex._AUTO_STATE["enabled"]:
+                self.assertEqual(snap["verdict_level"], "blocked")
+            else:
+                self.assertEqual(snap["verdict_level"], "stopped")
+            self.assertIn("76", next(g["detail"] for g in snap["gates"] if g["key"] == "score"))
+        finally:
+            forex._AUTO_SETTINGS.allowed_symbols = old_allowed
+
+    def test_gate_snapshot_ev_shield_xau_exempt_btc_active(self):
+        """P0-3 panel yansıması: XAU 'off/muaf', BTC 'pass' (tetik için işlem bekler)."""
+        tick = {"action": "", "score": 90.0, "spread_pips": 1.0, "adx": 30.0, "supertrend_dir": 1}
+        xau = forex.get_symbol_gate_snapshot("XAUUSD", tick=dict(tick), now_ts=1_000_000.0)
+        ev_xau = next(g for g in xau["gates"] if g["key"] == "ev_shield")
+        self.assertEqual(ev_xau["status"], "off")
+        self.assertIn("muaf", ev_xau["detail"].lower())
+        btc = forex.get_symbol_gate_snapshot("BTCUSD", tick=dict(tick), now_ts=1_000_000.0)
+        ev_btc = next(g for g in btc["gates"] if g["key"] == "ev_shield")
+        self.assertEqual(ev_btc["status"], "pass", "varsayılan btc_ev_exempt=False → BTC EV penceresine tabi")
+
+    def test_gate_snapshot_cooldown_block_reflects_btc_cooldown_setting(self):
+        """P2-6 panel yansıması: BTC kapanış soğuması panelden ayarlanan süreyi izler."""
+        now = 1_000_000.0
+        old_btc_exit = forex._LAST_BTC_EXIT_TIME
+        forex._LAST_BTC_EXIT_TIME = now - 10.0  # 10 sn önce kapanış
+        try:
+            snap = forex.get_symbol_gate_snapshot("BTCUSD", tick={}, now_ts=now)
+            cd_gate = next(g for g in snap["gates"] if g["key"] == "cooldown")
+            self.assertEqual(cd_gate["status"], "block")
+            self.assertIn("BTC kapanış soğuması", cd_gate["detail"])
+        finally:
+            forex._LAST_BTC_EXIT_TIME = old_btc_exit
+
+    def test_gate_snapshot_settings_contract_for_cockpit(self):
+        """Kokpit kartının okuduğu ayar anahtarları sözleşmedir.
+
+        Kart eşikleri panelde KOPYALAMAZ; yalnızca bu alanları okur. Alan
+        yeniden adlandırılırsa kart sessizce tire gösterirdi — test bunu keser.
+        `min_score` bilinçli olarak YOK: XAU'nun eşiği motorda sabit 78.0
+        olduğundan oradan okumak yanlış eşik gösterirdi (bkz. giriş kapıları).
+        """
+        snap = forex.get_symbol_gate_snapshot("BTCUSD", tick={}, now_ts=1_000_000.0)
+        s = snap["settings"]
+        for key in ("btc_min_score", "btc_cooldown_sec", "gold_cooldown_sec",
+                    "loss_streak_limit", "max_positions_per_symbol",
+                    "supertrend_filter_enabled", "adx_filter_enabled"):
+            self.assertIn(key, s, f"kokpit 'settings.{key}' bekliyor")
+        self.assertNotIn("min_score", s)  # XAU eşiği motorda sabit 78.0
+
+    def test_gate_snapshot_score_detail_carries_threshold(self):
+        """Kokpit eşiği kapı CÜMLESİNDEN okur; cümle formatı bozulmamalı."""
+        old_allowed = forex._AUTO_SETTINGS.allowed_symbols
+        forex._AUTO_SETTINGS.allowed_symbols = ["XAUUSD", "BTCUSD"]
+        try:
+            for sym, thr in (("BTCUSD", "76"), ("XAUUSD", "78")):
+                tick = {"action": "HOLD", "score": 10.0, "spread_pips": 1.0,
+                        "adx": 40.0, "supertrend_dir": 1}
+                snap = forex.get_symbol_gate_snapshot(sym, tick=dict(tick), now_ts=1_000_000.0)
+                detail = next(g["detail"] for g in snap["gates"] if g["key"] == "score")
+                self.assertRegex(
+                    detail, r"[<>≥≤]\s*\d",
+                    f"{sym}: skor kapısı eşiği '10.0 < 76' biçiminde olmalı, gelen: {detail}",
+                )
+                self.assertIn(thr, detail)
+        finally:
+            forex._AUTO_SETTINGS.allowed_symbols = old_allowed
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3638,6 +3638,328 @@ def get_all_symbol_ev_status(now_ts: Optional[float] = None) -> Dict[str, Any]:
     }
 
 
+# ============================================================================
+# SEMBOL KAPISI ANLIK GÖRÜNÜMÜ (2026-10-10) — kokpit paneli için
+# ============================================================================
+# NEDEN: /forex/btc-gold kokpiti BTC'nin "neden işlem açmadığını" yalnız
+# `_btc_scan_note` (karar akışına düşen tek satır) + EV listesiyle gösteriyordu.
+# Operatör 18 kapılı zincirin hangi halkada takıldığını göremiyordu ve her
+# panel eklentisi kuralı YENİDEN yazma riski taşıyordu.
+#
+# SÖZLEŞME: bu fonksiyon karar VERMEZ, yalnız ÖLÇER. Dönen kapılar döngüdeki
+# (`_forex_auto_paper_loop`) kapı zinciriyle aynı sırada ve aynı yardımcı
+# fonksiyonlarla (`ev_guard_decision`, `dxy_entry_veto`, `_FX_CORR.cluster_check`,
+# `get_usd_bias`, `_collect_symbol_ev`) hesaplanır. Tek fark: burada HİÇBİR
+# durum mutasyona uğramaz (`_LAST_BTC_EXIT_TIME` düzeltmesi gibi yan etkiler
+# kopya üzerinde yapılır) — panel her 3 sn'de çağırır.
+#
+# Sınır: piramitleme/spread/skor kapıları döngüde ADAY bazlıdır (aday yoksa
+# değerlendirilmez); burada "aday yoksa" bilgisi `action` alanından okunur ve
+# o kapılar `na` (veri yok) olarak işaretlenir — yanlış "geçti" göstermektense
+# "değerlendirilemedi" demek dürüsttür.
+_GATE_ORDER: List[Tuple[str, str]] = [
+    ("scope", "Kapsam (allowed_symbols)"),
+    ("loss_streak", "Seri-SL Sigortası"),
+    ("cooldown", "Sembol/BTC Soğuması"),
+    ("ev_shield", "EV Kalkanı (Kayıp-Uyarlamalı)"),
+    ("net_negative", "BTC Net-Negatif Freni"),
+    ("dxy", "DXY Rejim Filtresi"),
+    ("correlation", "Korelasyon Kalkanı"),
+    ("position_limit", "Pozisyon Limitleri"),
+    ("spread", "Spread Filtresi"),
+    ("score", "Skor Eşiği"),
+    ("adx", "ADX Trend Gücü"),
+    ("supertrend", "SuperTrend Yön Teyidi"),
+]
+
+
+def _gate(key: str, status: str, detail: str) -> Dict[str, Any]:
+    """Tek kapı kaydı. status: pass | block | na | off"""
+    label = next((lbl for k, lbl in _GATE_ORDER if k == key), key)
+    return {"key": key, "label": label, "status": status, "detail": detail}
+
+
+def get_symbol_gate_snapshot(
+    symbol: str,
+    tick: Optional[Dict[str, Any]] = None,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Bir sembolün giriş kapılarının ANLIK durumu + açık pozisyon özeti.
+
+    Salt-okunur: motordaki hiçbir sayacı/zaman damgasını değiştirmez.
+    """
+    if now_ts is None:
+        now_ts = time.time()
+    sym = str(symbol or "").upper().strip()
+    gates: List[Dict[str, Any]] = []
+
+    is_gold = "XAU" in sym or "GOLD" in sym
+    is_btc = sym == "BTCUSD"
+    tick = tick or _TICK_CACHE.get(sym) or {}
+    action = str(tick.get("action", "HOLD")).upper()
+    if action not in ("BUY", "SELL"):
+        action = ""
+
+    # --- 0. Kapsam
+    if sym in _AUTO_SETTINGS.allowed_symbols:
+        gates.append(_gate("scope", "pass", "Sembol kapsam içinde"))
+    else:
+        gates.append(_gate("scope", "block", "Sembol allowed_symbols DIŞINDA — hiçbir sinyal işleme dönüşmez"))
+
+    # --- 1. Seri-SL (sembol geneli + yön bazlı)
+    if _AUTO_SETTINGS.loss_streak_limit <= 0:
+        gates.append(_gate("loss_streak", "off", "Seri-SL sigortası kapalı (loss_streak_limit=0)"))
+    else:
+        limit = int(_AUTO_SETTINGS.loss_streak_limit)
+        sym_until = float(_SYMBOL_LOSS_COOLDOWN_UNTIL.get(sym, 0.0))
+        sym_streak = int(_SYMBOL_LOSS_STREAK.get(sym, 0))
+        dir_until = 0.0
+        dir_streak = 0
+        if action:
+            dir_until = float(_SYMBOL_DIR_LOSS_COOLDOWN_UNTIL.get((sym, action), 0.0))
+            dir_streak = int(_SYMBOL_DIR_LOSS_STREAK.get((sym, action), 0))
+        if now_ts < max(sym_until, dir_until):
+            if dir_until > sym_until:
+                detail = f"{action} yönünde {dir_streak}/{limit} ardışık kayıp — {int(dir_until - now_ts)} sn kaldı"
+            else:
+                detail = f"Sembolde {sym_streak}/{limit} ardışık kayıp — {int(sym_until - now_ts)} sn kaldı"
+            gates.append(_gate("loss_streak", "block", detail))
+        else:
+            gates.append(_gate("loss_streak", "pass", f"Sayaç {sym_streak}/{limit} (kayıp serisi yok)"))
+
+    # --- 2. Soğumalar (BTC özel + sembol geneli)
+    _btc_cd = float(_AUTO_SETTINGS.btc_cooldown_sec)
+    _btc_exit = float(_LAST_BTC_EXIT_TIME or 0.0)
+    sym_last = float(_LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0))
+    sym_cd = float(_AUTO_SETTINGS.gold_cooldown_sec) if is_gold else 60.0
+    btc_left = 0.0
+    if is_btc and _btc_cd > 0 and _btc_exit > 0:
+        btc_left = max(0.0, _btc_cd - max(0.0, now_ts - min(_btc_exit, now_ts)))
+    sym_left = max(0.0, min(sym_cd, sym_cd - max(0.0, now_ts - min(sym_last, now_ts)))) if sym_last else 0.0
+    if btc_left > 0 or sym_left > 0:
+        parts = []
+        if btc_left > 0:
+            parts.append(f"BTC kapanış soğuması {int(btc_left)} sn")
+        if sym_left > 0:
+            parts.append(f"son girişten {int(sym_left)} sn")
+        gates.append(_gate("cooldown", "block", " + ".join(parts)))
+    else:
+        cd_txt = f"BTC {_btc_cd:.0f} sn" if is_btc else f"sembol {sym_cd:.0f} sn"
+        gates.append(_gate("cooldown", "pass", f"Soğuma yok ({cd_txt} kuralı)"))
+
+    # --- 3. EV kalkanı
+    if not _AUTO_SETTINGS.ev_guard_enabled:
+        gates.append(_gate("ev_shield", "off", "EV kalkanı kapalı (ev_guard_enabled=False)"))
+    elif sym == "XAUUSD":
+        gates.append(_gate("ev_shield", "off", "XAUUSD TASARIM GEREĞİ muaf"))
+    elif is_btc and _AUTO_SETTINGS.btc_ev_exempt:
+        gates.append(_gate("ev_shield", "off", "BTC muaf (btc_ev_exempt=True — eski davranış)"))
+    else:
+        is_mt5_conn = bool(_MT5_STATE.get("connected"))
+        ev_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if is_mt5_conn else float(_AUTO_STATE["balance"])
+        risk_floor = ev_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
+        stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
+        overridden = now_ts < _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
+        blocked = ev_guard_decision(stats, _AUTO_SETTINGS.ev_min_trades,
+                                    _AUTO_SETTINGS.ev_max_win_rate, risk_floor)
+        base = (f"Son {int(_AUTO_SETTINGS.ev_window_hours)}s: {stats['n']} işlem, "
+                f"net ${stats['net']:+.2f}, WR %{stats['win_rate']:.0f}")
+        if overridden:
+            gates.append(_gate("ev_shield", "off", f"Operatör muafiyeti aktif — {base}"))
+        elif blocked:
+            reason = (f"akut kayıp (eşik -${abs(risk_floor):.2f})" if stats["net"] <= -abs(risk_floor)
+                      else f"WR %{stats['win_rate']:.0f} < %{_AUTO_SETTINGS.ev_max_win_rate:.0f}")
+            gates.append(_gate("ev_shield", "block", f"{reason} — {base}"))
+        else:
+            need = max(0, int(_AUTO_SETTINGS.ev_min_trades) - int(stats["n"]))
+            tail = f" — tetik için {need} işlem daha gerekli" if need else ""
+            gates.append(_gate("ev_shield", "pass", f"{base}{tail}"))
+
+    # --- 4. BTC net-negatif freni
+    if not is_btc:
+        gates.append(_gate("net_negative", "off", "Yalnız BTCUSD için tanımlı"))
+    elif not _AUTO_SETTINGS.btc_net_negative_guard_enabled:
+        gates.append(_gate("net_negative", "off", "Fren kapalı (btc_net_negative_guard_enabled=False)"))
+    else:
+        wh = float(_AUTO_SETTINGS.btc_net_negative_window_hours)
+        stats = _collect_symbol_ev(sym, now_ts, wh * 3600.0)
+        n_ok = stats["n"] >= int(_AUTO_SETTINGS.btc_net_negative_min_trades)
+        net_bad = stats["net"] < float(_AUTO_SETTINGS.btc_net_negative_usd)
+        base = f"Son {wh:.0f}s: {stats['n']} işlem, net ${stats['net']:+.2f}"
+        if n_ok and net_bad:
+            gates.append(_gate("net_negative", "block", f"{base} — BTC yeni giriş almıyor"))
+        else:
+            gates.append(_gate("net_negative", "pass", f"{base} (eşik: {int(_AUTO_SETTINGS.btc_net_negative_min_trades)} işlem)"))
+
+    # --- 5. DXY
+    dxy = get_dxy_regime()
+    if not _AUTO_SETTINGS.dxy_filter_enabled:
+        gates.append(_gate("dxy", "off", "DXY filtresi kapalı"))
+    elif action:
+        veto = dxy_entry_veto(sym, action, dxy)
+        regime = (dxy or {}).get("regime", "—")
+        if veto == "dxy_conflict":
+            gates.append(_gate("dxy", "block", f"{action} yönü dolar rejimiyle ({regime}) çelişiyor"))
+        elif veto == "dxy_strict_neutral":
+            gates.append(_gate("dxy", "pass", f"Nötr rejim ({regime}) — skor eşiğine +5.0 ek yük"))
+        else:
+            gates.append(_gate("dxy", "pass", f"Rejim {regime} ile uyumlu"))
+    else:
+        gates.append(_gate("dxy", "na", "Yön teyidi yok — DXY kapısı değerlendirilemedi"))
+
+    # --- 6. Korelasyon
+    if not _AUTO_SETTINGS.correlation_guard:
+        gates.append(_gate("correlation", "off", "Korelasyon kalkanı kapalı"))
+    elif action:
+        bias = get_usd_bias(sym, action)
+        if bias == "USD_NEUTRAL":
+            gates.append(_gate("correlation", "off", "USD_NEUTRAL — kalkan kapsamı dışı"))
+        else:
+            corr_positions: List[tuple] = []
+            for p in list(_MT5_STATE.get("open_positions", [])) + list(_AUTO_STATE.get("open_positions", [])):
+                corr_positions.append((str(p.get("symbol", "")).upper(),
+                                       get_usd_bias(p.get("symbol", ""), p.get("direction", "BUY"))))
+            for c in _MT5_STATE.get("pending_commands", []):
+                if c.get("action") == "OPEN_ORDER":
+                    corr_positions.append((str(c.get("symbol", "")).upper(),
+                                           get_usd_bias(c.get("symbol", ""), c.get("direction", "BUY"))))
+            ok, reason = _FX_CORR.cluster_check(sym, bias, corr_positions)
+            if ok:
+                gates.append(_gate("correlation", "pass", f"{bias} — çakışan küme yok"))
+            else:
+                gates.append(_gate("correlation", "block", f"{bias} çakışması: {reason}"))
+    else:
+        gates.append(_gate("correlation", "na", "Yön teyidi yok — korelasyon kapısı değerlendirilemedi"))
+
+    # --- 7. Pozisyon limitleri (açık/kuyruk)
+    mt5_open = list(_MT5_STATE.get("open_positions", []))
+    auto_open = list(_AUTO_STATE.get("open_positions", []))
+    pending = [c for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER"]
+    active_count = len(mt5_open) if _MT5_STATE.get("connected") else len(auto_open)
+    sym_open = [p for p in mt5_open + auto_open if str(p.get("symbol", "")).upper() == sym]
+    sym_pending = [c for c in pending if str(c.get("symbol", "")).upper() == sym]
+    max_open = int(_AUTO_SETTINGS.max_open_positions)
+    if active_count >= max_open:
+        gates.append(_gate("position_limit", "block", f"Açık pozisyon tavanı dolu ({active_count}/{max_open})"))
+    elif sym_pending:
+        gates.append(_gate("position_limit", "block",
+                           f"{sym} için gönderilmiş emrin işlem görmesi bekleniyor ({len(sym_pending)} adet)"))
+    elif sym_open:
+        max_pyr = int(_AUTO_SETTINGS.max_positions_per_symbol)
+        gates.append(_gate("position_limit", "block",
+                           f"{sym} açık pozisyon var ({len(sym_open)}/{max_pyr}) — yalnız kârda piramitleme"))
+    else:
+        gates.append(_gate("position_limit", "pass", f"{active_count}/{max_open} açık, {sym} için engel yok"))
+
+    # --- 8. Spread
+    spread = float(tick.get("spread_pips", 0.0) or 0.0)
+    eff_max_spread = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else float(_AUTO_SETTINGS.max_spread_pips)
+    if spread <= 0:
+        gates.append(_gate("spread", "na", "Spread verisi yok"))
+    elif spread > eff_max_spread:
+        gates.append(_gate("spread", "block", f"{spread:.1f}p > {eff_max_spread:.1f}p limit"))
+    else:
+        gates.append(_gate("spread", "pass", f"{spread:.1f}p / {eff_max_spread:.1f}p"))
+
+    # --- 9. Skor
+    score = float(tick.get("score", 0.0) or 0.0)
+    if is_btc:
+        req_score = float(_AUTO_SETTINGS.btc_min_score) if _AUTO_SETTINGS.btc_min_score > 0 else float(_AUTO_SETTINGS.min_score)
+        thr_lbl = f"btc_min_score {req_score:.0f}"
+    else:
+        req_score = 78.0 if (is_gold or "OIL" in sym or "USOIL" in sym) else float(_AUTO_SETTINGS.min_score)
+        thr_lbl = f"min_score {req_score:.0f}"
+    if score <= 0:
+        gates.append(_gate("score", "na", "Skor verisi yok"))
+    elif score < req_score:
+        gates.append(_gate("score", "block", f"{score:.1f} < {req_score:.0f} ({thr_lbl})"))
+    else:
+        gates.append(_gate("score", "pass", f"{score:.1f} ≥ {req_score:.0f} ({thr_lbl})"))
+
+    # --- 10. ADX
+    adx = float(tick.get("adx", 0.0) or 0.0)
+    if not _AUTO_SETTINGS.adx_filter_enabled:
+        gates.append(_gate("adx", "off", f"ADX kalkanı kapalı (ADX {adx:.0f})"))
+    elif adx < float(_AUTO_SETTINGS.adx_min):
+        gates.append(_gate("adx", "block", f"ADX {adx:.0f} < {_AUTO_SETTINGS.adx_min:.0f} — trend gücü zayıf"))
+    else:
+        gates.append(_gate("adx", "pass", f"ADX {adx:.0f} ≥ {_AUTO_SETTINGS.adx_min:.0f}"))
+
+    # --- 11. SuperTrend (yalnız klasik/radar adayı için geçerli; s3/EAP kendi yön motorunu taşır)
+    st_dir = int(tick.get("supertrend_dir", 0) or 0)
+    if not _AUTO_SETTINGS.supertrend_filter_enabled:
+        gates.append(_gate("supertrend", "off", "SuperTrend teyidi kapalı"))
+    elif not action or st_dir == 0:
+        gates.append(_gate("supertrend", "na", "Yön teyidi yok — teyit kapısı değerlendirilemedi"))
+    elif (action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0):
+        gates.append(_gate("supertrend", "block",
+                           f"{action} yönü SuperTrend ({'BOĞA' if st_dir > 0 else 'AYI'}) ile ters"))
+    else:
+        gates.append(_gate("supertrend", "pass",
+                           f"{action} yönü SuperTrend ({'BOĞA' if st_dir > 0 else 'AYI'}) ile uyumlu"))
+
+    # --- Özet: ilk BLOKE eden kapı = operatörün görmek istediği tek cümle
+    first_block = next((g for g in gates if g["status"] == "block"), None)
+    if not _AUTO_STATE["enabled"]:
+        verdict = "Otonom motor DURDURULDU — kapılar değerlendirilmiyor"
+        verdict_level = "stopped"
+    elif first_block:
+        verdict = f"Takıldığı kapı: {first_block['label']} — {first_block['detail']}"
+        verdict_level = "blocked"
+    elif not action:
+        verdict = "Tüm kapılar açık; ancak yön teyidi (BUY/SELL) oluşmadı — gözlemde"
+        verdict_level = "idle"
+    else:
+        verdict = f"Tüm kapılar açık — {action} sinyali işleme hazır"
+        verdict_level = "ready"
+
+    return {
+        "symbol": sym,
+        "generated_at": now_ts,
+        "action": action,
+        "verdict": verdict,
+        "verdict_level": verdict_level,
+        "blocking_gate": (first_block["key"] if first_block else None),
+        "gates": gates,
+        "open_positions": [
+            {
+                "ticket": p.get("ticket"),
+                "direction": str(p.get("direction", "")).upper(),
+                "lots": float(p.get("lots", 0.0) or 0.0),
+                "entry_price": float(p.get("entry_price", p.get("price", 0.0)) or 0.0),
+                "current_price": float(p.get("current_price", 0.0) or 0.0),
+                "sl_price": float(p.get("sl_price", 0.0) or 0.0),
+                "tp_price": float(p.get("tp_price", 0.0) or 0.0),
+                "pnl_usd": float(p.get("pnl_usd", p.get("profit", 0.0)) or 0.0),
+                "pnl_pips": float(p.get("pnl_pips", 0.0) or 0.0),
+                "breakeven_activated": bool(p.get("breakeven_activated")),
+                "trailing_activated": bool(p.get("trailing_activated")),
+                "open_time": p.get("open_time", ""),
+                "strategy_label": strategy_display_label(p.get("entry_source") or p.get("strategy")),
+            }
+            for p in (mt5_open + auto_open)
+            if str(p.get("symbol", "")).upper() == sym
+        ],
+        "settings": {
+            # Not: skor EŞİKLERİ buraya konmaz — motorda BTC için btc_min_score,
+            # XAU için SABİT 78.0 geçerlidir. Kokpit ikisini de kapı cümlesinden
+            # okur ("50.8 < 78 (min_score 78)"), böylece eşik iki yerde tutulmaz.
+            "gold_cooldown_sec": float(_AUTO_SETTINGS.gold_cooldown_sec),
+            "btc_min_score": float(_AUTO_SETTINGS.btc_min_score),
+            "btc_cooldown_sec": float(_AUTO_SETTINGS.btc_cooldown_sec),
+            "btc_ev_exempt": bool(_AUTO_SETTINGS.btc_ev_exempt),
+            "btc_net_negative_guard_enabled": bool(_AUTO_SETTINGS.btc_net_negative_guard_enabled),
+            "crypto_sl_atr_mult": float(_AUTO_SETTINGS.crypto_sl_atr_mult),
+            "crypto_tp_enabled": bool(_AUTO_SETTINGS.crypto_tp_enabled),
+            "crypto_risk_clamp_enabled": bool(_AUTO_SETTINGS.crypto_risk_clamp_enabled),
+            "loss_streak_limit": int(_AUTO_SETTINGS.loss_streak_limit),
+            "max_positions_per_symbol": int(_AUTO_SETTINGS.max_positions_per_symbol),
+            "supertrend_filter_enabled": bool(_AUTO_SETTINGS.supertrend_filter_enabled),
+            "adx_filter_enabled": bool(_AUTO_SETTINGS.adx_filter_enabled),
+        },
+    }
+
+
 async def _close_position_internal(pos_id: str, reason: str, exit_price: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """Açık pozisyonu kapatır ve muhasebeleştirir."""
     async with _AUTO_PAPER_LOCK:
@@ -5462,6 +5784,37 @@ def _invalidate_status_cache() -> None:
     """
     global _STATUS_CACHE
     _STATUS_CACHE = None
+
+
+# Kokpit kapı-görünümü için hafif önbellek: iki sembol, 2 sn TTL. Snapshot salt
+# okumadır ama `_collect_symbol_ev` her çağrıda tüm kapanış defterini tarar;
+# kokpit 3 sn'de bir iki sembol için çekerken bu, status ucunun 1 sn TTL
+# önbelleğiyle aynı desendir (bkz. /auto-paper/status PERFORMANS notu).
+_GATE_SNAPSHOT_CACHE: Dict[str, tuple] = {}
+_GATE_SNAPSHOT_TTL = 2.0
+
+
+@router.get("/auto-paper/gate-snapshot/{symbol}")
+async def get_gate_snapshot(symbol: str):
+    """Tek sembolün giriş kapısı zincirinin ANLIK durumu (kokpit paneli).
+
+    2026-10-10: /forex/btc-gold kokpiti BTC'nin "neden işlem açmıyor" sorusunu
+    kapı-kapı yanıtlar. Salt-okunur: motordaki hiçbir sayacı değiştirmez.
+    Döngüdeki kapılarla aynı yardımcı fonksiyonlar kullanıldığı için panel,
+    karar akışından kopamaz (ayrı bir kural seti YOK).
+    """
+    sym = str(symbol or "").upper().replace("/", "").strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="Sembol boş olamaz.")
+    # Sonekli/alias broker adını kanonikleştir (BTCUSD.m, BTC, GOLD vb.)
+    app_sym = canonical_symbol(sym)
+    now_ts = time.time()
+    cached = _GATE_SNAPSHOT_CACHE.get(app_sym)
+    if cached is not None and now_ts - cached[0] < _GATE_SNAPSHOT_TTL:
+        return cached[1]
+    snap = get_symbol_gate_snapshot(app_sym, tick=_TICK_CACHE.get(app_sym), now_ts=now_ts)
+    _GATE_SNAPSHOT_CACHE[app_sym] = (now_ts, snap)
+    return snap
 
 
 @router.get("/auto-paper/status")
