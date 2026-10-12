@@ -1136,6 +1136,149 @@ class TestTpRatchetAlternative(unittest.IsolatedAsyncioTestCase):
         self.assertIn("FOREX_TP_CANCEL_ON_TRAIL", src)
 
 
+class TestForexPerSymbolDailyKpi(unittest.TestCase):
+    """Portföy sayfası sembol bazlı günlük KPI kartları (`per_symbol_today`).
+
+    Kartlar status'un `today_kpi`'siyle AYNI defterden türetilmeli; ayrışırsa
+    üstteki toplam ile kartların toplamı tutmaz. Bu testler hem matematiği hem
+    o sözleşmeyi kilitler.
+    """
+
+    NOW = time.time()
+    DAY_AGO = NOW - 26 * 3600  # dünden bir kayıt (pencere dışı olmalı)
+
+    def _deal(self, sym, pnl, ts=None, pips=0.0, reason="TP_HIT", display=None):
+        return {
+            "symbol": sym,
+            "display": display or sym,
+            "profit": pnl,
+            "pnl_usd": pnl,
+            "pnl_pips": pips,
+            "exit_time": ts if isinstance(ts, str) else "",
+            "closed_at_ts": ts if not isinstance(ts, str) else None,
+            "exit_reason_title": reason,
+        }
+
+    def test_groups_by_symbol_and_sorts_by_net_desc(self):
+        deals = [
+            self._deal("EURUSD", 10.0, self.NOW, 5.0),
+            self._deal("EURUSD", -4.0, self.NOW, -2.0),
+            self._deal("XAUUSD", 42.5, self.NOW, 30.0),
+            self._deal("BTCUSD", -15.0, self.NOW, -100.0),
+        ]
+        out = forex._aggregate_daily_symbol_kpi(deals, [], self.NOW - 3600)
+        self.assertEqual([r["symbol"] for r in out], ["XAUUSD", "EURUSD", "BTCUSD"])
+        eur = next(r for r in out if r["symbol"] == "EURUSD")
+        self.assertEqual(eur["trades"], 2)
+        self.assertEqual(eur["wins"], 1)
+        self.assertEqual(eur["losses"], 1)
+        self.assertEqual(eur["pnl_usd"], 6.0)
+        self.assertEqual(eur["pnl_pips"], 3.0)
+        self.assertEqual(eur["win_rate"], 50.0)
+        self.assertEqual(eur["avg_pnl_usd"], 3.0)
+
+    def test_old_deals_excluded_by_window(self):
+        deals = [
+            self._deal("EURUSD", 100.0, self.DAY_AGO),
+            self._deal("EURUSD", 5.0, self.NOW),
+        ]
+        out = forex._aggregate_daily_symbol_kpi(deals, [], self.NOW - 3600)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["trades"], 1, "pencere dışı işlem karta girmemeli")
+        self.assertEqual(out[0]["pnl_usd"], 5.0)
+
+    def test_win_rate_uses_closed_trades_only_not_open(self):
+        """Açık pozisyon kazanma oranı PAYDASINA girmez (henüz sonucu yok)."""
+        deals = [self._deal("EURUSD", 10.0, self.NOW)]
+        open_pos = [
+            {"symbol": "EURUSD", "display": "EURUSD", "pnl_usd": 3.0},
+            {"symbol": "EURUSD", "display": "EURUSD", "pnl_usd": -1.0},
+        ]
+        out = forex._aggregate_daily_symbol_kpi(deals, open_pos, self.NOW - 3600)
+        eur = out[0]
+        self.assertEqual(eur["trades"], 1, "açık pozisyon kapalı sayılmamalı")
+        self.assertEqual(eur["win_rate"], 100.0)
+        self.assertEqual(eur["open_count"], 2)
+        self.assertEqual(eur["open_pnl_usd"], 2.0)
+
+    def test_open_only_symbol_reports_no_closed_kpi(self):
+        """Hiç kapanışı olmayan sembol kart açabilir ama WR/PF uydurmamalı."""
+        out = forex._aggregate_daily_symbol_kpi(
+            [], [{"symbol": "GBPUSD", "display": "GBPUSD", "pnl_usd": 7.5}], self.NOW - 3600
+        )
+        self.assertEqual(len(out), 1)
+        g = out[0]
+        self.assertEqual(g["trades"], 0)
+        self.assertEqual(g["win_rate"], 0.0)
+        self.assertEqual(g["profit_factor"], 0.0)
+        self.assertFalse(g["profit_factor_infinite"])
+        self.assertEqual(g["open_count"], 1)
+        self.assertEqual(g["open_pnl_usd"], 7.5)
+        self.assertEqual(g["best_trade_usd"], 0.0, "kapanış yokken en iyi işlem 0 kalır")
+
+    def test_profit_factor_and_infinite_sentinel(self):
+        prof = forex._aggregate_daily_symbol_kpi(
+            [self._deal("XAUUSD", 30.0, self.NOW), self._deal("XAUUSD", -10.0, self.NOW)],
+            [], self.NOW - 3600,
+        )[0]
+        self.assertEqual(prof["profit_factor"], 3.0)
+        self.assertFalse(prof["profit_factor_infinite"])
+        # Hiç zarar yoksa PF sonsuz → JSON taşıyamaz, nöbetçi sabit + bayrak
+        inf = forex._aggregate_daily_symbol_kpi(
+            [self._deal("XAUUSD", 20.0, self.NOW)], [], self.NOW - 3600
+        )[0]
+        self.assertEqual(inf["profit_factor"], forex._PF_INFINITE)
+        self.assertTrue(inf["profit_factor_infinite"])
+
+    def test_best_worst_tracked(self):
+        out = forex._aggregate_daily_symbol_kpi(
+            [self._deal("BTCUSD", 12.0, self.NOW), self._deal("BTCUSD", -33.0, self.NOW),
+             self._deal("BTCUSD", 8.0, self.NOW)],
+            [], self.NOW - 3600,
+        )[0]
+        self.assertEqual(out["best_trade_usd"], 12.0)
+        self.assertEqual(out["worst_trade_usd"], -33.0)
+
+    def test_net_includes_commission_and_swap(self):
+        """`_deal_net_pnl_usd` kuralı kartlarda da geçerli (MT5 bakiyesiyle uzlaşma)."""
+        deal = self._deal("EURUSD", 10.0, self.NOW)
+        deal["commission"] = -1.5
+        deal["swap"] = -0.5
+        out = forex._aggregate_daily_symbol_kpi([deal], [], self.NOW - 3600)[0]
+        self.assertEqual(out["pnl_usd"], 8.0)
+
+    def test_status_response_exposes_per_symbol_today(self):
+        """Status yanıtı sözleşmesi: alan mevcut ve toplamı today_kpi ile tutuyor."""
+        import asyncio
+        forex._STATUS_CACHE = None
+        prev_ts, prev_deals = forex._MT5_STATE.get("connected"), forex._MT5_STATE.get("closed_deals")
+        try:
+            forex._MT5_STATE["connected"] = True
+            now = time.time()
+            forex._MT5_STATE["closed_deals"] = [
+                {"symbol": "XAUUSD", "display": "XAUUSD", "profit": 25.0, "pnl_pips": 10.0,
+                 "time": now, "commission": 0.0, "swap": 0.0, "ticket": 1},
+                {"symbol": "GBPUSD", "display": "GBPUSD", "profit": -5.0, "pnl_pips": -3.0,
+                 "time": now, "commission": 0.0, "swap": 0.0, "ticket": 2},
+            ]
+            res = asyncio.get_event_loop().run_until_complete(forex.get_forex_auto_paper_status())
+            self.assertIn("per_symbol_today", res)
+            per = res["per_symbol_today"]
+            self.assertEqual({r["symbol"] for r in per}, {"XAUUSD", "GBPUSD"})
+            # Kartların toplamı günlük KPI ile aynı defterden → eşit olmalı
+            self.assertEqual(
+                round(sum(r["pnl_usd"] for r in per), 2),
+                res["today_kpi"]["total_pnl_usd"],
+            )
+            self.assertEqual(
+                sum(r["trades"] for r in per), res["today_kpi"]["total_trades"]
+            )
+        finally:
+            forex._MT5_STATE["connected"] = prev_ts
+            forex._MT5_STATE["closed_deals"] = prev_deals
+            forex._STATUS_CACHE = None
+
+
 if __name__ == "__main__":
     unittest.main()
 

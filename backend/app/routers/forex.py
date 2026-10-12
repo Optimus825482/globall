@@ -6012,6 +6012,12 @@ async def get_forex_auto_paper_status():
             "open_pnl_usd": open_pnl_usd,
         },
         "today_trades": today_deals,
+        # Sembol bazlı günlük KPI kartları (portföy sayfası). `today_deals` +
+        # açık pozisyonlardan türetilir; kartların TOPLAMI yukarıdaki
+        # `today_kpi` ile aynı defterden geldiği için birebir tutar.
+        "per_symbol_today": _aggregate_daily_symbol_kpi(
+            today_deals, normalized_positions, today_midnight_ts
+        ),
         "settings": _AUTO_SETTINGS.model_dump(),
         "open_positions": normalized_positions,
         "closed_trades": normalized_deals,
@@ -6756,6 +6762,98 @@ def _deal_ts(deal: Dict[str, Any]) -> Optional[float]:
     if ts is not None:
         return ts
     return _parse_deal_ts(deal.get("close_time"))
+
+
+def _divide_or_zero(numerator: float, denominator: float) -> float:
+    """Sıfıra bölmede 0.0 döner (KPI toplayıcılarının ortak kuralı)."""
+    return round(numerator / denominator, 2) if denominator else 0.0
+
+
+def _aggregate_daily_symbol_kpi(
+    deals: List[Dict[str, Any]],
+    open_positions: List[Dict[str, Any]],
+    min_ts: float,
+) -> List[Dict[str, Any]]:
+    """Günün kapanan işlemlerini SEMBOL BAZINDA gruplayıp KPI kartı verisi üretir.
+
+    Neden backend'de: aynı defterden status `today_kpi`'yi hesaplıyor; sembol
+    kırılımı da onu üreten yerden gelmezse iki sayı kaynağı ayrışır ve kartların
+    toplamı üstteki günlük KPI ile tutmaz. Tek kaynak burasıdır.
+
+    Dönüş sırası: net USD azalan (günün en kârlısı üstte), eşitlikte sembol adı.
+
+    `open_positions` ayrı sayılır: açık bir pozisyon KAPANMIŞ işlem gibi
+    sayılırsa kazanma oranı paydası şişer (henüz sonucu yok). Bu yüzden
+    `trades`/`win_rate` yalnız kapananları kapsar, açıklar `open_*` alanlarında
+    raporlanır.
+    """
+    buckets: Dict[str, Dict[str, Any]] = {}
+
+    def _bucket(sym: str, display: str) -> Dict[str, Any]:
+        key = (sym or "").upper() or "?"
+        b = buckets.get(key)
+        if b is None:
+            b = {
+                "symbol": key,
+                "display": display or key,
+                "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+                "pnl_usd": 0.0, "pnl_pips": 0.0,
+                "gross_profit_usd": 0.0, "gross_loss_usd": 0.0,
+                "profit_factor": 0.0, "profit_factor_infinite": False,
+                "avg_pnl_usd": 0.0,
+                "best_trade_usd": 0.0, "worst_trade_usd": 0.0,
+                "open_count": 0, "open_pnl_usd": 0.0,
+                "last_exit_ts": None, "last_exit_time": "",
+                "last_exit_reason": "",
+            }
+            buckets[key] = b
+        return b
+
+    for d in deals or []:
+        ts = _deal_ts(d) or 0.0
+        if ts < min_ts:
+            continue
+        pnl = _deal_net_pnl_usd(d)
+        b = _bucket(str(d.get("symbol", "")), str(d.get("display", "")))
+        b["trades"] += 1
+        if pnl >= 0:
+            b["wins"] += 1
+            b["gross_profit_usd"] = round(b["gross_profit_usd"] + pnl, 2)
+        else:
+            b["losses"] += 1
+            b["gross_loss_usd"] = round(b["gross_loss_usd"] + abs(pnl), 2)
+        b["pnl_usd"] = round(b["pnl_usd"] + pnl, 2)
+        b["pnl_pips"] = round(b["pnl_pips"] + float(d.get("pnl_pips", 0.0) or 0.0), 1)
+        b["best_trade_usd"] = round(max(b["best_trade_usd"], pnl), 2)
+        b["worst_trade_usd"] = round(min(b["worst_trade_usd"], pnl), 2)
+        if ts > (b["last_exit_ts"] or 0.0):
+            b["last_exit_ts"] = ts
+            b["last_exit_time"] = str(d.get("exit_time") or d.get("time") or "")
+            b["last_exit_reason"] = str(
+                d.get("exit_reason_title") or d.get("exit_reason") or ""
+            )
+
+    for p in open_positions or []:
+        b = _bucket(str(p.get("symbol", "")), str(p.get("display", "")))
+        b["open_count"] += 1
+        b["open_pnl_usd"] = round(
+            b["open_pnl_usd"] + float(p.get("pnl_usd", p.get("profit", 0.0)) or 0.0), 2
+        )
+
+    out: List[Dict[str, Any]] = []
+    for b in buckets.values():
+        b["win_rate"] = round(b["wins"] / b["trades"] * 100.0, 1) if b["trades"] else 0.0
+        b["avg_pnl_usd"] = _divide_or_zero(b["pnl_usd"], b["trades"])
+        if b["gross_loss_usd"] > 0:
+            b["profit_factor"] = round(b["gross_profit_usd"] / b["gross_loss_usd"], 2)
+        elif b["gross_profit_usd"] > 0:
+            # Hiç zarar yokken PF matematiksel olarak sonsuzdur; JSON `Infinity`
+            # taşıyamadığı için tek nöbetçi sabit kullanılır (bkz. `_PF_INFINITE`).
+            b["profit_factor"] = _PF_INFINITE
+            b["profit_factor_infinite"] = True
+        out.append(b)
+    out.sort(key=lambda x: (-x["pnl_usd"], x["symbol"]))
+    return out
 
 
 def _resolve_report_window(

@@ -43,6 +43,30 @@ interface ClosedTrade {
   score?: number;
 }
 
+/** Günün sembol bazlı KPI dilimi (backend `per_symbol_today`). */
+interface SymbolDailyKpi {
+  symbol: string;
+  display: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  pnl_usd: number;
+  pnl_pips: number;
+  gross_profit_usd: number;
+  gross_loss_usd: number;
+  profit_factor: number;
+  profit_factor_infinite: boolean;
+  avg_pnl_usd: number;
+  best_trade_usd: number;
+  worst_trade_usd: number;
+  open_count: number;
+  open_pnl_usd: number;
+  last_exit_ts: number | null;
+  last_exit_time: string;
+  last_exit_reason: string;
+}
+
 interface DecisionLog {
   id: string;
   time: string;
@@ -148,6 +172,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
   const [openPositions, setOpenPositions] = useState<AutoPosition[]>([]);
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
+  const [perSymbolToday, setPerSymbolToday] = useState<SymbolDailyKpi[]>([]);
   const [decisionLogs, setDecisionLogs] = useState<DecisionLog[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [logFilter, setLogFilter] = useState<string>("ALL");
@@ -184,6 +209,10 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         ));
         setClosedTrades((res.closed_trades || []).filter(
           (t: ClosedTrade) => !symFilter || symFilter.has(String(t.symbol).toUpperCase())
+        ));
+        // Sembol filtresi burada da uygulanır (daraltılmış görünüm aynı konsol).
+        setPerSymbolToday((res.per_symbol_today || []).filter(
+          (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
         ));
         // Sembolsüz global mesajlar (SCAN özeti, SYSTEM) kalır; filtre dışı sembollü satırlar gizlenir
         setDecisionLogs((res.decision_logs || []).filter(
@@ -542,6 +571,184 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 )}
               </div>
             </div>
+          </div>
+        );
+      })()}
+
+      {/* SEMBOL BAZLI GÜNLÜK KPI KARTLARI (2026-10-12) */}
+      {(() => {
+        const kpis = perSymbolToday;
+        const closedToday = kpis.reduce((a, k) => a + k.trades, 0);
+        const openToday = kpis.reduce((a, k) => a + k.open_count, 0);
+        const netToday = kpis.reduce((a, k) => a + k.pnl_usd, 0);
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-base">📊</span>
+                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  Sembol Bazlı Günlük Performans
+                </h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30">
+                  Bugün (UTC)
+                </span>
+                {kpis.length > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700">
+                    {closedToday} kapanan · {openToday} açık
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-600 dark:text-bunker-muted italic">
+                Kartlar bugün kapanan işlemleri kapsar · açık pozisyonlar ayrı sayılır (kazanma oranına girmez)
+              </span>
+            </div>
+
+            {kpis.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 text-center text-xs text-slate-600 dark:text-bunker-muted">
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Bugün henüz işlem sonuçlanmadı.</p>
+                <p className="mt-1 font-medium">Piyasa kapalı olabilir ya da motor yeni sinyal bekliyor.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                {kpis.map((k) => {
+                  const isProfit = k.pnl_usd >= 0;
+                  const hasTrades = k.trades > 0;
+                  const wrTone =
+                    !hasTrades
+                      ? "text-slate-500 dark:text-bunker-muted"
+                      : k.win_rate >= 50
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400";
+                  const pfText = k.profit_factor_infinite
+                    ? "∞"
+                    : hasTrades
+                    ? k.profit_factor.toFixed(2)
+                    : "—";
+                  return (
+                    <div
+                      key={k.symbol}
+                      className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm hover:border-slate-400 dark:hover:border-bunker-700 transition-colors"
+                    >
+                      {/* Başlık: sembol + açık pozisyon rozeti */}
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="min-w-0">
+                          <span className="text-sm font-black text-slate-900 dark:text-white block truncate">
+                            {k.display || k.symbol}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-bunker-muted">
+                            {k.symbol}
+                          </span>
+                        </div>
+                        {k.open_count > 0 && (
+                          <span
+                            className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-400/40"
+                            title={`${k.open_count} açık pozisyon · anlık ${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}`}
+                          >
+                            ⚡ {k.open_count} AÇIK
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Net kâr (kartın ana sayısı) */}
+                      <div className="mt-2">
+                        <span
+                          className={`text-xl font-black font-mono ${
+                            hasTrades
+                              ? isProfit
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                              : "text-slate-400 dark:text-bunker-muted"
+                          }`}
+                        >
+                          {hasTrades ? `${isProfit ? "+" : ""}$${k.pnl_usd.toFixed(2)}` : "—"}
+                        </span>
+                        {hasTrades && (
+                          <span
+                            className={`ml-1.5 text-[10px] font-bold font-mono ${
+                              k.pnl_pips >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"
+                            }`}
+                            title="Pip toplamı yalnız bu sembole ait — ölçek karışık değil"
+                          >
+                            {k.pnl_pips >= 0 ? "+" : ""}{k.pnl_pips} p
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Alt KPI satırı */}
+                      <div className="mt-2 pt-2 border-t border-slate-200 dark:border-bunker-800/70 grid grid-cols-3 gap-1 text-center">
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-bunker-muted uppercase block">
+                            WR
+                          </span>
+                          <span className={`text-[11px] font-black ${wrTone}`}>
+                            {hasTrades ? `%${k.win_rate.toFixed(0)}` : "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-bunker-muted uppercase block">
+                            K / Z
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                            {hasTrades ? `${k.wins}/${k.losses}` : "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-bunker-muted uppercase block">
+                            PF
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                            {pfText}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Günün en iyi / en kötü işlemi + son çıkış */}
+                      {hasTrades && (
+                        <div className="mt-1.5 flex items-center justify-between text-[9px] font-semibold text-slate-600 dark:text-bunker-muted">
+                          <span title="Günün en iyi işlemi">
+                            ▲ <span className="text-emerald-700 dark:text-emerald-400 font-mono">${k.best_trade_usd.toFixed(2)}</span>
+                          </span>
+                          <span title="Günün en kötü işlemi">
+                            ▼ <span className="text-rose-700 dark:text-rose-400 font-mono">${k.worst_trade_usd.toFixed(2)}</span>
+                          </span>
+                          {k.last_exit_time && (
+                            <span className="font-mono" title={`Son çıkış: ${k.last_exit_reason || "—"}`}>
+                              {formatUtc3(k.last_exit_time).split(" ").pop()}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Açık pozisyon anlık K/Z (kapanan yoksa kartın tek verisi) */}
+                      {k.open_count > 0 && (
+                        <div className="mt-1.5 text-[10px] font-bold text-slate-600 dark:text-bunker-muted">
+                          Açık anlık:{" "}
+                          <span
+                            className={`font-mono ${
+                              k.open_pnl_usd >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"
+                            }`}
+                          >
+                            {k.open_pnl_usd >= 0 ? "+" : ""}${k.open_pnl_usd.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Gün toplamı — kartların toplamı üstteki günlük KPI ile aynı defterden */}
+            {kpis.length > 0 && (
+              <div className="flex flex-wrap items-center justify-end gap-3 px-1 text-[11px] font-bold text-slate-700 dark:text-bunker-muted">
+                <span>Gün toplamı:</span>
+                <span className={`font-mono ${netToday >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                  {netToday >= 0 ? "+" : ""}${netToday.toFixed(2)}
+                </span>
+                <span className="text-slate-400 dark:text-bunker-700">·</span>
+                <span>{closedToday} kapanan işlem</span>
+              </div>
+            )}
           </div>
         );
       })()}
