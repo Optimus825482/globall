@@ -581,6 +581,14 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         const closedToday = kpis.reduce((a, k) => a + k.trades, 0);
         const openToday = kpis.reduce((a, k) => a + k.open_count, 0);
         const netToday = kpis.reduce((a, k) => a + k.pnl_usd, 0);
+        // Kartlar, hemen üstteki bakiye kartlarıyla AYNI iskeleti kullanır
+        // (p-3.5 / rounded-xl / bg-white|bunker-900/80 / shadow-sm) ve aynı
+        // tipografi sırasını izler: üst etiket → büyük mono sayı → alt açıklama.
+        const CARD =
+          "p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm";
+        const LABEL =
+          "text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block truncate";
+        const SUB = "text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5";
         return (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -603,135 +611,119 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               </span>
             </div>
 
+            {/* Izgara, üstteki bakiye satırının yoğunluğunu en geniş kırılımda
+                birebir taklit eder (xl:6); sembol kartları daha fazla metin
+                taşıdığı için md'de 3'e düşer. */}
             {kpis.length === 0 ? (
               <div className="p-8 rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 text-center text-xs text-slate-600 dark:text-bunker-muted">
                 <p className="text-sm font-bold text-slate-900 dark:text-white">Bugün henüz işlem sonuçlanmadı.</p>
                 <p className="mt-1 font-medium">Piyasa kapalı olabilir ya da motor yeni sinyal bekliyor.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 {kpis.map((k) => {
-                  const isProfit = k.pnl_usd >= 0;
                   const hasTrades = k.trades > 0;
-                  const wrTone =
-                    !hasTrades
-                      ? "text-slate-500 dark:text-bunker-muted"
-                      : k.win_rate >= 50
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-rose-600 dark:text-rose-400";
+                  const hasOpen = k.open_count > 0;
+                  const wrTone = !hasTrades
+                    ? "text-slate-500 dark:text-bunker-muted"
+                    : k.win_rate >= 50
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400";
                   const pfText = k.profit_factor_infinite
                     ? "∞"
                     : hasTrades
                     ? k.profit_factor.toFixed(2)
                     : "—";
+                  // Kartın ana sayısı: kapanan net kâr; kapanan yoksa açık anlık K/Z.
+                  const mainUsd = hasTrades ? k.pnl_usd : k.open_pnl_usd;
+                  const mainText = hasTrades
+                    ? `${k.pnl_usd >= 0 ? "+" : ""}$${k.pnl_usd.toFixed(2)}`
+                    : hasOpen
+                    ? `${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}`
+                    : "—";
+                  const mainTone = !hasTrades && !hasOpen
+                    ? "text-slate-400 dark:text-bunker-muted"
+                    : mainUsd >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400";
+                  const exitTimeShort = k.last_exit_time
+                    ? String(formatUtc3(k.last_exit_time).split(" ").pop())
+                    : "";
                   return (
-                    <div
-                      key={k.symbol}
-                      className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm hover:border-slate-400 dark:hover:border-bunker-700 transition-colors"
-                    >
-                      {/* Başlık: sembol + açık pozisyon rozeti */}
+                    <div key={k.symbol} className={CARD}>
+                      {/* Üst etiket — bakiye kartlarındaki gibi: SEMBOL + durum rozeti */}
                       <div className="flex items-start justify-between gap-1.5">
-                        <div className="min-w-0">
-                          <span className="text-sm font-black text-slate-900 dark:text-white block truncate">
-                            {k.display || k.symbol}
-                          </span>
-                          <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-bunker-muted">
-                            {k.symbol}
-                          </span>
-                        </div>
-                        {k.open_count > 0 && (
+                        <span className={LABEL} title={k.display || k.symbol}>
+                          {k.symbol}
+                        </span>
+                        {hasOpen ? (
                           <span
                             className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-400/40"
                             title={`${k.open_count} açık pozisyon · anlık ${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}`}
                           >
                             ⚡ {k.open_count} AÇIK
                           </span>
-                        )}
-                      </div>
-
-                      {/* Net kâr (kartın ana sayısı) */}
-                      <div className="mt-2">
-                        <span
-                          className={`text-xl font-black font-mono ${
-                            hasTrades
-                              ? isProfit
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                              : "text-slate-400 dark:text-bunker-muted"
-                          }`}
-                        >
-                          {hasTrades ? `${isProfit ? "+" : ""}$${k.pnl_usd.toFixed(2)}` : "—"}
-                        </span>
-                        {hasTrades && (
+                        ) : hasTrades ? (
                           <span
-                            className={`ml-1.5 text-[10px] font-bold font-mono ${
-                              k.pnl_pips >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"
-                            }`}
-                            title="Pip toplamı yalnız bu sembole ait — ölçek karışık değil"
+                            className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-100 text-slate-700 border border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700"
+                            title="Bugün kapanan işlem sayısı"
                           >
-                            {k.pnl_pips >= 0 ? "+" : ""}{k.pnl_pips} p
+                            {k.trades} İŞLEM
                           </span>
+                        ) : null}
+                      </div>
+
+                      {/* Büyük mono sayı — bakiye kartlarındaki tipografiyle aynı */}
+                      <span className={`text-lg font-black font-mono ${mainTone}`}>{mainText}</span>
+
+                      {/* Alt açıklama satırı — bakiye kartlarındaki gibi tek satır özet */}
+                      <span className={SUB}>
+                        {hasTrades
+                          ? `${k.pnl_pips >= 0 ? "+" : ""}${k.pnl_pips} pip · ${k.wins}K/${k.losses}Z · PF ${pfText}`
+                          : hasOpen
+                          ? "Yalnız açık pozisyon · kapanan yok"
+                          : "Bugün işlem yok"}
+                      </span>
+
+                      {/* İnce detay şeridi */}
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800/70 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[9px] font-semibold text-slate-600 dark:text-bunker-muted">
+                        {hasTrades ? (
+                          <span className="flex items-center gap-2">
+                            <span title="Günün en iyi işlemi">
+                              ▲{" "}
+                              <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                                ${k.best_trade_usd.toFixed(2)}
+                              </span>
+                            </span>
+                            <span title="Günün en kötü işlemi">
+                              ▼{" "}
+                              <span className="font-mono text-rose-700 dark:text-rose-400">
+                                ${k.worst_trade_usd.toFixed(2)}
+                              </span>
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="italic">Kapanan işlem yok</span>
                         )}
-                      </div>
-
-                      {/* Alt KPI satırı */}
-                      <div className="mt-2 pt-2 border-t border-slate-200 dark:border-bunker-800/70 grid grid-cols-3 gap-1 text-center">
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-bunker-muted uppercase block">
-                            WR
-                          </span>
-                          <span className={`text-[11px] font-black ${wrTone}`}>
-                            {hasTrades ? `%${k.win_rate.toFixed(0)}` : "—"}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-bunker-muted uppercase block">
-                            K / Z
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
-                            {hasTrades ? `${k.wins}/${k.losses}` : "—"}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-bunker-muted uppercase block">
-                            PF
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
-                            {pfText}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Günün en iyi / en kötü işlemi + son çıkış */}
-                      {hasTrades && (
-                        <div className="mt-1.5 flex items-center justify-between text-[9px] font-semibold text-slate-600 dark:text-bunker-muted">
-                          <span title="Günün en iyi işlemi">
-                            ▲ <span className="text-emerald-700 dark:text-emerald-400 font-mono">${k.best_trade_usd.toFixed(2)}</span>
-                          </span>
-                          <span title="Günün en kötü işlemi">
-                            ▼ <span className="text-rose-700 dark:text-rose-400 font-mono">${k.worst_trade_usd.toFixed(2)}</span>
-                          </span>
-                          {k.last_exit_time && (
-                            <span className="font-mono" title={`Son çıkış: ${k.last_exit_reason || "—"}`}>
-                              {formatUtc3(k.last_exit_time).split(" ").pop()}
+                        <span className="flex items-center gap-2 font-mono">
+                          {hasTrades && (
+                            <span className={wrTone} title="Bugün kapanan işlemlerde kazanma oranı">
+                              WR %{k.win_rate.toFixed(0)}
                             </span>
                           )}
-                        </div>
-                      )}
-
-                      {/* Açık pozisyon anlık K/Z (kapanan yoksa kartın tek verisi) */}
-                      {k.open_count > 0 && (
-                        <div className="mt-1.5 text-[10px] font-bold text-slate-600 dark:text-bunker-muted">
-                          Açık anlık:{" "}
-                          <span
-                            className={`font-mono ${
-                              k.open_pnl_usd >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"
-                            }`}
-                          >
-                            {k.open_pnl_usd >= 0 ? "+" : ""}${k.open_pnl_usd.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
+                          {hasOpen && (
+                            <span
+                              className={k.open_pnl_usd >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}
+                              title={`${k.open_count} açık pozisyonun anlık K/Z`}
+                            >
+                              ⚡{k.open_pnl_usd >= 0 ? "+" : ""}${k.open_pnl_usd.toFixed(2)}
+                            </span>
+                          )}
+                          {hasTrades && exitTimeShort && (
+                            <span title={`Son çıkış: ${k.last_exit_reason || "—"}`}>{exitTimeShort}</span>
+                          )}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
