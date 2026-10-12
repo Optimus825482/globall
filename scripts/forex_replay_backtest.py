@@ -49,6 +49,7 @@ BASE_BE_PIPS = 14.0         # canlı ayar varsayılanları (Motorla aynı)
 TUN_BE_PIPS_OVERRIDE = 0.0     # >0: spec BE tetik mesafesini (pip) ez - zaman-dilimi merdiveni testi
 TUN_BE_USD_FX = 1.0            # FX BE dolar-kurali esigi (1.0 = canli). 0 = dolar-kurali BE KAPALI
 TUN_MAX_SPREAD_FX = 3.0        # FX giris kapisi: spread bu pip degerini asarsa giris yok (3.0 = canli)
+TUN_SLIP_PIPS = 0.0            # --slip-pips: bacak basina aleyhe kayma (pip) — maliyet stresi (0 = kapali)
 TUN_TRAIL_PIPS_OVERRIDE = 0.0  # >0: spec trailing mesafesini (pip) ez - zaman-dilimi merdiveni testi
 BASE_TRAIL_PIPS = 20.0
 BLOCKED_HOURS: List[int] = []
@@ -1304,6 +1305,7 @@ class SimPos:
     entry_atr_pips: float = 0.0
     mfe_pips: float = 0.0
     sl0_pips: float = 0.0        # girişteki SL genişliği (pip) — BE R-tabanı için
+    slip_pips: float = 0.0       # --slip-pips: her bacakta aleyhe kayma (pip) — maliyet stresi
     layer: int = 0              # 0 = ilk pozisyon, 1.. = DCA katmanı
     dca_group: bool = False     # sepet yönetimi altında (TP/BE/trail bireysel çalışmaz)
     basket_armed: bool = False  # lead'te: sepet P/L tamponu geçti (BE kilidi arm)
@@ -1359,6 +1361,11 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         entry = round(mid - half_spread, cand["digits"])
         sl = round(entry + sl_pips * cand["pip_size"], cand["digits"])
         tp = round(entry - tp_eff * cand["pip_size"], cand["digits"])
+    # Maliyet stresi (--slip-pips): giriş bacağı da aleyhe kayar. SL/TP girişe göre
+    # hesaplandığı için seviyeler korunur; yalnız gerçekleşen PnL 2×slip kadar erir.
+    if TUN_SLIP_PIPS > 0:
+        entry = (round(entry + TUN_SLIP_PIPS * cand["pip_size"], cand["digits"]) if cand["action"] == "BUY"
+                 else round(entry - TUN_SLIP_PIPS * cand["pip_size"], cand["digits"]))
     lots = size_lots(sym, sl_pips, cand["pip_val"])
     # Canlı motorla aynı risk normalizasyonu (tek kaynak: forex.apply_risk_normalization)
     lots, risk_skip = forex.apply_risk_normalization(sym, lots, sl_pips, cand["pip_val"], BALANCE * RISK_PCT / 100.0)
@@ -1373,6 +1380,7 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         entry_price=entry, sl_price=sl, tp_price=tp, pip_size=cand["pip_size"],
         pip_val=cand["pip_val"], digits=cand["digits"], opened_bar=idx,
         partial_target_pips=partial_pips, fill_adjust=half_spread,
+        slip_pips=TUN_SLIP_PIPS,
         entry_atr_pips=cand.get("atr_pips", 0.0), no_fixed_tp=no_fixed_tp,
         sl0_pips=float(sl_pips),
         time_stop_bars=int(cand.get("time_stop_bars", 0) or 0),
@@ -1581,6 +1589,12 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
 
 
 def close_position(book: Book, pos: SimPos, reason: str, exit_price: float, closed_ts: float = 0.0) -> float:
+    # Maliyet stresi (--slip-pips): HER BACAKTA aleyhe kayma. Giriş zaten kaymış girişte
+    # uygulandı (bkz. open_position); burada yalnız ÇIKIŞ bacağı düşülür → gidiş-dönüş 2×.
+    # Amaç: BE kârlarının (+$1-2) yürütme maliyetiyle ne zaman negatife döndüğünü ölçmek.
+    if pos.slip_pips > 0:
+        exit_price = (exit_price - pos.slip_pips * pos.pip_size if pos.direction == "BUY"
+                      else exit_price + pos.slip_pips * pos.pip_size)
     if pos.direction == "BUY":
         pnl_pips = (exit_price - pos.entry_price) / pos.pip_size
     else:
@@ -3200,6 +3214,7 @@ def main():
                         help="BE tetik mesafesini pip cinsinden ez (0 = spec varsayilan 14). Zaman-dilimi merdiveni testi.")
     parser.add_argument("--trail-pips", type=float, default=0.0,
                         help="Trailing mesafesini pip cinsinden ez (0 = spec varsayilan 20). Zaman-dilimi merdiveni testi.")
+    parser.add_argument("--slip-pips", type=float, default=0.0, help="Bacak basina aleyhe kayma (pip) — maliyet stresi; giris+exit toplam 2x uygulanir (0 = kapali)")
     parser.add_argument("--spec-atr", action="store_true", help="Spec BE/Trail'i işlem-bazlı giriş ATR'siyle hesapla (motor-cmd hizalı köprü davranışı; kapalı = eski köprü ATR'siz)")
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
@@ -3340,10 +3355,11 @@ def main():
     TUN_BTC_NETNEG_USD = args.btc_netneg_usd
     TUN_ST_FILTER = args.st_filter
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
-    global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT
+    global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT, TUN_SLIP_PIPS
     TUN_NO_BE = args.no_be
     TUN_BE_TRIGGER = args.be_trigger
     TUN_BE_ATR_MULT = args.be_atr_mult
+    TUN_SLIP_PIPS = args.slip_pips
     TUN_SPEC_ATR = args.spec_atr
     TUN_BE_USD_FX = args.be_usd_fx
     TUN_MAX_SPREAD_FX = args.max_spread

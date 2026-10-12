@@ -58,6 +58,32 @@ OOS 30g net>0 ✓ · n≥100 ✓ · maxDD<$200 ✓ (OOS 110.1 / IS 106.7) · iki
 (dört pencerenin dördünde) · gerçek spread sonrası ✓ · XAU+BTC defterini düşürmüyor ✓
 (dört pencerede de net ve WR arttı).
 
+## Maliyet şoku (slipaj) — düzeltme gerçek yürütme altında ayakta mı?
+
+Replay'e `--slip-pips` eklendi: giriş ve çıkış **her bacak** için aleyhte slip (`pip_size × slip`).
+İki formül aynı koşullarda, XAU+BTC, canlı-parite bayrakları, gerçek spread.
+
+| Pencere | slip/bacak | union (YENİ) net · $/işlem · WR · PF | max_r_atr (ESKİ) net · $/işlem · WR · PF |
+|---|---:|---|---|
+| AR 10-08→10-13 | 0 | +320.22 · +0.57 · 76.0 · 1.41 | +177.73 · +0.41 · 65.5 · 1.20 (DD 174.67) |
+| AR | 1.0p | +212.93 · +0.39 · 75.7 · 1.27 | +120.76 · +0.30 · 65.3 · 1.13 (DD 194.38) |
+| AR | 2.0p | **+45.18 · +0.09 · 73.9 · 1.05** | **+19.35 · +0.05 · 64.7 · 1.02 (DD 201.55)** |
+| OOS 08-08→09-07 | 0 | +4052.58 · +1.10 · 75.6 · 1.68 | +557.00 · +0.21 · 59.4 · 1.06 (DD 404.69) |
+| OOS | 1.0p | +3014.40 · +0.82 · 74.5 · 1.47 | +180.44 · +0.07 · 59.1 · 1.02 (DD 564.90) |
+| OOS | 2.0p | **+2160.18 · +0.60 · 73.9 · 1.32** | **−275.01 · −0.10 · 58.7 · 0.97 (DD 615.11)** |
+
+(IS 09-07→10-07: YENİ +3226.43→+1465.97, PF 1.53→1.22, hep pozitif.)
+
+**Bulgular:**
+
+1. **Eski formül gerçek maliyet altında ölüyor.** 2 pip/bacakta OOS net negatife döner (PF 0.97,
+   DD 615$). Eski kenar kâğıt üstündeydi; canlı −204$ zarar bu tabloyla tutarlı.
+2. **Yeni formül ayakta kalıyor.** Aynı koşulda PF 1.32, +2160$, DD eskinin yarısından az.
+   Fark "daha kârlı" değil, **hayatta kalma**.
+3. **Dürüst sınır:** arıza penceresi (AR) her iki formülde de kırılgan; 2p'de YENİ +0.09$/işlem'e
+   iner. Marj YENİ lehine ~2× ve DD yarı, ama çalkantılı kısa pencerede ince. Geniş pencerelerde
+   fark 30-60×.
+
 ## Bilinçli kabul edilen risk
 
 BE erken kilitlenince chop'ta "küçük kâr kilidi → BE vuruşu" sayısı artar (BE çıkışları 155→360).
