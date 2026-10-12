@@ -201,5 +201,25 @@ başına n = 6–42, bar olan **≥100'ün altında** (60 günde 105). Yani "yü
 bir kol — toplam sistemi taşımaz, ama XAU/US30 defterine temiz artı ekler.
 
 **Karar:** Aday B önerilir (yalnız XAUUSD + US30 evreninde, ayrı kol olarak, tek giriş/gün/sembol);
-Aday A reddedilir. Canlıya alım için kullanıcı onayı + ilk günlerde paper gözlemi gerekir — bu
-doküman **önerir, uygulamaz**.
+Aday A reddedilir.
+
+### Uygulama (2026-10-13) — CANLIYA ALINDI
+
+Kullanıcı onayıyla Aday B canlı motora eklendi (altıncı giriş kolu):
+
+- `backend/app/routers/forex.py` — saf fonksiyon `sign_window_entry`; sabitler
+  `LONDON_SIGN_STRATEGY`/`LONDON_SIGN_LABEL`; strateji kimliği (`london_sign` → LSGN/LONDON_SIGN);
+  ayar alanları (`ls_enabled` **AÇIK**, `ls_symbols=[XAUUSD,US30]`, dakika-tabanlı sign/giriş
+  pencereleri, `ls_sl_atr=1.5`, `ls_hold_hours=3.0`); `_LS_STATE`; canlı streaming bloğu
+  (13:30-14:00 sign → 14:00-14:30 tek giriş); çıkış kablolaması (TP=0 → chandelier); hem paper
+  hem MT5 yolunda EoD zaman-stopu (`hold_minutes` / `open_ts`).
+- `scripts/mt5_bridge.py` — pozisyon yüküne `open_ts` eklendi (EoD yaş kontrolü).
+- `scripts/forex_replay_backtest.py` — iki zaman-stopu hatası düzeltildi
+  (`_time_stop_mode`'a `london_sign` eklendi; `emit()` `time_stop_bars`'ı geçirir).
+- `backend/tests/test_forex_auto_paper.py` — `test_london_sign_entry_and_scope` (saf kural +
+  kapsam + sıralama kilidi); bayat AUDNZD assert'i dürüst sözleşmeye çevrildi.
+
+Geri alma: panelden `ls_enabled=False` veya `git revert`. İlk günlerde paper gözlemi önerilir.
+
+**Bilinçli kabul edilen sınır:** pencere başına n = 6–42 (bar ≥100'ün altında) → bu bir
+"yüksek-hasılat, düşük-sıklık" koldur; XAU/US30 defterine temiz artı ekler, tek başına taşımaz.

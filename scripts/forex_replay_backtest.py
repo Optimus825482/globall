@@ -2715,7 +2715,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     # Erken momentum-dönüş çıkışı (MOMFLIP) serileri: sembol başına tüm seri bir kez hesaplanır,
     # ts→index haritasıyla bar bazında okunur (look-ahead yok: i. değer yalnız i ve öncesi barlardan).
     exit_maps: Optional[Dict[str, Any]] = None
-    _time_stop_mode = TUN_ENTRY_MODE in ("orb_filtered", "reopen_fade", "tokyo_fix")
+    _time_stop_mode = TUN_ENTRY_MODE in ("orb_filtered", "reopen_fade", "tokyo_fix", "london_sign", "orb_ny")
     if (TUN_ST_FLIP_EXIT or TUN_EMA_FLIP_EXIT or TUN_ST_FLIP_TIGHTEN > 0 or _time_stop_mode
             or TUN_ENTRY_MODE == "bb_bandwalk" or TUN_ADX_TRAIL):
         exit_maps = {"ts_idx": {}, "st_dirs": {}, "ema9": {}, "ema21": {}, "bb_closes": {}, "adx": {}}
@@ -2939,7 +2939,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                                            include_momentum=(vname == "NEW"))
                 if not tech:
                     continue
-                def emit(vname, action, score, mode_exits=None, entry_source=None):
+                def emit(vname, action, score, mode_exits=None, entry_source=None, mode_tsb=0):
                     """Adayı ORTAK kapı zincirinden geçirir; geçerse candidates[vname]'e ekler.
 
                     2026-10-12 çoklu-kol: klasik radar VE --combined kolları aynı kapıları
@@ -2959,6 +2959,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                             "digits": spec["digits"], "spread_pips": spread_pips, "gate": gate_note,
                             "exits": mode_exits, "adx_halflot": adx_halflot, "score_halflot": score_half_flag,
                             "entry_source": entry_source,
+                            "time_stop_bars": int(mode_tsb or 0),
                         }
 
                     # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
@@ -3134,11 +3135,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 else:
                     _mc = _entry_mode_candidate(sym, ts, bars, ci, tech, pip_size)
                     if _mc is not None:
-                        emit(vname, _mc["action"], 200.0, _mc.get("exits"))
+                        emit(vname, _mc["action"], 200.0, _mc.get("exits"), mode_tsb=_mc.get("time_stop_bars", 0))
                 # 2026-10-12 ÇOKLU-KOL: canlı ayarlarındaki bağımsız kollar (yalnız NEW defteri).
                 if TUN_COMBINED and vname == "NEW":
                     for _ac in _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size):
-                        emit("NEW", _ac["action"], 200.0, _ac.get("exits"), _ac.get("entry_source"))
+                        emit("NEW", _ac["action"], 200.0, _ac.get("exits"), _ac.get("entry_source"),
+                             mode_tsb=_ac.get("time_stop_bars", 0))
 
 
         # 4) Skor sırasına göre açılış (eski USD-yön sayacı kaldırıldı — korelasyon kalkanı koruyor)

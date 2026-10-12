@@ -844,6 +844,11 @@ EMA_ADX_PULLBACK_STRATEGY = "EMA_ADX_PULLBACK_M5"
 EMA_ADX_PULLBACK_LABEL = "EMA+ADX Geri Çekilme (M5)"
 LONDON_BREAKOUT_STRATEGY = "LONDON_BREAKOUT"
 LONDON_BREAKOUT_LABEL = "London Breakout (Asya Kutusu)"
+# London Sign = NY-açılışı sign-momentum (Seeck 2026 uyarlaması). 2026-10-12 replay
+# kazananı (XAUUSD+US30, 5 pencere hepsi pozitif; slip 2p/bacakta PF 1.76): 13:30-14:00
+# sign penceresi → 14:00-14:30 giriş, SL 1.5×ATR, TP yok (chandelier), EoD kapanış.
+LONDON_SIGN_STRATEGY = "LONDON_SIGN"
+LONDON_SIGN_LABEL = "London Sign (NY Açılışı Momentum)"
 # S3 = Supertrend+RSI pullback (goose AI strateji #3; L30 replay: XAU 5m +90/PF 2.09,
 # XAU 15m +58/PF 3.08, BTC 15m +59/PF 6.63 — 2026-10-08 kullanıcı kararı canlıya alındı)
 S3_PULLBACK_STRATEGY = "S3_SUPERTREND_RSI"
@@ -865,6 +870,8 @@ def strategy_name_for(entry_source: Any) -> str:
         return "DONCHIAN_ADX"
     if src == "london_breakout":
         return LONDON_BREAKOUT_STRATEGY
+    if src == "london_sign":
+        return LONDON_SIGN_STRATEGY
     return "M1_M5_RADAR_SCALPER"
 
 
@@ -883,6 +890,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
         return "DONCH"
     if src == "london_breakout":
         return "LBRK"
+    if src == "london_sign":
+        return "LSGN"
     return "RADAR"
 
 
@@ -898,6 +907,8 @@ def strategy_display_label(code_or_source: Any) -> str:
         return "S3 SuperTrend+RSI (M5)"
     if u in ("DONCHIAN_ADX", "DONCHIAN", "DONCH") or "DONCH" in u:
         return "Donchian ADX Kırılımı"
+    if u in ("LONDON_SIGN", "LSGN", "LS") or "LONDON_SIGN" in u:
+        return "London Sign (NY Açılışı Momentum)"
     if u in ("LONDON_BREAKOUT", "LBRK", "LB") or "LONDON" in u:
         return "London Breakout"
     if u in ("M1_M5_RADAR_SCALPER", "RADAR", "RADAR_SCALPER") or "RADAR" in u:
@@ -925,6 +936,8 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
         return S3_PULLBACK_STRATEGY
     if "DONCH" in raw_tag:
         return "DONCHIAN_ADX"
+    if "LSGN" in raw_tag or "LONDON_SIGN" in raw_tag:
+        return LONDON_SIGN_STRATEGY
     if "LBRK" in raw_tag or "LONDON" in raw_tag:
         return LONDON_BREAKOUT_STRATEGY
     if "RADAR" in raw_tag:
@@ -1145,6 +1158,37 @@ def london_breakout_entry(
     if max_per_day > 0 and day_counts.get(action, 0) >= max_per_day:
         return None
     return action
+
+
+def sign_window_entry(
+    sign_open: float, sign_close: float,
+    minute_of_day: int,
+    ent_start_min: int, ent_end_min: int,
+    day_entered: bool,
+) -> Optional[str]:
+    """NY-açılışı sign-momentum giriş kararı (saf fonksiyon — replay ile birebir).
+
+    Seeck (2026) Londra/NY-açılışı sign-momentumunun uyarlaması. Kural (2026-10-12
+    replay kazananı, XAUUSD+US30): 13:30–14:00 UTC sign penceresinde son kapanış ilk
+    kapanıştan YÜKSEKSE BUY, DÜŞÜKSE SELL; 14:00–14:30 UTC giriş penceresinde sembol
+    başına günde TEK giriş. SL = 1.5×ATR, sabit TP yok (chandelier trail taşır).
+
+    Pencere karşılaştırması DAKİKA tabanlıdır (saat-tamsayı yetersiz: 14:00→14:30
+    aynı saat içinde; `14 >= 14` pencereyi boşaltırdı).
+
+    Döner: "BUY" / "SELL" / None.
+    """
+    if sign_open <= 0 or sign_close <= 0:
+        return None
+    if minute_of_day < ent_start_min or minute_of_day >= ent_end_min:
+        return None
+    if day_entered:
+        return None
+    if sign_close > sign_open:
+        return "BUY"
+    if sign_close < sign_open:
+        return "SELL"
+    return None
 
 
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
@@ -3264,6 +3308,21 @@ class ForexAutoPaperSettings(BaseModel):
     lb_sl_box_frac: float = Field(0.5, ge=0.1, le=1.0, description="London Breakout: SL = kutu yüksekliği × bu oran (süpürme: 0.4 en iyi PF ama 0.5 default spec)")
     lb_tp_r: float = Field(1.5, ge=0.5, le=5.0, description="London Breakout: TP = SL × bu R katı")
     lb_max_per_day: int = Field(1, ge=1, le=5, description="London Breakout: sembol+yön başına günde azami giriş (replay spec: 1)")
+    ls_enabled: bool = Field(True, description="London Sign (NY açılışı sign-momentum, Seeck 2026 uyarlaması) akışı: 13:30-14:00 UTC sign penceresi → 14:00-14:30 giriş, SL 1.5×ATR, sabit TP yok (chandelier trail), EoD kapanış. 2026-10-12 replay: XAUUSD+US30 beş pencerenin beşinde pozitif (60g +$256 PF 2.16 WR %89.5; slip 2p/bacakta PF 1.76)")
+    ls_symbols: List[str] = Field(
+        default_factory=lambda: ["XAUUSD", "US30"],
+        description="London Sign sembolleri. 2026-10-12 replay: XAUUSD +$182 (WR %91.8 n49) ve US30 +$74 (WR %90 n30) — 60g pencerede iki pozitif. FX majörlerinde NEGATİF (USDJPY/GBPUSD/GBPJPY) → kapsam dışı. BTCUSD nötr/negatif (WR %54) → kapsam dışı.",
+    )
+    ls_sign_start_utc: int = Field(13, ge=0, le=23, description="London Sign: sign penceresi başlangıç saati (UTC)")
+    ls_sign_start_min: int = Field(30, ge=0, le=59, description="London Sign: sign penceresi başlangıç dakikası (UTC)")
+    ls_sign_end_utc: int = Field(14, ge=0, le=23, description="London Sign: sign penceresi bitiş saati (UTC)")
+    ls_sign_end_min: int = Field(0, ge=0, le=59, description="London Sign: sign penceresi bitiş dakikası (UTC)")
+    ls_entry_start_utc: int = Field(14, ge=0, le=23, description="London Sign: giriş penceresi başlangıç saati (UTC)")
+    ls_entry_start_min: int = Field(0, ge=0, le=59, description="London Sign: giriş penceresi başlangıç dakikası (UTC)")
+    ls_entry_end_utc: int = Field(14, ge=0, le=23, description="London Sign: giriş penceresi bitiş saati (UTC)")
+    ls_entry_end_min: int = Field(30, ge=0, le=59, description="London Sign: giriş penceresi bitiş dakikası (UTC)")
+    ls_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="London Sign: SL (× ATR(14)) — replay spec")
+    ls_hold_hours: float = Field(3.0, ge=0.0, le=24.0, description="London Sign: girişten bu saat sonra zorla kapat (EoD); 0 = kapatma. Replay: 3h (14:30+3h=17:30 UTC)")
 
 
 class ClosePositionRequest(BaseModel):
@@ -3466,6 +3525,9 @@ _S3_DAY_STATE: Dict[str, Dict[str, Any]] = {}
 # London Breakout mod durumu: sembol → {"day", "box_hi", "box_lo", "counts"}.
 # Kutu, tetik penceresine girişte (00:00→box_end) bir kez hesaplanır; gün değişince sıfırlanır.
 _LB_STATE: Dict[str, Dict[str, Any]] = {}
+# London Sign durumu: {sym: {"day": <ordinal>, "sign_open": f, "sign_close": f, "entered": bool}}.
+# Sign penceresinde ilk/son kapanış bir kez hesaplanır; gün değişince sıfırlanır.
+_LS_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -4069,6 +4131,7 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
             "MANUAL": "✋ Manuel Kapatma",
             "REVERSAL_FLIP": "🔄 Trend Dönüşü (Flip Reversal)",
             "SEANS16": "🕒 Seans Kapanışı (16:00 UTC)",
+            "EOD_TIME": "⏰ Zaman Sınırı (EoD)",
             "S3_ST_FLIP": "🧭 S3 SuperTrend Dönüşü",
         }
         human_reason = reason_titles.get(reason, reason)
@@ -4566,6 +4629,14 @@ async def _forex_auto_paper_loop():
                           and "XAU" not in sym and "BTC" not in sym
                           and datetime.datetime.now(datetime.timezone.utc).hour == 16):
                         positions_to_close.append((pos["id"], "SEANS16", cur_p))
+                    # (f) EoD ZAMAN-STOPU (London Sign spec): pozisyon taşıma süresi
+                    #     `hold_minutes`ı aştıysa bar kapanışı beklenmeden kapatılır.
+                    #     Swap/gece riskini keser; SL/TP/trail önce değerlendirildiği için
+                    #     yalnız "hiçbiri tetiklenmediyse" devreye girer.
+                    elif int(pos.get("hold_minutes", 0) or 0) > 0 and \
+                            (now_ts - float(pos.get("opened_at_ts", now_ts) or now_ts)) >= \
+                            int(pos.get("hold_minutes", 0) or 0) * 60.0:
+                        positions_to_close.append((pos["id"], "EOD_TIME", cur_p))
 
             # Pozisyonları kapat
             for pid, rsn, p_exit in positions_to_close:
@@ -4604,6 +4675,42 @@ async def _forex_auto_paper_loop():
                             "EXIT",
                             f"🧭 [MT5] {mpos.get('display', m_sym)} Bilet #{m_t} {S3_PULLBACK_LABEL} ST-flip çıkışı: "
                             f"SuperTrend tersine döndü ({'BOĞA' if _s3_m_st > 0 else 'AYI'}).",
+                            symbol=m_sym,
+                        )
+
+            # London Sign EoD zaman-stopu — MT5 yoluyla açılmış (paper kaydı olmayan)
+            # pozisyonlar için: emir yorumu "LSGN" ile başlıyorsa ve pozisyon
+            # ls_hold_hours'ı aştıysa CLOSE_ORDER kuyruğa girer (paper yolunun (f) dalıyla
+            # aynı semantik). `open_ts` köprüden taşınır (broker sunucu zamanı düzeltilmiş).
+            if _AUTO_SETTINGS.ls_enabled and _MT5_STATE.get("connected"):
+                _ls_hold_sec = float(_AUTO_SETTINGS.ls_hold_hours) * 3600.0
+                _ls_srv_offset = 0.0  # open_ts köprüde zaten UTC'ye indirilmiş
+                if _ls_hold_sec > 0:
+                    for mpos in list(_MT5_STATE.get("open_positions", [])):
+                        m_tag = str(mpos.get("strategy_tag", "") or "").strip().upper()
+                        if not m_tag.startswith("LSGN"):
+                            continue
+                        m_t = mpos.get("ticket")
+                        m_open_ts = float(mpos.get("open_ts", 0) or 0)
+                        if not m_t or m_open_ts <= 0:
+                            continue
+                        if now_ts - m_open_ts < _ls_hold_sec:
+                            continue
+                        already_closing = any(
+                            c.get("ticket") == m_t and c.get("action") == "CLOSE_ORDER"
+                            for c in _MT5_STATE.get("pending_commands", [])
+                        )
+                        if already_closing:
+                            continue
+                        _MT5_STATE["pending_commands"].append({
+                            "id": f"CMD-CLOSE-{m_t}-EOD",
+                            "action": "CLOSE_ORDER",
+                            "ticket": m_t,
+                        })
+                        _log_auto_decision(
+                            "EXIT",
+                            f"⏰ [MT5] {mpos.get('display', m_sym)} Bilet #{m_t} {LONDON_SIGN_LABEL} EoD çıkışı: "
+                            f"taşıma süresi {_AUTO_SETTINGS.ls_hold_hours:.1f} saati aştı.",
                             symbol=m_sym,
                         )
 
@@ -5028,6 +5135,118 @@ async def _forex_auto_paper_loop():
                                     strategy=LONDON_BREAKOUT_STRATEGY,
                                     strategy_label=LONDON_BREAKOUT_LABEL,
                                 )
+
+            # London Sign akışı (2026-10-12 canlıya alım — kullanıcı kararı):
+            # NY açılışı sign-momentum (Seeck 2026 uyarlaması). 13:30-14:00 UTC sign
+            # penceresinde son kapanış ilk kapanıştan yüksekse BUY, düşükse SELL;
+            # 14:00-14:30 giriş penceresinde sembol başına günde TEK giriş. SL 1.5×ATR,
+            # sabit TP YOK (chandelier trail taşır). Replay 2026-10-12: XAUUSD+US30 beş
+            # pencerenin beşinde pozitif (60g +$256 PF 2.16 WR %89.5; slip 2p/bacakta PF 1.76).
+            # Bar kaynağı S3/LB ile ortak (köprü broker mumları, fallback Yahoo).
+            if _AUTO_SETTINGS.ls_enabled:
+                _ls_now = datetime.datetime.now(datetime.timezone.utc)
+                _ls_day = _ls_now.toordinal()
+                _ls_min = _ls_now.hour * 60 + _ls_now.minute
+                _ls_allowed = {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                _ls_sig_lo = int(_AUTO_SETTINGS.ls_sign_start_utc) * 60 + int(_AUTO_SETTINGS.ls_sign_start_min)
+                _ls_sig_hi = int(_AUTO_SETTINGS.ls_sign_end_utc) * 60 + int(_AUTO_SETTINGS.ls_sign_end_min)
+                _ls_ent_lo = int(_AUTO_SETTINGS.ls_entry_start_utc) * 60 + int(_AUTO_SETTINGS.ls_entry_start_min)
+                _ls_ent_hi = int(_AUTO_SETTINGS.ls_entry_end_utc) * 60 + int(_AUTO_SETTINGS.ls_entry_end_min)
+                for _ls_sym in {s.upper() for s in (_AUTO_SETTINGS.ls_symbols or [])}:
+                    _ls_t = ticks.get(_ls_sym)
+                    _ls_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _ls_sym), None)
+                    if not _ls_t or not _ls_item:
+                        continue
+                    _ls_pip = _ls_item["pip_size"]
+                    _ls_disp = _ls_t.get("display", _ls_sym)
+                    _ls_st = _LS_STATE.setdefault(_ls_sym, {"day": _ls_day, "sign_open": 0.0, "sign_close": 0.0, "entered": False})
+                    if _ls_st["day"] != _ls_day:
+                        _ls_st["day"] = _ls_day
+                        _ls_st["sign_open"] = 0.0
+                        _ls_st["sign_close"] = 0.0
+                        _ls_st["entered"] = False
+                    # Sign penceresi: ilk ve son kapanış toplanır (gün içi bir kez).
+                    if _ls_sig_lo <= _ls_min < _ls_sig_hi:
+                        _ls_bars = _s3_bars_for(_ls_sym, "5m", limit=220)
+                        if _ls_bars and len(_ls_bars) >= 6:
+                            _ls_sb = [b for b in _ls_bars
+                                      if datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).toordinal() == _ls_day
+                                      and _ls_sig_lo <= (datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).hour * 60
+                                                         + datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).minute) < _ls_sig_hi]
+                            if _ls_sb:
+                                _ls_st["sign_open"] = float(_ls_sb[0]["open"])
+                                _ls_st["sign_close"] = float(_ls_sb[-1]["close"])
+                        continue
+                    if _ls_ent_lo <= _ls_min < _ls_ent_hi:
+                        _ls_action = sign_window_entry(
+                            sign_open=float(_ls_st.get("sign_open") or 0.0),
+                            sign_close=float(_ls_st.get("sign_close") or 0.0),
+                            minute_of_day=_ls_min,
+                            ent_start_min=_ls_ent_lo,
+                            ent_end_min=_ls_ent_hi,
+                            day_entered=bool(_ls_st.get("entered")),
+                        )
+                        if _ls_action:
+                            _ls_st["entered"] = True
+                            _ls_atr = float((_TECHNICAL_CACHE.get(_ls_sym) or {}).get("atr", 0.0))
+                            _ls_sl_pips = (float(_AUTO_SETTINGS.ls_sl_atr) * _ls_atr / _ls_pip) if _ls_pip > 0 else 0.0
+                            if _ls_sl_pips <= 0:
+                                _ls_st["entered"] = False  # ATR yoksa giriş yok (SL hesaplanamaz)
+                            else:
+                                candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _ls_sym] + [{
+                                    "symbol": _ls_sym,
+                                    "display": _ls_disp,
+                                    "action": _ls_action,
+                                    "score": 200.0,
+                                    "spread_pips": _LIVE_SPREAD_PIPS.get(_ls_sym, 2.0),
+                                    "atr_pips": round(_ls_atr / _ls_pip, 1) if _ls_pip > 0 else 15.0,
+                                    "adx": float((_TECHNICAL_CACHE.get(_ls_sym) or {}).get("adx", 25.0)),
+                                    "supertrend_dir": int((_TECHNICAL_CACHE.get(_ls_sym) or {}).get("supertrend_dir", 0)),
+                                    "entry_source": "london_sign",
+                                    "strategy": LONDON_SIGN_STRATEGY,
+                                    "strategy_label": LONDON_SIGN_LABEL,
+                                    "sl_pips_override": round(_ls_sl_pips, 1),
+                                    # TP YOK (0): chandelier trailing taşır — replay spec.
+                                    "tp_pips_override": 0.0,
+                                    # EoD zaman-stopu (replay spec: girişten ls_hold_hours saat).
+                                    "hold_minutes": int(float(_AUTO_SETTINGS.ls_hold_hours) * 60),
+                                }]
+                                _ls_sign_txt = "+" if _ls_action == "BUY" else "-"
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"🌆 [{_ls_disp}] {LONDON_SIGN_LABEL}: {_ls_action} adayı — NY açılışı "
+                                    f"sign {_ls_sign_txt} (kapanış {float(_ls_st['sign_close']):.5g} vs açılış "
+                                    f"{float(_ls_st['sign_open']):.5g}), SL {_ls_sl_pips:.1f} pip, TP yok (trail) — değerlendiriliyor.",
+                                    symbol=_ls_sym,
+                                    strategy=LONDON_SIGN_STRATEGY,
+                                    strategy_label=LONDON_SIGN_LABEL,
+                                )
+                    else:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_ls_sym}_ls_wait", 0.0) > 25.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{_ls_sym}_ls_wait"] = now_ts
+                            if _ls_sym not in _ls_allowed:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚠️ [{_ls_disp}] {LONDON_SIGN_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                    symbol=_ls_sym,
+                                    strategy=LONDON_SIGN_STRATEGY,
+                                    strategy_label=LONDON_SIGN_LABEL,
+                                )
+                            elif _ls_min < _ls_sig_lo:
+                                _ls_status = f"Sign penceresi bekleniyor ({_AUTO_SETTINGS.ls_sign_start_utc:02d}:{_AUTO_SETTINGS.ls_sign_start_min:02d}–{_AUTO_SETTINGS.ls_sign_end_utc:02d}:{_AUTO_SETTINGS.ls_sign_end_min:02d} UTC)"
+                            elif _ls_min < _ls_ent_lo:
+                                _ls_status = "Sign toplanıyor; 14:00–14:30 UTC girişi bekleniyor"
+                            elif _ls_min < _ls_ent_hi:
+                                _ls_status = "Giriş penceresi açık — sign yönü bekleniyor"
+                            else:
+                                _ls_status = f"Günün penceresi kapandı (giriş {_ls_ent_hi // 60:02d}:{_ls_ent_hi % 60:02d} UTC)"
+                            _log_auto_decision(
+                                "SCAN",
+                                f"🌆 [{_ls_disp}] {LONDON_SIGN_LABEL} bekliyor: Fiyat {float(_ls_t.get('bid', 0)):.5g} | {_ls_status}.",
+                                symbol=_ls_sym,
+                                strategy=LONDON_SIGN_STRATEGY,
+                                strategy_label=LONDON_SIGN_LABEL,
+                            )
 
             # Periyodik Canlı Tarama Özeti (Her 20 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 20.0:
@@ -5636,6 +5855,13 @@ async def _forex_auto_paper_loop():
                     sl_pips = float(cand.get("sl_pips_override") or sl_pips)
                     tp_pips = float(cand.get("tp_pips_override") or tp_pips)
                     first_target_pips = 0.0
+                if str(cand.get("entry_source", "")) == "london_sign":
+                    # London Sign çıkışları (replay ile birebir): SL = 1.5×ATR, SABİT TP YOK.
+                    # TP bilinçli 0 yazılır (override 0 falsy → `or tp_pips` yanlış olurdu);
+                    # kazanç chandelier trailing + BE kilidiyle taşınır.
+                    sl_pips = float(cand.get("sl_pips_override") or sl_pips)
+                    tp_pips = 0.0
+                    first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
@@ -5759,6 +5985,12 @@ async def _forex_auto_paper_loop():
                     # MT5 bağlı değilse Paper Engine sanal pozisyon havuzuna ekle
                     sl_dist = sl_pips * spec["pip_size"]
                     tp_dist = tp_pips * spec["pip_size"]
+                    # tp_pips <= 0 = sabit TP YOK (S3 5m / London Sign gibi trail-modları,
+                    # canlı MT5 yolu `tp=0.0` yazar = TP'siz). Paper yolunda eskiden
+                    # tp_price = entry_price oluyordu → pozisyon açılış anında "TP vuruldu"
+                    # sayılıp kapanabiliyordu. MT5 semantiğiyle hizala: TP yoksa tp_price=0.
+                    tp_price = (round(entry_p + tp_dist if direction == "BUY" else entry_p - tp_dist, spec["digits"])
+                                if tp_pips > 0 else 0.0)
                     pos_item = {
                         "id": f"FX-{int(time.time() * 1000) % 1000000}",
                         "symbol": sym,
@@ -5768,7 +6000,7 @@ async def _forex_auto_paper_loop():
                         "entry_price": entry_p,
                         "current_price": entry_p,
                         "sl_price": round(entry_p - sl_dist if direction == "BUY" else entry_p + sl_dist, spec["digits"]),
-                        "tp_price": round(entry_p + tp_dist if direction == "BUY" else entry_p - tp_dist, spec["digits"]),
+                        "tp_price": tp_price,
                         "initial_sl_price": round(entry_p - sl_dist if direction == "BUY" else entry_p + sl_dist, spec["digits"]),
                         "breakeven_activated": False,
                         "trailing_activated": False,
@@ -5787,6 +6019,8 @@ async def _forex_auto_paper_loop():
                         "strategy": _c_strat,
                         "strategy_label": _c_strat_lbl,
                         "strategy_tag": strategy_comment_tag(cand.get("entry_source")),
+                        # EoD zaman-stopu (dakika): swap/gece taşımadan kapat (London Sign spec).
+                        "hold_minutes": int(cand.get("hold_minutes", 0) or 0),
                     }
                     async with _AUTO_PAPER_LOCK:
                         _AUTO_STATE["open_positions"].append(pos_item)

@@ -954,7 +954,9 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             self.assertIn(("XAUUSD", "15m"), pairs)
             self.assertIn(("BTCUSD", "15m"), pairs)
             self.assertIn(("GBPUSD", "15m"), pairs)
-            self.assertIn(("AUDNZD", "5m"), pairs)
+            # 2026-10-12: AUDNZD s3_symbols_5m'den düşürüldü (hayalet kros — tick yok).
+            # eski assert bayattı; kilidi dürüst sözleşmeye çevirdik.
+            self.assertNotIn(("AUDNZD", "5m"), pairs)
         finally:
             forex._FOREX_VIEWED.clear()
             forex._FOREX_VIEWED.update(saved_viewed)
@@ -970,6 +972,50 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out[0]["high"], 3.0)
         self.assertEqual(out[0]["low"], -1.0)
         self.assertEqual(out[0]["close"], 2.5)
+
+    def test_london_sign_entry_and_scope(self):
+        """London Sign (NY açılışı sign-momentum, Aday B) — saf kural + kapsam kilidi.
+
+        2026-10-12 replay kazananı (XAUUSD+US30): sign penceresi 13:30-14:00 UTC,
+        giriş 14:00-14:30 UTC, günde TEK giriş. Pencere karşılaştırması DAKİKA
+        tabanlıdır (14:00→14:30 aynı saat içinde; saat-tamsayı pencereyi boşaltırdı).
+        """
+        # Taze örnekten oku: global _AUTO_SETTINGS başka testlerce mutasyona uğrayabilir
+        # (ör. test_auto_paper_settings_update); varsayılan sözleşmesi bu testte kilitlenir.
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertTrue(cfg.ls_enabled)
+        self.assertEqual(sorted(cfg.ls_symbols), ["US30", "XAUUSD"])
+        # Ayarlar replay spec'iyle birebir (dakika tabanlı pencereler)
+        self.assertEqual((cfg.ls_sign_start_utc, cfg.ls_sign_start_min), (13, 30))
+        self.assertEqual((cfg.ls_sign_end_utc, cfg.ls_sign_end_min), (14, 0))
+        self.assertEqual((cfg.ls_entry_start_utc, cfg.ls_entry_start_min), (14, 0))
+        self.assertEqual((cfg.ls_entry_end_utc, cfg.ls_entry_end_min), (14, 30))
+        self.assertEqual(cfg.ls_sl_atr, 1.5)
+        self.assertEqual(cfg.ls_hold_hours, 3.0)
+        # LS sembolleri işlem kapısında olmalı (yoksa aday üretilir ama işlem açılmaz)
+        for _ls_s in cfg.ls_symbols:
+            self.assertIn(_ls_s, cfg.allowed_symbols)
+        # Giriş penceresi 14:00-14:30 = dakika 840..870 (alt dahil, üst hariç)
+        f = forex.sign_window_entry
+        self.assertIsNone(f(1.1000, 1.1010, 815, 840, 870, False))   # sign penceresinde (13:35)
+        self.assertIsNone(f(1.1000, 1.1010, 730, 840, 870, False))   # pencereden önce
+        self.assertIsNone(f(1.1000, 1.1010, 900, 840, 870, False))   # pencereden sonra
+        self.assertIsNone(f(1.1000, 1.1010, 845, 840, 870, True))    # gün limiti (tek giriş/gün)
+        self.assertIsNone(f(1.1000, 1.1000, 845, 840, 870, False))   # sign nötr (eşit) → yok
+        self.assertIsNone(f(0.0, 1.1010, 845, 840, 870, False))      # veri yok → yok
+        self.assertEqual(f(1.1000, 1.1010, 845, 840, 870, False), "BUY")   # sign yeşil → BUY
+        self.assertEqual(f(1.1010, 1.1000, 845, 840, 870, False), "SELL")  # sign kırmızı → SELL
+        self.assertEqual(f(1.1000, 1.1010, 869, 840, 870, False), "BUY")   # üst sınır-1 içinde
+        self.assertIsNone(f(1.1000, 1.1010, 870, 840, 870, False))        # üst sınır hariç
+        # Strateji kimliği: kaynak + etiket + MT5 kapanış kaydı çözümü
+        self.assertEqual(forex.strategy_name_for("london_sign"), forex.LONDON_SIGN_STRATEGY)
+        self.assertEqual(forex.strategy_comment_tag("london_sign"), "LSGN")
+        self.assertEqual(forex.strategy_display_label("LONDON_SIGN"),
+                         "London Sign (NY Açılışı Momentum)")
+        # LSGN, London Breakout catch-all'ına DÜŞMEMELİ (sıralama kilidi)
+        self.assertNotEqual(forex.strategy_display_label("LSGN"), "London Breakout")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "LSGN 42"}),
+                         forex.LONDON_SIGN_STRATEGY)
 
     def test_donchian_adx_entry_rules(self):
         """Donchian+ADX canlı giriş kararı (replay kazananı ile aynı kural)."""

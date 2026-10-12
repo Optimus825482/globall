@@ -1149,6 +1149,7 @@ def sync_with_server(api_base: str):
             "breakeven_activated": (prot in ("BREAKEVEN", "TRAILING")),
             "trailing_activated": (prot == "TRAILING"),
             "open_time": datetime.datetime.fromtimestamp(pos_open_ts, datetime.timezone.utc).strftime("%H:%M:%S"),
+            "open_ts": pos_open_ts,
             # Açık pozisyonun strateji etiketi (emir açılışındaki yorum; panel rozet için)
             "strategy_tag": str(getattr(p, "comment", "") or "").strip(),
         })
