@@ -1250,6 +1250,10 @@ class TestForexPerSymbolDailyKpi(unittest.TestCase):
     def test_status_response_exposes_per_symbol_today(self):
         """Status yanıtı sözleşmesi: alan mevcut ve toplamı today_kpi ile tutuyor."""
         import asyncio
+        # Bu modüldeki IsolatedAsyncioTestCase dersleri kendi döngülerini kurup
+        # KAPATIR; `get_event_loop()` bu yüzden "no current event loop" verir.
+        # İzole bir döngü kurup kendimiz kapatıyoruz (testler arası sızma yok).
+        loop = asyncio.new_event_loop()
         forex._STATUS_CACHE = None
         prev_ts, prev_deals = forex._MT5_STATE.get("connected"), forex._MT5_STATE.get("closed_deals")
         try:
@@ -1261,7 +1265,7 @@ class TestForexPerSymbolDailyKpi(unittest.TestCase):
                 {"symbol": "GBPUSD", "display": "GBPUSD", "profit": -5.0, "pnl_pips": -3.0,
                  "time": now, "commission": 0.0, "swap": 0.0, "ticket": 2},
             ]
-            res = asyncio.get_event_loop().run_until_complete(forex.get_forex_auto_paper_status())
+            res = loop.run_until_complete(forex.get_forex_auto_paper_status())
             self.assertIn("per_symbol_today", res)
             per = res["per_symbol_today"]
             self.assertEqual({r["symbol"] for r in per}, {"XAUUSD", "GBPUSD"})
@@ -1274,6 +1278,7 @@ class TestForexPerSymbolDailyKpi(unittest.TestCase):
                 sum(r["trades"] for r in per), res["today_kpi"]["total_trades"]
             )
         finally:
+            loop.close()
             forex._MT5_STATE["connected"] = prev_ts
             forex._MT5_STATE["closed_deals"] = prev_deals
             forex._STATUS_CACHE = None
