@@ -354,22 +354,50 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["command"]["lots"], 0.50)
 
     def test_target_two_symbols_configuration(self):
-        """Verify the configured instruments are set in allowed_symbols (2026-10-08: + Radar evreni + LB pozitifleri)."""
+        """allowed_symbols ⊆ FOREX_SYMBOLS (2026-10-12 panel-dürüstlüğü kilidi).
+
+        13 kros 2026-10-08'de 'LB/Radar replay pozitifi' diye eklenmişti ama
+        FOREX_SYMBOLS'te olmadıkları için tick üretilmiyordu → panelde seçili
+        görünüp ASLA işlem açamıyorlardı. İzole 2-pencere replay'de hiçbiri
+        OOS n≥100 barını geçemedi → kanıt yok, çıkarıldılar.
+        """
         expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
-                    "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD",
-                    "GBPCHF", "EURCAD", "CHFJPY", "CADJPY", "GBPNZD",
-                    "GBPAUD", "GBPCAD", "AUDCAD", "EURAUD", "USDCHF", "CADCHF", "AUDCHF"]
+                    "GBPUSD", "AUDUSD", "USDJPY", "USDCHF"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 22)
+        self.assertEqual(len(cfg.allowed_symbols), 9)
         for s in expected:
             self.assertIn(s, cfg.allowed_symbols)
-        # Replay kanıtı olmayanlar izin listesinin dışında kalır
-        for s in ("EURUSD", "USDCAD", "NZDUSD",
+        # Panel-dürüstlüğü DEĞİŞMEZİ: her izinli sembol gerçekten işlenebilir olmalı
+        _universe = {i["symbol"] for i in forex.FOREX_SYMBOLS}
+        for s in cfg.allowed_symbols:
+            self.assertIn(s, _universe, f"{s} FOREX_SYMBOLS'te yok → hayalet")
+        # Kanıtsız kroslar izin listesinin dışında
+        for s in ("NZDJPY", "AUDNZD", "GBPCHF", "EURCAD", "CHFJPY", "CADJPY",
+                  "GBPNZD", "GBPAUD", "GBPCAD", "AUDCAD", "EURAUD", "CADCHF",
+                  "AUDCHF", "EURUSD", "USDCAD", "NZDUSD",
                   "ETHUSD", "NAS100", "USTEC", "USOIL"):
             self.assertNotIn(s, cfg.allowed_symbols)
-        # Check MT5 Bridge check_syms list contains these 4
+        # Veri hattı haritaları hâlâ her izinli sembolü kapsar
         for s in expected:
             self.assertIn(s, forex.YAHOO_SYMBOL_MAP)
+
+    def test_universe_invariant_strips_phantoms(self):
+        """`_enforce_universe_invariant` hayalet pariteleri atar (2026-10-12 kilidi)."""
+        cfg = forex.ForexAutoPaperSettings(
+            allowed_symbols=["XAUUSD", "GBPCHF", "NZDJPY", "GBPUSD", "AUDNZD"]
+        )
+        dropped = forex._enforce_universe_invariant(cfg)
+        self.assertEqual(sorted(dropped), ["AUDNZD", "GBPCHF", "NZDJPY"])
+        self.assertEqual(sorted(cfg.allowed_symbols), ["GBPUSD", "XAUUSD"])
+
+    def test_merge_settings_strips_phantom_symbols(self):
+        """PANEL bug'ı: kullanıcı panelden hayalet kros seçse bile motor kabul etmez."""
+        merged = forex.merge_settings_payload(
+            {"allowed_symbols": ["XAUUSD", "EURCAD", "BTCUSD"]}
+        )
+        self.assertIn("XAUUSD", merged.allowed_symbols)
+        self.assertIn("BTCUSD", merged.allowed_symbols)
+        self.assertNotIn("EURCAD", merged.allowed_symbols)
 
     def test_retired_symbols_are_out_of_universe_but_specs_kept(self):
         """ETHUSD, USOIL ve SPX500 2026-10-07'de forex evreninden çıkarıldı.

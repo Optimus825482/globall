@@ -677,14 +677,15 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.ev_min_trades, 10)
         self.assertEqual(cfg.ev_max_win_rate, 45.0)
         self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
-        # allowed_symbols: 22 sembol (2026-10-08: 5 kalibre + 5 Radar evreni + 12 LB pozitifi)
-        self.assertEqual(len(cfg.allowed_symbols), 22)
+        # allowed_symbols: 9 sembol (2026-10-12: 13 hayalet kros çıkarıldı — FOREX_SYMBOLS'te
+        # değildiler, tick almıyorlardı, izole replay'de OOS n≥100 barını geçemediler)
+        self.assertEqual(len(cfg.allowed_symbols), 9)
         self.assertIn("XAUUSD", cfg.allowed_symbols)
         self.assertIn("BTCUSD", cfg.allowed_symbols)
         self.assertIn("US30", cfg.allowed_symbols)
         self.assertIn("GBPUSD", cfg.allowed_symbols)
-        self.assertIn("AUDNZD", cfg.allowed_symbols)
-        self.assertIn("GBPCHF", cfg.allowed_symbols)
+        self.assertNotIn("AUDNZD", cfg.allowed_symbols)   # hayalet — çıkarıldı
+        self.assertNotIn("GBPCHF", cfg.allowed_symbols)   # hayalet — çıkarıldı
         self.assertNotIn("DXY", cfg.allowed_symbols)
 
 

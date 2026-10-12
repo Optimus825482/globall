@@ -221,8 +221,10 @@ FOREX_SYMBOLS = [
 # teknik rapor ve emekli kayıt uyumluluğu FOREX_SYMBOLS üzerinden sürer.
 # Motora sinyal üretilen liste budur — işlem kapısı (allowed_symbols) ayrıca
 # devrede olduğundan buradaki genişlik tek başına risk açmaz.
+# 2026-10-12: NZDJPY/AUDNZD çıkarıldı — FOREX_SYMBOLS'te değiller (tick yok),
+# radar satırı hiç üretemiyorlardı; liste artık tick üretebilen evrenin alt kümesi.
 RADAR_SCAN_SYMBOLS = {
-    "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD",
+    "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD",
 }
 
 _RETIRED_FOREX_SYMBOLS = [
@@ -3205,10 +3207,8 @@ class ForexAutoPaperSettings(BaseModel):
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
-                                 "GBPUSD", "AUDUSD", "NZDJPY", "AUDNZD", "USDJPY",
-                                 "GBPCHF", "EURCAD", "CHFJPY", "CADJPY", "GBPNZD",
-                                 "GBPAUD", "GBPCAD", "AUDCAD", "EURAUD", "USDCHF", "CADCHF", "AUDCHF"],
-        description="İşleme izin verilen pariteler (2026-10-07 kalibre kapsam + 2026-10-08 Radar-evreni replay pozitifleri + London Breakout replay pozitifleri — LBRK sembolleri yalnız LB akışıyla işlenir, klasik radar sinyalleri bu çiftlerde yine replay'de negatif olduğundan skor kapısından geçmez)",
+                                 "GBPUSD", "AUDUSD", "USDJPY", "USDCHF"],
+        description="İşleme izin verilen pariteler. 2026-10-12: 13 kros (NZDJPY, AUDNZD, GBPCHF, EURCAD, CHFJPY, CADJPY, GBPNZD, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — bunlar FOREX_SYMBOLS'te olmadığı için tick üretilmiyor, dolayısıyla panelde 'seçili' görünseler de ASLA işlem açamıyorlardı (hayalet). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=74) → kanıt yok, eklenmedi. DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
     )
     mode_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "GBPJPY", "EURJPY"],
@@ -3231,7 +3231,7 @@ class ForexAutoPaperSettings(BaseModel):
     ema_adx_tp_atr: float = Field(2.0, ge=0.0, le=6.0, description="EMA+ADX: TP (× ATR(14)); 0 = sabit TP yok (trailing'e bırakılır)")
     ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
     s3_enabled: bool = Field(True, description="S3 (Supertrend+RSI pullback) akışı: ST(10,3) yön + EMA200 tarafı + ADX≥25 + RSI pullback dönüşü (L30 replay: XAU/BTC üç pencere pozitif)")
-    s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD", "AUDNZD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09; AUDNZD 2026-10-08 7-sembol L30 +$27.36)")
+    s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09). 2026-10-12: AUDNZD DÜŞÜRÜLDÜ — FOREX_SYMBOLS'te değildi (tick yok → hayalet), izole 2-pencere replay'de OOS n=74 < 100 ve net −$61.09 → kanıt yok")
     s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30", "GBPUSD"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82; 2026-10-08 7-sembol evren: stflip +$279.54 PF 3.13 / tp2 +$278.97 PF 3.12 — GBPUSD +$29.65 eklendi; USTEC 0 işlem — pullback deseni oluşmuyor)")
     s3_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="S3: ADX(14) trend gücü eşiği (spec: 25)")
     s3_rsi_lo: float = Field(40.0, ge=0.0, le=50.0, description="S3: pullback bandı alt sınırı (son 6 bar TAMAMEN bu bandın altına inerse trend bozulmuş sayılır)")
@@ -3240,10 +3240,8 @@ class ForexAutoPaperSettings(BaseModel):
     s3_max_per_day: int = Field(0, ge=0, le=20, description="S3: sembol+TF+yön başına günde azami giriş (0 = sınırsız)")
     lb_enabled: bool = Field(True, description="London Breakout akışı: Asya kutusu (00:00→box_end UTC) high/low kırılımı, Londra penceresinde tetik. L30 replay pozitif 19 sembolde açık (2026-10-08)")
     lb_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "GBPUSD", "USDJPY", "GBPCHF", "EURCAD", "BTCUSD",
-                                 "CHFJPY", "GBPNZD", "CADJPY", "GBPAUD", "GBPCAD", "AUDCAD",
-                                 "EURAUD", "USDCHF", "US30", "CADCHF", "AUDCHF"],
-        description="London Breakout sembolleri (2026-10-08 L30 replay pozitifleri; GBPJPY −$11 hariç tutuldu — çift donchian-exclusive; EURJPY +$19.6 mevcut donchian kapsamında olduğu için eklenmedi)",
+        default_factory=lambda: ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "USDCHF", "US30"],
+        description="London Breakout sembolleri (2026-10-08 L30 replay pozitifleri; GBPJPY −$11 hariç tutuldu — çift donchian-exclusive). 2026-10-12: 11 kros (GBPCHF, EURCAD, CHFJPY, GBPNZD, CADJPY, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — FOREX_SYMBOLS'te olmadıkları için tick almıyorlardı (hayalet), izole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=25) → kanıt yok)",
     )
     lb_box_end_utc: int = Field(7, ge=0, le=12, description="London Breakout: Asya kutusu bitiş saati (UTC); 00:00'dan bu saate kadar high/low")
     lb_entry_end_utc: int = Field(11, ge=1, le=18, description="London Breakout: tetik penceresi bitiş saati (UTC); box_end'den bu saate kadar kutu dışına kapanış arar")
@@ -3271,6 +3269,33 @@ _LAST_DATA_GAP_LOG: Dict[str, float] = {}
 _LAST_SYMBOL_ENTRY_TIME: Dict[str, float] = {}
 
 _AUTO_SETTINGS = ForexAutoPaperSettings()
+
+
+def _enforce_universe_invariant(settings: "ForexAutoPaperSettings") -> List[str]:
+    """`allowed_symbols ⊆ FOREX_SYMBOLS` — hayalet parite kilidi (2026-10-12).
+
+    Tick ÜRETİMİ yalnız `FOREX_SYMBOLS` üyeleri için yapılır (bkz.
+    `_generate_realistic_ticks`); işlem akışlarının hepsi `ticks.get(sym)` kapısından
+    geçer. Dolayısıyla `allowed_symbols`'te olup `FOREX_SYMBOLS`'te olmayan bir çift
+    panelde 'seçili' görünür ama ASLA aday/işlem üretemez. 2026-10-12'de 13 kros tam
+    bu yüzden hayaletti; sessizce geri sızmalarını engellemek için temizlenir.
+    Döndürür: atılan semboller (karar günlüğüne yazılır).
+    """
+    universe = {item["symbol"] for item in FOREX_SYMBOLS}
+    phantoms = [s for s in (settings.allowed_symbols or []) if str(s).upper() not in universe]
+    if phantoms:
+        settings.allowed_symbols = [
+            s for s in (settings.allowed_symbols or []) if str(s).upper() in universe
+        ]
+    return phantoms
+
+
+_dropped_phantoms = _enforce_universe_invariant(_AUTO_SETTINGS)
+if _dropped_phantoms:
+    logger.warning(
+        "Forex ayarları: FOREX_SYMBOLS'te olmayan pariteler allowed_symbols'ten atıldı "
+        "(hayalet-işlem kilidi): %s", _dropped_phantoms,
+    )
 
 # --- 2026-10-10 denetim P1-5: ayar kalıcılığı + birleştirme (merge) -----------------
 # Eskiden _AUTO_SETTINGS yalnız bellekti (restart'ta panel config'i koda dönüyordu) ve
@@ -3348,6 +3373,16 @@ def merge_settings_payload(payload: Dict[str, Any]) -> "ForexAutoPaperSettings":
             cur[k] = v
     cur["enabled"] = _AUTO_STATE.get("enabled", cur.get("enabled", False))
     merged = ForexAutoPaperSettings(**cur)
+    _phantoms = _enforce_universe_invariant(merged)
+    if _phantoms:
+        try:
+            _log_auto_decision(
+                "SYSTEM",
+                f"⚠️ allowed_symbols'ten hayalet pariteler atıldı (FOREX_SYMBOLS'te yok, "
+                f"işlem açamazlar): {_phantoms}",
+            )
+        except Exception:
+            pass
     if unknown:
         try:
             _log_auto_decision("SYSTEM", f"ℹ️ Bilinmeyen ayar anahtarları yok sayıldı: {unknown}")
@@ -3365,6 +3400,12 @@ try:
             _known = {k: v for k, v in _persisted.items()
                       if k in ForexAutoPaperSettings.model_fields}
             _AUTO_SETTINGS = ForexAutoPaperSettings(**_known)
+            _dropped_phantoms = _enforce_universe_invariant(_AUTO_SETTINGS)
+            if _dropped_phantoms:
+                logger.warning(
+                    "Kalıcı forex ayarlarında hayalet pariteler bulundu ve atıldı "
+                    "(FOREX_SYMBOLS'te yok): %s", _dropped_phantoms,
+                )
 except Exception as _exc:  # pragma: no cover - savunmacı
     _AUTO_SETTINGS = ForexAutoPaperSettings()
 

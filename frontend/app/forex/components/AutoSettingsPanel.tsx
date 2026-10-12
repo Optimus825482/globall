@@ -49,6 +49,13 @@ const ALL_SYMBOLS = [
   { sym: "US30", label: "Dow Jones (US30)" },
   { sym: "XAUUSD", label: "Ons Altın (XAU)" },
 ];
+// NOT (2026-10-12): Bu liste backend `FOREX_SYMBOLS` evreniyle BİREBİR aynıdır.
+// Daha önce burada 13 kros (GBPCHF, EURCAD, CHFJPY, CADJPY, GBPNZD, GBPAUD,
+// GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF, NZDJPY, AUDNZD) seçilebiliyordu ama
+// backend'in tick ürettiği evrende olmadıkları için ASLA işlem açamıyorlardı
+// (panel yalanı). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi →
+// listeden çıkarıldılar. Yeni çift eklemek için önce backend `FOREX_SYMBOLS`'e
+// + replay kanıtına ihtiyaç var.
 
 const ALL_SYMBOL_KEYS = ALL_SYMBOLS.map((s) => s.sym);
 

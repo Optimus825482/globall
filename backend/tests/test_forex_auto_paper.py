@@ -889,17 +889,20 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("US30", cfg.s3_symbols_15m)
         # 2026-10-08 Radar-evreni (7 sembol) L30 replay: 15m stflip +$279.54 PF 3.13
         self.assertIn("GBPUSD", cfg.s3_symbols_15m)
-        self.assertIn("AUDNZD", cfg.s3_symbols_5m)
+        # 2026-10-12: AUDNZD s3 5m kolundan ÇIKARILDI (FOREX_SYMBOLS'te değildi →
+        # tick yok → hayalet; izole 2-pencere replay OOS n=74 < 100 barını geçemedi).
+        self.assertNotIn("AUDNZD", cfg.s3_symbols_5m)
         # US30 işlem kapısından geçebilmeli (kapsam kapısı allowed_symbols kesindir)
         self.assertIn("US30", cfg.allowed_symbols)
         self.assertIn("GBPUSD", cfg.allowed_symbols)
         self.assertIn("AUDUSD", cfg.allowed_symbols)
-        self.assertIn("NZDJPY", cfg.allowed_symbols)
-        self.assertIn("AUDNZD", cfg.allowed_symbols)
+        # 2026-10-12: hayalet kroslar (NZDJPY/AUDNZD dahil) allowed_symbols'ten çıkarıldı
+        self.assertNotIn("NZDJPY", cfg.allowed_symbols)
+        self.assertNotIn("AUDNZD", cfg.allowed_symbols)
         # London Breakout akışı (2026-10-08): ayarlar + saf kural + strateji kimliği
         self.assertTrue(cfg.lb_enabled)
         self.assertIn("XAUUSD", cfg.lb_symbols)
-        self.assertIn("GBPCHF", cfg.lb_symbols)
+        self.assertNotIn("GBPCHF", cfg.lb_symbols)  # 2026-10-12 hayalet kros çıkarıldı
         self.assertNotIn("GBPJPY", cfg.lb_symbols)  # donchian-exclusive çift LB'ye girmez
         self.assertEqual(cfg.lb_box_end_utc, 7)
         self.assertEqual(cfg.lb_entry_end_utc, 11)
