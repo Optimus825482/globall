@@ -242,6 +242,15 @@ TUN_LOSS_STREAK_CD = 300.0  # tetiklenince sembolün yeni giriş penceresi (sani
 # Mod kendi tetik şartını üretir; kapılar (EV/spread/korelasyon/seans) ve çıkış motoru
 # klasikle BİREBİR aynıdır — adil karşılaştırma. OLD defteri hep klasik kalır (referans).
 TUN_ENTRY_MODE = "classic"      # classic | london_breakout | pullback | donchian_adx
+# 2026-10-12 ÇOKLU-KOL modu (canlı-parite): canlı motor aynı anda BİRDEN ÇOK kolu işletir
+# (S3 SuperTrend+RSI, London Breakout, EMA+ADX pullback, Donchian — bkz. forex.py canlı döngü).
+# Replay'in tek-değerli --entry-mode'u bunu temsil edemiyordu → canlı↔replay yürütme farkı.
+# --combined: kol başına kendi sembol listesi (--arm-symbols, s3_5m=...;s3_15m=...;...) ile
+# her kolu ayrı ayrı üret, adayları klasik adaylarla AYNI kapı zincirinden geçir (dedup+bütçe
+# paylaşılır — canlıdaki gibi). Boş --arm-symbols = boş tarif; klasik kol her zaman açık.
+TUN_COMBINED = False
+TUN_ARM_SYMBOLS: Dict[str, set] = {}
+ARM_KEYS = ("s3_5m", "s3_15m", "ema_adx_pullback", "london_breakout", "donchian_adx")
 TUN_LB_BOX_END_H = 7            # Asya kutusu: 00:00 → 07:00 UTC
 TUN_LB_ENTRY_END_H = 11         # tetik penceresi: 07:00 → 11:00 UTC
 TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
@@ -1185,6 +1194,215 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
                           "tp_pips": round(TUN_BBW_TP_ATR * ap / pip_size, 1)}}
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-12 ÇOKLU-KOL (canlı-parite) yardımcıları
+# ---------------------------------------------------------------------------
+# Canlı motor her sembolde birden çok bağımsız kolu işletir; her kol kendi saf giriş
+# fonksiyonuyla (forex.py: s3_pullback_entry / ema_adx_pullback_entry /
+# london_breakout_entry / donchian_adx_entry) aday üretir. Replay tek-değerli
+# --entry-mode ile bunu temsil edemiyordu. Aşağıdaki fonksiyonlar aynı kuralları
+# replay'in bar dilimleri üzerinde birebir uygular ve AYNI aday sözlüğü biçimini döner.
+_ARM_ST_CACHE: Dict[str, list] = {}
+_ARM_S3_DAY: Dict[tuple, int] = {}
+_ARM_LB_BOX: Dict[tuple, tuple] = {}      # (sym, day) -> (box_hi, box_lo)
+
+
+def _arm_s3_candidate(sym, ts, bars, ci, tech, pip_size, tf) -> Optional[Dict[str, Any]]:
+    """S3 (Supertrend+RSI pullback) kolu — canlı `s3_pullback_entry` ile birebir.
+
+    Canlıda 5m ve 15m ayrı kaynak olarak koşar; replay çözünürlüğü tek TF olduğu için
+    tf parametresi yalnız çıkış setini (5m=TP'siz, 15m=TP var) belirler.
+    """
+    atr_price = float(tech.get("atr") or 0.0)
+    if ci < 210 or atr_price <= 0 or pip_size <= 0:
+        return None
+    st_dirs = _ARM_ST_CACHE.get(sym)
+    if st_dirs is None or len(st_dirs) < ci + 1:
+        st_dirs = _st_dir_series(bars, 10, 3.0)
+        _ARM_ST_CACHE[sym] = st_dirs
+    st_now = st_dirs[ci - 1]
+    if st_now == 0:
+        return None
+    rsi_s = _sr_rsi14_series([b[4] for b in bars[:ci]], sym)
+    r_now = rsi_s[ci - 1]
+    r_prev = rsi_s[ci - 2] if ci >= 2 and rsi_s[ci - 2] is not None else None
+    if r_now is None:
+        return None
+    e200 = _sr_ema200_series([b[4] for b in bars[:ci]], sym)[ci - 1]
+    c = bars[ci - 1][4]
+    if TUN_SRP_EMA200 and e200 > 0:
+        if st_now > 0 and c <= e200:
+            return None
+        if st_now < 0 and c >= e200:
+            return None
+    if TUN_SRP_ADX_MIN > 0 and float(tech.get("adx") or 0.0) < TUN_SRP_ADX_MIN:
+        return None
+    past_vals = [x for x in rsi_s[max(0, ci - 6):ci - 1] if x is not None]
+    if st_now > 0:
+        if not any(x < 50.0 for x in past_vals):
+            return None
+        if TUN_SRP_RSI_LO > 0 and past_vals and all(x < TUN_SRP_RSI_LO for x in past_vals):
+            return None
+        if r_prev is not None and r_prev >= 50.0:
+            return None
+        if r_now <= 50.0:
+            return None
+        action = "BUY"
+    else:
+        if not any(x > 50.0 for x in past_vals):
+            return None
+        if past_vals and all(x > 100.0 - TUN_SRP_RSI_LO for x in past_vals):
+            return None
+        if r_prev is not None and r_prev <= 50.0:
+            return None
+        if r_now >= 50.0:
+            return None
+        action = "SELL"
+    if TUN_SRP_MAX_PER_DAY > 0:
+        key = (sym, tf, int(ts // 86400), action)
+        if _ARM_S3_DAY.get(key, 0) >= TUN_SRP_MAX_PER_DAY:
+            return None
+        _ARM_S3_DAY[key] = _ARM_S3_DAY.get(key, 0) + 1
+    return {"action": action, "entry_source": f"s3_{tf}", "arm": f"s3_{tf}",
+            "exits": {"sl_pips": round(TUN_SRP_SL_ATR * atr_price / pip_size, 1),
+                      "tp_pips": round(TUN_SRP_TP_ATR * atr_price / pip_size, 1)}}
+
+
+def _arm_eap_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[str, Any]]:
+    """EMA+ADX geri-çekilme (M5) kolu — canlı `ema_adx_pullback_entry` ile birebir."""
+    atr_price = float(tech.get("atr") or 0.0)
+    e8, e21, e50 = (float(tech.get(k) or 0.0) for k in ("ema8", "ema21", "ema50"))
+    if atr_price <= 0 or e8 <= 0 or e21 <= 0 or e50 <= 0 or pip_size <= 0:
+        return None
+    if float(tech.get("adx") or 0.0) < TUN_EAP_ADX_MIN:
+        return None
+    b = bars[ci - 1]
+    o, h, l, c = b[1], b[2], b[3], b[4]
+    if not ((l <= e21 <= h) or (abs(c - e21) <= TUN_EAP_TOUCH_ATR * atr_price)):
+        return None
+    if e8 > e21 > e50 and c > e21 and c > o:
+        action = "BUY"
+    elif e8 < e21 < e50 and c < e21 and c < o:
+        action = "SELL"
+    else:
+        return None
+    key = (sym, int(ts // 86400), action)
+    if TUN_EAP_MAX_PER_DAY > 0:
+        if MODE_DAY_STATE.get(key, 0) >= TUN_EAP_MAX_PER_DAY:
+            return None
+        MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+    return {"action": action, "entry_source": "ema_adx_pullback", "arm": "ema_adx_pullback",
+            "exits": {"sl_pips": round(TUN_EAP_SL_ATR * atr_price / pip_size, 1),
+                      "tp_pips": round(TUN_EAP_TP_ATR * atr_price / pip_size, 1)}}
+
+
+def _arm_lb_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[str, Any]]:
+    """London Breakout kolu — canlı `london_breakout_entry` ile birebir (Asya kutusu)."""
+    hour = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).hour
+    if hour < TUN_LB_BOX_END_H or hour >= TUN_LB_ENTRY_END_H:
+        return None
+    day = int(ts // 86400)
+    window = bars[max(0, ci - 300):ci]
+    box = [b for b in window if int(b[0] // 86400) == day
+           and int((b[0] % 86400) // 3600) < TUN_LB_BOX_END_H]
+    if len(box) < 6:
+        return None
+    box_hi = max(b[2] for b in box)
+    box_lo = min(b[3] for b in box)
+    atr_price = float(tech.get("atr") or 0.0)
+    if TUN_LB_MIN_BOX_ATR > 0 and atr_price > 0 and (box_hi - box_lo) < TUN_LB_MIN_BOX_ATR * atr_price:
+        return None
+    c = bars[ci - 1][4]
+    box_h = box_hi - box_lo
+    if box_h <= 0 or pip_size <= 0:
+        return None
+    if c > box_hi:
+        action = "BUY"
+    elif c < box_lo:
+        action = "SELL"
+    else:
+        return None
+    key = (sym, day, action)
+    if LB_STATE.get(key):
+        return None
+    LB_STATE[key] = True
+    sl_pips = round((box_h * TUN_LB_SL_BOX_FRAC) / pip_size, 1)
+    return {"action": action, "entry_source": "london_breakout", "arm": "london_breakout",
+            "exits": {"sl_pips": sl_pips, "tp_pips": round(sl_pips * TUN_LB_TP_R, 1)}}
+
+
+def _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[str, Any]]:
+    """Donchian(20) orta-hat çaprazı + ADX kolu — canlı `donchian_adx_entry` ile birebir."""
+    hour = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).hour
+    is_jpy = "JPY" in sym.upper()
+    if not ((0 <= hour < 16) if is_jpy else (7 <= hour < 16)):
+        return None
+    adx = float(tech.get("adx") or 0.0)
+    if adx < TUN_DA_ADX_MIN:
+        return None
+    atr_price = float(tech.get("atr") or 0.0)
+    if atr_price <= 0 or pip_size <= 0:
+        return None
+    n = TUN_DA_DONCH
+    window = bars[max(0, ci - (n + 1)):ci]
+    if len(window) < n:
+        return None
+    hi_n = max(b[2] for b in window[:-1])
+    lo_n = min(b[3] for b in window[:-1])
+    mid = (hi_n + lo_n) / 2.0
+    c = bars[ci - 1][4]
+    prev_c = bars[ci - 2][4]
+    prev_mid = ((max(b[2] for b in window[:-2]) + min(b[3] for b in window[:-2])) / 2.0
+                if len(window) > 2 else mid)
+    if prev_c <= prev_mid and c > mid:
+        action = "BUY"
+    elif prev_c >= prev_mid and c < mid:
+        action = "SELL"
+    else:
+        return None
+    key = (sym, int(ts // 86400), action)
+    if MODE_DAY_STATE.get(key, 0) >= 2:
+        return None
+    MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+    return {"action": action, "entry_source": "donchian", "arm": "donchian_adx",
+            "exits": {"sl_pips": round(TUN_DA_SL_ATR * atr_price / pip_size, 1),
+                      "tp_pips": round(TUN_DA_TP_ATR * atr_price / pip_size, 1)}}
+
+
+def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str, Any]]:
+    """`--combined`: bu sembol+bar için TÜM aktif kolların adaylarını üretir.
+
+    Yalnız canlı AYARLARINDA (--arm-symbols) tanımlı sembollerde koşar; klasik radar
+    kolu dışarıda/her zaman açık kalır. Döner: aday sözlükleri listesi (boş olabilir).
+    """
+    if not TUN_ARM_SYMBOLS:
+        return []
+    u = sym.upper()
+    out: List[Dict[str, Any]] = []
+    if u in TUN_ARM_SYMBOLS.get("s3_5m", set()):
+        cd = _arm_s3_candidate(sym, ts, bars, ci, tech, pip_size, "5m")
+        if cd:
+            out.append(cd)
+    if u in TUN_ARM_SYMBOLS.get("s3_15m", set()):
+        cd = _arm_s3_candidate(sym, ts, bars, ci, tech, pip_size, "15m")
+        if cd:
+            out.append(cd)
+    if u in TUN_ARM_SYMBOLS.get("ema_adx_pullback", set()):
+        cd = _arm_eap_candidate(sym, ts, bars, ci, tech, pip_size)
+        if cd:
+            out.append(cd)
+    if u in TUN_ARM_SYMBOLS.get("london_breakout", set()):
+        cd = _arm_lb_candidate(sym, ts, bars, ci, tech, pip_size)
+        if cd:
+            out.append(cd)
+    if u in TUN_ARM_SYMBOLS.get("donchian_adx", set()):
+        cd = _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size)
+        if cd:
+            out.append(cd)
+    return out
+
 
 # 2026-10-06 kademeli alım + sepet kapatma (DCA) — kullanıcı önerisi:
 # Zarardaki işlemde fiyat, giriş-SL mesafesinin TUN_DCA_DIST_FRAC oranına gelince
@@ -2648,200 +2866,207 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                                            include_momentum=(vname == "NEW"))
                 if not tech:
                     continue
-                mode_exits: Optional[Dict[str, float]] = None
+                def emit(vname, action, score, mode_exits=None, entry_source=None):
+                    """Adayı ORTAK kapı zincirinden geçirir; geçerse candidates[vname]'e ekler.
+
+                    2026-10-12 çoklu-kol: klasik radar VE --combined kolları aynı kapıları
+                    (EV/spread/skor/seans/korelasyon) paylaşır — canlı motorun tek-bütçeli
+                    davranışının replay paritesi. `continue` → `return` (aday başına erken çıkış).
+                    """
+                    book = books[vname]
+                    atr_pips = tech["atr"] / pip_size if pip_size > 0 else 15.0
+                    spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
+                    adx_halflot = False
+                    score_half_flag = False
+
+                    def cand(gate_note=None):
+                        return {
+                            "symbol": sym, "action": action, "score": score, "price": close_now,
+                            "atr_pips": atr_pips, "pip_size": pip_size, "pip_val": spec["pip_val"],
+                            "digits": spec["digits"], "spread_pips": spread_pips, "gate": gate_note,
+                            "exits": mode_exits, "adx_halflot": adx_halflot, "score_halflot": score_half_flag,
+                            "entry_source": entry_source,
+                        }
+
+                    # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
+                    if vname == "NEW" and EV_GUARD:
+                        ev_rows = [c["pnl_usd"] for c in book.closed
+                                   if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - EV_WINDOW_SEC]
+                        ev_stats = {
+                            "n": len(ev_rows),
+                            "net": round(sum(ev_rows), 2),
+                            "win_rate": round(100.0 * sum(1 for p in ev_rows if p >= 0) / len(ev_rows), 1) if ev_rows else 0.0,
+                        }
+                        ev_risk_floor = BALANCE * RISK_PCT / 100.0 * EV_LOSS_RISK_MULT
+                        if forex.ev_guard_decision(ev_stats, EV_MIN_TRADES, EV_MAX_WIN_RATE, ev_risk_floor):
+                            blocked_events.append(("EV", cand("EV")))
+                            return
+                    # BTC net-negatif pencere freni (canlı P0-3 ayarının replay karşılığı).
+                    # EV kapısı kapalıyken de çalışır — BTC canlıda EV'den muaf tutulduğu için
+                    # frenin tek başına etkisini ölçmek gerekiyor.
+                    if vname == "NEW" and TUN_BTC_NETNEG_HOURS > 0 and sym == "BTCUSD":
+                        nn_rows = [c["pnl_usd"] for c in book.closed
+                                   if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - TUN_BTC_NETNEG_HOURS * 3600.0]
+                        if len(nn_rows) >= TUN_BTC_NETNEG_MIN and sum(nn_rows) < TUN_BTC_NETNEG_USD:
+                            blocked_events.append(("BTCNEG", cand("BTCNEG")))
+                            return
+                    if vname == "NEW" and BLOCKED_HOURS and forex.is_entry_hour_blocked(hour, BLOCKED_HOURS):
+                        blocked_events.append(("SAAT", cand("SAAT")))
+                        return
+                    if vname == "NEW":
+                        veto = forex.dxy_entry_veto(sym, action, dxy_regime)
+                        if veto == "dxy_conflict":
+                            if TUN_GOLD_DXY_SOFT and ("XAU" in sym or "GOLD" in sym):
+                                # XAUUSD: sert veto yerine ekstra skor eşiği (kategori bazlı yumuşatma)
+                                weak_bump = TUN_GOLD_DXY_BUMP
+                            else:
+                                blocked_events.append(("DXY", cand("DXY")))
+                                return
+                        else:
+                            weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
+                    else:
+                        weak_bump = 0.0
+                    # 5c. Majör güçlendirme kapıları (2026-10-06 araştırma mekanizmaları, yalnız NEW):
+                    # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
+                    # --gate-extras ile eklenen adaylar, --gold-session ile altın da kapsanır.
+                    _gate_syms = sym in FX_MAJORS or sym in GATED_EXTRAS or (TUN_GOLD_SESSION and ("XAU" in sym or "GOLD" in sym))
+                    _ext_syms = _gate_syms or (TUN_EXT_GATE_XG and ("XAU" in sym or "GOLD" in sym or "BTC" in sym))
+                    # Dalga-2 modları KENDİ zaman/volatilite filtresini taşır (tokyo_fix 00:55,
+                    # reopen 00:00, eurusd_tod saat-blokları, orb_filtered OR/ADR, squeeze_exp sıkışma)
+                    # → majör saat + mutlak min-ATR kapıları bunları budamasın.
+                    _mode_own_clock = TUN_ENTRY_MODE in ("eurusd_tod", "reopen_fade", "tokyo_fix",
+                                                         "orb_filtered", "squeeze_exp")
+                    if vname == "NEW" and _gate_syms:
+                        if TUN_MAJOR_HOURS and not _mode_own_clock and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
+                            blocked_events.append(("SEANS", cand("SEANS")))
+                            return
+                        if TUN_MAJOR_MIN_ATR > 0 and not _mode_own_clock and atr_pips < TUN_MAJOR_MIN_ATR:
+                            blocked_events.append(("VOLATİLİTE", cand("VOLATİLİTE")))
+                            return
+                    if vname == "NEW" and _ext_syms and TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
+                        ext_atr = ((close_now - float(tech["ema21"])) if action == "BUY"
+                                   else (float(tech["ema21"]) - close_now)) / (atr_pips * pip_size)
+                        if ext_atr > TUN_MAJOR_MAX_EXT:
+                            blocked_events.append(("UZAMA", cand("UZAMA")))
+                            return
+                    # 5d. BTC rejim kapıları (yalnız NEW): yapısal EMA200(1h) ve günlük VWAP yön hizası
+                    if vname == "NEW" and sym == "BTCUSD":
+                        if TUN_BTC_EMA200:
+                            ema_val = btc_ema200_by_hour.get(int(ts // 3600) - 1)
+                            if ema_val is not None and ((action == "BUY" and close_now <= ema_val) or (action == "SELL" and close_now >= ema_val)):
+                                blocked_events.append(("REJIM", cand("REJIM")))
+                                return
+                        if TUN_BTC_VWAP:
+                            vw = btc_vwap_by_ts.get(ts)
+                            if vw is not None and ((action == "BUY" and close_now <= vw) or (action == "SELL" and close_now >= vw)):
+                                blocked_events.append(("VWAP", cand("VWAP")))
+                                return
+                    # 5e. ABD endeks kapıları (yalnız NEW): seans likidite penceresi + açılış sürüşü teyidi
+                    if vname == "NEW" and sym in INDEX_GATED:
+                        if TUN_INDEX_HOURS is not None:
+                            dt_min = hour * 60 + datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).minute
+                            if not (TUN_INDEX_HOURS[0] <= dt_min < TUN_INDEX_HOURS[1]):
+                                blocked_events.append(("ISEANS", cand("ISEANS")))
+                                return
+                        if TUN_INDEX_OPEN_DRIVE:
+                            day_mod = int(ts % 86400)
+                            if 48900 <= day_mod < 54000:  # 13:35-15:00 UTC — açılış penceresi
+                                odir = open_drive_dir.get((sym, int(ts // 86400)))
+                                if odir and ((action == "BUY" and odir < 0) or (action == "SELL" and odir > 0)):
+                                    blocked_events.append(("ACILIS", cand("ACILIS")))
+                                    return
+                    if spread_pips > max_spread:
+                        return  # ortak kapı — gölge izlenmez
+                    req = base_req + weak_bump
+                    if score < req:
+                        return  # SKOR — sinyal taban eşiği, gölge izlenmez
+                    if vname == "NEW" and TUN_ADX_MIN > 0 and (not TUN_ADX_MIN_SYMS or sym in TUN_ADX_MIN_SYMS) and float(tech.get("adx", 25.0)) < TUN_ADX_MIN:
+                        if TUN_ADX_HALFLOT > 0:
+                            adx_halflot = True  # engelleme yok — lot çarpanı ile sınıflandır (A/B/C lite)
+                        else:
+                            blocked_events.append(("ADX", cand("ADX")))
+                            return
+                    if vname == "NEW" and TUN_SCORE_HALF_BELOW > 0 and score < TUN_SCORE_HALF_BELOW:
+                        score_half_flag = True  # engelleme yok — lot çarpanı ile sınıflandır (skor-bazlı A/B/C lite)
+                    if vname == "NEW" and TUN_ST_FILTER:
+                        st_dir = int(tech.get("supertrend_dir", 0))
+                        if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
+                            blocked_events.append(("SUPERTREND", cand("SUPERTREND")))
+                            return
+                    # MTF trend kapısı (2026-10-08 araştırma): H1 EMA200 durumu tersse giriş yok
+                    if vname == "NEW" and TUN_HTF_EMA200_GATE:
+                        h1s = h1_ema_maps.get(sym, {}).get(int(ts // 3600), 0)
+                        if h1s != 0 and ((action == "BUY" and h1s < 0) or (action == "SELL" and h1s > 0)):
+                            blocked_events.append(("H1TREND", cand("H1TREND")))
+                            return
+                    # Göreli-ATR bandı (2026-10-08 araştırma): ölü piyasa (düşük) ve kaos (yüksek) elenir
+                    if vname == "NEW" and TUN_REL_ATR_BAND and atr_pips > 0:
+                        med = rel_atr_lookup.get(sym, {}).get(ts, 0.0)
+                        if med > 0:
+                            atr_price_now = atr_pips * pip_size
+                            if atr_price_now < TUN_REL_ATR_LO * med or atr_price_now > TUN_REL_ATR_HI * med:
+                                blocked_events.append(("RELATR", cand("RELATR")))
+                                return
+                    # "Trend bitti" dedektör kapıları (yalnız NEW):
+                    # HTF  — 15M SuperTrend yönü tersse 5M sıçraması sayaç-trend girişidir
+                    if vname == "NEW" and TUN_HTF_ALIGN:
+                        d15 = htf_maps.get(sym, {}).get(int(ts // 900), 0)
+                        if d15 != 0 and ((action == "BUY" and d15 < 0) or (action == "SELL" and d15 > 0)):
+                            blocked_events.append(("HTF", cand("HTF")))
+                            return
+                    # IRAD — fiyat zirve/dibi yenilerken RSI teyit etmiyorsa (uyumsuzluk = tükenme)
+                    if vname == "NEW" and TUN_DIV_GATE > 0:
+                        div = div_maps.get(sym, {}).get(ts, 0)
+                        if (action == "BUY" and div == 1) or (action == "SELL" and div == -1):
+                            blocked_events.append(("IRAD", cand("IRAD")))
+                            return
+                    # SERI — sembol ardışık tam-SL kayıplarından sonra kısa süre yeni giriş almaz
+                    if vname == "NEW" and TUN_LOSS_STREAK > 0 and ts < loss_cd_until.get(sym, 0.0):
+                        blocked_events.append(("SERI", cand("SERI")))
+                        return
+                    bias = forex.get_usd_bias(sym, action)
+                    if vname == "NEW" and bias != "USD_NEUTRAL":
+                        pos_biases = [(p.symbol, forex.get_usd_bias(p.symbol, p.direction)) for p in book.positions]
+                        ok, _r = corr.cluster_check(sym, bias, pos_biases)
+                        if not ok:
+                            blocked_events.append(("KORELASYON", cand("KORELASYON")))
+                            return
+                    same_dir = [p for p in book.positions if p.symbol == sym and p.direction == action]
+                    if len(same_dir) >= MAX_PER_SYMBOL_DIR:
+                        return
+                    if same_dir:
+                        # YAS — trend yaşlandıysa (5M ST flip'ten beri N bar geçtiyse) aynı yöne
+                        # piramit yok; ilk giriş serbest. (Kayıp kümeleri tepedeki yığılmalardandı.)
+                        if vname == "NEW" and TUN_PYR_AGE_MAX > 0:
+                            d5, age5 = st_age_maps.get(sym, {}).get(ts, (0, 0))
+                            if d5 != 0 and d5 == (1 if action == "BUY" else -1) and age5 > TUN_PYR_AGE_MAX:
+                                blocked_events.append(("YAS", cand("YAS")))
+                                return
+                        if TUN_DCA and vname == "NEW":
+                            return  # DCA: aynı yönde ek işlem yalnız katman mekanizmasından (kâr şartlı pyramid kapalı)
+                        dir_pnl = sum(p.partial_realized_usd + float_pnl(p, close_now) for p in same_dir)
+                        if dir_pnl < PYRAMID_MIN_PROFIT_USD:
+                            return
+                    if (sym, action) in last_entry_bar and idx - last_entry_bar[(sym, action)] < 1:
+                        return
+                    candidates[vname].append(cand())
+
+                # Klasik radar kolu (her zaman açık). Tek-mod araştırması: --entry-mode.
                 mode_applies = (TUN_ENTRY_MODE != "classic" and vname == "NEW"
                                 and (not MODE_SYMBOLS or sym in MODE_SYMBOLS))
                 if not mode_applies:
-                    action = tech.get("action")
-                    if action not in ("BUY", "SELL"):
-                        continue
-                    score = float(tech["score"])
+                    _ba = tech.get("action")
+                    if _ba in ("BUY", "SELL"):
+                        emit(vname, _ba, float(tech["score"]))
                 else:
-                    # Alternatif giriş algoritması (giriş-kalibrasyonu projesi): mod kendi
-                    # tetik şartını üretir; kapılar ve çıkış motoru klasikle BİREBİR aynıdır.
-                    # MODE_SYMBOLS verilmişse mod yalnız o sembollere uygulanır (ör. XAU/BTC
-                    # klasik kalsın, yeni mod yalnız denenen çiftlerde).
-                    mode_c = _entry_mode_candidate(sym, ts, bars, ci, tech, pip_size)
-                    if mode_c is None:
-                        continue
-                    action = mode_c["action"]
-                    score = 200.0            # skor kapısını otomatik geç (mod kendi şartıyla süzülür)
-                    mode_exits = mode_c.get("exits")
-                atr_pips = tech["atr"] / pip_size if pip_size > 0 else 15.0
-                spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
-                adx_halflot = False  # ADX eşiği altına düşerse cand() işaretlenir (yarım lot modu)
-                score_half_flag = False  # radar skoru eşiğin altındaysa cand() işaretlenir (skor-bazlı yarım lot)
+                    _mc = _entry_mode_candidate(sym, ts, bars, ci, tech, pip_size)
+                    if _mc is not None:
+                        emit(vname, _mc["action"], 200.0, _mc.get("exits"))
+                # 2026-10-12 ÇOKLU-KOL: canlı ayarlarındaki bağımsız kollar (yalnız NEW defteri).
+                if TUN_COMBINED and vname == "NEW":
+                    for _ac in _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size):
+                        emit("NEW", _ac["action"], 200.0, _ac.get("exits"), _ac.get("entry_source"))
 
-                def cand(gate_note: Optional[str] = None) -> Dict:
-                    return {
-                        "symbol": sym, "action": action, "score": score, "price": close_now,
-                        "atr_pips": atr_pips, "pip_size": pip_size, "pip_val": spec["pip_val"],
-                        "digits": spec["digits"], "spread_pips": spread_pips, "gate": gate_note,
-                        "exits": mode_exits, "adx_halflot": adx_halflot, "score_halflot": score_half_flag,
-                    }
-
-                # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
-                if vname == "NEW" and EV_GUARD:
-                    ev_rows = [c["pnl_usd"] for c in book.closed
-                               if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - EV_WINDOW_SEC]
-                    ev_stats = {
-                        "n": len(ev_rows),
-                        "net": round(sum(ev_rows), 2),
-                        "win_rate": round(100.0 * sum(1 for p in ev_rows if p >= 0) / len(ev_rows), 1) if ev_rows else 0.0,
-                    }
-                    ev_risk_floor = BALANCE * RISK_PCT / 100.0 * EV_LOSS_RISK_MULT
-                    if forex.ev_guard_decision(ev_stats, EV_MIN_TRADES, EV_MAX_WIN_RATE, ev_risk_floor):
-                        blocked_events.append(("EV", cand("EV")))
-                        continue
-                # BTC net-negatif pencere freni (canlı P0-3 ayarının replay karşılığı).
-                # EV kapısı kapalıyken de çalışır — BTC canlıda EV'den muaf tutulduğu için
-                # frenin tek başına etkisini ölçmek gerekiyor.
-                if vname == "NEW" and TUN_BTC_NETNEG_HOURS > 0 and sym == "BTCUSD":
-                    nn_rows = [c["pnl_usd"] for c in book.closed
-                               if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - TUN_BTC_NETNEG_HOURS * 3600.0]
-                    if len(nn_rows) >= TUN_BTC_NETNEG_MIN and sum(nn_rows) < TUN_BTC_NETNEG_USD:
-                        blocked_events.append(("BTCNEG", cand("BTCNEG")))
-                        continue
-                if vname == "NEW" and BLOCKED_HOURS and forex.is_entry_hour_blocked(hour, BLOCKED_HOURS):
-                    blocked_events.append(("SAAT", cand("SAAT")))
-                    continue
-                if vname == "NEW":
-                    veto = forex.dxy_entry_veto(sym, action, dxy_regime)
-                    if veto == "dxy_conflict":
-                        if TUN_GOLD_DXY_SOFT and ("XAU" in sym or "GOLD" in sym):
-                            # XAUUSD: sert veto yerine ekstra skor eşiği (kategori bazlı yumuşatma)
-                            weak_bump = TUN_GOLD_DXY_BUMP
-                        else:
-                            blocked_events.append(("DXY", cand("DXY")))
-                            continue
-                    else:
-                        weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
-                else:
-                    weak_bump = 0.0
-                # 5c. Majör güçlendirme kapıları (2026-10-06 araştırma mekanizmaları, yalnız NEW):
-                # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
-                # --gate-extras ile eklenen adaylar, --gold-session ile altın da kapsanır.
-                _gate_syms = sym in FX_MAJORS or sym in GATED_EXTRAS or (TUN_GOLD_SESSION and ("XAU" in sym or "GOLD" in sym))
-                _ext_syms = _gate_syms or (TUN_EXT_GATE_XG and ("XAU" in sym or "GOLD" in sym or "BTC" in sym))
-                # Dalga-2 modları KENDİ zaman/volatilite filtresini taşır (tokyo_fix 00:55,
-                # reopen 00:00, eurusd_tod saat-blokları, orb_filtered OR/ADR, squeeze_exp sıkışma)
-                # → majör saat + mutlak min-ATR kapıları bunları budamasın.
-                _mode_own_clock = TUN_ENTRY_MODE in ("eurusd_tod", "reopen_fade", "tokyo_fix",
-                                                     "orb_filtered", "squeeze_exp")
-                if vname == "NEW" and _gate_syms:
-                    if TUN_MAJOR_HOURS and not _mode_own_clock and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
-                        blocked_events.append(("SEANS", cand("SEANS")))
-                        continue
-                    if TUN_MAJOR_MIN_ATR > 0 and not _mode_own_clock and atr_pips < TUN_MAJOR_MIN_ATR:
-                        blocked_events.append(("VOLATİLİTE", cand("VOLATİLİTE")))
-                        continue
-                if vname == "NEW" and _ext_syms and TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
-                    ext_atr = ((close_now - float(tech["ema21"])) if action == "BUY"
-                               else (float(tech["ema21"]) - close_now)) / (atr_pips * pip_size)
-                    if ext_atr > TUN_MAJOR_MAX_EXT:
-                        blocked_events.append(("UZAMA", cand("UZAMA")))
-                        continue
-                # 5d. BTC rejim kapıları (yalnız NEW): yapısal EMA200(1h) ve günlük VWAP yön hizası
-                if vname == "NEW" and sym == "BTCUSD":
-                    if TUN_BTC_EMA200:
-                        ema_val = btc_ema200_by_hour.get(int(ts // 3600) - 1)
-                        if ema_val is not None and ((action == "BUY" and close_now <= ema_val) or (action == "SELL" and close_now >= ema_val)):
-                            blocked_events.append(("REJIM", cand("REJIM")))
-                            continue
-                    if TUN_BTC_VWAP:
-                        vw = btc_vwap_by_ts.get(ts)
-                        if vw is not None and ((action == "BUY" and close_now <= vw) or (action == "SELL" and close_now >= vw)):
-                            blocked_events.append(("VWAP", cand("VWAP")))
-                            continue
-                # 5e. ABD endeks kapıları (yalnız NEW): seans likidite penceresi + açılış sürüşü teyidi
-                if vname == "NEW" and sym in INDEX_GATED:
-                    if TUN_INDEX_HOURS is not None:
-                        dt_min = hour * 60 + datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).minute
-                        if not (TUN_INDEX_HOURS[0] <= dt_min < TUN_INDEX_HOURS[1]):
-                            blocked_events.append(("ISEANS", cand("ISEANS")))
-                            continue
-                    if TUN_INDEX_OPEN_DRIVE:
-                        day_mod = int(ts % 86400)
-                        if 48900 <= day_mod < 54000:  # 13:35-15:00 UTC — açılış penceresi
-                            odir = open_drive_dir.get((sym, int(ts // 86400)))
-                            if odir and ((action == "BUY" and odir < 0) or (action == "SELL" and odir > 0)):
-                                blocked_events.append(("ACILIS", cand("ACILIS")))
-                                continue
-                if spread_pips > max_spread:
-                    continue  # ortak kapı — gölge izlenmez
-                req = base_req + weak_bump
-                if score < req:
-                    continue  # SKOR — sinyal taban eşiği, gölge izlenmez
-                if vname == "NEW" and TUN_ADX_MIN > 0 and (not TUN_ADX_MIN_SYMS or sym in TUN_ADX_MIN_SYMS) and float(tech.get("adx", 25.0)) < TUN_ADX_MIN:
-                    if TUN_ADX_HALFLOT > 0:
-                        adx_halflot = True  # engelleme yok — lot çarpanı ile sınıflandır (A/B/C lite)
-                    else:
-                        blocked_events.append(("ADX", cand("ADX")))
-                        continue
-                if vname == "NEW" and TUN_SCORE_HALF_BELOW > 0 and score < TUN_SCORE_HALF_BELOW:
-                    score_half_flag = True  # engelleme yok — lot çarpanı ile sınıflandır (skor-bazlı A/B/C lite)
-                if vname == "NEW" and TUN_ST_FILTER:
-                    st_dir = int(tech.get("supertrend_dir", 0))
-                    if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
-                        blocked_events.append(("SUPERTREND", cand("SUPERTREND")))
-                        continue
-                # MTF trend kapısı (2026-10-08 araştırma): H1 EMA200 durumu tersse giriş yok
-                if vname == "NEW" and TUN_HTF_EMA200_GATE:
-                    h1s = h1_ema_maps.get(sym, {}).get(int(ts // 3600), 0)
-                    if h1s != 0 and ((action == "BUY" and h1s < 0) or (action == "SELL" and h1s > 0)):
-                        blocked_events.append(("H1TREND", cand("H1TREND")))
-                        continue
-                # Göreli-ATR bandı (2026-10-08 araştırma): ölü piyasa (düşük) ve kaos (yüksek) elenir
-                if vname == "NEW" and TUN_REL_ATR_BAND and atr_pips > 0:
-                    med = rel_atr_lookup.get(sym, {}).get(ts, 0.0)
-                    if med > 0:
-                        atr_price_now = atr_pips * pip_size
-                        if atr_price_now < TUN_REL_ATR_LO * med or atr_price_now > TUN_REL_ATR_HI * med:
-                            blocked_events.append(("RELATR", cand("RELATR")))
-                            continue
-                # "Trend bitti" dedektör kapıları (yalnız NEW):
-                # HTF  — 15M SuperTrend yönü tersse 5M sıçraması sayaç-trend girişidir
-                if vname == "NEW" and TUN_HTF_ALIGN:
-                    d15 = htf_maps.get(sym, {}).get(int(ts // 900), 0)
-                    if d15 != 0 and ((action == "BUY" and d15 < 0) or (action == "SELL" and d15 > 0)):
-                        blocked_events.append(("HTF", cand("HTF")))
-                        continue
-                # IRAD — fiyat zirve/dibi yenilerken RSI teyit etmiyorsa (uyumsuzluk = tükenme)
-                if vname == "NEW" and TUN_DIV_GATE > 0:
-                    div = div_maps.get(sym, {}).get(ts, 0)
-                    if (action == "BUY" and div == 1) or (action == "SELL" and div == -1):
-                        blocked_events.append(("IRAD", cand("IRAD")))
-                        continue
-                # SERI — sembol ardışık tam-SL kayıplarından sonra kısa süre yeni giriş almaz
-                if vname == "NEW" and TUN_LOSS_STREAK > 0 and ts < loss_cd_until.get(sym, 0.0):
-                    blocked_events.append(("SERI", cand("SERI")))
-                    continue
-                bias = forex.get_usd_bias(sym, action)
-                if vname == "NEW" and bias != "USD_NEUTRAL":
-                    pos_biases = [(p.symbol, forex.get_usd_bias(p.symbol, p.direction)) for p in book.positions]
-                    ok, _r = corr.cluster_check(sym, bias, pos_biases)
-                    if not ok:
-                        blocked_events.append(("KORELASYON", cand("KORELASYON")))
-                        continue
-                same_dir = [p for p in book.positions if p.symbol == sym and p.direction == action]
-                if len(same_dir) >= MAX_PER_SYMBOL_DIR:
-                    continue
-                if same_dir:
-                    # YAS — trend yaşlandıysa (5M ST flip'ten beri N bar geçtiyse) aynı yöne
-                    # piramit yok; ilk giriş serbest. (Kayıp kümeleri tepedeki yığılmalardandı.)
-                    if vname == "NEW" and TUN_PYR_AGE_MAX > 0:
-                        d5, age5 = st_age_maps.get(sym, {}).get(ts, (0, 0))
-                        if d5 != 0 and d5 == (1 if action == "BUY" else -1) and age5 > TUN_PYR_AGE_MAX:
-                            blocked_events.append(("YAS", cand("YAS")))
-                            continue
-                    if TUN_DCA and vname == "NEW":
-                        continue  # DCA: aynı yönde ek işlem yalnız katman mekanizmasından (kâr şartlı pyramid kapalı)
-                    dir_pnl = sum(p.partial_realized_usd + float_pnl(p, close_now) for p in same_dir)
-                    if dir_pnl < PYRAMID_MIN_PROFIT_USD:
-                        continue
-                if (sym, action) in last_entry_bar and idx - last_entry_bar[(sym, action)] < 1:
-                    continue
-                candidates[vname].append(cand())
 
         # 4) Skor sırasına göre açılış (eski USD-yön sayacı kaldırıldı — korelasyon kalkanı koruyor)
         for vname, book in books.items():
@@ -3115,6 +3340,9 @@ def main():
     parser.add_argument("--rel-atr-lookback", type=int, default=576, help="Göreli-ATR medyan penceresi (bar)")
     parser.add_argument("--flat-16", action="store_true", help="16:00 UTC'de FX pozisyonlarını zorla kapat (araştırma: NY öğleden sonrası negatif) — yalnız FX çiftleri")
     parser.add_argument("--mode-symbols", default="", help="Giriş modunun uygulanacağı semboller (virgüllü; boş = tümüne). Diğer semboller classic motorla kalır — ör. XAU/BTC bozulmadan yalnız denenen çiftlerde mod")
+    parser.add_argument("--combined", action="store_true", help="2026-10-12 ÇOKLU-KOL (canlı-parite): --arm-symbols ile tanımlı bağımsız kolları (S3/LB/EAP/Donchian) klasik radarın YANINDA üret; hepsi aynı kapı zincirini paylaşır")
+    parser.add_argument("--arm-symbols", default="",
+                        help="Çoklu-kol sembol tarifi: 's3_5m=XAUUSD;s3_15m=XAUUSD,BTCUSD,US30,GBPUSD;ema_adx_pullback=XAUUSD;london_breakout=XAUUSD,GBPUSD,USDJPY,BTCUSD,USDCHF,US30;donchian_adx=XAUUSD'. Canlı varsayılanları birebir budur.")
     parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
     parser.add_argument("--min-score", type=float, default=75.0)
     parser.add_argument("--sl-mult", type=float, default=1.1)
@@ -3290,6 +3518,18 @@ def main():
     TUN_MODE_FLAT16 = args.flat_16
     global MODE_SYMBOLS
     MODE_SYMBOLS = {x.strip().upper() for x in args.mode_symbols.split(",") if x.strip()}
+    # 2026-10-12 ÇOKLU-KOL tarifi (canlı forex.py varsayılanlarının birebir aynası).
+    global TUN_COMBINED, TUN_ARM_SYMBOLS
+    TUN_COMBINED = bool(args.combined)
+    TUN_ARM_SYMBOLS = {}
+    if args.arm_symbols:
+        for _pair in args.arm_symbols.split(";"):
+            if "=" not in _pair:
+                continue
+            _k, _v = _pair.split("=", 1)
+            _k = _k.strip()
+            if _k in ARM_KEYS:
+                TUN_ARM_SYMBOLS[_k] = {s.strip().upper() for s in _v.split(",") if s.strip()}
     global TUN_DA_SL_ATR, TUN_DA_TP_ATR
     TUN_DA_SL_ATR = args.da_sl_atr
     TUN_DA_TP_ATR = args.da_tp_atr

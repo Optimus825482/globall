@@ -90,13 +90,57 @@ BE erken kilitlenince chop'ta "küçük kâr kilidi → BE vuruşu" sayısı art
 Ölçüm bu maliyetin kazanca göre küçük olduğunu ve işaret-tutarlı olduğunu gösteriyor; ancak gerçek
 piyasada ilk günlerde paper gözlemi önerilir.
 
+## Çoklu-kol ölçümü (2026-10-12) — sinyal kolları ELENDİ
+
+Replay yalnız tek `--entry-mode` işletirken canlı motor aynı anda **beş bağımsız kol** çalıştırır
+(klasik radar + S3 SuperTrend+RSI 5m/15m + EMA+ADX pullback + London Breakout + Donchian).
+Bu, canlı↔replay farkının en büyük ölçülmemiş kalemiydi. Kapatmak için replay'e **`--combined`**
+eklendi: her kol canlı `forex.py` sembol listeleriyle (`--arm-symbols`) koşar, üretilen adaylar
+klasik adaylarla **aynı kapı zincirinden** geçer (dedup + tek bütçe — canlı davranışının paritesi).
+Refactor sonrası eşdeğerlik kilitlendi: `--entry-mode classic` birebir `n=563 net=+320.22` verir.
+
+**Önce kollar izole** (arıza penceresi AR, XAU+BTC): supertrend_rsi +6.94 · ema_adx_pullback
++73.06 (PF 3.56) · london_breakout +4.19 · donchian_adx −2.34. Hiçbiri yıkıcı değil.
+
+**Sonra birleşik** (klasik + tüm kollar, canlı semboller):
+
+| Pencere | TEK KLASİK | ÇOKLU-KOL (canlı parite) |
+|---|---|---|
+| AR 10-08→10-13 | +320.22 · n 563 · PF 1.41 · DD 59.6 | **+393.46** · n 574 · PF 1.50 · DD 63.7 |
+| OOS 08-08→09-07 | +4052.58 · n 3696 · PF 1.68 · DD 111 | **+4450.30** · n 3851 · PF 1.73 · DD 158 |
+| IS 09-07→10-07 | +3226.43 · n 4095 · PF 1.53 · DD 107 | **+3256.71** · n 4246 · PF 1.51 · DD 150 |
+
+**Sonuç:** çoklu-kol üç pencerede de **klasikten ≥** (AR/OOS'ta belirgin artı, IS'te yatay) ve
+hiçbir pencerede negatife çevirmiyor. Dolayısıyla canlı zararın kaynağı **sinyal kolları DEĞİL**
+— tersine replay'i daha da pozitif yapıyorlar. (DD hafif artar ~+40$; kabul edilebilir.)
+
+### Tam canlı evren (13 sembol — tüm majör + kros + endeks)
+
+Aynı karşılaştırma XAU+BTC yerine **canlı evrenin tamamında** (`EURUSD,GBPUSD,USDJPY,USDCHF,
+AUDUSD,USDCAD,NZDUSD,GBPJPY,EURJPY,XAUUSD,NAS100,US30,BTCUSD`) tekrarlandı:
+
+| Pencere | TEK KLASİK | ÇOKLU-KOL (canlı parite) |
+|---|---|---|
+| AR 10-08→10-13 | +424.57 · n 1099 · PF 1.27 · DD 93.45 | **+478.81** · n 1107 · PF 1.30 · DD 105.77 |
+| OOS 08-08→09-07 | +4112.69 · n 6549 · PF 1.40 · DD 199.76 | **+4424.46** · n 6640 · PF 1.43 · DD 210.00 |
+| IS 09-07→10-07 | +2577.08 · n 7678 · PF 1.21 · DD 265.42 | **+2779.62** · n 7866 · PF 1.22 · DD 266.06 |
+
+Geniş evrende de kollar **her pencerede net kâr ekler, WR'yi düşürmez**; yalnız DD'yi hafif
+artırır (AR +13$, OOS +10$, IS +1$). Üç pencere de pozitif kalır. Not: 13 sembollük OOS DD'si
+(200→210) yönetişim barı olan $200'ün hemen üstünde — izlenmeli, ama bu geniş evren defteri,
+XAU+BTC'nin işlem gördüğü çekirdek defter değil.
+
+**Canlı −204$'ün zamanlaması bunu doğruluyor:** zarar, BE birleşim düzeltmesi canlıya girmeden
+**önce** birikmişti. Düzeltme commit'i `2fece7af` (2026-10-12 20:26); canlı −204 ise eski `max`
+formülü altında oluştu — maliyet şoku bölümünün gösterdiği gibi o formül gerçek maliyet altında
+tam da bu büyüklükte negatife dönüyor.
+
 ## Açık kalan (dürüstlük notu)
 
-Replay birleşim varyantı arıza penceresinde **+318**, canlı aynı pencerede **−204**. Düzeltme
-WR farkının büyük kısmını kapatır (canlı %59.8 → replay eski-formül %63.1 → birleşim %75.7),
-ama canlı ile replay arasında **yürütme katmanı** farkı sürüyor ve ölçülmedi:
+Replay birleşim varyantı arıza penceresinde **+393** (çoklu-kol; tek klasik +320), canlı aynı
+pencerede **−204**. Düzeltme WR farkının büyük kısmını kapatır ve **sinyal kolları ölçülüp elendi**.
+Geriye kalan ölçülmemiş yürütme farkları:
 
-1. Canlı motorun **çoklu sinyal kolları** (S3 SuperTrend+RSI, London Breakout, EMA+ADX pullback,
-   Donchian) replay `--entry-mode classic` koşumunda YOK.
+1. ~~Canlı çoklu sinyal kolları~~ — **ÖLÇÜLDÜ, elendi** (yukarı bkz.: kollar zarar kaynağı değil).
 2. MT5 gecikmesi/slipajı (tick-bazlı yürütme; replay bar-içi muhafazakâr model kullanır).
-3. Kısmi TP + TP-iptal + BE + chandelier etkileşimi gerçek akışta.
+3. Kısmi TP + TP-iptal + BE + chandelier etkileşimi gerçek akışta (replay tek çıkış motoru koşar).
