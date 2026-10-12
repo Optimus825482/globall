@@ -257,6 +257,9 @@ TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
 TUN_LB_TP_R = 1.5               # TP = SL × bu R katı
 TUN_LB_MIN_BOX_ATR = 0.0        # kutu yüksekliği < bu×ATR ise gün skip (0 = kapalı)
 LB_STATE: Dict[Tuple[str, int, str], bool] = {}  # (sembol, gün, yön) → bugün tetiklendi
+# 2026-10-12 london_sign modu durumları: sign penceresi (açılış,kapanış) ve giriş yapıldı bayrağı
+LS_SIGN: Dict[Tuple[str, int, str], Tuple[float, float]] = {}
+LS_STATE: Dict[Tuple[str, int, str], bool] = {}
 # pullback modu (araştırma ADAY 1): HTF trend + ADX rejim + EMA21'e geri çekilme + dönüş mumu
 TUN_PB_ADX_MIN = 20.0
 TUN_PB_TOUCH_ATR = 0.25
@@ -295,7 +298,21 @@ TUN_ORB_ENTRY_END_H = 16        # tetik penceresi bitiş (UTC)
 TUN_ORB_MIN_ATR = 0.0           # kutu yüksekliği / ATR alt sınırı (0 = kapalı)
 TUN_ORB_MAX_ATR = 0.0           # kutu yüksekliği / ATR üst sınırı (0 = kapalı)
 TUN_ORB_SL_FRAC = 0.5           # SL = kutu yüksekliği × bu oran
-TUN_ORB_TP_R = 1.5              # TP = SL × bu R katı
+TUN_ORB_TP_R = 1.5              # TP = SL × bu R katı; 0 = sabit TP yok → trail-ride (aşağı bkz.)
+# 2026-10-12 ORB TRAIL-RIDE: araştırma kanıtı (Zarattini-Aziz, Seeck) küçük sabit TP'nin
+# runner'ı kestiğini, EDGE'in 10R/EoD trail ile geldiğini söyler. Bizim orb modumuz yalnız
+# 1.5R sabit TP ile test edilmişti (docs/FX_TREND_SCALPING_TOP5: "en somut test boşluğumuz").
+# --orb-tp-r 0 → tp kapalı, chandelier trailing çıkar; --orb-hold-h ile EoD/zaman çıkışı.
+TUN_ORB_HOLD_H = 0              # >0: girişten bu saat (UTC) sonra zorla kapat (0 = kapalı)
+# 2026-10-12 LONDON SIGN MOMENTUM (yeni mod): Seeck 2026 (SSRN 7008318) — Londra açılışı ilk
+# 30-dk sign sinyali FX'te 6 enstrümandan 5'inde p<0.001; maliyet sonrası pozitif kalan TEK
+# intraday momentum (USDJPY OOS Sortino 0.748). Kural: 07:00-07:30 UTC aralığının yönü =
+# günün yönü; 07:30-08:00'de o yönde gir; EoD'e kadar trail ile taşı.
+TUN_LS_SYMS: set = set()        # boş = tüm semboller; dolu = yalnız bu semboller
+TUN_LS_SIGN = "07:00-07:30"     # sign penceresi (UTC)
+TUN_LS_ENTRY = "07:30-08:00"    # giriş penceresi (UTC)
+TUN_LS_HOLD_H = 8               # girişten bu saat sonra zorla kapat (EoD ≈ 07:30+8h=15:30 UTC)
+TUN_LS_SL_ATR = 1.5             # SL (× ATR(14)); TP yok → trailing ride
 # 2026-10-08 araştırma: MTF trend kapısı (H1 EMA200 durumu, yalnız kapanmış saat barları).
 # En çok tekrarlanan risk-ayarlı iyileştirme; PF'i değil drawdown'ı düşürür.
 TUN_HTF_EMA200_GATE = False     # True: 5m giriş yalnız H1 EMA200 trend yönüyle uyumluysa
@@ -435,12 +452,24 @@ _ADR_CACHE: Dict[str, List[float]] = {}
 
 
 def _parse_hour_span(span: str) -> Tuple[int, int]:
-    """'7-11' → (7, 11). Geçersizse (0,0) döner."""
+    """'7-11' veya '07:00-07:30' → (7, 11) / (7, 7.5). Geçersizse (0,0) döner.
+
+    Saat cinsinden float döner (dakika hassasiyeti için, ör. 07:30 → 7.5).
+    """
     try:
         a, b = span.split("-")
-        return int(a), int(b)
+        return _hour_float(a), _hour_float(b)
     except (ValueError, AttributeError):
         return (0, 0)
+
+
+def _hour_float(tok: str) -> float:
+    """'7' → 7.0 ; '07:30' → 7.5."""
+    parts = tok.strip().split(":")
+    h = float(parts[0])
+    if len(parts) > 1:
+        h += float(parts[1]) / 60.0
+    return h
 
 
 def _adr_pips(bars: List[Tuple], ci: int, days: int = 14) -> Optional[float]:
@@ -794,8 +823,52 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
         if pip_size <= 0:
             return None
         sl_pips = (box_h * TUN_ORB_SL_FRAC) / pip_size
-        return {"action": action, "exits": {"sl_pips": round(sl_pips, 1),
-                                            "tp_pips": round(sl_pips * TUN_ORB_TP_R, 1)}}
+        # TUN_ORB_TP_R = 0 → sabit TP yok → çıkış chandelier trailing'e bırakılır (trail-ride).
+        # TUN_ORB_HOLD_H > 0 → girişten bu saat sonra zorla kapat (EoD çıkışı).
+        _orb_out = {"action": action, "exits": {"sl_pips": round(sl_pips, 1),
+                                                "tp_pips": round(sl_pips * TUN_ORB_TP_R, 1)}}
+        if TUN_ORB_HOLD_H > 0:
+            _orb_out["time_stop_bars"] = int(TUN_ORB_HOLD_H * 12)   # 5m bar → saat
+        return _orb_out
+
+    if TUN_ENTRY_MODE == "london_sign":
+        # Seeck 2026 Londra-açılışı sign-momentum (FX'te maliyet sonrası pozitif kalan tek
+        # intraday momentum). Sign penceresi yönü belirler; giriş penceresinde o yönde gir;
+        # EoD'e (girişten TUN_LS_HOLD_H saat) kadar trail ile taşınır.
+        if TUN_LS_SYMS and sym.upper() not in TUN_LS_SYMS:
+            return None
+        sign_lo, sign_hi = _parse_hour_span(TUN_LS_SIGN)
+        ent_lo, ent_hi = _parse_hour_span(TUN_LS_ENTRY)
+        sec_of_day = ts % 86400
+        day = int(ts // 86400)
+        key = (sym, day, "sign")
+        if sign_lo * 3600 <= sec_of_day < sign_hi * 3600:
+            # Sign oluşuyor: pencerenin ilk ve son kapanışını sakla (kendi bar dilimimizden).
+            window = bars[max(0, ci - 40):ci]
+            sb = [b for b in window if int(b[0] // 86400) == day
+                  and sign_lo * 3600 <= int(b[0] % 86400) < sign_hi * 3600]
+            if sb:
+                LS_SIGN[key] = (sb[0][1], sb[-1][4])   # (açılış, kapanış)
+            return None
+        if ent_lo * 3600 <= sec_of_day < ent_hi * 3600:
+            if LS_STATE.get((sym, day, "entered")):
+                return None
+            sig = LS_SIGN.get(key)
+            if not sig or sig[1] <= 0 or sig[0] <= 0:
+                return None
+            up = sig[1] > sig[0]
+            key2 = (sym, day, "BUY" if up else "SELL")
+            if LB_STATE.get(key2):
+                return None
+            LB_STATE[key2] = True
+            LS_STATE[(sym, day, "entered")] = True
+            ap = float(tech.get("atr") or 0.0)
+            if ap <= 0 or pip_size <= 0:
+                return None
+            return {"action": "BUY" if up else "SELL",
+                    "exits": {"sl_pips": round(TUN_LS_SL_ATR * ap / pip_size, 1), "tp_pips": 0.0},
+                    "time_stop_bars": int(TUN_LS_HOLD_H * 12)}
+        return None
 
     # ==== 2026-10-08 Dalga-2 adayları ====
 
@@ -3275,7 +3348,7 @@ def main():
     parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
-    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
+    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk", "london_sign"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
     parser.add_argument("--lb-entry-end", type=int, default=11, help="London breakout tetik penceresi bitiş saati (UTC)")
     parser.add_argument("--lb-sl-frac", type=float, default=0.5, help="LB SL = kutu yüksekliği × bu oran")
@@ -3319,7 +3392,13 @@ def main():
     parser.add_argument("--orb-min-atr", type=float, default=0.0, help="ORB kutu yüksekliği / ATR alt sınırı (0 = kapalı)")
     parser.add_argument("--orb-max-atr", type=float, default=0.0, help="ORB kutu yüksekliği / ATR üst sınırı (0 = kapalı)")
     parser.add_argument("--orb-sl-frac", type=float, default=0.5, help="ORB SL = kutu yüksekliği × bu oran")
-    parser.add_argument("--orb-tp-r", type=float, default=1.5, help="ORB TP = SL × bu R katı")
+    parser.add_argument("--orb-tp-r", type=float, default=1.5, help="ORB TP = SL × bu R katı; 0 = sabit TP yok → trail-ride (chandelier)")
+    parser.add_argument("--orb-hold-h", type=float, default=0.0, help="ORB trail-ride: girişten bu saat sonra zorla kapat (EoD; 0 = kapalı)")
+    parser.add_argument("--ls-symbols", default="", help="london_sign modu sembolleri (virgüllü; boş = tümü)")
+    parser.add_argument("--ls-sign", default="07:00-07:30", help="london_sign: sign penceresi (UTC aralığı)")
+    parser.add_argument("--ls-entry", default="07:30-08:00", help="london_sign: giriş penceresi (UTC aralığı)")
+    parser.add_argument("--ls-hold-h", type=float, default=8.0, help="london_sign: girişten bu saat sonra EoD çıkışı")
+    parser.add_argument("--ls-sl-atr", type=float, default=1.5, help="london_sign: SL (× ATR(14)); TP yok → trail")
     # ---- Dalga-2 aday parametreleri ----
     parser.add_argument("--tod-long-hours", default="12-16", help="eurusd_tod: long (USD saatleri) UTC aralığı")
     parser.add_argument("--tod-short-hours", default="7-11", help="eurusd_tod: short (EUR saatleri) UTC aralığı")
@@ -3551,6 +3630,14 @@ def main():
     TUN_ORB_MAX_ATR = args.orb_max_atr
     TUN_ORB_SL_FRAC = args.orb_sl_frac
     TUN_ORB_TP_R = args.orb_tp_r
+    # 2026-10-12 yeni adaylar: ORB trail-ride + london_sign
+    global TUN_ORB_HOLD_H, TUN_LS_SYMS, TUN_LS_SIGN, TUN_LS_ENTRY, TUN_LS_HOLD_H, TUN_LS_SL_ATR
+    TUN_ORB_HOLD_H = args.orb_hold_h
+    TUN_LS_SYMS = {s.strip().upper() for s in args.ls_symbols.split(",") if s.strip()}
+    TUN_LS_SIGN = args.ls_sign
+    TUN_LS_ENTRY = args.ls_entry
+    TUN_LS_HOLD_H = args.ls_hold_h
+    TUN_LS_SL_ATR = args.ls_sl_atr
     global TUN_HTF_EMA200_GATE, TUN_REL_ATR_BAND, TUN_REL_ATR_LO, TUN_REL_ATR_HI, TUN_REL_ATR_LOOKBACK
     global TUN_SKIP_OLD
     TUN_SKIP_OLD = bool(getattr(args, "skip_old", False))

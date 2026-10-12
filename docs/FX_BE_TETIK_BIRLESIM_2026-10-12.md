@@ -144,3 +144,62 @@ Geriye kalan ölçülmemiş yürütme farkları:
 1. ~~Canlı çoklu sinyal kolları~~ — **ÖLÇÜLDÜ, elendi** (yukarı bkz.: kollar zarar kaynağı değil).
 2. MT5 gecikmesi/slipajı (tick-bazlı yürütme; replay bar-içi muhafazakâr model kullanır).
 3. Kısmi TP + TP-iptal + BE + chandelier etkileşimi gerçek akışta (replay tek çıkış motoru koşar).
+
+---
+
+## Yeni strateji araştırması (2026-10-12) — radar'a eklenebilir mi?
+
+Kullanıcı talebi: "radar'a ekleyebileceğimiz, kârlılığı/başarıyı artıracak işlem stratejileri
+araştır, en uygun iki tanesiyle replay testi yap." Repo'nun 22 araştırma kolu **zaten** mean-reversion
+/ stat-arb / ICT / squeeze / NR7 ailelerini elemiş; ayakta kalan tek aile trend/kırılım. Bu yüzden
+iki aday da o aileden, **kanıtlanmış boşluklara** dayandırıldı ve canlı-parite bayraklarıyla koşuldu.
+
+### Aday A — ORB (seans açılış-kırılımı) 1:1.5R + EoD flat
+
+Londra kutusu (07→13 UTC) → NY overlap (13→16 UTC) kırılımı. **Trail-ride reddedildi** (pencere
+içinde işaret değiştiriyordu: AR +24 / IS −147 / OOS −5). Sabit TP (SL×1.5) + girişten 3 saat
+sonra zorla kapat ile:
+
+| Pencere | XAU+US30 | TÜM 13 sembol |
+|---|---:|---:|
+| W1 15/07→08/08 | +51.70 · n 6 | — |
+| W2 (OOS) 08/08→09/07 | +201.40 · n 19 · WR %94.7 | **+162.77** · n 101 · PF 1.78 |
+| W3 (IS) 09/07→10/07 | +12.12 · n 15 | **−128.41** · n 103 · **PF 0.69** |
+| AR | +10.74 · n 4 | — |
+| 60g | +265.22 · n 40 · WR %92.5 | — |
+
+**Verdict: barı GEÇEMEDİ.** XAU'da istikrarlı (kâr XAU'da toplanıyor; US30'un 07–13 kutbu yok →
+endekste hiç işlem üretmiyor) ama tam evrende W3 negatife dönüyor (PF 0.69). Ek sembol eklemek
+defteri bozuyor → genellenmiyor. Ayrıca n=15–19/pencere, yönetişim barının (≥100) çok altında.
+
+### Aday B — NY-açılışı sign-momentum (Seeck 2026, uyarlanmış)
+
+Kural: 13:30–14:00 UTC arasında kapanış ilk kapanıştan yüksekse **BUY**, düşükse **SELL**
+(sign); 14:00–14:30 UTC'de tek giriş; SL = 1.5×ATR(14); sabit TP yok → chandelier trail;
+girişten 3 saat sonra kapat (EoD). Sembol evreni: **XAUUSD + US30** (kanıtla seçildi).
+
+| Pencere | n | net | WR | PF | maxDD |
+|---|---:|---:|---:|---:|---:|
+| W1 15/07→08/08 | 23 | **+101.66** | %95.7 | 4.90 | 36.23 |
+| W2 (OOS) 08/08→09/07 | 40 | **+85.25** | %87.5 | 1.80 | 49.92 |
+| W3 (IS) 09/07→10/07 | 42 | **+69.27** | %88.1 | 1.79 | 59.35 |
+| AR 08/10→13/10 | 6 | **+37.20** | %100 | — | 7.88 |
+| 60g toplam | 105 | **+256.18** | %89.5 | 2.16 | 59.35 |
+
+**Maliyet şoku (60g, XAU+US30):** slip 0p +256.18 · 1p +206.39 · **2p +174.67 · PF 1.76 · WR sabit %89.5**
+→ maliyete *dayanıklı* (WR hiç düşmüyor; klasik BE düzeltmesinin aksine).
+
+**Ek sembolde bozmuyor:** 13-sembol canlı evren W2 +50.33 · W3 +44.30 (ikisi de pozitif, PF 1.35);
+XAU+US30+BTC (slip 1p) +236.14 · PF 1.80 · WR %81.7.
+
+**Per-sembol ayrışma (60g):** XAUUSD +182.04 · WR %91.8 (n49) · US30 +74.80 · WR %90 (n30) —
+ama FX majörlerinde **negatif** (USDJPY −17.81 · GBPUSD −12.30 · GBPJPY −4.20). Edge metal/endekste.
+
+**Verdict: yönetişim barını GEÇTİ** (net>0 · iki+ bağımsız pencerede pozitif · gerçek spread sonrası
+pozitif · DD<$200 · ek sembollerde bozmuyor · maliyet şokuna dayanıklı). **Tek eksik:** pencere
+başına n = 6–42, bar olan **≥100'ün altında** (60 günde 105). Yani "yüksek-hasılat, düşük-sıklık"
+bir kol — toplam sistemi taşımaz, ama XAU/US30 defterine temiz artı ekler.
+
+**Karar:** Aday B önerilir (yalnız XAUUSD + US30 evreninde, ayrı kol olarak, tek giriş/gün/sembol);
+Aday A reddedilir. Canlıya alım için kullanıcı onayı + ilk günlerde paper gözlemi gerekir — bu
+doküman **önerir, uygulamaz**.
