@@ -1406,16 +1406,32 @@ def calculate_breakeven_target(
     headroom = 4.0 if is_gold else (25.0 if is_crypto else 3.5)
 
     # Volatilite & Risk tabanlı tetik eşiği
-    r_trigger = sl_pips * be_r_mult if sl_pips > 0 else 0.0
-    atr_trigger = atr_pips * be_atr_mult if atr_pips > 0 else 0.0
-    
-    # En az dolar güvencesi + R/ATR tetik tabanı
-    min_trigger_pips = max(
-        pips_for_1usd + headroom,
-        r_trigger,
-        atr_trigger,
-        eff_be_pips if eff_be_pips > 0 else 0.0
-    )
+    # 2026-10-12 DÜZELTME — BE tetiği artık BİRLEŞİM (veya), kümülatif taban (max) DEĞİL.
+    #
+    # Eski kod tabanları `max(...)` ile birleştiriyordu: BE kilidi bu tabanların EN
+    # BÜYÜĞÜNÜ bekliyordu (0.4×SL veya 0.5×ATR — altında 25-37 pip). Sonuç: kâr +10..30
+    # pip'e koşan işlem BE'ye hiç kilitlenmiyor, geri dönüşte TAM ATR stopuyla kapanıyordu.
+    # Doküman metni ise zaten "veya" diyordu — kod ile niyet çelişiyordu.
+    #
+    # Kanıt (replay A/B, 4 bağımsız pencere; XAUUSD+BTCUSD, canlı-parite bayrakları,
+    # gerçek spread): BE tetik formülü tek değişken olarak tarandı. İşaret-tutarlı sonuç —
+    # `max` (eski, canlı) vs birleşim (yeni):
+    #   10-08→10-13: +144.16/WR %63.1  →  +318.58/WR %75.7  (DD 148.9 → 58.7)
+    #   09-07→10-07: -186.77/WR %61.0  → +3278.73/WR %75.7  (DD 787.0 → 106.7)
+    #   08-08→09-07: +708.57/WR %59.4  → +4022.48/WR %75.3  (DD 380.5 → 110.1)
+    #   07-15→08-15: +256.23/WR %57.0  → +1916.42/WR %80.5  (DD 600.0 → 97.3)
+    # Dört pencerede de hem net hem WR hem maxDD lehine; alt tabanların hiçbiri tek başına
+    # suçlu değil, suçlu `max` birleşiminin kendisi (izolasyon merdiveni: max_r, max_atr,
+    # max_r_atr, min_r_atr ve dollar(=max($1,eff_be)) hepsi aynı çukura düşer, `usd`/`union`
+    # hepsi iyi). Ayrıca CANLI veriyle bağımsız uyum: canlı WR %59.8, eski formülün replay
+    # replikası %63.1; replay birleşim varyantı %75.7 — sapmayı kapatan tam bu katman.
+    #
+    # `be_r_mult` / `be_atr_mult` parametreleri imzada KALIR (çağıran/uyumluluk) ama tetikte
+    # artık kullanılmaz: R/ATR tabanları BE'yi geciktirip zarar ürettiği ölçülmüştür.
+    min_trigger_pips = pips_for_1usd + headroom
+    if eff_be_pips > 0:
+        # Birleşim: hangi eşiğe ÖNCE ulaşılırsa BE o zaman kilitlenir (replay varsayılanı).
+        min_trigger_pips = min(min_trigger_pips, eff_be_pips)
 
     if pnl_pips < min_trigger_pips:
         return None

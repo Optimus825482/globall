@@ -919,17 +919,18 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
         min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
 
-        # 1. BREAKEVEN (Başabaş / Volatilite ve R Tabanlı Net Kâr Kilidi)
-        # Erken boğulmayı engeller: En az min_trigger_pips (0.4*SL veya 0.5*ATR veya eff_be_pips veya $1 güvencesi)
+        # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi)
         is_gold_sym = ("XAU" in sym or "GOLD" in sym)
         is_crypto_sym = ("BTC" in sym)
-        # Gerçek işlem SL'i (cmd'den) — ATR'siz spec SL'i değil; BE tetik R-hesabı bunu kullanmalı
-        sl_nominal_pips = float(pos_exits["sl_pips"]) if (pos_exits and float(pos_exits.get("sl_pips", 0.0)) > 0) else spec.get("sl_pips", 15.0)
-        atr_nominal_pips = (eff_trail_pips / 1.2) if eff_trail_pips > 0 else 15.0
-
-        r_trigger = sl_nominal_pips * 0.40
-        atr_trigger = atr_nominal_pips * 0.50
-        min_trigger_pips = max(pips_for_1usd + min_headroom_pips, r_trigger, atr_trigger, eff_be_pips if eff_be_pips > 0 else 0.0)
+        # 2026-10-12 DÜZELTME (forex.py `calculate_breakeven_target` ile aynı kök neden):
+        # tabanlar `max` ile birleştirilince BE kilidi 0.4×SL / 0.5×ATR'ye (altın 25-37 pip)
+        # erteleniyordu; bu mesafeye ulaşamayan kazançlar BE'ye kilitlenmeden tam stopla
+        # kapanıyordu. Replay A/B (4 bağımsız pencere, XAU+BTC, gerçek spread): birleşim
+        # formülü net/WR/maxDD üçünde de işaret-tutarlı üstün. Ayrıntılı kanıt ve pencereler
+        # backend/app/routers/forex.py `calculate_breakeven_target` içindeki nota bakınız.
+        min_trigger_pips = pips_for_1usd + min_headroom_pips
+        if eff_be_pips > 0:
+            min_trigger_pips = min(min_trigger_pips, eff_be_pips)
 
         if pnl_pips >= min_trigger_pips:
             # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!

@@ -147,6 +147,13 @@ TUN_SPEC_ATR = False
 # kilitleyip chop'ta BE vuruşu üretiyordu (H48 S3: 63 işlemin 34'ü BE çıkışı). BE'siz modda
 # pozisyon gerçek SL/TP'ye (veya mod çıkışına) koşar; trailing BE kilidine bağlı olmadan çalışır.
 TUN_NO_BE = False
+# BE TETİK FORMÜLÜ (2026-10-12 teşhis): canlı `calculate_breakeven_target` tüm tabanları
+# BİRLİKTE ister — max($1+hurdle, 0.4×SL, 0.5×ATR, eff_be). Replay varsayılanı ise
+# birleşim kullanır: $1+hurdle VEYA eff_be. Canlı semantiği iki bağımsız pencerede
+# WR'yi %76→%64'e, neti +519→+149'a düşürüyor (BE geç kilitlenince kazanacak işlem
+# tam-SL'e dönüyor). Bu düğme merdiveni ölçer: union | max | max_r | max_atr | dollar.
+TUN_BE_TRIGGER = "union"
+TUN_BE_ATR_MULT = 0.5
 
 # 2026-10-06 varyant mekanikleri (30 günlük replay A/B ile test ediliyor)
 FX_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
@@ -1296,6 +1303,7 @@ class SimPos:
     trail_active: bool = False
     entry_atr_pips: float = 0.0
     mfe_pips: float = 0.0
+    sl0_pips: float = 0.0        # girişteki SL genişliği (pip) — BE R-tabanı için
     layer: int = 0              # 0 = ilk pozisyon, 1.. = DCA katmanı
     dca_group: bool = False     # sepet yönetimi altında (TP/BE/trail bireysel çalışmaz)
     basket_armed: bool = False  # lead'te: sepet P/L tamponu geçti (BE kilidi arm)
@@ -1366,6 +1374,7 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         pip_val=cand["pip_val"], digits=cand["digits"], opened_bar=idx,
         partial_target_pips=partial_pips, fill_adjust=half_spread,
         entry_atr_pips=cand.get("atr_pips", 0.0), no_fixed_tp=no_fixed_tp,
+        sl0_pips=float(sl_pips),
         time_stop_bars=int(cand.get("time_stop_bars", 0) or 0),
     )
 
@@ -1460,7 +1469,28 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     if not TUN_NO_BE and not pos.be_locked and not dca_mode:
         is_dollar_be = pnl_extreme_pips >= (be_trigger_pips + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
-        if (is_dollar_be or is_pip_be) and pnl_extreme_pips >= min_be_pips:
+        if TUN_BE_TRIGGER == "union":
+            fired = is_dollar_be or is_pip_be
+        else:
+            # Bileşen tabanlar (canlı calculate_breakeven_target ile birebir):
+            dollar_t = be_trigger_pips + headroom if be_trigger_pips < float("inf") else 0.0
+            r_trig = pos.sl0_pips * 0.40 if pos.sl0_pips > 0 else 0.0
+            atr_trig = pos.entry_atr_pips * TUN_BE_ATR_MULT if pos.entry_atr_pips > 0 else 0.0
+            pip_t = eff_be_pips if eff_be_pips > 0 else 0.0
+            if TUN_BE_TRIGGER == "max_r_atr":       # canlı tam formül
+                min_trigger = max(dollar_t, r_trig, atr_trig, pip_t)
+            elif TUN_BE_TRIGGER == "max_r":         # yalnız R tabanı eklenir
+                min_trigger = max(dollar_t, r_trig, pip_t)
+            elif TUN_BE_TRIGGER == "max_atr":       # yalnız ATR tabanı eklenir
+                min_trigger = max(dollar_t, atr_trig, pip_t)
+            elif TUN_BE_TRIGGER == "min_r_atr":     # EN İYİSİ: tabanlar ılımlı tutulur (0.4→0.25R, 0.5→0.35ATR)
+                min_trigger = max(dollar_t, pos.sl0_pips * 0.25, pos.entry_atr_pips * 0.35, pip_t)
+            elif TUN_BE_TRIGGER == "usd":           # YALNIZ $1 kuralı (R/ATR/eff_be tabanları zorunlu DEĞİL)
+                min_trigger = dollar_t
+            else:                                   # "dollar" — $1+hurdle VE eff_be (max)
+                min_trigger = max(dollar_t, pip_t)
+            fired = pnl_extreme_pips >= min_trigger
+        if fired and pnl_extreme_pips >= min_be_pips:
             locked = max(pips_be, round(pnl_extreme_pips * lock_ratio, 1))
             if direction == "BUY":
                 cand = round(entry + locked * pip, pos.digits)
@@ -3090,6 +3120,12 @@ def main():
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
     parser.add_argument("--no-be", action="store_true", help="BE kilidini tamamen kapat (BE-istismarı testi; trailing bağımsız çalışır)")
+    parser.add_argument("--be-trigger", default="union",
+                        choices=["union", "usd", "dollar", "max_r", "max_atr", "max_r_atr", "min_r_atr"],
+                        help="BE tetik formülü: union (replay varsayılanı: $1+hurdle VEYA eff_be) | "
+                             "dollar (yalnız $1+hurdle) | max_r / max_atr / max_r_atr (canlı formül) | "
+                             "min_r_atr (ılımlı taban: 0.25R + 0.35ATR)")
+    parser.add_argument("--be-atr-mult", type=float, default=0.5, help="max_atr/max_r_atr ATR taban çarpanı (canlı 0.5)")
     parser.add_argument("--fx-min-score", type=float, default=0.0, help="FX majörleri için ayrı skor eşiği (0 = min_score ile aynı)")
     parser.add_argument("--gold-dxy-soft", action="store_true", help="(Eski) XAUUSD DXY vetosunu +skora indirmek için — canlıda artık XAUUSD tamamen muaf, etki etmez")
     parser.add_argument("--gold-dxy-bump", type=float, default=5.0, help="XAUUSD DXY yumuşatma ekstra skoru")
@@ -3304,8 +3340,10 @@ def main():
     TUN_BTC_NETNEG_USD = args.btc_netneg_usd
     TUN_ST_FILTER = args.st_filter
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
-    global TUN_NO_BE
+    global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT
     TUN_NO_BE = args.no_be
+    TUN_BE_TRIGGER = args.be_trigger
+    TUN_BE_ATR_MULT = args.be_atr_mult
     TUN_SPEC_ATR = args.spec_atr
     TUN_BE_USD_FX = args.be_usd_fx
     TUN_MAX_SPREAD_FX = args.max_spread

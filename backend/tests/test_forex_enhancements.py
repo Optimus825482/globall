@@ -652,9 +652,37 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
 
 
     def test_dynamic_breakeven_target_calculation(self):
-        """Verify calculate_breakeven_target prevents premature breakeven lock."""
-        # 1. Very small profit (e.g. 5 pips on gold, when SL is 75 pips) should NOT trigger
+        """BE tetiği: $1+hurdle altı kilitlenmez; üstünde KİLİTLENİR (2026-10-12 düzeltmesi).
+
+        Eski sözleşme tabanları `max(...)` ile birleştiriyordu → BE kilidi 0.4×SL / 0.5×ATR
+        (burada 30/25 pip) bekliyordu. Replay A/B dört bağımsız pencerede bunun zarar
+        ürettiğini gösterdi (net, WR ve maxDD üçünde de işaret-tutarlı). Yeni sözleşme
+        BİRLEŞİM: $1+hurdle VEYA eff_be — hangisine önce ulaşılırsa.
+        """
+        # 1. $1 güvencesinin (+hurdle) ALTINDA kalan kâr kilitlenmez (erken boğulma koruması)
+        #    0.10 lot × $10/pip = $1/pip → $1 = 1 pip; altın hurdle 4 → tetik 5 pip.
         be_early = forex.calculate_breakeven_target(
+            pnl_pips=4.0,
+            pnl_usd=4.0,
+            lots=0.10,
+            pip_val=10.0,
+            pip_size=0.10,
+            digits=2,
+            direction="BUY",
+            entry_price=2700.0,
+            current_price=2700.4,
+            current_sl=2692.5,
+            sl_pips=75.0,
+            atr_pips=50.0,
+            eff_be_pips=25.0,
+            is_gold=True,
+            gold_be_lock_ratio=0.60,
+        )
+        self.assertIsNone(be_early)
+
+        # 2. Tetik eşiğine ulaşınca KİLİTLENİR — eski `max` formülü burada None dönerdi
+        #    (25 pip eff_be ya da 30 pip = 0.4×SL beklerdi). Kök neden testi budur.
+        be_hit = forex.calculate_breakeven_target(
             pnl_pips=5.0,
             pnl_usd=5.0,
             lots=0.10,
@@ -671,30 +699,50 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
             is_gold=True,
             gold_be_lock_ratio=0.60,
         )
-        self.assertIsNone(be_early)
-
-        # 2. Reaching the threshold (e.g. >= 0.4*SL = 30 pips or eff_be) should trigger and lock profit
-        be_hit = forex.calculate_breakeven_target(
-            pnl_pips=32.0,
-            pnl_usd=32.0,
-            lots=0.10,
-            pip_val=10.0,
-            pip_size=0.10,
-            digits=2,
-            direction="BUY",
-            entry_price=2700.0,
-            current_price=2703.2,
-            current_sl=2692.5,
-            sl_pips=75.0,
-            atr_pips=50.0,
-            eff_be_pips=25.0,
-            is_gold=True,
-            gold_be_lock_ratio=0.60,
-        )
         self.assertIsNotNone(be_hit)
-        # Lock ratio 0.60 * 32.0 = 19.2 pips -> 2700.0 + 1.92 = 2701.92
-        self.assertAlmostEqual(be_hit, 2701.92, places=2)
+        # Kilit oranı 0.60 × 5.0 = 3.0 pip → 2700.0 + 3 × 0.10 = 2700.30
+        self.assertAlmostEqual(be_hit, 2700.30, places=2)
         self.assertGreater(be_hit, 2700.0)
+        # Kilitlenen stop her zaman girişin ÜSTÜNDE (gerçek kâr kilidi, başabaş değil)
+
+    def test_be_trigger_is_union_not_cumulative_max(self):
+        """Kök-neden regresyon kilidi: R/ATR tabanları BE'yi GECİKTİRMEMELİ.
+
+        Geniş SL (300 pip) + yüksek ATR (200 pip) verildiğinde `max` formülü tetiği
+        120 pip'e çıkarırdı (0.4×300); birleşim formülü $1+hurdle'da kalır. Canlı↔replay
+        sapmasını üreten tam bu mekanizmaydı (bkz. forex.calculate_breakeven_target notu).
+        """
+        common = dict(
+            lots=0.10, pip_val=10.0, pip_size=0.10, digits=2,
+            direction="BUY", entry_price=2700.0, current_sl=2692.5,
+            sl_pips=300.0, atr_pips=200.0, eff_be_pips=25.0,
+            is_gold=True, gold_be_lock_ratio=0.60,
+        )
+        # 10 pip kâr: `max` olsaydı (0.4×300=120 veya 0.5×200=100 beklerdi) None dönerdi
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=10.0, pnl_usd=10.0, current_price=2701.0, **common))
+        # Eşiğin altı hâlâ korunuyor (4 pip < 5 pip tetik)
+        self.assertIsNone(forex.calculate_breakeven_target(
+            pnl_pips=4.0, pnl_usd=4.0, current_price=2700.4, **common))
+
+    def test_be_fx_and_crypto_triggers_are_union(self):
+        """FX ve kripto için de birleşim semantiği geçerli (altına özel değil)."""
+        # FX: 0.10 lot, pip_val 10 → $1/pip; headroom 3.5 → tetik 4.5 pip; eff_be 14 pip
+        fx = forex.calculate_breakeven_target(
+            pnl_pips=5.0, pnl_usd=5.0, lots=0.10, pip_val=10.0, pip_size=0.0001,
+            digits=5, direction="BUY", entry_price=1.10000, current_price=1.10050,
+            current_sl=1.09900, sl_pips=20.0, atr_pips=10.0, eff_be_pips=14.0,
+        )
+        self.assertIsNotNone(fx)  # 5 pip ≥ 4.5 → kilit (max olsaydı 14 pip beklerdi)
+        # Kripto: 0.10 lot, pip_val 1.0 → $0.10/pip → pips_for_1usd = 10 pip; headroom 25
+        # → tetik 35 pip; eff_be 40 pip.
+        crypto = forex.calculate_breakeven_target(
+            pnl_pips=36.0, pnl_usd=3.60, lots=0.10, pip_val=1.0, pip_size=1.0,
+            digits=2, direction="SELL", entry_price=60000.0, current_price=59964.0,
+            current_sl=60100.0, sl_pips=150.0, atr_pips=100.0, eff_be_pips=40.0,
+            is_crypto=True,
+        )
+        self.assertIsNotNone(crypto)  # 36 ≥ 35 → kilit
 
     def test_btc_min_score_priority(self):
         """Verify btc_min_score priority over global min_score."""
