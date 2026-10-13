@@ -14,6 +14,7 @@ import datetime
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -754,6 +755,111 @@ class TestManualScanNow(unittest.TestCase):
             self.assertEqual(forex._LB_STATE[sym]["counts"], {})
         finally:
             forex._LB_STATE.pop(sym, None)
+
+    def test_every_enabled_arm_is_scanned(self):
+        """Motordaki HER açık giriş kolu tarama raporunda temsil edilmeli.
+
+        Regresyon (2026-10-13): London Sign 2026-10-12'de 6. giriş kolu olarak
+        canlıya alındı ama `_scan_now_strategy_rows`'a eklenmedi — kol gerçekte
+        işlem açıyordu, radar sayfası ise onu hiç taramıyordu. Bu test, kol
+        listesi ile tarayıcının kapsamı ayrışırsa kırılır.
+        """
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertTrue(cfg.ls_enabled, "varsayılan 'da LS açık — test bunu varsayar")
+        radar = {"candidates": [], "scan_note": "yok"}
+        ticks = {sym: {"display": sym, "bid": 1.1, "ask": 1.1001} for sym in cfg.ls_symbols}
+        for sym in cfg.lb_symbols + cfg.mode_symbols + cfg.ema_adx_symbols \
+                + cfg.s3_symbols_5m + cfg.s3_symbols_15m:
+            ticks.setdefault(sym, {"display": sym, "bid": 1.1, "ask": 1.1001})
+
+        rows = forex._scan_now_strategy_rows(ticks, radar)
+
+        strategies = {r["strategy"] for r in rows}
+        expected = {
+            "RADAR",
+            "DONCHIAN_ADX",
+            forex.EMA_ADX_PULLBACK_STRATEGY,
+            "S3_5M",
+            "S3_15M",
+            forex.LONDON_BREAKOUT_STRATEGY,
+            forex.LONDON_SIGN_STRATEGY,
+        }
+        missing = expected - strategies
+        self.assertEqual(missing, set(), f"taranmayan giriş kolu: {missing}")
+
+        # London Sign satırları sembol başına en az bir kez ve insan-okur olmalı
+        ls_rows = [r for r in rows if r["strategy"] == forex.LONDON_SIGN_STRATEGY]
+        self.assertTrue(ls_rows, "LS kolu hiç satır üretmedi")
+        self.assertEqual({r["symbol"] for r in ls_rows}, {s.upper() for s in cfg.ls_symbols})
+        for r in ls_rows:
+            self.assertTrue(r["status"], f"boş LS status: {r}")
+
+    def test_ls_state_not_advanced_by_scan(self):
+        """LS örneği: tarama `_LS_STATE`'i (sign/entered) değiştirmemeli —
+        aksi halde manuel tur motorun günlük tek-giriş hakkını yakardı."""
+        sym = "XAUUSD"  # varsayılan ls_symbols üyesi
+        radar = {"candidates": [], "scan_note": "yok"}
+        ticks = {sym: {"display": "XAU/USD", "bid": 2400.0, "ask": 2400.3}}
+        day = datetime.datetime.now(datetime.timezone.utc).toordinal()
+        forex._LS_STATE[sym] = {
+            "day": day, "sign_open": 2400.0, "sign_close": 2401.0, "entered": False,
+        }
+        try:
+            forex._scan_now_strategy_rows(ticks, radar)
+            state = forex._LS_STATE[sym]
+            self.assertEqual(state["sign_open"], 2400.0)
+            self.assertEqual(state["sign_close"], 2401.0)
+            self.assertFalse(state["entered"], "tarama LS 'entered' bayrağını yakmamalı")
+        finally:
+            forex._LS_STATE.pop(sym, None)
+
+    def test_ls_row_mirrors_motor_on_missing_atr(self):
+        """Giriş penceresi sembol başına TEK satır üretmeli ve ATR yokken aday
+        göstermemeli — motor da 5191-5192'de SL hesaplanamayınca girişe izin
+        vermez. Aksi halde radar "BUY adayı, SL 0.0p" gösterip kullanıcıyı
+        açılmayacak bir işleme inandırırdı.
+        """
+        cfg = forex.ForexAutoPaperSettings()
+        sym = "XAUUSD"  # varsayılan ls_symbols üyesi
+        radar = {"candidates": [], "scan_note": "yok"}
+        ticks = {sym: {"display": "XAU/USD", "bid": 2400.0, "ask": 2400.3}}
+        day = datetime.datetime.now(datetime.timezone.utc).toordinal()
+        # Sign yukarı: giriş penceresi açık olsa BUY adayı çıkardı
+        forex._LS_STATE[sym] = {"day": day, "sign_open": 2400.0,
+                                "sign_close": 2401.0, "entered": False}
+        had_tech = sym in forex._TECHNICAL_CACHE
+        tech_before = dict(forex._TECHNICAL_CACHE.get(sym) or {})
+
+        class _FixedDT(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                # 14:05 UTC — giriş penceresi (14:00–14:30) içinde
+                return cls(2026, 10, 13, 14, 5, tzinfo=datetime.timezone.utc)
+
+        try:
+            forex._TECHNICAL_CACHE.pop(sym, None)  # ATR yok
+            with mock.patch.object(forex.datetime, "datetime", _FixedDT):
+                rows = forex._scan_now_strategy_rows(ticks, radar)
+            ls_rows = [r for r in rows
+                       if r["strategy"] == forex.LONDON_SIGN_STRATEGY and r["symbol"] == sym]
+            self.assertEqual(len(ls_rows), 1, f"sembol başına tek satır olmalı: {ls_rows}")
+            self.assertIsNone(ls_rows[0]["action"], "ATR yokken aday gösterilmemeli")
+            self.assertIn("ATR", ls_rows[0]["status"])
+
+            # ATR varken aynı durum gerçek aday üretmeli
+            forex._TECHNICAL_CACHE[sym] = {"atr": 12.0}
+            with mock.patch.object(forex.datetime, "datetime", _FixedDT):
+                rows2 = forex._scan_now_strategy_rows(ticks, radar)
+            ls2 = [r for r in rows2
+                   if r["strategy"] == forex.LONDON_SIGN_STRATEGY and r["symbol"] == sym]
+            self.assertEqual(len(ls2), 1)
+            self.assertEqual(ls2[0]["action"], "BUY")
+        finally:
+            if had_tech:
+                forex._TECHNICAL_CACHE[sym] = tech_before
+            else:
+                forex._TECHNICAL_CACHE.pop(sym, None)
+            forex._LS_STATE.pop(sym, None)
 
 
 class TestRiskNormalization(unittest.IsolatedAsyncioTestCase):

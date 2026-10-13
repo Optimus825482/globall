@@ -6092,6 +6092,14 @@ def _invalidate_status_cache() -> None:
 _GATE_SNAPSHOT_CACHE: Dict[str, tuple] = {}
 _GATE_SNAPSHOT_TTL = 2.0
 
+# Radar sayfasının periyodik strateji taraması için önbellek (bkz.
+# GET /auto-paper/strategy-scan). `_scan_now_strategy_rows` her turda canlı tick +
+# teknik gösterge tazeler; sayfa 3 sn'de bir yokladığı için TTL 5 sn tutulur.
+# Dict-mutasyonu deseni bilinçli: döngü içinde yeniden atama `global` bildirimi
+# gerektirir ve bu dosyada globals-shadow regresyonu test ediliyor.
+_STRATEGY_SCAN_CACHE: Dict[str, Any] = {"ts": 0.0, "payload": None}
+_STRATEGY_SCAN_TTL = 5.0
+
 
 @router.get("/auto-paper/gate-snapshot/{symbol}")
 async def get_gate_snapshot(symbol: str):
@@ -6553,9 +6561,15 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
 
     Motor döngüsündeki aday üretim felsefesini aynalar: saf giriş fonksiyonları
     çağrılır ama `counts` sayaçları ve `_DONCHIAN_STATE`/`_S3_DAY_STATE`/
-    `_LB_STATE` GÜNCELLENMEZ (kopya üzerinde çalışılır) — manuel tarama hiçbir
-    zaman gerçek girişin gün-limitini yakmamalı. Data refresh yine de yapılır
-    (taze tick + teknik) ama motor state'ine dokunulmaz.
+    `_LB_STATE`/`_LS_STATE` GÜNCELLENMEZ (kopya üzerinde çalışılır) — manuel tarama
+    hiçbir zaman gerçek girişin gün-limitini yakmamalı. Data refresh yine de
+    yapılır (taze tick + teknik) ama motor state'ine dokunulmaz.
+
+    Kapsam (2026-10-13): motordaki TÜM giriş kolları taranır — RADAR (klasik skor),
+    DONCHIAN_ADX, EMA_ADX_PULLBACK_M5, S3 (5m+15m), LONDON_BREAKOUT, LONDON_SIGN.
+    Yeni bir kol eklenirse (bkz. `_forex_auto_paper_loop` aday üretimi) buraya da
+    eklenmeli; aksi halde kol canlıda çalışır ama radar sayfası onu hiç göstermez
+    (LS tam bu yüzden eksik kalmıştı).
     """
     s = _AUTO_SETTINGS
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -6705,17 +6719,79 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
             else:
                 _row(LONDON_BREAKOUT_STRATEGY, sym, f"Günün tetik penceresi kapandı ({int(s.lb_entry_end_utc):02d}:00 UTC)")
 
+    # --- 6) London Sign (NY açılışı sign-momentum)
+    # 2026-10-13: EKSİK KOL. LS canlıya 2026-10-12'de alındı (6. giriş kolu) ama
+    # bu raporlayıcıya eklenmediği için radar sayfası onu hiç taramıyordu —
+    # "uygulamadaki tüm tarama sistemleri" derken en yeni kol görünmüyordu.
+    # Motorla aynı pencere/sign mantığı; state KOPYA üzerinde okunur.
+    if s.ls_enabled:
+        ls_min_now = hour * 60 + now.minute
+        ls_sig_lo = int(s.ls_sign_start_utc) * 60 + int(s.ls_sign_start_min)
+        ls_sig_hi = int(s.ls_sign_end_utc) * 60 + int(s.ls_sign_end_min)
+        ls_ent_lo = int(s.ls_entry_start_utc) * 60 + int(s.ls_entry_start_min)
+        ls_ent_hi = int(s.ls_entry_end_utc) * 60 + int(s.ls_entry_end_min)
+        for sym in sorted({x.upper() for x in (s.ls_symbols or [])}):
+            t = ticks.get(sym)
+            if not t:
+                _row(LONDON_SIGN_STRATEGY, sym, "Veri yok")
+                continue
+            st_copy = dict(_LS_STATE.get(sym, {}))
+            if st_copy.get("day") != day:
+                st_copy = {"day": day, "sign_open": 0.0, "sign_close": 0.0, "entered": False}
+            sign_open = float(st_copy.get("sign_open") or 0.0)
+            sign_close = float(st_copy.get("sign_close") or 0.0)
+            act = sign_window_entry(
+                sign_open=sign_open, sign_close=sign_close,
+                minute_of_day=ls_min_now,
+                ent_start_min=ls_ent_lo, ent_end_min=ls_ent_hi,
+                day_entered=bool(st_copy.get("entered")),
+            )
+            pip = next((i["pip_size"] for i in FOREX_SYMBOLS if i["symbol"] == sym), 0.0001)
+            atr = float((_TECHNICAL_CACHE.get(sym) or {}).get("atr", 0.0))
+            sl_pips = (float(s.ls_sl_atr) * atr / pip) if (atr > 0 and pip > 0) else 0.0
+            # Pencere sırası motorla birebir: `act` yalnız giriş penceresi içinde
+            # dolu olabilir (sign_window_entry pencere dışında None döner), bu yüzden
+            # giriş penceresi dalı act'i de kapsar. Her sembol için TEK satır yazılır.
+            if ls_min_now < ls_sig_lo:
+                _row(LONDON_SIGN_STRATEGY, sym,
+                     f"Sign penceresi bekleniyor ({int(s.ls_sign_start_utc):02d}:{int(s.ls_sign_start_min):02d}–"
+                     f"{int(s.ls_sign_end_utc):02d}:{int(s.ls_sign_end_min):02d} UTC)")
+            elif ls_min_now < ls_ent_lo:
+                _row(LONDON_SIGN_STRATEGY, sym,
+                     f"Sign toplanıyor (şimdiye kadar {sign_close:.5g} vs {sign_open:.5g}) — "
+                     f"giriş penceresi {int(s.ls_entry_start_utc):02d}:{int(s.ls_entry_start_min):02d} UTC'de açılıyor")
+            elif ls_min_now < ls_ent_hi:
+                # Motorun 5191-5192 satırları: ATR yoksa giriş yok (SL hesaplanamaz),
+                # `entered` geri alınır ve aday ÜRETİLMEZ. Rapor da aday göstermemeli.
+                if sl_pips <= 0:
+                    _row(LONDON_SIGN_STRATEGY, sym,
+                         "Giriş penceresi açık ama ATR yok — SL hesaplanamaz, motor pas geçer")
+                elif st_copy.get("entered"):
+                    _row(LONDON_SIGN_STRATEGY, sym, "Giriş penceresi açık — bugünkü giriş yapıldı (günde tek)")
+                elif act:
+                    _row(LONDON_SIGN_STRATEGY, sym,
+                         f"{act} adayı — NY açılışı sign {'+' if act == 'BUY' else '−'} "
+                         f"(kapanış {sign_close:.5g} vs açılış {sign_open:.5g}), "
+                         f"SL {sl_pips:.1f}p, TP yok (chandelier trail)", act)
+                elif sign_open <= 0 or sign_close <= 0:
+                    _row(LONDON_SIGN_STRATEGY, sym, "Giriş penceresi açık ama sign ölçülemedi (mum serisi bekleniyor)")
+                else:
+                    _row(LONDON_SIGN_STRATEGY, sym,
+                         f"Giriş penceresi açık — sign nötr (kapanış {sign_close:.5g} = açılış {sign_open:.5g}), yön yok")
+            else:
+                _row(LONDON_SIGN_STRATEGY, sym,
+                     f"Günün penceresi kapandı (giriş bitişi {int(s.ls_entry_end_utc):02d}:{int(s.ls_entry_end_min):02d} UTC)")
+
     return rows
 
 
-@router.post("/auto-paper/scan-now")
-async def trigger_forex_manual_scan():
-    """Manuel strateji taraması: tüm stratejileri sırayla tek turda değerlendirir.
+async def _build_strategy_scan_payload() -> Dict[str, Any]:
+    """Tüm strateji kollarının anlık durumunu tek turda toplar (salt-okunur).
 
-    Salt-okunur raporlayıcı — motor döngüsünü (`_forex_auto_paper_loop`) ve hiçbir
-    sayaç/state'i değiştirmez; giriş kararları yine motorun kendi turunda
-    verilir. Panelin "Şimdi Tara" butonu radar/S3/LB/Donchian/EAP'nin o anki
-    durumunu insan-okur satırlarla görür.
+    `scan-now` ucu bunu POST (manuel, log düşer) ve GET (radar sayfası periyodik
+    yoklaması, log yazmaz) için ortak kullanır. Log ayrımı kritiktir: sayfa her
+    birkaç saniyede yoklarsa karar akışı "kullanıcı tarama başlattı" satırlarıyla
+    dolardı.
     """
     now_ts = time.time()
     await _refresh_live_rates_if_needed()
@@ -6727,15 +6803,10 @@ async def trigger_forex_manual_scan():
     active_names = [x["name"] for x in sessions if x.get("active")]
     blocked = is_entry_hour_blocked(datetime.datetime.now(datetime.timezone.utc).hour,
                                     _AUTO_SETTINGS.blocked_hours_utc)
-    _AUTO_STATE["last_scan_time"] = now_ts
-    _log_auto_decision(
-        "MANUAL",
-        (f"🖐️ Kullanıcı manuel tarama başlattı: {len(rows)} strateji-kolu tarandı, "
-         f"{candidates_count} canlı aday (seanslar: {', '.join(active_names) if active_names else 'kapalı'})."),
-    )
     return {
         "status": "ok",
         "scanned_at": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%Y-%m-%d %H:%M:%S UTC+3"),
+        "scanned_at_ts": now_ts,
         "total_rows": len(rows),
         "candidates_count": candidates_count,
         "sessions_active": active_names,
@@ -6743,6 +6814,52 @@ async def trigger_forex_manual_scan():
         "motor_enabled": bool(_AUTO_STATE.get("enabled")),
         "rows": rows,
     }
+
+
+@router.post("/auto-paper/scan-now")
+async def trigger_forex_manual_scan():
+    """Manuel strateji taraması: tüm stratejileri sırayla tek turda değerlendirir.
+
+    Salt-okunur raporlayıcı — motor döngüsünü (`_forex_auto_paper_loop`) ve hiçbir
+    sayaç/state'i değiştirmez; giriş kararları yine motorun kendi turunda
+    verilir. Panelin "Şimdi Tara" butonu radar/S3/LB/LS/Donchian/EAP'nin o anki
+    durumunu insan-okur satırlarla görür.
+    """
+    payload = await _build_strategy_scan_payload()
+    _AUTO_STATE["last_scan_time"] = payload["scanned_at_ts"]
+    _log_auto_decision(
+        "MANUAL",
+        (f"🖐️ Kullanıcı manuel tarama başlattı: {payload['total_rows']} strateji-kolu tarandı, "
+         f"{payload['candidates_count']} canlı aday "
+         f"(seanslar: {', '.join(payload['sessions_active']) if payload['sessions_active'] else 'kapalı'})."),
+    )
+    # Manuel tur önbelleği bayatlatır: sayfanın periyodik yoklaması bir sonraki
+    # turda taze sonucu görmeli (aksi halde buton "hiçbir şey değişmedi" gibi durur).
+    _STRATEGY_SCAN_CACHE["ts"] = 0.0
+    _STRATEGY_SCAN_CACHE["payload"] = None
+    return payload
+
+
+@router.get("/auto-paper/strategy-scan")
+async def get_forex_strategy_scan():
+    """Radar sayfasının periyodik strateji taraması (GET, önbellekli, logsuz).
+
+    2026-10-13: Radar sayfası eskiden yalnız kendi klasik skor taramasını
+    (`/radar`) gösteriyordu; S3 / London Breakout / London Sign / Donchian / EAP
+    kolları yalnız "Şimdi Tara" butonuna basılınca görünürdü. Kullanıcı isteği:
+    uygulamadaki TÜM tarama sistemleri radar sayfasında taransın. Bu uç aynı
+    salt-okunur raporu döner; TTL önbelleği ile sayfa 3 sn'de bir yoklasa bile
+    motor döngüsünü yormaz ve karar akışına log basmaz.
+    """
+    now_ts = time.time()
+    cached_ts = float(_STRATEGY_SCAN_CACHE["ts"] or 0.0)
+    cached_payload = _STRATEGY_SCAN_CACHE["payload"]
+    if cached_payload is not None and now_ts - cached_ts < _STRATEGY_SCAN_TTL:
+        return cached_payload
+    payload = await _build_strategy_scan_payload()
+    _STRATEGY_SCAN_CACHE["ts"] = now_ts
+    _STRATEGY_SCAN_CACHE["payload"] = payload
+    return payload
 
 
 # ============================================================================

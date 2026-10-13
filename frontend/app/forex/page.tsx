@@ -119,7 +119,7 @@ function scoreTone(score: number, required: number): string {
   return "text-bunker-muted";
 }
 
-/** Manuel tarama satırı (backend /auto-paper/scan-now). */
+/** Strateji taraması satırı (backend /auto-paper/strategy-scan ve /scan-now). */
 interface ScanNowRow {
   strategy: string;
   strategy_label: string;
@@ -140,6 +140,73 @@ interface ScanNowResponse {
   motor_enabled: boolean;
   rows: ScanNowRow[];
 }
+
+/**
+ * Satırın hangi strateji kolundan geldiği — rozet rengi/etiketi TEK yerden.
+ *
+ * Kapsam (2026-10-13): motordaki TÜM giriş kolları listelenir; yeni bir kol
+ * eklenirse (bkz. backend `_forex_auto_paper_loop` aday üretimi) buraya da
+ * eklenmeli. Motorda üretilip burada tanımsız kalan kol ham koduyla görünür
+ * (bilinçli: panelde sessizce kaybolmaz).
+ */
+const ARM_META: Record<string, { icon: string; label: string; medal: string }> = {
+  RADAR: {
+    icon: "📡",
+    label: "Klasik Radar",
+    medal: "bg-blue-500/15 text-blue-300 border-blue-500/40",
+  },
+  DONCHIAN_ADX: {
+    icon: "🎯",
+    label: "Donchian ADX",
+    medal: "bg-purple-500/15 text-purple-300 border-purple-500/40",
+  },
+  EMA_ADX_PULLBACK_M5: {
+    icon: "📐",
+    label: "EMA+ADX",
+    medal: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40",
+  },
+  S3_5M: {
+    icon: "🧭",
+    label: "S3 · 5m",
+    medal: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+  },
+  S3_15M: {
+    icon: "🧭",
+    label: "S3 · 15m",
+    medal: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+  },
+  LONDON_BREAKOUT: {
+    icon: "🌅",
+    label: "London Breakout",
+    medal: "bg-orange-500/15 text-orange-300 border-orange-500/40",
+  },
+  LONDON_SIGN: {
+    icon: "🌆",
+    label: "London Sign",
+    medal: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
+  },
+};
+
+function armMeta(strategy: string) {
+  return (
+    ARM_META[strategy] || {
+      icon: "🧩",
+      label: strategy || "Bilinmeyen kol",
+      medal: "bg-bunker-800 text-bunker-muted border-bunker-700",
+    }
+  );
+}
+
+/** Kolların panelde gösterim sırası (motor karar akışına yakın sıra). */
+const ARM_ORDER: string[] = [
+  "RADAR",
+  "LONDON_SIGN",
+  "DONCHIAN_ADX",
+  "EMA_ADX_PULLBACK_M5",
+  "S3_5M",
+  "S3_15M",
+  "LONDON_BREAKOUT",
+];
 
 export default function ForexRadarPage() {
   const [candidates, setCandidates] = useState<ForexCandidate[]>([]);
@@ -164,18 +231,33 @@ export default function ForexRadarPage() {
   // Profesyonel Grafik Modalı (Lightweight Charts)
   const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidate | null>(null);
 
-  // Manuel "Şimdi Tara" — tüm stratejileri sırayla tek turda tetikler
+  // Strateji taraması — TÜM giriş kolları (Radar/S3/LB/LS/Donchian/EAP).
+  // Sayfa açıkken periyodik yoklanır; "Şimdi Tara" aynı ucu POST ile zorlar.
   const [scanning, setScanning] = useState(false);
   const [scanNowResult, setScanNowResult] = useState<ScanNowResponse | null>(null);
+  const [armFilter, setArmFilter] = useState<string>("ALL");
   const runScanNow = async () => {
     setScanning(true);
     try {
       const res = await apiFetch("/api/forex/auto-paper/scan-now", { method: "POST" });
+      // Buton listeyi sıfırlar ki manuel turun sonucu doğrudan görünsün
+      // (kullanıcı bir kola süzülmüşse ve o kol bu turda aday üretmediyse
+      // "hiçbir şey olmadı" izlenimi doğmasın).
+      setArmFilter("ALL");
       setScanNowResult(res);
     } catch (err) {
       console.error("Manuel tarama hatası:", err);
     } finally {
       setScanning(false);
+    }
+  };
+
+  const fetchStrategyScan = async () => {
+    try {
+      const res = await apiFetch("/api/forex/auto-paper/strategy-scan");
+      if (res && res.rows) setScanNowResult(res);
+    } catch (err) {
+      console.error("Strateji taraması yükleme hatası:", err);
     }
   };
 
@@ -200,6 +282,12 @@ export default function ForexRadarPage() {
   // arka planda durur, üst üste binen istekleri engeller.
   usePolling(fetchRadar, 3000);
 
+  // Strateji taraması 5 sn'de bir (backend'de aynı TTL önbelleği var): radar
+  // tablosu klasik skoru, bu bölüm ise DİĞER tüm giriş kollarını gösterir.
+  // Sekme arka plandayken usePolling durur — motor döngüsü zaten kendi turunda
+  // aynı kararları verir, panelin yoklaması yalnız görünürlük içindir.
+  usePolling(fetchStrategyScan, 5000);
+
   const calculateLot = async () => {
     try {
       const res = await apiFetch("/api/forex/calculate-lot", {
@@ -223,6 +311,31 @@ export default function ForexRadarPage() {
 
   // Güçlü sinyaller — filtrelerden bağımsız, radarın özü.
   const strongSignals = useMemo(() => candidates.filter((c) => c.tier === "STRONG"), [candidates]);
+
+  // Kol özeti: her giriş kolu kaç sembol taradı / kaç canlı aday üretti.
+  // Sıralama ARM_ORDER (motor akışı), tanımsız kollar sona alfabetik eklenir —
+  // backend yeni bir kol eklerse panelde kaybolmaz, "🧩" rozetiyle görünür.
+  const armStats = useMemo(() => {
+    const rows = scanNowResult?.rows || [];
+    const byArm = new Map<string, { strategy: string; total: number; candidates: number }>();
+    for (const r of rows) {
+      const key = r.strategy || "—";
+      const cur = byArm.get(key) || { strategy: key, total: 0, candidates: 0 };
+      cur.total += 1;
+      if (r.action) cur.candidates += 1;
+      byArm.set(key, cur);
+    }
+    const known = ARM_ORDER.filter((a) => byArm.has(a)).map((a) => byArm.get(a)!);
+    const unknown = [...byArm.values()]
+      .filter((a) => !ARM_ORDER.includes(a.strategy))
+      .sort((x, y) => x.strategy.localeCompare(y.strategy));
+    return [...known, ...unknown];
+  }, [scanNowResult]);
+
+  const visibleScanRows = useMemo(() => {
+    const rows = scanNowResult?.rows || [];
+    return armFilter === "ALL" ? rows : rows.filter((r) => r.strategy === armFilter);
+  }, [scanNowResult, armFilter]);
 
   const tierCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -304,12 +417,21 @@ export default function ForexRadarPage() {
         </div>
       </div>
 
-      {/* MANUEL TARAMA SONUCU */}
+      {/* TÜM TARAMA SİSTEMLERİ — giriş kollarının canlı durumu.
+          Eskiden yalnız "Şimdi Tara" sonrası görünürdü; artık sayfa açıkken
+          5 sn'de bir kendiliğinden taranır (backend GET /auto-paper/strategy-scan). */}
       {scanNowResult && (
         <div className="p-4 rounded-2xl bg-bunker-900/80 border border-emerald-500/30 backdrop-blur-md shadow-lg">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-            <div className="font-mono text-sm font-bold text-emerald-300">
-              🔍 Manuel Tarama Sonucu — {scanNowResult.candidates_count}/{scanNowResult.total_rows} kol canlı aday üretti
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-lg">🔬</span>
+              <span className="font-mono text-sm font-bold text-emerald-300">
+                Tüm Tarama Sistemleri — {scanNowResult.candidates_count}/{scanNowResult.total_rows} kol canlı aday üretti
+              </span>
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                KENDİLİĞİNDEN TARANIYOR
+              </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap font-mono text-[11px]">
               <span className="text-bunker-muted">{scanNowResult.scanned_at}</span>
@@ -321,43 +443,89 @@ export default function ForexRadarPage() {
               {scanNowResult.entry_hour_blocked && (
                 <span className="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/40 text-rose-300 font-bold">ZAYIF SAAT KALKANI</span>
               )}
-              <button
-                onClick={() => setScanNowResult(null)}
+              <Link
+                href="/forex/ayarlar"
                 className="px-2 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
+                title="Kolların sembol listelerini ve eşiklerini ayarlar sayfasından yönet"
               >
-                ✕ kapat
-              </button>
+                ⚙️ ayarlar
+              </Link>
             </div>
           </div>
-          <div className="space-y-1 max-h-72 overflow-y-auto">
-            {scanNowResult.rows.map((r, i) => (
-              <div
-                key={`${r.strategy}-${r.symbol}-${i}`}
-                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-mono text-xs border ${
-                  r.action
-                    ? "bg-emerald-500/10 border-emerald-500/30"
-                    : "bg-bunker-900/60 border-bunker-800"
-                }`}
-              >
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                  r.action ? "bg-emerald-500/20 text-emerald-300" : "bg-bunker-800 text-bunker-muted"
-                }`}>
-                  {r.strategy_label}
-                </span>
-                <span className="font-bold text-white shrink-0">{r.display}</span>
-                {r.action && (
-                  <span className={`font-bold shrink-0 ${r.action === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
-                    {r.action === "BUY" ? "▲ AL" : "▼ SAT"}
+
+          {/* Kol rozetleri — hangi kol kaç sembol tarıyor, kaçı aday üretti.
+              Tıklayınca liste o kola süzülür (aynı kola ikinci tık filtreyi kaldırır). */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setArmFilter("ALL")}
+              className={`px-2 py-1 rounded-lg border font-mono text-[10px] font-bold transition-all ${
+                armFilter === "ALL"
+                  ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
+                  : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+              }`}
+            >
+              TÜMÜ · {scanNowResult.total_rows} satır
+            </button>
+            {armStats.map((a) => {
+              const meta = armMeta(a.strategy);
+              const on = armFilter === a.strategy;
+              return (
+                <button
+                  key={a.strategy}
+                  type="button"
+                  onClick={() => setArmFilter(on ? "ALL" : a.strategy)}
+                  className={`px-2 py-1 rounded-lg border font-mono text-[10px] font-bold transition-all ${
+                    on
+                      ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
+                      : a.candidates > 0
+                        ? `${meta.medal} hover:brightness-125`
+                        : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+                  }`}
+                  title={`${meta.label} — ${a.total} sembol tarandı, ${a.candidates} canlı aday`}
+                >
+                  {meta.icon} {meta.label} · {a.total}
+                  {a.candidates > 0 && (
+                    <span className="ml-1 text-emerald-300">★{a.candidates}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-1 max-h-96 overflow-y-auto">
+            {visibleScanRows.map((r, i) => {
+              const meta = armMeta(r.strategy);
+              return (
+                <div
+                  key={`${r.strategy}-${r.symbol}-${i}`}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-mono text-xs border ${
+                    r.action
+                      ? "bg-emerald-500/10 border-emerald-500/30"
+                      : "bg-bunker-900/60 border-bunker-800"
+                  }`}
+                >
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 border ${meta.medal}`}>
+                    {meta.icon} {meta.label}
                   </span>
-                )}
-                <span className={r.action ? "text-emerald-200/90" : "text-bunker-muted"}>{r.status}</span>
-                {!r.panel_kapsaminda && r.symbol !== "—" && (
-                  <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/10 border border-yellow-500/30 text-yellow-300">
-                    panel kapsamı dışı
-                  </span>
-                )}
-              </div>
-            ))}
+                  <span className="font-bold text-white shrink-0">{r.display}</span>
+                  {r.action && (
+                    <span className={`font-bold shrink-0 ${r.action === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
+                      {r.action === "BUY" ? "▲ AL" : "▼ SAT"}
+                    </span>
+                  )}
+                  <span className={r.action ? "text-emerald-200/90" : "text-bunker-muted"}>{r.status}</span>
+                  {!r.panel_kapsaminda && r.symbol !== "—" && (
+                    <span
+                      className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/10 border border-yellow-500/30 text-yellow-300"
+                      title="Bu sembol allowed_symbols dışında — sinyal olsa bile motor işlem açamaz"
+                    >
+                      panel kapsamı dışı
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
