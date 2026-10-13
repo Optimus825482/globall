@@ -369,6 +369,7 @@ FOREX_TP_CANCEL_ON_TRAIL_DEFAULT = (
 )
 
 _LAST_GOLD_EXIT_TIME = 0.0
+_LAST_XAU_RADAR_SIGNAL_BAR: Dict[str, int] = {}
 _LAST_BTC_EXIT_TIME = 0.0
 _LAST_CLOSED_DEAL_IDS: set = set()
 
@@ -1595,8 +1596,24 @@ def _resample_5m_to_15m(
     highs: List[float],
     lows: List[float],
     closes: List[float],
+    bar_times: Optional[List[int]] = None,
 ) -> Tuple[List[float], List[float], List[float], List[float]]:
-    """Resample 5-minute candles into 15-minute candles for multi-timeframe analysis."""
+    """Resample only complete 15-minute buckets for multi-timeframe analysis."""
+    if bar_times is not None and len(bar_times) == len(closes):
+        by_time = {int(ts): i for i, ts in enumerate(bar_times)}
+        buckets = sorted({(int(ts) // 900) * 900 for ts in bar_times})
+        o15, h15, l15, c15 = [], [], [], []
+        for bucket in buckets:
+            indices = [by_time.get(bucket + offset) for offset in (0, 300, 600)]
+            if any(i is None for i in indices):
+                continue
+            i0, i1, i2 = indices
+            o15.append(opens[i0])
+            h15.append(max(highs[i0], highs[i1], highs[i2]))
+            l15.append(min(lows[i0], lows[i1], lows[i2]))
+            c15.append(closes[i2])
+        return o15, h15, l15, c15
+
     n = len(closes)
     rem = n % 3
     o15, h15, l15, c15 = [], [], [], []
@@ -1768,6 +1785,7 @@ def _compute_technical_indicators(
     opens: List[float],
     symbol: str,
     include_momentum: bool = True,
+    bar_times: Optional[List[int]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Calculates Multi-Timeframe (15M HTF Trend + 5M LTF Execution) indicators, RSI(14), MACD, ATR, CMO, CCI and composite score.
 
@@ -1799,7 +1817,7 @@ def _compute_technical_indicators(
     last_price = float(c[-1])
 
     # 2. 15M HTF Trend Filter (Resampled from 5M bars)
-    o15, h15, l15, c15 = _resample_5m_to_15m(opens, highs, lows, closes)
+    o15, h15, l15, c15 = _resample_5m_to_15m(opens, highs, lows, closes, bar_times)
     if len(c15) >= 15:
         c15_arr = np.asarray(c15, dtype=float)
         ema_fast_15m = float(_calc_ema(c15_arr, 10)[-1])
@@ -2013,6 +2031,25 @@ def _compute_technical_indicators(
         score = round(max(50.0, min(58.0, 50.0 + abs(bullish_pts - bearish_pts) * 0.1)), 1)
         macd_verdict = f"NÖTR (MTF Uyumsuzluğu | 15M: {htf_trend}, 5M: {'Boğa' if ltf_bullish else 'Ayı'} - Beklemede)"
 
+    # Altında yalnızca kapanmış M5 SuperTrend ile teyit edilen, aynı yöndeki
+    # 15M rejim işlemi açılabilir. Nötr HTF'deki kısa tepki, düşen ana harekette
+    # RADAR'ın BUY üretmesine yol açıyordu. Bu koruma panel ayarından kapatılamaz.
+    direction_guard_reason = ""
+    if symbol.upper() == "XAUUSD" and action in ("BUY", "SELL"):
+        expected_htf = "BULLISH" if action == "BUY" else "BEARISH"
+        expected_st = 1 if action == "BUY" else -1
+        if htf_trend != expected_htf:
+            action = "HOLD"
+            direction_guard_reason = f"Altın yön filtresi: 15M {htf_trend}; {expected_htf} teyidi bekleniyor"
+        elif st_dir != expected_st:
+            action = "HOLD"
+            direction_guard_reason = (
+                "Altın yön filtresi: 5M SuperTrend yönü belirsiz" if st_dir == 0
+                else "Altın yön filtresi: 5M SuperTrend karşı yönde"
+            )
+        if direction_guard_reason:
+            macd_verdict = direction_guard_reason
+
     return {
         "price": last_price,
         "high": float(np.max(h)),
@@ -2040,8 +2077,11 @@ def _compute_technical_indicators(
         "donch_mid_prev": round((max(highs[-21:-1]) + min(lows[-21:-1])) / 2.0, 6) if len(highs) >= 21 else None,
         "trend": trend,
         "action": action,
+        "direction_guard_reason": direction_guard_reason,
         "score": score,
         "htf_trend": htf_trend,
+        "signal_bar_time": int(bar_times[-1]) if bar_times and len(bar_times) == len(closes) else None,
+        "signal_bar_confirmed": bool(bar_times and len(bar_times) == len(closes)),
         "updated_at": time.time(),
     }
 
@@ -2062,13 +2102,37 @@ def _sync_fetch_candles_for_symbol(fx_sym: str, yf_sym: str) -> Optional[Dict[st
                 data = json.loads(resp.read().decode("utf-8"))
                 result = data["chart"]["result"][0]
                 quote = result["indicators"]["quote"][0]
-                opens = [o for o in quote.get("open", []) if o is not None]
-                highs = [h for h in quote.get("high", []) if h is not None]
-                lows = [l for l in quote.get("low", []) if l is not None]
-                closes = [c for c in quote.get("close", []) if c is not None]
+                timestamps = result.get("timestamp") or []
+                raw_opens = quote.get("open", [])
+                raw_highs = quote.get("high", [])
+                raw_lows = quote.get("low", [])
+                raw_closes = quote.get("close", [])
+                now_ts = time.time()
+                bars = []
+                for i, raw_ts in enumerate(timestamps):
+                    if i >= len(raw_opens) or i >= len(raw_highs) or i >= len(raw_lows) or i >= len(raw_closes):
+                        continue
+                    try:
+                        bar_ts = int(raw_ts)
+                        o, h, l, c = raw_opens[i], raw_highs[i], raw_lows[i], raw_closes[i]
+                        if any(v is None for v in (o, h, l, c)) or bar_ts + 300 > now_ts:
+                            continue
+                        o, h, l, c = float(o), float(h), float(l), float(c)
+                        if not all(math.isfinite(v) for v in (o, h, l, c)) or min(o, h, l, c) <= 0:
+                            continue
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    bars.append((bar_ts, o, h, l, c))
+                bars.sort(key=lambda bar: bar[0])
+                bars = bars[-250:]
+                timestamps = [bar[0] for bar in bars]
+                opens = [bar[1] for bar in bars]
+                highs = [bar[2] for bar in bars]
+                lows = [bar[3] for bar in bars]
+                closes = [bar[4] for bar in bars]
                 if len(closes) >= 15:
-                    _CLOSES_CACHE[fx_sym] = closes[-250:]
-                    return _compute_technical_indicators(closes, highs, lows, opens, fx_sym)
+                    _CLOSES_CACHE[fx_sym] = closes
+                    return _compute_technical_indicators(closes, highs, lows, opens, fx_sym, bar_times=timestamps)
         except Exception as exc:
             last_err = exc
             continue
@@ -2228,6 +2292,9 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             high_p = round(max(tech["high"], ask_p), digits)
             low_p = round(min(tech["low"], bid_p), digits)
             atr_val = tech["atr"]
+            direction_guard_reason = str(tech.get("direction_guard_reason", ""))
+            signal_bar_time = tech.get("signal_bar_time")
+            signal_bar_confirmed = bool(tech.get("signal_bar_confirmed", False))
         else:
             score = 50.0
             trend = "NEUTRAL"
@@ -2243,6 +2310,9 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             high_p = round(live_p * 1.002, digits)
             low_p = round(live_p * 0.998, digits)
             atr_val = 15.0 * pip
+            direction_guard_reason = ""
+            signal_bar_time = None
+            signal_bar_confirmed = False
 
         _TICK_CACHE[sym] = {
             "symbol": sym,
@@ -2272,6 +2342,9 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "cci": cci,
             "adx": adx,
             "supertrend_dir": st_dir,
+            "direction_guard_reason": direction_guard_reason,
+            "signal_bar_time": signal_bar_time,
+            "signal_bar_confirmed": signal_bar_confirmed,
             "atr": atr_val,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "updated_at": now,
@@ -2900,6 +2973,9 @@ async def get_forex_radar(use_cache: bool = True):
             "adx": t.get("adx", 25.0),
             "supertrend_dir": st_dir,
             "htf_trend": t.get("htf_trend", "NEUTRAL"),
+            "direction_guard_reason": t.get("direction_guard_reason", ""),
+            "signal_bar_time": t.get("signal_bar_time"),
+            "signal_bar_confirmed": bool(t.get("signal_bar_confirmed", False)),
             "pip_target": spec["tp_pips"],
             "stop_loss_pips": spec["sl_pips"],
             "risk_reward": f"1:{round(spec['tp_pips'] / spec['sl_pips'], 2)}" if spec["sl_pips"] > 0 else "1:1.83",
@@ -4270,7 +4346,7 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     global _LAST_GOLD_EXIT_TIME
     action = str(gold_tick.get("action", "HOLD"))
     if action not in ("BUY", "SELL"):
-        return "yön teyidi oluşmadı — gözlemde"
+        return str(gold_tick.get("direction_guard_reason") or "yön teyidi oluşmadı — gözlemde")
     reasons: List[str] = []
     active_count = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
     if active_count >= _AUTO_SETTINGS.max_open_positions:
@@ -5401,6 +5477,37 @@ async def _forex_auto_paper_loop():
                 if new_action not in ("BUY", "SELL"):
                     continue
 
+                # XAU ana RADAR sinyali yalnızca zaman damgalı, kapanmış M5
+                # mumlarından üretilebilir. Stratejiye özel giriş kolları kendi
+                # mum doğrulamalarını kullanır ve bu koşuldan etkilenmez.
+                if sym == "XAUUSD" and not _c_src and not bool(cand.get("signal_bar_confirmed", False)):
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get("XAUUSD_unconfirmed", 0.0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME["XAUUSD_unconfirmed"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            "[XAU/USD][M1/M5 Çoklu Radar] Kapanmış M5 mum zaman damgası yok — BUY/SELL açılmadı.",
+                            symbol=sym,
+                            strategy="M1_M5_RADAR_SCALPER",
+                            strategy_label="M1/M5 Çoklu Radar",
+                        )
+                    continue
+
+                if sym == "XAUUSD" and not _c_src:
+                    signal_bar_time = int(cand.get("signal_bar_time") or 0)
+                    last_used_bar = int(_LAST_XAU_RADAR_SIGNAL_BAR.get(sym, 0))
+                    if signal_bar_time <= last_used_bar:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get("XAUUSD_same_bar", 0.0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME["XAUUSD_same_bar"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                "[XAU/USD][M1/M5 Çoklu Radar] Aynı kapanmış M5 sinyal mumu tekrar kullanılamaz — yeni giriş bekleniyor.",
+                                symbol=sym,
+                                strategy="M1_M5_RADAR_SCALPER",
+                                strategy_label="M1/M5 Çoklu Radar",
+                                metadata={"signal_bar_time": signal_bar_time, "last_used_signal_bar_time": last_used_bar},
+                            )
+                        continue
+
                 # Seri-SL ve Yön Bazlı Seri Zarar Soğuması: sembol veya yön ardışık kayıplardan sonra
                 # YENİ giriş almaz (flip dahil); açık pozisyon yönetimi aynen sürer.
                 if _AUTO_SETTINGS.loss_streak_limit > 0:
@@ -6077,20 +6184,46 @@ async def _forex_auto_paper_loop():
                     _invalidate_status_cache()
 
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
+                if sym == "XAUUSD" and not _c_src:
+                    _LAST_XAU_RADAR_SIGNAL_BAR[sym] = int(cand.get("signal_bar_time") or 0)
 
                 actual_risk_usd = round(mt5_lots * sl_pips * pip_val, 2)
                 _strat_name = strategy_name_for(cand.get("entry_source"))
                 _strat_lbl = strategy_display_label(cand.get("entry_source"))
+                signal_bar_time = cand.get("signal_bar_time")
+                signal_bar_context = ""
+                if signal_bar_time:
+                    signal_bar_local = datetime.datetime.fromtimestamp(
+                        int(signal_bar_time), TZ_UTC3
+                    ).strftime("%H:%M:%S UTC+3")
+                    st_label = "BOĞA" if int(cand.get("supertrend_dir", 0)) > 0 else (
+                        "AYI" if int(cand.get("supertrend_dir", 0)) < 0 else "BELİRSİZ"
+                    )
+                    signal_bar_context = (
+                        f" | Teyit: 15M {cand.get('htf_trend', 'NA')}, "
+                        f"5M ST {st_label}, kapanmış mum açılışı {signal_bar_local}"
+                    )
                 _log_auto_decision(
                     "ENTRY",
-                    f"⚡ [İŞLEM AÇILDI] [{_strat_lbl}] {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f})",
+                    f"⚡ [İŞLEM AÇILDI] [{_strat_lbl}] {mt5_lots} Lot {direction} {sym} @ {entry_p} | TP: +{tp_pips}p | SL: -{sl_pips}p | Risk: ${actual_risk_usd:.2f} (Skor: {cand['score']:.0f}){signal_bar_context}",
                     symbol=sym,
                     strategy=_strat_name,
                     strategy_label=_strat_lbl,
                     metadata={"lots": mt5_lots, "direction": direction, "score": cand["score"],
                               "risk_usd": actual_risk_usd, "strategy": _strat_name,
                               "strategy_label": _strat_lbl,
-                              "entry_source": cand.get("entry_source", "")},
+                              "entry_source": cand.get("entry_source", ""),
+                              "signal_bar_time": cand.get("signal_bar_time"),
+                              "signal_bar_confirmed": (
+                                  bool(cand.get("signal_bar_confirmed", False))
+                                  if not cand.get("entry_source") else None
+                              ),
+                              "htf_trend": cand.get("htf_trend"),
+                              "supertrend_dir": cand.get("supertrend_dir"),
+                              "rsi_m5": cand.get("rsi_15m"),
+                              "adx": cand.get("adx"),
+                              "macd_hist": cand.get("macd_hist"),
+                              "direction_guard_reason": cand.get("direction_guard_reason", "")},
                 )
 
                 # Döngü başına en fazla 1 işlem aç (ani yığılmayı önle)
