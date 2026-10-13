@@ -375,33 +375,22 @@ export default function ForexCalendarAlertModal() {
         </div>
 
         {/* Aksiyon Butonları */}
-        <div className="pt-2 border-t border-bunker-800 flex items-center justify-between gap-2 flex-wrap">
-          <a
-            href="https://www.investing.com/economic-calendar"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-all flex items-center gap-1"
+        <div className="pt-2 border-t border-bunker-800 flex items-center justify-end gap-2 flex-wrap">
+          <Link
+            href="/"
+            onClick={handleClose}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition-all"
           >
-            <span>🌐</span> Investing.com Takvimi ↗
-          </a>
+            Senaryoyu İncele →
+          </Link>
 
-          <div className="flex items-center gap-2">
-            <Link
-              href="/"
-              onClick={handleClose}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition-all"
-            >
-              Senaryoyu İncele →
-            </Link>
-
-            <button
-              type="button"
-              onClick={handleClose}
-              className="px-4 py-1.5 rounded-xl bg-bunker-900 border border-bunker-700 hover:border-white text-white text-xs font-bold transition-all"
-            >
-              Anladım / Kapat
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="px-4 py-1.5 rounded-xl bg-bunker-900 border border-bunker-700 hover:border-white text-white text-xs font-bold transition-all"
+          >
+            Anladım / Kapat
+          </button>
         </div>
       </div>
     </div>

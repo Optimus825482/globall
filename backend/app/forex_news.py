@@ -640,79 +640,153 @@ def higher_is_bullish_for_event(title: str) -> bool:
     return True
 
 
+def format_pair_directional_impacts(currency: str, symbols: List[str], is_bullish: bool) -> str:
+    """Para biriminin güçlenmesi veya zayıflamasına göre paritelerin yönünü (↑ Yükselir / ↓ Düşer) net olarak üretir."""
+    c = (currency or "USD").upper().strip()
+    if not symbols:
+        symbols = map_symbols_for_event(c, "")
+
+    impacts: List[str] = []
+    seen: set = set()
+
+    for s in symbols[:4]:
+        sym = s.upper().strip()
+        if sym in seen:
+            continue
+        seen.add(sym)
+
+        # Sembol açıklayıcı etiketleri
+        name_extra = ""
+        if sym == "XAUUSD":
+            name_extra = " (Altın)"
+        elif sym == "BTCUSD":
+            name_extra = " (Bitcoin)"
+        elif sym == "USOIL":
+            name_extra = " (Ham Petrol)"
+
+        # Emtia ve Kripto özel kuralları
+        if sym == "USOIL":
+            if c == "USD":
+                direction = "↓ Düşer" if is_bullish else "↑ Yükselir"
+            elif c == "CAD":
+                direction = "↑ Yükselir" if is_bullish else "↓ Düşer"
+            else:
+                direction = "↓ Düşer" if is_bullish else "↑ Yükselir"
+            impacts.append(f"{sym}{name_extra} {direction}")
+            continue
+
+        if sym == "XAUUSD" and c == "AUD":
+            direction = "↑ Desteklenir" if is_bullish else "↓ Gevşer"
+            impacts.append(f"{sym}{name_extra} {direction}")
+            continue
+
+        # Standart 6 karakterli pariteler (BASE + QUOTE)
+        if len(sym) == 6:
+            base = sym[:3]
+            quote = sym[3:6]
+            if c == base:
+                direction = "↑ Yükselir" if is_bullish else "↓ Düşer"
+                impacts.append(f"{sym}{name_extra} {direction}")
+            elif c == quote:
+                direction = "↓ Düşer" if is_bullish else "↑ Yükselir"
+                impacts.append(f"{sym}{name_extra} {direction}")
+            else:
+                # Dolaylı korelasyon
+                direction = "↓ Düşer" if is_bullish else "↑ Yükselir"
+                impacts.append(f"{sym}{name_extra} {direction}")
+        else:
+            direction = "↓ Düşer" if is_bullish else "↑ Yükselir"
+            impacts.append(f"{sym}{name_extra} {direction}")
+
+    return " · ".join(impacts) if impacts else (f"{c}↑ Primlenir" if is_bullish else f"{c}↓ Zayıflar")
+
+
 def generate_event_scenario(title: str, country: str, currency: str, symbols: List[str]) -> Dict[str, str]:
     """Her ekonomik olay için 'Ne Olursa Ne Olur?' senaryosu üretir."""
-    sym_str = ", ".join(symbols[:3])
+    c = (currency or "USD").upper().strip()
+    bucket = classify_event_bucket(title)
 
-    if classify_event_bucket(title) == "rate":
+    if bucket == "rate":
+        bull_impacts = format_pair_directional_impacts(c, symbols, True)
+        bear_impacts = format_pair_directional_impacts(c, symbols, False)
         return {
-            "title": f"{currency} Faiz & Para Politikası Senaryosu",
-            "bullish_trigger": "Faiz Beklenti Üzeri Kalırsa / Şahin Açıklama",
-            "bullish_outcome": f"{currency} para birimi hızla primlenir. Karşıt pariteler ve Altın (XAUUSD) düşüşe geçer.",
-            "bearish_trigger": "Faiz İndirimi Gelirse / Güvercin Açıklama",
-            "bearish_outcome": f"{currency} değer kaybeder. {sym_str} üzerinde güçlü rahatlama yükselişi başlar.",
+            "title": f"{c} Faiz & Para Politikası Senaryosu",
+            "bullish_trigger": "Faiz Beklenti Üzeri / Şahin Açıklama",
+            "bullish_outcome": f"{c} Güçlenir ({c}↑) ➔ {bull_impacts}",
+            "bearish_trigger": "Faiz İndirimi / Güvercin Açıklama",
+            "bearish_outcome": f"{c} Zayıflar ({c}↓) ➔ {bear_impacts}",
             "scalper_tip": "Açıklanma dakikasında spread 2-3 katına çıkabilir; fitil oluştuktan 30 saniye sonra kırılımla girin.",
-            "summary_short": f"Şahin/Yüksek: {currency}↑ / Altın↓ | Güvercin/Düşük: Altın↑ / {currency}↓",
+            "summary_short": f"Şahin/Yüksek: {c}↑ | Güvercin/Düşük: {c}↓",
         }
-    elif classify_event_bucket(title) == "inflation":
+    elif bucket == "inflation":
+        bull_impacts = format_pair_directional_impacts(c, symbols, True)
+        bear_impacts = format_pair_directional_impacts(c, symbols, False)
         return {
-            "title": f"{currency} Enflasyon Verisi Senaryosu",
-            "bullish_trigger": "Enflasyon Beklenti Üstü Çıkarsa (Sıcak Veri)",
-            "bullish_outcome": f"Sıkılaşma/faiz koruma fiyatlanır. {currency} güçlenir, XAUUSD ve risk varlıkları baskılanır.",
-            "bearish_trigger": "Enflasyon Beklenti Altı Kalırsa (Soğuma)",
-            "bearish_outcome": f"Faiz indirim kapısı aralanır. {currency} değer kaybeder, Altın (XAUUSD) ve {sym_str} sert yükselir.",
+            "title": f"{c} Enflasyon Verisi Senaryosu",
+            "bullish_trigger": "Enflasyon Beklenti Üstü (Sıcak Veri / Yüksek TÜFE)",
+            "bullish_outcome": f"Sıkılaşma fiyatlanır, {c} Güçlenir ({c}↑) ➔ {bull_impacts}",
+            "bearish_trigger": "Enflasyon Beklenti Altı (Soğuma / Düşük TÜFE)",
+            "bearish_outcome": f"Faiz indirim kapısı aralanır, {c} Zayıflar ({c}↓) ➔ {bear_impacts}",
             "scalper_tip": "Veri anında ters yöne emir yazmayın; ilk 1 dakikalık mum kapanış yönünde momentum scalping yapın.",
-            "summary_short": f"Sıcak Veri (>): {currency}↑ / Altın↓ | Soğuk Veri (<): Altın↑ / {currency}↓",
+            "summary_short": f"Sıcak Veri: {c}↑ | Soğuk Veri: {c}↓",
         }
-    elif classify_event_bucket(title) == "employment":
+    elif bucket == "employment":
+        bull_impacts = format_pair_directional_impacts(c, symbols, True)
+        bear_impacts = format_pair_directional_impacts(c, symbols, False)
         return {
-            "title": f"{currency} İstihdam & İş Gücü Senaryosu",
-            "bullish_trigger": "İstihdam Beklenti Üstü / Düşük İşsizlik",
-            "bullish_outcome": f"Ekonomi güçlü algısıyla {currency} alım görür. Karşıt pariteler geri çekilir.",
-            "bearish_trigger": "İstihdam Beklenti Altı / Yüksek İşsizlik",
-            "bearish_outcome": f"Ekonomik yavaşlama endişesiyle {currency} satılır; XAUUSD ve diğer varlıklar fırlar.",
+            "title": f"{c} İstihdam & İş Gücü Senaryosu",
+            "bullish_trigger": "İstihdam Beklenti Üstü / Düşük İşsizlik (Güçlü Ekonomi)",
+            "bullish_outcome": f"Güçlü ekonomiyle {c} Güçlenir ({c}↑) ➔ {bull_impacts}",
+            "bearish_trigger": "İstihdam Beklenti Altı / Yüksek İşsizlik (Zayıflama)",
+            "bearish_outcome": f"Yavaşlama endişesiyle {c} Zayıflar ({c}↓) ➔ {bear_impacts}",
             "scalper_tip": "İstihdam dalgası 10-15 dakika sürebilir; stop mesafesini normalin 1.5 katı tutun.",
-            "summary_short": f"Güçlü İstihdam: {currency}↑ / Altın↓ | Zayıf İstihdam: Altın↑ / {currency}↓",
+            "summary_short": f"Güçlü İstihdam: {c}↑ | Zayıf İstihdam: {c}↓",
         }
-    elif classify_event_bucket(title) == "oil_stocks":
+    elif bucket == "oil_stocks":
         return {
             "title": "Ham Petrol Stok Senaryosu",
-            "bullish_trigger": "Stoklarda Beklenmedik Düşüş (Arz Kısıtı)",
-            "bullish_outcome": "USOIL (Ham Petrol) yukarı sıçrar. USDCAD düşüş eğilimine girer.",
+            "bullish_trigger": "Stoklarda Beklenmedik Düşüş (Arz Daralması)",
+            "bullish_outcome": "Arz kısıtıyla petrol primlenir ➔ USOIL (Ham Petrol) ↑ Yükselir · USDCAD ↓ Düşer",
             "bearish_trigger": "Stoklarda Beklenti Üstü Artış (Talep Yetersizliği)",
-            "bearish_outcome": "USOIL sert satış yer. USDCAD yukarı tepki verir.",
+            "bearish_outcome": "Arz fazlasıyla petrol satılır ➔ USOIL (Ham Petrol) ↓ Düşer · USDCAD ↑ Yükselir",
             "scalper_tip": "Stok verisi açıklandıktan 30 saniye sonra trend yönüne stoplu katılın.",
             "summary_short": "Stok Düşüşü: USOIL↑ / USDCAD↓ | Stok Artışı: USOIL↓ / USDCAD↑",
         }
-    elif classify_event_bucket(title) == "gdp":
+    elif bucket == "gdp":
+        bull_impacts = format_pair_directional_impacts(c, symbols, True)
+        bear_impacts = format_pair_directional_impacts(c, symbols, False)
         return {
-            "title": f"{currency} Büyüme (GSYH) Senaryosu",
-            "bullish_trigger": "GSYH Beklenti Üzeri Çıkarsa",
-            "bullish_outcome": f"Büyüme ivmesiyle {currency} güçlenir, hisse endeksleri ve {sym_str} yön bulur.",
-            "bearish_trigger": "GSYH Beklenti Altı Kalırsa",
-            "bearish_outcome": f"Resesyon riskiyle {currency} baskılanır, güvenli limanlara kaçış hızlanır.",
+            "title": f"{c} Büyüme (GSYH) Senaryosu",
+            "bullish_trigger": "GSYH Beklenti Üzeri Çıkarsa (Güçlü Büyüme)",
+            "bullish_outcome": f"Büyüme ivmesiyle {c} Güçlenir ({c}↑) ➔ {bull_impacts}",
+            "bearish_trigger": "GSYH Beklenti Altı Kalırsa (Resesyon Riski)",
+            "bearish_outcome": f"Resesyon riskiyle {c} Zayıflar ({c}↓) ➔ {bear_impacts}",
             "scalper_tip": "Öncü veriler nihai verilerden daha yüksek oynaklık yaratır.",
-            "summary_short": f"Güçlü GSYH: {currency}↑ | Zayıf GSYH: {currency}↓",
+            "summary_short": f"Güçlü GSYH: {c}↑ | Zayıf GSYH: {c}↓",
         }
-    elif classify_event_bucket(title) == "pmi":
+    elif bucket == "pmi":
+        bull_impacts = format_pair_directional_impacts(c, symbols, True)
+        bear_impacts = format_pair_directional_impacts(c, symbols, False)
         return {
-            "title": f"{currency} PMI Satın Alma Yöneticileri Senaryosu",
+            "title": f"{c} PMI Satın Alma Yöneticileri Senaryosu",
             "bullish_trigger": "PMI > 50 ve Beklenti Üzeri (Genişleme)",
-            "bullish_outcome": f"Sektörel canlılık teyit edilir, {currency} alıcı bulur.",
+            "bullish_outcome": f"Sektörel canlılıkla {c} Güçlenir ({c}↑) ➔ {bull_impacts}",
             "bearish_trigger": "PMI < 50 veya Beklenti Altı (Daralma)",
-            "bearish_outcome": f"Daralma endişesiyle {currency} geriler, savunmacı varlıklar prim yapar.",
+            "bearish_outcome": f"Daralma endişesiyle {c} Zayıflar ({c}↓) ➔ {bear_impacts}",
             "scalper_tip": "PMI verilerinde ilk 5 dakikalık hareket genellikle trend oluşturur.",
-            "summary_short": f"PMI > 50: {currency}↑ | PMI < 50: {currency}↓",
+            "summary_short": f"PMI > 50: {c}↑ | PMI < 50: {c}↓",
         }
     else:
+        bull_impacts = format_pair_directional_impacts(c, symbols, True)
+        bear_impacts = format_pair_directional_impacts(c, symbols, False)
         return {
-            "title": f"{currency} Makro Gösterge Senaryosu",
+            "title": f"{c} Makro Gösterge Senaryosu",
             "bullish_trigger": "Açıklanan > Beklenti (Pozitif Sürpriz)",
-            "bullish_outcome": f"{currency} varlıkları primlenir. {sym_str} üzerinde volatilite artar.",
+            "bullish_outcome": f"{c} Değer Kazanır ({c}↑) ➔ {bull_impacts}",
             "bearish_trigger": "Açıklanan < Beklenti (Negatif Sürpriz)",
-            "bearish_outcome": f"{currency} üzerinde kâr satışı gelir, karşıt pariteler destek bulur.",
+            "bearish_outcome": f"{c} Değer Kaybeder ({c}↓) ➔ {bear_impacts}",
             "scalper_tip": "Veri açıklandığında seans hacmini kontrol edin; düşük hacimde sahte kırılımlar olabilir.",
-            "summary_short": f"Beklenti Üzeri: {currency}↑ | Beklenti Altı: {currency}↓",
+            "summary_short": f"Beklenti Üzeri: {c}↑ | Beklenti Altı: {c}↓",
         }
 
 
@@ -1609,6 +1683,12 @@ def _update_event_dynamic_fields(items: List[Dict[str, Any]]) -> None:
         has_previous = bool(str(ev.get("previous") or "").strip()) and ev.get("previous") != "—"
         has_actual = bool(str(ev.get("actual") or "").strip()) and ev.get("actual") != "—"
         ev["has_data"] = bool(has_forecast or has_previous)
+        orig_title = str(ev.get("original_title") or ev.get("title") or "")
+        country = str(ev.get("country") or ev.get("country_name") or "US")
+        currency = str(ev.get("currency") or country)
+        symbols = ev.get("affected_symbols") or map_symbols_for_event(currency, orig_title)
+        ev["scenario"] = generate_event_scenario(orig_title, country, currency, symbols)
+
         ev["outcome"] = (
             evaluate_event_outcome(
                 str(ev.get("original_title") or ev.get("title") or ""),

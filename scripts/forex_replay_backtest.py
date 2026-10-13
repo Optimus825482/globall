@@ -289,6 +289,12 @@ TUN_MODE_SL_ATR = 2.0
 TUN_MODE_TP_ATR = 0.0           # 0 = sabit TP yok → --chandelier ile trail-öncelikli çıkış
 TUN_SQUEEZE_BB_PCT = 20.0       # bandwidth bu persentilin altındaysa "sıkışma" sayılır
 TUN_SQUEEZE_BB_PERIOD = 20
+# Bollinger⊂Keltner sıkışma kırılımı (TTM/Squeeze-Momentum; John Carter)
+TUN_SQZ_KC_BB_MULT = 2.0        # Bollinger std-dev çarpanı
+TUN_SQZ_KC_MULT = 1.5           # Keltner ATR çarpanı
+TUN_SQZ_KC_PERIOD = 20          # BB/Keltner periyodu
+TUN_SQZ_KC_MOM_MIN = 0.0        # momentum |.| eşiği (>0 = momentum onayı şart)
+TUN_SQZ_KC_TP_R = 2.0           # TP = SL × bu R katı (0 = sabit TP yok → trail)
 TUN_NR7_N = 7                   # NR7: son 7 barın en dar aralığı
 TUN_NR7_ADX_MIN = 18.0
 TUN_ORB_BOX_START_H = 7         # London kutusu başlangıç saati (UTC)
@@ -415,6 +421,82 @@ def _bb_bandwidth_series(closes: List[float], period: int = 20, mult: float = 2.
 
 # Squeeze modu bandwidth serisi önbelleği: sembol → tam seri (her barda yeniden hesaplamayı önler)
 _BB_BW_CACHE: Dict[str, List[float]] = {}
+
+# Keltner/Squeeze-Momentum serisi önbelleği: sembol → (bb_up, bb_lo, kc_up, kc_lo, kc_mid, mom)
+_SQZ_KC_CACHE: Dict[str, Any] = {}
+
+
+def _wilder_ema_series(vals: List[float], period: int) -> List[float]:
+    """Wilder yumuşatmalı EMA — klasik Keltner Kanalı'nda (20,1.5) kullanılan form."""
+    if not vals:
+        return []
+    k = 1.0 / period
+    seed = sum(vals[:period]) / min(period, len(vals))
+    out = [seed] * min(period, len(vals))
+    e = seed
+    for v in vals[period:]:
+        e += k * (v - e)
+        out.append(e)
+    return out
+
+
+def _squeeze_kc_series(bars: List[Tuple], period: int = 20, bb_mult: float = 2.0,
+                       kc_mult: float = 1.5) -> Dict[str, List[float]]:
+    """Bollinger ⊂ Keltner sıkışma serisi + LazyBear squeeze momentum.
+
+    BB(20,2 SMA) üst/alt, Keltner(20,1.5 Wilder-EMA ± mult×ATR) üst/alt/orta ve
+    momentum (close − midRange) doğrusal regresyonu. Sıkışma = bb_up < kc_up VE bb_lo > kc_lo.
+    i. değerler yalnız i ve öncesi barlardan türetilir (look-ahead yok).
+    """
+    n = len(bars)
+    closes = [b[4] for b in bars]
+    bb_up = [0.0] * n
+    bb_lo = [0.0] * n
+    # SMA(20) ± 2σ kayan pencere
+    s = s2 = 0.0
+    for i in range(n):
+        s += closes[i]
+        s2 += closes[i] * closes[i]
+        if i >= period:
+            s -= closes[i - period]
+            s2 -= closes[i - period] * closes[i - period]
+        if i >= period - 1:
+            m = s / period
+            var = max(0.0, s2 / period - m * m)
+            sd = var ** 0.5
+            bb_up[i] = m + bb_mult * sd
+            bb_lo[i] = m - bb_mult * sd
+    # TR → Wilder • ATR serisi
+    trs = []
+    prev_c = closes[0]
+    for b in bars:
+        trs.append(max(b[2] - b[3], abs(b[2] - prev_c), abs(b[3] - prev_c)))
+        prev_c = b[4]
+    if len(trs) >= period:
+        seed = sum(trs[:period]) / period
+        atr = [seed] * period
+        a = seed
+        for i in range(period, len(trs)):
+            a = (a * (period - 1) + trs[i]) / period
+            atr.append(a)
+        atr = atr[:n]
+    else:
+        atr = trs[:]
+    kc_mid = _wilder_ema_series(closes, period)
+    # Momentum = close − (en yüksek high + en düşük low + SMA)/3 son `period` barda
+    mom = [0.0] * n
+    for i in range(period - 1, n):
+        win = bars[i - period + 1:i + 1]
+        hi = max(b[2] for b in win)
+        lo = min(b[3] for b in win)
+        sma = sum(b[4] for b in win) / period
+        mom[i] = closes[i] - (hi + lo + sma) / 3.0
+    return {
+        "bb_up": bb_up, "bb_lo": bb_lo, "kc_mid": kc_mid,
+        "kc_up": [kc_mid[i] + kc_mult * atr[i] for i in range(n)],
+        "kc_lo": [kc_mid[i] - kc_mult * atr[i] for i in range(n)],
+        "mom": mom,
+    }
 
 
 def _sr_ema200_series(closes: List[float], cache_key: str) -> List[float]:
@@ -748,6 +830,54 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
         if ex is None:
             return None
         return {"action": action, "exits": ex}
+
+    if TUN_ENTRY_MODE == "squeeze_kc":
+        # Bollinger⊂Keltner sıkışma kırılımı (TTM / Squeeze-Momentum; John Carter).
+        # Sıkışma: BB üst < Keltner üst VE BB alt > Keltner alt. Kırılım: sıkışma sonrası
+        # BB bandının DIŞINDA kapanış (fitil değil gövde). Yön: bandın çıktığı taraf —
+        # momentum (close−midRange regresyonu) aynı işaretliyse teyitli.
+        period = TUN_SQZ_KC_PERIOD
+        if ci < period + 30:
+            return None
+        ser = _SQZ_KC_CACHE.get(sym)
+        if ser is None or len(ser.get("bb_up", [])) != len(bars):
+            ser = _squeeze_kc_series(bars, period, TUN_SQZ_KC_BB_MULT, TUN_SQZ_KC_MULT)
+            _SQZ_KC_CACHE[sym] = ser
+        j = ci - 1
+        bb_u, bb_l = ser["bb_up"][j], ser["bb_lo"][j]
+        kc_u, kc_l = ser["kc_up"][j], ser["kc_lo"][j]
+        if bb_u <= 0 or bb_l <= 0:
+            return None
+        # Sıkışma bu barda mı bitti? Bir önceki barda sıkışma vardı, şimdi bant dışına çıktı.
+        jp = ci - 2
+        squeezed_prev = (ser["bb_up"][jp] < ser["kc_up"][jp]) and (ser["bb_lo"][jp] > ser["kc_lo"][jp])
+        released = (bb_u >= kc_u) or (bb_l <= kc_l)
+        if not (squeezed_prev and released):
+            return None
+        c = bars[j][4]
+        mom = ser["mom"][j]
+        if c >= bb_u and mom >= TUN_SQZ_KC_MOM_MIN:
+            action = "BUY"
+        elif c <= bb_l and mom <= -TUN_SQZ_KC_MOM_MIN:
+            action = "SELL"
+        else:
+            return None
+        day = int(ts // 86400)
+        key = (sym, day, action)
+        if MODE_DAY_STATE.get(key, 0) >= 2:
+            return None
+        MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+        # SL: Keltner orta hattının hemen arkası (spec). TP: yok → chandelier/ATR trailing.
+        pip = pip_size
+        sl_price = abs(c - ser["kc_mid"][j])
+        sl_pips = round(sl_price / pip, 1) if pip > 0 else 0.0
+        if sl_pips <= 0:
+            ex = _mode_atr_exits()
+            if ex is None:
+                return None
+            return {"action": action, "exits": ex}
+        tp = TUN_SQZ_KC_TP_R * sl_pips
+        return {"action": action, "exits": {"sl_pips": sl_pips, "tp_pips": round(tp, 1)}}
 
     if TUN_ENTRY_MODE == "nr7":
         # Crabel NR7: son N barın EN DAR aralıklı barı; ardından o barın high/low kırılımı.
@@ -3350,7 +3480,7 @@ def main():
     parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
-    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk", "london_sign"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
+    parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk", "london_sign", "squeeze_kc"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
     parser.add_argument("--lb-entry-end", type=int, default=11, help="London breakout tetik penceresi bitiş saati (UTC)")
     parser.add_argument("--lb-sl-frac", type=float, default=0.5, help="LB SL = kutu yüksekliği × bu oran")
@@ -3385,6 +3515,11 @@ def main():
     parser.add_argument("--mode-tp-atr", type=float, default=0.0, help="Yeni modlar TP (× ATR; 0 = sabit TP yok → --chandelier trailing çıkar)")
     parser.add_argument("--squeeze-bb-pct", type=float, default=20.0, help="Squeeze modu: bandwidth persentil eşiği (alt = sıkışma)")
     parser.add_argument("--squeeze-bb-period", type=int, default=20, help="Squeeze modu Bollinger periyodu")
+    parser.add_argument("--sqz-kc-mult", type=float, default=1.5, help="squeeze_kc: Keltner ATR çarpanı (spec 1.5)")
+    parser.add_argument("--sqz-kc-bb-mult", type=float, default=2.0, help="squeeze_kc: Bollinger std-dev çarpanı (spec 2.0)")
+    parser.add_argument("--sqz-kc-period", type=int, default=20, help="squeeze_kc: BB/Keltner periyodu (spec 20)")
+    parser.add_argument("--sqz-kc-mom-min", type=float, default=0.0, help="squeeze_kc: momentum |.| onay eşiği (0 = kapalı)")
+    parser.add_argument("--sqz-kc-tp-r", type=float, default=2.0, help="squeeze_kc: TP = SL × bu R katı (0 = trail)")
     parser.add_argument("--nr7-n", type=int, default=7, help="NR7 modu: en dar aralık penceresi (bar)")
     parser.add_argument("--nr7-adx-min", type=float, default=18.0, help="NR7 modu ADX eşiği (0 = kapalı)")
     parser.add_argument("--orb-box-start", type=int, default=7, help="ORB kutusu başlangıç saati UTC (London)")
@@ -3617,11 +3752,17 @@ def main():
     global TUN_MODE_SL_ATR, TUN_MODE_TP_ATR, TUN_SQUEEZE_BB_PCT, TUN_SQUEEZE_BB_PERIOD
     global TUN_NR7_N, TUN_NR7_ADX_MIN, TUN_ORB_BOX_START_H, TUN_ORB_BOX_END_H
     global TUN_ORB_ENTRY_START_H, TUN_ORB_ENTRY_END_H, TUN_ORB_MIN_ATR, TUN_ORB_MAX_ATR
-    global TUN_ORB_SL_FRAC, TUN_ORB_TP_R
+    global TUN_ORB_SL_FRAC, TUN_ORB_TP_R, TUN_SQZ_KC_MULT, TUN_SQZ_KC_BB_MULT
+    global TUN_SQZ_KC_PERIOD, TUN_SQZ_KC_MOM_MIN, TUN_SQZ_KC_TP_R
     TUN_MODE_SL_ATR = args.mode_sl_atr
     TUN_MODE_TP_ATR = args.mode_tp_atr
     TUN_SQUEEZE_BB_PCT = args.squeeze_bb_pct
     TUN_SQUEEZE_BB_PERIOD = args.squeeze_bb_period
+    TUN_SQZ_KC_MULT = args.sqz_kc_mult
+    TUN_SQZ_KC_BB_MULT = args.sqz_kc_bb_mult
+    TUN_SQZ_KC_PERIOD = args.sqz_kc_period
+    TUN_SQZ_KC_MOM_MIN = args.sqz_kc_mom_min
+    TUN_SQZ_KC_TP_R = args.sqz_kc_tp_r
     TUN_NR7_N = args.nr7_n
     TUN_NR7_ADX_MIN = args.nr7_adx_min
     TUN_ORB_BOX_START_H = args.orb_box_start

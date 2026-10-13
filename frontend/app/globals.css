@@ -38,7 +38,8 @@ main, .content-shell, .content-shell > *, .page-shell, .card, .panel, .ui-card {
 .topbar-kicker { color: rgb(100 116 139); font: 600 .58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; }
 .topbar-title { margin-top: .3rem; color: white; font: 600 .9rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .topbar-status { display: flex; align-items: center; gap: .5rem; color: rgb(148 163 184); font: 600 .62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; }
-.content-shell { padding: 1.5rem; }
+.content-shell { padding: 0.85rem; }
+@media (min-width: 640px) { .content-shell { padding: 1.5rem; } }
 @media (min-width: 1024px) { .content-shell { padding: 2rem; } }
 .section-tabs { display: flex; gap: .35rem; overflow-x: auto; padding: .35rem; border: 1px solid rgb(31 48 80 / .8); border-radius: .85rem; background: rgb(12 19 34 / .65); box-shadow: 0 8px 24px rgb(2 6 23 / .25), inset 0 1px rgb(255 255 255 / .05); scrollbar-width: none; }
 .section-tabs::-webkit-scrollbar { display: none; }
@@ -1187,4 +1188,29 @@ html.light ::-webkit-scrollbar-thumb {
 html.light ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+/* ============================================================================
+   12. EKONOMİK TAKVİM KRİTİK VERİ SAĞDAN SOLA KAYAN BANT (MARQUEE)
+   ============================================================================ */
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: ticker-scroll 24s linear infinite;
+}
+
+.animate-ticker:hover,
+.animate-ticker:active {
+  animation-play-state: paused;
+}
+
 

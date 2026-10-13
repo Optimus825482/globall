@@ -764,3 +764,27 @@ def test_dynamic_fields_outcome_without_date_iso():
     assert empty["has_data"] is False
     assert empty["outcome"] is None
 
+
+def test_directional_scenarios_are_clear_and_unambiguous():
+    """Senaryolarda 'volatilite artar' gibi belirsiz ifadeler yerine net yön okları ve yükselir/düşer bulunmalıdır."""
+    from app.forex_news import generate_event_scenario, format_pair_directional_impacts
+
+    # USD Makro Göstergesi
+    scenario = generate_event_scenario(
+        "Ticaret Dengesi", "ABD", "USD", ["XAUUSD", "EURUSD", "BTCUSD", "USDJPY"]
+    )
+    # Volatilite artar gibi muğlak ifadeler olmamalı
+    assert "volatilite artar" not in scenario["bullish_outcome"].lower()
+    assert "volatilite artar" not in scenario["bearish_outcome"].lower()
+
+    # Net yön ifadeleri bulunmalı
+    assert "XAUUSD (Altın) ↓ Düşer" in scenario["bullish_outcome"]
+    assert "EURUSD ↓ Düşer" in scenario["bullish_outcome"]
+    assert "USDJPY ↑ Yükselir" in scenario["bullish_outcome"]
+
+    # Bearish (USD zayıflar) yönleri
+    assert "XAUUSD (Altın) ↑ Yükselir" in scenario["bearish_outcome"]
+    assert "EURUSD ↑ Yükselir" in scenario["bearish_outcome"]
+    assert "USDJPY ↓ Düşer" in scenario["bearish_outcome"]
+
+

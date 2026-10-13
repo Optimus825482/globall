@@ -7,6 +7,7 @@ import TopBar from "./TopBar";
 import BottomNav from "./BottomNav";
 import ForexRadarModal from "../forex/components/ForexRadarModal";
 import ForexCalendarAlertModal from "../forex/components/ForexCalendarAlertModal";
+import ForexEventTickerBanner from "./ForexEventTickerBanner";
 import { reconcilePushSubscription } from "../lib/push";
 import { useExchangeProvider } from "../lib/exchange";
 
@@ -51,6 +52,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <ExchangeContext.Provider value={exchange}>
         <main className="min-h-screen w-full bg-bunker-950">
+          <div className="sticky top-0 z-30">
+            <ForexEventTickerBanner />
+          </div>
           {children}
           <ForexRadarModal />
           <ForexCalendarAlertModal />
@@ -63,6 +67,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <ExchangeContext.Provider value={exchange}>
         <main className="min-h-screen w-full overflow-y-auto">
+          <div className="sticky top-0 z-30">
+            <ForexEventTickerBanner />
+          </div>
           <div className="w-full px-2 sm:px-4 lg:px-6 py-2.5 sm:py-4 max-w-[1700px] mx-auto">
             {children}
           </div>

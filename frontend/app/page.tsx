@@ -12,7 +12,6 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import Link from "next/link";
 import { apiFetch } from "./lib/api";
 import { usePolling } from "./lib/usePolling";
-import { triggerTestCalendarNotification } from "./lib/notificationSettings";
 import {
   hasPublishedActual,
   outcomeSide,
@@ -1181,40 +1180,22 @@ export default function HomePage() {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-wide uppercase">
-                  Ekonomik Takvim (Investing.com 2 &amp; 3 Yıldız)
+                  Ekonomik Takvim (2 &amp; 3 Yıldızlı Kritik Veriler)
                 </h2>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                   ⭐⭐ / ⭐⭐⭐ Kritik Volatilite
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40">
-                  ⚡ Veritabanı Önbelleği (3 Saatte Bir Otomatik)
+                  ⚡ Otomatik Senkronize (3 Saatte Bir)
                 </span>
               </div>
               <p className="text-[11px] text-slate-600 dark:text-bunker-muted mt-0.5">
-                Investing.com 2 ve 3 yıldızlı makro açıklamalar günde bir ve gün içerisinde 3 saatte bir arka planda çekilir; veritabanından anında sunulur.
+                Piyasayı hareketlendiren 2 ve 3 yıldızlı kritik makro açıklamalar gün boyunca takip edilir; veritabanından anında sunulur.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <a
-              href="https://www.investing.com/economic-calendar"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/25 transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <span>🌐</span> Investing.com Takvimi ↗
-            </a>
-
-            <button
-              type="button"
-              onClick={() => triggerTestCalendarNotification()}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-100 dark:bg-rose-500/15 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 hover:bg-rose-200 dark:hover:bg-rose-500/25 transition-all flex items-center gap-1.5 shadow-sm"
-              title="5 dakika kala çıkacak acil uyarı modalini ve sesini test edin"
-            >
-              <span>⚡</span> 5 Dk Uyarısını Test Et
-            </button>
-
             <button
               type="button"
               onClick={() => fetchCalendar(true)}
@@ -1308,7 +1289,7 @@ export default function HomePage() {
         {/* İKİ SÜTUNLU EKONOMİK TAKVİM (SOL: EN SON AÇIKLANANLAR EN ÜSTTE, SAĞ: SIRADAKİ AÇIKLANACAKLAR) */}
         {loadingCalendar && calendarEvents.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-600 dark:text-bunker-muted animate-pulse font-mono rounded-xl bg-slate-50 dark:bg-bunker-950/50 border border-slate-300 dark:border-bunker-800">
-            Investing.com 2 ve 3 yıldızlı ekonomik takvim verileri ve senaryoları yükleniyor…
+            2 ve 3 yıldızlı kritik ekonomik takvim verileri ve senaryoları yükleniyor…
           </div>
         ) : filteredCalendarEvents.length === 0 ? (
           <div className="p-8 text-center space-y-2 rounded-xl bg-bunker-950/50 border border-bunker-800">
@@ -1637,89 +1618,6 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* 5. CANLI AÇIK POZİSYONLAR (VARSA) */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping" />
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Canlı Açık Pozisyonlar ({openPositions.length})
-            </h2>
-          </div>
-          {openPositions.length > 0 && (
-            <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
-              Anlık Açık PnL:{" "}
-              <span className={openPnlTotal >= 0 ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-rose-700 dark:text-rose-400 font-black"}>
-                {openPnlTotal >= 0 ? `+$${openPnlTotal.toFixed(2)}` : `-$${Math.abs(openPnlTotal).toFixed(2)}`}
-              </span>
-              {" · "}
-              <span className={openPipsTotal >= 0 ? "text-emerald-800 dark:text-emerald-300 font-bold" : "text-rose-800 dark:text-rose-300 font-bold"}>
-                {openPipsTotal >= 0 ? `+${openPipsTotal.toFixed(1)}` : openPipsTotal.toFixed(1)} pip
-              </span>
-            </div>
-          )}
-        </div>
-
-        {openPositions.length === 0 ? (
-          <div className="p-6 text-center text-slate-600 dark:text-bunker-muted text-xs rounded-2xl bg-white dark:bg-bunker-900/50 border border-slate-300 dark:border-bunker-800 shadow-sm">
-            Şu anda açık Forex pozisyonu bulunmuyor. Scalper motoru yeni giriş sinyali gözlemliyor.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sortedOpenPositions.map((pos) => {
-              const isProfit = (pos.pnl_usd ?? 0) >= 0;
-              return (
-                <div
-                  key={pos.id}
-                  className={`p-4 rounded-xl border backdrop-blur-md transition-all shadow-sm ${
-                    isProfit
-                      ? "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/70 dark:bg-emerald-950/20 dark:shadow-[0_0_12px_rgba(16,185,129,0.1)]"
-                      : "border-rose-300 dark:border-rose-500/40 bg-rose-50/70 dark:bg-rose-950/20 dark:shadow-[0_0_12px_rgba(244,63,94,0.1)]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">{pos.symbol}</span>
-                      {(pos.strategy_label || pos.strategy) && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-600/50 whitespace-nowrap">
-                          {pos.strategy_label || pos.strategy}
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                        pos.direction === "BUY"
-                          ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40"
-                          : "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40"
-                      }`}
-                    >
-                      {pos.direction} {pos.lots} Lot
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex items-baseline justify-between">
-                    <div className="text-[11px] text-slate-600 dark:text-bunker-muted">
-                      <div>Giriş: {formatPrice(pos.entry_price, pos.symbol)}</div>
-                      <div>Anlık: {formatPrice(pos.current_price, pos.symbol)}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-black ${isProfit ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
-                        {pos.pnl_usd >= 0 ? `+$${pos.pnl_usd.toFixed(2)}` : `-$${Math.abs(pos.pnl_usd).toFixed(2)}`}
-                      </div>
-                      <div className={`text-[10px] font-bold ${pos.pnl_pips >= 0 ? "text-emerald-800 dark:text-emerald-300" : "text-rose-800 dark:text-rose-300"}`}>
-                        {pos.pnl_pips >= 0 ? `+${pos.pnl_pips.toFixed(1)}` : pos.pnl_pips.toFixed(1)} pip
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-
-
       {/* 7. KAPANAN İŞLEMLER RAPOR YÖNLENDİRMESİ & GÜNLÜK ÖZET */}
       <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -1961,20 +1859,11 @@ export default function HomePage() {
             </div>
 
             {/* Alt Butonlar */}
-            <div className="pt-3 border-t border-slate-200 dark:border-bunker-800 flex items-center justify-between gap-3">
-              <a
-                href="https://www.investing.com/economic-calendar"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all flex items-center gap-1"
-              >
-                <span>🌐</span> Investing.com Takvimine Git ↗
-              </a>
-
+            <div className="pt-3 border-t border-slate-200 dark:border-bunker-800 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="px-5 py-2 rounded-xl bg-slate-100 dark:bg-bunker-900 border border-slate-300 dark:border-bunker-700 hover:border-slate-400 dark:hover:border-cyan-400 text-slate-800 dark:text-white text-xs font-bold transition-all shadow-xs"
+                className="w-full sm:w-auto px-6 py-2 rounded-xl bg-slate-100 dark:bg-bunker-900 border border-slate-300 dark:border-bunker-700 hover:border-slate-400 dark:hover:border-cyan-400 text-slate-800 dark:text-white text-xs font-bold transition-all shadow-xs"
               >
                 Kapat
               </button>

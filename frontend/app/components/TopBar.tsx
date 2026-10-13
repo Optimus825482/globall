@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useExchange } from "../lib/exchange";
 import { usePwa } from "../lib/pwa";
 import { useTheme } from "../lib/theme";
+import ForexEventTickerBanner from "./ForexEventTickerBanner";
 
 // 2026-10-07: Yalnız var olan rotaların başlıkları tutulur. Silinen spot
 // sayfalarının girdileri burada kalsaydı ölü referans olurdu.
@@ -48,10 +49,11 @@ export default function TopBar() {
       {/* Global Terminal Üst Vurgu Çizgisi: Siber-siyan ışıltılı bant */}
       <div className="fixed top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-600 shadow-[0_0_12px_rgba(0,240,255,0.7)] z-50 pointer-events-none" />
 
-      <header
-        className="topbar sticky top-0 z-30 flex items-center justify-between gap-2.5 px-3 sm:px-6 py-2.5 bg-bunker-950/90 border-b border-bunker-800/90 backdrop-blur-xl"
-        style={{ paddingTop: "max(0.6rem, env(safe-area-inset-top, 0px))" }}
-      >
+      <div className="sticky top-0 z-30">
+        <header
+          className="topbar flex items-center justify-between gap-2.5 px-3 sm:px-6 py-2.5 bg-bunker-950/90 border-b border-bunker-800/90 backdrop-blur-xl"
+          style={{ paddingTop: "max(0.6rem, env(safe-area-inset-top, 0px))" }}
+        >
         {/* Sol Alan: Mobil Menü Butonu + Başlık */}
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Mobil Menü Aç Butonu */}
@@ -125,6 +127,8 @@ export default function TopBar() {
           </div>
         </div>
       </header>
-    </>
+      <ForexEventTickerBanner />
+    </div>
+  </>
   );
 }
