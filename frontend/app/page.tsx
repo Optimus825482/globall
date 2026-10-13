@@ -14,6 +14,7 @@ import { apiFetch } from "./lib/api";
 import { usePolling } from "./lib/usePolling";
 import { triggerTestCalendarNotification } from "./lib/notificationSettings";
 import {
+  hasPublishedActual,
   outcomeSide,
   comparisonText,
   labelText,
@@ -583,17 +584,39 @@ export default function HomePage() {
     return Array.from(map.values()).sort((a, b) => b.pnl_usd - a.pnl_usd);
   }, [closedTrades]);
 
-  // Günün En İyi ve En Kötü İşlemleri
-  const { bestTrade, worstTrade } = useMemo(() => {
-    if (!closedTrades.length) return { bestTrade: null, worstTrade: null };
-    let best = closedTrades[0];
-    let worst = closedTrades[0];
-    for (const t of closedTrades) {
-      if ((t.pnl_usd ?? 0) > (best.pnl_usd ?? 0)) best = t;
-      if ((t.pnl_usd ?? 0) < (worst.pnl_usd ?? 0)) worst = t;
+  // Takvim olaylarının zaman damgasını hesaplayan yardımcı fonksiyon
+  const getCalendarEventTime = useCallback((e: EconomicEvent, defaultVal = 0): number => {
+    if (e.date_iso) {
+      const t = new Date(e.date_iso).getTime();
+      if (!isNaN(t) && t > 0) return t;
     }
-    return { bestTrade: best, worstTrade: worst };
-  }, [closedTrades]);
+    if (e.date_str) {
+      const m = e.date_str.match(/(\d{1,2}):(\d{2})/);
+      if (m) {
+        const d = new Date();
+        d.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
+        if (e.date_str.toLowerCase().includes("yarın")) {
+          d.setDate(d.getDate() + 1);
+        }
+        return d.getTime();
+      }
+    }
+    return defaultVal;
+  }, []);
+
+  // 1. SOL SÜTUN: Açıklanan Olaylar (En son açıklanan en üstte: b - a)
+  const publishedCalendarEvents = useMemo(() => {
+    return filteredCalendarEvents
+      .filter((item) => hasPublishedActual(item.actual) || item.status === "Açıklandı")
+      .sort((a, b) => getCalendarEventTime(b, 0) - getCalendarEventTime(a, 0));
+  }, [filteredCalendarEvents, getCalendarEventTime]);
+
+  // 2. SAĞ SÜTUN: Sıradaki Açıklanacak Olaylar (Kronolojik yaklaşan sıra: a - b)
+  const upcomingCalendarEvents = useMemo(() => {
+    return filteredCalendarEvents
+      .filter((item) => !hasPublishedActual(item.actual) && item.status !== "Açıklandı")
+      .sort((a, b) => getCalendarEventTime(a, 9999999999999) - getCalendarEventTime(b, 9999999999999));
+  }, [filteredCalendarEvents, getCalendarEventTime]);
 
   // Filtrelenmiş Kapanan İşlemler
   const filteredClosedTrades = useMemo(() => {
@@ -847,131 +870,240 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 3. BAŞARI ÇUBUĞU VE GÜNÜN ÖNE ÇIKANLARI */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* BAŞARI ÇUBUĞU & İŞLEM DAĞILIMI */}
-        <div className="lg:col-span-2 p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📈</span>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                Günün İşlem Başarısı Dağılımı
-              </h2>
-            </div>
-            <span className="text-xs text-slate-600 dark:text-bunker-muted">
-              Toplam {kpi.total_trades} Kapanan İşlem
+      {/* 3. PARİTE BAZINDA GÜNLÜK KÂR / ZARAR KATKISI */}
+      <section className="p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🪙</span>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              Parite Bazında Günlük Kâr / Zarar Katkısı
+            </h2>
+          </div>
+          {symbolStats.length > 0 && (
+            <span className="text-xs text-slate-600 dark:text-bunker-muted font-medium">
+              {symbolStats.length} Aktif Parite
             </span>
+          )}
+        </div>
+
+        {symbolStats.length === 0 ? (
+          <div className="p-4 text-center text-xs text-slate-500 dark:text-bunker-muted rounded-xl bg-slate-50 dark:bg-bunker-950/40 border border-slate-200 dark:border-bunker-800">
+            Bugün henüz kapanan parite işlemi bulunmuyor.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+            {symbolStats.map((item) => {
+              const pos = item.pnl_usd >= 0;
+              return (
+                <div
+                  key={item.symbol}
+                  className={`p-3 rounded-xl transition-all space-y-1 border ${
+                    pos
+                      ? "bg-slate-50 dark:bg-bunker-950/70 border-emerald-300/60 dark:border-emerald-500/30 hover:border-emerald-500"
+                      : "bg-slate-50 dark:bg-bunker-950/70 border-rose-300/60 dark:border-rose-500/30 hover:border-rose-500"
+                  }`}
+                >
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-900 dark:text-white">
+                    <span>{item.symbol}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-bunker-muted font-mono">{item.trades} işlem</span>
+                  </div>
+                  <div className={`text-sm font-black ${pos ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+                    {pos ? `+$${item.pnl_usd.toFixed(2)}` : `-$${Math.abs(item.pnl_usd).toFixed(2)}`}
+                  </div>
+                  <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
+                    <span>%{item.trades > 0 ? ((item.wins / item.trades) * 100).toFixed(0) : 0} Win</span>
+                    <span className={item.pnl_pips >= 0 ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-rose-700 dark:text-rose-300 font-bold"}>
+                      {item.pnl_pips >= 0 ? `+${item.pnl_pips.toFixed(0)}` : item.pnl_pips.toFixed(0)}p
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* 4. GÜNÜN İŞLEM BAŞARISI DAĞILIMI (GÜNÜN ÖNE ÇIKANLARI KALDIRILDI, DÜZGÜN VE MODERN TASARIM) */}
+      <section className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-4">
+        {/* Üst Başlık ve Başarı Oranı Rozeti */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-bunker-800 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 border border-emerald-400/40 flex items-center justify-center text-xl shrink-0">
+              📈
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                  Günün İşlem Başarısı Dağılımı
+                </h2>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-bunker-950 text-slate-700 dark:text-bunker-muted border border-slate-200 dark:border-bunker-800">
+                  Bugün 00:01 Sonrası
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-bunker-muted mt-0.5">
+                Kapanan scalper işlemlerinin net kârlılık, başarı oranı ve brüt hacim dağılımı.
+              </p>
+            </div>
           </div>
 
-          {/* İlerleme Çubuğu */}
-          <div className="space-y-1.5">
-            <div className="w-full h-4 rounded-full bg-slate-200 dark:bg-bunker-950 overflow-hidden flex border border-slate-300 dark:border-bunker-800">
-              <div
-                style={{ width: `${kpi.total_trades > 0 ? (kpi.wins / kpi.total_trades) * 100 : 0}%` }}
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-slate-900"
-                title={`${kpi.wins} Kazanılan İşlem`}
-              >
-                {kpi.wins > 0 && `${kpi.wins}`}
-              </div>
-              <div
-                style={{ width: `${kpi.total_trades > 0 ? (kpi.losses / kpi.total_trades) * 100 : 0}%` }}
-                className="h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
-                title={`${kpi.losses} Kayıp İşlem`}
-              >
-                {kpi.losses > 0 && `${kpi.losses}`}
-              </div>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                ✓ %{winRate.toFixed(1)} Kazanma (WIN)
-              </span>
-              <span className="text-rose-700 dark:text-rose-400 font-bold">
-                ✕ %{(100 - winRate).toFixed(1)} Kayıp (LOSS)
-              </span>
-            </div>
-          </div>
-
-          {/* Hızlı Aksiyon Bağlantıları */}
-          <div className="pt-3 border-t border-slate-200 dark:border-bunker-800 flex flex-wrap gap-2.5">
-            <Link
-              href="/forex/portfolio"
-              className="px-3 py-1.5 rounded-xl bg-blue-100 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/30 text-blue-900 dark:text-blue-300 text-xs hover:bg-blue-200 dark:hover:bg-blue-500/20 transition-all font-bold flex items-center gap-1.5"
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-3 py-1 rounded-xl text-xs font-black bg-slate-100 dark:bg-bunker-950 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-bunker-800">
+              Toplam {kpi.total_trades} İşlem
+            </span>
+            <span
+              className={`px-3 py-1 rounded-xl text-xs font-black border ${
+                winRate >= 50
+                  ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
+                  : "bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-500/40"
+              }`}
             >
-              <span>💼</span> Forex Portföy
-            </Link>
-            <Link
-              href="/forex/btc-gold"
-              className="px-3 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all font-bold flex items-center gap-1.5"
-            >
-              <span>🥇</span> BTC + Altın
-            </Link>
-            <Link
-              href="/forex"
-              className="px-3 py-1.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/30 text-cyan-900 dark:text-cyan-300 text-xs hover:bg-cyan-200 dark:hover:bg-cyan-500/20 transition-all font-bold flex items-center gap-1.5"
-            >
-              <span>📡</span> Radar
-            </Link>
-            <Link
-              href="/forex/reports"
-              className="px-3 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-500/10 border border-purple-300 dark:border-purple-500/30 text-purple-900 dark:text-purple-300 text-xs hover:bg-purple-200 dark:hover:bg-purple-500/20 transition-all font-bold flex items-center gap-1.5"
-            >
-              <span>📋</span> Detaylı Raporlar
-            </Link>
-            <Link
-              href="/settings"
-              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-bunker-800/80 border border-slate-300 dark:border-bunker-700 text-slate-700 dark:text-bunker-muted hover:text-slate-900 dark:hover:text-white text-xs transition-all font-bold flex items-center gap-1.5 ml-auto"
-            >
-              <span>⚙️</span> Ayarlar
-            </Link>
+              %{winRate.toFixed(1)} Kazanma Oranı
+            </span>
           </div>
         </div>
 
-        {/* GÜNÜN ÖNE ÇIKAN İŞLEMLERİ */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-base">🏆</span>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Günün Öne Çıkanları
-            </h2>
-          </div>
-
-          <div className="space-y-2.5 text-xs">
-            {/* EN İYİ İŞLEM */}
-            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 space-y-1">
-              <div className="flex justify-between items-center text-[10px] text-emerald-800 dark:text-emerald-400 font-bold uppercase">
-                <span>Günün En İyi İşlemi</span>
-                <span>{bestTrade?.symbol || "—"}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-900 dark:text-white font-bold">{bestTrade?.direction || "—"} {bestTrade?.lots ? `${bestTrade.lots} Lot` : ""}</span>
-                <span className="text-emerald-700 dark:text-emerald-400 font-black text-sm">
-                  {bestTrade ? `+$${(bestTrade.pnl_usd ?? 0).toFixed(2)}` : "—"}
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
-                <span>{bestTrade?.pnl_pips ? `+${bestTrade.pnl_pips.toFixed(1)} pip` : ""}</span>
-                <span>{formatClockTime(bestTrade?.exit_time || bestTrade?.close_time)}</span>
-              </div>
+        {/* 3 Ana Metrik Kartı: Kazanılan | Kaybedilen | Kâr Faktörü & Net */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          {/* Kazanılan İşlemler */}
+          <div className="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-300/80 dark:border-emerald-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                <span>✅</span> Kazanılan (WIN)
+              </span>
+              <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 rounded-full font-mono">
+                {kpi.wins} İşlem
+              </span>
             </div>
-
-            {/* EN BÜYÜK KAYIP */}
-            <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-300 dark:border-rose-500/30 space-y-1">
-              <div className="flex justify-between items-center text-[10px] text-rose-800 dark:text-rose-400 font-bold uppercase">
-                <span>Günün En Büyük Kaybı</span>
-                <span>{worstTrade?.symbol || "—"}</span>
+            <div className="flex items-baseline justify-between pt-1">
+              <div>
+                <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Brüt Kâr:</div>
+                <div className="text-base font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                  +${(kpi.gross_profit_usd ?? 0).toFixed(2)}
+                </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-900 dark:text-white font-bold">{worstTrade?.direction || "—"} {worstTrade?.lots ? `${worstTrade.lots} Lot` : ""}</span>
-                <span className="text-rose-700 dark:text-rose-400 font-black text-sm">
-                  {worstTrade ? `-$${Math.abs(worstTrade.pnl_usd ?? 0).toFixed(2)}` : "—"}
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
-                <span>{worstTrade?.pnl_pips ? `${worstTrade.pnl_pips.toFixed(1)} pip` : ""}</span>
-                <span>{formatClockTime(worstTrade?.exit_time || worstTrade?.close_time)}</span>
+              <div className="text-right">
+                <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Oran:</div>
+                <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 font-mono">
+                  %{winRate.toFixed(1)}
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Kaybedilen İşlemler */}
+          <div className="p-3.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-300/80 dark:border-rose-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-rose-800 dark:text-rose-400 flex items-center gap-1.5">
+                <span>❌</span> Kayıp (LOSS)
+              </span>
+              <span className="text-xs font-black text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-500/20 px-2 py-0.5 rounded-full font-mono">
+                {kpi.losses} İşlem
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between pt-1">
+              <div>
+                <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Brüt Zarar:</div>
+                <div className="text-base font-black text-rose-700 dark:text-rose-400 font-mono">
+                  -${Math.abs(kpi.gross_loss_usd ?? 0).toFixed(2)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Oran:</div>
+                <div className="text-sm font-bold text-rose-700 dark:text-rose-300 font-mono">
+                  %{(kpi.total_trades > 0 ? (kpi.losses / kpi.total_trades) * 100 : 0).toFixed(1)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Kâr Faktörü & Net Sonuç */}
+          <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-300/80 dark:border-indigo-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-indigo-800 dark:text-indigo-400 flex items-center gap-1.5">
+                <span>⚡</span> Kâr Faktörü (PF)
+              </span>
+              <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-500/20 px-2 py-0.5 rounded-full font-mono">
+                {kpi.profit_factor_infinite ? "∞" : (kpi.profit_factor ?? 0).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between pt-1">
+              <div>
+                <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Net K/Z:</div>
+                <div className={`text-base font-black font-mono ${isNetProfit ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+                  {isNetProfit ? `+$${kpi.total_pnl_usd.toFixed(2)}` : `-$${Math.abs(kpi.total_pnl_usd).toFixed(2)}`}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Net Pip:</div>
+                <div className={`text-sm font-bold font-mono ${(kpi.total_pnl_pips ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
+                  {(kpi.total_pnl_pips ?? 0) >= 0 ? `+${(kpi.total_pnl_pips ?? 0).toFixed(1)}` : (kpi.total_pnl_pips ?? 0).toFixed(1)}p
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Kalın ve Şık İlerleme / Başarı Çubuğu */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center text-xs font-bold">
+            <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+              <span>✓</span> %{winRate.toFixed(1)} Kazanma ({kpi.wins} İşlem)
+            </span>
+            <span className="text-rose-700 dark:text-rose-400 flex items-center gap-1">
+              <span>✕</span> %{(kpi.total_trades > 0 ? (kpi.losses / kpi.total_trades) * 100 : 0).toFixed(1)} Kayıp ({kpi.losses} İşlem)
+            </span>
+          </div>
+
+          <div className="w-full h-5 rounded-full bg-slate-200 dark:bg-bunker-950 overflow-hidden flex border border-slate-300 dark:border-bunker-800 shadow-inner">
+            <div
+              style={{ width: `${kpi.total_trades > 0 ? (kpi.wins / kpi.total_trades) * 100 : 0}%` }}
+              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 flex items-center justify-center text-[10px] font-black text-slate-900 shadow-sm"
+              title={`${kpi.wins} Kazanılan İşlem (%${winRate.toFixed(1)})`}
+            >
+              {kpi.wins > 0 && `${kpi.wins} WIN`}
+            </div>
+            <div
+              style={{ width: `${kpi.total_trades > 0 ? (kpi.losses / kpi.total_trades) * 100 : 0}%` }}
+              className="h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-500 flex items-center justify-center text-[10px] font-black text-white shadow-sm"
+              title={`${kpi.losses} Kayıp İşlem`}
+            >
+              {kpi.losses > 0 && `${kpi.losses} LOSS`}
+            </div>
+          </div>
+        </div>
+
+        {/* Hızlı Aksiyon Bağlantıları */}
+        <div className="pt-2.5 border-t border-slate-200 dark:border-bunker-800 flex flex-wrap items-center gap-2">
+          <Link
+            href="/forex/portfolio"
+            className="px-3 py-1.5 rounded-xl bg-blue-100 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/30 text-blue-900 dark:text-blue-300 text-xs hover:bg-blue-200 dark:hover:bg-blue-500/20 transition-all font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <span>💼</span> Forex Portföy
+          </Link>
+          <Link
+            href="/forex/btc-gold"
+            className="px-3 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <span>🥇</span> BTC + Altın
+          </Link>
+          <Link
+            href="/forex"
+            className="px-3 py-1.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/30 text-cyan-900 dark:text-cyan-300 text-xs hover:bg-cyan-200 dark:hover:bg-cyan-500/20 transition-all font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <span>📡</span> Radar
+          </Link>
+          <Link
+            href="/forex/reports"
+            className="px-3 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-500/10 border border-purple-300 dark:border-purple-500/30 text-purple-900 dark:text-purple-300 text-xs hover:bg-purple-200 dark:hover:bg-purple-500/20 transition-all font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <span>📋</span> Detaylı Raporlar
+          </Link>
+          <Link
+            href="/settings"
+            className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-bunker-800/80 border border-slate-300 dark:border-bunker-700 text-slate-700 dark:text-bunker-muted hover:text-slate-900 dark:hover:text-white text-xs transition-all font-bold flex items-center gap-1.5 ml-auto shadow-sm"
+          >
+            <span>⚙️</span> Ayarlar
+          </Link>
         </div>
       </section>
 
@@ -1110,141 +1242,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* BUGÜN AÇIKLANAN VERİLER VİTRİNİ ─────────────────────────────────────
-            Filtre kontrollerinin ÜSTÜNDE, filtrelerden BAĞIMSIZ durur: amaç
-            "kullanıcının o an filtrelediği satırlar" değil, "bugün açıklanan
-            sonuçlar"dır. Veri yoksa blok hiç render edilmez (gürültü yok). */}
-        {todaysPublishedEvents.length > 0 && (
-          <div className="rounded-xl border border-emerald-400 dark:border-emerald-500/40 bg-emerald-50/70 dark:bg-emerald-500/[0.07] p-3 space-y-2.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-base">📣</span>
-              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                Bugün Açıklanan Veriler
-              </h3>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40">
-                {todaysPublishedEvents.length} olay · gerçekleşen senaryo işaretli
-              </span>
-              <span className="text-[10px] text-emerald-800/80 dark:text-emerald-300/70">
-                Gece yarısına (TSİ) kadar görünür.
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-              {todaysPublishedEvents.map((item) => {
-                const side = outcomeSide(item);
-                const isBull = side === "bullish";
-                const cmp = comparisonText(item);
-                const label = labelText(item);
-                const basis = basisText(item);
-                const dirNote = directionNoteText(item);
-                const branchOutcome = isBull
-                  ? item.scenario?.bullish_outcome
-                  : item.scenario?.bearish_outcome;
-                return (
-                  <div
-                    key={`published-${item.id}`}
-                    className={`p-3 rounded-xl border shadow-sm space-y-2 ${
-                      isBull
-                        ? "bg-white dark:bg-bunker-900/80 border-emerald-400 dark:border-emerald-500/40"
-                        : "bg-white dark:bg-bunker-900/80 border-rose-400 dark:border-rose-500/40"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-bold">
-                          <span>{item.flag || "🌐"}</span>
-                          <span>{item.country_name || item.country}</span>
-                          {item.currency && (
-                            <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-black">
-                              ({item.currency})
-                            </span>
-                          )}
-                          {item.date_str && (
-                            <span className="text-[10px] text-slate-500 dark:text-bunker-muted font-mono">
-                              ⏰ {item.date_str}
-                            </span>
-                          )}
-                        </div>
-                        <div className="font-extrabold text-slate-900 dark:text-white text-xs leading-snug">
-                          {item.title}
-                        </div>
-                      </div>
-                      <span
-                        className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap border ${
-                          isBull
-                            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
-                            : "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/40"
-                        }`}
-                        title={label || undefined}
-                      >
-                        {isBull ? "🟢" : "🔴"} {label || (isBull ? "Olumlu" : "Olumsuz")}
-                      </span>
-                    </div>
-
-                    {/* ÜÇ DEĞER YAN YANA: beklenti · önceki · açıklanan.
-                        Beklenti çoğu olayda boş gelir (kaynak kısıtı) — o zaman
-                        "—" gösterilir ve kıyas `basis` üzerinden Önceki'ye yapılır. */}
-                    <div className="grid grid-cols-3 gap-2 text-xs pt-0.5">
-                      <div className={basis === "Beklenti" ? "opacity-100" : "opacity-80"}>
-                        <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Beklenti:</div>
-                        <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{item.forecast || "—"}</strong>
-                      </div>
-                      <div className={basis === "Önceki" ? "opacity-100" : "opacity-80"}>
-                        <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Önceki:</div>
-                        <strong className="text-slate-800 dark:text-white font-bold">{item.previous || "—"}</strong>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Açıklanan:</div>
-                        <strong
-                          className={`font-black ${
-                            isBull
-                              ? "text-emerald-700 dark:text-emerald-400"
-                              : "text-rose-700 dark:text-rose-400"
-                          }`}
-                        >
-                          {item.actual || "—"}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {cmp && (
-                      <div className="text-[10px] font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-bunker-950/60 rounded-lg px-2 py-1 border border-slate-200 dark:border-bunker-800">
-                        {cmp}
-                        {basis && (
-                          <span className="text-slate-500 dark:text-bunker-muted"> · kıyas: {basis}</span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Ters aile uyarısı: "Beklenti Üzeri" + 🔴 çelişkisini açıklar. */}
-                    {dirNote && (
-                      <div className="text-[10px] text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg px-2 py-1 border border-rose-200 dark:border-rose-500/30">
-                        ⚠️ {dirNote}
-                      </div>
-                    )}
-
-                    {branchOutcome && (
-                      <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-2">
-                        {branchOutcome}
-                      </p>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEvent(item)}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-bunker-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-bunker-700 hover:bg-slate-200 dark:hover:bg-bunker-700 transition-all"
-                      title="Yalnızca gerçekleşen senaryo dalıyla birlikte kartı aç"
-                    >
-                      Kart İncele →
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* İçerik Kartları */}
+        {/* İKİ SÜTUNLU EKONOMİK TAKVİM (SOL: EN SON AÇIKLANANLAR EN ÜSTTE, SAĞ: SIRADAKİ AÇIKLANACAKLAR) */}
         {loadingCalendar && calendarEvents.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-600 dark:text-bunker-muted animate-pulse font-mono rounded-xl bg-slate-50 dark:bg-bunker-950/50 border border-slate-300 dark:border-bunker-800">
             Investing.com 2 ve 3 yıldızlı ekonomik takvim verileri ve senaryoları yükleniyor…
@@ -1267,150 +1265,311 @@ export default function HomePage() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/80 shadow-md">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-300 dark:border-bunker-800 bg-slate-100/90 dark:bg-bunker-950/80 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px]">
-                  <th className="py-3 px-3.5 whitespace-nowrap">Tarih &amp; Saat</th>
-                  <th className="py-3 px-3 whitespace-nowrap">Yıldız (Önem)</th>
-                  <th className="py-3 px-3 whitespace-nowrap">Geri Sayım</th>
-                  <th className="py-3 px-4 min-w-[240px]">Haber / Olay Başlığı</th>
-                  <th className="py-3 px-3 whitespace-nowrap">Beklenti / Sonuç</th>
-                  <th className="py-3 px-3 min-w-[140px]">Etkilenebilecek Semboller</th>
-                  <th className="py-3 px-3 text-right whitespace-nowrap">İşlem</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-bunker-800/80">
-                {filteredCalendarEvents.map((item) => {
-                  const is3Stars = (item.stars || (item.impact === "High" ? 3 : 2)) === 3;
-                  return (
-                    <tr
-                      key={item.id}
-                      onClick={() => setSelectedEvent(item)}
-                      className={`cursor-pointer transition-colors group ${
-                        is3Stars
-                          ? "hover:bg-rose-500/10 dark:hover:bg-rose-950/20"
-                          : "hover:bg-cyan-500/10 dark:hover:bg-cyan-950/20"
-                      }`}
-                      title="Detaylı senaryo ve strateji analizini kart olarak açmak için tıklayın"
-                    >
-                      {/* 1. Sütun: Tarih & Saat */}
-                      <td className="py-3 px-3.5 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-cyan-300 font-mono text-xs">
-                          <span>⏰</span>
-                          <span>{item.date_str}</span>
-                        </div>
-                      </td>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-5 pt-1">
+            {/* 1. SOL SÜTUN: AÇIKLANANLAR (EN SON AÇIKLANAN EN ÜSTTE) */}
+            <div className="flex flex-col space-y-3">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-500/30">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                    <span>📢</span> Açıklanan Veriler
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
+                    En son açıklanan en üstte
+                  </span>
+                  <span className="text-[11px] font-bold font-mono text-emerald-900 dark:text-emerald-400">
+                    ({publishedCalendarEvents.length})
+                  </span>
+                </div>
+              </div>
 
-                      {/* 2. Sütun: Yıldız Sayısı */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide ${
-                            is3Stars
-                              ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40"
-                              : "bg-amber-500/20 text-amber-750 dark:text-amber-300 border border-amber-500/40"
-                          }`}
-                        >
-                          {is3Stars ? "⭐⭐⭐ 3 Yıldız" : "⭐⭐ 2 Yıldız"}
-                        </span>
-                      </td>
+              <div className="max-h-[750px] overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                {publishedCalendarEvents.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500 dark:text-bunker-muted rounded-xl bg-slate-50 dark:bg-bunker-950/40 border border-slate-200 dark:border-bunker-800">
+                    Bugün henüz açıklanmış makro veri bulunmuyor veya filtrelere uyan sonuç yok.
+                  </div>
+                ) : (
+                  publishedCalendarEvents.map((item) => {
+                    const side = outcomeSide(item);
+                    const isBull = side === "bullish";
+                    const isBear = side === "bearish";
+                    const cmp = comparisonText(item);
+                    const label = labelText(item);
+                    const basis = basisText(item);
+                    const dirNote = directionNoteText(item);
+                    const branchOutcome = isBull
+                      ? item.scenario?.bullish_outcome
+                      : isBear
+                      ? item.scenario?.bearish_outcome
+                      : item.scenario?.summary_short || item.scenario?.title;
+                    const is3Stars = (item.stars || (item.impact === "High" ? 3 : 2)) === 3;
 
-                      {/* 3. Sütun: Geri Sayım */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <EventCountdownBadge
-                            dateIso={item.date_iso}
-                            dateStr={item.date_str}
-                            status={item.status}
-                            isPassed={item.is_passed}
-                            nowSec={nowSec}
-                          />
+                    return (
+                      <div
+                        key={`pub-${item.id}`}
+                        onClick={() => setSelectedEvent(item)}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md space-y-2.5 ${
+                          isBull
+                            ? "bg-white dark:bg-bunker-900/90 border-emerald-400 dark:border-emerald-500/40 hover:border-emerald-500"
+                            : isBear
+                            ? "bg-white dark:bg-bunker-900/90 border-rose-400 dark:border-rose-500/40 hover:border-rose-500"
+                            : "bg-white dark:bg-bunker-900/90 border-slate-300 dark:border-bunker-800 hover:border-cyan-500/50"
+                        }`}
+                        title="Detaylı kartı ve senaryoyu açmak için tıklayın"
+                      >
+                        {/* Başlık Satırı */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-bold flex-wrap">
+                              <span>{item.flag || "🌐"}</span>
+                              <span>{item.country_name || item.country}</span>
+                              {item.currency && (
+                                <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-black">
+                                  ({item.currency})
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-700 dark:text-slate-300 font-mono bg-slate-100 dark:bg-bunker-950 px-1.5 py-0.5 rounded border border-slate-200 dark:border-bunker-800 font-bold">
+                                ⏰ {item.date_str}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                  is3Stars
+                                    ? "text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40"
+                                    : "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40"
+                                }`}
+                              >
+                                {is3Stars ? "⭐⭐⭐ 3 Yıldız" : "⭐⭐ 2 Yıldız"}
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-900 dark:text-white text-xs leading-snug hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
+                              {item.title}
+                            </h4>
+                          </div>
+
+                          {/* Sonuç Rozeti */}
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                              item.status === "Açıklandı"
-                                ? "bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40"
-                                : item.is_passed
-                                ? "bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600/40"
-                                : "bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border border-cyan-500/40"
+                            className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap border ${
+                              isBull
+                                ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
+                                : isBear
+                                ? "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/40"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700"
                             }`}
                           >
-                            {item.status || "Bekleniyor"}
+                            {isBull ? "🟢 " : isBear ? "🔴 " : "⚪ "}
+                            {label || (isBull ? "Olumlu" : isBear ? "Olumsuz" : "Açıklandı")}
                           </span>
                         </div>
-                      </td>
 
-                      {/* 4. Sütun: Başlık */}
-                      <td className="py-3 px-4">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-bold">
-                            <span>{item.flag || "🌐"}</span>
-                            <span>{item.country_name || item.country}</span>
-                            {item.currency && (
-                              <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-black">
-                                ({item.currency})
+                        {/* Beklenti / Önceki / Açıklanan Değerleri */}
+                        <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 dark:bg-bunker-950/60 p-2.5 rounded-lg border border-slate-200/80 dark:border-bunker-800/80">
+                          <div>
+                            <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Beklenti:</div>
+                            <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{item.forecast || "—"}</strong>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Önceki:</div>
+                            <strong className="text-slate-800 dark:text-white font-bold">{item.previous || "—"}</strong>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Açıklanan:</div>
+                            <strong
+                              className={`font-black ${
+                                isBull
+                                  ? "text-emerald-700 dark:text-emerald-400"
+                                  : isBear
+                                  ? "text-rose-700 dark:text-rose-400"
+                                  : "text-slate-900 dark:text-white"
+                              }`}
+                            >
+                              {item.actual || "—"}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {/* Kıyaslama veya Ters Yön Notu */}
+                        {cmp && (
+                          <div className="text-[10px] font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-bunker-950/60 rounded-lg px-2 py-1 border border-slate-200 dark:border-bunker-800">
+                            {cmp}
+                            {basis && <span className="text-slate-500 dark:text-bunker-muted"> · kıyas: {basis}</span>}
+                          </div>
+                        )}
+
+                        {dirNote && (
+                          <div className="text-[10px] text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg px-2 py-1 border border-rose-200 dark:border-rose-500/30">
+                            ⚠️ {dirNote}
+                          </div>
+                        )}
+
+                        {/* Senaryo Açıklaması */}
+                        {branchOutcome && (
+                          <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-2">
+                            {branchOutcome}
+                          </p>
+                        )}
+
+                        {/* Alt Butonlar & Etkilenen Semboller */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 dark:border-bunker-800/60">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {item.affected_symbols.map((sym) => (
+                              <span
+                                key={sym}
+                                className="px-1.5 py-0.5 rounded text-[9px] font-black bg-cyan-100 dark:bg-cyan-950/70 text-cyan-800 dark:text-cyan-300 border border-cyan-400/40"
+                              >
+                                {sym}
                               </span>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(item);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-bunker-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-bunker-700 hover:bg-slate-200 dark:hover:bg-bunker-700 transition-all shrink-0"
+                          >
+                            Kart İncele →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* 2. SAĞ SÜTUN: SIRADAKİ AÇIKLANACAKLAR (KRONOLOJİK / EN YAKIN EN ÜSTTE) */}
+            <div className="flex flex-col space-y-3">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-cyan-50/80 dark:bg-cyan-950/30 border border-cyan-300 dark:border-cyan-500/30">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-cyan-900 dark:text-cyan-300 flex items-center gap-1.5">
+                    <span>⏳</span> Sıradaki Açıklanacaklar
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 dark:bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/30">
+                    Yaklaşan Olaylar (Kronolojik)
+                  </span>
+                  <span className="text-[11px] font-bold font-mono text-cyan-900 dark:text-cyan-400">
+                    ({upcomingCalendarEvents.length})
+                  </span>
+                </div>
+              </div>
+
+              <div className="max-h-[750px] overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                {upcomingCalendarEvents.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500 dark:text-bunker-muted rounded-xl bg-slate-50 dark:bg-bunker-950/40 border border-slate-200 dark:border-bunker-800">
+                    Bugün için beklenen başka makro veri kalmadı veya filtrelere uyan sonuç yok.
+                  </div>
+                ) : (
+                  upcomingCalendarEvents.map((item) => {
+                    const is3Stars = (item.stars || (item.impact === "High" ? 3 : 2)) === 3;
+                    return (
+                      <div
+                        key={`up-${item.id}`}
+                        onClick={() => setSelectedEvent(item)}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md space-y-2.5 bg-white dark:bg-bunker-900/90 border-slate-300 dark:border-bunker-800 hover:border-cyan-500/60 ${
+                          is3Stars ? "dark:hover:border-rose-500/60" : ""
+                        }`}
+                        title="Detaylı kartı ve senaryoyu açmak için tıklayın"
+                      >
+                        {/* Başlık Satırı */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-bold flex-wrap">
+                              <span>{item.flag || "🌐"}</span>
+                              <span>{item.country_name || item.country}</span>
+                              {item.currency && (
+                                <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-black">
+                                  ({item.currency})
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-900 dark:text-cyan-300 font-mono font-bold bg-slate-100 dark:bg-bunker-950 px-1.5 py-0.5 rounded border border-slate-200 dark:border-bunker-800">
+                                ⏰ {item.date_str}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                  is3Stars
+                                    ? "text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40"
+                                    : "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40"
+                                }`}
+                              >
+                                {is3Stars ? "⭐⭐⭐ 3 Yıldız" : "⭐⭐ 2 Yıldız"}
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-900 dark:text-white text-xs leading-snug hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
+                              {item.title}
+                            </h4>
+                            {item.original_title && item.original_title !== item.title && (
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 italic line-clamp-1">
+                                {item.original_title}
+                              </div>
                             )}
                           </div>
-                          <div className="font-extrabold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors text-xs leading-snug">
-                            {item.title}
-                          </div>
-                          {item.original_title && item.original_title !== item.title && (
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 italic line-clamp-1">
-                              {item.original_title}
-                            </div>
-                          )}
-                        </div>
-                      </td>
 
-                      {/* Ek Bilgi Sütunu: Beklenti / Önceki / Sonuç */}
-                      <td className="py-3 px-3 whitespace-nowrap text-[11px]">
-                        <div className="space-y-0.5">
-                          <div className="text-slate-600 dark:text-slate-400">
-                            Beklenti: <span className="font-bold text-slate-900 dark:text-cyan-300">{item.forecast || "—"}</span>
+                          {/* Geri Sayım Rozeti */}
+                          <div className="shrink-0 flex items-center gap-1">
+                            <EventCountdownBadge
+                              dateIso={item.date_iso}
+                              dateStr={item.date_str}
+                              status={item.status}
+                              isPassed={item.is_passed}
+                              nowSec={nowSec}
+                            />
                           </div>
-                          <div className="text-slate-500 dark:text-slate-400">
-                            Önceki: <span className="font-medium text-slate-700 dark:text-slate-300">{item.previous || "—"}</span>
+                        </div>
+
+                        {/* Beklenti / Önceki Değerleri */}
+                        <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-bunker-950/60 p-2.5 rounded-lg border border-slate-200/80 dark:border-bunker-800/80">
+                          <div>
+                            <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Beklenti:</div>
+                            <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{item.forecast || "—"}</strong>
                           </div>
-                          {item.actual && item.actual !== "—" && (
-                            <div className="text-emerald-700 dark:text-emerald-400 font-black">
-                              Açıklanan: {item.actual}
-                            </div>
-                          )}
+                          <div>
+                            <div className="text-[10px] text-slate-500 dark:text-bunker-muted">Önceki:</div>
+                            <strong className="text-slate-800 dark:text-white font-bold">{item.previous || "—"}</strong>
+                          </div>
                         </div>
-                      </td>
 
-                      {/* 5. Sütun: Etkilenebilecek Semboller */}
-                      <td className="py-3 px-3">
-                        <div className="flex flex-wrap gap-1 items-center">
-                          {item.affected_symbols.map((sym) => (
-                            <span
-                              key={sym}
-                              className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-100 dark:bg-cyan-950/70 text-cyan-800 dark:text-cyan-300 border border-cyan-400/50 dark:border-cyan-500/40"
-                            >
-                              {sym}
-                            </span>
-                          ))}
+                        {/* Senaryo Başlığı / Özeti */}
+                        {item.scenario?.summary_short || item.scenario?.title ? (
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 italic">
+                            💡 {item.scenario?.summary_short || item.scenario?.title}
+                          </p>
+                        ) : null}
+
+                        {/* Alt Butonlar & Etkilenen Semboller */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 dark:border-bunker-800/60">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {item.affected_symbols.map((sym) => (
+                              <span
+                                key={sym}
+                                className="px-1.5 py-0.5 rounded text-[9px] font-black bg-cyan-100 dark:bg-cyan-950/70 text-cyan-800 dark:text-cyan-300 border border-cyan-400/40"
+                              >
+                                {sym}
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(item);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-cyan-100 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-400/50 hover:bg-cyan-200 dark:hover:bg-cyan-900/60 transition-all shrink-0"
+                          >
+                            Senaryoyu İncele →
+                          </button>
                         </div>
-                      </td>
-
-                      {/* 6. Sütun: Detaylı Kart Butonu */}
-                      <td className="py-3 px-3 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEvent(item);
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-cyan-700 dark:text-cyan-300 bg-cyan-100 dark:bg-cyan-950/60 border border-cyan-400/60 dark:border-cyan-500/40 hover:bg-cyan-200 dark:hover:bg-cyan-900/60 transition-all inline-flex items-center gap-1 shadow-sm"
-                        >
-                          <span>🔍 Kart İncele</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         )}
       </section>
@@ -1496,43 +1655,7 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* 6. PARİTE BAZINDA GÜNLÜK KÂR / ZARAR DAĞILIMI */}
-      {symbolStats.length > 0 && (
-        <section className="p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-base">🪙</span>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Parite Bazında Günlük Kâr / Zarar Katkısı
-            </h2>
-          </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {symbolStats.map((item) => {
-              const pos = item.pnl_usd >= 0;
-              return (
-                <div
-                  key={item.symbol}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-bunker-950/70 border border-slate-200 dark:border-bunker-800 hover:border-cyan-500/40 transition-all space-y-1"
-                >
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-900 dark:text-white">
-                    <span>{item.symbol}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-bunker-muted">{item.trades} işlem</span>
-                  </div>
-                  <div className={`text-sm font-black ${pos ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
-                    {pos ? `+$${item.pnl_usd.toFixed(2)}` : `-$${Math.abs(item.pnl_usd).toFixed(2)}`}
-                  </div>
-                  <div className="text-[10px] text-slate-600 dark:text-bunker-muted flex justify-between">
-                    <span>%{item.trades > 0 ? ((item.wins / item.trades) * 100).toFixed(0) : 0} Win</span>
-                    <span className={item.pnl_pips >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}>
-                      {item.pnl_pips >= 0 ? `+${item.pnl_pips.toFixed(0)}` : item.pnl_pips.toFixed(0)}p
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* 7. KAPANAN İŞLEMLER RAPOR YÖNLENDİRMESİ & GÜNLÜK ÖZET */}
       <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
