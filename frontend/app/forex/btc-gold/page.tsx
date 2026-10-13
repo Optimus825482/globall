@@ -5,9 +5,6 @@ import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3 } from "../../lib/format";
-// AutoSettings tipi kokpit kartlarının TP/SL/spread hedefleri için kullanılır;
-// parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı.
-import { type AutoSettings } from "../components/AutoSettingsPanel";
 import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
 
 // --- VERİ TİPLERİ ---
@@ -127,6 +124,8 @@ interface TickerData {
   adx?: number;
   supertrend_dir?: number;
   atr?: number;
+  /** Ham MACD histogramı (fiyat birimi) — yön barı `atr` ile böler. */
+  macd_hist?: number;
   volatility?: string;
   updated_at?: number;
 }
@@ -154,6 +153,24 @@ interface RadarCandidate {
   risk_reward: string;
   atr_pips: number;
   tv_symbol: string;
+  /** Ham MACD histogramı (fiyat birimi). `atr` alanıyla bölünüp ölçeksizleştirilir. */
+  macd_hist?: number;
+  /** Ham ATR (fiyat birimi) — yön barının ölçek böleni. */
+  atr?: number;
+}
+
+/** Sembol bazlı KPI dilimi — backend `per_symbol_today` / `per_symbol_all_time`. */
+interface SymbolKpi {
+  symbol: string;
+  display: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  pnl_usd: number;
+  pnl_pips: number;
+  open_count: number;
+  open_pnl_usd: number;
 }
 
 // --- GAUGE BİLEŞENİ (YARIM DAİRE PROFESYONEL TRİGONOMETRİK KADRAN) ---
@@ -332,6 +349,132 @@ function SemiCircleGauge({
   );
 }
 
+// --- DİNAMİK YÖN BARI (ORTASI NÖTR · SAĞ BUY · SOL SELL) ---
+// Veri UYDURMAZ: değeri motorun kendi ürettiği MACD histogramının ATR'ye oranı
+// belirler (bkz. eşik vs. tick üretimi). +1 tam boğa, -1 tam ayı, 0 nötr.
+// Neden "ölçeksiz": XAU histogramı $ biriminde, BTC de $ biriminde ama ATR'leri
+// kıyaslanamaz — ATR'ye bölmek ikisini de aynı -1..+1 ölçeğine taşır.
+// Nötr ölü bölge (±0.12) kasıtlı: küçük histogram salınımı "sinyal" sayılmasın.
+const NEUTRAL_DEAD_ZONE = 0.12;
+
+function DirectionBar({
+  value,
+  detail,
+  hasData,
+}: {
+  /** -1 (tam SATIŞ) … 0 (nötr) … +1 (tam ALIŞ) */
+  value: number;
+  detail: string;
+  hasData: boolean;
+}) {
+  const clamped = Math.max(-1, Math.min(1, isNaN(value) ? 0 : value));
+  const posPct = 50 + clamped * 50; // 0% = sol uç, 50% = orta, 100% = sağ uç
+  const isBuy = clamped > NEUTRAL_DEAD_ZONE;
+  const isSell = clamped < -NEUTRAL_DEAD_ZONE;
+  const tone = !hasData
+    ? "text-bunker-muted"
+    : isBuy
+    ? "text-emerald-300"
+    : isSell
+    ? "text-rose-300"
+    : "text-slate-300";
+  const verdict = !hasData ? "VERİ YOK" : isBuy ? "ALIŞ YÖNÜ" : isSell ? "SATIŞ YÖNÜ" : "NÖTR / BEKLE";
+  const needleColor = !hasData ? "#64748b" : isBuy ? "#10b981" : isSell ? "#f43f5e" : "#94a3b8";
+
+  return (
+    <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800/80">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[10px] font-black text-bunker-muted uppercase tracking-wider">
+          🎯 Yön Göstergesi — Dinamik Momentum
+        </span>
+        <span className={`text-[10px] font-black tracking-wide ${tone}`}>{verdict}</span>
+      </div>
+
+      {/* Ray: sol kırmızı (SELL) → orta gri (NÖTR) → sağ yeşil (BUY) */}
+      <div className="relative h-3 rounded-full overflow-hidden border border-bunker-800/80 shadow-inner">
+        <div className="absolute inset-0 flex">
+          <div className="w-1/2 h-full bg-gradient-to-r from-rose-600/70 to-rose-500/10" />
+          <div className="w-1/2 h-full bg-gradient-to-r from-emerald-500/10 to-emerald-600/70" />
+        </div>
+        {/* Nötr ölü bölge işareti — ortadaki gri şerit */}
+        <div
+          className="absolute top-0 h-full bg-slate-500/35 border-x border-slate-400/40"
+          style={{ left: `${50 - NEUTRAL_DEAD_ZONE * 50}%`, width: `${NEUTRAL_DEAD_ZONE * 100}%` }}
+        />
+        {/* Orta çizgi */}
+        <div className="absolute left-1/2 top-0 h-full w-px bg-slate-300/50" />
+        {/* İbre */}
+        <div
+          className="absolute top-[-2px] h-[16px] w-[3px] rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(255,255,255,0.35)]"
+          style={{ left: `calc(${posPct}% - 1.5px)`, background: needleColor }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between text-[9px] font-mono mt-1.5">
+        <span className="text-rose-300/80 font-bold">◀ SELL</span>
+        <span className="text-slate-400 font-bold">NÖTR</span>
+        <span className="text-emerald-300/80 font-bold">BUY ▶</span>
+      </div>
+      <p className="text-[10px] text-bunker-300 mt-1.5 text-center">{detail}</p>
+    </div>
+  );
+}
+
+// --- SEMBOL BAŞARI ORANI (BUGÜN & TÜM ZAMANLAR) ---
+// Kullanıcı isteği (2026-10-13): "başarı oranlarını o günkü ve tüm zamanlar
+// olmak üzere ayrı ayrı". İki blok AYNI defterden gelir (backend
+// `per_symbol_today` ve `per_symbol_all_time`), bu yüzden sayıları tutarlıdır.
+function WinRateBlock({
+  title,
+  kpi,
+  accent,
+}: {
+  title: string;
+  kpi: SymbolKpi | null;
+  accent: string;
+}) {
+  const trades = kpi?.trades ?? 0;
+  const wins = kpi?.wins ?? 0;
+  const losses = kpi?.losses ?? 0;
+  const rate = kpi?.win_rate ?? 0;
+  const pnlUsd = kpi?.pnl_usd ?? 0;
+  const pnlPips = kpi?.pnl_pips ?? 0;
+  const hasTrades = trades > 0;
+  const tone = !hasTrades
+    ? "text-bunker-muted"
+    : rate >= 50
+    ? "text-emerald-300"
+    : "text-rose-300";
+  return (
+    <div className="p-2.5 rounded-xl bg-bunker-950/80 border border-bunker-800/80">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-[9px] font-black uppercase tracking-wider ${accent}`}>{title}</span>
+        <span className={`text-sm font-black font-mono ${tone}`}>
+          {hasTrades ? `%${rate.toFixed(1)}` : "—"}
+        </span>
+      </div>
+      <div className="text-[9px] text-bunker-muted font-mono mt-0.5">
+        {hasTrades ? `${wins}K / ${losses}Z (${trades} İşlem)` : "Kapanan işlem yok"}
+      </div>
+      <div className="text-[9px] font-mono mt-1 flex items-center gap-1.5">
+        <span className="text-bunker-muted">NET KÂRLILIK</span>
+        {hasTrades ? (
+          <>
+            <span className={pnlUsd >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+              {pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)}
+            </span>
+            <span className={pnlPips >= 0 ? "text-emerald-400/80" : "text-rose-400/80"}>
+              {pnlPips >= 0 ? "+" : ""}{pnlPips.toFixed(1)} pip
+            </span>
+          </>
+        ) : (
+          <span className="text-bunker-muted">—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- RAKAMSAL PROGRESS BARLI KART BİLEŞENİ ---
 function ProgressBarCard({
   title,
@@ -431,10 +574,23 @@ export default function BtcGoldForexPage() {
   const [openPnlUsd, setOpenPnlUsd] = useState<number>(0.0);
   const [openPnlPips, setOpenPnlPips] = useState<number>(0.0);
   const [realizedPnlUsd, setRealizedPnlUsd] = useState<number>(0.0);
+  const [realizedPnlPips, setRealizedPnlPips] = useState<number>(0.0);
   const [winRate, setWinRate] = useState<number>(0.0);
   const [totalTrades, setTotalTrades] = useState<number>(0);
   const [wins, setWins] = useState<number>(0);
   const [losses, setLosses] = useState<number>(0);
+  // BUGÜN kırılımı: tüm zamanlar KPI'larından ayrı tutulur (kullanıcı ikisini
+  // yan yana istedi). Kaynak aynı defterdir — backend `daily_*` alanları.
+  const [dailyWinRate, setDailyWinRate] = useState<number>(0.0);
+  const [dailyTrades, setDailyTrades] = useState<number>(0);
+  const [dailyWins, setDailyWins] = useState<number>(0);
+  const [dailyLosses, setDailyLosses] = useState<number>(0);
+  const [dailyPnlUsd, setDailyPnlUsd] = useState<number>(0.0);
+  const [dailyPnlPips, setDailyPnlPips] = useState<number>(0.0);
+  // Sembol bazlı KPI dilimleri (backend `per_symbol_today` / `per_symbol_all_time`).
+  // İkisi AYNI defterden türetilir; panel ikisini yan yana gösterir.
+  const [perSymbolToday, setPerSymbolToday] = useState<SymbolKpi[]>([]);
+  const [perSymbolAllTime, setPerSymbolAllTime] = useState<SymbolKpi[]>([]);
 
   const [openPositions, setOpenPositions] = useState<AutoPosition[]>([]);
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
@@ -445,23 +601,10 @@ export default function BtcGoldForexPage() {
   const [tickers, setTickers] = useState<Record<string, TickerData>>({});
   const [radarMap, setRadarMap] = useState<Record<string, RadarCandidate>>({});
 
-  // Motor ayarları — kokpit kartlarındaki TP/SL/spread hedef göstergeleri için.
-  // (Panel /forex/ayarlar sayfasına taşındı; düzenleme artık oradan yapılır.)
-  const [appliedSettings, setAppliedSettings] = useState<AutoSettings>({
-    enabled: false,
-    balance: 1000.0,
-    risk_per_trade_pct: 5.0,
-    max_open_positions: 25,
-    min_score: 70.0,
-    tp_pips: 25.0,
-    sl_pips: 15.0,
-    breakeven_pips: 8.0,
-    trailing_stop_pips: 12.0,
-    session_filter: false,
-    max_spread_pips: 3.0,
-    gold_cooldown_sec: 60.0,
-    allowed_symbols: ["XAUUSD", "BTCUSD"],
-  });
+  // Motor ayarları kokpit kartlarında ARTIK KULLANILMIYOR: "24s Günlük Fiyat
+  // Aralığı", "Spread Emniyet Skalası" ve "Risk / Ödül Skalası" barları
+  // kaldırıldığında TP/SL/spread hedeflerini okuyan tek yer kalmadı. Ayar
+  // düzenleme zaten /forex/ayarlar sayfasında; burada tutmak ölü durum olurdu.
 
   // Canlı Log Filtresi ve Otomatik Kaydırma
   const [logFilter, setLogFilter] = useState<string>("ALL");
@@ -483,6 +626,8 @@ export default function BtcGoldForexPage() {
     action?: string;
     score?: number;
     strength_label?: string;
+    /** Kısa trend etiketi (ör. "Güçlü Trend"), 2026-10-13'te eklendi. */
+    trend_label?: string;
     comment: string;
   }
   const [autoComment, setAutoComment] = useState<{
@@ -505,10 +650,23 @@ export default function BtcGoldForexPage() {
         setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
         setOpenPnlPips(res.open_pnl_pips ?? 0.0);
         setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
+        setRealizedPnlPips(res.realized_pnl_pips ?? 0.0);
         setTotalTrades(res.total_trades ?? 0);
         setWins(res.wins ?? 0);
         setLosses(res.losses ?? 0);
         setWinRate(res.win_rate ?? 0.0);
+        setDailyWinRate(res.daily_win_rate ?? 0.0);
+        setDailyTrades(res.daily_trades ?? 0);
+        setDailyWins(res.daily_wins ?? 0);
+        setDailyLosses(res.daily_losses ?? 0);
+        setDailyPnlUsd(res.daily_pnl ?? 0.0);
+        setDailyPnlPips(res.daily_pips ?? 0.0);
+        setPerSymbolToday(
+          (res.per_symbol_today || []).filter((k: SymbolKpi) => symFilter.has(String(k.symbol).toUpperCase()))
+        );
+        setPerSymbolAllTime(
+          (res.per_symbol_all_time || []).filter((k: SymbolKpi) => symFilter.has(String(k.symbol).toUpperCase()))
+        );
 
         setOpenPositions(
           (res.open_positions || []).filter((p: AutoPosition) => symFilter.has(String(p.symbol).toUpperCase()))
@@ -522,9 +680,6 @@ export default function BtcGoldForexPage() {
           )
         );
         setSessions(res.sessions || []);
-        if (res.settings) {
-          setAppliedSettings(res.settings);
-        }
       }
     } catch (err) {
       console.error("Auto paper status hatası:", err);
@@ -888,14 +1043,57 @@ export default function BtcGoldForexPage() {
           </span>
         </div>
 
+        {/* Başarı oranı — BUGÜN ve TÜM ZAMANLAR ayrı ayrı (kullanıcı isteği
+            2026-10-13). İki blok AYNI defterden gelir (backend `daily_*` ve
+            üst-düzey alanlar), bu yüzden sayılar birbirini tutar; "bugün"
+            tanımı UTC gece yarısıdır (rapor ekranının UTC+3'ünden farklı). */}
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-          <span className="text-[10px] text-bunker-muted uppercase block">Başarı Oranı (Win Rate)</span>
-          <span className="text-lg font-bold text-yellow-400 font-mono">
-            %{winRate.toFixed(1)}
-          </span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">
-            {wins}K / {losses}Z ({totalTrades} İşlem)
-          </span>
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] text-bunker-muted uppercase block">Başarı Oranı</span>
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-400/30">
+              BUGÜN / TÜM Z.
+            </span>
+          </div>
+
+          <div className="mt-1 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[9px] font-bold text-bunker-muted uppercase shrink-0">Bugün</span>
+              <span className="text-sm font-bold text-yellow-400 font-mono">%{dailyWinRate.toFixed(1)}</span>
+            </div>
+            <div className="text-[9px] text-bunker-muted font-mono leading-tight">
+              {dailyWins}K / {dailyLosses}Z ({dailyTrades} İşlem)
+            </div>
+            <div className="text-[9px] font-mono leading-tight">
+              <span className="text-bunker-muted">Net: </span>
+              <span className={dailyPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {dailyPnlUsd >= 0 ? "+" : ""}${dailyPnlUsd.toFixed(2)}
+              </span>
+              <span className="text-bunker-muted"> · </span>
+              <span className={dailyPnlPips >= 0 ? "text-emerald-400/80" : "text-rose-400/80"}>
+                {dailyPnlPips >= 0 ? "+" : ""}{dailyPnlPips.toFixed(1)} pip
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-2 pt-2 border-t border-bunker-800 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[9px] font-bold text-bunker-muted uppercase shrink-0">Tüm Zamanlar</span>
+              <span className="text-sm font-bold text-cyan-300 font-mono">%{winRate.toFixed(1)}</span>
+            </div>
+            <div className="text-[9px] text-bunker-muted font-mono leading-tight">
+              {wins}K / {losses}Z ({totalTrades} İşlem)
+            </div>
+            <div className="text-[9px] font-mono leading-tight">
+              <span className="text-bunker-muted">Net: </span>
+              <span className={realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {realizedPnlUsd >= 0 ? "+" : ""}${realizedPnlUsd.toFixed(2)}
+              </span>
+              <span className="text-bunker-muted"> · </span>
+              <span className={realizedPnlPips >= 0 ? "text-emerald-400/80" : "text-rose-400/80"}>
+                {realizedPnlPips >= 0 ? "+" : ""}{realizedPnlPips.toFixed(1)} pip
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
@@ -1138,12 +1336,6 @@ export default function BtcGoldForexPage() {
             const askPrice = tick?.ask || candidate?.ask || curPrice;
             const spreadPips = tick?.spread_pips ?? candidate?.spread_pips ?? (isGold ? 1.5 : 12.0);
             const changePct = tick?.change_pct ?? 0.45;
-            const dayHigh = tick?.high || curPrice * 1.008;
-            const dayLow = tick?.low || curPrice * 0.992;
-
-            // Günlük Fiyat Aralığı Yüzdesi (Progress bar için)
-            const rangeSpan = dayHigh - dayLow || 1;
-            const rangePct = Math.max(0, Math.min(100, ((curPrice - dayLow) / rangeSpan) * 100));
 
             // İndikatörler
             const score = candidate?.score ?? tick?.score ?? 72.0;
@@ -1155,14 +1347,33 @@ export default function BtcGoldForexPage() {
             const macdVerdict = candidate?.macd_verdict ?? tick?.macd_verdict ?? "POZİTİF (Alım Güçleniyor)";
             const cmo = candidate?.cmo ?? tick?.cmo ?? 18.0;
             const cci = candidate?.cci ?? tick?.cci ?? 75.0;
-            const atrPips = candidate?.atr_pips ?? 18.5;
-            const tpTarget = candidate?.pip_target ?? appliedSettings.tp_pips;
-            const slTarget = candidate?.stop_loss_pips ?? appliedSettings.sl_pips;
-            const rrRatio = candidate?.risk_reward ?? `1:${(tpTarget / (slTarget || 1)).toFixed(2)}`;
 
-            // Spread Güvenlik Yüzdesi (Limit 3.0 veya ayar)
-            const maxSpreadAllowed = appliedSettings.max_spread_pips || (isGold ? 3.0 : 25.0);
-            const spreadSafetyPct = Math.min(100, (spreadPips / maxSpreadAllowed) * 100);
+            // --- DİNAMİK YÖN (2026-10-13) ---------------------------------
+            // MACD histogramının ATR'ye oranı ham momentumu verir; -1..+1'e
+            // sıkıştırılır. XAU ile BTC'nin histogram büyüklükleri kıyaslanamaz
+            // (farklı fiyat/ATR ölçeği), ATR'ye bölmek bu ölçek farkını siler.
+            const clamp1 = (v: number) => Math.max(-1, Math.min(1, isNaN(v) ? 0 : v));
+            const macdHist = Number(candidate?.macd_hist ?? tick?.macd_hist ?? 0);
+            const atrRaw = Number(candidate?.atr ?? tick?.atr ?? 0);
+            const momentumNorm = atrRaw > 0 ? clamp1(macdHist / atrRaw) : 0;
+            // Yön barı TEK göstergeye bağlanmaz (o zaman gürültüye açık olurdu):
+            // trend + SuperTrend + MACD momentum + RSI konumu + CMO'nun eşit
+            // ağırlıklı ortalamasıdır. Hepsi motorun canlı ürettiği alanlardır.
+            const trendSign = trend === "BULLISH" ? 1 : trend === "BEARISH" ? -1 : 0;
+            const stSign = supertrendDir > 0 ? 1 : supertrendDir < 0 ? -1 : 0;
+            const rsiNorm = clamp1((rsi - 50) / 50);
+            const cmoNorm = clamp1(cmo / 50);
+            const dirScore = hasLive
+              ? (trendSign + stSign + momentumNorm + rsiNorm + cmoNorm) / 5
+              : 0;
+            const dirDetail = hasLive
+              ? `Trend ${trend === "BULLISH" ? "Boğa" : trend === "BEARISH" ? "Ayı" : "Yatay"} · SuperTrend ${
+                  supertrendDir > 0 ? "Boğa" : "Ayı"
+                } · MACD ${macdHist >= 0 ? "+" : ""}${(atrRaw > 0 ? macdHist / atrRaw : 0).toFixed(2)} ATR · RSI ${rsi.toFixed(0)}`
+              : "Canlı veri bekleniyor";
+
+            // MACD momentum barının yüzdesi: 50 = nötr, 100 = tam boğa, 0 = tam ayı.
+            const macdBarPct = 50 + momentumNorm * 50;
 
             // Renk Şeması
             const cardBorder = isGold ? "border-amber-500/40" : "border-orange-500/40";
@@ -1394,6 +1605,12 @@ export default function BtcGoldForexPage() {
                     <span>Hassas İbreli Göstergeler (Cockpit Gauges)</span>
                   </div>
 
+                  {/* Yön barı — bloğun EN ÜSTÜNDE: ortası NÖTR, sağ BUY, sol SELL.
+                      Değeri motorun canlı göstergelerinden türetilir (bkz. dirScore). */}
+                  <div className="mb-2.5">
+                    <DirectionBar value={dirScore} detail={dirDetail} hasData={hasLive} />
+                  </div>
+
                   <div className="grid grid-cols-3 gap-2.5">
                     {/* Gauge 1: Radar Skoru */}
                     <SemiCircleGauge
@@ -1447,58 +1664,22 @@ export default function BtcGoldForexPage() {
                     <span>Rakamsal Parametre Barları (Progress Bars)</span>
                   </div>
 
-                  {/* Bar 1: Günlük 24s Fiyat Aralığı (Low - High Range) */}
-                  <ProgressBarCard
-                    title="24s Günlük Fiyat Aralığı"
-                    icon="📈"
-                    valueText={`$${curPrice.toFixed(isGold ? 2 : 1)} (%${rangePct.toFixed(0)})`}
-                    subText={`Aralık: $${(dayHigh - dayLow).toFixed(isGold ? 2 : 1)}`}
-                    percentage={rangePct}
-                    leftLabel={`Low: $${dayLow.toFixed(isGold ? 2 : 1)}`}
-                    rightLabel={`High: $${dayHigh.toFixed(isGold ? 2 : 1)}`}
-                    barColor="gradient"
-                  />
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Bar 2: MACD Histogram & Momentum */}
+                    {/* Bar: MACD Histogram & Momentum (gerçek ATR-normalize histogram) */}
                     <ProgressBarCard
                       title="MACD Momentum"
                       icon="🌊"
                       valueText={macdVerdict}
                       subText="Momentum Yönü"
-                      percentage={trend === "BULLISH" ? 85 : trend === "BEARISH" ? 15 : 50}
+                      percentage={macdBarPct}
                       leftLabel="Ayı Satış"
                       rightLabel="Boğa Alış"
-                      barColor={trend === "BULLISH" ? "emerald" : trend === "BEARISH" ? "rose" : "amber"}
+                      barColor={momentumNorm > NEUTRAL_DEAD_ZONE ? "emerald" : momentumNorm < -NEUTRAL_DEAD_ZONE ? "rose" : "amber"}
                     />
 
-                    {/* Bar 3: Spread Emniyeti */}
+                    {/* Bar: Volatilite & Osilatörler (CMO & CCI) */}
                     <ProgressBarCard
-                      title="Spread Emniyet Skalası"
-                      icon="🛡️"
-                      valueText={`${spreadPips} / ${maxSpreadAllowed} p`}
-                      subText={spreadPips <= maxSpreadAllowed ? "✓ İşleme Uygun" : "⚠️ Yüksek Spread"}
-                      percentage={spreadSafetyPct}
-                      leftLabel="0 pips"
-                      rightLabel={`${maxSpreadAllowed} pips`}
-                      barColor={spreadSafetyPct > 80 ? "rose" : spreadSafetyPct > 50 ? "amber" : "emerald"}
-                    />
-
-                    {/* Bar 4: Hedef Risk/Ödül Oranı */}
-                    <ProgressBarCard
-                      title="Risk / Ödül Skalası"
-                      icon="🎯"
-                      valueText={rrRatio}
-                      subText={`TP: +${tpTarget}p | SL: -${slTarget}p`}
-                      percentage={Math.min(100, (tpTarget / ((tpTarget + slTarget) || 1)) * 100)}
-                      leftLabel={`SL: ${slTarget}p`}
-                      rightLabel={`TP: ${tpTarget}p`}
-                      barColor="cyan"
-                    />
-
-                    {/* Bar 5: Volatilite & Osilatörler (CMO & CCI) */}
-                    <ProgressBarCard
-                      title="Chande (CMO) &amp; CCI"
+                      title="Chande (CMO) & CCI"
                       icon="⚡"
                       valueText={`CMO: ${cmo.toFixed(1)} | CCI: ${cci.toFixed(0)}`}
                       subText={cmo > 0 ? "Pozitif İvme" : "Negatif İvme"}
@@ -1506,6 +1687,29 @@ export default function BtcGoldForexPage() {
                       leftLabel="-50"
                       rightLabel="+50"
                       barColor={cmo >= 0 ? "emerald" : "rose"}
+                    />
+                  </div>
+                </div>
+
+                {/* 3b. SEMBOL BAŞARI ORANI — BUGÜN & TÜM ZAMANLAR (2026-10-13)
+                    Kullanıcı isteği: başarı oranı her sembolde iki dönem için
+                    ayrı gösterilir. Kaynak backend `per_symbol_today` /
+                    `per_symbol_all_time`; ikisi aynı defterden → tutarlı. */}
+                <div className="px-4 pb-1">
+                  <div className="text-[11px] font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🏆</span>
+                    <span>{sym} Başarı Oranı</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <WinRateBlock
+                      title="BUGÜN"
+                      kpi={perSymbolToday.find((k) => k.symbol.toUpperCase() === sym) || null}
+                      accent="text-blue-300"
+                    />
+                    <WinRateBlock
+                      title="TÜM ZAMANLAR"
+                      kpi={perSymbolAllTime.find((k) => k.symbol.toUpperCase() === sym) || null}
+                      accent="text-cyan-300"
                     />
                   </div>
                 </div>
@@ -1560,39 +1764,46 @@ export default function BtcGoldForexPage() {
                   />
                 </div>
 
-                {/* OTOMATİK YORUM — motorun göstergelerinden sentezlenen insan-okur analiz (60 sn'de bir yenilenir) */}
+                {/* OTOMATİK YORUM — sade ve net (2026-10-13)
+                    Backend metni 2-4 kısa cümleye indirildi; panelde önce
+                    "ne oluyor" tek satırda, sonra açıklama okunur. Rozet yalnız
+                    gerçekten bir eylem varsa (BUY/SELL) gösterilir. */}
                 {(() => {
                   const c = autoComment?.symbols?.[sym];
+                  const hasSignal = c?.action === "BUY" || c?.action === "SELL";
                   const badgeCls =
                     c?.action === "BUY"
                       ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-                      : c?.action === "SELL"
-                      ? "bg-rose-500/15 text-rose-300 border-rose-500/40"
-                      : "bg-bunker-800 text-bunker-muted border-bunker-700";
+                      : "bg-rose-500/15 text-rose-300 border-rose-500/40";
+                  const summary = hasSignal
+                    ? `${c?.trend_label || "Sinyal"} — ${c?.action === "BUY" ? "alış" : "satış"} yönü`
+                    : "Belirgin bir yön yok — izlemede";
                   return (
-                    <div className="mx-4 mb-4 p-3 rounded-xl bg-bunker-950/70 border border-bunker-700/60">
-                      <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                    <div className="mx-4 mb-4 p-3.5 rounded-xl bg-bunker-950/70 border border-bunker-700/60">
+                      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                         <div className="flex items-center gap-2">
                           <span className="text-sm leading-none">🤖</span>
                           <span className="text-[10px] font-black uppercase tracking-wider text-bunker-300">
                             Otomatik Yorum
                           </span>
-                          {c?.action && (
+                          {hasSignal && (
                             <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${badgeCls}`}>
-                              {c.action}
-                            </span>
-                          )}
-                          {typeof c?.score === "number" && c.score > 0 && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black border border-bunker-700 bg-bunker-900 text-bunker-300">
-                              {c.strength_label} · {c.score}/100
+                              {c?.action}
                             </span>
                           )}
                         </div>
                         <span className="text-[9px] text-bunker-muted">60 sn'de bir yenilenir</span>
                       </div>
-                      <p className="text-[12px] leading-relaxed text-bunker-200 select-text">
+
+                      <p className="text-[13px] font-bold text-white leading-snug">{summary}</p>
+                      <p className="text-[12px] leading-relaxed text-bunker-300 select-text mt-1">
                         {c?.comment || "Yorum hazırlanıyor…"}
                       </p>
+                      {typeof c?.score === "number" && c.score > 0 && (
+                        <p className="text-[10px] text-bunker-muted mt-1.5 font-mono">
+                          Güç: {c.strength_label} ({c.score}/100)
+                        </p>
+                      )}
                     </div>
                   );
                 })()}

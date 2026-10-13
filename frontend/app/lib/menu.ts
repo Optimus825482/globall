@@ -38,14 +38,15 @@ export const MENU_GROUPS: MenuGroup[] = [
     items: [
       { href: "/", label: "Ana Sayfa", icon: "🏠", desc: "Günün Forex işlem karnesi, başarı oranı ve kârlılık özeti" },
       { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı hesap yönetimi" },
-      { href: "/metamobil", label: "MetaMobil", icon: "📱", desc: "MetaTrader 5 mobil arayüz kopyası (Kotasyonlar, Grafik, Ticaret & Geçmiş)", alsoActive: ["/forex/metamobil"] },
+      { href: "/metamobil", label: "MetaMobil", icon: "📱", desc: "MetaTrader 5 mobil arayüz kopyası (Kotasyonlar, Grafik, Ticaret & Geçmiş)" },
       { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
       { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği", alsoActive: ["/charts"] },
       { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex ekranı", alsoActive: ["/technical-charts"] },
       { href: "/chat", label: "Forex Chat", icon: "💬", desc: "Makroekonomi ve FX uzman AI asistanı" },
-      { href: "/forex/reports", label: "Raporlar", icon: "📋", desc: "Detaylı işlem geçmişi ve analiz raporları", alsoActive: ["/forex/islemler"] },
-      { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Forex motor parametreleri, sistem sağlığı ve konfigürasyon", adminOnly: true, alsoActive: ["/forex/ayarlar", "/system-health"] },
+      { href: "/forex/islemler", label: "Forex İşlemler", icon: "🧾", desc: "Kapanan ve açık işlemlerin detaylı listesi, tek tek işlem geçmişi" },
+      { href: "/forex/reports", label: "Raporlar", icon: "📋", desc: "Detaylı işlem geçmişi ve analiz raporları" },
+      { href: "/settings", label: "Ayarlar", icon: "⚙️", desc: "Forex motor parametreleri, sistem sağlığı ve konfigürasyon", adminOnly: true, alsoActive: ["/forex/ayarlar", "/system-health", "/forex/metamobil"] },
     ],
   },
 ];

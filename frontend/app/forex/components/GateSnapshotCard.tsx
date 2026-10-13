@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 // ============================================================================
 // KAPISI ANLIK GÖRÜNÜMÜ (2026-10-10) — kokpit paneli
 // ============================================================================
@@ -118,53 +120,6 @@ function GateRow({ gate }: { gate: GateInfo }) {
   );
 }
 
-function OpenPositionRow({
-  p,
-}: {
-  p: NonNullable<GateSnapshot["open_positions"]>[number];
-}) {
-  const isProfit = p.pnl_usd >= 0;
-  const protectedLabel = p.trailing_activated
-    ? { txt: "TRAILING", cls: "bg-amber-500/15 text-amber-300 border-amber-400/30" }
-    : p.breakeven_activated
-    ? { txt: "BE", cls: "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" }
-    : { txt: "SABİT SL", cls: "bg-bunker-800 text-bunker-muted border-bunker-700" };
-  return (
-    <div className="p-2.5 rounded-lg bg-bunker-950/70 border border-bunker-800">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span
-            className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
-              p.direction === "BUY"
-                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-            }`}
-          >
-            {p.direction}
-          </span>
-          <span className="text-[10px] font-bold text-white font-mono">{p.lots} lot</span>
-          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${protectedLabel.cls}`}>
-            {protectedLabel.txt}
-          </span>
-          {p.ticket ? <span className="text-[9px] text-cyan-300 font-mono">#{p.ticket}</span> : null}
-        </div>
-        <span className={`text-xs font-black font-mono ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-          {isProfit ? "+" : ""}${p.pnl_usd.toFixed(2)}
-        </span>
-      </div>
-      <div className="flex items-center justify-between gap-2 text-[9px] text-bunker-muted font-mono flex-wrap">
-        <span>Giriş: {p.entry_price}</span>
-        <span className={isProfit ? "text-emerald-400/80" : "text-rose-400/80"}>
-          {p.pnl_pips >= 0 ? "+" : ""}
-          {p.pnl_pips.toFixed(1)}p
-        </span>
-        <span className="text-rose-300/80">SL: {p.sl_price || "-"}</span>
-        <span className="text-emerald-300/80">TP: {p.tp_price || "-"}</span>
-      </div>
-    </div>
-  );
-}
-
 const VERDICT_STYLE: Record<GateSnapshot["verdict_level"], { border: string; bg: string; text: string; icon: string }> = {
   ready: { border: "border-emerald-500/50", bg: "bg-emerald-500/10", text: "text-emerald-300", icon: "🟢" },
   blocked: { border: "border-rose-500/50", bg: "bg-rose-500/10", text: "text-rose-300", icon: "⛔" },
@@ -181,6 +136,10 @@ export default function GateSnapshotCard({
   loading: boolean;
   isBtc?: boolean;
 }) {
+  // Akordeon (2026-10-13): zincir 12+ satır yer kapladığı için varsayılan
+  // KAPALI. Kanca erken `return`'lerden ÖNCE çağrılmalı (React kuralı), bu
+  // yüzden state yukarıda — snapshot yokken de hook sırası sabit kalır.
+  const [expanded, setExpanded] = useState(false);
   if (!snapshot && loading) {
     return (
       <div className="p-4 rounded-2xl border border-bunker-800 bg-bunker-950/60 text-center">
@@ -204,131 +163,51 @@ export default function GateSnapshotCard({
 
   return (
     <div className={`rounded-2xl border ${isBtc ? "border-orange-500/30" : "border-amber-500/30"} bg-bunker-900/70 overflow-hidden shadow-xl`}>
-      {/* Başlık */}
-      <div className={`px-4 py-3 border-b border-bunker-800 bg-gradient-to-r ${isBtc ? "from-orange-950/30" : "from-amber-950/30"} via-bunker-900 to-transparent`}>
+      {/* Başlık — tıklanabilir akordeon düğmesi (varsayılan KAPALI).
+          Özet (verdict + sayaçlar) kapalıyken de görünür: operatör "neden
+          işlem açılmıyor" cevabını açmadan okuyabilir; zincirin tamamı
+          (12+ kapı satırı) yalnız istenince açılır. */}
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className={`w-full text-left px-4 py-3 bg-gradient-to-r ${isBtc ? "from-orange-950/30" : "from-amber-950/30"} via-bunker-900 to-transparent hover:via-bunker-800/60 transition-colors`}
+      >
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
+            <span
+              className={`text-[10px] text-bunker-muted transition-transform duration-200 ${
+                expanded ? "rotate-90" : ""
+              }`}
+            >
+              ▶
+            </span>
             <span>🚦</span>
             <h4 className="text-[11px] font-black text-white uppercase tracking-wider">
               Giriş Kapısı Zinciri — Neden İşlem Açmıyor?
             </h4>
           </div>
-          <span className="text-[9px] text-bunker-muted font-mono">
-            {passedCount} geçti · {blockedCount} engel · {offCount} devre dışı{naCount ? ` · ${naCount} beklemede` : ""}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-bunker-muted font-mono">
+              {passedCount} geçti · {blockedCount} engel · {offCount} devre dışı{naCount ? ` · ${naCount} beklemede` : ""}
+            </span>
+            <span className="text-[9px] font-bold text-bunker-muted border border-bunker-700 rounded px-1.5 py-0.5">
+              {expanded ? "Kapat ▲" : "Detayı Aç ▼"}
+            </span>
+          </div>
         </div>
-        {/* Tek cümlelik verdict */}
+        {/* Tek cümlelik verdict — akordeon kapalıyken de görünür */}
         <div className={`mt-2 px-3 py-2 rounded-xl border ${v.border} ${v.bg} flex items-start gap-2`}>
           <span className="text-xs leading-none mt-0.5">{v.icon}</span>
           <p className={`text-[11px] font-bold leading-relaxed ${v.text} select-text`}>{snapshot.verdict}</p>
         </div>
-      </div>
+      </button>
 
-      {/* Kapı satırları */}
-      <div className="p-3 space-y-1.5">
-        {snapshot.gates.map((g) => (
-          <GateRow key={g.key} gate={g} />
-        ))}
-      </div>
-
-      {/* Uygulanan koruma ayarları — "emir açılırsa nasıl yönetilecek?"
-          Kapı zinciri girişi anlatır; bu şerit çıkışı/riski anlatır. BTC'de
-          TP'nin kapalı olması ve SL'nin ATR katına bağlı olması operatörün
-          en çok şaşırdığı iki gerçek olduğu için açıkça yazılır.
-          ÖNEMLİ: hücreler motorun GERÇEK kapsamına göre ayrılır — ATR-SL/TP
-          yalnız kriptoda etkilidir (motorda "BTC"/"ETH" koşulu), risk kısıtı
-          ise kripto+altında ortak (`is_crypto or is_gold`). XAU kartında
-          kripto hücresi göstermek yanlış bilgi olurdu. */}
-      {(() => {
-        const s = snapshot.settings;
-        const cell = (label: string, value: string, tone: string, on: boolean) => ({
-          label,
-          value,
-          tone,
-          on,
-        });
-        const cryptoCells = isBtc
-          ? [
-              cell("SL (ATR katı)", `${s.crypto_sl_atr_mult}×`, "text-cyan-300", true),
-              cell(
-                "Sabit TP",
-                s.crypto_tp_enabled ? "AÇIK" : "KAPALI",
-                s.crypto_tp_enabled ? "text-emerald-300" : "text-amber-300",
-                s.crypto_tp_enabled
-              ),
-              cell(
-                "EV Muafiyeti",
-                s.btc_ev_exempt ? "MUAF" : "TABİ",
-                s.btc_ev_exempt ? "text-amber-300" : "text-emerald-300",
-                !s.btc_ev_exempt
-              ),
-              cell(
-                "Net-Negatif Freni",
-                s.btc_net_negative_guard_enabled ? "AÇIK" : "KAPALI",
-                s.btc_net_negative_guard_enabled ? "text-amber-300" : "text-bunker-muted",
-                s.btc_net_negative_guard_enabled
-              ),
-            ]
-          : [];
-        const cdSec = isBtc ? s.btc_cooldown_sec : s.gold_cooldown_sec;
-        const commonCells = [
-          cell(
-            "Kapanış Soğuması",
-            cdSec == null ? "—" : cdSec > 0 ? `${cdSec}s` : "kapalı",
-            cdSec == null ? "text-bunker-muted" : cdSec > 0 ? "text-cyan-300" : "text-amber-300",
-            (cdSec ?? 0) > 0
-          ),
-          cell(
-            "Risk Kısıtı",
-            s.crypto_risk_clamp_enabled ? "AÇIK" : "KAPALI",
-            s.crypto_risk_clamp_enabled ? "text-emerald-300" : "text-rose-300",
-            s.crypto_risk_clamp_enabled
-          ),
-          cell(
-            "SuperTrend Teyidi",
-            s.supertrend_filter_enabled ? "AÇIK" : "KAPALI",
-            s.supertrend_filter_enabled ? "text-emerald-300" : "text-amber-300",
-            s.supertrend_filter_enabled
-          ),
-          cell(
-            "ADX Kalkanı",
-            s.adx_filter_enabled ? "AÇIK" : "KAPALI",
-            s.adx_filter_enabled ? "text-emerald-300" : "text-bunker-muted",
-            s.adx_filter_enabled
-          ),
-        ];
-        return (
-          <div className="px-3 pb-3">
-            <div className="text-[10px] font-black text-bunker-muted uppercase tracking-wider pt-1 pb-1.5">
-              Uygulanan Koruma Ayarları
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {[...cryptoCells, ...commonCells].map((it) => (
-                <div
-                  key={it.label}
-                  className={`px-2 py-1.5 rounded-lg border ${
-                    it.on ? "border-bunker-700 bg-bunker-950/70" : "border-bunker-800 bg-bunker-950/40"
-                  }`}
-                >
-                  <span className="block text-[8px] text-bunker-muted uppercase tracking-wider truncate">
-                    {it.label}
-                  </span>
-                  <span className={`block text-[11px] font-black font-mono ${it.tone}`}>{it.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Açık pozisyonlar */}
-      {snapshot.open_positions.length > 0 && (
-        <div className="px-3 pb-3 space-y-1.5">
-          <div className="text-[10px] font-black text-bunker-muted uppercase tracking-wider pt-1">
-            {snapshot.symbol} Açık Pozisyonlar ({snapshot.open_positions.length})
-          </div>
-          {snapshot.open_positions.map((p, i) => (
-            <OpenPositionRow key={`${p.ticket || "pos"}-${i}`} p={p} />
+      {/* Kapı satırları — yalnız açıkken */}
+      {expanded && (
+        <div className="p-3 space-y-1.5 border-t border-bunker-800">
+          {snapshot.gates.map((g) => (
+            <GateRow key={g.key} gate={g} />
           ))}
         </div>
       )}

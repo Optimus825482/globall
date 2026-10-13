@@ -2189,6 +2189,10 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             macd_verdict = tech["macd_verdict"]
             cmo = tech.get("cmo", 0.0)
             cci = tech.get("cci", 0.0)
+            # MACD histogramı (ham, fiyat biriminde). Kokpitteki "MACD Momentum"
+            # barı bunu kullanır; ATR'ye bölünerek ölçeksiz hale getirilir —
+            # XAU ($) ile BTC ($) histogram büyüklükleri kıyaslanamaz.
+            macd_hist_val = float(tech.get("macd_hist", 0.0) or 0.0)
             adx = tech.get("adx", 25.0)
             st_dir = int(tech.get("supertrend_dir", 0))
             change_pct = tech["change_pct"]
@@ -2203,6 +2207,7 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             macd_verdict = "NÖTR (Veri Bekleniyor)"
             cmo = 0.0
             cci = 0.0
+            macd_hist_val = 0.0
             adx = 25.0
             st_dir = 0
             change_pct = 0.0
@@ -2233,6 +2238,7 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "action": action,
             "rsi": rsi,
             "macd_verdict": macd_verdict,
+            "macd_hist": macd_hist_val,
             "cmo": cmo,
             "cci": cci,
             "adx": adx,
@@ -2854,6 +2860,12 @@ async def get_forex_radar(use_cache: bool = True):
             "action": action,
             "rsi_15m": t.get("rsi", 50.0),
             "macd_verdict": t.get("macd_verdict", "NÖTR (Beklemede)"),
+            # Ham MACD histogramı: kokpit "MACD Momentum" barı bunu ATR'ye
+            # bölerek gösterir (bkz. tick sözlüğü — aynı alan, aynı birim).
+            "macd_hist": float(t.get("macd_hist", 0.0) or 0.0),
+            # Ham ATR (fiyat birimi): kokpit yön barı MACD histogramını bununla
+            # bölüp ölçeksizleştirir (bkz. tick sözlüğü — aynı alan, aynı birim).
+            "atr": float(t.get("atr", 0.0) or 0.0),
             "cmo": t.get("cmo", 0.0),
             "cci": t.get("cci", 0.0),
             "adx": t.get("adx", 25.0),
@@ -2953,20 +2965,8 @@ def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
 # ============================================================================
 # BTC-GOLD SAYFASI — ANLIK OTOMATİK YORUM (kural tabanlı, insan-okur Türkçe)
 # Frontend 60 sn'de bir /btc-gold/comment çağırır; gösterge cache'inden
-# 3-5 cümlelik sade bir piyasa yorumu sentezlenir (LLM çağrısı yok → hızlı+ücretsiz).
+# 2-4 cümlelik düz Türkçe bir piyasa yorumu sentezlenir (LLM çağrısı yok → hızlı+ücretsiz).
 # ============================================================================
-
-def _adx_trend_words(adx: float) -> str:
-    if adx >= 40:
-        return "çok güçlü"
-    if adx >= 30:
-        return "güçlü"
-    if adx >= 20:
-        return "belirginleşen"
-    if adx >= 15:
-        return "zayıf"
-    return "çok zayıf (yatay baskı)"
-
 
 def _strength_label(score: float) -> str:
     if score >= 90:
@@ -2980,130 +2980,85 @@ def _strength_label(score: float) -> str:
     return "BELİRSİZ"
 
 
-def _price_position_note(price: float, high: float, low: float) -> str:
-    band = high - low
-    if band <= 0:
-        return ""
-    pos = (price - low) / band
-    if pos >= 0.85:
-        return "fiyat gün içi zirvesine yakın"
-    if pos <= 0.15:
-        return "fiyat gün içi dibine yakın"
-    if pos >= 0.6:
-        return "fiyat gün bandının üst yarısında"
-    if pos <= 0.4:
-        return "fiyat gün bandının alt yarısında"
-    return "fiyat gün bandının ortasında nefes alıyor"
+def _human_symbol_comment(symbol: str, tick: Dict[str, Any], min_score: float) -> Dict[str, Any]:
+    """Tek sembol için kısa, düz Türkçe yorum sentezler (LLM yok).
 
+    Kullanıcı geri bildirimi (2026-10-13): önceki metin jargondan geçilmiyordu
+    ("MTF Ayı Uyumu", "belirginleşen trend", "momentum teyidi"...). Arayüzün
+    sade dil kuralı burada da geçerli: her cümle TEK bir şey söyler ve
+    operatörün karar verirken sorduğu soruya cevap verir.
 
-def _human_symbol_comment(symbol: str, tick: Dict[str, Any], min_score: float,
-                          dxy_regime: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Tek sembol için 3-5 cümlelik sade Türkçe yorum sentezler.
-
-    Kaynak: teknik göstergeler (RSI/CCI/CMO/ADX/SuperTrend/ATR), motor skoru,
-    giriş eşiği (min_score / btc_min_score), gün içi fiyat bandı ve DXY rejimi.
+    Cümle sırası sabit: yön → güç → göstergeler (RSI/SuperTrend) → karar.
+    DXY rejimi sayfanın kendi "Piyasa Notu" şeridinde zaten yazıyor ve bu iki
+    enstrüman DXY'den tasarım gereği muaf olduğu için burada tekrarlanmaz.
     """
     score = float(tick.get("score", 50.0))
     trend = str(tick.get("trend", "NEUTRAL"))
     action = str(tick.get("action", "HOLD"))
     rsi = float(tick.get("rsi", 50.0))
-    cci = float(tick.get("cci", 0.0))
-    cmo = float(tick.get("cmo", 0.0))
     adx = float(tick.get("adx", 20.0))
     st_dir = int(tick.get("supertrend_dir", 0))
-    atr = float(tick.get("atr", 0.0))
-    pip_size = float(tick.get("pip_size", 0.1))
-    atr_pips = atr / pip_size if pip_size > 0 else 0.0
-    price = float(tick.get("ask", 0.0) or tick.get("bid", 0.0))
-    high = float(tick.get("high", 0.0) or price)
-    low = float(tick.get("low", 0.0) or price)
-    vol = str(tick.get("volatility", "NORMAL"))
 
-    yon = "yukarı" if trend == "BULLISH" else ("aşağı" if trend == "BEARISH" else "yatay")
-    adx_w = _adx_trend_words(adx)
-    st_yon = {1: "yukarı", -1: "aşağı", 0: "kararsız"}.get(st_dir, "kararsız")
-
-    sentences: List[str] = []
-
-    # 1) Trend cümlesi
-    if adx >= 25 and trend != "NEUTRAL":
-        sentences.append(f"Trend {adx_w} (ADX {adx:.0f}) ve yönü {yon}; SuperTrend {st_yon} yönünü onaylıyor.")
-    elif trend != "NEUTRAL":
-        sentences.append(
-            f"Trend {yon} yönünde ama gücü henüz zayıf (ADX {adx:.0f}) — teyit gelmeden riskli."
-        )
+    # Sade karşılıklar — "BULLISH/BEARISH" ve "yukarı 1 / aşağı -1" operatöre
+    # teknik tabir; ekranda düz Türkçe istendi.
+    if trend == "BULLISH":
+        trend_txt = "fiyat yükseliş eğiliminde"
+    elif trend == "BEARISH":
+        trend_txt = "fiyat düşüş eğiliminde"
     else:
-        sentences.append(f"Trend gücü zayıf (ADX {adx:.0f}) — piyasa yatay sıkışmada, yön arıyor.")
+        trend_txt = "fiyat belirgin bir yöne gitmiyor"
 
-    # 2) Momentum cümlesi (RSI ana; CCI/CMO kısa vade)
+    if adx >= 40:
+        guc_txt, guc_kisa = f"trend çok güçlü (ADX {adx:.0f})", "Trend çok güçlü"
+    elif adx >= 25:
+        guc_txt, guc_kisa = f"trend güçlü (ADX {adx:.0f})", "Trend güçlü"
+    elif adx >= 20:
+        guc_txt, guc_kisa = f"trend henüz güçleniyor (ADX {adx:.0f})", "Trend güçleniyor"
+    elif adx >= 15:
+        guc_txt, guc_kisa = f"trend zayıf (ADX {adx:.0f})", "Trend zayıf"
+    else:
+        guc_txt, guc_kisa = f"piyasa yatay, trend yok (ADX {adx:.0f})", "Piyasa yatay"
+
+    sentences: List[str] = [
+        f"Şu an {trend_txt}; {guc_txt}.",
+    ]
+
+    # 2) Gösterge yorumu — RSI tek başına, SuperTrend tek başına. Skor/kapı
+    #    cümlesi zaten üstteki "Anlık Motor Durumu" şeridinde yazıyor, burada
+    #    tekrar edilmez.
     if rsi >= 70:
-        momentum = f"aşırı alım bölgesinde (RSI {rsi:.1f}) — tepe riski var"
+        sentences.append(f"RSI {rsi:.0f} ile alım tarafı fazla ısınmış; yukarıdan almak riskli.")
     elif rsi >= 55:
-        momentum = f"momentum alıcıların elinde (RSI {rsi:.1f})"
+        sentences.append(f"RSI {rsi:.0f} — alıcılar güçlü.")
     elif rsi <= 30:
-        momentum = f"aşırı satım bölgesinde (RSI {rsi:.1f}) — dip bölgesi"
+        sentences.append(f"RSI {rsi:.0f} ile satış tarafı fazla soğumuş; tepki alımı gelebilir.")
     elif rsi <= 45:
-        momentum = f"momentum satıcıların elinde (RSI {rsi:.1f})"
+        sentences.append(f"RSI {rsi:.0f} — satıcılar güçlü.")
     else:
-        momentum = f"momentum nötr (RSI {rsi:.1f})"
+        sentences.append(f"RSI {rsi:.0f} — alıcı ile satıcı dengede.")
 
-    short_neutral = abs(cci) < 30 and abs(cmo) < 5
-    if short_neutral and 45 <= rsi < 70:
-        momentum += f"; ama kısa vadeli göstergeler nötrleşmiş (CCI {cci:.0f}, CMO {cmo:+.1f}) — piyasa nefes alıyor"
-    elif cci >= 100:
-        momentum += f"; CCI {cci:.0f} ile güçlü momentum teyidi var"
-    elif cci <= -100:
-        momentum += f"; CCI {cci:.0f} ile satış baskısı teyitli"
-    sentences.append(f"Momentum tarafında {momentum}.")
+    if st_dir > 0:
+        sentences.append("SuperTrend al yönünü gösteriyor.")
+    elif st_dir < 0:
+        sentences.append("SuperTrend sat yönünü gösteriyor.")
 
-    # 3) Fiyat konumu
-    pos_note = _price_position_note(price, high, low)
-    if pos_note:
-        sentences.append(f"{pos_note[0].upper()}{pos_note[1:]} (gün bandı {low:,.0f} – {high:,.0f}).")
-
-    # 4) Karar cümlesi — motor eşiğiyle karşılaştır
-    if action in ("BUY", "SELL") and score >= min_score:
-        marj = score - min_score
-        if short_neutral or vol == "HIGH":
-            risk = "girişte kısa bir bekleme/tolerans bölgesi iyi olur"
-        elif rsi >= 70 or rsi <= 30:
-            risk = "aşırı uç göstergelere karşı lot küçük tutulmalı"
-        else:
-            risk = "sinyal taze, plan doğrultusunda işlem edilebilir"
-        sentences.append(
-            f"{action} sinyali geçerli: skor {score:.1f}, giriş eşiğini {marj:.1f} puan marjla aşıyor — {risk}."
-        )
+    # 3) Karar — motor eşiğiyle karşılaştırılır; eşik SAYISI kapı zincirinde var.
+    if action == "BUY" and score >= min_score:
+        sentences.append("Alış sinyali giriş eşiğini geçti; kurallar uygun olduğunda işlem açılabilir.")
+    elif action == "SELL" and score >= min_score:
+        sentences.append("Satış sinyali giriş eşiğini geçti; kurallar uygun olduğunda işlem açılabilir.")
     elif action in ("BUY", "SELL"):
-        sentences.append(
-            f"{action} adayı var ama skor {score:.1f}, giriş eşiği {min_score:.0f}'in altında — "
-            "henüz işlem değil, izlenmeye devam."
-        )
+        yon_txt = "alış" if action == "BUY" else "satış"
+        sentences.append(f"{yon_txt.capitalize()} yönü var ama puan giriş eşiğinin altında; şimdilik izlemede.")
     else:
-        sentences.append(f"Sinyal yok (HOLD): skor {score:.1f}, yön belirsiz — beklemek en doğru hamle.")
-
-    # 5) Bağlam notu — DXY (XAU/BTC muaf ama rejim uyumu bilgi değeri taşır)
-    if dxy_regime:
-        regime = dxy_regime.get("regime", "USD_NEUTRAL")
-        dxy_trend = dxy_regime.get("trend", "NEUTRAL")
-        if regime == "USD_WEAK":
-            uyum = "dolar zayıflığı USD karşıtı bu sembolü destekliyor" if not symbol.startswith("USD") \
-                else "dolar zayıflığı bu sembole baskı yapıyor"
-        elif regime == "USD_STRONG":
-            uyum = "dolar güçleniyor, USD karşıtı semboller için ters rüzgar" if not symbol.startswith("USD") \
-                else "dolar güçleniyor, bu sembolü destekliyor"
-        else:
-            uyum = "dolar sıkışık rejimde, belirleyici değil"
-        sentences.append(f"DXY {regime.replace('USD_', '')} ({dxy_trend}): {uyum}.")
-
-    # 6) Volatilite uyarısı
-    if vol == "HIGH" and atr_pips > 0:
-        sentences.append(f"Volatilite yüksek (ATR {atr_pips:.0f} pip) — stop mesafesi ve lot boyu buna göre planlanmalı.")
+        sentences.append("Şu an yön yok; beklemek doğru.")
 
     return {
         "symbol": symbol,
         "display": tick.get("display", symbol),
         "action": action,
         "score": round(score, 1),
+        "trend_label": guc_kisa,
         "strength_label": _strength_label(score),
         "comment": " ".join(sentences),
     }
@@ -3136,7 +3091,7 @@ async def get_btc_gold_auto_comment():
             }
             continue
         min_score = _AUTO_SETTINGS.btc_min_score if sym == "BTCUSD" else _AUTO_SETTINGS.min_score
-        symbols_out[sym] = _human_symbol_comment(sym, tick, float(min_score), dxy)
+        symbols_out[sym] = _human_symbol_comment(sym, tick, float(min_score))
 
     # Genel piyasa notu (sayfa üstü tek satır)
     dxy_note = ""
@@ -6268,6 +6223,12 @@ async def get_forex_auto_paper_status():
         "per_symbol_today": _aggregate_daily_symbol_kpi(
             today_deals, normalized_positions, today_midnight_ts
         ),
+        # Sembol bazlı TÜM ZAMANLAR KPI'ları (aynı defter, `min_ts=0` → kesme yok).
+        # Bugün ve tüm zamanlar AYNI normalize defterden türetildiği için iki görünüm
+        # birbirini tutar; panel ikisini yan yana gösterir (bkz. `per_symbol_today`).
+        "per_symbol_all_time": _aggregate_symbol_kpi(
+            normalized_deals, normalized_positions, 0.0
+        ),
         "settings": _AUTO_SETTINGS.model_dump(),
         "open_positions": normalized_positions,
         "closed_trades": normalized_deals,
@@ -7019,52 +6980,68 @@ def _divide_or_zero(numerator: float, denominator: float) -> float:
     return round(numerator / denominator, 2) if denominator else 0.0
 
 
-def _aggregate_daily_symbol_kpi(
-    deals: List[Dict[str, Any]],
-    open_positions: List[Dict[str, Any]],
-    min_ts: float,
-) -> List[Dict[str, Any]]:
-    """Günün kapanan işlemlerini SEMBOL BAZINDA gruplayıp KPI kartı verisi üretir.
+def _kpi_bucket_begin(sym: str, display: str) -> Dict[str, Any]:
+    """Tek sembolün KPI kovasını sıfır değerlerle açar (bkz. `_finalize_kpi_buckets`)."""
+    key = (sym or "").upper() or "?"
+    return {
+        "symbol": key,
+        "display": display or key,
+        "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+        "pnl_usd": 0.0, "pnl_pips": 0.0,
+        "gross_profit_usd": 0.0, "gross_loss_usd": 0.0,
+        "profit_factor": 0.0, "profit_factor_infinite": False,
+        "avg_pnl_usd": 0.0,
+        "best_trade_usd": 0.0, "worst_trade_usd": 0.0,
+        "open_count": 0, "open_pnl_usd": 0.0,
+        "last_exit_ts": None, "last_exit_time": "",
+        "last_exit_reason": "",
+    }
 
-    Neden backend'de: aynı defterden status `today_kpi`'yi hesaplıyor; sembol
-    kırılımı da onu üreten yerden gelmezse iki sayı kaynağı ayrışır ve kartların
-    toplamı üstteki günlük KPI ile tutmaz. Tek kaynak burasıdır.
 
-    Dönüş sırası: net USD azalan (günün en kârlısı üstte), eşitlikte sembol adı.
+def _finalize_kpi_buckets(buckets: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Kova sözlüğünü türetilmiş oranlarla kapatıp sıralı listeye çevirir.
 
-    `open_positions` ayrı sayılır: açık bir pozisyon KAPANMIŞ işlem gibi
-    sayılırsa kazanma oranı paydası şişer (henüz sonucu yok). Bu yüzden
-    `trades`/`win_rate` yalnız kapananları kapsar, açıklar `open_*` alanlarında
-    raporlanır.
+    Sıra: net USD azalan (en kârlı sembol üstte), eşitlikte sembol adı.
     """
-    buckets: Dict[str, Dict[str, Any]] = {}
+    out: List[Dict[str, Any]] = []
+    for b in buckets.values():
+        b["win_rate"] = round(b["wins"] / b["trades"] * 100.0, 1) if b["trades"] else 0.0
+        b["avg_pnl_usd"] = _divide_or_zero(b["pnl_usd"], b["trades"])
+        if b["gross_loss_usd"] > 0:
+            b["profit_factor"] = round(b["gross_profit_usd"] / b["gross_loss_usd"], 2)
+        elif b["gross_profit_usd"] > 0:
+            # Hiç zarar yokken PF matematiksel olarak sonsuzdur; JSON `Infinity`
+            # taşıyamadığı için tek nöbetçi sabit kullanılır (bkz. `_PF_INFINITE`).
+            b["profit_factor"] = _PF_INFINITE
+            b["profit_factor_infinite"] = True
+        out.append(b)
+    out.sort(key=lambda x: (-x["pnl_usd"], x["symbol"]))
+    return out
 
-    def _bucket(sym: str, display: str) -> Dict[str, Any]:
-        key = (sym or "").upper() or "?"
-        b = buckets.get(key)
-        if b is None:
-            b = {
-                "symbol": key,
-                "display": display or key,
-                "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
-                "pnl_usd": 0.0, "pnl_pips": 0.0,
-                "gross_profit_usd": 0.0, "gross_loss_usd": 0.0,
-                "profit_factor": 0.0, "profit_factor_infinite": False,
-                "avg_pnl_usd": 0.0,
-                "best_trade_usd": 0.0, "worst_trade_usd": 0.0,
-                "open_count": 0, "open_pnl_usd": 0.0,
-                "last_exit_ts": None, "last_exit_time": "",
-                "last_exit_reason": "",
-            }
-            buckets[key] = b
-        return b
 
+def _accumulate_kpi_deals(
+    buckets: Dict[str, Dict[str, Any]],
+    deals: List[Dict[str, Any]],
+    min_ts: float,
+) -> None:
+    """Kapanan işlemleri kovalara işler; `min_ts`'ten eski olanlar atlanır.
+
+    Sınıflama tüm uçlarla AYNI: `pnl >= 0` → WIN (bkz. status KPI bloğu ve
+    `_deal_net_pnl_usd`). Açık pozisyonlar `trades`/`win_rate` paydasına
+    GİRMEZ (henüz sonucu yok) — yalnız `open_*` alanlarında sayılır.
+    """
     for d in deals or []:
         ts = _deal_ts(d) or 0.0
         if ts < min_ts:
             continue
         pnl = _deal_net_pnl_usd(d)
-        b = _bucket(str(d.get("symbol", "")), str(d.get("display", "")))
+        key = str(d.get("symbol", "")).upper() or "?"
+        b = buckets.get(key)
+        if b is None:
+            b = _kpi_bucket_begin(key, str(d.get("display", "")))
+            buckets[key] = b
+        elif not b["display"] and d.get("display"):
+            b["display"] = str(d.get("display"))
         b["trades"] += 1
         if pnl >= 0:
             b["wins"] += 1
@@ -7083,27 +7060,61 @@ def _aggregate_daily_symbol_kpi(
                 d.get("exit_reason_title") or d.get("exit_reason") or ""
             )
 
+
+def _accumulate_kpi_open(
+    buckets: Dict[str, Dict[str, Any]],
+    open_positions: List[Dict[str, Any]],
+) -> None:
+    """Açık pozisyonları kovaya `open_count`/`open_pnl_usd` olarak ekler.
+
+    Kapanmamış bir pozisyonun sonucu henüz yoktur; kazanma oranına
+    girmez (payda şişmesin). Yalnız anlık K/Z gösterilir.
+    """
     for p in open_positions or []:
-        b = _bucket(str(p.get("symbol", "")), str(p.get("display", "")))
+        sym = str(p.get("symbol", "")).upper() or "?"
+        b = buckets.get(sym)
+        if b is None:
+            b = _kpi_bucket_begin(sym, str(p.get("display", "")))
+            buckets[sym] = b
         b["open_count"] += 1
         b["open_pnl_usd"] = round(
             b["open_pnl_usd"] + float(p.get("pnl_usd", p.get("profit", 0.0)) or 0.0), 2
         )
 
-    out: List[Dict[str, Any]] = []
-    for b in buckets.values():
-        b["win_rate"] = round(b["wins"] / b["trades"] * 100.0, 1) if b["trades"] else 0.0
-        b["avg_pnl_usd"] = _divide_or_zero(b["pnl_usd"], b["trades"])
-        if b["gross_loss_usd"] > 0:
-            b["profit_factor"] = round(b["gross_profit_usd"] / b["gross_loss_usd"], 2)
-        elif b["gross_profit_usd"] > 0:
-            # Hiç zarar yokken PF matematiksel olarak sonsuzdur; JSON `Infinity`
-            # taşıyamadığı için tek nöbetçi sabit kullanılır (bkz. `_PF_INFINITE`).
-            b["profit_factor"] = _PF_INFINITE
-            b["profit_factor_infinite"] = True
-        out.append(b)
-    out.sort(key=lambda x: (-x["pnl_usd"], x["symbol"]))
-    return out
+
+def _aggregate_symbol_kpi(
+    deals: List[Dict[str, Any]],
+    open_positions: List[Dict[str, Any]],
+    min_ts: float,
+) -> List[Dict[str, Any]]:
+    """Kapanan işlemleri SEMBOL BAZINDA gruplayıp KPI kartı verisi üretir.
+
+    Neden backend'de: aynı defterden status `today_kpi`'yi hesaplıyor; sembol
+    kırılımı da onu üreten yerden gelmezse iki sayı kaynağı ayrışır ve kartların
+    toplamı üstteki KPI ile tutmaz. Tek kaynak burasıdır.
+
+    `min_ts=0` → TÜM ZAMANLAR (portföy sayfasının "tüm zamanlar" şeridi);
+    `min_ts=gün başı` → yalnız günün kapananları. İki çağrı AYNI defteri
+    kullandığı için bugün ve tüm zamanlar sayıları birbirini tutar.
+    """
+    buckets: Dict[str, Dict[str, Any]] = {}
+    _accumulate_kpi_deals(buckets, deals, min_ts)
+    _accumulate_kpi_open(buckets, open_positions)
+    return _finalize_kpi_buckets(buckets)
+
+
+def _aggregate_daily_symbol_kpi(
+    deals: List[Dict[str, Any]],
+    open_positions: List[Dict[str, Any]],
+    min_ts: float,
+) -> List[Dict[str, Any]]:
+    """Günün kapanan işlemlerini SEMBOL BAZINDA gruplayıp KPI kartı verisi üretir.
+
+    `_aggregate_symbol_kpi`'nın ince sarmalayıcısı — adı çağrı yerinde
+    "günlük" niyetini korur (status `per_symbol_today`) ve mevcut testler
+    bu adı doğrudan çağırır.
+    """
+    return _aggregate_symbol_kpi(deals, open_positions, min_ts)
 
 
 def _resolve_report_window(

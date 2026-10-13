@@ -43,7 +43,7 @@ interface ClosedTrade {
   score?: number;
 }
 
-/** Günün sembol bazlı KPI dilimi (backend `per_symbol_today`). */
+/** Sembol bazlı KPI dilimi (backend `per_symbol_today` / `per_symbol_all_time`). */
 interface SymbolDailyKpi {
   symbol: string;
   display: string;
@@ -169,10 +169,21 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [wins, setWins] = useState<number>(0);
   const [losses, setLosses] = useState<number>(0);
   const [winRate, setWinRate] = useState<number>(0.0);
+  // BUGÜN kırılımı — tüm zamanlar KPI'larından ayrı (kullanıcı isteği 2026-10-13).
+  const [dailyWinRate, setDailyWinRate] = useState<number>(0.0);
+  const [dailyTrades, setDailyTrades] = useState<number>(0);
+  const [dailyWins, setDailyWins] = useState<number>(0);
+  const [dailyLosses, setDailyLosses] = useState<number>(0);
+  const [dailyPnlUsd, setDailyPnlUsd] = useState<number>(0.0);
+  const [dailyPnlPips, setDailyPnlPips] = useState<number>(0.0);
 
   const [openPositions, setOpenPositions] = useState<AutoPosition[]>([]);
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
   const [perSymbolToday, setPerSymbolToday] = useState<SymbolDailyKpi[]>([]);
+  // Tüm zamanlar kırılımı (2026-10-13): kullanıcı başarı oranını "o günkü ve
+  // tüm zamanlar" olarak ayrı istedi. İkisi AYNI defterden gelir (backend
+  // `per_symbol_today` / `per_symbol_all_time`) → sayılar tutarlıdır.
+  const [perSymbolAllTime, setPerSymbolAllTime] = useState<SymbolDailyKpi[]>([]);
   const [decisionLogs, setDecisionLogs] = useState<DecisionLog[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [logFilter, setLogFilter] = useState<string>("ALL");
@@ -204,6 +215,12 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         setWins(res.wins ?? 0);
         setLosses(res.losses ?? 0);
         setWinRate(res.win_rate ?? 0.0);
+        setDailyWinRate(res.daily_win_rate ?? 0.0);
+        setDailyTrades(res.daily_trades ?? 0);
+        setDailyWins(res.daily_wins ?? 0);
+        setDailyLosses(res.daily_losses ?? 0);
+        setDailyPnlUsd(res.daily_pnl ?? 0.0);
+        setDailyPnlPips(res.daily_pips ?? 0.0);
         setOpenPositions((res.open_positions || []).filter(
           (p: AutoPosition) => !symFilter || symFilter.has(String(p.symbol).toUpperCase())
         ));
@@ -212,6 +229,9 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         ));
         // Sembol filtresi burada da uygulanır (daraltılmış görünüm aynı konsol).
         setPerSymbolToday((res.per_symbol_today || []).filter(
+          (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
+        ));
+        setPerSymbolAllTime((res.per_symbol_all_time || []).filter(
           (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
         ));
         // Sembolsüz global mesajlar (SCAN özeti, SYSTEM) kalır; filtre dışı sembollü satırlar gizlenir
@@ -575,6 +595,92 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         );
       })()}
 
+      {/* BAŞARI ORANI — BUGÜN & TÜM ZAMANLAR (2026-10-13)
+          Kullanıcı isteği: başarı oranı "o günkü ve tüm zamanlar" olarak
+          AYRI gösterilsin. Kaynak status ucunun aynı defteri: bugün `daily_*`,
+          tüm zamanlar üst-düzey alanlar → iki blok birbirini tutar. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {[
+          {
+            title: "BAŞARI ORANI — BUGÜN",
+            badge: "Bugün (UTC)",
+            badgeCls: "bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30",
+            rate: dailyWinRate,
+            w: dailyWins,
+            l: dailyLosses,
+            n: dailyTrades,
+            pnlUsd: dailyPnlUsd,
+            pnlPips: dailyPnlPips,
+            accent: "text-slate-900 dark:text-white",
+          },
+          {
+            title: "BAŞARI ORANI — TÜM ZAMANLAR",
+            badge: "Kayıtlı defter",
+            badgeCls: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700",
+            rate: winRate,
+            w: wins,
+            l: losses,
+            n: totalTrades,
+            pnlUsd: realizedPnlUsd,
+            pnlPips: realizedPnlPips,
+            accent: "text-slate-900 dark:text-white",
+          },
+        ].map((b) => {
+          const hasTrades = b.n > 0;
+          const rateTone = !hasTrades
+            ? "text-slate-500 dark:text-bunker-muted"
+            : b.rate >= 50
+            ? "text-emerald-600 dark:text-emerald-400"
+            : "text-rose-600 dark:text-rose-400";
+          return (
+            <div
+              key={b.title}
+              className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase">
+                  {b.title}
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${b.badgeCls}`}>
+                  {b.badge}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-3 mt-1">
+                <span className={`text-2xl font-black font-mono ${rateTone}`}>
+                  {hasTrades ? `%${b.rate.toFixed(1)}` : "—"}
+                </span>
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-bunker-muted font-mono">
+                  {hasTrades ? `${b.w}K / ${b.l}Z (${b.n} İşlem)` : "Kapanan işlem yok"}
+                </span>
+              </div>
+              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                <span className="font-bold text-slate-700 dark:text-bunker-muted">NET KÂRLILIK</span>
+                <span
+                  className={`font-mono font-black ${
+                    b.pnlUsd >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  {b.pnlUsd >= 0 ? "+" : ""}${b.pnlUsd.toFixed(2)}
+                </span>
+                <span
+                  className={`font-mono font-bold ${
+                    b.pnlPips >= 0
+                      ? "text-emerald-700 dark:text-emerald-400/80"
+                      : "text-rose-700 dark:text-rose-400/80"
+                  }`}
+                  title="Pip toplamı semboller arası farklı ölçekte olabilir"
+                >
+                  {b.pnlPips >= 0 ? "+" : ""}
+                  {b.pnlPips.toFixed(1)} pip
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* SEMBOL BAZLI GÜNLÜK KPI KARTLARI (2026-10-12) */}
       {(() => {
         const kpis = perSymbolToday;
@@ -649,6 +755,16 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   const exitTimeShort = k.last_exit_time
                     ? String(formatUtc3(k.last_exit_time).split(" ").pop())
                     : "";
+                  // Tüm zamanlar dilimi (2026-10-13): kart artık hem BUGÜN hem
+                  // TÜM ZAMANLAR başarı oranını/netini taşır. Aynı defterden
+                  // (backend `per_symbol_all_time`) → tutarlı.
+                  const all = perSymbolAllTime.find((a) => a.symbol === k.symbol) || null;
+                  const allHasTrades = (all?.trades ?? 0) > 0;
+                  const allRateTone = !allHasTrades
+                    ? "text-slate-500 dark:text-bunker-muted"
+                    : (all!.win_rate >= 50)
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400";
                   return (
                     <div key={k.symbol} className={CARD}>
                       {/* Üst etiket — bakiye kartlarındaki gibi: SEMBOL + durum rozeti */}
@@ -684,6 +800,48 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                           ? "Yalnız açık pozisyon · kapanan yok"
                           : "Bugün işlem yok"}
                       </span>
+
+                      {/* TÜM ZAMANLAR satırı — kullanıcı isteği (2026-10-13):
+                          başarı oranı bugün VE tüm zamanlar olarak ayrı. */}
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800/70">
+                        <div className="flex items-center justify-between gap-2 text-[9px]">
+                          <span className="font-black text-slate-600 dark:text-bunker-muted uppercase tracking-wider">
+                            Tüm Zamanlar
+                          </span>
+                          <span className={`font-mono font-black ${allRateTone}`}>
+                            {allHasTrades ? `%${all!.win_rate.toFixed(1)}` : "—"}
+                          </span>
+                        </div>
+                        <div className="text-[9px] font-semibold text-slate-600 dark:text-bunker-muted font-mono">
+                          {allHasTrades
+                            ? `${all!.wins}K / ${all!.losses}Z (${all!.trades} İşlem)`
+                            : "Kapanan işlem yok"}
+                        </div>
+                        {allHasTrades && (
+                          <div className="text-[9px] font-mono flex items-center gap-1.5">
+                            <span className="text-slate-500 dark:text-bunker-muted">Net</span>
+                            <span
+                              className={
+                                all!.pnl_usd >= 0
+                                  ? "text-emerald-700 dark:text-emerald-400 font-bold"
+                                  : "text-rose-700 dark:text-rose-400 font-bold"
+                              }
+                            >
+                              {all!.pnl_usd >= 0 ? "+" : ""}${all!.pnl_usd.toFixed(2)}
+                            </span>
+                            <span
+                              className={
+                                all!.pnl_pips >= 0
+                                  ? "text-emerald-700/90 dark:text-emerald-400/80"
+                                  : "text-rose-700/90 dark:text-rose-400/80"
+                              }
+                            >
+                              {all!.pnl_pips >= 0 ? "+" : ""}
+                              {all!.pnl_pips.toFixed(1)} pip
+                            </span>
+                          </div>
+                        )}
+                      </div>
 
                       {/* İnce detay şeridi */}
                       <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800/70 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[9px] font-semibold text-slate-600 dark:text-bunker-muted">

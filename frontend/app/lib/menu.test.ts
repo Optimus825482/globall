@@ -28,7 +28,9 @@ describe("menu — kapsam", () => {
   });
 
   it("2026-10-07: TÜM menü öğeleri geçerli rotalara gider (tek piyasa Forex + Ana Sayfa)", () => {
-    const ALLOWED = ["/", "/forex", "/chat", "/settings"];
+    // /metamobil, 2026-10-07 birleşik menüde MetaTrader mobil kopyası olarak
+    // eklendi (menu.ts); test bu rotayı tanımıyordu ve zincirleme bayattı.
+    const ALLOWED = ["/", "/forex", "/chat", "/settings", "/metamobil"];
     for (const href of hrefs) {
       expect(ALLOWED.some((p) => href === p || href.startsWith(p + "/"))).toBe(true);
     }
@@ -72,21 +74,32 @@ describe("menu — rol görünürlüğü", () => {
     const expectedOrder = [
       "/",
       "/forex/portfolio",
+      "/metamobil",
       "/forex/btc-gold",
       "/forex",
       "/forex/charts",
       "/forex/technical-charts",
       "/chat",
+      "/forex/islemler",
       "/forex/reports",
       "/settings",
     ];
     expect(items).toEqual(expectedOrder);
   });
+
+  it("2026-10-13: Forex İşlemler kendi menü öğesidir (Raporlar'a gizlenmez)", () => {
+    const islemler = allItems.find((i) => i.href === "/forex/islemler");
+    expect(islemler).toBeDefined();
+    const reports = allItems.find((i) => i.href === "/forex/reports");
+    // Eski hâlde /forex/islemler yalnız `alsoActive` ile Raporlar'a bağlıydı;
+    // kullanıcı onu ayrı bir giriş olarak istedi.
+    expect(reports?.alsoActive ?? []).not.toContain("/forex/islemler");
+  });
 });
 
 describe("menu — mobil alt navigasyon", () => {
-  it("4 öğe + menü düğmesi mobilde sığar", () => {
-    expect(BOTTOM_NAV_ITEMS.length).toBe(4);
+  it("5 öğe + menü düğmesi mobilde sığar", () => {
+    expect(BOTTOM_NAV_ITEMS.length).toBe(5);
   });
 
   it("alt navigasyon öğeleri menüde de var", () => {
