@@ -379,7 +379,10 @@ function DirectionBar({
     ? "text-rose-300"
     : "text-slate-300";
   const verdict = !hasData ? "VERİ YOK" : isBuy ? "ALIŞ YÖNÜ" : isSell ? "SATIŞ YÖNÜ" : "NÖTR / BEKLE";
-  const needleColor = !hasData ? "#64748b" : isBuy ? "#10b981" : isSell ? "#f43f5e" : "#94a3b8";
+  // İbrenin yanında okunacak ham değer: ölçeğin ±1 olduğu, ortasının 0 olduğu
+  // barın alt etiketlerinden anlaşılır (kullanıcı isteği 2026-10-13).
+  const valueText = hasData ? `${clamped >= 0 ? "+" : ""}${clamped.toFixed(2)}` : "—";
+  const dotColor = !hasData ? "#64748b" : isBuy ? "#10b981" : isSell ? "#f43f5e" : "#94a3b8";
 
   return (
     <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800/80">
@@ -387,36 +390,51 @@ function DirectionBar({
         <span className="text-[10px] font-black text-bunker-muted uppercase tracking-wider">
           🎯 Yön Göstergesi — Dinamik Momentum
         </span>
-        <span className={`text-[10px] font-black tracking-wide ${tone}`}>{verdict}</span>
+        <span className="flex items-center gap-2">
+          <span className={`text-[10px] font-black font-mono ${tone}`}>{valueText}</span>
+          <span className={`text-[10px] font-black tracking-wide ${tone} flex items-center gap-1`}>
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
+            {verdict}
+          </span>
+        </span>
       </div>
 
       {/* Ray: sol kırmızı (SELL) → orta gri (NÖTR) → sağ yeşil (BUY).
           Renkler satır içi CSS olarak verilir: `bg-gradient-*` sınıfları açık
           temada `html.light [class*="bg-gradient-"]` kuralıyla beyaza
           düzleştirildiği için ray tamamen kayboluyordu (2026-10-13). */}
-      <div className="relative h-3 rounded-full overflow-hidden border border-bunker-800/80 shadow-inner">
-        <div className="absolute inset-0 flex">
-          <div className="w-1/2 h-full" style={{ background: "linear-gradient(90deg, rgba(225,29,72,0.75), rgba(244,63,94,0.10))" }} />
-          <div className="w-1/2 h-full" style={{ background: "linear-gradient(90deg, rgba(16,185,129,0.10), rgba(5,150,105,0.75))" }} />
-        </div>
+      {/* `gap` YOK: iki `w-1/2` yarım + gap rayı 1px taşırırdı (kapsayıcıda
+          overflow-hidden yok — ibre dışarı taşsın diye). Ayırıcı zaten
+          aşağıdaki orta çizgi. */}
+      <div className="relative h-3 flex">
+        {/* Sol yarı: ORTADA en açık kırmızı, sola gittikçe koyulaşır.
+            Sağ yarı: ORTADA en açık yeşil, sağa gittikçe koyulaşır.
+            Alpha tabanı 0.22: açık temada beyaz ray üstünde de seçilebilsin. */}
+        <div
+          className="w-1/2 h-full rounded-l-full border border-bunker-800/80 shadow-inner"
+          style={{ background: "linear-gradient(90deg, rgba(153,27,27,0.95), rgba(244,63,94,0.22))" }}
+        />
+        <div
+          className="w-1/2 h-full rounded-r-full border border-bunker-800/80 shadow-inner"
+          style={{ background: "linear-gradient(90deg, rgba(16,185,129,0.22), rgba(4,120,87,0.95))" }}
+        />
         {/* Nötr ölü bölge işareti — ortadaki gri şerit */}
         <div
-          className="absolute top-0 h-full bg-slate-500/35 border-x border-slate-400/40"
+          className="absolute top-0 h-full bg-slate-500/35 border-x border-slate-400/40 z-10"
           style={{ left: `${50 - NEUTRAL_DEAD_ZONE * 50}%`, width: `${NEUTRAL_DEAD_ZONE * 100}%` }}
         />
-        {/* Orta çizgi */}
-        <div className="absolute left-1/2 top-0 h-full w-px bg-slate-300/50" />
-        {/* İbre */}
-        <div
-          className="absolute top-[-2px] h-[16px] w-[3px] rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(255,255,255,0.35)]"
-          style={{ left: `calc(${posPct}% - 1.5px)`, background: needleColor }}
-        />
+        {/* Orta çizgi (0) — iki yarının buluştuğu nokta */}
+        <div className="absolute left-1/2 top-[-3px] h-[18px] w-px bg-slate-300/70 z-10" />
+        {/* İbre: bar'ın DIŞINA taşar, rengi dolgudan DEĞİL sabit beyaz/siyah
+            halkadan gelir → her zeminde net görünür (kullanıcı bildirimi
+            2026-10-13: "nerede olduğunu gösteren çizgi belli olmuyor"). */}
+        <div className="bar-needle" style={{ left: `${posPct}%` }} />
       </div>
 
       <div className="flex items-center justify-between text-[9px] font-mono mt-1.5">
-        <span className="text-rose-300/80 font-bold">◀ SELL</span>
-        <span className="text-slate-400 font-bold">NÖTR</span>
-        <span className="text-emerald-300/80 font-bold">BUY ▶</span>
+        <span className="text-rose-300/80 font-bold">◀ SELL −1</span>
+        <span className="text-slate-400 font-bold">0 · NÖTR</span>
+        <span className="text-emerald-300/80 font-bold">+1 BUY ▶</span>
       </div>
       <p className="text-[10px] text-bunker-300 mt-1.5 text-center">{detail}</p>
     </div>
@@ -478,6 +496,104 @@ function WinRateBlock({
   );
 }
 
+// Bar ekseninde "orta"nın yüzdesi. Dinamik barların TAMAMI ortası 0 kabul
+// eden ıraksak (diverging) ölçek kullanır — kullanıcı isteği 2026-10-13.
+const DIVERGING_MID_PCT = 50;
+
+/** Ortası 0 kabul edilen ıraksak bar.
+ *  Dolgu ortadan dışa büyür: sağa doğru açık yeşil → koyu yeşil, sola doğru
+ *  açık kırmızı → koyu kırmızı. Boşluk (dolgu olmayan kısım) çapraz taramalıdır
+ *  → "burada sapma yok" okunur.
+ *
+ *  @param posPct  değerin raydaki % konumu (0 sol … 100 sağ)
+ *  @param midPct  0 (nötr) noktasının % konumu; varsayılan ortası
+ *  @param height  rayın yükseklik sınıfı (h-2.5 / h-3 …)
+ *  @param valueLabel ibrenin altında yazan ham değer ("+0.42 ATR" gibi) */
+function DivergingBar({
+  posPct,
+  midPct = DIVERGING_MID_PCT,
+  height = "h-3",
+  valueLabel,
+  scaleLeft = "-100",
+  scaleMid = "0",
+  scaleRight = "+100",
+  midLineLabel,
+  endLabels,
+}: {
+  posPct: number;
+  midPct?: number;
+  height?: string;
+  valueLabel?: string;
+  scaleLeft?: string;
+  scaleMid?: string;
+  scaleRight?: string;
+  /** Orta çizginin hemen üstünde görünen referans etiketi ("0 · 100.00" gibi). */
+  midLineLabel?: string;
+  /** Sol/sağ uç anlam etiketleri ("◀ ZAYIF DOLAR" / "GÜÇLÜ DOLAR ▶"). */
+  endLabels?: { left: string; right: string };
+}) {
+  const safePos = Math.max(0, Math.min(100, isNaN(posPct) ? midPct : posPct));
+  // Dolgu [fillLo, fillHi] aralığını kaplar; kalan bölge taramalıdır.
+  const fillLo = Math.min(midPct, safePos);
+  const fillHi = Math.max(midPct, safePos);
+
+  // İbre bar'ın DIŞINA taşar (top/bottom -3px) → ray yüksekliği ne olursa olsun
+  // net görünür. Bu, kullanıcının "çizgi belli olmuyor" bildiriminin düzeltmesi.
+
+  return (
+    <div className="my-1.5">
+      {/* `overflow-hidden` YOK: ibre rayın dışına (top/bottom -3px) taşar ve
+          kırpılırsa yine görünmez olur. Dolgu zaten `rounded-full` olduğu için
+          taşma gerekmiyor. */}
+      <div className={`w-full ${height} rounded-full diverging-track bg-bunker-900 border border-bunker-800/80 relative shadow-inner`}>
+        <div className="diverging-inner">
+          {/* Boşluk taraması — dolgunun DIŞINDA kalan bölge.
+              DİKKAT: `right: X%` elemanın sağ kenarını parent'ın sağ kenarından
+              X% uzağa koyar; sol taramanın sağ kenarı fillLo'da bitmeli, bu
+              yüzden `right: (100 − fillLo)%`. */}
+          <div className="diverging-hatch" style={{ left: "0%", right: `${100 - fillLo}%` }} />
+          <div className="diverging-hatch" style={{ left: `${fillHi}%`, right: "0%" }} />
+          {/* Dolgu: ortadan (0) değere doğru, açıktan koyuya */}
+          <div
+            className="diverging-fill"
+            style={{
+              ["--mid" as string]: `${midPct}`,
+              ["--clip-l" as string]: `${fillLo}%`,
+              ["--clip-r" as string]: `${fillHi}%`,
+            }}
+          />
+        </div>
+        {/* Ortası 0 referansı — nötr noktası */}
+        <div className="absolute top-0 h-full w-px bg-slate-300/60 z-10" style={{ left: `${midPct}%` }} />
+        {/* İbre: değerin bulunduğu yer */}
+        <div className="bar-needle" style={{ left: `${safePos}%` }} />
+      </div>
+
+      {/* Ölçek alt etiketleri: sol uç / orta 0 / sağ uç */}
+      <div className="flex items-center justify-between text-[10px] text-bunker-muted mt-1 font-mono">
+        <span>{scaleLeft}</span>
+        <span className="font-black text-bunker-300">
+          {midLineLabel ? `${scaleMid} · ${midLineLabel}` : scaleMid}
+        </span>
+        <span>{scaleRight}</span>
+      </div>
+
+      {valueLabel && (
+        <div className="text-center mt-0.5">
+          <span className="font-mono text-[10px] font-black text-bunker-200">{valueLabel}</span>
+        </div>
+      )}
+
+      {endLabels && (
+        <div className="flex items-center justify-between text-[9px] font-mono mt-0.5">
+          <span className="text-rose-300/80 font-bold">{endLabels.left}</span>
+          <span className="text-emerald-300/80 font-bold">{endLabels.right}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- RAKAMSAL PROGRESS BARLI KART BİLEŞENİ ---
 function ProgressBarCard({
   title,
@@ -488,6 +604,10 @@ function ProgressBarCard({
   rightLabel,
   barColor = "emerald",
   icon,
+  needleLabel,
+  diverging = false,
+  midLabel = "0",
+  endLabels,
 }: {
   title: string;
   valueText: string | React.ReactNode;
@@ -497,6 +617,14 @@ function ProgressBarCard({
   rightLabel?: string;
   barColor?: "emerald" | "amber" | "rose" | "cyan" | "blue" | "purple" | "gradient";
   icon?: string;
+  /** İbrenin yanında yazılacak ham sapma değeri ("+0.42 ATR" gibi). */
+  needleLabel?: string;
+  /** true → ortası 0 kabul edilen ıraksak bar (sağ yeşil / sol kırmızı). */
+  diverging?: boolean;
+  /** Iraksak modda ölçeğin ORTA (0) etiketi. */
+  midLabel?: string;
+  /** Iraksak modda sol/sağ uç anlam etiketleri. */
+  endLabels?: { left: string; right: string };
 }) {
   const clampedPct = Math.max(0, Math.min(100, isNaN(percentage) ? 0 : percentage));
 
@@ -526,21 +654,46 @@ function ProgressBarCard({
       </div>
 
       {/* Progress Bar Container */}
-      <div className="my-1.5">
-        <div className="w-full h-2.5 rounded-full bg-bunker-900 border border-bunker-800/80 p-0.5 overflow-hidden relative shadow-inner">
-          <div
-            className="progress-fill h-full rounded-full transition-all duration-700 ease-out"
-            style={{ width: `${clampedPct}%`, ["--progress-color" as string]: fillColor }}
-          />
+      {diverging ? (
+        // Ortası 0 kabul edilen ıraksak bar: sağa yeşil, sola kırmızı.
+        // `valueLabel` burada ALT etiket olarak çizildiği için `midLabel` ve
+        // uç etiketleri de buraya geçirilir.
+        <DivergingBar
+          posPct={clampedPct}
+          valueLabel={needleLabel}
+          scaleLeft={leftLabel || "-100"}
+          scaleMid={midLabel}
+          scaleRight={rightLabel || "+100"}
+          endLabels={endLabels}
+        />
+      ) : (
+        <div className="my-1.5">
+          <div className="w-full h-2.5 rounded-full diverging-track bg-bunker-900 border border-bunker-800/80 relative shadow-inner">
+            <div
+              className="progress-fill h-full rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${clampedPct}%`, ["--progress-color" as string]: fillColor }}
+            />
+            {/* İbre: bar'ın nerede dolduğunu net gösterir (2026-10-13). */}
+            <div className="bar-needle" style={{ left: `${clampedPct}%` }} />
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Alt Etiketler */}
-      <div className="flex items-center justify-between text-[10px] text-bunker-muted mt-0.5 font-mono">
-        <span>{leftLabel || "0%"}</span>
-        {subText && <span className="font-sans font-semibold text-bunker-300">{subText}</span>}
-        <span>{rightLabel || "100%"}</span>
-      </div>
+      {/* Alt Etiketler — ıraksak modda ölçek etiketleri barın ALTINDA
+          (DivergingBar) çizilir; burada TEKRAR yazılmaz (çift etiket olurdu). */}
+      {diverging ? (
+        subText && (
+          <div className="text-[10px] font-sans font-semibold text-bunker-300 text-center mt-0.5">
+            {subText}
+          </div>
+        )
+      ) : (
+        <div className="flex items-center justify-between text-[10px] text-bunker-muted mt-0.5 font-mono">
+          <span>{leftLabel || "0%"}</span>
+          {subText && <span className="font-sans font-semibold text-bunker-300">{subText}</span>}
+          <span>{rightLabel || "100%"}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -583,11 +736,11 @@ function DxyProgressPanel({ dxy }: { dxy: DxyPanelData }) {
   // Nötr (sıkışık dolar) referansı: 100.0 seviyesi — endeksin klasik pivotu.
   const neutralPct = Math.max(0, Math.min(100, ((100.0 - bandMin) / bandSpan) * 100));
 
-  // Rejim → renk ve etiket. Zayıf dolar altın/BTC için RÜZGÂR (yeşil),
-  // güçlü dolar TERS RÜZGÂR (kırmızı), sıkışık nötr (amber).
+  // Rejim → etiket. Zayıf dolar altın/BTC için RÜZGÂR, güçlü dolar TERS RÜZGÂR.
+  // (Renk artık rejimden DEĞİL, barın ortası-0 ıraksak ölçeğinden gelir;
+  //  rejim bilgisi üstteki renkli rozette ve bar altındaki etikette taşınır.)
   const isWeak = regime === "USD_WEAK";
   const isStrong = regime === "USD_STRONG";
-  const fillColor = isWeak ? "#10b981" : isStrong ? "#f43f5e" : "#f59e0b";
   const regimeLabel = isWeak
     ? "DOLAR ZAYIF — ALTIN & BTC LEHİNE"
     : isStrong
@@ -628,26 +781,27 @@ function DxyProgressPanel({ dxy }: { dxy: DxyPanelData }) {
         </div>
       </div>
 
-      {/* Dinamik progress bar: sol = zayıf dolar bandın altı, sağ = güçlü dolar */}
-      <div>
-        <div className="w-full h-3 rounded-full bg-bunker-900 border border-bunker-800/80 p-0.5 overflow-hidden relative shadow-inner">
-          {/* Nötr (sıkışık) merkez işareti — 100.0 endeks pivodu */}
-          <div
-            className="absolute top-0 h-full w-px bg-slate-400/40 z-10"
-            style={{ left: `${neutralPct}%` }}
-          />
-          {hasPrice && (
-            <div
-              className="progress-fill h-full rounded-full transition-all duration-700 ease-out"
-              style={{ width: `${pct}%`, ["--progress-color" as string]: fillColor }}
-            />
-          )}
-        </div>
-        <div className="flex items-center justify-between text-[9px] text-bunker-muted font-mono mt-1">
-          <span className="text-emerald-300/80 font-bold">◀ ZAYIF DOLAR (altın lehine)</span>
-          <span className="text-rose-300/80 font-bold">GÜÇLÜ DOLAR (altın aleyhine) ▶</span>
-        </div>
-      </div>
+      {/* Dinamik progress bar — ORTASI 0 (nötr/sıkışık dolar = 100.0 pivodu),
+          sağa gittikçe AÇIK yeşilden KOYU yeşile, sola gittikçe AÇIK kırmızıdan
+          KOYU kırmızıya (kullanıcı isteği 2026-10-13 "heps").
+          İbre değerin bulunduğu yeri net gösterir; ibrenin ALTINDA ham endeks
+          değeri yazar. */}
+      <DivergingBar
+        // Fiyat yokken dolgu ÇİZİLMEZ: `pct` 0'a kırpılır ve bant orta noktası
+        // 37.5 olduğundan bar "sapma var" gibi görünürdü (sessiz yanıltma).
+        // Bu yüzden ibre/dolgu nötr noktada tutulur.
+        posPct={hasPrice ? pct : neutralPct}
+        midPct={neutralPct}
+        scaleLeft={bandMin.toFixed(1)}
+        scaleMid="0"
+        scaleRight={bandMax.toFixed(1)}
+        midLineLabel="NÖTR"
+        valueLabel={hasPrice ? `${price.toFixed(2)} (${pct >= neutralPct ? "+" : ""}${(pct - neutralPct).toFixed(1)} sapma)` : undefined}
+        endLabels={{
+          left: "◀ ZAYIF DOLAR (altın lehine)",
+          right: "GÜÇLÜ DOLAR (altın aleyhine) ▶",
+        }}
+      />
     </div>
   );
 }
@@ -1790,19 +1944,25 @@ export default function BtcGoldForexPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Bar: MACD Histogram & Momentum (gerçek ATR-normalize histogram) */}
+                    {/* Bar: MACD Histogram & Momentum (gerçek ATR-normalize histogram)
+                        Ortası 0: sağa boğa (yeşil), sola ayı (kırmızı). */}
                     <ProgressBarCard
                       title="MACD Momentum"
                       icon="🌊"
                       valueText={macdVerdict}
                       subText="Momentum Yönü"
                       percentage={macdBarPct}
-                      leftLabel="Ayı Satış"
-                      rightLabel="Boğa Alış"
+                      leftLabel="-1 ATR"
+                      rightLabel="+1 ATR"
+                      needleLabel={`${macdHist >= 0 ? "+" : ""}${(atrRaw > 0 ? macdHist / atrRaw : 0).toFixed(2)} ATR`}
                       barColor={momentumNorm > NEUTRAL_DEAD_ZONE ? "emerald" : momentumNorm < -NEUTRAL_DEAD_ZONE ? "rose" : "amber"}
+                      diverging
+                      endLabels={{ left: "◀ AYI SATIŞ", right: "BOĞA ALIŞ ▶" }}
                     />
 
-                    {/* Bar: Volatilite & Osilatörler (CMO & CCI) */}
+                    {/* Bar: Volatilite & Osilatörler (CMO & CCI)
+                        Ortası 0: CMO ±50 aralığından; sağa pozitif ivme (yeşil),
+                        sola negatif ivme (kırmızı). */}
                     <ProgressBarCard
                       title="Chande (CMO) & CCI"
                       icon="⚡"
@@ -1811,7 +1971,10 @@ export default function BtcGoldForexPage() {
                       percentage={Math.max(0, Math.min(100, (cmo + 50)))}
                       leftLabel="-50"
                       rightLabel="+50"
+                      needleLabel={`CMO ${cmo >= 0 ? "+" : ""}${cmo.toFixed(1)}`}
                       barColor={cmo >= 0 ? "emerald" : "rose"}
+                      diverging
+                      endLabels={{ left: "◀ NEGATİF İVME", right: "POZİTİF İVME ▶" }}
                     />
                   </div>
                 </div>

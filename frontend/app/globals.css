@@ -268,6 +268,111 @@ button, a { touch-action: manipulation; }
   );
 }
 
+/* ============================================================================
+   IRAKSAK (DIVERGING) İŞLEVSEL BAR — 2026-10-13
+   Kullanıcı isteği: "bar'ın ortasını 0 kabul et; sağa gittikçe açık yeşilden
+   koyuya, sola gittikçe açık kırmızıdan koyuya".
+   Klasik ıraksak ölçek: ORTA = 0 (nötr). Dolgu ortadan DIŞA doğru büyür — sağ
+   yarı yeşil rampası, sol yarı kırmızı rampası, uçlar en koyu.
+
+   Geometri `style` ile üç custom property olarak verilir:
+     --mid    : 0 (nötr) noktası             → gradientin renk sınırı (SABİT)
+     --clip-l : dolgunun SOL kenarı  = min(0, değer)
+     --clip-r : dolgunun SAĞ kenarı = max(0, değer)
+   Eleman bar'ı TAM kaplar ve `clip-path` ile [--clip-l, --clip-r] aralığına
+   kırpılır. `--clip-l/r` min/max ile verilir çünkü değer 0'ın SOLUNDA olduğunda
+   aralık [değer, 0]'a döner — sabit "sol = 0" varsayımı o durumda dolguyu
+   tamamen boşa düşürürdü.
+   Gradient bar genişliğine demirli olduğu için renk sınırı değerle KAYMAZ;
+   "orta = 0" her değerde okunur kalır. Boşluk taramalıdır (`.diverging-hatch`),
+   yani dolgu "0'dan ne kadar sapmış" görsel olarak dürüst kalır.
+
+   ÖNEMLİ (açık tema tuzağı): `html.light [class*="bg-gradient-"]` kuralı tüm
+   gradientleri beyaza düzleştirir; bu sınıfın adı `bg-gradient-` İÇERMEZ, o
+   yüzden kuraldışı kalır. Ray zemini ise ayrıca `.diverging-track` ile
+   karartılır — yoksa beyaz ray üstünde açık renk dolgu kayboluyordu. */
+.diverging-fill {
+  position: absolute;
+  inset: 0;
+  /* Gradient bar'ın TAM genişliğine demirlenir; --mid = 0 (nötr) noktası.
+     0→mid: koyu kırmızıdan açık kırmızıya; mid→100: açık yeşilden koyu yeşile.
+     (Gradient elemanın kendi genişliğine göre olsaydı, değer sağa kaydıkça
+      renk sınırı da kayar ve "orta = 0" okunmazdı.) */
+  background-image: linear-gradient(
+    90deg,
+    #991b1b 0%,
+    #fca5a5 calc(var(--mid, 50) * 1%),
+    #86efac calc(var(--mid, 50) * 1%),
+    #047857 100%
+  );
+  /* Yalnız 0 ile değer arasındaki bölge görünür kalır (dışa doğru büyüme).
+     `--clip-l` = min(0, değer), `--clip-r` = max(0, değer). */
+  clip-path: inset(0 calc(100% - var(--clip-r, 50%)) 0 var(--clip-l, 50%));
+  transition: clip-path 700ms ease-out;
+}
+
+/* Boşluk (dolgusuz bölge) taraması: "burada sapma yok" okunur. */
+.diverging-hatch {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--hatch, rgba(148, 163, 184, 0.20)) 0 1px,
+    transparent 1px 5px
+  );
+  transition: left 700ms ease-out, right 700ms ease-out;
+}
+
+/* Taşmayı kırpan iç katman: dolgu + tarama burada; İBRE dışarıda kalır
+   (ibre rayın dışına taşar ve `overflow-hidden`a yakalanmamalıdır). */
+.diverging-inner {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 9999px;
+}
+
+/* Ray zemini: koyu temada zaten koyu; açık temada `bg-bunker-900` kuralı onu
+   BEYAZA çevirir ve rampanın ORTADAKİ açık uçları (#fca5a5 / #86efac) beyaz
+   üstünde kaybolur. Bu yüzden ray açık temada çelik grisi kalmalı.
+   Sınıf İKİ KEZ yazıldı: `html.light [class*="bg-bunker-900"]` ile aynı
+   özgüllükte (0,2,1) olduğu için kaynak sırasına bağlı kalırdı ve o kural
+   bu bloktan SONRA geldiğinden kazanırdı. Tekrar, özgüllüğü sıradan bağımsız
+   olarak yükseltir. */
+html.light .diverging-track.diverging-track {
+  background-color: #e2e8f0 !important; /* slate-200 */
+  border-color: #94a3b8 !important;     /* slate-400 */
+}
+html.light .diverging-hatch {
+  --hatch: rgba(51, 65, 85, 0.30);
+}
+
+/* İBRE (konum çizgisi) — 2026-10-13.
+   Kullanıcı bildirimi: "içindeki nerede olduğunu gösteren çizgi belli olmuyor".
+   Eski ibre 3px, yarı saydam ve renkliydi; renkli dolgunun üstünde kayboluyordu.
+   Yeni ibre: bar'ın DIŞINA taşan, BEYAZ çerçeveli, hem koyu hem açık temada
+   kontrast veren sabit ışık halkalı çubuk. Rengi dolgudan bağımsızdır. */
+.bar-needle {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 9999px;
+  background-color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.65), 0 0 10px rgba(255, 255, 255, 0.55);
+  transition: left 700ms ease-out;
+  z-index: 20;
+  pointer-events: none;
+}
+html.light .bar-needle {
+  background-color: #0f172a;
+  border-color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.55), 0 0 8px rgba(15, 23, 42, 0.30);
+}
+
 .page-shell { width: min(100%, 1180px); margin: 0 auto; }
 .page-heading { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1.5rem; }
 .page-heading h1 { @apply font-mono text-2xl font-bold tracking-tight; }

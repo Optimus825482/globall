@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="tr" class="dark">
+<head>
+<meta charset="utf-8" />
+<title>Iraksak Bar Önizlemesi — BTC + Altın Konsolu</title>
+<!--
+  Bu dosya bir ÖNİZLEME ARACIDIR, uygulamanın parçası değildir.
+  İçindeki CSS, frontend/app/globals.css içindeki .diverging-* ve .bar-needle
+  kurallarının BİREBİR kopyasıdır. Sayfa aynı bileşenin farklı değerlerdeki
+  görünümünü koyu ve açık temada yan yana gösterir.
+  Amaç: 2026-10-13 tarihli "ortası 0, sağa açık yeşilden koyuya, sola açık
+  kırmızıdan koyuya, ibre net görünsün" isteğinin sonucunu tarayıcı paneli
+  olmadan doğrulayabilmek.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#070b14; color:#e2e8f0;
+         font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif; padding:24px; }
+  h1 { font-size:15px; letter-spacing:.05em; text-transform:uppercase; color:#93a7c6; margin:0 0 4px; }
+  h2 { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:#93a7c6; margin:28px 0 10px; }
+  p.note { font-size:11px; color:#93a7c6; margin:0 0 18px; }
+  .theme { border:1px solid #142036; border-radius:12px; padding:16px; margin-bottom:20px; background:#0c1322; }
+  .theme.light { background:#f8fafc; border-color:#cbd5e1; color:#0f172a; }
+  .theme.light h2, .theme.light p.note, .theme.light .caption { color:#334155; }
+  .row { display:grid; grid-template-columns:120px 1fr; gap:12px; align-items:center; margin:0 0 14px; }
+  .caption { font-size:11px; color:#93a7c6; font-family:ui-monospace, Consolas, monospace; }
+
+  /* ---------- globals.css'ten BİREBİR kopya (başlıyor) ---------- */
+  .diverging-track.bg-bunker-900 { background-color:#0c1322; border-color:#142036; }
+  .diverging-fill {
+    position:absolute; inset:0;
+    background-image:linear-gradient(90deg, #991b1b 0%, #fca5a5 calc(var(--mid,50) * 1%), #86efac calc(var(--mid,50) * 1%), #047857 100%);
+    clip-path:inset(0 calc(100% - var(--clip-r,50%)) 0 var(--clip-l,50%));
+    transition:clip-path .7s ease-out;
+  }
+  .diverging-hatch {
+    position:absolute; top:0; bottom:0;
+    background-image:repeating-linear-gradient(45deg, var(--hatch,#94a3b833) 0 1px, transparent 1px 5px);
+    transition:left .7s ease-out,right .7s ease-out;
+  }
+  .diverging-inner { position:absolute; inset:0; overflow:hidden; border-radius:9999px; }
+  .bar-needle {
+    position:absolute; top:-3px; bottom:-3px; width:3px; margin-left:-1.5px;
+    border-radius:9999px; background-color:#f8fafc;
+    border:1px solid #fffffff2;
+    box-shadow:0 0 0 1px #020617a6, 0 0 10px #ffffff8c;
+    transition:left .7s ease-out; z-index:20; pointer-events:none;
+  }
+  /* ---------- açık tema (html.light) ---------- */
+  html.light-theme .diverging-track.diverging-track { background-color:#e2e8f0!important; border-color:#94a3b8!important; }
+  html.light-theme .diverging-hatch { --hatch:#3341554d; }
+  html.light-theme .bar-needle {
+    background-color:#0f172a; border-color:#fff;
+    box-shadow:0 0 0 1px #0f172a8c, 0 0 8px #0f172a4d;
+  }
+  html.light-theme .scale { color:#334155; }
+  html.light-theme .val { color:#0f172a; }
+  html.light-theme .ends .l { color:#be123c; }
+  html.light-theme .ends .r { color:#047857; }
+  /* ---------- kopya bitti ---------- */
+
+  .barwrap { width:100%; }
+  .track { position:relative; width:100%; border-radius:9999px; border:1px solid; }
+  .h3 { height:12px; }
+  .h25 { height:10px; }
+  .mid-line { position:absolute; top:0; height:100%; width:1px; background:#cbd5e199; z-index:10; }
+  .scale { display:flex; justify-content:space-between; font-size:10px;
+           font-family:ui-monospace, Consolas, monospace; color:#93a7c6; margin-top:4px; }
+  .val { text-align:center; font-size:10px; font-weight:900; margin-top:2px;
+         font-family:ui-monospace, Consolas, monospace; color:#cbd5e1; }
+  .ends { display:flex; justify-content:space-between; font-size:9px; font-weight:700;
+          font-family:ui-monospace, Consolas, monospace; margin-top:2px; }
+  .ends .l { color:#fda4afcc; } .ends .r { color:#6ee7b7cc; }
+</style>
+</head>
+<body>
+
+<h1>Iraksak (ortası 0) dinamik bar — önizleme</h1>
+<p class="note">
+  Ortası 0 · sağa gittikçe açık yeşilden koyuya · sola gittikçe açık kırmızıdan koyuya ·
+  beyaz/siyah halkalı ibre konumu net gösterir. Boşluk = çapraz tarama ("burada sapma yok").
+</p>
+
+<div class="theme">
+  <h2>Koyu tema</h2>
+  <div id="dark"></div>
+</div>
+
+<div class="theme light" id="lightbox">
+  <h2>Açık tema (html.light)</h2>
+  <div id="light"></div>
+</div>
+
+<script>
+// Bileşenin birebir mantığı: posPct değerin yeri, midPct 0'ın yeri.
+function bar(posPct, midPct, scaleLeft, scaleMid, scaleRight, valueLabel, ends) {
+  const s = Math.max(0, Math.min(100, posPct));
+  const lo = Math.min(midPct, s), hi = Math.max(midPct, s);
+  return `
+  <div class="barwrap">
+    <div class="track h3 diverging-track bg-bunker-900">
+      <div class="diverging-inner">
+        <div class="diverging-hatch" style="left:0%;right:${100 - lo}%"></div>
+        <div class="diverging-hatch" style="left:${hi}%;right:0%"></div>
+        <div class="diverging-fill" style="--mid:${midPct};--clip-l:${lo}%;--clip-r:${hi}%"></div>
+      </div>
+      <div class="mid-line" style="left:${midPct}%"></div>
+      <div class="bar-needle" style="left:${s}%"></div>
+    </div>
+    <div class="scale"><span>${scaleLeft}</span><span>${scaleMid}</span><span>${scaleRight}</span></div>
+    <div class="val">${valueLabel}</div>
+    ${ends ? `<div class="ends"><span class="l">${ends[0]}</span><span class="r">${ends[1]}</span></div>` : ""}
+  </div>`;
+}
+
+const cases = [
+  { cap: "Yön barı +0.85 (güçlü ALIŞ)",  pos: 92.5, mid: 50, sl:"-1", sm:"0", sr:"+1", v:"+0.85", e:["◀ SELL −1","+1 BUY ▶"] },
+  { cap: "Yön barı −0.40 (SATIŞ)",      pos: 30,   mid: 50, sl:"-1", sm:"0", sr:"+1", v:"−0.40", e:["◀ SELL −1","+1 BUY ▶"] },
+  { cap: "Yön barı 0.00 (NÖTR)",        pos: 50,   mid: 50, sl:"-1", sm:"0", sr:"+1", v:"+0.00", e:["◀ SELL −1","+1 BUY ▶"] },
+  { cap: "MACD +0.42 ATR",              pos: 71,   mid: 50, sl:"-1 ATR", sm:"0", sr:"+1 ATR", v:"+0.42 ATR", e:["◀ AYI SATIŞ","BOĞA ALIŞ ▶"] },
+  { cap: "CMO −22.5 (negatif ivme)",    pos: 27.5, mid: 50, sl:"-50", sm:"0", sr:"+50", v:"CMO −22.5", e:["◀ NEGATİF İVME","POZİTİF İVME ▶"] },
+  { cap: "DXY 97.40 — 0 noktası 100.0 (sola sapma, dolar zayıf)",
+    pos: 21.25, mid: 37.5, sl:"94.0", sm:"0 · NÖTR", sr:"110.0",
+    v:"97.40 (−16.2 sapma)", e:["◀ ZAYIF DOLAR (altın lehine)","GÜÇLÜ DOLAR (altın aleyhine) ▶"] },
+];
+
+function render(id) {
+  document.getElementById(id).innerHTML =
+    cases.map(c => `<div class="row"><span class="caption">${c.cap}</span>${bar(c.pos,c.mid,c.sl,c.sm,c.sr,c.v,c.e)}</div>`).join("");
+}
+render("dark");
+document.documentElement.classList.add("light-theme");
+render("light");
+document.documentElement.classList.remove("light-theme");
+</script>
+
+</body>
+</html>
