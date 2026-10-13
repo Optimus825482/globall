@@ -581,6 +581,10 @@ def get_dxy_regime() -> Optional[Dict[str, Any]]:
         "rsi": rsi,
         "cmo": tech.get("cmo", 0.0),
         "change_pct": tech.get("change_pct", 0.0),
+        # Canlı DXY seviyesi (BTC-Gold sayfasındaki dinamik DXY progress bar'ı için).
+        # Endeksin MUTLAK değeri, rejim yorumundan ayrıdır: kullanıcı "değeri de
+        # yazalım" dedi, yalnız "USD_WEAK" etiketi yetmiyordu.
+        "price": float(tech.get("price", 0.0) or 0.0),
         "updated_at": tech.get("updated_at", 0.0),
     }
 
@@ -3135,6 +3139,10 @@ async def get_btc_gold_auto_comment():
         "interval_sec": 60,
         "generated_at": time.time(),
         "market_note": " ".join(x for x in (dxy_note, session_note, source_note) if x),
+        # Dinamik DXY panosu (2026-10-13): sayfa üstündeki notun ÜSTÜNE progress bar
+        # + sayısal değer olarak çizilir. `None` ise frontend bileşeni hiç göstermez
+        # (DXY fetch'i başarısızsa tire/yanlış değer göstermek yerine gizlenir).
+        "dxy": dxy,
         "symbols": symbols_out,
     }
 

@@ -250,6 +250,24 @@ button, a { touch-action: manipulation; }
 .chat-setting-card p { margin-top:.35rem; color:#94a3b8; font-size:.78rem; line-height:1.5; }
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 
+/* İŞLEVSEL PROGRESS DOLGUSU (2026-10-13).
+   Kullanıcı bildirimi: "progress barların ilerlemeleri DOLU RENKLİ olsun".
+   Dolgu çubukları hem KOYU hem AÇIK temada görünür olmalıdır. Rengi çağıran
+   bileşen `--progress-color` ile satır içi verir; burada o değişkenden hem
+   düz renk (background-color) hem de hafif aydınlık gradient üretilir.
+   Açık temadaki `html.light [class*="bg-gradient-"] { background-image:none;
+   background-color:#fff }` kuralı `.progress-fill`'i `:not()` ile dışarıda
+   bırakır — bu yüzden dolgu beyaza dönmez. `background-color` HER İKİ temada
+   da geçerli olduğu için bar hiçbir durumda "boş" görünmez. */
+.progress-fill {
+  background-color: var(--progress-color, #10b981);
+  background-image: linear-gradient(
+    90deg,
+    var(--progress-color, #10b981),
+    color-mix(in srgb, var(--progress-color, #10b981) 70%, #ffffff)
+  );
+}
+
 .page-shell { width: min(100%, 1180px); margin: 0 auto; }
 .page-heading { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1.5rem; }
 .page-heading h1 { @apply font-mono text-2xl font-bold tracking-tight; }
@@ -653,8 +671,13 @@ html.light .bg-slate-950 {
   color: #0f172a !important;
 }
 
-/* Koyu degrade zeminler açık modda temiz ve ferah hale getirilir */
-html.light [class*="bg-gradient-"] {
+/* Koyu degrade zeminler açık modda temiz ve ferah hale getirilir.
+   ANCAK `.progress-fill` HARİÇ: o sınıf dekoratif kart zemini değil, İŞLEVSEL
+   bir dolgu çubuğudur. Kural eskiden onu da beyaza çevirdiği için açık temada
+   progress barların dolgusu beyaz-üstü-beyaz oluyor ve bar BOŞ görünüyordu
+   (kullanıcı bildirimi 2026-10-13: "progress barların ilerlemeleri dolu renkli
+   olsun"). `:not()` ile dolgu çubukları bu düzleştirmeden muaf tutulur. */
+html.light [class*="bg-gradient-"]:not(.progress-fill) {
   background-image: none !important;
   background-color: #ffffff !important;
 }

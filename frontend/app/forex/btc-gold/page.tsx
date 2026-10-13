@@ -390,11 +390,14 @@ function DirectionBar({
         <span className={`text-[10px] font-black tracking-wide ${tone}`}>{verdict}</span>
       </div>
 
-      {/* Ray: sol kırmızı (SELL) → orta gri (NÖTR) → sağ yeşil (BUY) */}
+      {/* Ray: sol kırmızı (SELL) → orta gri (NÖTR) → sağ yeşil (BUY).
+          Renkler satır içi CSS olarak verilir: `bg-gradient-*` sınıfları açık
+          temada `html.light [class*="bg-gradient-"]` kuralıyla beyaza
+          düzleştirildiği için ray tamamen kayboluyordu (2026-10-13). */}
       <div className="relative h-3 rounded-full overflow-hidden border border-bunker-800/80 shadow-inner">
         <div className="absolute inset-0 flex">
-          <div className="w-1/2 h-full bg-gradient-to-r from-rose-600/70 to-rose-500/10" />
-          <div className="w-1/2 h-full bg-gradient-to-r from-emerald-500/10 to-emerald-600/70" />
+          <div className="w-1/2 h-full" style={{ background: "linear-gradient(90deg, rgba(225,29,72,0.75), rgba(244,63,94,0.10))" }} />
+          <div className="w-1/2 h-full" style={{ background: "linear-gradient(90deg, rgba(16,185,129,0.10), rgba(5,150,105,0.75))" }} />
         </div>
         {/* Nötr ölü bölge işareti — ortadaki gri şerit */}
         <div
@@ -497,15 +500,20 @@ function ProgressBarCard({
 }) {
   const clampedPct = Math.max(0, Math.min(100, isNaN(percentage) ? 0 : percentage));
 
-  const colorClasses: Record<string, string> = {
-    emerald: "from-emerald-600 to-emerald-400 bg-emerald-500",
-    amber: "from-amber-600 to-amber-400 bg-amber-500",
-    rose: "from-rose-600 to-rose-400 bg-rose-500",
-    cyan: "from-cyan-600 to-cyan-400 bg-cyan-400",
-    blue: "from-blue-600 to-blue-400 bg-blue-500",
-    purple: "from-purple-600 to-purple-400 bg-purple-500",
-    gradient: "from-rose-500 via-amber-400 to-emerald-400 bg-gradient-to-r",
+  // Dolgu RENGİ artık sınıf değil, doğrudan hex: `.progress-fill` CSS'i
+  // `--progress-color` değişkeninden hem düz rengi hem gradienti üretir.
+  // (2026-10-13: açık temada `bg-gradient-*` sınıfları beyaza düzleştiriliyordu
+  // → bar boş görünüyordu. Sabit hex bu tuzağı tamamen kaldırır.)
+  const fillColors: Record<string, string> = {
+    emerald: "#10b981",
+    amber: "#f59e0b",
+    rose: "#f43f5e",
+    cyan: "#22d3ee",
+    blue: "#3b82f6",
+    purple: "#a855f7",
+    gradient: "#22d3ee",
   };
+  const fillColor = fillColors[barColor] || fillColors.emerald;
 
   return (
     <div className="p-3.5 rounded-xl bg-bunker-950/80 border border-bunker-800/80 hover:border-bunker-700 transition-all flex flex-col justify-between shadow-sm">
@@ -521,10 +529,8 @@ function ProgressBarCard({
       <div className="my-1.5">
         <div className="w-full h-2.5 rounded-full bg-bunker-900 border border-bunker-800/80 p-0.5 overflow-hidden relative shadow-inner">
           <div
-            className={`h-full rounded-full transition-all duration-700 ease-out bg-gradient-to-r ${
-              colorClasses[barColor] || colorClasses.emerald
-            }`}
-            style={{ width: `${clampedPct}%` }}
+            className="progress-fill h-full rounded-full transition-all duration-700 ease-out"
+            style={{ width: `${clampedPct}%`, ["--progress-color" as string]: fillColor }}
           />
         </div>
       </div>
@@ -534,6 +540,113 @@ function ProgressBarCard({
         <span>{leftLabel || "0%"}</span>
         {subText && <span className="font-sans font-semibold text-bunker-300">{subText}</span>}
         <span>{rightLabel || "100%"}</span>
+      </div>
+    </div>
+  );
+}
+
+// --- DİNAMİK DXY PANOSU (2026-10-13) ---
+// Kullanıcı isteği: "piyasa notunun ÜST kısmına dinamik DXY değerini gösteren
+// progress bar ve değeri yazalım." Rejim (USD_STRONG/WEAK/NEUTRAL) + canlı
+// endeks seviyesi + RSI + günlük değişim tek şeritte gösterilir.
+//
+// Bar yorumu: dolar GÜCÜNÜ soldan sağa ölçer. Sabit bir bant (94–110) kullanılır:
+// DXY pratikte bu aralıkta salınır. Değer bandın DIŞINA çıkarsa bant değeri
+// kapsayacak şekilde genişletilir — aksi hâlde bar uçta çakılı kalır ve
+// gerçek seviye yanlış okunur (sessiz yanıltma).
+const DXY_BAND_MIN = 94.0;
+const DXY_BAND_MAX = 110.0;
+
+interface DxyPanelData {
+  regime?: string;
+  trend?: string;
+  score?: number;
+  rsi?: number;
+  cmo?: number;
+  change_pct?: number;
+  price?: number;
+}
+
+function DxyProgressPanel({ dxy }: { dxy: DxyPanelData }) {
+  const price = Number(dxy.price || 0);
+  const regime = dxy.regime || "USD_NEUTRAL";
+  const trend = dxy.trend || "NEUTRAL";
+  const changePct = Number(dxy.change_pct || 0);
+  const rsi = Number(dxy.rsi ?? 50);
+
+  const hasPrice = price > 0;
+  // Bant değeri kapsamıyorsa genişlet (bar uçta çakılı kalmasın).
+  const bandMin = hasPrice ? Math.min(DXY_BAND_MIN, price - 0.5) : DXY_BAND_MIN;
+  const bandMax = hasPrice ? Math.max(DXY_BAND_MAX, price + 0.5) : DXY_BAND_MAX;
+  const bandSpan = Math.max(0.001, bandMax - bandMin);
+  const pct = Math.max(0, Math.min(100, ((price - bandMin) / bandSpan) * 100));
+  // Nötr (sıkışık dolar) referansı: 100.0 seviyesi — endeksin klasik pivotu.
+  const neutralPct = Math.max(0, Math.min(100, ((100.0 - bandMin) / bandSpan) * 100));
+
+  // Rejim → renk ve etiket. Zayıf dolar altın/BTC için RÜZGÂR (yeşil),
+  // güçlü dolar TERS RÜZGÂR (kırmızı), sıkışık nötr (amber).
+  const isWeak = regime === "USD_WEAK";
+  const isStrong = regime === "USD_STRONG";
+  const fillColor = isWeak ? "#10b981" : isStrong ? "#f43f5e" : "#f59e0b";
+  const regimeLabel = isWeak
+    ? "DOLAR ZAYIF — ALTIN & BTC LEHİNE"
+    : isStrong
+    ? "DOLAR GÜÇLÜ — ALTIN & BTC ALEYHİNE"
+    : "DOLAR SIKIŞIK — YÖNSÜZ";
+  const toneText = isWeak ? "text-emerald-300" : isStrong ? "text-rose-300" : "text-amber-300";
+  const trendIcon = trend === "BULLISH" ? "▲" : trend === "BEARISH" ? "▼" : "◆";
+  const changeTone =
+    changePct > 0 ? "text-emerald-300" : changePct < 0 ? "text-rose-300" : "text-bunker-muted";
+
+  return (
+    <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[10px] font-black text-bunker-muted uppercase tracking-wider flex items-center gap-1.5">
+          <span>💵</span>
+          <span>DXY — ABD Dolar Endeksi</span>
+        </span>
+        <span className={`text-[10px] font-black tracking-wide ${toneText}`}>● {regimeLabel}</span>
+      </div>
+
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-2.5">
+          <span className="text-2xl font-black font-mono text-white leading-none">
+            {hasPrice ? price.toFixed(2) : "—"}
+          </span>
+          <span className={`text-xs font-bold font-mono ${changeTone}`}>
+            {trendIcon} {changePct >= 0 ? "+" : ""}
+            {changePct.toFixed(2)}%
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-[10px] font-mono text-bunker-muted">
+          <span>
+            RSI <span className="text-bunker-200 font-bold">{rsi.toFixed(1)}</span>
+          </span>
+          <span>
+            Skor <span className="text-bunker-200 font-bold">{Number(dxy.score ?? 0).toFixed(0)}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Dinamik progress bar: sol = zayıf dolar bandın altı, sağ = güçlü dolar */}
+      <div>
+        <div className="w-full h-3 rounded-full bg-bunker-900 border border-bunker-800/80 p-0.5 overflow-hidden relative shadow-inner">
+          {/* Nötr (sıkışık) merkez işareti — 100.0 endeks pivodu */}
+          <div
+            className="absolute top-0 h-full w-px bg-slate-400/40 z-10"
+            style={{ left: `${neutralPct}%` }}
+          />
+          {hasPrice && (
+            <div
+              className="progress-fill h-full rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${pct}%`, ["--progress-color" as string]: fillColor }}
+            />
+          )}
+        </div>
+        <div className="flex items-center justify-between text-[9px] text-bunker-muted font-mono mt-1">
+          <span className="text-emerald-300/80 font-bold">◀ ZAYIF DOLAR (altın lehine)</span>
+          <span className="text-rose-300/80 font-bold">GÜÇLÜ DOLAR (altın aleyhine) ▶</span>
+        </div>
       </div>
     </div>
   );
@@ -634,6 +747,17 @@ export default function BtcGoldForexPage() {
     interval_sec?: number;
     generated_at?: number;
     market_note?: string;
+    /** Dinamik DXY panosu (backend `get_dxy_regime()` çıktısı; veri yoksa null). */
+    dxy?: {
+      regime?: string;
+      trend?: string;
+      score?: number;
+      rsi?: number;
+      cmo?: number;
+      change_pct?: number;
+      price?: number;
+      updated_at?: number;
+    } | null;
     symbols?: Record<string, SymbolComment>;
   } | null>(null);
 
@@ -1016,7 +1140,7 @@ export default function BtcGoldForexPage() {
       )}
 
       {/* HESAP METRİKLERİ KARTLARI */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
           <span className="text-[10px] text-bunker-muted uppercase block">IC Markets Bakiye</span>
           <span className="text-lg font-bold text-emerald-400 font-mono">
@@ -1096,13 +1220,9 @@ export default function BtcGoldForexPage() {
           </div>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-          <span className="text-[10px] text-bunker-muted uppercase block">Kaldıraç &amp; Sunucu</span>
-          <span className="text-base font-bold text-white tracking-wide">
-            1:{mt5.account?.leverage || 5000}
-          </span>
-          <span className="text-[9px] text-emerald-400 block mt-0.5 truncate">{mt5.account?.server || "ICMarketsSC-Demo"}</span>
-        </div>
+        {/* "Kaldıraç & Sunucu" kartı kaldırıldı (kullanıcı isteği 2026-10-13:
+            "BUNU KALDIR GEREK YOK") — sabit 1:5000 / ICMarketsSC-Demo bilgisi
+            portföy sayfasında zaten var, bu sayfada tekrar değeri yoktu. */}
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
           <span className="text-[10px] text-bunker-muted uppercase block">Aktif Seanslar</span>
@@ -1275,6 +1395,11 @@ export default function BtcGoldForexPage() {
             Canlı Yenileme: <span className="text-emerald-400 font-bold">1.5 saniye</span>
           </span>
         </div>
+
+        {/* DİNAMİK DXY PANOSU — piyasa notunun ÜSTÜNDE (kullanıcı isteği 2026-10-13).
+            Canlı DXY seviyesi + rejim + dinamik progress bar. DXY verisi yoksa
+            (backend `dxy: null`) bileşen hiç gösterilmez; tire/yanlış sayı yok. */}
+        {autoComment?.dxy && <DxyProgressPanel dxy={autoComment.dxy} />}
 
         {/* Ortak Piyasa Notu (DXY + seans + fiyat kaynağı) */}
         {autoComment?.market_note && (
