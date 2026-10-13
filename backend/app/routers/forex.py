@@ -3202,6 +3202,37 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 # OTONOM FOREX PAPER TRADE SCALPING MOTORU (M1 / M5 Dynamic Exit & Risk Engine)
 # ============================================================================
 
+# --- CANLI SABİTLER: kod içinde tanımlı, sunucudaki ayar dosyası EZEMEZ (2026-10-13) ---
+# Neden sabit: gömülü canlı sunucuda `forex_auto_settings.json` (Docker `/data` birimi)
+# bu iki değerin ESKİ halini tutuyordu ve kod varsayılanını maskeliyordu; panelde de
+# düzenlenecek alan YOK (chandelier `trailing_stop_pips`'ten ayrı bir alan, `ls_symbols`
+# ise hiç panelde değil). Yani tek geçerli kontrol noktası kod. Aşağıdaki değerler
+# `ForexAutoPaperSettings` varsayılanı olur VE açılışta kalıcı dosyadan yüklenen değerlerin
+# üzerine zorlanır — böylece sunucu eski dosyayla açılsa bile canlı bu değerleri kullanır.
+#
+# chandelier_atr_mult = 0.3: kâr tepesinden 0.3×GİRİŞ ATR'si geri verilince kilit.
+#   4 bağımsız pencerede kazanan (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF ↑, maxDD ↓),
+#   2-pip kaymada korunuyor. XAU+BTC replay: chand0.3 $4305.70/PF 1.87 vs en iyi
+#   sabit-pip $3950.88/1.80; chand1.2 (eski canlı değer) $3863 — sabit-pipten KÖTÜ.
+#   Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md
+# ls_symbols = XAUUSD + US30 + NAS100: LS kolunun işlem açabildiği evren. NAS100
+#   (= MT5 'USTEC') üç pencerede de pozitif ve XAU/US30 pnl'ini düşürmüyor.
+CANLI_CHANDELIER_ATR_MULT = 0.3
+CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
+
+
+def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaperSettings":
+    """Ayar dosyasını EZEREK iki canlı sabiti zorlar (yukarıdaki gerekçe).
+
+    Hem açılışta (kalıcı dosya yüklendikten sonra) hem de panel/POST ile ayar
+    kaydedildiğinde çağrılır; gövdede `chandelier_atr_mult`/`ls_symbols` gelse bile
+    sabit kazanır. İkisinin de değerini değiştirmek için koddaki sabit düzenlenir.
+    """
+    settings.chandelier_atr_mult = CANLI_CHANDELIER_ATR_MULT
+    settings.ls_symbols = list(CANLI_LS_SYMBOLS)
+    return settings
+
+
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
@@ -3250,7 +3281,7 @@ class ForexAutoPaperSettings(BaseModel):
     crypto_risk_clamp_enabled: bool = Field(True, description="Kripto/altında risk-skip bypass'ı yerine lotu kategori tabanına SABİTLE (risk asla artmaz; eski davranış aşırı lotu kullanıyordu — 2026-10-10 denetim P0-4)")
     loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
     loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
-    chandelier_atr_mult: float = Field(0.3, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. 1.2→0.3 sıkma 4 bağımsız pencerede kazanıyor (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF artıyor, maxDD düşüyor) ve 2-pip kaymada korunuyor. Doğrudan XAU+BTC replay (2026-07-15→08-15): chand0.3 net $4305.70 / PF 1.87 / DD $79.49 vs en iyi sabit-pip $3950.88 / 1.80; 2-pip kaymada $2538.31/1.47 vs $2218.56/1.39. 15dk bar çözünürlüğünde yön korunuyor (etki ~%36 küçülür) → 0.05 yerine 0.3. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
+    chandelier_atr_mult: float = Field(CANLI_CHANDELIER_ATR_MULT, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. **Bu değer canlı SABİT: `CANLI_CHANDELIER_ATR_MULT` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 1.2→0.3 sıkma 4 bağımsız pencerede kazanıyor (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF artıyor, maxDD düşüyor) ve 2-pip kaymada korunuyor. Doğrudan XAU+BTC replay (2026-07-15→08-15): chand0.3 net $4305.70 / PF 1.87 / DD $79.49 vs en iyi sabit-pip $3950.88 / 1.80; 2-pip kaymada $2538.31/1.47 vs $2218.56/1.39. 15dk bar çözünürlüğünde yön korunuyor (etki ~%36 küçülür) → 0.05 yerine 0.3. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
@@ -3298,8 +3329,8 @@ class ForexAutoPaperSettings(BaseModel):
     lb_max_per_day: int = Field(1, ge=1, le=5, description="London Breakout: sembol+yön başına günde azami giriş (replay spec: 1)")
     ls_enabled: bool = Field(True, description="London Sign (NY açılışı sign-momentum, Seeck 2026 uyarlaması) akışı: 13:30-14:00 UTC sign penceresi → 14:00-14:30 giriş, SL 1.5×ATR, sabit TP yok (chandelier trail), EoD kapanış. 2026-10-12 replay: XAUUSD+US30 beş pencerenin beşinde pozitif (60g +$256 PF 2.16 WR %89.5; slip 2p/bacakta PF 1.76)")
     ls_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "US30", "NAS100"],
-        description="London Sign sembolleri. 2026-10-12 replay: XAUUSD +$182 (WR %91.8 n49) ve US30 +$74 (WR %90 n30) — 60g pencerede iki pozitif. FX majörlerinde NEGATİF (USDJPY/GBPUSD/GBPJPY) → kapsam dışı. BTCUSD nötr/negatif (WR %54) → kapsam dışı. 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — üç pencerede de pozitif (W1 +$83 n21 WR %86, W2 +$58 n25 WR %80, W3 +$43 n10 WR %90); canlı LS defterine eklenince XAU/US30 pnl'i BİREBİR sabit kalıp üstüne +$107/+$58/+$43 ekliyor; slip 2p'de WR sabit %85.7.",
+        default_factory=lambda: list(CANLI_LS_SYMBOLS),
+        description="London Sign sembolleri. **Bu liste canlı SABİT: `CANLI_LS_SYMBOLS` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 2026-10-12 replay: XAUUSD +$182 (WR %91.8 n49) ve US30 +$74 (WR %90 n30) — 60g pencerede iki pozitif. FX majörlerinde NEGATİF (USDJPY/GBPUSD/GBPJPY) → kapsam dışı. BTCUSD nötr/negatif (WR %54) → kapsam dışı. 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — üç pencerede de pozitif (W1 +$83 n21 WR %86, W2 +$58 n25 WR %80, W3 +$43 n10 WR %90); canlı LS defterine eklenince XAU/US30 pnl'i BİREBİR sabit kalıp üstüne +$107/+$58/+$43 ekliyor; slip 2p'de WR sabit %85.7.",
     )
     ls_sign_start_utc: int = Field(13, ge=0, le=23, description="London Sign: sign penceresi başlangıç saati (UTC)")
     ls_sign_start_min: int = Field(30, ge=0, le=59, description="London Sign: sign penceresi başlangıç dakikası (UTC)")
@@ -3451,6 +3482,8 @@ def merge_settings_payload(payload: Dict[str, Any]) -> "ForexAutoPaperSettings":
             _log_auto_decision("SYSTEM", f"ℹ️ Bilinmeyen ayar anahtarları yok sayıldı: {unknown}")
         except Exception:
             pass
+    # Canlı sabitler gövdeden gelse bile kazanır (tek kontrol noktası kod).
+    _apply_canli_sabitler(merged)
     return merged
 
 
@@ -3471,6 +3504,15 @@ try:
                 )
 except Exception as _exc:  # pragma: no cover - savunmacı
     _AUTO_SETTINGS = ForexAutoPaperSettings()
+
+# Canlı sabitleri (en üstteki `CANLI_*`) kalıcı dosya yüklendikten SONRA zorla:
+# sunucudaki forex_auto_settings.json eski chandelier/ls_symbols değerlerini tutsa bile
+# canlı bunları kullansın (dosya kod sabitini maskeliyordu).
+_apply_canli_sabitler(_AUTO_SETTINGS)
+logger.info(
+    "[FX SABİT] chandelier_atr_mult=%.2f, ls_symbols=%s (kod sabiti — ayar dosyası/panel ezemez)",
+    _AUTO_SETTINGS.chandelier_atr_mult, _AUTO_SETTINGS.ls_symbols,
+)
 
 # IC Markets MT5 Durumu (Global Köprü Paylaşımı)
 _MT5_STATE: Dict[str, Any] = {

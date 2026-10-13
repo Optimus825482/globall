@@ -1366,6 +1366,33 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         # test sessiz bir gerileme ya da kanıtsız bir değişikliği yakalar.
         self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 0.3)
 
+    def test_canli_sabitler_override_settings_file_and_panel(self):
+        """İki canlı sabit (chandelier + ls_symbols) hem kalıcı dosyayı hem panel
+        gövdesini EZMELİ — sunucudaki eski `forex_auto_settings.json` ve panel isteği
+        bu değerleri değiştiremez (2026-10-13; ikisinin de panelde alanı yok).
+
+        Gerçek vaka: üretimdeki dosya `chandelier_atr_mult=1.2` ve `ls_symbols`'siz
+        NAS100 tutuyordu; kod sabiti dosyaya yenilmeyince canlı eski davranışta kalıyordu.
+        """
+        # (a) Kalıcı dosyadan eski değerler gelmiş gibi kur, zorla, sabit kazanmalı
+        s = forex.ForexAutoPaperSettings(
+            chandelier_atr_mult=1.2, ls_symbols=["XAUUSD", "US30"])
+        forex._apply_canli_sabitler(s)
+        self.assertEqual(s.chandelier_atr_mult, forex.CANLI_CHANDELIER_ATR_MULT)
+        self.assertEqual(s.ls_symbols, list(forex.CANLI_LS_SYMBOLS))
+
+        # (b) Panel/POST gövdesi bu iki alanı değiştirmeye çalışsa da sabit kazanmalı
+        merged = forex.merge_settings_payload(
+            {"chandelier_atr_mult": 3.0, "ls_symbols": ["GBPUSD"], "min_score": 80.0})
+        self.assertEqual(merged.chandelier_atr_mult, forex.CANLI_CHANDELIER_ATR_MULT)
+        self.assertEqual(merged.ls_symbols, list(forex.CANLI_LS_SYMBOLS))
+        # Sabit olmayan alan normal şekilde geçmeli (kontrol)
+        self.assertEqual(merged.min_score, 80.0)
+
+        # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
+        self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.3)
+        self.assertEqual(list(forex.CANLI_LS_SYMBOLS), ["XAUUSD", "US30", "NAS100"])
+
     async def test_trailing_uses_entry_atr_not_current_atr(self):
         """Motor döngüsü trailing'i GİRİŞ ATR'siyle kurmalı, cari ATR ile değil.
 
