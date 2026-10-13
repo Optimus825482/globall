@@ -1333,6 +1333,98 @@ class TestForexPerSymbolDailyKpi(unittest.TestCase):
             forex._STATUS_CACHE = None
 
 
+class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
+    """Chandelier trailing GİRİŞ ATR'sini kullanmalı — 2026-10-13 canlı↔replay paritesi.
+
+    Replay trailing'i işlem açılışında dondurulmuş ATR ile hesaplar
+    (forex_replay_backtest.py:1828-1830) ve 1.2 → 0.3 sıkma kazancı O davranışla
+    ölçüldü. Canlı eski kod her tick CARİ ATR'yi kullanıyordu → ATR sıçradığında
+    trailing mesafesi işlem ortasında genişleyip kazanılan pip geri veriliyordu.
+    """
+
+    def test_entry_atr_wins_over_current_atr(self):
+        # Giriş ATR'si varsa o kullanılır; cari ATR ne olursa olsun yok sayılır.
+        self.assertEqual(forex.resolve_chandelier_atr(40.0, 120.0), 40.0)
+        self.assertEqual(forex.resolve_chandelier_atr(12.5, 3.0), 12.5)
+
+    def test_falls_back_to_current_atr_when_missing(self):
+        # Eski pozisyon / alan yazılmamış → cari ATR'ye düş (güvenli davranış).
+        self.assertEqual(forex.resolve_chandelier_atr(None, 55.0), 55.0)
+        self.assertEqual(forex.resolve_chandelier_atr(0.0, 55.0), 55.0)
+        self.assertEqual(forex.resolve_chandelier_atr("", 55.0), 55.0)
+
+    def test_zero_when_both_missing(self):
+        # İkisi de yoksa 0 döner → çağıran chandelier dalını atlar (sabit pip trail).
+        self.assertEqual(forex.resolve_chandelier_atr(None, None), 0.0)
+        self.assertEqual(forex.resolve_chandelier_atr(0.0, 0.0), 0.0)
+
+    def test_chandelier_default_unchanged(self):
+        # 2026-10-13: 0.3'e sıkma replay'de kazanıyor AMA canlı MT5'i köprü
+        # (chandelier'siz, sabit-pip trail) yönettiği için canlıya YAZILMADI.
+        # Varsayılan 1.2'de kalır; bu test sessiz bir değişikliği yakalar.
+        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 1.2)
+
+    async def test_trailing_uses_entry_atr_not_current_atr(self):
+        """Motor döngüsü trailing'i GİRİŞ ATR'siyle kurmalı, cari ATR ile değil.
+
+        Pozisyon elle tohumlanır: giriş ATR'si 40 pip, cari tick ATR'si 200 pip
+        (5x sıçrama). Chandelier_MFE − 0.3×ATR olduğundan iki kaynak FARKLI SL üretir;
+        hangisinin yazıldığı ayırt edicidir.
+        """
+        from unittest import mock
+
+        entry_atr, mfe, cur = 40.0, 330.0, 4132.0       # pip cinsinden
+        pip_size, entry_p = 0.10, 4100.0
+        # cari ATR tick'i: 200 pip → atr = 200 * 0.10 = 20.0
+        ticks = {
+            "XAUUSD": {
+                "symbol": "XAUUSD", "display": "XAU/USD", "bid": cur, "ask": cur + 0.1,
+                "price": cur, "pip_size": pip_size, "digits": 2, "atr": 200 * pip_size,
+                "spread_pips": 1.0, "change_pct": 0.8, "score": 95.0, "action": "BUY",
+            }
+        }
+        pos = {
+            "id": "FX-TEST-EATR", "symbol": "XAUUSD", "display": "XAU/USD",
+            "direction": "BUY", "lots": 0.02, "entry_price": entry_p,
+            "current_price": cur, "sl_price": entry_p, "tp_price": 0.0,
+            "initial_sl_price": entry_p - 24 * pip_size,
+            "breakeven_activated": True,        # trailing dalının ön koşulu
+            "trailing_activated": False, "partial_taken": False,
+            "open_time": "12:00:00 UTC+3", "pnl_usd": 0.0, "pnl_pips": 0.0,
+            "pip_size": pip_size, "digits": 2, "score": 95.0,
+            "strategy": "M1_M5_RADAR_SCALPER", "entry_source": "",
+            "entry_atr_pips": entry_atr, "mfe_pips": mfe,
+        }
+        exp_entry = round(entry_p + (mfe - 0.3 * entry_atr) * pip_size, 2)   # 4131.8
+        exp_cur = round(entry_p + (mfe - 0.3 * 200.0) * pip_size, 2)         # 4127.0
+        self.assertNotAlmostEqual(exp_entry, exp_cur, places=2)
+
+        orig_ticks = forex._generate_realistic_ticks
+        prev_open = list(forex._AUTO_STATE["open_positions"])
+        prev_enabled = forex._AUTO_STATE["enabled"]
+        prev_chand = forex._AUTO_SETTINGS.chandelier_atr_mult
+        try:
+            forex._AUTO_SETTINGS.chandelier_atr_mult = 0.3
+            forex._AUTO_STATE["open_positions"] = [pos]
+            forex._AUTO_STATE["enabled"] = True
+            forex._generate_realistic_ticks = mock.AsyncMock(return_value=ticks)
+            task = asyncio.create_task(forex._forex_auto_paper_loop())
+            await asyncio.sleep(2.2)            # döngü 1.5s uyur, sonra bir tarama yapar
+            forex._AUTO_STATE["enabled"] = False
+            await asyncio.wait_for(task, timeout=5)
+        finally:
+            forex._generate_realistic_ticks = orig_ticks
+            forex._AUTO_STATE["enabled"] = prev_enabled
+            forex._AUTO_SETTINGS.chandelier_atr_mult = prev_chand
+            result_pos = forex._AUTO_STATE["open_positions"][0] if forex._AUTO_STATE["open_positions"] else pos
+            forex._AUTO_STATE["open_positions"] = prev_open
+        self.assertEqual(
+            result_pos["sl_price"], exp_entry,
+            f"trailing cari ATR'yi kullanmış (beklenen {exp_entry} = giriş ATR, "
+            f"cari ATR olsaydı {exp_cur})",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
 

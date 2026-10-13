@@ -1372,6 +1372,31 @@ def get_symbol_trading_specs(
     }
 
 
+def resolve_chandelier_atr(
+    entry_atr_pips: Optional[float],
+    current_atr_pips: Optional[float],
+) -> float:
+    """Chandelier trailing için kullanılacak ATR'yi seçer (saf fonksiyon — test edilebilir).
+
+    Öncelik GİRİŞ ATR'sidir. Replay trailing'i girişte dondurulmuş ATR ile hesaplar
+    (scripts/forex_replay_backtest.py:1828-1830) ve canlı davranışın kanıtlanmış olan bu
+    olduğu için canlı da aynısını yapmalıdır. Eski canlı kod her tick CARİ ATR'yi
+    kullanıyordu: ATR sıçradığında trailing mesafesi işlem ortasında genişliyor ve
+    kazanılan pip geri veriliyordu (2026-10-13 canlı↔replay ayrık analizi).
+
+    Giriş ATR'si yoksa (eski pozisyon / henüz yazılmamış alan) CARİ ATR'ye düşülür;
+    ikisi de yoksa 0.0 döner ve çağıran chandelier dalını atlar (sabit pip trail'e düşer).
+    """
+    for v in (entry_atr_pips, current_atr_pips):
+        try:
+            f = float(v or 0.0)
+        except (TypeError, ValueError):
+            f = 0.0
+        if f > 0:
+            return f
+    return 0.0
+
+
 def get_atr_exit_levels(
     atr_pips: Optional[float],
     sl_pips: float,
@@ -3217,7 +3242,7 @@ class ForexAutoPaperSettings(BaseModel):
     crypto_risk_clamp_enabled: bool = Field(True, description="Kripto/altında risk-skip bypass'ı yerine lotu kategori tabanına SABİTLE (risk asla artmaz; eski davranış aşırı lotu kullanıyordu — 2026-10-10 denetim P0-4)")
     loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
     loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
-    chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden bu ATR katı geri verilince kilitler (0 = sabit pip trail; 2026-10-07 replay: 1.2 → 30g +$29/%10g +$6, 'kazandığını geri verme' tavanı. Kâr-tepesi takibi BE/TP'yi beklemeden erken kilitler)")
+    chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). NOT (2026-10-13): bu ayar YALNIZ motorun paper yolunu etkiler — canlı MT5 hesabını `scripts/mt5_bridge.py` yönetir ve orada chandelier YOK (sabit-pip trail). Kazananları kesen katman chandelier değil BE kilidi; sıkma adayı (1.2→0.3) replay'de +8..11% veriyor ama canlı yol kullanmadığı için buraya yazılmadı")
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
@@ -4367,6 +4392,14 @@ async def _forex_auto_paper_loop():
                     pos["current_price"] = cur_p
 
                     atr_pips = round(t.get("atr", 0.001) / pip_size, 1) if pip_size > 0 else 15.0
+                    # GİRİŞ ATR'si — chandelier paritesi. Replay trailing'i girişte
+                    # dondurulmuş ATR ile hesaplar (forex_replay_backtest.py:1828);
+                    # canlı eskiden her tick CARİ ATR'yi kullanıyordu, bu yüzden ATR
+                    # sıçradığında trailing mesafesi işlem ortasında genişleyip kazanılan
+                    # pip'i geri veriyordu (canlı↔replay ayrık). Alan ilk turda yazılır,
+                    # pozisyon ömrü boyunca sabit kalır; kalıcılık yoksa cari ATR'ye düşülür.
+                    if atr_pips > 0 and not pos.get("entry_atr_pips"):
+                        pos["entry_atr_pips"] = atr_pips
                     spec = get_symbol_trading_specs(
                         sym,
                         base_be=_AUTO_SETTINGS.breakeven_pips,
@@ -4478,11 +4511,13 @@ async def _forex_auto_paper_loop():
                     if pos.get("breakeven_activated") or pnl_pips >= eff_trail_pips:
                         chand_mult = float(_AUTO_SETTINGS.chandelier_atr_mult or 0.0)
                         pos_mfe = float(pos.get("mfe_pips", 0.0) or 0.0)
+                        # Replay paritesi: trailing GİRİŞ ATR'siyle hesaplanır, cari ATR ile
+                        # değil. Alan yoksa (eski pozisyon / ilk tur yazılmamış) cari ATR'ye düş.
+                        chand_atr = resolve_chandelier_atr(pos.get("entry_atr_pips"), atr_pips)
                         updated_trail = False
-                        if chand_mult > 0 and atr_pips > 0 and pos_mfe > 0:
-                            # Chandelier: kâr tepesinden chand_mult×ATR geri verilince kilit
-                            # (replay: 1.2 → 30g +$29 / 10g +$6; "kazandığını geri verme" tavanı)
-                            cand_pips = pos_mfe - (chand_mult * atr_pips)
+                        if chand_mult > 0 and chand_atr > 0 and pos_mfe > 0:
+                            # Chandelier: kâr tepesinden chand_mult×ATR(giriş) geri verilince kilit
+                            cand_pips = pos_mfe - (chand_mult * chand_atr)
                             if direction == "BUY":
                                 cand_sl = round(entry_p + (cand_pips * pip_size), digits)
                                 # Trailing SL asla 1$ Breakeven seviyesinin altına inmez!
@@ -5963,6 +5998,12 @@ async def _forex_auto_paper_loop():
                         "partial_target_pips": first_target_pips,
                         "partial_realized_usd": 0.0,
                         "initial_lots": mt5_lots,
+                        # Giriş ATR'si (pip) — chandelier trailing paritesi için pozisyonda
+                        # SAKLANIR. Replay trailing'i giriş ATR'siyle hesaplar
+                        # (forex_replay_backtest.py:1828); canlı eskiden her tick CARİ ATR'yi
+                        # kullanıyordu → ATR sıçrayınca trailing mesafesi işlem ortasında
+                        # genişleyip kazanılan pip geri veriliyordu. 2026-10-13.
+                        "entry_atr_pips": round(float(atr_pips), 1),
                         "opened_at_ts": now_ts,
                         "open_time": datetime.datetime.fromtimestamp(now_ts, TZ_UTC3).strftime("%H:%M:%S UTC+3"),
                         "pnl_usd": 0.0,
