@@ -557,6 +557,34 @@ def is_oil_stock_event(title: str) -> bool:
     return any(k in t for k in _OIL_STOCK_MARKERS)
 
 
+def is_speech_or_non_data_2star(
+    title: str,
+    orig_title: str = "",
+    stars: int = 2,
+    forecast: str = "",
+    previous: str = "",
+    actual: str = "",
+) -> bool:
+    """Kurum başkanları / üyeleri vb. konuşmalarını içeren ve rakamsal veri açıklamayan 2 yıldızlı olayları eler."""
+    if stars != 2:
+        return False
+    t = f"{title} {orig_title}".lower()
+    speech_keywords = [
+        "speech", "speaks", "konuşma", "konuşması", "konuşuyor",
+        "testimony", "statement", "panel", "briefing",
+    ]
+    if any(k in t for k in speech_keywords):
+        return True
+
+    missing = {"", "—", "-", "–", "n/a", "na", "null", "none"}
+    f_empty = str(forecast or "").strip().lower() in missing
+    p_empty = str(previous or "").strip().lower() in missing
+    a_empty = str(actual or "").strip().lower() in missing
+    if f_empty and p_empty and a_empty:
+        return True
+    return False
+
+
 # Kova adı -> anahtar kelime listesi. SIRA ANLAMLIDIR: "Fed ... Inflation" gibi
 # başlıklar `rate` kovasına düşmelidir, `inflation` kovasına değil. Bu sözlük hem
 # `generate_event_scenario` (gösterilecek senaryo metni) hem de
@@ -1353,6 +1381,9 @@ def parse_investing_payload(html_text: str, now_utc: Optional[datetime.datetime]
                 forecast = str(ev.get("forecast") or "—")
                 previous = str(ev.get("previous") or "—")
 
+                if is_speech_or_non_data_2star(tr_title, orig_title, stars, forecast, previous, actual):
+                    continue
+
                 is_passed = False
                 try:
                     ev_dt = datetime.datetime.fromisoformat(time_iso.replace("Z", "+00:00"))
@@ -1501,6 +1532,11 @@ async def fetch_forexfactory_events() -> List[Dict[str, Any]]:
             affected_symbols = map_symbols_for_event(country, orig_title)
             scenario = generate_event_scenario(orig_title, c_info["name"], country, affected_symbols)
 
+            forecast_val = ev.get("forecast") or "—"
+            previous_val = ev.get("previous") or "—"
+            if is_speech_or_non_data_2star(tr_title, orig_title, stars, forecast_val, previous_val, "—"):
+                continue
+
             parsed.append({
                 "id": f"cal-ff-{abs(hash(orig_title + date_iso)) % 1000000}",
                 "title": tr_title,
@@ -1515,8 +1551,8 @@ async def fetch_forexfactory_events() -> List[Dict[str, Any]]:
                 "stars": stars,
                 "stars_str": "⭐⭐⭐" if stars == 3 else "⭐⭐",
                 "impact_label": "⭐⭐⭐ YÜKSEK (3 Yıldız)" if stars == 3 else "⭐⭐ ORTA (2 Yıldız)",
-                "forecast": ev.get("forecast") or "—",
-                "previous": ev.get("previous") or "—",
+                "forecast": forecast_val,
+                "previous": previous_val,
                 "actual": "—",
                 "status": "Bekleniyor",
                 "comment": get_turkish_comment("", orig_title, tr_title),
@@ -1665,10 +1701,14 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
             if not any(x.get("title") == fb.get("title") or x.get("original_title") == fb.get("original_title") for x in items):
                 items.append(fb)
 
-    # Yalnızca 2 ve 3 Yıldızlı Olayları filtrele
+    # Yalnızca 2 ve 3 Yıldızlı Olayları filtrele (ve 2 yıldızlı verisiz konuşmaları ele)
     filtered_items = [
         x for x in items 
-        if x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"]
+        if (x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"])
+        and not is_speech_or_non_data_2star(
+            x.get("title", ""), x.get("original_title", ""), x.get("stars", 2),
+            x.get("forecast", ""), x.get("previous", ""), x.get("actual", "")
+        )
     ]
 
     def sort_key(ev: Dict[str, Any]) -> tuple:
@@ -1731,9 +1771,19 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
     if force_refresh:
         return await sync_economic_calendar_to_db(min_stars=min_stars)
 
+    def _clean_items(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [
+            x for x in raw
+            if (x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"])
+            and not is_speech_or_non_data_2star(
+                x.get("title", ""), x.get("original_title", ""), x.get("stars", 2),
+                x.get("forecast", ""), x.get("previous", ""), x.get("actual", "")
+            )
+        ]
+
     # 1. Bellek Önbelleği (RAM) Kontrolü
     if _CALENDAR_CACHE["items"] and (now - _CALENDAR_CACHE["timestamp"]) < _CACHE_TTL_SEC:
-        items = _CALENDAR_CACHE["items"]
+        items = _clean_items(_CALENDAR_CACHE["items"])
         _update_event_dynamic_fields(items)
         return items
 
@@ -1741,9 +1791,10 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
     db_items: List[Dict[str, Any]] = []
     if database:
         try:
-            db_items = await database.get_economic_calendar_events(
+            raw_db = await database.get_economic_calendar_events(
                 min_stars=min_stars, limit=CALENDAR_MAX_EVENTS
             )
+            db_items = _clean_items(raw_db)
         except Exception as exc:
             logger.debug("[EconomicCalendar] Veritabanından okuma hatası: %s", exc)
 
@@ -1754,7 +1805,7 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
         return db_items
 
     # 3. Veritabanı boşsa (ilk kurulum anı): Disk önbelleğine bak
-    disk_items = _load_disk_cache()
+    disk_items = _clean_items(_load_disk_cache())
     if disk_items and len(disk_items) > 0:
         _CALENDAR_CACHE["timestamp"] = now
         _CALENDAR_CACHE["items"] = disk_items
@@ -1764,7 +1815,7 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
         return disk_items
 
     # 4. Tamamen boşsa hazır yedek olayları hemen sun ve arka planda DB'yi doldur
-    fallback = [x for x in FALLBACK_EVENTS if x.get("stars", 0) >= min_stars or x.get("impact") in ["High", "Medium"]]
+    fallback = _clean_items(FALLBACK_EVENTS)
     _CALENDAR_CACHE["timestamp"] = now
     _CALENDAR_CACHE["items"] = fallback
     _update_event_dynamic_fields(fallback)

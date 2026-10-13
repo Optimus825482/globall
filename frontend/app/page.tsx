@@ -227,22 +227,30 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
   className = "",
 }: EventCountdownBadgeProps) {
   const targetMs = useMemo(() => {
-    if (dateIso) {
-      const parsed = new Date(dateIso).getTime();
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
     if (dateStr) {
+      const lower = dateStr.toLowerCase();
       const timeMatch = dateStr.match(/(\d{1,2}):(\d{2})/);
       if (timeMatch) {
         const h = parseInt(timeMatch[1], 10);
         const m = parseInt(timeMatch[2], 10);
         const d = new Date();
         d.setHours(h, m, 0, 0);
-        if (dateStr.toLowerCase().includes("yarın")) {
+        if (lower.includes("yarın")) {
           d.setDate(d.getDate() + 1);
+          return d.getTime();
         }
-        return d.getTime();
+        if (lower.includes("dün")) {
+          d.setDate(d.getDate() - 1);
+          return d.getTime();
+        }
+        if (lower.includes("bugün")) {
+          return d.getTime();
+        }
       }
+    }
+    if (dateIso) {
+      const parsed = new Date(dateIso).getTime();
+      if (!isNaN(parsed) && parsed > 0) return parsed;
     }
     return null;
   }, [dateIso, dateStr]);
@@ -251,15 +259,28 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
 
   const diffSec = Math.floor((targetMs - nowSec * 1000) / 1000);
 
-  // Açıklanmış veya geçmiş olaylar
-  if (status === "Açıklandı" || isPassed || diffSec <= 0) {
+  // Açıklanmış olaylar
+  if (status === "Açıklandı") {
     return (
       <span
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 ${className}`}
-        title="Olay açıklandı veya saati geçti"
+        title="Olay açıklandı"
       >
         <span>✓</span>
         <span>Açıklandı</span>
+      </span>
+    );
+  }
+
+  // Saati geldi/geçti ama henüz veri gelmemiş
+  if (diffSec <= 0) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-400/50 ${className}`}
+        title="Saati geldi / Veri açıklanıyor"
+      >
+        <span>⏱️</span>
+        <span>Açıklanıyor</span>
       </span>
     );
   }
@@ -507,14 +528,33 @@ export default function HomePage() {
         }
       }
 
-      // Arama Filtresi
-      if (calendarSearch.trim()) {
-        const q = calendarSearch.toLowerCase().trim();
-        const inTitle = (item.title || "").toLowerCase().includes(q);
-        const inOrig = (item.original_title || "").toLowerCase().includes(q);
-        const inCountry = (item.country || "").toLowerCase().includes(q);
-        const inSymbols = item.affected_symbols.some((s) => s.toLowerCase().includes(q));
-        if (!inTitle && !inOrig && !inCountry && !inSymbols) return false;
+      // 2 Yıldızlı Konuşmaları ve Veri İçermeyen Olayları Filtrele (Kullanıcı Talebi)
+      const stars = item.stars || (item.impact === "High" ? 3 : 2);
+      if (stars === 2) {
+        const t = (item.title || "").toLowerCase();
+        const ot = (item.original_title || "").toLowerCase();
+        const speechKeywords = [
+          "speech",
+          "speaks",
+          "konuşma",
+          "konuşması",
+          "konuşuyor",
+          "testimony",
+          "statement",
+          "panel",
+          "briefing",
+        ];
+        if (speechKeywords.some((k) => t.includes(k) || ot.includes(k))) {
+          return false;
+        }
+
+        const isMissingNum = (v?: string | null) =>
+          !v || ["", "—", "-", "–", "n/a", "na", "null", "none"].includes(v.trim().toLowerCase());
+
+        // Eğer ne beklenti ne önceki var ve açıklanan rakam da yoksa
+        if (isMissingNum(item.forecast) && isMissingNum(item.previous) && !hasPublishedActual(item.actual)) {
+          return false;
+        }
       }
 
       return true;
@@ -584,22 +624,38 @@ export default function HomePage() {
     return Array.from(map.values()).sort((a, b) => b.pnl_usd - a.pnl_usd);
   }, [closedTrades]);
 
+  // PERFORMANS: Takvim geri sayımları için tek paylaşımlı saniyelik sayaç.
+  const hasPendingEvents = filteredCalendarEvents.length > 0 || calendarEvents.length > 0;
+  const nowSec = useSharedNowSec(hasPendingEvents);
+
   // Takvim olaylarının zaman damgasını hesaplayan yardımcı fonksiyon
   const getCalendarEventTime = useCallback((e: EconomicEvent, defaultVal = 0): number => {
+    // 1. Eğer date_str içinde göreceli gün ("yarın", "dün", "bugün") ve saat varsa bu önceliklidir
+    if (e.date_str) {
+      const lower = e.date_str.toLowerCase();
+      const m = e.date_str.match(/(\d{1,2}):(\d{2})/);
+      if (m) {
+        const h = parseInt(m[1], 10);
+        const min = parseInt(m[2], 10);
+        const d = new Date();
+        d.setHours(h, min, 0, 0);
+        if (lower.includes("yarın")) {
+          d.setDate(d.getDate() + 1);
+          return d.getTime();
+        }
+        if (lower.includes("dün")) {
+          d.setDate(d.getDate() - 1);
+          return d.getTime();
+        }
+        if (lower.includes("bugün")) {
+          return d.getTime();
+        }
+      }
+    }
+    // 2. date_iso
     if (e.date_iso) {
       const t = new Date(e.date_iso).getTime();
       if (!isNaN(t) && t > 0) return t;
-    }
-    if (e.date_str) {
-      const m = e.date_str.match(/(\d{1,2}):(\d{2})/);
-      if (m) {
-        const d = new Date();
-        d.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
-        if (e.date_str.toLowerCase().includes("yarın")) {
-          d.setDate(d.getDate() + 1);
-        }
-        return d.getTime();
-      }
     }
     return defaultVal;
   }, []);
@@ -612,11 +668,26 @@ export default function HomePage() {
   }, [filteredCalendarEvents, getCalendarEventTime]);
 
   // 2. SAĞ SÜTUN: Sıradaki Açıklanacak Olaylar (Kronolojik yaklaşan sıra: a - b)
+  // KESİN KURAL: Yalnızca GELECEKTEKİ (saati henüz gelmemiş), açıklanmamış olaylar yer alır!
+  // Dünden kalmış veya saati geçmiş veya açıklanmış olaylar burada ASLA yer alamaz!
   const upcomingCalendarEvents = useMemo(() => {
+    const currentMs = nowSec * 1000;
     return filteredCalendarEvents
-      .filter((item) => !hasPublishedActual(item.actual) && item.status !== "Açıklandı")
+      .filter((item) => {
+        // Zaten açıklanmışsa sıradaki olamaz
+        if (hasPublishedActual(item.actual) || item.status === "Açıklandı") return false;
+
+        // Dünden kalan eski bir olay ise sıradaki olamaz
+        if (item.date_str && item.date_str.toLowerCase().includes("dün")) return false;
+
+        // Zamanı ŞİMDİ veya geçmişse sıradaki olamaz (saati gelmiş/geçmiş olaylar burada duramaz)
+        const eventMs = getCalendarEventTime(item, 0);
+        if (eventMs <= currentMs) return false;
+
+        return true;
+      })
       .sort((a, b) => getCalendarEventTime(a, 9999999999999) - getCalendarEventTime(b, 9999999999999));
-  }, [filteredCalendarEvents, getCalendarEventTime]);
+  }, [filteredCalendarEvents, getCalendarEventTime, nowSec]);
 
   // Filtrelenmiş Kapanan İşlemler
   const filteredClosedTrades = useMemo(() => {
@@ -641,15 +712,7 @@ export default function HomePage() {
   const winRate = kpi.total_trades > 0 ? (kpi.wins / kpi.total_trades) * 100 : 0;
   const isNetProfit = kpi.total_pnl_usd >= 0;
 
-  // PERFORMANS: Takvim geri sayımları için tek paylaşımlı saniyelik sayaç.
-  // Takvim listesi boşsa interval kurulmaz.
-  //
-  // Ticker `filteredCalendarEvents` ile sınırlanamaz: vitrin (aşağıda) FİLTRELENMEMİŞ
-  // `calendarEvents` üzerinden çalışır, bu yüzden hiçbir şeyle eşleşmeyen bir filtre
-  // seçildiğinde sayaç durur ve vitrin gün dönümünde düşmezdi. İki listeden biri
-  // doluysa sayaç çalışır.
-  const hasPendingEvents = filteredCalendarEvents.length > 0 || calendarEvents.length > 0;
-  const nowSec = useSharedNowSec(hasPendingEvents);
+
 
   // BUGÜN AÇIKLANAN VERİLER: veri içeren, sonucu belirlenmiş ve penceresi açık
   // (aynı UTC+3 günü) olaylar — her biri için ayrı kart. Kaynak `calendarEvents`
@@ -1893,17 +1956,7 @@ export default function HomePage() {
                   </p>
                 )}
 
-                {/* SCALPER İPUCU */}
-                {selectedEvent.scenario?.scalper_tip && (
-                  <div className="p-3.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-400 dark:border-cyan-500/30 text-[11px] text-cyan-950 dark:text-cyan-200 space-y-1 shadow-sm">
-                    <span className="font-black text-cyan-800 dark:text-cyan-400 uppercase text-[10px] tracking-wider block">
-                      🎯 Scalper Operatör Notu:
-                    </span>
-                    <p className="leading-relaxed font-semibold">
-                      {selectedEvent.scenario.scalper_tip}
-                    </p>
-                  </div>
-                )}
+
               </div>
             </div>
 
