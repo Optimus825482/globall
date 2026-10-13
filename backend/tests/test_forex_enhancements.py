@@ -361,21 +361,22 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         görünüp ASLA işlem açamıyorlardı. İzole 2-pencere replay'de hiçbiri
         OOS n≥100 barını geçemedi → kanıt yok, çıkarıldılar.
         """
-        expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
+        expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
                     "GBPUSD", "AUDUSD", "USDJPY", "USDCHF"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 9)
+        self.assertEqual(len(cfg.allowed_symbols), 10)
         for s in expected:
             self.assertIn(s, cfg.allowed_symbols)
         # Panel-dürüstlüğü DEĞİŞMEZİ: her izinli sembol gerçekten işlenebilir olmalı
         _universe = {i["symbol"] for i in forex.FOREX_SYMBOLS}
         for s in cfg.allowed_symbols:
             self.assertIn(s, _universe, f"{s} FOREX_SYMBOLS'te yok → hayalet")
-        # Kanıtsız kroslar izin listesinin dışında
+        # Kanıtsız kroslar izin listesinin dışında (2026-10-13: NAS100 EKLENDİ — MT5 'USTEC';
+        # USTEC alias'ı FOREX_SYMBOLS'te olmadığı için hâlâ dışarıda)
         for s in ("NZDJPY", "AUDNZD", "GBPCHF", "EURCAD", "CHFJPY", "CADJPY",
                   "GBPNZD", "GBPAUD", "GBPCAD", "AUDCAD", "EURAUD", "CADCHF",
                   "AUDCHF", "EURUSD", "USDCAD", "NZDUSD",
-                  "ETHUSD", "NAS100", "USTEC", "USOIL"):
+                  "ETHUSD", "USTEC", "USOIL"):
             self.assertNotIn(s, cfg.allowed_symbols)
         # Veri hattı haritaları hâlâ her izinli sembolü kapsar
         for s in expected:

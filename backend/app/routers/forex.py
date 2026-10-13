@@ -3266,13 +3266,13 @@ class ForexAutoPaperSettings(BaseModel):
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30",
+        default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
                                  "GBPUSD", "AUDUSD", "USDJPY", "USDCHF"],
-        description="İşleme izin verilen pariteler. 2026-10-12: 13 kros (NZDJPY, AUDNZD, GBPCHF, EURCAD, CHFJPY, CADJPY, GBPNZD, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — bunlar FOREX_SYMBOLS'te olmadığı için tick üretilmiyor, dolayısıyla panelde 'seçili' görünseler de ASLA işlem açamıyorlardı (hayalet). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=74) → kanıt yok, eklenmedi. DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
+        description="İşleme izin verilen pariteler. 2026-10-12: 13 kros (NZDJPY, AUDNZD, GBPCHF, EURCAD, CHFJPY, CADJPY, GBPNZD, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — bunlar FOREX_SYMBOLS'te olmadığı için tick üretilmiyor, dolayısıyla panelde 'seçili' görünseler de ASLA işlem açamıyorlardı (hayalet). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=74) → kanıt yok, eklenmedi. 2026-10-13: NAS100 (= MT5 'USTEC', Nasdaq 100; bkz. mt5_bridge SYMBOL_ALIAS_MAP) EKLENDİ — kullanıcı kararı 'USTEC tüm kollarda aç'; tam-canlı-defter A/B: W1 OOS +$207 / W2 −$56 (klasik kol tek başına işaret dönüyor, ama LS/EMA+ADX/Donchian kollarıyla birlikte net pozitif). DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
     )
     mode_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "GBPJPY", "EURJPY"],
-        description="Donchian+ADX giriş modunun AKTİF olduğu semboller (2026-10-10 denetim P0-2: BTCUSD ÇIKARILDI — 32g izole replay'de BTC donchian −$27.50/113 işlem, klasik kol +$396; mod JPY krosları için kalibre edilmişti)",
+        default_factory=lambda: ["XAUUSD", "GBPJPY", "EURJPY", "NAS100"],
+        description="Donchian+ADX giriş modunun AKTİF olduğu semboller (2026-10-10 denetim P0-2: BTCUSD ÇIKARILDI — 32g izole replay'de BTC donchian −$27.50/113 işlem, klasik kol +$396; mod JPY krosları için kalibre edilmişti). 2026-10-13: NAS100 eklendi (izole 2-pencere: W1 +$23.37 n32, W2 +$2.57 n47 → işaret-tutarlı pozitif).",
     )
     mode_exclusive: List[str] = Field(
         default_factory=lambda: ["GBPJPY", "EURJPY"],
@@ -3281,8 +3281,8 @@ class ForexAutoPaperSettings(BaseModel):
     donchian_adx_min: float = Field(18.0, ge=0.0, le=60.0, description="Donchian+ADX modu ADX(14) eşiği (2026-10-10 denetim P2-9: kodda sabitti, diğer akışlar ayardan okuyordu — kalibre değer 18.0 korunur)")
     donchian_max_per_day: int = Field(2, ge=0, le=20, description="Donchian+ADX modu: yön başına günde azami giriş (2026-10-10 denetim P2-9: kodda sabitti — kalibre değer 2 korunur; 0 = sınırsız)")
     ema_adx_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD"],
-        description="EMA+ADX geri-çekilme skalpi (M5) akışının AKTİF olduğu semboller (2026-10-08: XAUUSD 5m; 60g +$184.56 + Tem15 +$153.90 iki bağımsız pencerede pozitif). Klasik ve donchian akışları bu sembollerde KORUNUR (üç akış birlikte).",
+        default_factory=lambda: ["XAUUSD", "NAS100"],
+        description="EMA+ADX geri-çekilme skalpi (M5) akışının AKTİF olduğu semboller (2026-10-08: XAUUSD 5m; 60g +$184.56 + Tem15 +$153.90 iki bağımsız pencerede pozitif). Klasik ve donchian akışları bu sembollerde KORUNUR (üç akış birlikte). 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — izole 2-pencere pozitif (W1 +$3.25 n33, W2 +$71.00 n37 WR %89.2).",
     )
     ema_adx_enabled: bool = Field(True, description="EMA+ADX geri-çekilme (M5) akışı: EMA8/21/50 dizilimi + ADX + EMA21 geri çekilmesi + trend yönünde onay barı")
     ema_adx_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="EMA+ADX: ADX(14) trend gücü eşiği (spec: 25)")
@@ -3310,8 +3310,8 @@ class ForexAutoPaperSettings(BaseModel):
     lb_max_per_day: int = Field(1, ge=1, le=5, description="London Breakout: sembol+yön başına günde azami giriş (replay spec: 1)")
     ls_enabled: bool = Field(True, description="London Sign (NY açılışı sign-momentum, Seeck 2026 uyarlaması) akışı: 13:30-14:00 UTC sign penceresi → 14:00-14:30 giriş, SL 1.5×ATR, sabit TP yok (chandelier trail), EoD kapanış. 2026-10-12 replay: XAUUSD+US30 beş pencerenin beşinde pozitif (60g +$256 PF 2.16 WR %89.5; slip 2p/bacakta PF 1.76)")
     ls_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "US30"],
-        description="London Sign sembolleri. 2026-10-12 replay: XAUUSD +$182 (WR %91.8 n49) ve US30 +$74 (WR %90 n30) — 60g pencerede iki pozitif. FX majörlerinde NEGATİF (USDJPY/GBPUSD/GBPJPY) → kapsam dışı. BTCUSD nötr/negatif (WR %54) → kapsam dışı.",
+        default_factory=lambda: ["XAUUSD", "US30", "NAS100"],
+        description="London Sign sembolleri. 2026-10-12 replay: XAUUSD +$182 (WR %91.8 n49) ve US30 +$74 (WR %90 n30) — 60g pencerede iki pozitif. FX majörlerinde NEGATİF (USDJPY/GBPUSD/GBPJPY) → kapsam dışı. BTCUSD nötr/negatif (WR %54) → kapsam dışı. 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — üç pencerede de pozitif (W1 +$83 n21 WR %86, W2 +$58 n25 WR %80, W3 +$43 n10 WR %90); canlı LS defterine eklenince XAU/US30 pnl'i BİREBİR sabit kalıp üstüne +$107/+$58/+$43 ekliyor; slip 2p'de WR sabit %85.7.",
     )
     ls_sign_start_utc: int = Field(13, ge=0, le=23, description="London Sign: sign penceresi başlangıç saati (UTC)")
     ls_sign_start_min: int = Field(30, ge=0, le=59, description="London Sign: sign penceresi başlangıç dakikası (UTC)")

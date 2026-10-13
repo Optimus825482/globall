@@ -984,7 +984,9 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         # (ör. test_auto_paper_settings_update); varsayılan sözleşmesi bu testte kilitlenir.
         cfg = forex.ForexAutoPaperSettings()
         self.assertTrue(cfg.ls_enabled)
-        self.assertEqual(sorted(cfg.ls_symbols), ["US30", "XAUUSD"])
+        # 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — üç pencerede de pozitif, canlı LS
+        # defterine eklenince XAU/US30 pnl'i birebir sabit kalıp üstüne +$107/+$58/+$43 ekliyor.
+        self.assertEqual(sorted(cfg.ls_symbols), ["NAS100", "US30", "XAUUSD"])
         # Ayarlar replay spec'iyle birebir (dakika tabanlı pencereler)
         self.assertEqual((cfg.ls_sign_start_utc, cfg.ls_sign_start_min), (13, 30))
         self.assertEqual((cfg.ls_sign_end_utc, cfg.ls_sign_end_min), (14, 0))
