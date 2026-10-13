@@ -3,10 +3,12 @@
 Soru (kullanıcı): "Trailing mesafesi çok kısa, sürekli çok küçük kârlarla kapanıyor."
 
 **Sonuç: gözlem doğru, teşhis yanlış.** Kazananları kesen katman trailing değil,
-**BE (başabaş) kâr kilidi**. Replay'de trailing'i sıkmak kazandırıyor — **ama canlı
-MT5 hesabında chandelier hiç çalışmıyor** (köprü sabit-pip trail kullanıyor, bkz. §6).
-Bu yüzden **canlı davranış değiştirilmedi**; kanıtlanan kaldıraç (tepeye demirlenmiş
-trailing) köprüye taşınmayı bekliyor.
+**BE (başabaş) kâr kilidi**. Kanıtlanan kaldıraç **tepeye demirlenmiş** trailing
+(chandelier `MFE − 0.3×giriş-ATR`), sabit-pip mesafesi DEĞİL.
+
+§6'da çıkan kritik gerçek: canlı MT5'i **köprü** (`scripts/mt5_bridge.py`) yönetir ve
+orada chandelier YOKTU — bu yüzden önce chandelier köprüye **port edildi** (§7), port
+replay ile doğrulandı, ve `chandelier_atr_mult = 0.3` **canlıya yazıldı**.
 
 ---
 
@@ -147,20 +149,63 @@ ayarı canlı MT5 hesabını **hiç etkilemez**; yalnız engine paper modunu etk
 yapmıyor**. Aranan etki **tepeye demirlenmiş** trailing'de (chandelier MFE'den
 ölçer), köprünün sabit mesafesinde değil.
 
-## Öneri (revize)
+## 7. KÖPRÜYE PORT EDİLDİ ve replay ile doğrulandı (2026-10-13, aynı gün)
 
-1. ~~`chandelier_atr_mult` 1.2 → 0.3~~ — **canlıya YAZILMADI.** Replay'de kazanan sıkma
-   (+%8..11) yalnız motor paper yolunda; canlı MT5 köprüyü kullandığı için o kazanç
-   canlı hesaba yansımaz. Kod varsayılanı ve `forex_auto_settings.json` 1.2'de
-   BIRAKILDI (test bunu kilitliyor).
-2. **Asıl açık iş:** köprüye chandelier'i (MFE − mult×giriş-ATR) taşımak. Ölçülen
-   kazanç orada; sabit-pip trail'de kazanç yok. Bu ayrı bir değişiklik ve ayrı
-   replay kanıtı gerektirir.
+§6'daki açık iş kapandı: chandelier `scripts/mt5_bridge.py`'ye taşındı ve portun
+kendisi replay'de ölçüldü.
+
+**Köprü değişiklikleri** (`scripts/mt5_bridge.py`):
+- `POSITION_MFE_PIPS` (bilet başına tepe kâr, pips) ve `POSITION_ENTRY_ATR_PIPS`
+  (giriş ATR'si, **ilk görülüşte BİR KEZ dondurulur**) modül sözlükleri.
+- `_compute_atr_pips(sym, pip_size)` — `M5 × 20` bar ortalama (high−low)/pip; hata
+  durumunda 0.0 döner, asla yükseltmez. Birim doğrulaması: Wilder ATR-14 ile tüm
+  test edilen sembollerde ±%3 içinde (XAU 31.5 vs 29.3, BTC 108.7 vs 109.5,
+  US30 32.1 vs 31.0, GBPUSD 4.5 vs 4.4, USDJPY 2.8 vs 2.9).
+- `CURRENT_SETTINGS["chandelier_atr_mult"] = 0.0` varsayılanı → ayar gelmezse eski
+  sabit-pip davranışı birebir korunur (`else` dalı değişmedi).
+- Chandelier dalı: `cand_pips = MFE − mult × giriş_ATR`, `$1` tabanıyla; SL asla
+  geri gitmez; **girişe göreli** (`entry_p ± cand_pips`), replay ile aynı ölçüm.
+
+**Motor tarafı** (`forex.py`): `/mt5/sync` ayar yüküne `chandelier_atr_mult`
+eklendi; `OPEN_ORDER` komutuna `entry_atr_pips` eklendi. Böylece köprü değeri
+motordan alır; motorun gönderdiği değer **artık canlı davranışı belirler**.
+
+**Portun replay doğrulaması** (XAUUSD+BTCUSD, 2026-07-15→08-15, aynı bayraklar):
+
+| kol | n | WR% | net $ | PF | DD $ | TRAIL n |
+|---|---|---|---|---|---|---|
+| sabit 40 pip (XAU bugünkü) | 3147 | 77.7 | 3933.27 | 1.78 | 80.03 | 219 |
+| sabit 30 pip | 3148 | 77.7 | 3947.88 | 1.79 | 80.03 | 261 |
+| sabit 20 pip | 3141 | 77.7 | 3950.88 | 1.80 | 80.03 | 334 |
+| chandelier 0.5 | 3131 | 77.6 | 4012.48 | 1.81 | 80.03 | 548 |
+| **chandelier 0.3** | **3128** | **77.6** | **4305.70** | **1.87** | **79.49** | **1062** |
+| chandelier 1.2 (eski varsayılan) | 3146 | 77.5 | 3863 | 1.77 | 80 | 203 |
+
+Chandelier 0.3 hem net hem PF hem maxDD'de sabit-pip'i geçiyor. **Kritik:** `chand 1.2`
+(yani ESKİ kod varsayılanı) sabit-pipten **kötü** (3863 vs 3933) — yani 1.2'yi
+olduğu gibi bırakıp portu aktive etmek canlıyı bozardı.
+
+| 2-pip aleyhe kayma | net $ | PF | DD $ |
+|---|---|---|---|
+| sabit 40 + slip2 | 2218.56 | 1.39 | 126.19 |
+| **chand 0.3 + slip2** | **2538.31** | **1.47** | 127.71 |
+
+Kaymada da sıralama korunuyor → etki spread-gürültüsü artefaktı değil.
+
+## Öneri — UYGULANDI
+
+1. **`chandelier_atr_mult` = 0.3** yazıldı: `forex.py:3245` Field varsayılanı ve
+   kalıcı `D:\data\forex_auto_settings.json` (yedek: `.bak-chand03-20261013`).
+   Motor bunu `/mt5/sync` ile köprüye gönderir. Değerlendirme: 1.2 → canlıda
+   sabit-pipten kötü; 0.3 → dört bağımsız pencerede ve doğrudan XAU+BTC port
+   replay'inde en iyi; 0.2 biraz daha iyi görünse de 15 dk bar testinde etkinin
+   ~%36'sı bar çözünürlüğüne bağlı çıktığı için ölçülü 0.3 seçildi.
+   **Geri alma:** panelden 1.2'ye çek veya `forex_auto_settings.json`'da 1.2.
+2. **Giriş-ATR paritesi** (`resolve_chandelier_atr`) hem motor paper yolunda hem
+   köprüde: `entry_atr_pips` girişte dondurulur, yoksa cari ATR'ye düşülür. §5'teki
+   canlı↔replay uyuşmazlığı kapandı.
 3. **Dokunulmayan:** BE kilidi (0.40/0.60, birleşim tetiği) — bu analiz onu
    suçlamıyor; aksine trail'in ondan devralması gerektiğini söylüyor.
-4. `resolve_chandelier_atr` + `entry_atr_pips` paritesi kodda bırakıldı (paper yolu
-   için doğru düzeltme ve köprü taşıması için ön koşul), ama canlı davranışı
-   değiştirmiyor.
 
 **Dürüstlük notları:** (a) replay XAU+BTC üzerinde koşuldu, canlı defterde BTCUSD
 145/249 işlem; (b) 15 dk bar testi chandelier etkisinin bir kısmının bar

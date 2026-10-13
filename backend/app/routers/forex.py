@@ -3242,7 +3242,7 @@ class ForexAutoPaperSettings(BaseModel):
     crypto_risk_clamp_enabled: bool = Field(True, description="Kripto/altında risk-skip bypass'ı yerine lotu kategori tabanına SABİTLE (risk asla artmaz; eski davranış aşırı lotu kullanıyordu — 2026-10-10 denetim P0-4)")
     loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
     loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
-    chandelier_atr_mult: float = Field(1.2, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). NOT (2026-10-13): bu ayar YALNIZ motorun paper yolunu etkiler — canlı MT5 hesabını `scripts/mt5_bridge.py` yönetir ve orada chandelier YOK (sabit-pip trail). Kazananları kesen katman chandelier değil BE kilidi; sıkma adayı (1.2→0.3) replay'de +8..11% veriyor ama canlı yol kullanmadığı için buraya yazılmadı")
+    chandelier_atr_mult: float = Field(0.3, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. 1.2→0.3 sıkma 4 bağımsız pencerede kazanıyor (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF artıyor, maxDD düşüyor) ve 2-pip kaymada korunuyor. Doğrudan XAU+BTC replay (2026-07-15→08-15): chand0.3 net $4305.70 / PF 1.87 / DD $79.49 vs en iyi sabit-pip $3950.88 / 1.80; 2-pip kaymada $2538.31/1.47 vs $2218.56/1.39. 15dk bar çözünürlüğünde yön korunuyor (etki ~%36 küçülür) → 0.05 yerine 0.3. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
@@ -5944,6 +5944,10 @@ async def _forex_auto_paper_loop():
                         # yönetsin (köprünün kendi spec kopyası ikinci kez hesap yapmaz)
                         "be_pips": spec_exits["be_pips"],
                         "trail_pips": spec_exits["trail_pips"],
+                        # Giriş ATR'si (pip) — köprünün chandelier'i GİRİŞ ATR'siyle
+                        # hesaplaması için işlemle birlikte taşınır (replay paritesi:
+                        # trailing girişte dondurulmuş ATR kullanır).
+                        "entry_atr_pips": round(float(atr_pips), 1),
                         "be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio if is_gold else 0.40,
                         "partial_pips": first_target_pips,
                         # Strateji etiketi MT5 emrine gömülür (kapanan deal `comment`'iyle geri
@@ -7731,6 +7735,10 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             # Trailing aktifleşince köprünün de sabit TP emrini çekmesi için (opt-in).
             # Kapalıyken köprü hiçbir ek MODIFY_SLTP üretmez → canlı davranış aynı kalır.
             "tp_cancel_on_trail": _AUTO_SETTINGS.tp_cancel_on_trail,
+            # Chandelier trailing çarpanı — köprü artık tepeye demirlenmiş trailing
+            # uygulayabilsin (MFE − kat × giriş ATR'si). 0 = kapalı → köprü eski
+            # sabit-pip davranışında kalır (geri alma tek değer).
+            "chandelier_atr_mult": _AUTO_SETTINGS.chandelier_atr_mult,
         },
     }
 

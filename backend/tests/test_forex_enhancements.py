@@ -1358,11 +1358,13 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forex.resolve_chandelier_atr(None, None), 0.0)
         self.assertEqual(forex.resolve_chandelier_atr(0.0, 0.0), 0.0)
 
-    def test_chandelier_default_unchanged(self):
-        # 2026-10-13: 0.3'e sıkma replay'de kazanıyor AMA canlı MT5'i köprü
-        # (chandelier'siz, sabit-pip trail) yönettiği için canlıya YAZILMADI.
-        # Varsayılan 1.2'de kalır; bu test sessiz bir değişikliği yakalar.
-        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 1.2)
+    def test_chandelier_default_is_replay_verified(self):
+        # 2026-10-13: chandelier köprüye port edildi; motor bu değeri /mt5/sync ile
+        # gönderdiği için artık CANLI davranışı belirler. Replay kanıtı 0.3 diyor
+        # (net $4305.70 / PF 1.87 vs sabit-pip $3950.88 / 1.80; 2-pip kaymada korunur).
+        # 1.2'ye geri dönerse chandelier sabit-pipten KÖTÜ olur (3863 vs 3933) → bu
+        # test sessiz bir gerileme ya da kanıtsız bir değişikliği yakalar.
+        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 0.3)
 
     async def test_trailing_uses_entry_atr_not_current_atr(self):
         """Motor döngüsü trailing'i GİRİŞ ATR'siyle kurmalı, cari ATR ile değil.
@@ -1423,6 +1425,148 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
             f"trailing cari ATR'yi kullanmış (beklenen {exp_entry} = giriş ATR, "
             f"cari ATR olsaydı {exp_cur})",
         )
+
+
+class TestChandelierTrailingBridge(unittest.IsolatedAsyncioTestCase):
+    """Chandelier (tepe-çapalı) trailing — MT5 köprüsü (`check_and_apply_dynamic_exits`).
+
+    2026-10-13: Tepe-çapalı mesafe `mfe - chandelier_atr_mult * entry_atr_pips` ile ölçülür.
+    `CURRENT_SETTINGS["chandelier_atr_mult"] == 0.0` (varsayılan) ESKİ sabit-pip trailing'i
+    BİREBİR korur (regresyon kapısı). ATR GİRİŞTE dondurulur — `POSITION_EXITS[ticket]
+    ["entry_atr_pips"]` varsa PREFERRED; yoksa `_compute_atr_pips` (0.0 → sabit-pip'e düş).
+    Motor tarafındaki eşi (forex.py `resolve_chandelier_atr` + TestChandelierEntryAtrParity)
+    ile aynı sözleşmeyi kilitler.
+    """
+
+    TICKET = 555001
+    ENTRY_P = 1.08000
+    CUR_P = 1.08500
+
+    _DICT_NAMES = (
+        "POSITION_MFE_PIPS", "POSITION_ENTRY_ATR_PIPS",
+        "POSITION_EXITS", "POSITION_PROTECTION_MAP", "PARTIAL_TP_MAP",
+    )
+
+    def setUp(self):
+        self._saved_settings = dict(mt5_bridge.CURRENT_SETTINGS)
+        self._clear_dicts()
+
+    def tearDown(self):
+        mt5_bridge.CURRENT_SETTINGS.clear()
+        mt5_bridge.CURRENT_SETTINGS.update(self._saved_settings)
+        self._clear_dicts()
+
+    def _clear_dicts(self):
+        for name in self._DICT_NAMES:
+            d = getattr(mt5_bridge, name, None)
+            if isinstance(d, dict):
+                d.clear()
+
+    def _fake_position(self, sl=1.07850, tp=1.09000):
+        """`check_and_apply_dynamic_exits`'in beklediği minimal MT5 pozisyonu (namedtuple).
+
+        +50 pip'te tutulur (price_current 1.08500, entry 1.08000): BE kilidi (0.4×50=20p →
+        SL 1.0820) ile trailing adayları kıyaslanabilsin. EURUSD → pip_size 0.0001, digits 5.
+        """
+        import collections
+        FakePos = collections.namedtuple(
+            "_FakeChandPos",
+            "ticket symbol type price_open price_current sl tp volume profit",
+        )
+        return FakePos(
+            ticket=self.TICKET, symbol="EURUSD", type=0,          # 0 = POSITION_TYPE_BUY
+            price_open=self.ENTRY_P, price_current=self.CUR_P, sl=sl, tp=tp,
+            volume=0.5, profit=250.0,
+        )
+
+    @staticmethod
+    def _settings(chand_mult, tp_cancel=False):
+        return {
+            "breakeven_pips": 14.0,
+            "trailing_stop_pips": 20.0,
+            "partial_tp_enabled": False,
+            "tp_cancel_on_trail": tp_cancel,
+            "chandelier_atr_mult": chand_mult,
+        }
+
+    def _run_bridge(self, settings, pos, current_atr_pips=0.0):
+        """`check_and_apply_dynamic_exits`'i mock'lu MT5 ile koşturur; gönderilen emirleri döner.
+
+        `_compute_atr_pips` sabitlenir (gerçek MT5 bar'ı olmadan determinist olsun diye);
+        `symbol_info` → Mock(digits=5, volume_min=0.01) (mevcut köprü testleriyle aynı desen).
+        """
+        from unittest import mock
+        mt5_bridge.CURRENT_SETTINGS.clear()
+        mt5_bridge.CURRENT_SETTINGS.update(settings)
+        sent = []
+
+        def fake_order_send(req):
+            sent.append(dict(req))
+            return mock.Mock(retcode=mt5_bridge.mt5.TRADE_RETCODE_DONE, comment="ok")
+
+        with mock.patch.object(mt5_bridge.mt5, "positions_get", return_value=[pos]), \
+             mock.patch.object(mt5_bridge.mt5, "symbol_info",
+                               return_value=mock.Mock(digits=5, volume_min=0.01)), \
+             mock.patch.object(mt5_bridge.mt5, "order_send", side_effect=fake_order_send), \
+             mock.patch.object(mt5_bridge, "_compute_atr_pips",
+                               return_value=current_atr_pips, create=True):
+            mt5_bridge.check_and_apply_dynamic_exits(be_pips=14.0, trail_pips=20.0)
+        return sent
+
+    # 1. REGRESYON KAPISI: çarpan 0.0 (varsayılan) → ESKİ sabit-pip trail BİREBİR
+    def test_chandelier_disabled_by_default(self):
+        """chandelier_atr_mult = 0.0 → SL tam olarak `price_current − 20 pip` olmalı."""
+        pos = self._fake_position(sl=1.07850)
+        sent = self._run_bridge(self._settings(0.0), pos, current_atr_pips=0.0)
+        expected = round(self.CUR_P - 20 * 0.0001, 5)      # 1.08300
+        self.assertEqual(len(sent), 1, "sabit-pip trailing tek MODIFY_SLTP üretmeli")
+        self.assertEqual(sent[0]["sl"], expected,
+                         "çarpan 0.0'da eski sabit-pip davranışı korunmalı")
+
+    # 2. GİRİŞ ATR'si kullanılır — CARİ ATR DEĞİL
+    def test_chandelier_uses_entry_atr_not_current(self):
+        """entry_atr_pips=40 ile SL `mfe − 0.3×40`; cari ATR (100) yok sayılmalı."""
+        mt5_bridge.POSITION_MFE_PIPS[self.TICKET] = 60.0
+        mt5_bridge.POSITION_EXITS[self.TICKET] = {"entry_atr_pips": 40.0, "trail_pips": 20.0}
+        pos = self._fake_position(sl=1.07850)
+        sent = self._run_bridge(self._settings(0.3), pos, current_atr_pips=100.0)
+        exp_entry = round(self.ENTRY_P + (60.0 - 0.3 * 40.0) * 0.0001, 5)   # 1.0848
+        exp_cur = round(self.ENTRY_P + (60.0 - 0.3 * 100.0) * 0.0001, 5)    # 1.0830
+        self.assertNotEqual(exp_entry, exp_cur, "iki ATR kaynağı ayırt edici olmalı")
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(
+            sent[0]["sl"], exp_entry,
+            f"giriş ATR'si kullanılmalı ({exp_entry}); cari ATR olsaydı {exp_cur}",
+        )
+
+    # 3. STOP ASLA GERİ GİTMEZ
+    def test_chandelier_never_moves_stop_backwards(self):
+        """Mevcut SL, chandelier adayının (1.0848) ÜSTÜNDE → SL düşürülmemeli (emir YOK)."""
+        mt5_bridge.POSITION_MFE_PIPS[self.TICKET] = 60.0
+        mt5_bridge.POSITION_EXITS[self.TICKET] = {"entry_atr_pips": 40.0, "trail_pips": 20.0}
+        pos = self._fake_position(sl=1.08550)   # adayın üstünde → geri taşıma yasak
+        sent = self._run_bridge(self._settings(0.3), pos, current_atr_pips=100.0)
+        self.assertEqual(sent, [], "SL adayın üstündeyken geri taşınmamalı (emir YOK)")
+
+    # 4. GİRİŞ ATR'si YOK → SABİT-PİP'E DÜŞ (çökme yok)
+    def test_chandelier_falls_back_when_entry_atr_missing(self):
+        """entry_atr_pips=0 + _compute_atr_pips()=0.0 → chandelier atlanır, sabit-pip traili."""
+        mt5_bridge.POSITION_MFE_PIPS[self.TICKET] = 60.0
+        mt5_bridge.POSITION_EXITS[self.TICKET] = {"trail_pips": 20.0, "entry_atr_pips": 0.0}
+        pos = self._fake_position(sl=1.07850)
+        sent = self._run_bridge(self._settings(0.3), pos, current_atr_pips=0.0)
+        expected = round(self.CUR_P - 20 * 0.0001, 5)      # 1.08300
+        self.assertEqual(len(sent), 1, "ATR yoksa sabit-pip trail (çökme olmadan)")
+        self.assertEqual(sent[0]["sl"], expected)
+
+    # 5. _compute_atr_pips HER ARIZADA 0.0, ASLA raise etmez
+    def test_compute_atr_pips_returns_zero_on_failure(self):
+        from unittest import mock
+        with mock.patch.object(mt5_bridge.mt5, "copy_rates_from_pos", return_value=None):
+            self.assertEqual(mt5_bridge._compute_atr_pips("EURUSD", 0.0001), 0.0)
+        with mock.patch.object(mt5_bridge.mt5, "copy_rates_from_pos",
+                               side_effect=RuntimeError("boom")):
+            self.assertEqual(mt5_bridge._compute_atr_pips("EURUSD", 0.0001), 0.0)
 
 
 if __name__ == "__main__":
