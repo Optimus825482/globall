@@ -783,6 +783,7 @@ class TestManualScanNow(unittest.TestCase):
             "S3_15M",
             forex.LONDON_BREAKOUT_STRATEGY,
             forex.LONDON_SIGN_STRATEGY,
+            forex.SQUEEZE_KC_STRATEGY,
         }
         missing = expected - strategies
         self.assertEqual(missing, set(), f"taranmayan giriş kolu: {missing}")

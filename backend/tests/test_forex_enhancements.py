@@ -1380,6 +1380,7 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         forex._apply_canli_sabitler(s)
         self.assertEqual(s.chandelier_atr_mult, forex.CANLI_CHANDELIER_ATR_MULT)
         self.assertEqual(s.ls_symbols, list(forex.CANLI_LS_SYMBOLS))
+        self.assertEqual(s.squeeze_kc_symbols, list(forex.CANLI_SQUEEZE_KC_SYMBOLS))
 
         # (b) Panel/POST gövdesi bu iki alanı değiştirmeye çalışsa da sabit kazanmalı
         merged = forex.merge_settings_payload(
@@ -1392,6 +1393,10 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
         self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.3)
         self.assertEqual(list(forex.CANLI_LS_SYMBOLS), ["XAUUSD", "US30", "NAS100"])
+        # Keltner Squeeze (M15) kapsamı da kanıtlanmış 5 semboldür; panel/ayar
+        # dosyası ezemez (2026-10-14 kanonik DB hattı + --combined defter testi).
+        self.assertEqual(list(forex.CANLI_SQUEEZE_KC_SYMBOLS),
+                         ["XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF"])
 
     async def test_trailing_uses_entry_atr_not_current_atr(self):
         """Motor döngüsü trailing'i GİRİŞ ATR'siyle kurmalı, cari ATR ile değil.

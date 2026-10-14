@@ -858,6 +858,20 @@ LONDON_SIGN_LABEL = "London Sign (NY Açılışı Momentum)"
 # XAU 15m +58/PF 3.08, BTC 15m +59/PF 6.63 — 2026-10-08 kullanıcı kararı canlıya alındı)
 S3_PULLBACK_STRATEGY = "S3_SUPERTREND_RSI"
 S3_PULLBACK_LABEL = "S3 Supertrend+RSI"
+# Keltner/TTM Squeeze kırılımı (John Carter) — M15 kolu. 2026-10-14 kullanıcı kararı canlıya
+# alındı. Kanıt (MT5 gerçek tick → PostgreSQL kanonik hattı, gerçek spread profili):
+#   standalone M15: OOS 09-07→10-07 n=97 WR %74.2 net +$143.93 PF 1.74 maxDD $53.83;
+#                     IS 08-01→09-07 n=123 WR %72.4 net +$77.65 PF 1.47 maxDD $54.66;
+#                     2× spread'de de iki pencere pozitif (+$140.79 / +$51.93).
+#   defter testi (`--combined`, klasik radar YANINDA, canlının GERÇEK bayrakları:
+#   st-filter+muafiyet / major-min-atr 2.5 / max-open 99 / chandelier 0.3): dört hücrede de
+#   net ARTAR, maxDD hiç bozulmaz → OOS 1× +$3709.01→+$3914.26 (Δ+205.25, DD ±0) ·
+#   OOS 2× +$2860.52→+$2928.81 (Δ+68.29, DD ±0) · IS 1× +$5759.89→+$5835.35 (Δ+75.46, DD ±0) ·
+#   IS 2× +$5006.69→+$5121.31 (Δ+114.62, DD −31.24). Artefakt: outputs/skc_ab_*.json
+#   (koşum: scripts/_run_skc_ab.sh).
+# Kapsam: kanıtlanan 5 sembol (aşağıdaki SQUEEZE_KC_SYMBOLS).
+SQUEEZE_KC_STRATEGY = "SQUEEZE_KC_M15"
+SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
 
 
 def strategy_name_for(entry_source: Any) -> str:
@@ -877,6 +891,8 @@ def strategy_name_for(entry_source: Any) -> str:
         return LONDON_BREAKOUT_STRATEGY
     if src == "london_sign":
         return LONDON_SIGN_STRATEGY
+    if src == "squeeze_kc":
+        return SQUEEZE_KC_STRATEGY
     return "M1_M5_RADAR_SCALPER"
 
 
@@ -897,6 +913,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
         return "LBRK"
     if src == "london_sign":
         return "LSGN"
+    if src == "squeeze_kc":
+        return "SQZKC"
     return "RADAR"
 
 
@@ -912,6 +930,8 @@ def strategy_display_label(code_or_source: Any) -> str:
         return "S3 SuperTrend+RSI (M5)"
     if u in ("DONCHIAN_ADX", "DONCHIAN", "DONCH") or "DONCH" in u:
         return "Donchian ADX Kırılımı"
+    if u in ("SQUEEZE_KC_M15", "SQZKC", "SQUEEZE_KC") or "SQUEEZE_KC" in u or "SQZKC" in u:
+        return "Keltner Squeeze Kırılımı (M15)"
     if u in ("LONDON_SIGN", "LSGN", "LS") or "LONDON_SIGN" in u:
         return "London Sign (NY Açılışı Momentum)"
     if u in ("LONDON_BREAKOUT", "LBRK", "LB") or "LONDON" in u:
@@ -941,6 +961,8 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
         return S3_PULLBACK_STRATEGY
     if "DONCH" in raw_tag:
         return "DONCHIAN_ADX"
+    if "SQZKC" in raw_tag or "SQUEEZE_KC" in raw_tag:
+        return SQUEEZE_KC_STRATEGY
     if "LSGN" in raw_tag or "LONDON_SIGN" in raw_tag:
         return LONDON_SIGN_STRATEGY
     if "LBRK" in raw_tag or "LONDON" in raw_tag:
@@ -996,6 +1018,158 @@ def _s3_atr_series(bars: List[Dict[str, Any]], period: int = 14) -> List[float]:
         a = (a * (period - 1) + trs[i]) / period
         out.append(a)
     return out
+
+
+def _s3_wilder_ema_series(vals: List[float], period: int) -> List[float]:
+    """Wilder yumuşatmalı EMA — klasik Keltner Kanalı formu (replay `_wilder_ema_series` birebir)."""
+    if not vals:
+        return []
+    k = 1.0 / period
+    seed = sum(vals[:period]) / min(period, len(vals))
+    out = [seed] * min(period, len(vals))
+    e = seed
+    for v in vals[period:]:
+        e += k * (v - e)
+        out.append(e)
+    return out
+
+
+def _squeeze_kc_series_live(bars: List[Dict[str, Any]], period: int = 20,
+                            bb_mult: float = 2.0, kc_mult: float = 1.5) -> Dict[str, List[float]]:
+    """Bollinger ⊂ Keltner sıkışma serisi + LazyBear momentum (replay `_squeeze_kc_series` birebir).
+
+    `bars` = {open,high,low,close}; dönen seriler bar sayısıyla hizalıdır ve yalnız i ve
+    öncesinden türetilir (look-ahead yok). Sıkışma = bb_up < kc_up VE bb_lo > kc_lo.
+    """
+    n = len(bars)
+    if n < period + 1:
+        return {}
+    closes = [float(b["close"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    bb_up = [0.0] * n
+    bb_lo = [0.0] * n
+    # SMA(period) ± bb_mult·σ kayan pencere
+    s = s2 = 0.0
+    for i in range(n):
+        s += closes[i]
+        s2 += closes[i] * closes[i]
+        if i >= period:
+            s -= closes[i - period]
+            s2 -= closes[i - period] * closes[i - period]
+        if i >= period - 1:
+            m = s / period
+            var = max(0.0, s2 / period - m * m)
+            sd = var ** 0.5
+            bb_up[i] = m + bb_mult * sd
+            bb_lo[i] = m - bb_mult * sd
+    # TR → Wilder ATR serisi
+    trs: List[float] = []
+    prev_c = closes[0]
+    for i in range(n):
+        trs.append(max(highs[i] - lows[i], abs(highs[i] - prev_c), abs(lows[i] - prev_c)))
+        prev_c = closes[i]
+    if len(trs) >= period:
+        a = sum(trs[:period]) / period
+        atr = [a] * period
+        for i in range(period, len(trs)):
+            a = (a * (period - 1) + trs[i]) / period
+            atr.append(a)
+        atr = atr[:n]
+    else:
+        atr = trs[:]
+    kc_mid = _s3_wilder_ema_series(closes, period)
+    # Momentum = close − (en yüksek high + en düşük low + SMA) / 3, son `period` barda
+    mom = [0.0] * n
+    for i in range(period - 1, n):
+        hi = max(highs[i - period + 1:i + 1])
+        lo = min(lows[i - period + 1:i + 1])
+        sma = sum(closes[i - period + 1:i + 1]) / period
+        mom[i] = closes[i] - (hi + lo + sma) / 3.0
+    return {
+        "bb_up": bb_up, "bb_lo": bb_lo, "kc_mid": kc_mid,
+        "kc_up": [kc_mid[i] + kc_mult * atr[i] for i in range(n)],
+        "kc_lo": [kc_mid[i] - kc_mult * atr[i] for i in range(n)],
+        "mom": mom,
+        # Kapanışlar da döner: sıkışma bırakışını fiyatla karşılaştırırken
+        # bar dizisini yeniden okumaya gerek kalmaz (aynı index uzayı).
+        "close": closes,
+    }
+
+
+def _squeeze_kc_tech_for(sym: str) -> Optional[Dict[str, Any]]:
+    """Keltner Squeeze (M15) gösterge seti — kapanmış barlar, look-ahead yok.
+
+    Bar kaynağı S3/LB/LS ile ortak: önce köprü broker mumları, yoksa Yahoo
+    (`_s3_bars_for`). Oluşan son bar diziden çıkarılır (replay `ci-1` disiplini):
+    `ci` = kapanmış bar sayısı, karar barı `ci-1` (dizide son eleman).
+    """
+    bars_full = _s3_bars_for(sym, "15m", limit=260)
+    if not bars_full:
+        return None
+    closed = bars_full[:-1]
+    period = int(_AUTO_SETTINGS.squeeze_kc_period)
+    # Replay kapısı `ci < period + 30` → kapanmış bar sayısı yetersizse pas.
+    if len(closed) < period + 30:
+        return None
+    ser = _squeeze_kc_series_live(closed, period,
+                                  float(_AUTO_SETTINGS.squeeze_kc_bb_mult),
+                                  float(_AUTO_SETTINGS.squeeze_kc_mult))
+    if not ser:
+        return None
+    return {"series": ser, "bars": len(closed), "updated_at": time.time()}
+
+
+def squeeze_kc_entry(tech: Optional[Dict[str, Any]], pip_size: float,
+                     day_counts: Optional[Dict[str, int]] = None) -> Optional[Dict[str, Any]]:
+    """Keltner Squeeze M15 giriş kararı (replay `TUN_ENTRY_MODE == "squeeze_kc"` birebir).
+
+    Kural: bir önceki barda sıkışma vardı (BB ⊂ Keltner) ve bu barda bant dışına
+    çıkıldı; kapanış bandın dışında VE LazyBear momentumu aynı işaretli ise giriş.
+    SL = |kapanış − KC orta|, TP = `squeeze_kc_tp_r` × SL. Sembol+gün+yön başına
+    en çok 2 giriş (replay `MODE_DAY_STATE` sayacı).
+
+    Döner: {"action", "sl_pips", "tp_pips", "mom", "day_key"} ya da None.
+    `pip_size <= 0` ise SL hesaplanamaz → `sl_pips: None` döner (çağıran spec
+    SL/TP yoluna düşer; replay'in `_mode_atr_exits` fallback'i budur).
+    """
+    if not tech:
+        return None
+    ser = tech.get("series") or {}
+    n = int(tech.get("bars") or 0)
+    j, jp = n - 1, n - 2          # karar barı ve bir öncesi
+    if jp < 0 or not ser.get("bb_up"):
+        return None
+    bb_u, bb_l = ser["bb_up"][j], ser["bb_lo"][j]
+    kc_u, kc_l = ser["kc_up"][j], ser["kc_lo"][j]
+    if bb_u <= 0 or bb_l <= 0:
+        return None
+    squeezed_prev = (ser["bb_up"][jp] < ser["kc_up"][jp]) and (ser["bb_lo"][jp] > ser["kc_lo"][jp])
+    released = (bb_u >= kc_u) or (bb_l <= kc_l)
+    if not (squeezed_prev and released):
+        return None
+    closes = ser.get("close") or []
+    if len(closes) <= j:
+        return None
+    c = float(closes[j])
+    mom = float(ser["mom"][j])
+    mom_min = float(_AUTO_SETTINGS.squeeze_kc_mom_min)
+    if c >= bb_u and mom >= mom_min:
+        action = "BUY"
+    elif c <= bb_l and mom <= -mom_min:
+        action = "SELL"
+    else:
+        return None
+    day_key = f"{datetime.datetime.now(datetime.timezone.utc).toordinal()}|{action}"
+    if day_counts is not None and int(day_counts.get(day_key, 0)) >= 2:
+        return None
+    sl_pips = round(abs(c - float(ser["kc_mid"][j])) / pip_size, 1) if pip_size > 0 else 0.0
+    if sl_pips <= 0:
+        return {"action": action, "sl_pips": None, "tp_pips": None,
+                "mom": mom, "bb_up": bb_u, "bb_lo": bb_l, "day_key": day_key}
+    return {"action": action, "sl_pips": sl_pips,
+            "tp_pips": round(float(_AUTO_SETTINGS.squeeze_kc_tp_r) * sl_pips, 1),
+            "mom": mom, "bb_up": bb_u, "bb_lo": bb_l, "day_key": day_key}
 
 
 def _s3_st_dir_series(bars: List[Dict[str, Any]], period: int = 10, mult: float = 3.0) -> List[int]:
@@ -2440,6 +2614,14 @@ def _get_forex_watch() -> List[Dict[str, str]]:
                 if key not in seen:
                     seen.add(key)
                     out.append({"symbol": s, "interval": tf})
+    if _AUTO_SETTINGS.squeeze_kc_enabled:
+        # Keltner Squeeze (M15) da broker mumlarıyla sinyal üretir → panel kapalıyken
+        # köprünün bu çiftlerin M15 mumlarını çekmesi gerekir (S3 ile aynı gerekçe).
+        for sym in list(_AUTO_SETTINGS.squeeze_kc_symbols or []):
+            key = (str(sym).upper(), "15m")
+            if key not in seen:
+                seen.add(key)
+                out.append({"symbol": key[0], "interval": key[1]})
     now = time.time()
     for (sym, tf), ts in list(_FOREX_VIEWED.items()):
         if now - ts > _FOREX_VIEWED_TTL:
@@ -2534,6 +2716,19 @@ def _refresh_s3_state(ticks: Dict[str, Dict[str, Any]]) -> None:
             tech = _s3_tech_for(sym, tf)
             if tech:
                 _S3_STATE[f"{sym}|{tf}"] = tech
+
+
+def _refresh_squeeze_kc_state(ticks: Dict[str, Dict[str, Any]]) -> None:
+    """Keltner Squeeze (M15) sembollerinin gösterge setlerini tazeler.
+
+    Sembol başına tek hesap; aday üretimi `_SQUEEZE_KC_STATE[sym]`'i okur. Bar
+    kaynağı S3 ile ortak (köprü broker mumları, Yahoo fallback); iki kaynak da
+    yoksa sembol bu tur sessizce atlanır.
+    """
+    for sym in {s.upper() for s in (_AUTO_SETTINGS.squeeze_kc_symbols or [])}:
+        tech = _squeeze_kc_tech_for(sym)
+        if tech:
+            _SQUEEZE_KC_STATE[sym] = tech
 
 
 def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[List[Dict[str, Any]]]:
@@ -3295,6 +3490,10 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 #   (= MT5 'USTEC') üç pencerede de pozitif ve XAU/US30 pnl'ini düşürmüyor.
 CANLI_CHANDELIER_ATR_MULT = 0.3
 CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
+# Keltner Squeeze (M15) canlı sembol sabiti — kanıt 5 kanonik sembolde toplandı
+# (XAUUSD tek başına +$83.90 OOS / +$52.06 IS taşıyordu). LS gibi ZORLANIR: sunucudaki
+# ayar dosyası ve panel gövdesi bu listeyi ezemez; değiştirmek için koddaki sabit düzenlenir.
+CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
 
 
 def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaperSettings":
@@ -3306,6 +3505,7 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
     """
     settings.chandelier_atr_mult = CANLI_CHANDELIER_ATR_MULT
     settings.ls_symbols = list(CANLI_LS_SYMBOLS)
+    settings.squeeze_kc_symbols = list(CANLI_SQUEEZE_KC_SYMBOLS)
     return settings
 
 
@@ -3418,6 +3618,16 @@ class ForexAutoPaperSettings(BaseModel):
     ls_entry_end_min: int = Field(30, ge=0, le=59, description="London Sign: giriş penceresi bitiş dakikası (UTC)")
     ls_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="London Sign: SL (× ATR(14)) — replay spec")
     ls_hold_hours: float = Field(3.0, ge=0.0, le=24.0, description="London Sign: girişten bu saat sonra zorla kapat (EoD); 0 = kapatma. Replay: 3h (14:30+3h=17:30 UTC)")
+    squeeze_kc_enabled: bool = Field(True, description="Keltner/TTM Squeeze kırılımı (M15) akışı: BB(20,2)⊂Keltner(20,1.5) sıkışması bırakılınca bant-dışı kapanış + LazyBear momentum teyidi; SL = |kapanış − KC orta|, TP = 2R. 2026-10-14 canlıya alındı — kanonik DB hattında standalone M15 iki pencerede pozitif (OOS n=97 +$143.93 PF 1.74 / IS n=123 +$77.65 PF 1.47, 2× spread'e dayanıyor) ve --combined defter testinde neti düşürmüyor (dört hücrede Δ+68..+205, maxDD bozulmuyor).")
+    squeeze_kc_symbols: List[str] = Field(
+        default_factory=lambda: list(CANLI_SQUEEZE_KC_SYMBOLS),
+        description="Keltner Squeeze (M15) sembolleri. **Bu liste canlı SABİT: `CANLI_SQUEEZE_KC_SYMBOLS` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** Kanıt 5 sembolde: XAUUSD (tek başına +$83.90 OOS / +$52.06 IS), BTCUSD, US30, NAS100, USDCHF — hepsi iki pencerede pozitif; GBPJPY/EURJPY/GBPUSD/AUDUSD/USDJPY işaret döndürdüğü için kapsam dışı.",
+    )
+    squeeze_kc_period: int = Field(20, ge=5, le=100, description="Squeeze KC: BB/Keltner periyodu (spec 20)")
+    squeeze_kc_bb_mult: float = Field(2.0, ge=0.5, le=5.0, description="Squeeze KC: Bollinger std-dev çarpanı (spec 2.0)")
+    squeeze_kc_mult: float = Field(1.5, ge=0.5, le=5.0, description="Squeeze KC: Keltner ATR çarpanı (spec 1.5)")
+    squeeze_kc_mom_min: float = Field(0.0, ge=0.0, le=100.0, description="Squeeze KC: momentum |.| onay eşiği (0 = kapalı, spec)")
+    squeeze_kc_tp_r: float = Field(2.0, ge=0.0, le=6.0, description="Squeeze KC: TP = SL × bu R katı (0 = TP yok, trailing)")
 
 
 class ClosePositionRequest(BaseModel):
@@ -3634,6 +3844,11 @@ _LB_STATE: Dict[str, Dict[str, Any]] = {}
 # London Sign durumu: {sym: {"day": <ordinal>, "sign_open": f, "sign_close": f, "entered": bool}}.
 # Sign penceresinde ilk/son kapanış bir kez hesaplanır; gün değişince sıfırlanır.
 _LS_STATE: Dict[str, Dict[str, Any]] = {}
+# Keltner Squeeze (M15) durumu: sembol → gösterge seti (BB/KC serileri + momentum).
+# Göstergeler S3/LB/LS ile ortak broker mumlarından (fallback Yahoo) hesaplanır; gün
+# sayaçları ayrı tutulur (gösterge dict'i her turda tazelenir).
+_SQUEEZE_KC_STATE: Dict[str, Dict[str, Any]] = {}
+_SQUEEZE_KC_DAY_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -5364,6 +5579,85 @@ async def _forex_auto_paper_loop():
                                 strategy_label=LONDON_SIGN_LABEL,
                             )
 
+            # Keltner Squeeze (M15) akışı (2026-10-14 canlıya alım — kullanıcı kararı):
+            # BB(20,2) ⊂ Keltner(20,1.5) sıkışması bırakılınca bant-dışı kapanış +
+            # LazyBear momentum teyidi; SL = |kapanış − KC orta|, TP = 2R. Kanonik
+            # DB hattında standalone M15 iki pencerede pozitif (OOS n=97 +$143.93
+            # PF 1.74 / IS n=123 +$77.65 PF 1.47, 2× spread'e dayanıyor) ve
+            # `--combined` defter testinde klasik radarın netini düşürmüyor.
+            # Bar kaynağı S3/LB/LS ile ortak (köprü broker mumları, fallback Yahoo).
+            if _AUTO_SETTINGS.squeeze_kc_enabled:
+                _refresh_squeeze_kc_state(ticks)
+                _skc_allowed = {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                _skc_day = datetime.datetime.now(datetime.timezone.utc).toordinal()
+                for _skc_sym in {s.upper() for s in (_AUTO_SETTINGS.squeeze_kc_symbols or [])}:
+                    _skc_tech = _SQUEEZE_KC_STATE.get(_skc_sym)
+                    _skc_t = ticks.get(_skc_sym)
+                    _skc_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _skc_sym), None)
+                    if not _skc_tech or not _skc_t or not _skc_item:
+                        continue
+                    _skc_pip = _skc_item["pip_size"]
+                    _skc_disp = _skc_t.get("display", _skc_sym)
+                    _skc_st = _SQUEEZE_KC_DAY_STATE.setdefault(_skc_sym, {"day": _skc_day, "counts": {}})
+                    if _skc_st["day"] != _skc_day:
+                        _skc_st["day"] = _skc_day
+                        _skc_st["counts"] = {}
+                    _skc_dec = squeeze_kc_entry(_skc_tech, float(_skc_pip), _skc_st["counts"])
+                    if _skc_dec:
+                        _skc_st["counts"][_skc_dec["day_key"]] = int(_skc_st["counts"].get(_skc_dec["day_key"], 0)) + 1
+                        candidates = [c for c in candidates
+                                      if str(c.get("symbol", "")).upper() != _skc_sym] + [{
+                            "symbol": _skc_sym,
+                            "display": _skc_disp,
+                            "action": _skc_dec["action"],
+                            "score": 200.0,
+                            "spread_pips": _LIVE_SPREAD_PIPS.get(_skc_sym, 2.0),
+                            "atr_pips": round(float((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("atr", 0.0)) / _skc_pip, 1) if _skc_pip > 0 else 15.0,
+                            "adx": float((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("adx", 25.0)),
+                            # ST(10,3) bu stratejinin KENDİ yön motoru DEĞİL: kanıt
+                            # ST-filtresi kapalı koşuldu (`--combined` harness varsayılanı
+                            # `TUN_ST_FILTER=False`) → aday gerçek ST yönünü taşır ama
+                            # ST kapısı bu koldan atlanır (aşağıda `_is_sqzkc`).
+                            "supertrend_dir": int((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("supertrend_dir", 0)),
+                            "entry_source": "squeeze_kc",
+                            "strategy": SQUEEZE_KC_STRATEGY,
+                            "strategy_label": SQUEEZE_KC_LABEL,
+                            "sl_pips_override": _skc_dec["sl_pips"],
+                            "tp_pips_override": _skc_dec["tp_pips"],
+                        }]
+                        _log_auto_decision(
+                            "SCAN",
+                            f"🌀 [{_skc_disp}] {SQUEEZE_KC_LABEL}: {_skc_dec['action']} adayı — "
+                            f"sıkışma bırakışı (kapanış BB {'üst' if _skc_dec['action'] == 'BUY' else 'alt'} "
+                            f"bandı dışında), momentum {_skc_dec['mom']:+.5g}, "
+                            f"SL {(_skc_dec['sl_pips'] if _skc_dec['sl_pips'] else 0):.1f} pip, "
+                            f"TP {(float(_AUTO_SETTINGS.squeeze_kc_tp_r)):.1f}R — değerlendiriliyor.",
+                            symbol=_skc_sym,
+                            strategy=SQUEEZE_KC_STRATEGY,
+                            strategy_label=SQUEEZE_KC_LABEL,
+                        )
+                    else:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_skc_sym}_sqzkc_wait", 0.0) > 25.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{_skc_sym}_sqzkc_wait"] = now_ts
+                            if _skc_sym not in _skc_allowed:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚠️ [{_skc_disp}] {SQUEEZE_KC_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                    symbol=_skc_sym,
+                                    strategy=SQUEEZE_KC_STRATEGY,
+                                    strategy_label=SQUEEZE_KC_LABEL,
+                                )
+                            else:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"🌀 [{_skc_disp}] {SQUEEZE_KC_LABEL} bekliyor: Fiyat "
+                                    f"{float(_skc_t.get('bid', 0)):.5g} | M15'te sıkışma bırakışı ve "
+                                    f"momentum teyidi aranıyor.",
+                                    symbol=_skc_sym,
+                                    strategy=SQUEEZE_KC_STRATEGY,
+                                    strategy_label=SQUEEZE_KC_LABEL,
+                                )
+
             # Periyodik Canlı Tarama Özeti (Her 20 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 20.0:
                 _LAST_SCAN_PULSE_TIME = now_ts
@@ -5381,6 +5675,10 @@ async def _forex_auto_paper_loop():
                         active_strats.append("London Breakout")
                     if _AUTO_SETTINGS.ema_adx_enabled:
                         active_strats.append("EMA+ADX M5")
+                    if _AUTO_SETTINGS.ls_enabled:
+                        active_strats.append("London Sign")
+                    if _AUTO_SETTINGS.squeeze_kc_enabled:
+                        active_strats.append("Keltner Squeeze M15")
                     if _AUTO_SETTINGS.mode_symbols:
                         active_strats.append("Donchian ADX")
                     active_strats.append("M1/M5 Çoklu Radar")
@@ -5910,11 +6208,15 @@ async def _forex_auto_paper_loop():
                 # dizilimi + onay barı); SuperTrend bu moda canlı davranışı replay kanıtından
                 # saptırırdı (kanıt EAP-pure koşuldu) → bu aday için ST kapısı atlanır.
                 # Aynı istisna S3 için geçerli: ST(10,3) stratejinin KENDİ yön motorudur
-                # (replay PURE koşumu kural seti birebir).
+                # (replay PURE koşumu kural seti birebir). Keltner Squeeze için de
+                # istisna ZORUNLU: kanıt `--combined` kol koşumunda ST filtresi KAPALI
+                # alındı (harness varsayılanı TUN_ST_FILTER=False) → canlıda filtre
+                # açıkken uygulanırsa test edilen davranıştan sapar.
                 st_dir = int(cand.get("supertrend_dir", 0))
                 _is_eap = str(cand.get("entry_source", "")) == "ema_adx_pullback"
                 _is_s3 = str(cand.get("entry_source", "")).startswith("s3_")
-                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap and not _is_s3:
+                _is_sqzkc = str(cand.get("entry_source", "")) == "squeeze_kc"
+                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap and not _is_s3 and not _is_sqzkc:
                     if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
@@ -6009,6 +6311,16 @@ async def _forex_auto_paper_loop():
                     sl_pips = float(cand.get("sl_pips_override") or sl_pips)
                     tp_pips = 0.0
                     first_target_pips = 0.0
+                if str(cand.get("entry_source", "")) == "squeeze_kc":
+                    # Keltner Squeeze çıkışları (replay ile birebir): SL = |kapanış − KC
+                    # orta|, TP = 2R. Aday üretilirken hesaplanıp taşındı; pip_size<=0 ise
+                    # override None gelir → spec SL/TP yoluna düşülür (replay'in ATR-exit
+                    # fallback'i).
+                    _skc_ov = cand.get("sl_pips_override")
+                    if _skc_ov:
+                        sl_pips = float(_skc_ov)
+                        tp_pips = float(cand.get("tp_pips_override") or tp_pips)
+                        first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
@@ -6018,10 +6330,12 @@ async def _forex_auto_paper_loop():
                 is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
                 is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
                 is_crypto = ("BTC" in sym or "ETH" in sym)
-                if is_crypto and not _AUTO_SETTINGS.crypto_tp_enabled and not str(cand.get("entry_source", "")).startswith("s3_"):
+                if is_crypto and not _AUTO_SETTINGS.crypto_tp_enabled and not str(cand.get("entry_source", "")).startswith("s3_") and str(cand.get("entry_source", "")) != "squeeze_kc":
                     # Kriptoda sabit TP kapalı (2026-10-06 30g replay kazananı: BTC −$55.70→−$18.02):
                     # kazanç BE kilidi + trailing ile koşturulur, TP emri kurulmaz.
-                    # İstisna: S3 adayı — kanıt koşumda TP'liydi (BTC 15m +$59.28 PF 6.63).
+                    # İstisna 1: S3 adayı — kanıt koşumda TP'liydi (BTC 15m +$59.28 PF 6.63).
+                    # İstisna 2: Keltner Squeeze — kanıt koşumu TP = 2R sabit TP'liydi
+                    # (5 sembolün biri BTCUSD); TP sıfırlanırsa test edilen davranıştan sapar.
                     tp_pips = 0.0
 
                 if is_index:
@@ -6740,11 +7054,11 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
     hiçbir zaman gerçek girişin gün-limitini yakmamalı. Data refresh yine de
     yapılır (taze tick + teknik) ama motor state'ine dokunulmaz.
 
-    Kapsam (2026-10-13): motordaki TÜM giriş kolları taranır — RADAR (klasik skor),
-    DONCHIAN_ADX, EMA_ADX_PULLBACK_M5, S3 (5m+15m), LONDON_BREAKOUT, LONDON_SIGN.
-    Yeni bir kol eklenirse (bkz. `_forex_auto_paper_loop` aday üretimi) buraya da
-    eklenmeli; aksi halde kol canlıda çalışır ama radar sayfası onu hiç göstermez
-    (LS tam bu yüzden eksik kalmıştı).
+    Kapsam (2026-10-14): motordaki TÜM giriş kolları taranır — RADAR (klasik skor),
+    DONCHIAN_ADX, EMA_ADX_PULLBACK_M5, S3 (5m+15m), LONDON_BREAKOUT, LONDON_SIGN,
+    SQUEEZE_KC_M15. Yeni bir kol eklenirse (bkz. `_forex_auto_paper_loop` aday
+    üretimi) buraya da eklenmeli; aksi halde kol canlıda çalışır ama radar sayfası
+    onu hiç göstermez (LS tam bu yüzden eksik kalmıştı).
     """
     s = _AUTO_SETTINGS
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -6956,6 +7270,34 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
             else:
                 _row(LONDON_SIGN_STRATEGY, sym,
                      f"Günün penceresi kapandı (giriş bitişi {int(s.ls_entry_end_utc):02d}:{int(s.ls_entry_end_min):02d} UTC)")
+
+    # --- 7) Keltner Squeeze (M15)
+    # 2026-10-14: canlıya alınan 6. kol. LS ile aynı ders — kol motora yazılıp
+    # raporlayıcıya eklenmezse radar sayfası onu hiç göstermez. Gösterge seti
+    # motordan okunur, yoksa burada hesaplanır (state KOPYA üzerinde okunur).
+    if s.squeeze_kc_enabled:
+        for sym in sorted({x.upper() for x in (s.squeeze_kc_symbols or [])}):
+            t = ticks.get(sym)
+            tech = _SQUEEZE_KC_STATE.get(sym) or _squeeze_kc_tech_for(sym)
+            pip = next((i["pip_size"] for i in FOREX_SYMBOLS if i["symbol"] == sym), 0.0001)
+            if not t or not tech:
+                _row(SQUEEZE_KC_STRATEGY, sym, "Veri yok — M15 mum serisi bekleniyor")
+                continue
+            st_copy = dict(_SQUEEZE_KC_DAY_STATE.get(sym, {}))
+            if st_copy.get("day") != day:
+                st_copy = {"day": day, "counts": {}}
+            counts = dict(st_copy.get("counts", {}))
+            act = squeeze_kc_entry(tech, float(pip or 0.0), counts)
+            ser = tech.get("series") or {}
+            mom_last = float((ser.get("mom") or [0.0])[-1])
+            if act:
+                _row(SQUEEZE_KC_STRATEGY, sym,
+                     f"{act['action']} sıkışma kırılım adayı (momentum {act['mom']:+.5g}, "
+                     f"SL {float(act.get('sl_pips') or 0):.1f}p, TP {float(s.squeeze_kc_tp_r):.1f}R)",
+                     act["action"])
+            else:
+                _row(SQUEEZE_KC_STRATEGY, sym,
+                     f"Sıkışma bırakışı bekleniyor (momentum {mom_last:+.5g})")
 
     return rows
 

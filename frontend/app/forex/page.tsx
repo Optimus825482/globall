@@ -185,6 +185,11 @@ const ARM_META: Record<string, { icon: string; label: string; medal: string }> =
     label: "London Sign",
     medal: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
   },
+  SQUEEZE_KC_M15: {
+    icon: "🌀",
+    label: "Keltner Squeeze · 15m",
+    medal: "bg-teal-500/15 text-teal-300 border-teal-500/40",
+  },
 };
 
 function armMeta(strategy: string) {
@@ -206,6 +211,7 @@ const ARM_ORDER: string[] = [
   "S3_5M",
   "S3_15M",
   "LONDON_BREAKOUT",
+  "SQUEEZE_KC_M15",
 ];
 
 export default function ForexRadarPage() {

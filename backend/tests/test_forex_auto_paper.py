@@ -1019,6 +1019,123 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "LSGN 42"}),
                          forex.LONDON_SIGN_STRATEGY)
 
+    def test_squeeze_kc_entry_and_scope(self):
+        """Keltner Squeeze (M15) — saf kural + kapsam/sabit kilidi.
+
+        2026-10-14 canlıya alındı (6. kol). Kural: BB(20,2) ⊂ Keltner(20,1.5)
+        sıkışması bırakılınca bant-dışı kapanış + LazyBear momentum teyidi;
+        SL = |kapanış − KC orta|, TP = 2R. Sembol+gün+yön başına en çok 2 giriş.
+        """
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertTrue(cfg.squeeze_kc_enabled)
+        # Kapsam canlı SABİT: kanıt 5 sembolde (liste panel/ayar dosyasıyla ezilemez)
+        self.assertEqual(sorted(cfg.squeeze_kc_symbols),
+                         ["BTCUSD", "NAS100", "US30", "USDCHF", "XAUUSD"])
+        self.assertEqual(sorted(forex.CANLI_SQUEEZE_KC_SYMBOLS),
+                         ["BTCUSD", "NAS100", "US30", "USDCHF", "XAUUSD"])
+        # Semboller işlem kapısında olmalı (yoksa aday üretilir ama işlem açılmaz)
+        for _s in cfg.squeeze_kc_symbols:
+            self.assertIn(_s, cfg.allowed_symbols)
+        # Parametreler replay/harness spec'iyle birebir
+        self.assertEqual(cfg.squeeze_kc_period, 20)
+        self.assertEqual(cfg.squeeze_kc_bb_mult, 2.0)
+        self.assertEqual(cfg.squeeze_kc_mult, 1.5)
+        self.assertEqual(cfg.squeeze_kc_mom_min, 0.0)
+        self.assertEqual(cfg.squeeze_kc_tp_r, 2.0)
+
+        # --- Seri doğruluğu: BB ⊂ KC sıkışma → bırakış üretilmeli (look-ahead yok)
+        ser = forex._squeeze_kc_series_live(
+            [{"time": i, "open": 100.0, "high": 100.0 + 0.01, "low": 100.0 - 0.01,
+              "close": 100.0} for i in range(60)], 20, 2.0, 1.5)
+        self.assertTrue(ser["bb_up"])
+        # Sabit fiyat: BB ve KC bantları sıfır genişlikte (sıkışma var).
+        self.assertTrue(ser["bb_up"][-1] < ser["kc_up"][-1])
+
+        # --- Giriş kararı (sentetik oranlarla): sıkışma bırakışı + momentum yönü
+        def _mk(band_gap, close_off, mom, prev_gap=0.5):
+            """Son bar BB bandın dışına çıkar; bir önceki bar `prev_gap` ile sıkışıktır.
+
+            KC sabit (üst 101 / alt 99); BB üst/alt = 100 ± gap. `prev_gap < 1.0`
+            → önceki bar sıkışık, `band_gap >= 1.0` → son bar bırakış.
+            """
+            n = 60
+            bb_u = [100.0] * n
+            bb_l = [100.0] * n
+            bb_u[n - 2], bb_l[n - 2] = 100.0 + prev_gap, 100.0 - prev_gap
+            bb_u[n - 1], bb_l[n - 1] = 100.0 + band_gap, 100.0 - band_gap
+            return {"bars": n, "series": {
+                "bb_up": bb_u, "bb_lo": bb_l,
+                "kc_up": [101.0] * n, "kc_lo": [99.0] * n, "kc_mid": [100.0] * n,
+                "mom": [0.0] * (n - 1) + [mom],
+                "close": [100.0] * (n - 1) + [100.0 + close_off],
+            }}
+
+        # Önceki bar sıkışık (BB 100±0.5 ⊂ KC 101/99), son bar BB üst bandının
+        # dışında (101.0) kapanıyor + momentum aynı işaretli → BUY
+        dec = forex.squeeze_kc_entry(_mk(1.0, 2.0, 0.5), 1.0, {})
+        self.assertIsNotNone(dec)
+        self.assertEqual(dec["action"], "BUY")
+        # SL = |kapanış − KC orta| = |102 − 100| = 2.0 fiyat birimi / pip 1.0 = 2.0 pip
+        self.assertEqual(dec["sl_pips"], 2.0)
+        self.assertEqual(dec["tp_pips"], 4.0)          # 2R
+        # Aynı kurulum, aşağı kırılım
+        dec_s = forex.squeeze_kc_entry(_mk(1.0, -2.0, -0.5), 1.0, {})
+        self.assertEqual(dec_s["action"], "SELL")
+
+        # Sıkışma YOKSA (önceki bar da bandın dışında) giriş olmaz
+        self.assertIsNone(forex.squeeze_kc_entry(_mk(1.0, 2.0, 0.5, prev_gap=1.5), 1.0, {}))
+
+        # Momentum ters işaretliyse bant dışı kapanış tek başına yetmez
+        self.assertIsNone(forex.squeeze_kc_entry(_mk(1.0, 2.0, -0.5), 1.0, {}))
+
+        # Gün limiti: aynı sembol+gün+yön 2 kez dolduysa aday üretilmez
+        ok = forex.squeeze_kc_entry(_mk(1.0, 2.0, 0.5), 1.0, {})
+        counts = {ok["day_key"]: 2}
+        self.assertIsNone(forex.squeeze_kc_entry(_mk(1.0, 2.0, 0.5), 1.0, counts))
+
+        # pip_size<=0 → SL hesaplanamaz; karar yine de döner ama override None
+        # (çağıran spec SL/TP yoluna düşer; replay `_mode_atr_exits` fallback'i).
+        nopip = forex.squeeze_kc_entry(_mk(1.0, 2.0, 0.5), 0.0, {})
+        self.assertEqual(nopip["action"], "BUY")
+        self.assertIsNone(nopip["sl_pips"])
+        self.assertIsNone(nopip["tp_pips"])
+
+        # Veri yok → giriş yok
+        self.assertIsNone(forex.squeeze_kc_entry(None, 1.0, {}))
+        self.assertIsNone(forex.squeeze_kc_entry({}, 1.0, {}))
+
+        # --- Strateji kimliği: kaynak + etiket + MT5 kapanış kaydı çözümü
+        self.assertEqual(forex.strategy_name_for("squeeze_kc"), "SQUEEZE_KC_M15")
+        self.assertEqual(forex.strategy_comment_tag("squeeze_kc"), "SQZKC")
+        self.assertEqual(forex.strategy_display_label("SQUEEZE_KC_M15"),
+                         "Keltner Squeeze Kırılımı (M15)")
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "SQZKC 7"}),
+                         forex.SQUEEZE_KC_STRATEGY)
+        # MT5 yorum sınırı 31 karakter — etiket kısa kalmalı
+        self.assertLessEqual(len(forex.strategy_comment_tag("squeeze_kc")), 31)
+
+        # --- Kripto "sabit TP yok" kuralı squeeze_kc'yi EZMEMELİ.
+        # Kanıt koşumu TP = 2R SABİT TP'liydi ve 5 sembolden biri BTCUSD; kural
+        # uygulanırsa BTC kolu TP'siz koşar → test edilen davranıştan sapar
+        # (S3 istisnasıyla aynı gerekçe).
+        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        crypto_gate = [ln for ln in src.splitlines()
+                       if "crypto_tp_enabled and not str(cand.get(" in ln]
+        self.assertTrue(crypto_gate, "kripto TP kapısı bulunamadı")
+        self.assertIn('!= "squeeze_kc"', crypto_gate[0],
+                      "kripto 'TP yok' istisnası squeeze_kc'yi kapsamalı")
+
+    def test_squeeze_kc_supertrend_exemption_locked(self):
+        """Squeeze KC, SuperTrend kapısından MUAF olmalı (kanıt ST-filtresi kapalı koşuldu).
+
+        `--combined` harness varsayılanı `TUN_ST_FILTER=False`; canlıda ST filtresi
+        açıkken kola uygulanırsa test edilen davranıştan sapar (S3/EAP istisnasıyla
+        aynı gerekçe).
+        """
+        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        self.assertIn('_is_sqzkc = str(cand.get("entry_source", "")) == "squeeze_kc"', src)
+        self.assertIn("and not _is_sqzkc", src)
+
     def test_donchian_adx_entry_rules(self):
         """Donchian+ADX canlı giriş kararı (replay kazananı ile aynı kural)."""
         f = forex.donchian_adx_entry

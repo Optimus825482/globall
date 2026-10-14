@@ -272,7 +272,7 @@ async def init_db():
         schema_sql = ""
         for filename in ("001_pgvector_schema.sql", "002_macd_evidence_lift.sql",
                          "003_rising_signals.sql", "004_bloat_prevention.sql",
-                         "005_user_binance_keys.sql"):
+                         "005_user_binance_keys.sql", "006_mt5_spread_profile.sql"):
             path = os.path.join(migrations_dir, filename)
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as schema_file:
@@ -4451,6 +4451,57 @@ async def get_market_symbols(timeframe="5m"):
         ).fetchall()
         return [str(row["symbol"]).upper() for row in rows]
     return await _run_db(op)
+
+async def upsert_mt5_spread_profiles(rows):
+    """MT5 tick'inden olculen GERCEK spread profillerini yaz (idempotent).
+
+    Replay motoru eskiden elle uretilen bir JSON'dan (outputs/fx_spread_p95.json)
+    okuyordu; artik MT5 -> DB hattindan gelir. Ayni (symbol,timeframe) tekrar
+    yazilirsa guncellenir.
+    """
+    if not rows:
+        return 0
+    def op(conn):
+        sql = """INSERT INTO mt5_spread_profile
+            (symbol,timeframe,pip_size,avg_pips,p50_pips,p95_pips,sample_count,
+             measured_from,measured_to,source,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(symbol,timeframe) DO UPDATE SET
+            pip_size=excluded.pip_size,avg_pips=excluded.avg_pips,p50_pips=excluded.p50_pips,
+            p95_pips=excluded.p95_pips,sample_count=excluded.sample_count,
+            measured_from=excluded.measured_from,measured_to=excluded.measured_to,
+            source=excluded.source,updated_at=excluded.updated_at"""
+        now = time.time()
+        values = [(
+            str(r["symbol"]).upper(), r["timeframe"], float(r["pip_size"]),
+            float(r["avg_pips"]), float(r["p50_pips"]), float(r["p95_pips"]),
+            int(r.get("sample_count") or 0),
+            r.get("measured_from"), r.get("measured_to"),
+            r.get("source", "mt5_icmarkets"), float(r.get("updated_at") or now),
+        ) for r in rows]
+        conn.executemany(sql, values)
+        conn.commit()
+        return len(values)
+    return await _run_db(op)
+
+
+async def get_mt5_spread_profiles(timeframe=None):
+    """Spread profillerini oku; replay'in bekledigi ``{symbol: {...}}`` haritasini ver."""
+    def op(conn):
+        q = "SELECT * FROM mt5_spread_profile"
+        args = []
+        if timeframe:
+            q += " WHERE timeframe=?"
+            args.append(timeframe)
+        q += " ORDER BY symbol"
+        out = {}
+        for row in conn.execute(q, args).fetchall():
+            d = dict(row)
+            sym = str(d.pop("symbol")).upper()
+            out[sym] = d
+        return out
+    return await _run_db(op)
+
 
 async def upsert_market_feature_snapshots(rows):
     if not rows: return 0

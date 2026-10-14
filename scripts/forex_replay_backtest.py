@@ -134,6 +134,11 @@ TUN_CLOSE_CONFIRM = False   # True: aday hemen açılmaz; SONRAKİ taze bar siny
 TUN_SCORE_HALF_BELOW = 0.0  # >0: radar skoru bu eşiğin altındaki adaylar engellenmez, lot küçültülür (skor-bazlı A/B/C lite)
 TUN_SCORE_HALF_MULT = 0.5   # skor-bazlı yarım lot çarpanı
 TUN_ST_FILTER = False       # SuperTrend yön teyidi kapalı/kapalı
+# Canlı `forex.py` ST kapısından MUAF tutulan kaynaklar (`_is_eap`/`_is_s3`/`_is_sqzkc`,
+# forex.py:6212-6215). Bu kollar KENDİ yön motorunu taşır ya da kanıtları ST filtresi
+# KAPALI alınmıştır; canlı varsayılanı `supertrend_filter_enabled=True` olduğu için
+# muafiyet olmadan replay canlıyı modellemez. `--st-exempt-arms` ile açılır.
+TUN_ST_EXEMPT_ARMS = False
 # BTC net-negatif pencere freni (2026-10-10 denetim P0-3): canlı motor `btc_net_negative_*`
 # ayarlarının replay karşılığı. Sembolün son N saatteki net'i eşiğin altındaysa ve yeterli
 # işlem varsa yeni giriş yok. Ardışık-SL'e bağlı DEĞİL → SL,TP,SL,SL,TP salınımını yakalar.
@@ -250,7 +255,7 @@ TUN_ENTRY_MODE = "classic"      # classic | london_breakout | pullback | donchia
 # paylaşılır — canlıdaki gibi). Boş --arm-symbols = boş tarif; klasik kol her zaman açık.
 TUN_COMBINED = False
 TUN_ARM_SYMBOLS: Dict[str, set] = {}
-ARM_KEYS = ("s3_5m", "s3_15m", "ema_adx_pullback", "london_breakout", "donchian_adx")
+ARM_KEYS = ("s3_5m", "s3_15m", "ema_adx_pullback", "london_breakout", "donchian_adx", "squeeze_kc")
 TUN_LB_BOX_END_H = 7            # Asya kutusu: 00:00 → 07:00 UTC
 TUN_LB_ENTRY_END_H = 11         # tetik penceresi: 07:00 → 11:00 UTC
 TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
@@ -1574,6 +1579,52 @@ def _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[
                       "tp_pips": round(TUN_DA_TP_ATR * atr_price / pip_size, 1)}}
 
 
+def _arm_squeeze_kc_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[str, Any]]:
+    """Keltner/TTM squeeze kırılım kolu (John Carter) — `squeeze_kc` giriş modunun aynası.
+
+    Canlıya ALINMADI; "--combined ile mevcut defteri düşürüyor mu" testi için kol olarak
+    koşar. Mantık `TUN_ENTRY_MODE == "squeeze_kc"` dalıyla BİREBİR aynıdır (BB⊂KC sıkışma
+    bırakışı + bant-dışı kapanış + momentum teyidi; SL = |kapanış − KC orta|, TP = R×SL).
+    """
+    period = TUN_SQZ_KC_PERIOD
+    if ci < period + 30:
+        return None
+    ser = _SQZ_KC_CACHE.get(sym)
+    if ser is None or len(ser.get("bb_up", [])) != len(bars):
+        ser = _squeeze_kc_series(bars, period, TUN_SQZ_KC_BB_MULT, TUN_SQZ_KC_MULT)
+        _SQZ_KC_CACHE[sym] = ser
+    j = ci - 1
+    bb_u, bb_l = ser["bb_up"][j], ser["bb_lo"][j]
+    kc_u, kc_l = ser["kc_up"][j], ser["kc_lo"][j]
+    if bb_u <= 0 or bb_l <= 0:
+        return None
+    jp = ci - 2
+    squeezed_prev = (ser["bb_up"][jp] < ser["kc_up"][jp]) and (ser["bb_lo"][jp] > ser["kc_lo"][jp])
+    released = (bb_u >= kc_u) or (bb_l <= kc_l)
+    if not (squeezed_prev and released):
+        return None
+    c = bars[j][4]
+    mom = ser["mom"][j]
+    if c >= bb_u and mom >= TUN_SQZ_KC_MOM_MIN:
+        action = "BUY"
+    elif c <= bb_l and mom <= -TUN_SQZ_KC_MOM_MIN:
+        action = "SELL"
+    else:
+        return None
+    key = (sym, int(ts // 86400), action)
+    if MODE_DAY_STATE.get(key, 0) >= 2:
+        return None
+    MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+    sl_pips = round(abs(c - ser["kc_mid"][j]) / pip_size, 1) if pip_size > 0 else 0.0
+    if sl_pips <= 0:
+        ex = _mode_atr_exits()
+        if ex is None:
+            return None
+        return {"action": action, "entry_source": "squeeze_kc", "arm": "squeeze_kc", "exits": ex}
+    return {"action": action, "entry_source": "squeeze_kc", "arm": "squeeze_kc",
+            "exits": {"sl_pips": sl_pips, "tp_pips": round(TUN_SQZ_KC_TP_R * sl_pips, 1)}}
+
+
 def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str, Any]]:
     """`--combined`: bu sembol+bar için TÜM aktif kolların adaylarını üretir.
 
@@ -1602,6 +1653,10 @@ def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str
             out.append(cd)
     if u in TUN_ARM_SYMBOLS.get("donchian_adx", set()):
         cd = _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size)
+        if cd:
+            out.append(cd)
+    if u in TUN_ARM_SYMBOLS.get("squeeze_kc", set()):
+        cd = _arm_squeeze_kc_candidate(sym, ts, bars, ci, tech, pip_size)
         if cd:
             out.append(cd)
     return out
@@ -3194,7 +3249,14 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         score_half_flag = True  # engelleme yok — lot çarpanı ile sınıflandır (skor-bazlı A/B/C lite)
                     if vname == "NEW" and TUN_ST_FILTER:
                         st_dir = int(tech.get("supertrend_dir", 0))
-                        if st_dir != 0 and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
+                        # Canlı parite: `forex.py:6212-6215` bu kaynakları ST kapısından
+                        # muaf tutar (EAP/S3 kendi yön motoru; squeeze_kc kanıtı ST kapalı
+                        # alındı). Muafiyet kapalıyken davranış eskisiyle BİREBİR aynıdır.
+                        _st_exempt = (TUN_ST_EXEMPT_ARMS and (
+                            entry_source == "ema_adx_pullback"
+                            or str(entry_source or "").startswith("s3_")
+                            or entry_source == "squeeze_kc"))
+                        if st_dir != 0 and not _st_exempt and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
                             blocked_events.append(("SUPERTREND", cand("SUPERTREND")))
                             return
                     # MTF trend kapısı (2026-10-08 araştırma): H1 EMA200 durumu tersse giriş yok
@@ -3454,6 +3516,7 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
     global TUN_ADX_MIN, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_CLOSE_CONFIRM, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
+    global TUN_ST_EXEMPT_ARMS
     global TUN_SCORE_HALF_BELOW, TUN_SCORE_HALF_MULT
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
     global TUN_CHANDLIER, TUN_MAJOR_HOURS, TUN_MAJOR_MIN_ATR, TUN_MAJOR_MAX_EXT, GATED_EXTRAS
@@ -3575,6 +3638,8 @@ def main():
     parser.add_argument("--btc-netneg-min", type=int, default=6, help="BTC net-negatif freni için pencerede gereken min işlem")
     parser.add_argument("--btc-netneg-usd", type=float, default=0.0, help="BTC net-negatif freni eşiği (USD); pencere net'i bunun altındaysa dinlenir")
     parser.add_argument("--st-filter", action="store_true", help="SuperTrend yön teyidini aç")
+    parser.add_argument("--st-exempt-arms", action="store_true",
+                        help="Canlı parite: EAP/S3/squeeze_kc adaylarını SuperTrend kapısından muaf tut (forex.py:6212-6215; --st-filter ile birlikte anlamlı)")
     parser.add_argument("--hours", default="", help="Engellenecek UTC saatleri, virgüllü (örn 5,15)")
     parser.add_argument("--no-ev-guard", action="store_true", help="Sembol EV kalkanını kapat")
     parser.add_argument("--no-be", action="store_true", help="BE kilidini tamamen kapat (BE-istismarı testi; trailing bağımsız çalışır)")
@@ -3824,6 +3889,7 @@ def main():
     TUN_BTC_NETNEG_MIN = args.btc_netneg_min
     TUN_BTC_NETNEG_USD = args.btc_netneg_usd
     TUN_ST_FILTER = args.st_filter
+    TUN_ST_EXEMPT_ARMS = bool(args.st_exempt_arms)
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT, TUN_SLIP_PIPS
     TUN_NO_BE = args.no_be
