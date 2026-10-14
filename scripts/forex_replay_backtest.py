@@ -1725,6 +1725,69 @@ def fetch_candles(yf_sym: str, days: int) -> Optional[List[Tuple]]:
         return None
 
 
+# ---------------------------------------------------------------------------
+# PostgreSQL kaynağı (2026-10-14) — MT5 köprüsünden gelen mumlar
+# ---------------------------------------------------------------------------
+# Kullanıcı talebi: "testlerde cache yazmaya uğraşma; MT5 köprüsünden local
+# Postgres'e çek, oradan test et". JSON önbelleği (`forex_replay_data_*.json`)
+# elle tazelenmesi gereken ve pencere dışıysa SESSİZCE 0 işlem dönen bir dosyaydı.
+# `historical_candles` tablosu ise köprüden sürekli beslenir (source:
+# `mt5_icmarkets_tick` / `*_5m_downsampled`) ve 5m/15m/30m/1h tutar.
+def _db_url() -> str:
+    """DATABASE_URL: ortam değişkeni → backend/.env → boş."""
+    u = (os.environ.get("DATABASE_URL") or "").strip()
+    if u:
+        return u
+    envp = os.path.join(ROOT, "backend", ".env")
+    try:
+        with open(envp, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("DATABASE_URL="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return ""
+
+
+def fetch_candles_from_db(interval: str = "5m") -> Dict[str, List[Tuple]]:
+    """`historical_candles`'tan mumları okur; JSON önbelleğiyle AYNI biçim döner.
+
+    Dönüş: {symbol: [(ts_sn, o, h, l, c), ...]} — ts SANİYE (JSON önbelleğiyle aynı),
+    DB'de open_time MİLİSANİYE olduğu için 1000'e bölünür.
+    """
+    url = _db_url()
+    if not url:
+        print("[VERI] DATABASE_URL yok (ortam + backend/.env) — DB kaynağı atlandı")
+        return {}
+    try:
+        import psycopg
+    except ImportError:
+        print("[VERI] psycopg kurulu değil — DB kaynağı atlandı")
+        return {}
+    q = ("SELECT symbol, open_time, open, high, low, close FROM historical_candles "
+         "WHERE timeframe = %s ORDER BY symbol, open_time")
+    out: Dict[str, List[Tuple]] = {}
+    try:
+        with psycopg.connect(url, connect_timeout=10) as conn:
+            for sym, ot, o, h, l, c in conn.execute(q, (interval,)).fetchall():
+                if None in (o, h, l, c):
+                    continue
+                out.setdefault(sym, []).append(
+                    (float(ot) / 1000.0, float(o), float(h), float(l), float(c)))
+    except Exception as exc:
+        print(f"[VERI HATASI] PostgreSQL ({interval}): {exc}")
+        return {}
+    if out:
+        n = sum(len(v) for v in out.values())
+        span = (min(v[0][0] for v in out.values()), max(v[-1][0] for v in out.values()))
+        fmt = lambda t: datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%d")
+        print(f"[VERI] PostgreSQL historical_candles: {len(out)} sembol | {n} bar | "
+              f"span ~{(span[1] - span[0]) / 86400.0:.1f} gün ({fmt(span[0])} → {fmt(span[1])}) | "
+              f"timeframe={interval} | kaynak: MT5 köprüsü")
+    return out
+
+
 def fetch_all(days: int) -> Dict[str, List[Tuple]]:
     data: Dict[str, List[Tuple]] = {}
     jobs = dict(forex.YAHOO_SYMBOL_MAP)
@@ -3585,6 +3648,9 @@ def main():
     parser = argparse.ArgumentParser(description="Forex replay A/B (eski vs yeni algoritma)")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--cache", default="")
+    parser.add_argument("--source", choices=["auto", "db", "cache"], default="auto",
+                        help="Mum kaynağı: auto (DB varsa DB, yoksa JSON önbellek/Yahoo — VARSAYILAN) | "
+                             "db (yalnız PostgreSQL historical_candles; MT5 köprüsü besler) | cache (eski JSON yolu)")
     parser.add_argument("--out", default=os.path.join(ROOT, "outputs", "forex_replay_7d_report.json"))
     parser.add_argument("--window", choices=["full", "recent", "prior"], default="full",
                         help="recent: son 7 gün (in-sample) | prior: önceki 7 gün (out-of-sample)")
@@ -4083,12 +4149,32 @@ def main():
         print(f"[KONFIG] {cfg_str}")
 
     cache_path = args.cache or os.path.join(ROOT, "outputs", f"forex_replay_data_{args.days}d.json")
-    if os.path.exists(cache_path):
+
+    # 2026-10-14: ÖNCE PostgreSQL (MT5 köprüsü verisi). JSON önbelleği elle tazelenir ve
+    # pencere dışıysa sessizce 0 işlem dönerdi; `historical_candles` sürekli beslenir.
+    data = None
+    if args.source in ("auto", "db"):
+        _want = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
+        _db = fetch_candles_from_db(args.interval)
+        if _want:
+            _missing = sorted(s for s in _want if s not in _db)
+            if _missing:
+                print(f"[VERI] DB'de eksik sembol: {_missing}")
+                _db = {} if args.source == "auto" else _db
+                if args.source == "db" and _missing:
+                    raise SystemExit(f"[VERI] --source db istendi ama şu semboller DB'de yok: {_missing}")
+        if _db:
+            data = _db
+    if data is None and args.source == "db":
+        raise SystemExit("[VERI] --source db istendi ama historical_candles boş. "
+                         "Köprü/motor veri akıtıyor mu? (backend/app/routers/maintenance.py)")
+
+    if data is None and os.path.exists(cache_path):
         print(f"[VERI] Önbellekten yükleniyor: {cache_path}")
         with open(cache_path, encoding="utf-8") as f:
             raw = json.load(f)
         data = {sym: [tuple(b) for b in bars] for sym, bars in raw.items()}
-    else:
+    elif data is None:
         print(f"[VERI] Yahoo Finance'ten {args.days} gün 5M mum çekiliyor...")
         data = fetch_all(args.days)
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)

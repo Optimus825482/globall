@@ -21,6 +21,19 @@ Oturumlar arası kurallar. Günlük kayıt: `YYYY-MM-DD.md`. Raporlar `outputs/`
 - **Yeni global state →** TÜM `_reset_state()` yardımcılarını güncelle (`test_monitoring.py` ×2, `test_m1_monitoring_fixes.py`).
 - **`next build`:** sandbox shim `.next` silmeyi engeller — kod hatası DEĞİL. `tsc --noEmit` tek başına yetmez.
 - **Denetim dersi:** planına değil **BULGU LİSTESİNE** güven, parti sonunda ID bazında tara.
+- **AÇIK TEMA TUZAĞI (2026-10-14 — kullanıcı bildirimi "yazılar görünmüyor, arka planla aynı renk"):**
+  `html.light .text-white { color:#0f172a !important }` yalnız **tam sınıf adını** yakalar.
+  Tailwind **opaklık varyantları AYRI sınıftır** (`text-white/95` → `text-white\/95`) ve bu kurala
+  TAKILMAZ → açık temada beyaz kalır. Ayrıca `html.light [class*="bg-gradient-"]` **tüm** gradient
+  zeminleri `background-color:#fff !important` ile beyaza düzleştirir → beyaz üstünde beyaz yazı.
+  Çözüm: (a) `html.light [class*="text-white/"]` genel kuralı eklendi; (b) işlevsel alarm bantları
+  `.ticker-banner` gibi bir sınıfla düzleştirmeden `:not()` ile muaf tutulup açık temada kendi
+  zeminini korur. **Yeni bir renkli/gradientli uyarı bileşeni eklerken bu iki tuzağı kontrol et.**
+- **CSS doğrulama yöntemi:** dev sunucusunun CSS parçası **bayat olabilir** (hash sabit kalıyor,
+  kaynakta olmayan kurallar dönebilir). Kesin doğrulama:
+  `npx tailwindcss -i app/globals.css -o out.css --minify` (kaynaktan derler) + önce/sonra için
+  `git show HEAD:frontend/app/globals.css > _before.css` ile ikinci derleme. Görsel A/B için her
+  paneli KENDİ CSS'ini taşıyan bir `<iframe srcdoc>` içine koy (markup aynı, tek değişken CSS).
 
 ## 3. Otonom döngüler
 

@@ -783,9 +783,31 @@ html.light .bg-slate-950 {
    progress barların dolgusu beyaz-üstü-beyaz oluyor ve bar BOŞ görünüyordu
    (kullanıcı bildirimi 2026-10-13: "progress barların ilerlemeleri dolu renkli
    olsun"). `:not()` ile dolgu çubukları bu düzleştirmeden muaf tutulur. */
-html.light [class*="bg-gradient-"]:not(.progress-fill) {
+html.light [class*="bg-gradient-"]:not(.progress-fill):not(.ticker-banner) {
   background-image: none !important;
   background-color: #ffffff !important;
+}
+
+/* 2026-10-14 — KRİTİK VERİ ALARMI KAYAN BANDI (kullanıcı bildirimi:
+   "ETKİLENECEK sembol yazıları görünmüyor, arka planla aynı renkte").
+   Kök neden İKİ kuralın birleşimiydi:
+     (a) yukarıdaki `html.light [class*="bg-gradient-"]` bandın
+         `bg-gradient-to-r from-red-600 via-rose-600 to-red-700` zeminini
+         `background-color:#ffffff !important` ile BEYAZA düzleştiriyordu,
+     (b) `html.light .text-white` kuralı OPAKLIK VARYANTLARINI yakalamıyor —
+         bantta semboller `text-white/95` sınıfıyla yazılıyor (ayrı sınıf adı
+         `text-white\/95`), dolayısıyla metin BEYAZ kalıyordu.
+   Sonuç: beyaz bant üzerinde beyaz yazı. Uyarı bandı dekoratif kart zemini
+   DEĞİL, işlevsel bir alarmdır — her iki temada da kırmızı ve beyaz metinli
+   kalmalıdır (`.progress-fill` muafiyetiyle aynı mantık). */
+html.light .ticker-banner {
+  background-image: linear-gradient(90deg, #dc2626, #e11d48, #b91c1c) !important;
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+html.light .ticker-banner .text-white,
+html.light .ticker-banner [class*="text-white/"] {
+  color: #ffffff !important;
 }
 
 /* 2. Keskin ve Belirgin Kenarlıklar (Borders) */
@@ -800,6 +822,14 @@ html.light [class*="border-slate-700"] {
 
 /* 3. YÜKSEK KONTRASTLI METİN VE BAŞLIKLAR (SİLİK GRİLER ENGELLENDİ) */
 html.light .text-white,
+/* 2026-10-14: `text-white` OPAKLIK VARYANTLARI (`text-white/95`, `/90`, `/80` …)
+   AYRI sınıf adlarıdır (`text-white\/95`) ve yukarıdaki seçici onları YAKALAMAZ.
+   Bu yüzden `text-white/95` açık temada beyaz kalıyor, beyaz zemin üzerinde
+   görünmez oluyordu (kullanıcı bildirimi: kayan bantta "ETKİLENECEK" sembolleri).
+   Bant kendi kırmızı zeminini koruduğu için `.ticker-banner` altındaki metinler
+   yukarıda (gradient bloğunda) AÇIKÇA beyaza sabitlenir — o kural bu seçiciden
+   daha özgüldür ve kazanır. */
+html.light [class*="text-white/"],
 html.light h1,
 html.light h2,
 html.light h3,

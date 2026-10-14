@@ -117,7 +117,7 @@ export default function ForexEventTickerBanner() {
 
   return (
     <div
-      className="w-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white border-b border-red-800 shadow-md overflow-hidden select-none z-30"
+      className="ticker-banner w-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white border-b border-red-800 shadow-md overflow-hidden select-none z-30"
       style={{ minHeight: "34px" }}
     >
       <Link
