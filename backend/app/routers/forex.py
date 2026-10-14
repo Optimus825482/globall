@@ -864,11 +864,12 @@ S3_PULLBACK_LABEL = "S3 Supertrend+RSI"
 #                     IS 08-01→09-07 n=123 WR %72.4 net +$77.65 PF 1.47 maxDD $54.66;
 #                     2× spread'de de iki pencere pozitif (+$140.79 / +$51.93).
 #   defter testi (`--combined`, klasik radar YANINDA, canlının GERÇEK bayrakları:
-#   st-filter+muafiyet / major-min-atr 2.5 / max-open 99 / chandelier 0.3): dört hücrede de
-#   net ARTAR, maxDD hiç bozulmaz → OOS 1× +$3709.01→+$3914.26 (Δ+205.25, DD ±0) ·
-#   OOS 2× +$2860.52→+$2928.81 (Δ+68.29, DD ±0) · IS 1× +$5759.89→+$5835.35 (Δ+75.46, DD ±0) ·
-#   IS 2× +$5006.69→+$5121.31 (Δ+114.62, DD −31.24). Artefakt: outputs/skc_ab_*.json
-#   (koşum: scripts/_run_skc_ab.sh).
+#   st-filter+muafiyet / major-min-atr 2.5 / max-open 99 / chandelier 0.3 + kol
+#   sırası & sembol-bazlı YERİNDEN ETME paritesi): dört hücrede de net ARTAR,
+#   maxDD hiç bozulmaz → OOS 1× +$3483.27→+$3565.89 (Δ+82.62, DD ±0) ·
+#   OOS 2× +$2557.10→+$2735.02 (Δ+177.92, DD −4.40) · IS 1× +$5301.11→+$5490.92
+#   (Δ+189.81, DD ±0) · IS 2× +$4694.36→+$4799.28 (Δ+104.92, DD −4.55).
+#   Artefakt: outputs/skc_ab_*.json (koşum: scripts/_run_skc_ab.sh).
 # Kapsam: kanıtlanan 5 sembol (aşağıdaki SQUEEZE_KC_SYMBOLS).
 SQUEEZE_KC_STRATEGY = "SQUEEZE_KC_M15"
 SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
@@ -2586,7 +2587,14 @@ _MT5_CANDLES_TTL = 30.0  # Köprü ~1.5 sn'de bir push eder; 30 sn bayat toleran
 # söylemek için. TTL dolan çiftler düşer (bant genişliği korunur).
 _FOREX_VIEWED: Dict[Tuple[str, str], float] = {}
 _FOREX_VIEWED_TTL = 120.0
-_MT5_WATCH_MAX = 12  # Köprüye tek turda istenebilecek azami çift
+# Köprüye tek turda istenebilecek azami (sembol, periyot) çifti. 2026-10-14:
+# 12 → 24. Motorun KALICI çiftleri tek başına 10 slot tutuyordu (S3 5m+15m ×
+# XAUUSD/BTCUSD/US30/GBPUSD = 8, squeeze_kc M15 × NAS100/USDCHF = 2) ve kırpma
+# (`out[:MAX]`) İZLENEN çiftleri EN SONA koyduğu için panelde grafiği açılan
+# sembolün çifti köprü listesine neredeyse HİÇ giremiyordu. Sonuç: grafik düzgün
+# açılıyor ama gecikmeli Yahoo (vadeli) beslemesine düşüyor ve anlık
+# güncellenmiyordu (canlı tick yaması da %0.15 baz-farkı kapısından geçmiyordu).
+_MT5_WATCH_MAX = 24
 
 
 def _note_forex_viewed(symbol: str, interval: str) -> None:
@@ -2600,12 +2608,28 @@ def _note_forex_viewed(symbol: str, interval: str) -> None:
 def _get_forex_watch() -> List[Dict[str, str]]:
     """Son `_FOREX_VIEWED_TTL` içinde bakılan çiftler (bayat olanlar budanır).
 
-    S3 motoru için sembol+periyot çiftleri KALİCİ eklenir: S3 (Supertrend+RSI)
-    broker mumlarıyla (Yahoo yerine — aynı kotasyon) sinyal üretir ve panel
-    kapalıyken de köprünün bu çiftleri çekmesi gerekir.
+    Sıra ÖNEMLİ (2026-10-14): panelin ŞU AN baktığı çiftler EN ÖNE konur (kırpma
+    tavana takılırsa motor çiftleri kesilir, panel grafiği ASLA açlığa düşmez).
+    S3/squeeze_kc motor çiftleri ondan sonra KALICI eklenir: bu motorlar broker
+    mumlarıyla sinyal üretir ve panel kapalıyken de çekilmeleri gerekir.
     """
     out: List[Dict[str, str]] = []
     seen: set = set()
+    now = time.time()
+    # 1) Panelin baktığı çiftler (en taze önce): kullanıcı grafiği açtığı anda
+    #    köprü o çifti çekmeye başlar → grafik broker kotasyonuyla canlı akar.
+    viewed: List[Tuple[Tuple[str, str], float]] = []
+    for (sym, tf), ts in list(_FOREX_VIEWED.items()):
+        if now - ts > _FOREX_VIEWED_TTL:
+            _FOREX_VIEWED.pop((sym, tf), None)
+            continue
+        viewed.append(((sym, tf), ts))
+    viewed.sort(key=lambda kv: -kv[1])
+    for (sym, tf), _ts in viewed:
+        if (sym, tf) not in seen:
+            seen.add((sym, tf))
+            out.append({"symbol": sym, "interval": tf})
+    # 2) Motorun kalıcı çiftleri (panel kapalıyken de sinyal üretimi için).
     if _AUTO_SETTINGS.s3_enabled:
         for sym in list(_AUTO_SETTINGS.s3_symbols_5m) + list(_AUTO_SETTINGS.s3_symbols_15m):
             s = str(sym).upper()
@@ -2622,14 +2646,6 @@ def _get_forex_watch() -> List[Dict[str, str]]:
             if key not in seen:
                 seen.add(key)
                 out.append({"symbol": key[0], "interval": key[1]})
-    now = time.time()
-    for (sym, tf), ts in list(_FOREX_VIEWED.items()):
-        if now - ts > _FOREX_VIEWED_TTL:
-            _FOREX_VIEWED.pop((sym, tf), None)
-            continue
-        if (sym, tf) not in seen:
-            seen.add((sym, tf))
-            out.append({"symbol": sym, "interval": tf})
     return out[:_MT5_WATCH_MAX]
 
 
@@ -5618,6 +5634,10 @@ async def _forex_auto_paper_loop():
                             # ST-filtresi kapalı koşuldu (`--combined` harness varsayılanı
                             # `TUN_ST_FILTER=False`) → aday gerçek ST yönünü taşır ama
                             # ST kapısı bu koldan atlanır (aşağıda `_is_sqzkc`).
+                            # NOT (2026-10-14): canlı döngüde squeeze_kc EN SON çalışır
+                            # ve bu satır sembolün ÖNCEKİ adayını (klasik radar dahil)
+                            # yerinden eder; harness paritesi (`--combined`) aynı sırayı
+                            # ve yerinden etmeyi uygular (bkz. ARM_KEYS notu).
                             "supertrend_dir": int((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("supertrend_dir", 0)),
                             "entry_source": "squeeze_kc",
                             "strategy": SQUEEZE_KC_STRATEGY,

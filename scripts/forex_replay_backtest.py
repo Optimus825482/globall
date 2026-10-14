@@ -255,7 +255,14 @@ TUN_ENTRY_MODE = "classic"      # classic | london_breakout | pullback | donchia
 # paylaşılır — canlıdaki gibi). Boş --arm-symbols = boş tarif; klasik kol her zaman açık.
 TUN_COMBINED = False
 TUN_ARM_SYMBOLS: Dict[str, set] = {}
-ARM_KEYS = ("s3_5m", "s3_15m", "ema_adx_pullback", "london_breakout", "donchian_adx", "squeeze_kc")
+# SIRA CANLI `forex.py` DÖNGÜSÜNÜN BİREBİR AYNASIDIR (2026-10-14): canlıda kollar
+# sırayla çalışır ve her kol kendi sembolünün ÖNCEKİ adayını düşürür
+# (`candidates = [c for c in candidates if symbol != sym] + [yeni]`) → bir sembolde
+# siklus sonunda YALNIZ SON ateşleyen kolun adayı kalır. Bu yüzden burada da donchian
+# en başta, squeeze_kc en sonda: `_combined_arm_candidates` çıktısı sırayla emit
+# edilir ve son ateşleyen sembolün adayını yerinden eder. Canlıda LB → LS gelir (LS
+# harness'ta yok, bilinen ve belgelenmiş boşluk).
+ARM_KEYS = ("donchian_adx", "s3_5m", "s3_15m", "ema_adx_pullback", "london_breakout", "squeeze_kc")
 TUN_LB_BOX_END_H = 7            # Asya kutusu: 00:00 → 07:00 UTC
 TUN_LB_ENTRY_END_H = 11         # tetik penceresi: 07:00 → 11:00 UTC
 TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
@@ -1635,6 +1642,13 @@ def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str
         return []
     u = sym.upper()
     out: List[Dict[str, Any]] = []
+    # SIRA = canlı forex.py döngüsü (bkz. ARM_KEYS notu): donchian → s3_5m → s3_15m →
+    # ema_adx_pullback → london_breakout → squeeze_kc. Sonra gelen kol, aynı sembolde
+    # öncekinin adayını yerinden eder (canlı `candidates = [...] + [yeni]` paritesi).
+    if u in TUN_ARM_SYMBOLS.get("donchian_adx", set()):
+        cd = _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size)
+        if cd:
+            out.append(cd)
     if u in TUN_ARM_SYMBOLS.get("s3_5m", set()):
         cd = _arm_s3_candidate(sym, ts, bars, ci, tech, pip_size, "5m")
         if cd:
@@ -1651,14 +1665,14 @@ def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str
         cd = _arm_lb_candidate(sym, ts, bars, ci, tech, pip_size)
         if cd:
             out.append(cd)
-    if u in TUN_ARM_SYMBOLS.get("donchian_adx", set()):
-        cd = _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size)
-        if cd:
-            out.append(cd)
     if u in TUN_ARM_SYMBOLS.get("squeeze_kc", set()):
         cd = _arm_squeeze_kc_candidate(sym, ts, bars, ci, tech, pip_size)
         if cd:
             out.append(cd)
+    # Sıra garantisi: ARM_KEYS ile birebir aynı olmalı (tek doğruluk kaynağı).
+    assert [c["arm"] for c in out] == sorted([c["arm"] for c in out],
+                                             key=lambda a: ARM_KEYS.index(a)), \
+        f"kol sırası canlıdan saptı: {[c['arm'] for c in out]}"
     return out
 
 
@@ -3124,18 +3138,32 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                                            include_momentum=(vname == "NEW"))
                 if not tech:
                     continue
-                def emit(vname, action, score, mode_exits=None, entry_source=None, mode_tsb=0):
+                def emit(vname, action, score, mode_exits=None, entry_source=None, mode_tsb=0,
+                         replace_symbol=False):
                     """Adayı ORTAK kapı zincirinden geçirir; geçerse candidates[vname]'e ekler.
 
                     2026-10-12 çoklu-kol: klasik radar VE --combined kolları aynı kapıları
                     (EV/spread/skor/seans/korelasyon) paylaşır — canlı motorun tek-bütçeli
                     davranışının replay paritesi. `continue` → `return` (aday başına erken çıkış).
+
+                    2026-10-14 canlı-parite (yerinden etme): `replace_symbol=True` iken bu
+                    sembolün MEVCUT adayları (klasik radar adayı dahil) kapı zincirine
+                    GİRMEDEN ÖNCE düşürülür — canlı `forex.py` kol bloklarının
+                    `candidates = [c for c in candidates if symbol != sym] + [yeni]`
+                    satırının birebir karşılığı. Canlıda yerinden etme kapı zincirinden
+                    önce olduğu için, kol adayı sonradan bir kapıda elenirse o sembol o
+                    siklusta HİÇ aday taşımaz (klasik aday geri gelmez) — bu davranış
+                    bilerek korunur.
                     """
                     book = books[vname]
                     atr_pips = tech["atr"] / pip_size if pip_size > 0 else 15.0
                     spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
                     adx_halflot = False
                     score_half_flag = False
+                    # Canlı parite: yerinden etme (aşağıdaki not) kapı zincirinden ÖNCE yapılır.
+                    if replace_symbol:
+                        candidates[vname] = [c for c in candidates[vname]
+                                             if str(c.get("symbol", "")).upper() != sym.upper()]
 
                     def cand(gate_note=None):
                         return {
@@ -3329,10 +3357,14 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if _mc is not None:
                         emit(vname, _mc["action"], 200.0, _mc.get("exits"), mode_tsb=_mc.get("time_stop_bars", 0))
                 # 2026-10-12 ÇOKLU-KOL: canlı ayarlarındaki bağımsız kollar (yalnız NEW defteri).
+                # 2026-10-14 canlı-parite: kollar canlı sırayla (donchian→…→squeeze_kc) emit
+                # edilir ve `replace_symbol=True` ile aynı sembolün önceki adayını (klasik
+                # radar adayı dahil) yerinden eder — canlı forex.py'nin kol bloklarındaki
+                # `candidates = [c for c in candidates if symbol != sym] + [yeni]` paritesi.
                 if TUN_COMBINED and vname == "NEW":
                     for _ac in _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size):
                         emit("NEW", _ac["action"], 200.0, _ac.get("exits"), _ac.get("entry_source"),
-                             mode_tsb=_ac.get("time_stop_bars", 0))
+                             mode_tsb=_ac.get("time_stop_bars", 0), replace_symbol=True)
 
 
         # 4) Skor sırasına göre açılış (eski USD-yön sayacı kaldırıldı — korelasyon kalkanı koruyor)

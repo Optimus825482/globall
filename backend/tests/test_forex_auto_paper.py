@@ -957,6 +957,16 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             # 2026-10-12: AUDNZD s3_symbols_5m'den düşürüldü (hayalet kros — tick yok).
             # eski assert bayattı; kilidi dürüst sözleşmeye çevirdik.
             self.assertNotIn(("AUDNZD", "5m"), pairs)
+            # 2026-10-14 (grafik canlı değil hatası): İZLENEN çiftler kalıcı motor
+            # çiftlerinin ÖNÜNE geçmeli ve tavan (`_MT5_WATCH_MAX`) paneli aç
+            # bırakmamalı. Eskiden 10 kalıcı çift + `out[:12]` → panelin grafiği
+            # açılan sembolün çifti listeden düşüyor, grafik Yahoo'ya kayıyor ve
+            # anlık güncellenmiyordu.
+            forex._note_forex_viewed("XAUUSD", "1h")
+            watch = forex._get_forex_watch()
+            self.assertEqual((watch[0]["symbol"], watch[0]["interval"]), ("XAUUSD", "1h"))
+            self.assertIn(("XAUUSD", "1h"), {(w["symbol"], w["interval"]) for w in watch})
+            self.assertGreaterEqual(forex._MT5_WATCH_MAX, 20)
         finally:
             forex._FOREX_VIEWED.clear()
             forex._FOREX_VIEWED.update(saved_viewed)
