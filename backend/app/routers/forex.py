@@ -330,6 +330,10 @@ _LIVE_PRICES_CACHE: Dict[str, float] = {}
 # Hard Risk Constants (Broker safety ceilings)
 HARD_MAX_FOREX_LOT = 50.0
 HARD_MAX_GOLD_LOT = 50.0
+# Endeks (US30/NAS100) için hard tavan. IC Markets bu sembollerde 1 lot'u 1
+# kontrat olarak sunar ve fiyat 1$ kazandırdığında risk 1$ = büyük değil,
+# AMA US30'da 0.20 lot × 81.7 pip = %1.6 risk göstergesiyle ölçüldü.
+HARD_MAX_INDEX_LOT = 50.0
 HARD_MIN_GOLD_COOLDOWN_SEC = 60.0
 HARD_MIN_BREAKEVEN_PIPS = 14.0
 TZ_UTC3 = datetime.timezone(datetime.timedelta(hours=3), name="UTC+3")
@@ -3523,7 +3527,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
     is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
     if is_index:
-        lot_ceiling = 50.0
+        lot_ceiling = min(HARD_MAX_INDEX_LOT, _AUTO_SETTINGS.max_index_lot)
         safe_lots = round(max(0.10, min(standard_lots, lot_ceiling)), 2)
     elif is_oil:
         lot_ceiling = 1.0
@@ -3599,6 +3603,7 @@ class ForexAutoPaperSettings(BaseModel):
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli scalper pozisyonu)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
+    flip_ignore_min_score: bool = Field(True, description="Zıt sinyal flip'inde skor eşiğini yoksay (2026-10-14 kullanıcı kararı: 'herhangi bir stratejiden zıt sinyal gelirse açık işlem kapanıp yeni sinyalle açılsın'). True = açık pozisyon varken zıt yönde sinyal GELDİĞİ anında flip (skor eşiği aranmaz). Spread/maliyet kapısı, korelasyon kalkanı, seri-SL soğuması, risk normalizasyonu ve lot bütçesi korunur — bunlar risk kapısıdır, atlanmaz.")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
     sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
     breakeven_pips: float = Field(14.0, ge=2.0, le=50.0, description="Başabaş kilit tetik mesafesi")
@@ -3609,6 +3614,7 @@ class ForexAutoPaperSettings(BaseModel):
     max_spread_pips: float = Field(10.0, ge=0.5, le=15.0, description="Maksimum izin verilen spread (pip) — 2026-10-07 kullanıcı kararı: 3.0→10.0 (raw hesapta gerçek spreadler 0.1-2.1 pip; kısıt artık filtre değil sigorta)")
     max_forex_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı")
     max_gold_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı")
+    max_index_lot: float = Field(2.0, ge=0.10, le=HARD_MAX_INDEX_LOT, description="Maksimum Endeks (US30/NAS100) lot tavanı — 2026-10-14 kullanıcı kararı: US30'da diğer sembollere göre aşırı lot açılıyordu (50.0 hard tavan), 2.0'a çekildi. IC Markets endeks kontratlarında 1 lot = 1 kontrat; pip değeri yüksek olduğundan risk hızlı büyür.")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     btc_cooldown_sec: float = Field(60.0, ge=0.0, le=900.0, description="BTCUSD kapanış sonrası soğuma süresi (sn). 2026-10-10 denetim P1-6: flip'te bu sayaç sıfırlanır; panelden ayarlanabilir hale getirildi (0 = kapalı)")
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
@@ -5989,8 +5995,12 @@ async def _forex_auto_paper_loop():
                     if opposite_dirs:
                         # (b) ZIT yönlü pozisyon varsa (örn: BUY açıkken SELL sinyali geldiyse veya tersi):
                         # Ve sinyal yeterince güçlüyse (skor >= min_score ve spread uygunsa)
+                        # 2026-10-14 kullanıcı kararı: flip_ignore_min_score açıkken skor eşiği
+                        # ARANMAZ — herhangi bir stratejiden zıt sinyal gelirse anında flip.
+                        # Spread (maliyet) kapısı her iki durumda da korunur.
                         effective_spread_limit = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
-                        if cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score and cand.get("spread_pips", 99.0) <= effective_spread_limit:
+                        _score_gate_ok = bool(_AUTO_SETTINGS.flip_ignore_min_score) or cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score
+                        if _score_gate_ok and cand.get("spread_pips", 99.0) <= effective_spread_limit:
                             old_dir_str = "/".join(opposite_dirs)
                             _log_auto_decision(
                                 "REVERSAL",
@@ -6040,7 +6050,9 @@ async def _forex_auto_paper_loop():
 
                             # Döngü devam eder ve aşağıda yeni new_action (BUY/SELL) emrini açar!
                         else:
-                            # Zıt yönlü ama skor eşiğini henüz aşmamışsa mevcut işlemi bozma
+                            # Zıt yönlü ama maliyet kapısı (spread) aşılıyor — mevcut işlemi bozma.
+                            # (flip_ignore_min_score açıkken skor asla bu kapıya takılmaz;
+                            # yalnızca spread kapısı flip'i engeller — maliyet riski yaratır.)
                             continue
 
                     elif new_action in existing_dirs:
@@ -6527,7 +6539,7 @@ async def _forex_auto_paper_loop():
                     tp_pips = 0.0
 
                 if is_index:
-                    lot_ceiling = 50.0
+                    lot_ceiling = min(HARD_MAX_INDEX_LOT, _AUTO_SETTINGS.max_index_lot)
                     mt5_lots = max(0.10, min(round(raw_calc_lots * 10) / 10, lot_ceiling))
                 elif is_oil:
                     # Petrol: replay'de doğrulanan muhafazakâr profil (0.50–1.0 lot; 2026-10-06).
@@ -8562,6 +8574,8 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             "max_positions_per_symbol": _AUTO_SETTINGS.max_positions_per_symbol,
             "max_forex_lot": _AUTO_SETTINGS.max_forex_lot,
             "max_gold_lot": _AUTO_SETTINGS.max_gold_lot,
+            "max_index_lot": _AUTO_SETTINGS.max_index_lot,
+            "flip_ignore_min_score": _AUTO_SETTINGS.flip_ignore_min_score,
             "gold_cooldown_sec": _AUTO_SETTINGS.gold_cooldown_sec,
             "atr_exit_enabled": _AUTO_SETTINGS.atr_exit_enabled,
             "partial_tp_enabled": _AUTO_SETTINGS.partial_tp_enabled,
@@ -8649,7 +8663,7 @@ async def send_mt5_order(req: MT5ManualOrderRequest):
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
     is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
     if is_index:
-        lot_cap = 50.0
+        lot_cap = min(HARD_MAX_INDEX_LOT, _AUTO_SETTINGS.max_index_lot)
         actual_lots = round(max(0.10, min(req.lots, lot_cap)), 2)
     elif is_oil:
         lot_cap = 1.0

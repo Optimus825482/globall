@@ -31,10 +31,11 @@ function getFlag(ev: CalendarEvent) {
   return FLAG_MAP[ev.country] || FLAG_MAP[ev.currency] || "🌐";
 }
 
-function formatTimeLocal(dateIso: string) {
+function formatUtc3Time(dateIso: string) {
   try {
     const d = new Date(dateIso);
-    return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+    const tr = new Date(d.getTime() + 3 * 3600 * 1000);
+    return `${String(tr.getUTCHours()).padStart(2, "0")}:${String(tr.getUTCMinutes()).padStart(2, "0")}`;
   } catch {
     return "--:--";
   }
@@ -43,9 +44,16 @@ function formatTimeLocal(dateIso: string) {
 function groupByDate(events: CalendarEvent[]) {
   const map = new Map<string, CalendarEvent[]>();
   for (const ev of events) {
-    const d = ev.date_iso ? ev.date_iso.slice(0, 10) : "Tarihsiz";
-    if (!map.has(d)) map.set(d, []);
-    map.get(d)!.push(ev);
+    let key = "Tarihsiz";
+    if (ev.date_iso) {
+      // UTC+3 gün anahtarı (saat dilimi tutarlılığı)
+      try {
+        const tr = new Date(new Date(ev.date_iso).getTime() + 3 * 3600 * 1000);
+        key = tr.toISOString().slice(0, 10);
+      } catch { /* Tarihsiz */ }
+    }
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(ev);
   }
   return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
@@ -289,7 +297,7 @@ export default function ForexCalendarPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-bunker-muted font-mono mt-1 flex-wrap">
-                          <span className="text-white/70 font-bold">{formatTimeLocal(ev.date_iso)}</span>
+                          <span className="text-white/70 font-bold">{formatUtc3Time(ev.date_iso)}</span>
                           <span>·</span>
                           <span>Önceki: {ev.previous || "—"}</span>
                           <span>·</span>

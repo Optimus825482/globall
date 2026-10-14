@@ -125,6 +125,36 @@ interface EconomicEvent {
   };
 }
 
+// Ekonomik takvim saatleri HER ZAMAN Türkiye saati (UTC+3) — kullanıcı kararı
+// 2026-10-14: "haberlerde saat olarak UTC+3'e göre yazsın".
+// Kaynak: olayın `date_iso` (UTC). Backend'in `date_str`i yedek olarak kalır.
+function formatUtc3Date(iso?: string, fallback: string = ""): string {
+  if (!iso) return fallback;
+  try {
+    const utcMs = new Date(iso).getTime();
+    if (!Number.isFinite(utcMs)) return fallback;
+    const TR_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const trMs = utcMs + TR_OFFSET_MS;
+    const tr = new Date(trMs);
+    const nowTr = new Date(Date.now() + TR_OFFSET_MS);
+    const hh = String(tr.getUTCHours()).padStart(2, "0");
+    const mm = String(tr.getUTCMinutes()).padStart(2, "0");
+    const time = `${hh}:${mm}`;
+    const daysTr = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+    const monthsTr = ["", "Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+    const dayDiff = Math.round(
+      (Date.UTC(tr.getUTCFullYear(), tr.getUTCMonth(), tr.getUTCDate()) -
+        Date.UTC(nowTr.getUTCFullYear(), nowTr.getUTCMonth(), nowTr.getUTCDate())) / 86400000
+    );
+    if (dayDiff === 0) return `Bugün ${time}`;
+    if (dayDiff === 1) return `Yarın ${time}`;
+    if (dayDiff === -1) return `Dün ${time}`;
+    return `${tr.getUTCDate()} ${monthsTr[tr.getUTCMonth() + 1]} (${daysTr[(tr.getUTCDay() + 6) % 7]}) ${time}`;
+  } catch {
+    return fallback;
+  }
+}
+
 function formatPrice(v?: number | null, symbol: string = ""): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return "—";
   const s = symbol.toUpperCase();
@@ -1375,7 +1405,7 @@ export default function HomePage() {
                                 </span>
                               )}
                               <span className="text-[10px] text-slate-700 dark:text-slate-300 font-mono bg-slate-100 dark:bg-bunker-950 px-1.5 py-0.5 rounded border border-slate-200 dark:border-bunker-800 font-bold">
-                                ⏰ {item.date_str}
+                                ⏰ {formatUtc3Date(item.date_iso, item.date_str)}
                               </span>
                               <span
                                 className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
@@ -1532,7 +1562,7 @@ export default function HomePage() {
                                 </span>
                               )}
                               <span className="text-[10px] text-slate-900 dark:text-cyan-300 font-mono font-bold bg-slate-100 dark:bg-bunker-950 px-1.5 py-0.5 rounded border border-slate-200 dark:border-bunker-800">
-                                ⏰ {item.date_str}
+                                ⏰ {formatUtc3Date(item.date_iso, item.date_str)}
                               </span>
                               <span
                                 className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
@@ -1558,7 +1588,7 @@ export default function HomePage() {
                           <div className="shrink-0 flex items-center gap-1">
                             <EventCountdownBadge
                               dateIso={item.date_iso}
-                              dateStr={item.date_str}
+                              dateStr={formatUtc3Date(item.date_iso, item.date_str)}
                               status={item.status}
                               isPassed={item.is_passed}
                               nowSec={nowSec}
@@ -1683,11 +1713,11 @@ export default function HomePage() {
                     {selectedEvent.impact_label || ((selectedEvent.stars || 2) === 3 ? "⭐⭐⭐ YÜKSEK (3 Yıldız)" : "⭐⭐ ORTA (2 Yıldız)")}
                   </span>
                   <span className="text-xs text-cyan-800 dark:text-cyan-400 font-bold">
-                    ⏰ {selectedEvent.date_str}
+                    ⏰ {formatUtc3Date(selectedEvent.date_iso, selectedEvent.date_str)}
                   </span>
                   <EventCountdownBadge
                     dateIso={selectedEvent.date_iso}
-                    dateStr={selectedEvent.date_str}
+                    dateStr={formatUtc3Date(selectedEvent.date_iso, selectedEvent.date_str)}
                     status={selectedEvent.status}
                     isPassed={selectedEvent.is_passed}
                     nowSec={nowSec}
