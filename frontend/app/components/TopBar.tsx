@@ -18,8 +18,8 @@ const labels: Record<string, string> = {
   "/forex/btc-gold": "BTC + Altın Konsolu",
   "/forex/islemler": "Forex İşlemler",
   "/forex/portfolio": "Forex Portföy",
+  // 2026-10-14: "Teknik Grafik" sayfası Grafik ile birleşti; ayrı etiket kalktı.
   "/forex/charts": "Forex Grafik",
-  "/forex/technical-charts": "Forex 4'lü Grafik",
   "/forex/reports": "Forex Raporlar",
   "/forex/calendar": "Ekonomik Takvim",
   "/forex/ayarlar": "Forex Ayarları",

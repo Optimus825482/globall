@@ -2758,6 +2758,31 @@ def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[Li
     return bars[-limit:]
 
 
+def _resample_bars(bars: List[Dict[str, Any]], bucket_sec: int) -> List[Dict[str, Any]]:
+    """Barları `bucket_sec` saniyelik kovalara birleştirir (open ilk, high max,
+    low min, close son, volume toplam). Zaman damgası kovanın başıdır.
+
+    2026-10-14: "3m" için Yahoo 1m → 180 sn; "4h" için 60m → 14400 sn. Yahoo M3
+    barı vermediği ve anahtarı `interval_map`'e eklemek tek başına YETMEDİĞİ için
+    bu yardımcı ayrıldı (eskiden 4h mantığı gövdeye gömülüydü)."""
+    groups: Dict[int, List[Dict[str, Any]]] = {}
+    for b in bars:
+        bucket = (int(b["time"]) // bucket_sec) * bucket_sec
+        groups.setdefault(bucket, []).append(b)
+    out: List[Dict[str, Any]] = []
+    for bucket in sorted(groups.keys()):
+        gbars = groups[bucket]
+        out.append({
+            "time": bucket,
+            "open": gbars[0]["open"],
+            "high": max(x["high"] for x in gbars),
+            "low": min(x["low"] for x in gbars),
+            "close": gbars[-1]["close"],
+            "volume": sum(x.get("volume", 0) for x in gbars),
+        })
+    return out
+
+
 
 def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
     clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
@@ -2799,6 +2824,11 @@ def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> 
 
     interval_map = {
         "1m": ("1m", "2d"),
+        # 2026-10-14: "3m" eklendi. Yahoo'da M3 barı YOK; 1m çekilip 180 sn'lik
+        # kovalara birleştirilir (aşağıdaki resample bloğu). Bu satır olmadan
+        # anahtar varsayılana düşer ve 3m isteği sessizce "5m barları 3m sanılır"
+        # hâline gelirdi — eksen 3 dakika der, veri 5 dakikadır.
+        "3m": ("1m", "7d"),
         "5m": ("5m", "5d"),
         "15m": ("15m", "10d"),
         "30m": ("30m", "20d"),
@@ -2852,25 +2882,12 @@ def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> 
         except Exception:
             continue
 
-    if interval in ("4h", "240m") and bars:
-        resampled = []
-        groups: Dict[int, List[Dict[str, Any]]] = {}
-        for b in bars:
-            bucket = (b["time"] // 14400) * 14400
-            if bucket not in groups:
-                groups[bucket] = []
-            groups[bucket].append(b)
-        for bucket in sorted(groups.keys()):
-            gbars = groups[bucket]
-            resampled.append({
-                "time": bucket,
-                "open": gbars[0]["open"],
-                "high": max(x["high"] for x in gbars),
-                "low": min(x["low"] for x in gbars),
-                "close": gbars[-1]["close"],
-                "volume": sum(x.get("volume", 0) for x in gbars),
-            })
-        bars = resampled
+    # Yahoo'nun vermediği periyotları kaynak periyottan türet.
+    #   3m  ← 1m barı 180 sn'lik kovalara birleştirir
+    #   4h  ← 60m barı 14400 sn'lik kovalara birleştirir
+    _bucket_sec = {"3m": 180, "4h": 14400, "240m": 14400}.get(interval)
+    if _bucket_sec and bars:
+        bars = _resample_bars(bars, _bucket_sec)
 
     if bars:
         live_tick = _LIVE_PRICES_CACHE.get(clean_sym)

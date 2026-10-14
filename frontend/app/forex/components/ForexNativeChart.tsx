@@ -32,10 +32,12 @@ import { uid as newUid } from "../../charts/chartShared";
 const IndicatorPicker = dynamic(() => import("../../charts/IndicatorPicker").then((m) => m.default), { ssr: false });
 const IndicatorSettings = dynamic(() => import("../../charts/IndicatorSettings"), { ssr: false });
 
-export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+// 2026-10-14: "3m" eklendi — grafik sayfası TF seti 1-3-5-15-30-H1-H4-D1 ile hizalandı.
+export type Timeframe = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
 const TF_SECONDS: Record<Timeframe, number> = {
   "1m": 60,
+  "3m": 180,
   "5m": 300,
   "15m": 900,
   "30m": 1800,
@@ -943,7 +945,7 @@ export default function ForexNativeChart({
         <div className="flex items-center gap-1">
           {/* Kompakt modda periyot seçici gizli: MetaMobil araç çubuğunda zaten var. */}
           {!compact && <span className="text-[10px] text-bunker-muted mr-1">Periyot:</span>}
-          {!compact && (["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as Timeframe[]).map((tf) => (
+          {!compact && (["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"] as Timeframe[]).map((tf) => (
             <button
               key={tf}
               type="button"

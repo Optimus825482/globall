@@ -944,8 +944,8 @@ export default function ForexReportsPage() {
           </Link>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/forex/technical-charts" className="hover:text-blue-400 transition-colors">
-            4'lü TradingView Çoklu Ekran →
+          <Link href="/forex/charts" className="hover:text-blue-400 transition-colors">
+            Grafik Ekranı (1 / 2 / 4) →
           </Link>
         </div>
       </div>

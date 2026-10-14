@@ -10,12 +10,15 @@ export const FALLBACK_SYMBOLS = [
     "EURUSD", "XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "NAS100", "US30",
     "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "BTCTRY", "ETHTRY"
 ];
+// 2026-10-14: "3m" eklendi — grafik sayfasındaki TF seti (1-3-5-15-30-H1-H4-D1)
+// ile tek kaynak olması için. Etiketler de o setin etiketleriyle hizalandı.
 export const INTERVALS = [
-    { v: "1m", l: "1M" }, { v: "5m", l: "5M" }, { v: "15m", l: "15M" },
-    { v: "30m", l: "M30" }, { v: "1h", l: "1H" }, { v: "4h", l: "4H" }, { v: "1d", l: "D1" }
+    { v: "1m", l: "1m" }, { v: "3m", l: "3m" }, { v: "5m", l: "5m" },
+    { v: "15m", l: "15m" }, { v: "30m", l: "30m" }, { v: "1h", l: "H1" },
+    { v: "4h", l: "H4" }, { v: "1d", l: "D1" }
 ];
 export const INTERVAL_MS: Record<string, number> = {
-    "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
     "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000
 };
 export const PALETTE = ["#10b981", "#3b82f6", "#f59e0b", "#a855f7", "#ec4899", "#06b6d4", "#84cc16", "#f97316"];

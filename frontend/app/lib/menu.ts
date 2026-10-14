@@ -41,8 +41,9 @@ export const MENU_GROUPS: MenuGroup[] = [
       { href: "/metamobil", label: "MetaMobil", icon: "📱", desc: "MetaTrader 5 mobil arayüz kopyası (Kotasyonlar, Grafik, Ticaret & Geçmiş)" },
       { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
-      { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Tekli detaylı parite grafiği", alsoActive: ["/charts"] },
-      { href: "/forex/technical-charts", label: "Teknik Grafik", icon: "🖥️", desc: "4'lü çoklu Forex ekranı", alsoActive: ["/technical-charts"] },
+      // 2026-10-14: "Grafik" ve "Teknik Grafik" TEK sayfada birleşti. Tek giriş
+      // kalır; eski iki rota da bu sayfaya düşer (`alsoActive`).
+      { href: "/forex/charts", label: "Grafik", icon: "📈", desc: "Birleşik grafik ekranı: 1/2/4 grafik, MA7-MA20-MA99, MACD, RSI-ADX", alsoActive: ["/charts", "/forex/technical-charts", "/technical-charts"] },
       { href: "/chat", label: "Forex Chat", icon: "💬", desc: "Makroekonomi ve FX uzman AI asistanı" },
       { href: "/forex/islemler", label: "Forex İşlemler", icon: "🧾", desc: "Kapanan ve açık işlemlerin detaylı listesi, tek tek işlem geçmişi" },
       { href: "/forex/reports", label: "Raporlar", icon: "📋", desc: "Detaylı işlem geçmişi ve analiz raporları" },

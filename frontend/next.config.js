@@ -24,6 +24,15 @@ const nextConfig = {
   // doğrula); /_next/static hash'li asset'leri zaten content-hash'li olduğu
   // için immutable kalır; HTML dokümanları no-cache. Böylece ?v=<BUILD_ID>
   // değiştiğinde tarayıcı yeni SW + yeni JS alır, bayat shell kalmaz.
+  // 2026-10-14: "Grafik" ve "Teknik Grafik" TEK sayfada birleşti. Eski iki rota
+  // silindi; kullanıcının yer imleri ve tarayıcı geçmişi kırılmasın diye
+  // birleşik sayfaya yönlendirilir. `permanent: false` (307) bilinçli: kalıcı
+  // yönlendirme tarayıcıda sonsuza kadar önbelleklenir ve geri alınamaz.
+  // Sorgu parametreleri (`?symbol=XAUUSD`) yönlendirmede korunur.
+  redirects: async () => [
+    { source: "/technical-charts", destination: "/forex/charts", permanent: false },
+    { source: "/forex/technical-charts", destination: "/forex/charts", permanent: false },
+  ],
   headers: async () => [
     {
       source: "/sw.js",

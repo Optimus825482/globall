@@ -972,6 +972,42 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._FOREX_VIEWED.update(saved_viewed)
             forex._AUTO_SETTINGS.s3_enabled = saved_enabled
 
+    def test_resample_bars_m3_from_1m(self):
+        """2026-10-14: "3m" isteği sessizce 5m barları döndürmemeli.
+
+        Yahoo M3 barı VERMEZ; `interval_map["3m"] = ("1m", "7d")` ile 1m çekilip
+        `_resample_bars(bars, 180)` ile birleştirilir. Bu test hem birleştirmenin
+        open/high/low/close kuralını hem de kova genişliğinin 180 sn olduğunu
+        (300 değil) kilitler — yanlış genişlik seçilirse grafik ekseni 3 dk der,
+        veri 5 dk olur.
+        """
+        base = 720  # 720 = 12×60 → 180'e tam hizalı (gerçek 1m zaman damgaları da öyle)
+        bars1 = [{"time": base + i * 60, "open": float(i), "high": float(i) + 1.0,
+                  "low": float(i) - 1.0, "close": float(i) + 0.5, "volume": 1.0}
+                 for i in range(6)]
+        out = forex._resample_bars(bars1, 180)
+        self.assertEqual(len(out), 2, "1m×6 → 3m×2 olmalı")
+        self.assertEqual([b["time"] for b in out], [base, base + 180])
+        self.assertEqual(out[0]["open"], 0.0)
+        self.assertEqual(out[0]["high"], 3.0)
+        self.assertEqual(out[0]["low"], -1.0)
+        self.assertEqual(out[0]["close"], 2.5)
+        self.assertEqual(out[0]["volume"], 3.0)
+        # Hizalı OLMAYAN seride kova 180'in katına yuvarlanır (serinin başındaki
+        # yarım kova kırpılır; canlıda yalnız son `limit` bar döndüğü için kenar
+        # kaybı görünmez, ama davranış sözleşme olarak burada kilitlenir).
+        off = forex._resample_bars(
+            [{"time": 1000 + i * 60, "open": 1.0, "high": 1.0, "low": 1.0,
+              "close": 1.0, "volume": 1.0} for i in range(6)], 180)
+        self.assertEqual([b["time"] for b in off], [900, 1080, 1260])
+
+    def test_resample_map_covers_3m_and_4h(self):
+        """`interval_map` 3m'i 1m kaynağına bağlamalı; 4h resample'ı bozulmamalı."""
+        import inspect
+        src = inspect.getsource(forex._fetch_forex_klines)
+        self.assertIn('"3m": ("1m", "7d")', src.replace("'", '"'))
+        self.assertIn('_bucket_sec = {"3m": 180, "4h": 14400, "240m": 14400}', src)
+
     def test_s3_resample_15m(self):
         """5m→15m birleştirme: open ilk, high max, low min, close son."""
         bars5 = [{"time": 1000 + i * 300, "open": float(i), "high": float(i) + 1.0,

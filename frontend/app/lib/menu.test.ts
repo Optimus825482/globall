@@ -78,13 +78,22 @@ describe("menu — rol görünürlüğü", () => {
       "/forex/btc-gold",
       "/forex",
       "/forex/charts",
-      "/forex/technical-charts",
       "/chat",
       "/forex/islemler",
       "/forex/reports",
       "/settings",
     ];
     expect(items).toEqual(expectedOrder);
+  });
+
+  it("2026-10-14: Grafik ve Teknik Grafik TEK menü öğesinde birleşti", () => {
+    // Kullanıcı iki ayrı grafik sayfasının tek sayfada birleşmesini istedi;
+    // menüde tek "Grafik" girişi kalır, eski rota `alsoActive` ile aynı
+    // sayfayı aydınlatır (link kırılmaz, ama ikinci bir satır açılmaz).
+    expect(hrefs).toContain("/forex/charts");
+    expect(hrefs).not.toContain("/forex/technical-charts");
+    const grafik = allItems.find((i) => i.href === "/forex/charts");
+    expect(grafik?.alsoActive ?? []).toContain("/forex/technical-charts");
   });
 
   it("2026-10-13: Forex İşlemler kendi menü öğesidir (Raporlar'a gizlenmez)", () => {

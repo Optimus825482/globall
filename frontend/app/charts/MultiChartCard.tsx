@@ -17,6 +17,12 @@ import { formatPrice, pricePrecision } from "../lib/format";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 
 export interface ChartIndicators {
+    // Hareketli ortalamalar (2026-10-14 kullanıcı isteği): MA7/MA20/MA99
+    // varsayılan AÇIK ve renkleri sabit — MA7 turuncu, MA20 mavi, MA99 mor.
+    // Bunlar SMA'dır (kullanıcı "MA" dedi, "EMA" değil).
+    ma7: boolean;
+    ma20: boolean;
+    ma99: boolean;
     // EMAs
     ema9: boolean;
     ema21: boolean;
@@ -53,18 +59,28 @@ interface MultiChartCardProps {
     isMaximized: boolean;
     onToggleMaximize: () => void;
     onUpdateConfig: (updated: Partial<MultiChartConfig>) => void;
+    /** Görünen sıra (1'den başlar). Kart içi kimlik artık budur — slot id 1..4 sabit kalsa da
+     *  2 grafik seçildiğinde kullanıcı "Grafik 1 / Grafik 2" görür. */
+    ordinal: number;
 }
 
+// Zaman dilimleri — kullanıcı etiketi 1-3-5-15-30-H1-H4-D1 (2026-10-14 isteği).
 const INTERVALS = [
-    { v: "1m",  l: "1D" },
-    { v: "3m",  l: "3D" },
-    { v: "5m",  l: "5D" },
-    { v: "15m", l: "15D" },
-    { v: "30m", l: "30D" },
-    { v: "1h",  l: "1S" },
-    { v: "4h",  l: "4S" },
-    { v: "1d",  l: "1G" },
+    { v: "1m",  l: "1m" },
+    { v: "3m",  l: "3m" },
+    { v: "5m",  l: "5m" },
+    { v: "15m", l: "15m" },
+    { v: "30m", l: "30m" },
+    { v: "1h",  l: "H1" },
+    { v: "4h",  l: "H4" },
+    { v: "1d",  l: "D1" },
 ];
+
+/** Sayfa üstündeki toplu TF seçici de aynı listeyi okur (tek kaynak). */
+export const CHART_INTERVALS = INTERVALS;
+
+/** MA renkleri — kullanıcı isteğiyle SABİT: MA7 turuncu, MA20 mavi, MA99 mor. */
+export const MA_COLORS = { ma7: "#f59e0b", ma20: "#3b82f6", ma99: "#a855f7" } as const;
 
 const INTERVAL_MS: Record<string, number> = {
     "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
@@ -342,6 +358,10 @@ interface IndicatorDef {
 }
 
 const INDICATOR_DEFS: IndicatorDef[] = [
+    // MA7 / MA20 / MA99 — varsayılan AÇIK, renkleri sabit
+    { key: "ma7",       label: "MA 7 (Turuncu)",     color: "text-amber-400",  dotColor: "bg-amber-500",  category: "MA Ribbon", overlay: true  },
+    { key: "ma20",      label: "MA 20 (Mavi)",       color: "text-blue-400",   dotColor: "bg-blue-500",   category: "MA Ribbon", overlay: true  },
+    { key: "ma99",      label: "MA 99 (Mor)",        color: "text-purple-400", dotColor: "bg-purple-500", category: "MA Ribbon", overlay: true  },
     // EMAs
     { key: "ema9",       label: "EMA 9 (Kısa)",      color: "text-blue-400",   dotColor: "bg-blue-500",   category: "EMA Ribbon", overlay: true  },
     { key: "ema21",      label: "EMA 21 (Orta)",      color: "text-emerald-400",dotColor: "bg-emerald-500",category: "EMA Ribbon", overlay: true  },
@@ -367,7 +387,7 @@ const INDICATOR_DEFS: IndicatorDef[] = [
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function MultiChartCard({ config, availableSymbols, isMaximized, onToggleMaximize, onUpdateConfig }: MultiChartCardProps) {
+export default function MultiChartCard({ config, availableSymbols, isMaximized, onToggleMaximize, onUpdateConfig, ordinal }: MultiChartCardProps) {
     const cardRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
@@ -547,6 +567,30 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         seriesMapRef.current.clear();
         const ind = config.indicators;
         let subpane = 1;
+
+        // ── Overlay: MA7 / MA20 / MA99 (SMA) ─────────────────────────────────
+        // Renkler sabit (MA_COLORS): MA7 turuncu, MA20 mavi, MA99 mor.
+        if (ind.ma7) {
+            const d = calcSMA(bars, 7);
+            if (d.length) {
+                const s = chart.addSeries(LineSeries, { color: MA_COLORS.ma7, lineWidth: 1, title: "MA7", priceLineVisible: false });
+                s.setData(d); seriesMapRef.current.set("ma7", s);
+            }
+        }
+        if (ind.ma20) {
+            const d = calcSMA(bars, 20);
+            if (d.length) {
+                const s = chart.addSeries(LineSeries, { color: MA_COLORS.ma20, lineWidth: 1, title: "MA20", priceLineVisible: false });
+                s.setData(d); seriesMapRef.current.set("ma20", s);
+            }
+        }
+        if (ind.ma99) {
+            const d = calcSMA(bars, 99);
+            if (d.length) {
+                const s = chart.addSeries(LineSeries, { color: MA_COLORS.ma99, lineWidth: 2, title: "MA99", priceLineVisible: false });
+                s.setData(d); seriesMapRef.current.set("ma99", s);
+            }
+        }
 
         // ── Overlay: EMAs ────────────────────────────────────────────────────
         if (ind.ema9)   { const d = calcEMA(bars, 9);   if (d.length) { const s = chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 1, title: "EMA9",   priceLineVisible: false }); s.setData(d); seriesMapRef.current.set("ema9", s); } }
@@ -742,7 +786,9 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
             <div className={`flex flex-wrap items-center justify-between gap-1.5 px-3 py-2 border-b shrink-0 text-xs ${isDark ? "bg-bunker-900/90 border-bunker-800" : "bg-gray-50 border-gray-200"}`}>
                 {/* Left: ID + Symbol */}
                 <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-neon-green/15 text-neon-green border border-neon-green/30 shrink-0">#{config.id}</span>
+                    {/* Sıra numarası: çok grafikte 1'den başlar (slot id'si değil,
+                        GÖRÜNEN sıra — 2 grafik seçilince 1·2, 4 grafikte 1·2·3·4). */}
+                    <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-neon-green/15 text-neon-green border border-neon-green/30 shrink-0">{ordinal}</span>
                     <div className="relative">
                         <button type="button" onClick={() => { setSymbolSearchOpen(v => !v); setIndicatorMenuOpen(false); }}
                             className="flex items-center gap-1 px-2 py-1 rounded-md bg-bunker-800/80 hover:bg-bunker-700/80 border border-bunker-700 text-white font-mono font-bold text-xs transition-colors">
@@ -869,11 +915,11 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                 </div>
                                 {/* Quick Presets */}
                                 <div className="mt-2 pt-2 border-t border-bunker-800 flex flex-wrap gap-1.5">
-                                    <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ema9: true, ema21: true, volume: true } })}
+                                    <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, volume: true } })}
                                         className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Temel</button>
-                                    <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ema9: true, ema21: true, ema50: true, bollinger: true, rsi: true, volume: true } })}
+                                    <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, ema50: true, bollinger: true, rsi: true, volume: true } })}
                                         className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Orta</button>
-                                    <button type="button" onClick={() => onUpdateConfig({ indicators: { ema9: true, ema21: true, ema50: true, ema200: true, bollinger: true, vwap: true, volume: true, rsi: true, macd: true, stochastic: false, williamsR: false, cci: false, atr: false, supertrend: false, obv: false, mfi: false } })}
+                                    <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, ema50: true, ema200: true, bollinger: true, vwap: true, volume: true, rsi: true, macd: true } })}
                                         className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Pro</button>
                                     <button type="button" onClick={() => onUpdateConfig({ indicators: Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any })}
                                         className="px-2 py-0.5 rounded text-[10px] font-mono bg-neon-red/10 hover:bg-neon-red/20 border border-neon-red/30 text-neon-red transition-colors">Temizle</button>
@@ -932,16 +978,20 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                         <span>Y: <strong className="text-neon-green">{formatPrice(hoverLegend.high)}</strong></span>
                         <span>D: <strong className="text-neon-red">{formatPrice(hoverLegend.low)}</strong></span>
                         <span>K: <strong className="text-white">{formatPrice(hoverLegend.close)}</strong></span>
-                    </>) : (<>
-                        {priceData && <span>Son: <strong className="text-white">{formatPrice(priceData.last)}</strong></span>}
-                        {/* RSI-14 / ADX-14: seçili TF'nin son mumlarından, her veri tazelemesinde güncellenir */}
-                        {momentum?.rsi14 != null && (
-                            <span>RSI-14: <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>
-                        )}
-                        {momentum?.adx14 != null && (
-                            <span>ADX-14: <strong className={momentum.adx14 >= 25 ? "text-neon-green" : momentum.adx14 >= 20 ? "text-yellow-300" : "text-bunker-muted"}>{momentum.adx14.toFixed(1)}</strong></span>
-                        )}
-                    </>)}
+                    </>) : (
+                        priceData ? <span>Son: <strong className="text-white">{formatPrice(priceData.last)}</strong></span> : null
+                    )}
+                    {/* RSI-14 / ADX-14 — KULLANICI İSTEĞİ (2026-10-14): bu değerler
+                        grafiğin üstünde VARSAYILAN yazılı olmalı. Eskiden yalnız
+                        imleç grafiğin üstünde DEĞİLKEN görünüyorlardı; fareyle
+                        üzerine gelindiğinde kaybolmaları "yok" izlenimi veriyordu.
+                        Artık OHLC satırından bağımsız, her zaman buradalar. */}
+                    {momentum?.rsi14 != null && (
+                        <span>RSI-14: <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>
+                    )}
+                    {momentum?.adx14 != null && (
+                        <span>ADX-14: <strong className={momentum.adx14 >= 25 ? "text-neon-green" : momentum.adx14 >= 20 ? "text-yellow-300" : "text-bunker-muted"}>{momentum.adx14.toFixed(1)}</strong></span>
+                    )}
                 </div>
                 <div ref={containerRef} className="w-full h-full" />
                 {loading && (

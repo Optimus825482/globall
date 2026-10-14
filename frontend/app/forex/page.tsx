@@ -568,25 +568,18 @@ export default function ForexRadarPage() {
           </div>
           <div className="text-[11px] text-bunker-muted font-mono">Tüm Giriş/Çıkış &amp; CSV</div>
         </Link>
-        <Link
-          href="/forex/technical-charts"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">🖥️</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            4'lü Grafik
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Çoklu TradingView</div>
-        </Link>
+        {/* 2026-10-14: "4'lü Grafik" ve "Tekli Grafik" kartları TEK karta birleşti
+            (kullanıcı isteği). Tek giriş /forex/charts; grafik sayısı sayfa içindeki
+            1/2/4 seçicisinden ayarlanır. */}
         <Link
           href="/forex/charts"
           className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group"
         >
           <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📈</div>
           <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            Tekli Grafik
+            Grafik
           </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Detaylı İnceleme</div>
+          <div className="text-[11px] text-bunker-muted font-mono">1 / 2 / 4 Ekran · MA · MACD</div>
         </Link>
         <Link
           href="/forex/calendar"

@@ -74,6 +74,11 @@ _CANDLE_TICK = 0
 
 MT5_TIMEFRAMES = {
     "1m": mt5.TIMEFRAME_M1,
+    # 2026-10-14: grafik sayfasının TF seti 1-3-5-15-30-H1-H4-D1 oldu; köprü de
+    # M3 push edebilsin diye eklendi. Bu olmadan panel 3m istediğinde
+    # `fetch_watch_candles` anahtarı tanımaz ve çift sessizce atlanır → grafik
+    # broker yerine Yahoo'ya düşerdi.
+    "3m": mt5.TIMEFRAME_M3,
     "5m": mt5.TIMEFRAME_M5,
     "15m": mt5.TIMEFRAME_M15,
     "30m": mt5.TIMEFRAME_M30,

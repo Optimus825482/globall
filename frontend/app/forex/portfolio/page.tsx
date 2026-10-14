@@ -1479,8 +1479,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             📊 Tüm İşlem Raporları & CSV İndir →
           </Link>
         </div>
-        <Link href="/forex/technical-charts" className="hover:text-blue-400 transition-colors">
-          4'lü TradingView Çoklu Ekran →
+        <Link href="/forex/charts" className="hover:text-blue-400 transition-colors">
+          Grafik Ekranı (1 / 2 / 4) →
         </Link>
       </div>
     </div>

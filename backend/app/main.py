@@ -1705,6 +1705,27 @@ _market_klines_cache: dict[str, tuple[float, list]] = {}
 _market_klines_inflight: dict[str, asyncio.Future] = {}
 _MARKET_KLINES_CACHE_TTL_SEC = 12.0
 
+# Grafik panelinin gördüğü çift, köprünün `candle_watch` listesine de yazılmalı.
+# Eskiden yalnız `ws_live_candles.note_viewed` çağrılıyordu; köprü listesi
+# (`forex._note_forex_viewed`) ise SADECE `/api/forex/klines` ucundan besleniyordu.
+# Sonuç: `/api/market-klines` kullanan 4'lü grafik ızgarası açılan çifti köprüye
+# HİÇ bildirmiyordu → o çift için broker mumu çekilmiyor, grafik gecikmeli
+# Yahoo (vadeli) serisine düşüyor ve canlı tick yaması baz-farkı kapısından
+# geçmediği için "anlık güncellenmiyor" görünüyordu (2026-10-14, bkz. tekli
+# sayfanın birleşik sayfaya taşınması). Şimdi iki kayıt birlikte yapılır.
+def _note_candle_viewed(symbol: str, interval: str) -> None:
+    try:
+        from app.ws_live_candles import note_viewed
+        note_viewed(symbol, interval)
+    except Exception:
+        pass
+    try:
+        from app.routers.forex import _note_forex_viewed
+        _note_forex_viewed(symbol, interval)
+    except Exception:
+        pass
+
+
 @app.get("/api/market-klines/{symbol}")
 async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200):
     """Single public market-data adapter used by all UI candle consumers.
@@ -1723,11 +1744,7 @@ async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200)
     # 1. Hızlı mikro RAM önbelleği
     cached = _market_klines_cache.get(cache_key)
     if cached and now < cached[0]:
-        try:
-            from app.ws_live_candles import note_viewed
-            note_viewed(clean_sym, interval)
-        except Exception:
-            pass
+        _note_candle_viewed(clean_sym, interval)
         return {
             "symbol": clean_sym,
             "interval": interval,
@@ -1740,11 +1757,7 @@ async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200)
     if future is not None:
         try:
             rows = await asyncio.shield(future)
-            try:
-                from app.ws_live_candles import note_viewed
-                note_viewed(clean_sym, interval)
-            except Exception:
-                pass
+            _note_candle_viewed(clean_sym, interval)
             return {
                 "symbol": clean_sym,
                 "interval": interval,
@@ -1782,8 +1795,7 @@ async def get_market_klines(symbol: str, interval: str = "5m", limit: int = 200)
         _market_klines_inflight.pop(cache_key, None)
 
     try:
-        from app.ws_live_candles import note_viewed
-        note_viewed(clean_sym, interval)
+        _note_candle_viewed(clean_sym, interval)
     except Exception as exc:
         logger.debug("canlı mum aboneliği kaydedilemedi: %s", exc)
 

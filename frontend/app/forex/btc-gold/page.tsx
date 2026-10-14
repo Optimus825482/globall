@@ -2284,8 +2284,8 @@ export default function BtcGoldForexPage() {
             Tüm Pariteler Portföy Konsolu
           </Link>
         </div>
-        <Link href="/forex/technical-charts" className="hover:text-amber-400 transition-colors">
-          4'lü TradingView Ekranı →
+        <Link href="/forex/charts" className="hover:text-amber-400 transition-colors">
+          Grafik Ekranı (1 / 2 / 4) →
         </Link>
       </div>
     </div>
