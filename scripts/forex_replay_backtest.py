@@ -173,6 +173,10 @@ TUN_INDEX_HOURS = None        # (başlangıç_dk, bitiş_dk) UTC dakika aralığ
 TUN_INDEX_OPEN_DRIVE = False  # ABD açılışının ilk 5m mumu yönü 13:35-15:00 arası yön teyidi olarak zorunlu (Zarattini-Aziz 2023)
 
 TUN_CHANDLIER = 0.0         # >0: trailing = MFE − chandelier×ATR(giriş) (0 = sabit pip trail)
+TUN_CHAND_INDEP = False     # 2026-10-14 Kol C: chandelier kapısını BE kilidinden BAĞIMSIZLAŞTIR
+                            # (MFE > mult×giriş ATR'si olur olmaz kur). Kapalıyken davranış birebir eski hâli.
+TUN_BE_ATR_GOLD = 0.0       # 2026-10-14: XAUUSD'ye özel BE tetik tabanı (× giriş ATR'si; 0 = kapalı)
+TUN_BE_ATR_CRYPTO = 0.0     # 2026-10-14: BTCUSD/ETHUSD'ye özel BE tetik tabanı (× giriş ATR'si; 0 = kapalı)
 TUN_MAJOR_HOURS = None      # (başlangıç, biti) UTC saat aralığı — majörler yalnız bu pencerede (None = kapalı)
 TUN_MAJOR_MIN_ATR = 0.0     # majörler minimum ATR(pips) — ölü piyasa filtresi (0 = kapalı)
 TUN_MAJOR_MAX_EXT = 0.0     # majörlerde fiyatın EMA21'den maks. ATR-katı uzaması — kovalamama (0 = kapalı)
@@ -1967,6 +1971,13 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     if not TUN_NO_BE and not pos.be_locked and not dca_mode:
         is_dollar_be = pnl_extreme_pips >= (be_trigger_pips + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
+        # 2026-10-14: AİLE-ÖZEL ATR TABANI — canlı `be_trigger_atr_mult_gold/crypto` ile aynı.
+        # Tetik `fired` olsa bile bu tabanın ALTINDA kilitlenmez ("BTC ve XAU'da erken tetiklenmesin").
+        _fam_mult = (
+            TUN_BE_ATR_GOLD if is_gold_pos
+            else (TUN_BE_ATR_CRYPTO if ("BTC" in pos.symbol.upper() or "ETH" in pos.symbol.upper()) else 0.0)
+        )
+        _fam_floor = (_fam_mult * pos.entry_atr_pips) if (_fam_mult > 0 and pos.entry_atr_pips > 0) else 0.0
         if TUN_BE_TRIGGER == "union":
             fired = is_dollar_be or is_pip_be
         else:
@@ -1988,6 +1999,8 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
             else:                                   # "dollar" — $1+hurdle VE eff_be (max)
                 min_trigger = max(dollar_t, pip_t)
             fired = pnl_extreme_pips >= min_trigger
+        if fired and _fam_floor > 0 and pnl_extreme_pips < _fam_floor:
+            fired = False
         if fired and pnl_extreme_pips >= min_be_pips:
             locked = max(pips_be, round(pnl_extreme_pips * lock_ratio, 1))
             if direction == "BUY":
@@ -2022,7 +2035,14 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
             pos.be_locked = True
 
     # (4) Trailing (BE sonrası): chandelier (MFE − mult×ATR_giriş) veya sabit pip trail — sepet üyesinde atlanır
-    if pos.be_locked and not dca_mode:
+    # 2026-10-14 (Kol C — --chand-indep-gate): kapıyı BE kilidinden bağımsızlaştırır.
+    # Açıkken chandelier, MFE > mult×giriş ATR'si olur olmaz kurulur (BE beklemez). Kapalıyken
+    # koşul birebir `pos.be_locked` kalır → mevcut kalibrasyon bozulmaz.
+    _chand_indep_armed = (
+        TUN_CHAND_INDEP and chandelier_mult > 0 and pos.entry_atr_pips > 0
+        and pos.mfe_pips > chandelier_mult * pos.entry_atr_pips
+    )
+    if (pos.be_locked or _chand_indep_armed) and not dca_mode:
         pips_1usd_now = max(0.5, round(1.0 / max(0.0001, pos.lots * pos.pip_val), 1))
         if chandelier_mult > 0 and pos.entry_atr_pips > 0:
             # Volatilite-adaptif: kâr tepesinden volatilite nefes payı kadar geri ver
@@ -3734,6 +3754,9 @@ def main():
     parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
     parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
+    parser.add_argument("--chand-indep-gate", action="store_true", help="2026-10-14 Kol C: chandelier kapısını BE kilidinden bağımsızlaştır (MFE > mult×giriş ATR'si olur olmaz kur). Kapalı = mevcut davranış.")
+    parser.add_argument("--be-trigger-atr-gold", type=float, default=0.0, help="XAUUSD'ye özel BE tetik tabanı (× giriş ATR'si; 0 = kapalı). Canlı `be_trigger_atr_mult_gold` ile aynı.")
+    parser.add_argument("--be-trigger-atr-crypto", type=float, default=0.0, help="BTCUSD/ETHUSD'ye özel BE tetik tabanı (× giriş ATR'si; 0 = kapalı). Canlı `be_trigger_atr_mult_crypto` ile aynı.")
     parser.add_argument("--st-flip-exit", action="store_true", help="Açık pozisyonda 5M SuperTrend yönü ters dönünce bar kapanışında kapat (MOMFLIP — erken trend-dönüş çıkışı)")
     parser.add_argument("--st-flip-min-pnl", type=float, default=0.0, help="MOMFLIP yalnız pnl(pip) ≥ eşikken uygulansın (0 = zarardayken de erken kes)")
     parser.add_argument("--st-exit-period", type=int, default=10, help="MOMFLIP çıkış SuperTrend periyodu (canlı sinyal ST: 10)")
@@ -3924,6 +3947,11 @@ def main():
     TUN_ST_EXEMPT_ARMS = bool(args.st_exempt_arms)
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT, TUN_SLIP_PIPS
+    global TUN_CHAND_INDEP
+    global TUN_BE_ATR_GOLD, TUN_BE_ATR_CRYPTO
+    TUN_CHAND_INDEP = bool(args.chand_indep_gate)
+    TUN_BE_ATR_GOLD = float(args.be_trigger_atr_gold)
+    TUN_BE_ATR_CRYPTO = float(args.be_trigger_atr_crypto)
     TUN_NO_BE = args.no_be
     TUN_BE_TRIGGER = args.be_trigger
     TUN_BE_ATR_MULT = args.be_atr_mult

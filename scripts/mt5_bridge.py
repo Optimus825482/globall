@@ -981,6 +981,13 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi)
         is_gold_sym = ("XAU" in sym or "GOLD" in sym)
         is_crypto_sym = ("BTC" in sym)
+        # 2026-10-14 (Kol A — canlı↔replay paritesi): replay `pnl_extreme_pips` (bar tepesi)
+        # kullanır, canlı `pnl_pips` (poll anı). Aynı formül canlıda sistematik olarak DAHA
+        # SIKI kilit üretiyordu → replay'in ölçülmüş pozitifi canlıya taşınmıyordu. Açıkken
+        # tetik ve kilit aynı tepeden (MFE) okunur. Kapalıyken davranış BİREBİR eski hâli.
+        _be_from_mfe = bool(CURRENT_SETTINGS.get("be_lock_from_mfe", False))
+        _mfe_now = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
+        ref_pips = max(pnl_pips, _mfe_now) if _be_from_mfe else pnl_pips
         # 2026-10-12 DÜZELTME (forex.py `calculate_breakeven_target` ile aynı kök neden):
         # tabanlar `max` ile birleştirilince BE kilidi 0.4×SL / 0.5×ATR'ye (altın 25-37 pip)
         # erteleniyordu; bu mesafeye ulaşamayan kazançlar BE'ye kilitlenmeden tam stopla
@@ -991,13 +998,39 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         if eff_be_pips > 0:
             min_trigger_pips = min(min_trigger_pips, eff_be_pips)
 
-        if pnl_pips >= min_trigger_pips:
+        # 2026-10-14 (Kol B): ATR/R tabanı — tetiği GECİKTİRİR. 0 = kapalı (mevcut davranış).
+        # Gerekçe: tetik `$1 + headroom` olduğu için pip cinsinden `1/lot` ile ölçekleniyor;
+        # XAU 0.05 lot'ta 6 pip = 0.15 ATR'ye düşüyor (ATR ~39.8 pip). UYARI: yalnız tetiği
+        # geciktirmek 2026-10-12 replay'inde elendi — kilit tabanı birlikte büyümedikçe kâr etmiyor.
+        _be_trig_atr = float(CURRENT_SETTINGS.get("be_trigger_atr_mult", 0.0) or 0.0)
+        _be_trig_r = float(CURRENT_SETTINGS.get("be_trigger_r_mult", 0.0) or 0.0)
+        # 2026-10-14 (kullanıcı: "BTC ve XAU'da erken tetiklenmesin") — AİLE-ÖZEL ATR TABANI.
+        # Sorun tam olarak bu iki ailede: ATR büyük, `pips_for_1usd + headroom` küçük → `min()`
+        # tetiği tabana indiriyor (XAU 0.05 lot → 6 pip = 0.15 ATR; BTC → 45 pip = 0.27 ATR).
+        # FX/endekste aynı formül ~1 ATR'ye denk geldiği için o ailelere DOKUNULMAZ.
+        _be_trig_atr_fam = (
+            float(CURRENT_SETTINGS.get("be_trigger_atr_mult_gold", 0.0) or 0.0) if is_gold_sym
+            else (float(CURRENT_SETTINGS.get("be_trigger_atr_mult_crypto", 0.0) or 0.0)
+                  if is_crypto_sym else 0.0)
+        )
+        _atr_ref = float((POSITION_EXITS.get(ticket, {}) or {}).get("entry_atr_pips", 0.0) or 0.0)
+        if _atr_ref <= 0:
+            _atr_ref = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
+        _mult_atr = max(_be_trig_atr, _be_trig_atr_fam)
+        if _mult_atr > 0 and _atr_ref > 0:
+            min_trigger_pips = max(min_trigger_pips, _mult_atr * _atr_ref)
+        if _be_trig_r > 0:
+            _sl0_ref = float((POSITION_EXITS.get(ticket, {}) or {}).get("sl_pips", 0.0) or 0.0)
+            if _sl0_ref > 0:
+                min_trigger_pips = max(min_trigger_pips, _be_trig_r * _sl0_ref)
+
+        if ref_pips >= min_trigger_pips:
             # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
             be_lock_ratio = float(CURRENT_SETTINGS.get("gold_be_lock_ratio", 0.6)) if is_gold_sym else 0.40
             # Pozisyonun motor cmd'siyle gelen kilit oranı (varsa) ayarı ezer — backend/köprü tutarlılığı
             if pos_exits and 0 < float(pos_exits.get("be_lock_ratio", 0.0)) < 1:
                 be_lock_ratio = float(pos_exits["be_lock_ratio"])
-            locked_pips = max(pips_for_1usd, round(pnl_pips * be_lock_ratio, 1))
+            locked_pips = max(pips_for_1usd, round(ref_pips * be_lock_ratio, 1))
             if direction == "BUY":
                 be_sl = round(entry_p + (locked_pips * pip_size), digits)
                 if cur_sl < be_sl and be_sl < cur_p:
@@ -1031,8 +1064,15 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # ÖNCE trailing'i başlatıp doğrulanan davranıştan sapardı (kanıt BE-sonrası rejimde
         # ölçüldü). Bu yüzden kapı sabit-pip dalıyla aynı bırakılır; chandelier yalnız BE
         # kilitliyken (veya pnl >= eff_trail) devreye girer.
+        # 2026-10-14 (Kol C): kapı `chandelier_gate_independent` ile BE'den bağımsızlaştırılabilir.
+        # Açıkken chandelier, MFE > mult×giriş ATR'si olur olmaz kurulur (BE beklemez) — aksi
+        # hâlde XAU'da MFE > 0.75 ATR altındaki tüm hareketlerde ölü kalıyor (tepe medyanı 0.63 ATR).
+        _chand_indep_armed = (
+            bool(CURRENT_SETTINGS.get("chandelier_gate_independent", False))
+            and use_chandelier and chand_cand_pips > 0
+        )
         if use_chandelier:
-            _trail_gate = _trail_active
+            _trail_gate = _trail_active or _chand_indep_armed
         else:
             _trail_gate = (eff_trail_pips > 0 and _trail_active)
         if _trail_gate:

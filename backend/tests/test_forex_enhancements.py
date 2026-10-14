@@ -544,10 +544,10 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
     def test_default_risk_and_position_limits(self):
-        """Verify default position sizing is 5% balance risk (2026-10-08: 10→5) and max_open_positions is 99."""
+        """Varsayılan risk bütçesi %2 (2026-10-14: 5→2, ReportHistory-53077151 kanıtı) ve max_open_positions 99."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 1)
-        self.assertEqual(cfg.risk_per_trade_pct, 5.0)
+        self.assertEqual(cfg.risk_per_trade_pct, 2.0)
         self.assertEqual(cfg.max_open_positions, 99)
         # LotCalculatorRequest ayrı, manuel hesap aracı (grafik butonu) — kendi varsayılanı kalır.
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
@@ -744,6 +744,156 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
             is_crypto=True,
         )
         self.assertIsNotNone(crypto)  # 36 ≥ 35 → kilit
+
+    # ── 2026-10-14: BE/trail denetim kolları (ReportHistory-53077151) ──────────
+
+    def test_arm_defaults_preserve_current_behavior(self):
+        """Üç kolun da varsayılanı KAPALI olmalı — kanıt gelmeden canlı davranış değişmez."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertFalse(cfg.be_lock_from_mfe)
+        self.assertEqual(cfg.be_trigger_atr_mult, 0.0)
+        self.assertEqual(cfg.be_trigger_r_mult, 0.0)
+        self.assertFalse(cfg.chandelier_gate_independent)
+
+    def test_arm_a_be_lock_from_mfe_uses_peak(self):
+        """Kol A: `use_mfe_lock` ile kilit ANLIK kâr yerine MFE (tepe) üzerinden hesaplanır.
+
+        Canlı `pnl_pips` (poll anı), replay `pnl_extreme_pips` (bar tepesi) kullanıyordu →
+        canlı sistematik olarak daha sıkı kilit üretiyordu. Ölçüm: kazananların tepe kârı
+        toplam +1682 USD iken fiilen alınan +775 USD (%54 geri verilmiş).
+        """
+        common = dict(
+            pnl_pips=5.0, pnl_usd=5.0, lots=0.10, pip_val=10.0, pip_size=0.10, digits=2,
+            direction="BUY", entry_price=2700.0, current_price=2702.0, current_sl=2692.5,
+            sl_pips=75.0, atr_pips=50.0, eff_be_pips=25.0,
+            is_gold=True, gold_be_lock_ratio=0.60,
+        )
+        # Anlık kâr 5 pip → kilit 0.60 × 5 = 3 pip → 2700.30 (mevcut davranış)
+        off = forex.calculate_breakeven_target(mfe_pips=20.0, use_mfe_lock=False, **common)
+        self.assertAlmostEqual(off, 2700.30, places=2)
+        # Tepe 20 pip → kilit 0.60 × 20 = 12 pip → 2701.20 (replay paritesi)
+        on = forex.calculate_breakeven_target(mfe_pips=20.0, use_mfe_lock=True, **common)
+        self.assertAlmostEqual(on, 2701.20, places=2)
+        self.assertGreater(on, off)
+
+    def test_arm_a_mfe_lock_survives_zero_instant_pnl(self):
+        """Kol A açıkken anlık kâr 0 olsa da tepe tetiği taşır (replay `pnl_extreme` semantiği)."""
+        args = dict(
+            lots=0.10, pip_val=10.0, pip_size=0.10, digits=2,
+            direction="BUY", entry_price=2700.0, current_price=2701.50, current_sl=2692.5,
+            sl_pips=75.0, atr_pips=50.0, eff_be_pips=25.0,
+            is_gold=True, gold_be_lock_ratio=0.60,
+        )
+        self.assertIsNone(forex.calculate_breakeven_target(
+            pnl_pips=0.0, pnl_usd=0.0, mfe_pips=20.0, use_mfe_lock=False, **args))
+        self.assertAlmostEqual(forex.calculate_breakeven_target(
+            pnl_pips=0.0, pnl_usd=0.0, mfe_pips=20.0, use_mfe_lock=True, **args), 2701.20, places=2)
+
+    def test_arm_b_atr_and_r_trigger_floors(self):
+        """Kol B: ATR/R tabanı BE tetiğini GECİKTİRİR; 0 = kapalı (mevcut davranış korunur)."""
+        args = dict(
+            lots=0.10, pip_val=10.0, pip_size=0.10, digits=2,
+            direction="BUY", entry_price=2700.0, current_sl=2692.5,
+            sl_pips=75.0, atr_pips=50.0, eff_be_pips=25.0,
+            is_gold=True, gold_be_lock_ratio=0.60,
+        )
+        # Taban yok: 5 pip yeter (min($1+hurdle=5, eff_be=25) = 5)
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=5.0, pnl_usd=5.0, current_price=2700.50, **args))
+        # ATR tabanı 0.5×50 = 25 pip → 20 pip artık YETMEZ, 25 pip yeter
+        self.assertIsNone(forex.calculate_breakeven_target(
+            pnl_pips=20.0, pnl_usd=20.0, current_price=2702.00,
+            be_trigger_atr_mult=0.5, **args))
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=25.0, pnl_usd=25.0, current_price=2702.50,
+            be_trigger_atr_mult=0.5, **args))
+        # R tabanı 0.4×75 = 30 pip → 25 pip YETMEZ, 30 pip yeter
+        self.assertIsNone(forex.calculate_breakeven_target(
+            pnl_pips=25.0, pnl_usd=25.0, current_price=2702.50,
+            be_trigger_r_mult=0.4, **args))
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=30.0, pnl_usd=30.0, current_price=2703.00,
+            be_trigger_r_mult=0.4, **args))
+
+    def test_arm_b_gold_and_crypto_scoped_atr_floor(self):
+        """Aile-özel ATR tabanı: XAU ve BTC'de tetik yükselir, FX/endeks ETKİLENMEZ.
+
+        Kullanıcı talebi (2026-10-14): "BTC ve XAU'da erken tetiklenmesin."
+        XAU 0.05 lot → tetik 6 pip = 0.15 ATR; BTC → 45 pip = 0.27 ATR'ye düşüyordu.
+        """
+        gold = dict(
+            lots=0.10, pip_val=10.0, pip_size=0.10, digits=2,
+            direction="BUY", entry_price=2700.0, current_sl=2692.5,
+            sl_pips=75.0, atr_pips=40.0, eff_be_pips=25.0,
+            is_gold=True, gold_be_lock_ratio=0.60,
+        )
+        # Taban yok: 5 pip yeter (min($1+hurdle=5, eff_be=25))
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=5.0, pnl_usd=5.0, current_price=2700.50, **gold))
+        # 0.75 × 40 ATR = 30 pip taban → 20 pip YETMEZ, 30 pip yeter
+        self.assertIsNone(forex.calculate_breakeven_target(
+            pnl_pips=20.0, pnl_usd=20.0, current_price=2702.00,
+            be_trigger_atr_mult_gold=0.75, **gold))
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=30.0, pnl_usd=30.0, current_price=2703.00,
+            be_trigger_atr_mult_gold=0.75, **gold))
+        # Kripto alanı ALTINDA tetiklenmemeli (aileler karışmaz) → taban yokmuş gibi davranır
+        self.assertAlmostEqual(forex.calculate_breakeven_target(
+            pnl_pips=20.0, pnl_usd=20.0, current_price=2702.00,
+            be_trigger_atr_mult_crypto=0.75, **gold), 2701.20, places=2)
+
+        crypto = dict(
+            lots=0.10, pip_val=1.0, pip_size=1.0, digits=2,
+            direction="SELL", entry_price=60000.0, current_sl=60150.0,
+            sl_pips=150.0, atr_pips=166.0, eff_be_pips=40.0, is_crypto=True,
+        )
+        # Taban yok: 35 pip yeter (min($1+hurdle=35, eff_be=40))
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=35.0, pnl_usd=3.5, current_price=59964.0, **crypto))
+        # 0.5 × 166 ATR = 83 pip taban → 45 pip YETMEZ, 83 pip yeter
+        self.assertIsNone(forex.calculate_breakeven_target(
+            pnl_pips=45.0, pnl_usd=4.5, current_price=59955.0,
+            be_trigger_atr_mult_crypto=0.5, **crypto))
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=83.0, pnl_usd=8.3, current_price=59960.0,
+            be_trigger_atr_mult_crypto=0.5, **crypto))
+        # Altın alanı KRİPTODA tetiklenmemeli (aileler karışmaz) → taban yokmuş gibi davranır
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=45.0, pnl_usd=4.5, current_price=59955.0,
+            be_trigger_atr_mult_gold=0.5, **crypto))
+
+    def test_arm_family_trigger_defaults_off(self):
+        """2026-10-14 kullanıcı kararı: XAU 0.75 / BTC 0.50 AÇIK. 0.0 = kapatma yolu korunuyor."""
+        cfg = forex.ForexAutoPaperSettings()
+        self.assertEqual(cfg.be_trigger_atr_mult_gold, 0.75)
+        self.assertEqual(cfg.be_trigger_atr_mult_crypto, 0.50)
+        # Kapatma yolu: 0.0 verilince taban uygulanmaz (davranış eski hâline döner)
+        gold = dict(lots=0.10, pip_val=10.0, pip_size=0.10, digits=2, direction="BUY",
+                    entry_price=2700.0, current_sl=2692.5, sl_pips=75.0, atr_pips=40.0,
+                    eff_be_pips=25.0, is_gold=True, gold_be_lock_ratio=0.60)
+        self.assertIsNotNone(forex.calculate_breakeven_target(
+            pnl_pips=20.0, pnl_usd=20.0, current_price=2702.00,
+            be_trigger_atr_mult_gold=0.0, **gold))
+        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        self.assertIn('"be_trigger_atr_mult_gold"', src)
+        self.assertIn('"be_trigger_atr_mult_crypto"', src)
+        br = (PROJECT_ROOT / "scripts" / "mt5_bridge.py").read_text(encoding="utf-8")
+        self.assertIn('CURRENT_SETTINGS.get("be_trigger_atr_mult_gold"', br)
+        self.assertIn('CURRENT_SETTINGS.get("be_trigger_atr_mult_crypto"', br)
+
+    def test_arms_are_wired_into_live_bridge(self):
+        """Kaynak kilidi: üç kol da canlı köprüde (scripts/mt5_bridge.py) okunmalı."""
+        src = (PROJECT_ROOT / "scripts" / "mt5_bridge.py").read_text(encoding="utf-8")
+        self.assertIn('CURRENT_SETTINGS.get("be_lock_from_mfe"', src)
+        self.assertIn('CURRENT_SETTINGS.get("be_trigger_atr_mult"', src)
+        self.assertIn('CURRENT_SETTINGS.get("be_trigger_r_mult"', src)
+        self.assertIn('CURRENT_SETTINGS.get("chandelier_gate_independent"', src)
+        # Kollar motorun /mt5/sync yüküne de eklenmeli, yoksa köprüde hep kapalı kalır
+        eng = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        for key in ('"be_lock_from_mfe"', '"be_trigger_atr_mult"',
+                    '"be_trigger_r_mult"', '"chandelier_gate_independent"'):
+            self.assertIn(key, eng)
+
 
     def test_btc_min_score_priority(self):
         """Verify btc_min_score priority over global min_score."""

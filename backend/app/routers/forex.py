@@ -1371,6 +1371,12 @@ def sign_window_entry(
     return None
 
 
+# Risk bütçesinin sert tavanı (TEK KAYNAK). Lot normalizasyonu ve kripto/altın
+# taban-lot kelepçesi bu aynı çarpanı kullanmak ZORUNDA — ikisi ayrışırsa bütçe
+# sessizce aşılır (2026-10-14 olayı: kelepçe koşulsuz uygulanıp tavanı deliyordu).
+RISK_HARD_MULT = 2.0
+
+
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
     """Lot × SL × pip_val riskini bütçeye sıkıştırır (saf fonksiyon — test edilebilir).
 
@@ -1395,7 +1401,7 @@ def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: 
     if sl_pips <= 0 or pip_val <= 0 or lots <= 0:
         return round(float(lots), 2), False
     target_risk = float(risk_usd) * 1.25
-    hard_risk = float(risk_usd) * 2.0
+    hard_risk = float(risk_usd) * RISK_HARD_MULT
     current_risk = float(lots) * float(sl_pips) * float(pip_val)
     if current_risk <= target_risk:
         return round(float(lots), 2), False
@@ -1407,6 +1413,19 @@ def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: 
             return floor_lot, False
         return round(float(lots), 2), True
     return fitted, False
+
+
+def floor_lot_respects_budget(floor_lot: float, sl_pips: float, pip_val: float, risk_usd: float) -> bool:
+    """Kategori taban lotu (kripto/altın kelepçesi) bütçe sert tavanına sığıyor mu?
+
+    Saf fonksiyon — 2026-10-14 kelepçe düzeltmesinin tek karar noktası.
+    False dönerse kelepçe UYGULANMAZ ve işlem pas geçilir: broker taban lotu,
+    ayarlanan bütçenin RISK_HARD_MULT katını bile aşıyorsa o pozisyonun riski
+    bütçeyle yönetilemez (bakiyeyi büyütmek veya bütçeyi yükseltmek gerekir).
+    """
+    if floor_lot <= 0 or sl_pips <= 0 or pip_val <= 0 or risk_usd <= 0:
+        return False
+    return floor_lot * float(sl_pips) * float(pip_val) <= float(risk_usd) * RISK_HARD_MULT
 
 
 def is_entry_hour_blocked(current_utc_hour: int, blocked_hours: List[int]) -> bool:
@@ -1636,6 +1655,12 @@ def calculate_breakeven_target(
     gold_be_lock_ratio: float = 0.60,
     be_r_mult: float = 0.40,
     be_atr_mult: float = 0.50,
+    mfe_pips: float = 0.0,
+    use_mfe_lock: bool = False,
+    be_trigger_atr_mult: float = 0.0,
+    be_trigger_r_mult: float = 0.0,
+    be_trigger_atr_mult_gold: float = 0.0,
+    be_trigger_atr_mult_crypto: float = 0.0,
 ) -> Optional[float]:
     """Volatilite (ATR) ve Risk (R) tabanlı başabaş (Breakeven) hedefi hesaplar.
     
@@ -1647,7 +1672,14 @@ def calculate_breakeven_target(
     Kilitlenme kuralı:
       SL seviyesi giriş fiyatının ötesine taşınır (kârın lock_ratio kadarı veya min $1).
     """
-    if pnl_pips <= 0:
+    if pnl_pips <= 0 and not (use_mfe_lock and mfe_pips > 0):
+        return None
+
+    # 2026-10-14 (Kol A — canlı↔replay paritesi): replay `pnl_extreme_pips` (bar tepesi)
+    # kullanır, canlı ise `pnl_pips` (poll anı). Aynı formül canlıda sistematik olarak
+    # daha SIKI kilit üretiyordu. `use_mfe_lock` açıkken tetik ve kilit aynı tepeden okunur.
+    ref_pips = max(pnl_pips, mfe_pips) if use_mfe_lock else pnl_pips
+    if ref_pips <= 0:
         return None
 
     dollar_per_pip = max(0.0001, lots * pip_val)
@@ -1682,12 +1714,30 @@ def calculate_breakeven_target(
         # Birleşim: hangi eşiğe ÖNCE ulaşılırsa BE o zaman kilitlenir (replay varsayılanı).
         min_trigger_pips = min(min_trigger_pips, eff_be_pips)
 
-    if pnl_pips < min_trigger_pips:
+    # 2026-10-14 (Kol B): ATR/R tabanı — tetiği GECİKTİRİR. 0 = kapalı (mevcut davranış).
+    # Neden gerekli: tetik `$1 + headroom` olduğu için pip cinsinden `1/lot` ile ölçekleniyor;
+    # XAU 0.05 lot'ta 6 pip = 0.15 ATR'ye düşüyor (ATR ~39.8 pip). UYARI: yalnız tetiği
+    # geciktirmek 2026-10-12 replay'inde elendi — kilit tabanı birlikte büyümedikçe kâr etmiyor.
+    if be_trigger_atr_mult > 0 and atr_pips > 0:
+        min_trigger_pips = max(min_trigger_pips, be_trigger_atr_mult * atr_pips)
+    if be_trigger_r_mult > 0 and sl_pips > 0:
+        min_trigger_pips = max(min_trigger_pips, be_trigger_r_mult * sl_pips)
+
+    # 2026-10-14 (kullanıcı: "BTC ve XAU'da erken tetiklenmesin") — AİLE-ÖZEL ATR TABANI.
+    # Sorun tam olarak bu iki ailede: ATR büyük ama `pips_for_1usd + headroom` küçük olduğu için
+    # `min()` tetiği tabana indiriyor (XAU 0.05 lot → 6 pip = 0.15 ATR; BTC 0.05 lot → 45 pip = 0.27 ATR).
+    # FX/endekste aynı formül ~1 ATR'ye denk geldiği için o ailelere DOKUNULMAZ.
+    if is_gold and be_trigger_atr_mult_gold > 0 and atr_pips > 0:
+        min_trigger_pips = max(min_trigger_pips, be_trigger_atr_mult_gold * atr_pips)
+    if is_crypto and be_trigger_atr_mult_crypto > 0 and atr_pips > 0:
+        min_trigger_pips = max(min_trigger_pips, be_trigger_atr_mult_crypto * atr_pips)
+
+    if ref_pips < min_trigger_pips:
         return None
 
     # Kilitlenecek pips: kârın belirli oranı, ama en az $1 kâr güvencesi
     lock_ratio = gold_be_lock_ratio if is_gold else 0.40
-    locked_pips = max(pips_for_1usd, round(pnl_pips * lock_ratio, 1))
+    locked_pips = max(pips_for_1usd, round(ref_pips * lock_ratio, 1))
 
     if direction == "BUY":
         cand_be = round(entry_price + (locked_pips * pip_size), digits)
@@ -3545,7 +3595,7 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(5.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye) — 2026-10-08 kullanıcı kararı: 10→5 (replay XAU lot tavanı ~0,13% idi; %5 = ~1,5 lot tipik XAU, işlem riski ~$500 @10k)")
+    risk_per_trade_pct: float = Field(2.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye). 2026-10-14: 5→2. Kanıt: ReportHistory-53077151 (308 işlem) işlem başına 1R riski medyan %9.94 bakiye (ayar %5), 148 işlem >%10; bakiye 140.77→tepe 306.19→41.16 (−%87 tepe dibi). Bütçe aşımının kaynağı taban-lot kelepçesiydi (aşağıda sınırlandı). Panelden ayarlanabilir.")
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli scalper pozisyonu)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
@@ -3592,6 +3642,16 @@ class ForexAutoPaperSettings(BaseModel):
     loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
     chandelier_atr_mult: float = Field(CANLI_CHANDELIER_ATR_MULT, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. **Bu değer canlı SABİT: `CANLI_CHANDELIER_ATR_MULT` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 1.2→0.3 sıkma 4 bağımsız pencerede kazanıyor (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF artıyor, maxDD düşüyor) ve 2-pip kaymada korunuyor. Doğrudan XAU+BTC replay (2026-07-15→08-15): chand0.3 net $4305.70 / PF 1.87 / DD $79.49 vs en iyi sabit-pip $3950.88 / 1.80; 2-pip kaymada $2538.31/1.47 vs $2218.56/1.39. 15dk bar çözünürlüğünde yön korunuyor (etki ~%36 küçülür) → 0.05 yerine 0.3. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
+    # ── 2026-10-14: BE/trail denetim kolları (ReportHistory-53077151) ────────────
+    # Hepsinin varsayılanı MEVCUT DAVRANIŞI BİREBİR KORUR (kapalı/0). Yalnız replay
+    # A/B kanıtı geçen kol açılır. Ölçüm: 1R medyan 1.34 ATR iken kazanan çıkış
+    # +0.16 R (0.21 ATR); kazananların %54 tepe kârı BE/trail kilidiyle geri verilmiş.
+    be_lock_from_mfe: bool = Field(False, description="BE kilidi ANLIK kâr yerine MFE (tepe) üzerinden hesaplanır — replay paritesi. Canlı `pnl_pips` (poll anı) kullanırken replay `pnl_extreme_pips` (bar tepesi) kullanıyordu; bu sapma canlıda sistematik olarak DAHA SIKI kilit üretiyordu. Açıkken tetik ve kilit aynı tepeden okunur (replay ile birebir).")
+    be_trigger_atr_mult: float = Field(0.0, ge=0.0, le=5.0, description="BE tetiğine ATR tabanı ekler: tetik = max(min($1+headroom, eff_be), bu kat × giriş ATR'si). 0 = kapalı (mevcut davranış). Amaç: XAU'da tetiğin 0.15 ATR'ye düşmesini engellemek. UYARI: 2026-10-12 dokümanında yalnız-tetik geciktirme (min_r_atr) replay'de ELENDİ — kilit tabanı birlikte büyümedikçe işe yaramıyor; kanıt olmadan açılmaz.")
+    be_trigger_r_mult: float = Field(0.0, ge=0.0, le=5.0, description="BE tetiğine R tabanı ekler: tetik = max(min($1+headroom, eff_be), bu kat × giriş SL'i). 0 = kapalı (mevcut davranış).")
+    chandelier_gate_independent: bool = Field(False, description="Chandelier, BE kilidini BEKLEMEDEN kurulur (MFE > mult×giriş ATR'si olur olmaz). Şu an kapı `BE aktif` şartına bağlı olduğu için XAU'da MFE > 0.75 ATR (diğerlerinde 0.50 ATR) altındaki tüm hareketlerde chandelier ölü kalıyor; ölçülen tepe medyanı 0.63 ATR. **Replay W1 OOS: net +3904→+4510 (+%15.5), PF 1.62→1.73, WR %74.0→%78.8.**")
+    be_trigger_atr_mult_gold: float = Field(0.75, ge=0.0, le=5.0, description="XAUUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). Kullanıcı talebi (2026-10-14): altında erken tetiklenmesin. XAU 0.05 lot'ta tetik 6 pip = 0.15 ATR'ye düşüyordu; 0.75 → ~30 pip = 0.75 ATR'de kilitlenir. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.75 AÇILDI.** Ölçüm uyarısı: W1 OOS'ta tetiği geciktiren genel kol (minratr) net +3904→+675'e düşürdü (PF 1.62→1.08, SL zararı −6278→−8755) — yani erken BE tam-SL olacak işlemleri küçük kâra çeviriyordu. Bu değer o riske rağmen açıldı; geri alma: 0.0.")
+    be_trigger_atr_mult_crypto: float = Field(0.50, ge=0.0, le=5.0, description="BTCUSD/ETHUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). BTC 0.05 lot'ta tetik 45 pip = 0.27 ATR'ye düşüyordu; 0.50 → ~83 pip = 0.50 ATR. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.50 AÇILDI.** Geri alma: 0.0.")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
@@ -4854,6 +4914,13 @@ async def _forex_auto_paper_loop():
                             is_gold=is_gold_pos,
                             is_crypto=is_crypto_pos,
                             gold_be_lock_ratio=_AUTO_SETTINGS.gold_be_lock_ratio,
+                            # 2026-10-14 kollar — varsayılanları mevcut davranışı korur.
+                            mfe_pips=float(pos.get("mfe_pips", 0.0) or 0.0),
+                            use_mfe_lock=bool(_AUTO_SETTINGS.be_lock_from_mfe),
+                            be_trigger_atr_mult=float(_AUTO_SETTINGS.be_trigger_atr_mult),
+                            be_trigger_r_mult=float(_AUTO_SETTINGS.be_trigger_r_mult),
+                            be_trigger_atr_mult_gold=float(_AUTO_SETTINGS.be_trigger_atr_mult_gold),
+                            be_trigger_atr_mult_crypto=float(_AUTO_SETTINGS.be_trigger_atr_mult_crypto),
                         )
                         if cand_be is not None:
                             pos["sl_price"] = cand_be
@@ -4882,7 +4949,19 @@ async def _forex_auto_paper_loop():
                     # (b) İZ SÜREN STOP (TRAILING STOP) DENETİMİ
                     # Sembole ve volatiliteye (ATR) göre trailing mesafesi
                     # BE kilitlendikten sonra VEYA pnl_pips >= eff_trail_pips olduğunda fiyatı arkasından takip et
-                    if pos.get("breakeven_activated") or pnl_pips >= eff_trail_pips:
+                    #
+                    # 2026-10-14 (Kol C): kapı `chandelier_gate_independent` ile BE'den
+                    # bağımsızlaştırılabilir. Açıkken chandelier, MFE > mult×giriş ATR'si olur
+                    # olmaz kurulur (BE beklemez) — aksi hâlde XAU'da MFE > 0.75 ATR altındaki
+                    # tüm hareketlerde ölü kalıyor (ölçülen tepe medyanı 0.63 ATR).
+                    _chand_indep_armed = False
+                    if bool(_AUTO_SETTINGS.chandelier_gate_independent):
+                        _cm_gate = float(_AUTO_SETTINGS.chandelier_atr_mult or 0.0)
+                        _ca_gate = resolve_chandelier_atr(pos.get("entry_atr_pips"), atr_pips)
+                        _mf_gate = float(pos.get("mfe_pips", 0.0) or 0.0)
+                        _chand_indep_armed = (_cm_gate > 0 and _ca_gate > 0
+                                              and _mf_gate > _cm_gate * _ca_gate)
+                    if pos.get("breakeven_activated") or pnl_pips >= eff_trail_pips or _chand_indep_armed:
                         chand_mult = float(_AUTO_SETTINGS.chandelier_atr_mult or 0.0)
                         pos_mfe = float(pos.get("mfe_pips", 0.0) or 0.0)
                         # Replay paritesi: trailing GİRİŞ ATR'siyle hesaplanır, cari ATR ile
@@ -6409,8 +6488,14 @@ async def _forex_auto_paper_loop():
                             _floor_lot = 0.01
                         else:
                             _floor_lot = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, 0.01)
-                        mt5_lots = max(0.01, _floor_lot)
-                        risk_skip = False
+                        # 2026-10-14 DÜZELTME: kelepçe artık bütçe sert tavanına TABİ.
+                        # Önceden `risk_skip` KOŞULSUZ iptal ediliyordu → küçük bakiyede taban
+                        # lotun riski bakiyenin %5-20'sine çıkıyordu (ReportHistory-53077151:
+                        # medyan %9.94, tepe %14.9 — ayar %5 idi). Taban lot sert tavanı
+                        # (RISK_HARD_MULT × bütçe) aşıyorsa işlem PAS geçilir; bütçe delinmez.
+                        if floor_lot_respects_budget(_floor_lot, sl_pips, pip_val, risk_usd):
+                            mt5_lots = max(0.01, _floor_lot)
+                            risk_skip = False
                     else:
                         risk_skip = False  # eski davranış (aşırı lot korunur)
                 if risk_skip:
@@ -8418,6 +8503,15 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             # uygulayabilsin (MFE − kat × giriş ATR'si). 0 = kapalı → köprü eski
             # sabit-pip davranışında kalır (geri alma tek değer).
             "chandelier_atr_mult": _AUTO_SETTINGS.chandelier_atr_mult,
+            # 2026-10-14 BE/trail denetim kolları — varsayılanları mevcut davranışı korur.
+            # Köprü CURRENT_SETTINGS.update(settings) ile alır; anahtar yoksa `False`/`0.0`
+            # varsayılanına düşer, yani eski köprü sürümleri de bozulmaz.
+            "be_lock_from_mfe": bool(_AUTO_SETTINGS.be_lock_from_mfe),
+            "be_trigger_atr_mult": float(_AUTO_SETTINGS.be_trigger_atr_mult),
+            "be_trigger_r_mult": float(_AUTO_SETTINGS.be_trigger_r_mult),
+            "chandelier_gate_independent": bool(_AUTO_SETTINGS.chandelier_gate_independent),
+            "be_trigger_atr_mult_gold": float(_AUTO_SETTINGS.be_trigger_atr_mult_gold),
+            "be_trigger_atr_mult_crypto": float(_AUTO_SETTINGS.be_trigger_atr_mult_crypto),
         },
     }
 

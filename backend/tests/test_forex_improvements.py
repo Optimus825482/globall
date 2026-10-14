@@ -913,6 +913,43 @@ class TestRiskNormalization(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lots, 0.02)
         self.assertFalse(skip)
 
+    def test_risk_hard_mult_single_source(self):
+        """Sert tavan TEK KAYNAK olmalı: normalizasyon ve kelepçe aynı çarpanı kullanır (2026-10-14)."""
+        self.assertEqual(forex.RISK_HARD_MULT, 2.0)
+        # Tam sınır: kategori tabanı 0.10 × 200 pip × 1.0 = 20.0 == 2 × bütçe 10.0 → geçer
+        lots, skip = forex.apply_risk_normalization("US30", 0.20, 200.0, 1.0, 10.0)
+        self.assertFalse(skip)
+        self.assertEqual(lots, 0.10)
+        self.assertAlmostEqual(lots * 200.0 * 1.0, 10.0 * forex.RISK_HARD_MULT, places=6)
+
+    def test_floor_lot_budget_guard_blocks_oversized_minimum(self):
+        """Kelepçe düzeltmesi: taban lot sert tavanı aşıyorsa kelepçe UYGULANMAMALI (işlem pas).
+
+        Gerçek olay (ReportHistory-53077151, 2026-10-13 17:14): bakiye ~$58.7, ayar %5
+        → bütçe $2.94; taban lot 0.01 × 73.4 pip × $10 = $7.34 = 2.5 × bütçe.
+        """
+        self.assertFalse(forex.floor_lot_respects_budget(0.01, 73.4, 10.0, 58.7 * 0.05))
+        # 2026-10-14 varsayılanı %2 ile $41.16 bakiye: bütçe $0.82 → taban lot 8.9× bütçe → pas
+        self.assertFalse(forex.floor_lot_respects_budget(0.01, 73.4, 10.0, 41.16 * 0.02))
+        # Bakiye ~$250 (%2) olduğunda taban lot sert tavana sığar → kelepçe tekrar çalışır
+        self.assertTrue(forex.floor_lot_respects_budget(0.01, 73.4, 10.0, 250.0 * 0.02))
+        # Tam sınır: 0.01 × 100 pip × 10 = 10.0 == 2 × 5.0 → geçer (<=)
+        self.assertTrue(forex.floor_lot_respects_budget(0.01, 100.0, 10.0, 5.0))
+        # Dejenere girdiler güvenli tarafta kalmalı (kelepçe uygulanmaz)
+        for bad in ((0.0, 73.4, 10.0, 5.0), (0.01, 0.0, 10.0, 5.0),
+                    (0.01, 73.4, 0.0, 5.0), (0.01, 73.4, 10.0, 0.0),
+                    (-0.01, 73.4, 10.0, 5.0)):
+            self.assertFalse(forex.floor_lot_respects_budget(*bad))
+
+    def test_clamp_is_guarded_by_budget(self):
+        """Kaynak kilidi: kelepçe dalı bütçe kapısından geçmeden lotu sabitlememeli."""
+        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
+        self.assertIn("floor_lot_respects_budget(_floor_lot, sl_pips, pip_val, risk_usd)", src)
+        # Eski koşulsuz sabitleme deseni geri gelmemeli
+        self.assertNotIn(
+            "_floor_lot = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, 0.01)\n"
+            "                        mt5_lots = max(0.01, _floor_lot)", src)
+
 
 class TestEVGuard(unittest.IsolatedAsyncioTestCase):
     """Sembol EV kalkanı (yumuşatılmış eşikler): kararı ve istatistik toplama."""
