@@ -145,3 +145,21 @@ Araç: `_analyze_trailing.py <rapor.html>` (UTF-16 BOM; ham çıktı `outputs/`)
   **Kol C indep +4510 (PF 1.73, WR %78.8)** · Kol B minratr **+675 (PF 1.08)** — yani
   **tetiği geciktirmek ZARAR veriyor**; erken BE, tam-SL olacak işlemleri küçük kâra çeviriyor.
   Kol C (chandelier BE'siz kurulur) aynı isteği ölçülen şekilde karşılıyor.
+
+## 13. Veri kaynağı: PostgreSQL `historical_candles` (2026-10-14)
+
+- **Replay artık DB'den okuyabilir:** `--source auto` (VARSAYILAN; DB varsa DB, yoksa JSON önbellek/Yahoo) ·
+  `--source db` (yalnız DB; sembol eksikse **hata verir**) · `--source cache` (eski yol).
+  Bağlantı: `DATABASE_URL` → yoksa `backend/.env`. DB `open_time` **ms**, replay **sn** → `/1000`.
+- **Local DB envanteri:** `historical_candles` = 13 sembol, 5m/15m/30m/1h, **2026-07-15 → 2026-10-13 (~90 gün)**,
+  5m'de 244.454 satır. `source` = `mt5_icmarkets_tick*` → **MT5 köprüsünden** geliyor.
+  Besleme: `backend/app/routers/maintenance.py` → `database.upsert_market_candles`.
+  **JSON önbelleği (07-28→10-06) DB'den DARDIR.**
+- **JSON önbelleğinin kusurları (neden bırakıldı):** elle tazelenir; pencere dışıysa **sessizce 0 işlem**
+  döner (hata yok); `max_dd_usd` **0.00** raporlar → DD ölçülemez. DB yolunda DD ölçülüyor.
+- **DB ŞEMA KAYMASI (bulgu):** local DB'de **58 tablonun 22'si hiç kısıtsız**. Migration
+  (`backend/migrations/001_pgvector_schema.sql`) `CREATE TABLE IF NOT EXISTS` kullandığı için tablo
+  zaten varsa PK **hiç eklenmiyor** → `ON CONFLICT` "no unique or exclusion constraint" ile patlar.
+  `velocity_candidates` onarıldı (`ADD CONSTRAINT velocity_candidates_pkey PRIMARY KEY (candidate_id)`)
+  → `test_velocity_ml_backfill` 4/4 GEÇTİ. Kalan 21 tablo onarılmadı (boş olmayan tabloda PK çift kayıtta patlar).
+- **Local DB:** `postgresql://postgres@localhost:5432/scalper_global` (`backend/.env`).

@@ -3652,6 +3652,20 @@ class ForexAutoPaperSettings(BaseModel):
     chandelier_gate_independent: bool = Field(False, description="Chandelier, BE kilidini BEKLEMEDEN kurulur (MFE > mult×giriş ATR'si olur olmaz). Şu an kapı `BE aktif` şartına bağlı olduğu için XAU'da MFE > 0.75 ATR (diğerlerinde 0.50 ATR) altındaki tüm hareketlerde chandelier ölü kalıyor; ölçülen tepe medyanı 0.63 ATR. **Replay W1 OOS: net +3904→+4510 (+%15.5), PF 1.62→1.73, WR %74.0→%78.8.**")
     be_trigger_atr_mult_gold: float = Field(0.75, ge=0.0, le=5.0, description="XAUUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). Kullanıcı talebi (2026-10-14): altında erken tetiklenmesin. XAU 0.05 lot'ta tetik 6 pip = 0.15 ATR'ye düşüyordu; 0.75 → ~30 pip = 0.75 ATR'de kilitlenir. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.75 AÇILDI.** Ölçüm uyarısı: W1 OOS'ta tetiği geciktiren genel kol (minratr) net +3904→+675'e düşürdü (PF 1.62→1.08, SL zararı −6278→−8755) — yani erken BE tam-SL olacak işlemleri küçük kâra çeviriyordu. Bu değer o riske rağmen açıldı; geri alma: 0.0.")
     be_trigger_atr_mult_crypto: float = Field(0.50, ge=0.0, le=5.0, description="BTCUSD/ETHUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). BTC 0.05 lot'ta tetik 45 pip = 0.27 ATR'ye düşüyordu; 0.50 → ~83 pip = 0.50 ATR. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.50 AÇILDI.** Geri alma: 0.0.")
+    # ── 2026-10-14: EKONOMİK TAKVİM YÖN KANITI (kullanıcı talebi) ──────────────
+    # "Açıklanan veri bu sembolde BUY yönünü destekliyorsa filtreler kaldırılıp
+    #  işlem açılsın; karşıt yöndeyse radar sinyali engellensin."
+    # Anahtar VARSAYILAN KAPALI: bu bir strateji değişikliğidir ve proje kuralı
+    # gereği OOS replay kanıtı olmadan aktive edilmez. Açıldığında:
+    #   * karşıt yön  → sinyal ENGELLENİR (risk AZALTICI)
+    #   * destek yönü → YUMUŞAK filtreler atlanır (major seans/min-ATR, skor, ADX, SuperTrend)
+    # ASLA atlanmayanlar: spread, korelasyon kalkanı, seri-SL, soğuma, EV kalkanı,
+    # lot/risk bütçesi, maks pozisyon. Bunlar sinyal filtresi değil MALİYET/RİSK
+    # kapılarıdır; atlamak hesabı riske atar.
+    news_bias_enabled: bool = Field(False, description="Ekonomik takvim yön kanıtını otonom girişte kullan (2026-10-14 kullanıcı talebi). Yalnız AÇIKLANMIŞ olaylar kullanılır (actual dolu) — beklentiyle spekülasyon YAPILMAZ. Varsayılan KAPALI; kanıt olmadan açılmaz.")
+    news_bias_block_opposing: bool = Field(True, description="Takvim yönü sinyalin TERSİyse işlemi engelle (yalnız news_bias_enabled açıkken). Risk AZALTICI yön.")
+    news_bias_bypass_filters: bool = Field(False, description="Takvim yönü sinyali DESTEKLİYORSA yumuşak filtreleri atla (major seans/min-ATR, skor eşiği, ADX, SuperTrend). MALİYET/RİSK kapıları (spread, korelasyon, seri-SL, soğuma, EV, lot bütçesi, maks pozisyon) ASLA atlanmaz. Varsayılan KAPALI — bu bir strateji değişikliğidir, OOS replay kanıtı ister.")
+    news_bias_window_sec: float = Field(900.0, ge=60.0, le=3600.0, description="Açıklamadan sonra yönün geçerli sayıldığı pencere (saniye; varsayılan 900 = 15 dk)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
@@ -5876,6 +5890,20 @@ async def _forex_auto_paper_loop():
             pending_mt5_syms = {c.get("symbol", "").upper() for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER"}
             all_active_syms = mt5_active_syms | auto_active_syms | pending_mt5_syms
 
+            # 2026-10-14: EKONOMİK TAKVİM YÖN KANITI (kullanıcı talebi).
+            # Aday döngüsünden ÖNCE bir kez hesaplanır (her aday için takvim
+            # ayrıştırmak israf). `news_bias_enabled` kapalıyken hiç çalışmaz →
+            # davranış birebir eski hâli.
+            if _AUTO_SETTINGS.news_bias_enabled:
+                try:
+                    from app.forex_news import get_forex_news
+                    from app import forex_news_bias as _nb_mod
+                    _cal_events = await get_forex_news()
+                    _nb_mod.refresh_biases(_cal_events, now_ts,
+                                           float(_AUTO_SETTINGS.news_bias_window_sec))
+                except Exception as _nb_exc:
+                    _log_auto_decision("SYSTEM", f"⚠️ Takvim yön kanıtı alınamadı: {_nb_exc}")
+
             for cand in candidates:
                 sym = cand["symbol"].upper()
                 _c_src = cand.get("entry_source", "")
@@ -6195,6 +6223,50 @@ async def _forex_auto_paper_loop():
                 # 4. DXY (ABD Dolar Endeksi) Rejim Filtresi
                 # Pozisyon DXY rejimiyle çelişiyorsa veto; zayıf semboller nötr rejimde ekstra skor ister.
                 direction = cand.get("action", "")  # BUY or SELL
+
+                # 2026-10-14: TAKVİM YÖN KANITI (kullanıcı talebi).
+                #   karşıt yön  → sinyal engellenir (risk azaltıcı)
+                #   destek yönü → yumuşak filtreler atlanır (aşağıdaki 5c/7/7b/7c)
+                # Kanıt yoksa (dir=0) veya ayar kapalıysa davranış BİREBİR eskisi.
+                _nb_slot: Dict[str, Any] = {"dir": 0, "events": []}
+                _dir_sign = 1 if direction == "BUY" else (-1 if direction == "SELL" else 0)
+                _news_bypass = False
+                if _AUTO_SETTINGS.news_bias_enabled:
+                    try:
+                        from app import forex_news_bias as _nb_mod
+                        _nb_slot = _nb_mod.bias_for(sym)
+                    except Exception:
+                        _nb_slot = {"dir": 0, "events": []}
+                    if _nb_slot.get("dir") and _dir_sign:
+                        if _nb_slot["dir"] == -_dir_sign:
+                            if _AUTO_SETTINGS.news_bias_block_opposing:
+                                if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_news", 0) > 30.0:
+                                    _LAST_CANDIDATE_LOG_TIME[f"{sym}_news"] = now_ts
+                                    _ev0 = (_nb_slot.get("events") or [{}])[0]
+                                    _log_auto_decision(
+                                        "GATE",
+                                        f"[{cand['display']}][{_c_strat_lbl}] Takvim karşıt yön: "
+                                        f"{_ev0.get('title', '')} ({_ev0.get('currency', '')} "
+                                        f"{_ev0.get('label', '')}) → {sym} "
+                                        f"{'SELL' if _nb_slot['dir'] < 0 else 'BUY'} yönünü destekliyor; "
+                                        f"{direction} sinyali engellendi.",
+                                        symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                                    )
+                                continue
+                        else:
+                            _news_bypass = bool(_AUTO_SETTINGS.news_bias_bypass_filters)
+                            if _news_bypass and now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_newsbypass", 0) > 30.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_newsbypass"] = now_ts
+                                _evb = (_nb_slot.get("events") or [{}])[0]
+                                _log_auto_decision(
+                                    "GATE",
+                                    f"[{cand['display']}][{_c_strat_lbl}] Takvim DESTEK: "
+                                    f"{_evb.get('title', '')} ({_evb.get('currency', '')} "
+                                    f"{_evb.get('label', '')}) → {direction} yönü destekleniyor; "
+                                    f"yumuşak filtreler (seans/min-ATR, skor, ADX, SuperTrend) atlandı. "
+                                    f"Maliyet/risk kapıları (spread, korelasyon, seri-SL, soğuma, lot bütçesi) AÇIK kaldı.",
+                                    symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                                )
                 if direction not in ("BUY", "SELL"):
                     continue
 
@@ -6254,7 +6326,7 @@ async def _forex_auto_paper_loop():
                     _AUTO_SETTINGS.major_session_start_utc, _AUTO_SETTINGS.major_session_end_utc,
                     _AUTO_SETTINGS.major_min_atr_pips,
                 )
-                if gate_reason:
+                if gate_reason and not _news_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_major", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_major"] = now_ts
                         reason_str = ("Majör Seans Filtresi: UTC saat penceresi dışında (Asya seansı chop riski)."
@@ -6293,7 +6365,7 @@ async def _forex_auto_paper_loop():
                 else:
                     req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
                 req_score += weak_symbol_score_bump
-                if cand["score"] < req_score:
+                if cand["score"] < req_score and not _news_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
                         _log_auto_decision(
@@ -6307,7 +6379,7 @@ async def _forex_auto_paper_loop():
 
                 # 7b. ADX Trend Gücü Kalkanı — çalkantılı/yönsüz piyasada trend girişi yapılmaz
                 adx_val = float(cand.get("adx", 25.0))
-                if _AUTO_SETTINGS.adx_filter_enabled and adx_val < _AUTO_SETTINGS.adx_min:
+                if _AUTO_SETTINGS.adx_filter_enabled and adx_val < _AUTO_SETTINGS.adx_min and not _news_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_adx", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_adx"] = now_ts
                         _log_auto_decision(
@@ -6333,7 +6405,7 @@ async def _forex_auto_paper_loop():
                 _is_s3 = str(cand.get("entry_source", "")).startswith("s3_")
                 _is_sqzkc = str(cand.get("entry_source", "")) == "squeeze_kc"
                 if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap and not _is_s3 and not _is_sqzkc:
-                    if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
+                    if ((direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0)) and not _news_bypass:
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
                             _log_auto_decision(
@@ -8654,9 +8726,12 @@ async def get_macro_forex_news(
     country: Optional[str] = None,
     symbol: Optional[str] = None,
 ):
-    """Investing.com 2 ve 3 Yıldızlı Makro Ekonomik Takvim Olaylarını 'Ne Olursa Ne Olur' senaryosuyla döner."""
+    """Investing.com 2 ve 3 Yıldızlı Makro Ekonomik Takvim Olaylarını 'Ne Olursa Ne Olur' senaryosuyla döner.
+    Her olaya bias_direction (BUY/SELL/NEUTRAL) ve bias_explanation ekler."""
     try:
         from app.forex_news import get_forex_news, FALLBACK_EVENTS
+        from app.forex_news_bias import released_biases
+        import time as _time
         items = await get_forex_news(force_refresh=refresh)
         
         # Filtreleme
@@ -8668,6 +8743,21 @@ async def get_macro_forex_news(
         if symbol:
             s_upper = symbol.upper()
             items = [x for x in items if any(s_upper in str(sym).upper() for sym in x.get("affected_symbols", []))]
+
+        # Yön (bias) zenginleştirmesi — açıklanmış olaylar için
+        now_ts = _time.time()
+        bias_map = released_biases(items, now_ts)
+        for it in items:
+            sym = it.get("symbol") or it.get("affected_symbols", [""])[0]
+            if sym and sym in bias_map:
+                b = bias_map[sym]
+                it["bias_direction"] = b["direction"]
+                it["bias_confidence"] = b["confidence"]
+                it["bias_explanation"] = b["explanation"]
+            else:
+                it["bias_direction"] = "NEUTRAL"
+                it["bias_confidence"] = 0
+                it["bias_explanation"] = "Henüz açıklanmamış veya yön belirsiz"
 
         upcoming_5m = [x for x in items if x.get("is_within_5m")]
 

@@ -117,16 +117,16 @@ export default function ForexEventTickerBanner() {
 
   return (
     <div
-      className="ticker-banner w-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white border-b border-red-800 shadow-md overflow-hidden select-none z-30"
+      className="ticker-banner w-full bg-gradient-to-r from-red-700 via-red-600 to-rose-700 text-white border-b border-red-900 shadow-md overflow-hidden select-none z-30"
       style={{ minHeight: "34px" }}
     >
       <Link
         href="/forex/calendar"
-        className="flex items-center h-8 sm:h-9 text-xs sm:text-[13px] font-mono font-bold tracking-tight text-white hover:text-amber-200 transition-colors cursor-pointer group"
+        className="flex items-center h-8 sm:h-9 text-xs sm:text-[13px] font-mono font-bold tracking-tight text-white hover:text-white transition-colors cursor-pointer group"
         title="Detaylı takvimi ve senaryoları görmek için tıklayın"
       >
         {/* Sabit Sol Etiket (Sabit İkaz Rozeti) */}
-        <div className="shrink-0 flex items-center gap-1.5 px-3 py-1 bg-red-900/90 border-r border-red-500/50 text-[11px] font-black uppercase tracking-wider z-10 shadow-md">
+        <div className="shrink-0 flex items-center gap-1.5 px-3 py-1 bg-black/40 border-r border-red-400/40 text-[11px] font-black uppercase tracking-wider z-10 shadow-md">
           <span className="animate-pulse">🚨</span>
           <span className="hidden xs:inline">KRİTİK VERİ ALARMI</span>
           <span className="xs:hidden">ALARM</span>
@@ -139,19 +139,19 @@ export default function ForexEventTickerBanner() {
             <div className="flex items-center shrink-0 pr-10">
               {tickerItems.map((item, idx) => (
                 <span key={`t1-${item.id}-${idx}`} className="inline-flex items-center gap-2 mr-8">
-                  <span>{item.flag}</span>
-                  <span className="underline decoration-red-300 font-extrabold">{item.title}</span>
-                  <span className="px-1.5 py-0.2 rounded bg-black/30 text-amber-200 font-black text-[10px] sm:text-xs border border-amber-300/30">
+                  <span className="text-base">{item.flag}</span>
+                  <span className="underline decoration-white/60 font-extrabold">{item.title}</span>
+                  <span className="px-2 py-0.5 rounded bg-black/50 text-white font-black text-[10px] sm:text-xs border border-white/20">
                     {item.isUpcoming ? "⏳ " : "⚡ "}
                     {item.timeText}
                   </span>
-                  <span className="text-white/95 font-medium">
-                    · <strong className="text-yellow-200 font-black">ETKİLENECEK:</strong> [{item.symbols}]
+                  <span className="text-white font-medium">
+                    · <strong className="text-white font-black">ETKİLENECEK:</strong> [{item.symbols}]
                   </span>
-                  <span className="text-amber-200/90 text-[11px] hidden sm:inline">
+                  <span className="text-white/80 text-[11px] hidden sm:inline">
                     · (Yüksek volatilite ve spread riskine dikkat!)
                   </span>
-                  <span className="text-red-300/80 mx-2">✦</span>
+                  <span className="text-white/50 mx-2">✦</span>
                 </span>
               ))}
             </div>
@@ -160,19 +160,19 @@ export default function ForexEventTickerBanner() {
             <div className="flex items-center shrink-0 pr-10" aria-hidden="true">
               {tickerItems.map((item, idx) => (
                 <span key={`t2-${item.id}-${idx}`} className="inline-flex items-center gap-2 mr-8">
-                  <span>{item.flag}</span>
-                  <span className="underline decoration-red-300 font-extrabold">{item.title}</span>
-                  <span className="px-1.5 py-0.2 rounded bg-black/30 text-amber-200 font-black text-[10px] sm:text-xs border border-amber-300/30">
+                  <span className="text-base">{item.flag}</span>
+                  <span className="underline decoration-white/60 font-extrabold">{item.title}</span>
+                  <span className="px-2 py-0.5 rounded bg-black/50 text-white font-black text-[10px] sm:text-xs border border-white/20">
                     {item.isUpcoming ? "⏳ " : "⚡ "}
                     {item.timeText}
                   </span>
-                  <span className="text-white/95 font-medium">
-                    · <strong className="text-yellow-200 font-black">ETKİLENECEK:</strong> [{item.symbols}]
+                  <span className="text-white font-medium">
+                    · <strong className="text-white font-black">ETKİLENECEK:</strong> [{item.symbols}]
                   </span>
-                  <span className="text-amber-200/90 text-[11px] hidden sm:inline">
+                  <span className="text-white/80 text-[11px] hidden sm:inline">
                     · (Yüksek volatilite ve spread riskine dikkat!)
                   </span>
-                  <span className="text-red-300/80 mx-2">✦</span>
+                  <span className="text-white/50 mx-2">✦</span>
                 </span>
               ))}
             </div>
