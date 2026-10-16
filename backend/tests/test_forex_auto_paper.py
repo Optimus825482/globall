@@ -136,41 +136,49 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         async with forex._AUTO_PAPER_LOCK:
             forex._AUTO_STATE["open_positions"] = [test_pos]
 
-        # Simulate price moving up by +10 pips (above 8.0 breakeven threshold)
-        cur_p = 1.08100
-        pip_size = test_pos["pip_size"]
-        pnl_pips = round((cur_p - test_pos["entry_price"]) / pip_size, 1)
-        self.assertGreaterEqual(pnl_pips, forex._AUTO_SETTINGS.breakeven_pips)
+        orig_be = forex._AUTO_SETTINGS.breakeven_pips
+        orig_trail = forex._AUTO_SETTINGS.trailing_stop_pips
+        forex._AUTO_SETTINGS.breakeven_pips = 8.0
+        forex._AUTO_SETTINGS.trailing_stop_pips = 12.0
+        try:
+            # Simulate price moving up by +10 pips (above 8.0 breakeven threshold)
+            cur_p = 1.08100
+            pip_size = test_pos["pip_size"]
+            pnl_pips = round((cur_p - test_pos["entry_price"]) / pip_size, 1)
+            self.assertGreaterEqual(pnl_pips, forex._AUTO_SETTINGS.breakeven_pips)
 
-        # Breakeven logic execution
-        test_pos["current_price"] = cur_p
-        test_pos["pnl_pips"] = round(pnl_pips, 1)
-        if pnl_pips >= forex._AUTO_SETTINGS.breakeven_pips and not test_pos["breakeven_activated"]:
-            be_sl = round(test_pos["entry_price"] + (0.5 * pip_size), test_pos["digits"])
-            test_pos["sl_price"] = be_sl
-            test_pos["breakeven_activated"] = True
+            # Breakeven logic execution
+            test_pos["current_price"] = cur_p
+            test_pos["pnl_pips"] = round(pnl_pips, 1)
+            if pnl_pips >= forex._AUTO_SETTINGS.breakeven_pips and not test_pos["breakeven_activated"]:
+                be_sl = round(test_pos["entry_price"] + (0.5 * pip_size), test_pos["digits"])
+                test_pos["sl_price"] = be_sl
+                test_pos["breakeven_activated"] = True
 
-        self.assertTrue(test_pos["breakeven_activated"])
-        self.assertEqual(test_pos["sl_price"], 1.08005)
+            self.assertTrue(test_pos["breakeven_activated"])
+            self.assertEqual(test_pos["sl_price"], 1.08005)
 
-        # Now simulate price reaching +15 pips (above 12.0 trailing stop threshold)
-        cur_p2 = 1.08150
-        pnl_pips2 = (cur_p2 - test_pos["entry_price"]) / pip_size
-        test_pos["current_price"] = cur_p2
-        test_pos["pnl_pips"] = round(pnl_pips2, 1)
-        if pnl_pips2 >= forex._AUTO_SETTINGS.trailing_stop_pips:
-            trail_dist = forex._AUTO_SETTINGS.trailing_stop_pips * pip_size
-            cand_sl = round(cur_p2 - trail_dist, test_pos["digits"])
-            if cand_sl > test_pos["sl_price"]:
-                test_pos["sl_price"] = cand_sl
-                test_pos["trailing_activated"] = True
+            # Now simulate price reaching +15 pips (above 12.0 trailing stop threshold)
+            cur_p2 = 1.08150
+            pnl_pips2 = (cur_p2 - test_pos["entry_price"]) / pip_size
+            test_pos["current_price"] = cur_p2
+            test_pos["pnl_pips"] = round(pnl_pips2, 1)
+            if pnl_pips2 >= forex._AUTO_SETTINGS.trailing_stop_pips:
+                trail_dist = forex._AUTO_SETTINGS.trailing_stop_pips * pip_size
+                cand_sl = round(cur_p2 - trail_dist, test_pos["digits"])
+                if cand_sl > test_pos["sl_price"]:
+                    test_pos["sl_price"] = cand_sl
+                    test_pos["trailing_activated"] = True
 
-        self.assertTrue(test_pos["trailing_activated"])
-        expected_sl = round(cur_p2 - (forex._AUTO_SETTINGS.trailing_stop_pips * pip_size), test_pos["digits"])
-        self.assertEqual(test_pos["sl_price"], expected_sl)
+            self.assertTrue(test_pos["trailing_activated"])
+            expected_sl = round(cur_p2 - (forex._AUTO_SETTINGS.trailing_stop_pips * pip_size), test_pos["digits"])
+            self.assertEqual(test_pos["sl_price"], expected_sl)
 
-        # Close position
-        await forex.close_forex_position_manually(forex.ClosePositionRequest(id="FX-TEST-BE"))
+            # Close position
+            await forex.close_forex_position_manually(forex.ClosePositionRequest(id="FX-TEST-BE"))
+        finally:
+            forex._AUTO_SETTINGS.breakeven_pips = orig_be
+            forex._AUTO_SETTINGS.trailing_stop_pips = orig_trail
 
     async def test_asian_session_trading_allowed(self):
         # Verify that Asian sessions (Tokyo and Sydney) are recognized as active

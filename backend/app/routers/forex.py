@@ -592,6 +592,10 @@ FOREX_TP_CANCEL_ON_TRAIL_DEFAULT = (
 _LAST_GOLD_EXIT_TIME = 0.0
 _LAST_XAU_RADAR_SIGNAL_BAR: Dict[str, int] = {}
 _LAST_BTC_EXIT_TIME = 0.0
+_LAST_SYMBOL_LOSS_TIME: Dict[str, float] = {}
+_LAST_SYMBOL_EXIT_TIME: Dict[str, float] = {}
+_LAST_SYMBOL_EXIT_DIR: Dict[str, str] = {}
+_LAST_RADAR_SIGNAL_BAR: Dict[str, int] = {}
 _LAST_CLOSED_DEAL_IDS: set = set()
 
 # FX korelasyon kalkanı: 5M kapanış önbelleğinden rolling Pearson matrisi
@@ -2104,10 +2108,11 @@ def get_symbol_trading_specs(
         mult = 3.0
         digits = 2
         pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * 1.0 point = $1.00
-        eff_sl_pips = round(base_sl * mult, 1)
-        eff_tp_pips = round(base_tp * mult, 1)
-        eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
-        eff_trail_pips = round(base_trail * mult, 1)
+        base_sl_calc = round(base_sl * mult, 1)
+        eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1)) if (atr_pips and atr_pips > 0) else base_sl_calc
+        eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
+        eff_be_pips = max(25.0, round(eff_sl_pips * 0.75, 1))
+        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
 
     elif len(clean_sym) == 6 and clean_sym[3:6] in ("CAD", "CHF", "GBP", "NZD", "AUD", "EUR"):
         quote = clean_sym[3:6]
@@ -2119,10 +2124,11 @@ def get_symbol_trading_specs(
         # NZD: 10 * NZDUSD (~5.7), AUD: 10 * AUDUSD (~7.0), EUR: 10 * EURUSD (~11.3)
         pip_vals = {"GBP": 13.3, "CHF": 12.1, "CAD": 7.0, "NZD": 5.7, "AUD": 7.0, "EUR": 11.3}
         pip_val = pip_vals.get(quote, 10.0)
-        eff_sl_pips = round(base_sl * mult, 1)
-        eff_tp_pips = round(base_tp * mult, 1)
-        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
-        eff_trail_pips = round(base_trail * mult, 1)
+        base_sl_calc = round(base_sl * mult, 1)
+        eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1)) if (atr_pips and atr_pips > 0) else base_sl_calc
+        eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 0.75, 1))
+        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
 
     else:
         # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
@@ -2130,10 +2136,11 @@ def get_symbol_trading_specs(
         mult = 1.0
         digits = 5
         pip_val = 10.0
-        eff_sl_pips = round(base_sl * mult, 1)
-        eff_tp_pips = round(base_tp * mult, 1)
-        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
-        eff_trail_pips = round(base_trail * mult, 1)
+        base_sl_calc = round(base_sl * mult, 1)
+        eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1)) if (atr_pips and atr_pips > 0) else base_sl_calc
+        eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 0.75, 1))
+        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
 
     return {
         "pip_size": pip_size,
@@ -2728,19 +2735,25 @@ def _compute_technical_indicators(
             bullish_pts += 10
             bearish_pts += 10
     elif 30.0 <= rsi < 40.0:
-        # Oversold bounce opportunity
-        bullish_pts += 18
+        # Boğa trendinde veya nötrde sağlıklı dipten toparlanma
+        if htf_trend == "BULLISH":
+            bullish_pts += 20
+        elif htf_trend != "BEARISH":
+            bullish_pts += 10
     elif 60.0 < rsi <= 70.0:
-        # Overbought pullback opportunity
-        bearish_pts += 18
+        # Ayı trendinde veya nötrde tepe düzeltmesi; boğa trendinde momentum devamı
+        if htf_trend == "BEARISH":
+            bearish_pts += 20
+        elif htf_trend == "BULLISH":
+            bullish_pts += 15
+        else:
+            bearish_pts += 10
     elif rsi > 75.0:
-        # Extreme high - strong penalty
-        bullish_pts -= 20
-        bearish_pts += 12
+        # Aşırı uzama: Asla trende karşı SELL puanı basma! Sadece boğa alımını dondur
+        bullish_pts -= 25
     elif rsi < 25.0:
-        # Extreme low - strong penalty
-        bearish_pts -= 20
-        bullish_pts += 12
+        # Aşırı çöküş: Asla trende karşı BUY puanı basma! Sadece ayı satışını dondur
+        bearish_pts -= 25
 
     # (c2) RSI-Trend Alignment Bonus (8 Pts)
     if htf_trend == "BULLISH" and 45.0 <= rsi <= 65.0:
@@ -2771,12 +2784,10 @@ def _compute_technical_indicators(
         elif cmo < -25.0:
             bullish_pts -= 8
         if cmo > 65.0:
-            # Aşırı uzama — trend kovalamayı engelle (RSI > 75 cezasının CMO karşılığı)
-            bullish_pts -= 10
-            bearish_pts += 5
+            # Aşırı uzama — trend kovalamayı engelle (asla karşı yöne puan verme)
+            bullish_pts -= 15
         elif cmo < -65.0:
-            bearish_pts -= 10
-            bullish_pts += 5
+            bearish_pts -= 15
 
         cci = _compute_cci(h, l, c, 20)
         if cci > 0.0:
@@ -2788,56 +2799,48 @@ def _compute_technical_indicators(
         elif cci < -100.0:
             bullish_pts -= 6
         if cci > 200.0:
-            # Aşırı uzama — mean reversion riski
-            bullish_pts -= 6
-            bearish_pts += 3
+            # Aşırı uzama — mean reversion riski (asla karşı yöne puan verme)
+            bullish_pts -= 10
         elif cci < -200.0:
-            bearish_pts -= 6
-            bullish_pts += 3
+            bearish_pts -= 10
 
         if rsi >= 50.0 and cmo > 0.0 and cci > 0.0:
             bullish_pts += 8
         elif rsi <= 50.0 and cmo < 0.0 and cci < 0.0:
             bearish_pts += 8
 
-    # MTF Alignment Verdict
+    # MTF Alignment Verdict & Net Göreli Skorlama
     ltf_bullish = (ema9 > ema21 and last_price >= ema21 * 0.999)
     ltf_bearish = (ema9 < ema21 and last_price <= ema21 * 1.001)
 
-    if (htf_trend == "BULLISH" or htf_trend == "NEUTRAL") and ltf_bullish and bullish_pts >= bearish_pts:
+    net_bullish = bullish_pts - bearish_pts
+    net_bearish = bearish_pts - bullish_pts
+
+    # 15M Trendi NEUTRAL iken asla yönsüz piyasada işlem açılmaz; net puan farkı en az 10 olmalıdır
+    if htf_trend == "BULLISH" and ltf_bullish and net_bullish >= 10:
         trend = "BULLISH"
-        action = "BUY" if rsi <= 78.0 else "HOLD"
-        score = round(min(96.0, max(60.0, 50.0 + (bullish_pts * 0.46))), 1)
-        macd_verdict = f"AL (MTF Boğa Uyumu | 15M: {htf_trend} + 5M Momentum)"
-    elif (htf_trend == "BEARISH" or htf_trend == "NEUTRAL") and ltf_bearish and bearish_pts >= bullish_pts:
+        action = "BUY" if rsi <= 76.0 else "HOLD"
+        score = round(min(96.0, max(60.0, 50.0 + (net_bullish * 0.46))), 1)
+        macd_verdict = f"AL (MTF Boğa Uyumu | 15M: {htf_trend} + 5M Net: +{net_bullish})"
+    elif htf_trend == "BEARISH" and ltf_bearish and net_bearish >= 10:
         trend = "BEARISH"
-        action = "SELL" if rsi >= 22.0 else "HOLD"
-        score = round(min(96.0, max(60.0, 50.0 + (bearish_pts * 0.46))), 1)
-        macd_verdict = f"SAT (MTF Ayı Uyumu | 15M: {htf_trend} + 5M Momentum)"
+        action = "SELL" if rsi >= 24.0 else "HOLD"
+        score = round(min(96.0, max(60.0, 50.0 + (net_bearish * 0.46))), 1)
+        macd_verdict = f"SAT (MTF Ayı Uyumu | 15M: {htf_trend} + 5M Net: +{net_bearish})"
     else:
         # Choppy, conflicting timeframes, or indecisive market
         trend = "NEUTRAL"
         action = "HOLD"
         score = round(max(50.0, min(58.0, 50.0 + abs(bullish_pts - bearish_pts) * 0.1)), 1)
-        macd_verdict = f"NÖTR (MTF Uyumsuzluğu | 15M: {htf_trend}, 5M: {'Boğa' if ltf_bullish else 'Ayı'} - Beklemede)"
+        macd_verdict = f"NÖTR (MTF/Net Güç Yetersiz | 15M: {htf_trend}, Net Boğa: {net_bullish:+d} - Beklemede)"
 
-    # Altında yalnızca kapanmış M5 SuperTrend ile teyit edilen, aynı yöndeki
-    # 15M rejim işlemi açılabilir. Nötr HTF'deki kısa tepki, düşen ana harekette
-    # RADAR'ın BUY üretmesine yol açıyordu. Bu koruma panel ayarından kapatılamaz.
+    # Evrensel SuperTrend Yön Koruması: ST yönü sinyal yönüyle çelişiyorsa işlem kilitlenir
     direction_guard_reason = ""
-    if symbol.upper() == "XAUUSD" and action in ("BUY", "SELL"):
-        expected_htf = "BULLISH" if action == "BUY" else "BEARISH"
+    if action in ("BUY", "SELL"):
         expected_st = 1 if action == "BUY" else -1
-        if htf_trend != expected_htf:
+        if st_dir != 0 and st_dir != expected_st:
             action = "HOLD"
-            direction_guard_reason = f"Altın yön filtresi: 15M {htf_trend}; {expected_htf} teyidi bekleniyor"
-        elif st_dir != expected_st:
-            action = "HOLD"
-            direction_guard_reason = (
-                "Altın yön filtresi: 5M SuperTrend yönü belirsiz" if st_dir == 0
-                else "Altın yön filtresi: 5M SuperTrend karşı yönde"
-            )
-        if direction_guard_reason:
+            direction_guard_reason = f"SuperTrend kalkanı: 5M SuperTrend karşı yönde ({'BOĞA' if st_dir > 0 else 'AYI'})"
             macd_verdict = direction_guard_reason
 
     return {
@@ -5214,14 +5217,23 @@ async def _close_position_internal(pos_id: str, reason: str, exit_price: Optiona
         # Pozisyon kapandı: durum değişti, `/status` önbelleği bayat kalmasın.
         _invalidate_status_cache()
 
-        # Altın veya BTC pozisyonu kapandığında 60 saniye soğuma sayacını başlat
+        # Tüm semboller için evrensel çıkış zamanı ve yönü
         sym_closed = target.get("symbol", "").upper()
+        now_exit_ts = time.time()
+        _LAST_SYMBOL_EXIT_TIME[sym_closed] = now_exit_ts
+        _LAST_SYMBOL_EXIT_DIR[sym_closed] = target.get("direction", "").upper()
+
+        # Zararlı kapanış veya stop durumunda sembol bazlı soğuma kaydı (Seri Kayıp Kalkanı)
+        if reason in ("SL_HIT", "BE_HIT", "Scalper Close") or pnl_usd < 0:
+            _LAST_SYMBOL_LOSS_TIME[sym_closed] = now_exit_ts
+
+        # Altın veya BTC pozisyonu kapandığında geriye uyumluluk sayacını başlat
         if "XAU" in sym_closed or "GOLD" in sym_closed:
             global _LAST_GOLD_EXIT_TIME
-            _LAST_GOLD_EXIT_TIME = time.time()
+            _LAST_GOLD_EXIT_TIME = now_exit_ts
         if "BTC" in sym_closed:
             global _LAST_BTC_EXIT_TIME
-            _LAST_BTC_EXIT_TIME = time.time()
+            _LAST_BTC_EXIT_TIME = now_exit_ts
 
         # MT5 Köprüsü bağlıysa ve otomatik iletim aktifse, MT5'teki açık pozisyonu da otomatik kapat
         if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
@@ -6578,36 +6590,67 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # XAU ana RADAR sinyali yalnızca zaman damgalı, kapanmış M5
+                # Ana RADAR sinyali yalnızca zaman damgalı, kapanmış M5
                 # mumlarından üretilebilir. Stratejiye özel giriş kolları kendi
                 # mum doğrulamalarını kullanır ve bu koşuldan etkilenmez.
-                if sym == "XAUUSD" and not _c_src and not bool(cand.get("signal_bar_confirmed", False)):
-                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get("XAUUSD_unconfirmed", 0.0) > 30.0:
-                        _LAST_CANDIDATE_LOG_TIME["XAUUSD_unconfirmed"] = now_ts
+                if not _c_src and not bool(cand.get("signal_bar_confirmed", False)):
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_unconfirmed", 0.0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_unconfirmed"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            "[XAU/USD][M1/M5 Çoklu Radar] Kapanmış M5 mum zaman damgası yok — BUY/SELL açılmadı.",
+                            f"[{cand['display']}][{_c_strat_lbl}] Kapanmış M5 mum zaman damgası yok — BUY/SELL açılmadı.",
                             symbol=sym,
-                            strategy="M1_M5_RADAR_SCALPER",
-                            strategy_label="M1/M5 Çoklu Radar",
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
                         )
                     continue
 
-                if sym == "XAUUSD" and not _c_src:
+                if not _c_src:
                     signal_bar_time = int(cand.get("signal_bar_time") or 0)
-                    last_used_bar = int(_LAST_XAU_RADAR_SIGNAL_BAR.get(sym, 0))
+                    last_used_bar = int(_LAST_RADAR_SIGNAL_BAR.get(sym, 0) or _LAST_XAU_RADAR_SIGNAL_BAR.get(sym, 0))
                     if signal_bar_time <= last_used_bar:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get("XAUUSD_same_bar", 0.0) > 30.0:
-                            _LAST_CANDIDATE_LOG_TIME["XAUUSD_same_bar"] = now_ts
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_same_bar", 0.0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_same_bar"] = now_ts
                             _log_auto_decision(
                                 "GATE",
-                                "[XAU/USD][M1/M5 Çoklu Radar] Aynı kapanmış M5 sinyal mumu tekrar kullanılamaz — yeni giriş bekleniyor.",
+                                f"[{cand['display']}][{_c_strat_lbl}] Aynı kapanmış M5 sinyal mumu tekrar kullanılamaz — yeni bar bekleniyor.",
                                 symbol=sym,
-                                strategy="M1_M5_RADAR_SCALPER",
-                                strategy_label="M1/M5 Çoklu Radar",
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
                                 metadata={"signal_bar_time": signal_bar_time, "last_used_signal_bar_time": last_used_bar},
                             )
                         continue
+
+                # Evrensel Sembol Bazlı Zarar Soğuması (Tekil Stop Kalkanı - 180s)
+                loss_exit_time = _LAST_SYMBOL_LOSS_TIME.get(sym, 0.0)
+                if loss_exit_time > 0 and (now_ts - loss_exit_time < 180.0):
+                    rem_loss_cd = int(180.0 - (now_ts - loss_exit_time))
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_loss_cd", 0.0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_loss_cd"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] Seri Zarar Kalkanı: Son stop/kayıptan sonra soğuma bekleniyor ({rem_loss_cd} sn).",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
+                    continue
+
+                # Whipsaw / Testere Kalkanı (Zıt Yöne Ani Dönüş Koruması - 300s)
+                last_exit_dir = _LAST_SYMBOL_EXIT_DIR.get(sym, "")
+                last_exit_time = _LAST_SYMBOL_EXIT_TIME.get(sym, 0.0)
+                if last_exit_dir and new_action != last_exit_dir and (now_ts - last_exit_time < 300.0):
+                    rem_flip_cd = int(300.0 - (now_ts - last_exit_time))
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_flip_cd", 0.0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_flip_cd"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] Testere (Whipsaw) Kalkanı: Zıt yöne ani dönüş engeli ({rem_flip_cd} sn).",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
+                    continue
 
                 # Seri-SL ve Yön Bazlı Seri Zarar Soğuması: sembol veya yön ardışık kayıplardan sonra
                 # YENİ giriş almaz (flip dahil); açık pozisyon yönetimi aynen sürer.
@@ -7174,7 +7217,17 @@ async def _forex_auto_paper_loop():
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
-                raw_calc_lots = round(risk_usd / (sl_pips * pip_val), 2)
+
+                # Seans Likiditesi Koruması: 16:00 - 20:00 UTC (London Fix sonrası sığ likidite ve NY testeresi)
+                # aralığında risk otomatik olarak %50 ölçeklenir
+                curr_utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
+                if 16 <= curr_utc_hour < 20:
+                    risk_usd *= 0.50
+
+                # Komisyon ($7/lot) ve spread tamponlu efektif risk paydası
+                comm_per_lot = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
+                effective_risk_denom = max(1.0, (sl_pips * pip_val) + comm_per_lot)
+                raw_calc_lots = round(risk_usd / effective_risk_denom, 2)
 
                 # Dinamik Lot & Risk Hesaplama (Modalda belirlenen risk yüzdesine göre)
                 is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
@@ -7203,7 +7256,9 @@ async def _forex_auto_paper_loop():
                     lot_ceiling = 50.0
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 else:
-                    lot_ceiling = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+                    # Cross FX (CAD/CHF/NZD/JPY) paritelerinde aşırı lot birikimini engelleyen 0.75 lot güvenlik tavanı
+                    is_cross_fx = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
+                    lot_ceiling = min(0.75 if is_cross_fx else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 mt5_lots = round(mt5_lots, 2)
 
@@ -7369,6 +7424,8 @@ async def _forex_auto_paper_loop():
                 _opened_cycle.add(sym)
                 if (_PENDING_FLIP.get(sym) or {}).get("close_ok"):
                     _PENDING_FLIP.pop(sym, None)
+                if not _c_src:
+                    _LAST_RADAR_SIGNAL_BAR[sym] = int(cand.get("signal_bar_time") or 0)
                 if sym == "XAUUSD" and not _c_src:
                     _LAST_XAU_RADAR_SIGNAL_BAR[sym] = int(cand.get("signal_bar_time") or 0)
 
