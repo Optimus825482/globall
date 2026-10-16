@@ -278,9 +278,12 @@ export function formatFixed(value: number | string | null | undefined, digits = 
   return n.toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-/** Yerel (UTC değil) YYYY-MM-DD — date input default değeri için. */
+/** Türkiye Saati (UTC+3) YYYY-MM-DD dizesini döner — tüm rapor ve tarih seçimleri için. */
 export function localDateInput(): string {
   const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+  const d3 = new Date(now.getTime() + 3 * 3600 * 1000);
+  const y = d3.getUTCFullYear();
+  const m = String(d3.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(d3.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }

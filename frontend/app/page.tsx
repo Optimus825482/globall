@@ -177,17 +177,30 @@ function formatPrice(v?: number | null, symbol: string = ""): string {
 function formatClockTime(timeStr?: string | number, closedAtTs?: number): string {
   if (!timeStr && closedAtTs && typeof closedAtTs === "number" && closedAtTs > 0) {
     const ms = closedAtTs > 1e11 ? closedAtTs : closedAtTs * 1000;
-    const d = new Date(ms);
-    if (!isNaN(d.getTime())) {
-      const hh = String(d.getUTCHours()).padStart(2, "0");
-      const mm = String(d.getUTCMinutes()).padStart(2, "0");
-      const ss = String(d.getUTCSeconds()).padStart(2, "0");
+    const d3 = new Date(ms + 3 * 3600 * 1000);
+    if (!isNaN(d3.getTime())) {
+      const hh = String(d3.getUTCHours()).padStart(2, "0");
+      const mm = String(d3.getUTCMinutes()).padStart(2, "0");
+      const ss = String(d3.getUTCSeconds()).padStart(2, "0");
       return `${hh}:${mm}:${ss}`;
     }
   }
   if (!timeStr) return "—";
   try {
     const raw = String(timeStr).trim();
+    if (raw.includes("UTC+3")) {
+      const timeMatch = raw.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (timeMatch) {
+        return `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
+      }
+    }
+    if (raw.includes("UTC")) {
+      const timeMatch = raw.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (timeMatch) {
+        const h = String((Number(timeMatch[1]) + 3) % 24).padStart(2, "0");
+        return `${h}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
+      }
+    }
     const timeMatch = raw.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
     if (timeMatch) {
       return `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
@@ -212,16 +225,21 @@ function parseTradeTime(t: ClosedTrade | any): number {
   const s = String(rawStr).trim();
   const parts = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
   if (parts) {
+    if (s.includes("UTC+3")) {
+      return Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]), Number(parts[4]) - 3, Number(parts[5]), Number(parts[6] || 0));
+    }
     return Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]), Number(parts[4]), Number(parts[5]), Number(parts[6] || 0));
   }
   const parsed = new Date(s).getTime();
   return isNaN(parsed) ? 0 : parsed;
 }
 
-// Bulunulan tarihteki saat 00:01:00 eşiğini verir (MT5 sunucu takvimiyle uyumlu)
+// Bulunulan tarihteki saat 00:00:00 UTC+3 eşiğini verir (Türkiye saati UTC+3 takvimiyle tam uyumlu)
 function getToday0001Cutoff(): number {
   const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 1, 0);
+  const utc3Ms = now.getTime() + 3 * 3600 * 1000;
+  const d3 = new Date(utc3Ms);
+  return Date.UTC(d3.getUTCFullYear(), d3.getUTCMonth(), d3.getUTCDate(), 0, 0, 0) - 3 * 3600 * 1000;
 }
 
 interface EventCountdownBadgeProps {

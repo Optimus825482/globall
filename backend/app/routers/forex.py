@@ -8506,8 +8506,8 @@ async def get_forex_auto_paper_status():
     realized_usd = round(sum(d["pnl_usd"] for d in normalized_deals), 2) if is_mt5_conn else _AUTO_STATE["realized_pnl_usd"]
     win_rate = round((wins / total_trades * 100.0), 1) if total_trades > 0 else 0.0
 
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    now_utc3 = datetime.datetime.fromtimestamp(now_ts, TZ_UTC3)
+    today_midnight = now_utc3.replace(hour=0, minute=0, second=0, microsecond=0)
     today_midnight_ts = today_midnight.timestamp()
 
     today_deals = [d for d in normalized_deals if (_deal_ts(d) or 0.0) >= today_midnight_ts]

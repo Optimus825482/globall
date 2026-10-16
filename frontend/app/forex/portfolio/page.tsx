@@ -692,7 +692,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             {[
               {
                 title: "GÜNLÜK SİSTEM BAŞARISI",
-                badge: "Bugün (UTC)",
+                badge: "Bugün (UTC+3)",
                 badgeCls: "bg-blue-500/15 text-blue-300 border-blue-400/30",
                 rate: dailyWinRate,
                 w: dailyWins,
