@@ -18,6 +18,10 @@ import json
 import logging
 import math
 import os
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 import random
 import tempfile
 import time
@@ -2114,6 +2118,17 @@ def sign_window_entry(
 # taban-lot kelepçesi bu aynı çarpanı kullanmak ZORUNDA — ikisi ayrışırsa bütçe
 # sessizce aşılır (2026-10-14 olayı: kelepçe koşulsuz uygulanıp tavanı deliyordu).
 RISK_HARD_MULT = 2.0
+
+
+def get_symbol_risk_pct(symbol: str, settings: Optional[Any] = None) -> float:
+    """FX %15, XAUUSD %7, BTC/US30/USTEC/NAS100 %2 dinamik risk bütçesi yüzdesi."""
+    s = settings or _AUTO_SETTINGS
+    sym_u = str(symbol or "").upper()
+    if any(k in sym_u for k in ("BTC", "US30", "NAS100", "USTEC", "SPX")):
+        return float(getattr(s, "risk_crypto_index_pct", 2.0))
+    elif any(k in sym_u for k in ("XAU", "GOLD")):
+        return float(getattr(s, "risk_gold_pct", 7.0))
+    return float(getattr(s, "risk_per_trade_pct", 15.0))
 
 
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
@@ -4413,7 +4428,9 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(2.0, ge=0.1, le=20.0, description="Pozisyon hacmi risk bütçesi (% bakiye). 2026-10-14: 5→2. Kanıt: ReportHistory-53077151 (308 işlem) işlem başına 1R riski medyan %9.94 bakiye (ayar %5), 148 işlem >%10; bakiye 140.77→tepe 306.19→41.16 (−%87 tepe dibi). Bütçe aşımının kaynağı taban-lot kelepçesiydi (aşağıda sınırlandı). Panelden ayarlanabilir.")
+    risk_per_trade_pct: float = Field(15.0, ge=0.1, le=30.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %15")
+    risk_gold_pct: float = Field(7.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %7")
+    risk_crypto_index_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %2")
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli scalper pozisyonu)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
@@ -4458,17 +4475,20 @@ class ForexAutoPaperSettings(BaseModel):
     btc_net_negative_min_trades: int = Field(6, ge=3, le=50, description="BTC net-negatif freni için pencerede gereken minimum işlem sayısı")
     btc_net_negative_usd: float = Field(0.0, ge=-1000.0, le=0.0, description="BTC net-negatif freni eşiği (USD): pencere net'i bunun altındaysa BTC dinlenir (0.0 = herhangi bir net zarar)")
     crypto_risk_clamp_enabled: bool = Field(True, description="Kripto/altında risk-skip bypass'ı yerine lotu kategori tabanına SABİTLE (risk asla artmaz; eski davranış aşırı lotu kullanıyordu — 2026-10-10 denetim P0-4)")
-    loss_streak_limit: int = Field(3, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde bu kadar ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; 2026-10-07 kullanıcı önerisi + replay: 3)")
-    loss_streak_cooldown_sec: float = Field(300.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (saniye; normal altın/BTC cooldown'undan BAĞIMSIZ — kullanıcı önerisi: 300 = 5 dk)")
+    loss_streak_limit: int = Field(2, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde 2 ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; varsayılan: 2)")
+    loss_streak_cooldown_sec: float = Field(900.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (15 dk = 900 sn)")
     chandelier_atr_mult: float = Field(CANLI_CHANDELIER_ATR_MULT, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. **Bu değer canlı SABİT: `CANLI_CHANDELIER_ATR_MULT` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 1.2→0.3 sıkma 4 bağımsız pencerede kazanıyor (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF artıyor, maxDD düşüyor) ve 2-pip kaymada korunuyor. Doğrudan XAU+BTC replay (2026-07-15→08-15): chand0.3 net $4305.70 / PF 1.87 / DD $79.49 vs en iyi sabit-pip $3950.88 / 1.80; 2-pip kaymada $2538.31/1.47 vs $2218.56/1.39. 15dk bar çözünürlüğünde yön korunuyor (etki ~%36 küçülür) → 0.05 yerine 0.3. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     # ── 2026-10-14: BE/trail denetim kolları (ReportHistory-53077151) ────────────
     # Hepsinin varsayılanı MEVCUT DAVRANIŞI BİREBİR KORUR (kapalı/0). Yalnız replay
     # A/B kanıtı geçen kol açılır. Ölçüm: 1R medyan 1.34 ATR iken kazanan çıkış
     # +0.16 R (0.21 ATR); kazananların %54 tepe kârı BE/trail kilidiyle geri verilmiş.
-    be_lock_from_mfe: bool = Field(False, description="BE kilidi ANLIK kâr yerine MFE (tepe) üzerinden hesaplanır — replay paritesi. Canlı `pnl_pips` (poll anı) kullanırken replay `pnl_extreme_pips` (bar tepesi) kullanıyordu; bu sapma canlıda sistematik olarak DAHA SIKI kilit üretiyordu. Açıkken tetik ve kilit aynı tepeden okunur (replay ile birebir).")
-    be_trigger_atr_mult: float = Field(0.0, ge=0.0, le=5.0, description="BE tetiğine ATR tabanı ekler: tetik = max(min($1+headroom, eff_be), bu kat × giriş ATR'si). 0 = kapalı (mevcut davranış). Amaç: XAU'da tetiğin 0.15 ATR'ye düşmesini engellemek. UYARI: 2026-10-12 dokümanında yalnız-tetik geciktirme (min_r_atr) replay'de ELENDİ — kilit tabanı birlikte büyümedikçe işe yaramıyor; kanıt olmadan açılmaz.")
-    be_trigger_r_mult: float = Field(0.0, ge=0.0, le=5.0, description="BE tetiğine R tabanı ekler: tetik = max(min($1+headroom, eff_be), bu kat × giriş SL'i). 0 = kapalı (mevcut davranış).")
+    be_lock_from_mfe: bool = Field(True, description="BE kilidi ANLIK kâr yerine MFE (tepe) üzerinden hesaplanır — replay paritesi. Canlı `pnl_pips` (poll anı) kullanırken replay `pnl_extreme_pips` (bar tepesi) kullanıyordu; bu sapma canlıda sistematik olarak DAHA SIKI kilit üretiyordu. Açıkken tetik ve kilit aynı tepeden okunur (replay ile birebir).")
+    be_trigger_atr_mult: float = Field(0.80, ge=0.0, le=5.0, description="BE tetiğine ATR tabanı ekler: tetik = max(min($1+headroom, eff_be), bu kat × giriş ATR'si). 0.80 ATR volatilite nefes alanı.")
+    be_trigger_r_mult: float = Field(0.40, ge=0.0, le=5.0, description="BE tetiğine R tabanı ekler: 0.40R Dinamik BE kâr kilidi.")
+    chandelier_gate_independent: bool = Field(False, description="Chandelier, BE kilidini BEKLEMEDEN kurulur (MFE > mult×giriş ATR'si olur olmaz). Şu an kapı `BE aktif` şartına bağlı olduğu için XAU'da MFE > 0.75 ATR (diğerlerinde 0.50 ATR) altındaki tüm hareketlerde chandelier ölü kalıyor; ölçülen tepe medyanı 0.63 ATR. **Replay W1 OOS: net +3904→+4510 (+%15.5), PF 1.62→1.73, WR %74.0→%78.8.**")
+    be_trigger_atr_mult_gold: float = Field(0.75, ge=0.0, le=5.0, description="XAUUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). Kullanıcı talebi (2026-10-14): altında erken tetiklenmesin. XAU 0.05 lot'ta tetik 6 pip = 0.15 ATR'ye düşüyordu; 0.75 → ~30 pip = 0.75 ATR'de kilitlenir. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.75 AÇILDI.** Ölçüm uyarısı: W1 OOS'ta tetiği geciktiren genel kol (minratr) net +3904→+675'e düşürdü (PF 1.62→1.08, SL zararı −6278→−8755) — yani erken BE tam-SL olacak işlemleri küçük kâra çeviriyordu. Bu değer o riske rağmen açıldı; geri alma: 0.0.")
+    be_trigger_atr_mult_crypto: float = Field(0.50, ge=0.0, le=5.0, description="BTCUSD/ETHUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). BTC 0.05 lot'ta tetik 45 pip = 0.27 ATR'ye düşüyordu; 0.50 → ~83 pip = 0.50 ATR. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.50 AÇILDI.** Geri alma: 0.0.")
     chandelier_gate_independent: bool = Field(False, description="Chandelier, BE kilidini BEKLEMEDEN kurulur (MFE > mult×giriş ATR'si olur olmaz). Şu an kapı `BE aktif` şartına bağlı olduğu için XAU'da MFE > 0.75 ATR (diğerlerinde 0.50 ATR) altındaki tüm hareketlerde chandelier ölü kalıyor; ölçülen tepe medyanı 0.63 ATR. **Replay W1 OOS: net +3904→+4510 (+%15.5), PF 1.62→1.73, WR %74.0→%78.8.**")
     be_trigger_atr_mult_gold: float = Field(0.75, ge=0.0, le=5.0, description="XAUUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). Kullanıcı talebi (2026-10-14): altında erken tetiklenmesin. XAU 0.05 lot'ta tetik 6 pip = 0.15 ATR'ye düşüyordu; 0.75 → ~30 pip = 0.75 ATR'de kilitlenir. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.75 AÇILDI.** Ölçüm uyarısı: W1 OOS'ta tetiği geciktiren genel kol (minratr) net +3904→+675'e düşürdü (PF 1.62→1.08, SL zararı −6278→−8755) — yani erken BE tam-SL olacak işlemleri küçük kâra çeviriyordu. Bu değer o riske rağmen açıldı; geri alma: 0.0.")
     be_trigger_atr_mult_crypto: float = Field(0.50, ge=0.0, le=5.0, description="BTCUSD/ETHUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). BTC 0.05 lot'ta tetik 45 pip = 0.27 ATR'ye düşüyordu; 0.50 → ~83 pip = 0.50 ATR. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.50 AÇILDI.** Geri alma: 0.0.")
@@ -4932,11 +4952,14 @@ def get_all_symbol_ev_status(now_ts: Optional[float] = None) -> Dict[str, Any]:
         # BTC yalnız btc_ev_exempt=True ise muaf (varsayılan False → BTC EV penceresiyle dinlenir).
         is_exempt_symbol = (sym == "XAUUSD") or (sym == "BTCUSD" and _AUTO_SETTINGS.btc_ev_exempt)
 
+        sym_risk_pct = get_symbol_risk_pct(sym, _AUTO_SETTINGS)
+        sym_risk_floor = ev_balance * (sym_risk_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
+
         raw_blocked = ev_guard_decision(
             stats,
             _AUTO_SETTINGS.ev_min_trades,
             _AUTO_SETTINGS.ev_max_win_rate,
-            risk_floor,
+            sym_risk_floor,
         ) if not is_exempt_symbol else False
 
         is_effectively_blocked = raw_blocked and not is_overridden and _AUTO_SETTINGS.ev_guard_enabled
@@ -5129,7 +5152,7 @@ def get_symbol_gate_snapshot(
     else:
         is_mt5_conn = bool(_MT5_STATE.get("connected"))
         ev_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if is_mt5_conn else float(_AUTO_STATE["balance"])
-        risk_floor = ev_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
+        risk_floor = ev_bal * (get_symbol_risk_pct(sym, _AUTO_SETTINGS) / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
         stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
         overridden = now_ts < _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
         blocked = ev_guard_decision(stats, _AUTO_SETTINGS.ev_min_trades,
@@ -5525,7 +5548,7 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     if _AUTO_SETTINGS.ev_guard_enabled:
         ev_stats = _collect_symbol_ev("XAUUSD", now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
         ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
-        ev_floor = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
+        ev_floor = ev_balance * (get_symbol_risk_pct("XAUUSD", _AUTO_SETTINGS) / 100.0) * _AUTO_SETTINGS.ev_loss_risk_mult
         if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades, _AUTO_SETTINGS.ev_max_win_rate, ev_floor):
             reasons.append("son kayıplar nedeniyle dinleniyor")
     bias = get_usd_bias("XAUUSD", action)
@@ -7116,7 +7139,7 @@ async def _forex_auto_paper_loop():
                         pass
                     else:
                         ev_balance = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
-                        ev_risk_usd = ev_balance * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                        ev_risk_usd = ev_balance * (get_symbol_risk_pct(sym, _AUTO_SETTINGS) / 100.0)
                         ev_stats = _collect_symbol_ev(sym, now_ts, _AUTO_SETTINGS.ev_window_hours * 3600.0)
                         if ev_guard_decision(ev_stats, _AUTO_SETTINGS.ev_min_trades,
                                              _AUTO_SETTINGS.ev_max_win_rate,
@@ -7440,7 +7463,8 @@ async def _forex_auto_paper_loop():
                         first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
-                risk_usd = active_bal * (_AUTO_SETTINGS.risk_per_trade_pct / 100.0)
+                sym_risk_pct = get_symbol_risk_pct(sym, _AUTO_SETTINGS)
+                risk_usd = active_bal * (sym_risk_pct / 100.0)
 
                 # Seans Likiditesi Koruması: 16:00 - 20:00 UTC (London Fix sonrası sığ likidite ve NY testeresi)
                 # aralığında risk otomatik olarak %50 ölçeklenir
@@ -7517,7 +7541,7 @@ async def _forex_auto_paper_loop():
                         _log_auto_decision(
                             "GATE",
                             f"[{cand['display']}][{_c_strat_lbl}] Risk Kalkanı: SL {sl_pips:.0f}p ile en küçük mümkün lot bile "
-                            f"{_AUTO_SETTINGS.risk_per_trade_pct:.1f}% bütçenin 2 katını aşıyor. İşlem pas geçildi.",
+                            f"{sym_risk_pct:.1f}% bütçenin 2 katını aşıyor. İşlem pas geçildi.",
                             symbol=sym,
                             strategy=_c_strat,
                             strategy_label=_c_strat_lbl,

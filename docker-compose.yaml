@@ -183,7 +183,7 @@ services:
       INITIAL_BALANCE: ${INITIAL_BALANCE_GLOBAL:-1000.0}
       # TR Bridge: scalper.erkanerdem.online aktif değilse gereksiz ReadTimeoutError ve gecikmeyi önle
       BINANCE_TR_BRIDGE_ENABLED: ${BINANCE_TR_BRIDGE_ENABLED:-false}
-      BINANCE_TR_BRIDGE_SECRET: ${BINANCE_TR_BRIDGE_SECRET:-}
+      BINANCE_TR_BRIDGE_SECRET: ${BINANCE_TR_BRIDGE_SECRET}
       MT5_BRIDGE_TOKEN: ${MT5_BRIDGE_TOKEN:-}
       FOREX_MT5_SYNC_TOKEN: ${FOREX_MT5_SYNC_TOKEN:-}
     volumes:

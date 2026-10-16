@@ -556,13 +556,30 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
     def test_default_risk_and_position_limits(self):
-        """Varsayılan risk bütçesi %2 (2026-10-14: 5→2, ReportHistory-53077151 kanıtı) ve max_open_positions 99."""
+        """Varsayılan risk bütçesi (FX %15, XAU %7, Kripto/Endeks %2), 15dk soğuma ve 0.40R BE."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 1)
-        self.assertEqual(cfg.risk_per_trade_pct, 2.0)
+        self.assertEqual(cfg.risk_per_trade_pct, 15.0)
+        self.assertEqual(cfg.risk_gold_pct, 7.0)
+        self.assertEqual(cfg.risk_crypto_index_pct, 2.0)
+        self.assertEqual(cfg.loss_streak_limit, 2)
+        self.assertEqual(cfg.loss_streak_cooldown_sec, 900.0)
+        self.assertEqual(cfg.be_trigger_r_mult, 0.40)
         self.assertEqual(cfg.max_open_positions, 99)
         # LotCalculatorRequest ayrı, manuel hesap aracı (grafik butonu) — kendi varsayılanı kalır.
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
+
+    def test_get_symbol_risk_pct(self):
+        """Forex %15, XAUUSD %7, BTC/US30/USTEC/NAS100 %2 dinamik risk bütçesi kontrolü."""
+        self.assertEqual(forex.get_symbol_risk_pct("EURUSD"), 15.0)
+        self.assertEqual(forex.get_symbol_risk_pct("GBPUSD"), 15.0)
+        self.assertEqual(forex.get_symbol_risk_pct("AUDCAD"), 15.0)
+        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 7.0)
+        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 7.0)
+        self.assertEqual(forex.get_symbol_risk_pct("BTCUSD"), 2.0)
+        self.assertEqual(forex.get_symbol_risk_pct("US30"), 2.0)
+        self.assertEqual(forex.get_symbol_risk_pct("USTEC"), 2.0)
+        self.assertEqual(forex.get_symbol_risk_pct("NAS100"), 2.0)
 
     def test_same_symbol_pyramiding_limit_three(self):
         """Verify that 3 positions in the same direction are allowed, but the 4th is blocked."""
@@ -760,11 +777,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
     # ── 2026-10-14: BE/trail denetim kolları (ReportHistory-53077151) ──────────
 
     def test_arm_defaults_preserve_current_behavior(self):
-        """Üç kolun da varsayılanı KAPALI olmalı — kanıt gelmeden canlı davranış değişmez."""
+        """Doğrulanan 0.40R Dinamik BE Kâr Kilidi ve MFE tepe okuması varsayılan olarak aktiftir."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertFalse(cfg.be_lock_from_mfe)
-        self.assertEqual(cfg.be_trigger_atr_mult, 0.0)
-        self.assertEqual(cfg.be_trigger_r_mult, 0.0)
+        self.assertTrue(cfg.be_lock_from_mfe)
+        self.assertEqual(cfg.be_trigger_atr_mult, 0.80)
+        self.assertEqual(cfg.be_trigger_r_mult, 0.40)
         self.assertFalse(cfg.chandelier_gate_independent)
 
     def test_arm_a_be_lock_from_mfe_uses_peak(self):
