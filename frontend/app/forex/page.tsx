@@ -298,6 +298,7 @@ export default function ForexRadarPage() {
   // Filtreler
   const [tierFilter, setTierFilter] = useState<"ALL" | Tier>("ALL");
   const [directionFilter, setDirectionFilter] = useState<"ALL" | "BUY" | "SELL">("ALL");
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Quick Lot Calculator state
@@ -439,18 +440,32 @@ export default function ForexRadarPage() {
     return counts;
   }, [candidates]);
 
-  // Tablo: kademe + yön + arama filtreleri uygulanır.
+  // Tablo: kademe + yön + kategori + arama filtreleri uygulanır.
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return candidates.filter((c) => {
       if (tierFilter !== "ALL" && c.tier !== tierFilter) return false;
       if (directionFilter !== "ALL" && c.action !== directionFilter) return false;
+      if (categoryFilter !== "ALL") {
+        if (categoryFilter === "crypto") {
+          const isCrypto = c.category === "crypto" || ["BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD"].includes(c.symbol);
+          if (!isCrypto) return false;
+        } else if (categoryFilter === "commodity") {
+          if (c.category !== "commodity" && !c.symbol.includes("XAU")) return false;
+        } else if (categoryFilter === "index") {
+          if (c.category !== "index" && !c.symbol.includes("US30") && !c.symbol.includes("NAS100")) return false;
+        } else if (categoryFilter === "major") {
+          if (c.category !== "major") return false;
+        } else if (categoryFilter === "cross") {
+          if (c.category !== "cross") return false;
+        }
+      }
       if (q && !(`${c.display} ${c.symbol} ${c.name}`.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [candidates, tierFilter, directionFilter, searchQuery]);
+  }, [candidates, tierFilter, directionFilter, categoryFilter, searchQuery]);
 
-  const filtersActive = tierFilter !== "ALL" || directionFilter !== "ALL" || searchQuery.trim() !== "";
+  const filtersActive = tierFilter !== "ALL" || directionFilter !== "ALL" || categoryFilter !== "ALL" || searchQuery.trim() !== "";
 
   return (
     <div className="space-y-6 pb-12">
@@ -655,14 +670,14 @@ export default function ForexRadarPage() {
       {/* HIZLI ERİŞİM KARTLARI */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <Link
-          href="/forex/btc-gold"
+          href="/forex/portfolio?tab=xauusd"
           className="p-3.5 rounded-xl bg-bunker-900/80 border border-amber-500/40 hover:border-amber-400 transition-all group"
         >
           <div className="text-xl mb-1 group-hover:scale-110 transition-transform">🥇</div>
           <div className="font-mono text-sm font-bold text-white group-hover:text-amber-300">
-            BTC + Altın Odak İzleme
+            XAUUSD Komuta &amp; Loglar
           </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Yalnız XAUUSD · BTCUSD</div>
+          <div className="text-[11px] text-bunker-muted font-mono">Teknik Analiz · Karar Logları</div>
         </Link>
         <Link
           href="/forex/portfolio"
@@ -1001,6 +1016,18 @@ export default function ForexRadarPage() {
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-white placeholder-bunker-600 outline-none focus:border-blue-400 w-36"
             />
             <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-white outline-none focus:border-blue-400"
+            >
+              <option value="ALL">Tüm Kategoriler</option>
+              <option value="crypto">⚡ Kripto (7/24)</option>
+              <option value="major">Majör Pariteler</option>
+              <option value="cross">Kros Pariteler</option>
+              <option value="commodity">Emtia (Altın)</option>
+              <option value="index">Endeksler (US30 / NAS)</option>
+            </select>
+            <select
               value={tierFilter}
               onChange={(e) => setTierFilter(e.target.value as any)}
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-white outline-none focus:border-blue-400"
@@ -1027,6 +1054,7 @@ export default function ForexRadarPage() {
                 onClick={() => {
                   setTierFilter("ALL");
                   setDirectionFilter("ALL");
+                  setCategoryFilter("ALL");
                   setSearchQuery("");
                 }}
                 className="text-blue-400 hover:underline font-bold px-1"

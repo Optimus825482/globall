@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3 } from "../../lib/format";
@@ -812,6 +813,11 @@ function DxyProgressPanel({ dxy }: { dxy: DxyPanelData }) {
 
 // --- ANA SAYFA BİLEŞENİ ---
 export default function BtcGoldForexPage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/forex/portfolio?tab=xauusd");
+  }, [router]);
+
   const allowedSymbols = useMemo(() => ["XAUUSD", "BTCUSD"], []);
   const symFilter = useMemo(() => new Set(["XAUUSD", "BTCUSD"]), []);
 

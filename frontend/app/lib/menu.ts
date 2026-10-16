@@ -37,9 +37,8 @@ export const MENU_GROUPS: MenuGroup[] = [
     label: "Forex & Emtia",
     items: [
       { href: "/", label: "Ana Sayfa", icon: "🏠", desc: "Günün Forex işlem karnesi, başarı oranı ve kârlılık özeti" },
-      { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Lot ve Pip bazlı hesap yönetimi" },
+      { href: "/forex/portfolio", label: "Forex Portföy", icon: "💼", desc: "Portföy, açık işlemler, XAUUSD kokpiti ve teknik analiz", alsoActive: ["/forex/btc-gold"] },
       { href: "/metamobil", label: "MetaMobil", icon: "📱", desc: "MetaTrader 5 mobil arayüz kopyası (Kotasyonlar, Grafik, Ticaret & Geçmiş)" },
-      { href: "/forex/btc-gold", label: "BTC + Altın", icon: "🥇", desc: "Yalnız XAUUSD & BTCUSD otonom scalper konsolu" },
       { href: "/forex", label: "Forex Radar", icon: "📡", desc: "Majör pariteler ve emtia takibi" },
       // 2026-10-14: "Grafik" ve "Teknik Grafik" TEK sayfada birleşti. Tek giriş
       // kalır; eski iki rota da bu sayfaya düşer (`alsoActive`).

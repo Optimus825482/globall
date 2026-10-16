@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3 } from "../../lib/format";
+import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
+import ForexChartModal, { type ForexCandidateMeta } from "../components/ForexChartModal";
 
+// --- VERİ TİPLERİ ---
 interface AutoPosition {
   id: string;
   symbol: string;
@@ -43,7 +46,6 @@ interface ClosedTrade {
   score?: number;
 }
 
-/** Sembol bazlı KPI dilimi (backend `per_symbol_today` / `per_symbol_all_time`). */
 interface SymbolDailyKpi {
   symbol: string;
   display: string;
@@ -128,10 +130,39 @@ interface MT5State {
   pending_commands_count: number;
 }
 
+type TabKey = "portfolio" | "xauusd" | "forex_tech" | "crypto_tech";
+
+// 7/24 Hafta sonu kripto portföyü sembolleri
+const CRYPTO_SYMBOLS = [
+  { sym: "BTCUSD", name: "Bitcoin", icon: "₿", digits: 2 },
+  { sym: "ETHUSD", name: "Ethereum", icon: "Ξ", digits: 2 },
+  { sym: "SOLUSD", name: "Solana", icon: "◎", digits: 4 },
+  { sym: "BNBUSD", name: "Binance Coin", icon: "🔶", digits: 3 },
+  { sym: "XRPUSD", name: "Ripple", icon: "✕", digits: 4 },
+  { sym: "LNKUSD", name: "Chainlink", icon: "🔗", digits: 3 },
+  { sym: "UNIUSD", name: "Uniswap", icon: "🦄", digits: 4 },
+  { sym: "AVXUSD", name: "Avalanche", icon: "🔺", digits: 4 },
+  { sym: "ADAUSD", name: "Cardano", icon: "₳", digits: 5 },
+  { sym: "XTZUSD", name: "Tezos", icon: "ꜩ", digits: 5 },
+  { sym: "DATAUSD", name: "Streamr", icon: "📡", digits: 4 },
+];
+
 export default function ForexPortfolioPage({ symbols, title }: { symbols?: string[]; title?: string } = {}) {
-  // symbols verilirse bu sayfa YALNIZ bu sembolleri gösterir (aynı konsol, daraltılmış görünüm).
-  // İşlem izni backend'deki allowed_symbols ile yönetilir — bu filtre yalnızca görünümdür.
   const symFilter: Set<string> | null = symbols ? new Set(symbols.map((s) => s.toUpperCase())) : null;
+
+  // Sekme yönetimi
+  const [activeTab, setActiveTab] = useState<TabKey>("portfolio");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "xauusd" || tabParam === "forex_tech" || tabParam === "crypto_tech") {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
+
   // IC Markets MT5 Canlı Köprü Durumu
   const [mt5, setMt5] = useState<MT5State>({
     connected: false,
@@ -161,7 +192,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [wins, setWins] = useState<number>(0);
   const [losses, setLosses] = useState<number>(0);
   const [winRate, setWinRate] = useState<number>(0.0);
-  // BUGÜN kırılımı — tüm zamanlar KPI'larından ayrı (kullanıcı isteği 2026-10-13).
+
+  // Bugün KPI'ları
   const [dailyWinRate, setDailyWinRate] = useState<number>(0.0);
   const [dailyTrades, setDailyTrades] = useState<number>(0);
   const [dailyWins, setDailyWins] = useState<number>(0);
@@ -172,17 +204,30 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [openPositions, setOpenPositions] = useState<AutoPosition[]>([]);
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
   const [perSymbolToday, setPerSymbolToday] = useState<SymbolDailyKpi[]>([]);
-  // Tüm zamanlar kırılımı (2026-10-13): kullanıcı başarı oranını "o günkü ve
-  // tüm zamanlar" olarak ayrı istedi. İkisi AYNI defterden gelir (backend
-  // `per_symbol_today` / `per_symbol_all_time`) → sayılar tutarlıdır.
   const [perSymbolAllTime, setPerSymbolAllTime] = useState<SymbolDailyKpi[]>([]);
   const [decisionLogs, setDecisionLogs] = useState<DecisionLog[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
+
+  // Filtreler (Loglar için)
   const [logFilter, setLogFilter] = useState<string>("ALL");
   const [strategyFilter, setStrategyFilter] = useState<string>("ALL");
 
-  // Parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı —
-  // bu sayfa yalnızca izler, motor ayarlarını düzenlemez.
+  // Teknik Veriler & Radar Adayları & Tickers
+  const [radarCandidates, setRadarCandidates] = useState<any[]>([]);
+  const [tickers, setTickers] = useState<Record<string, any>>({});
+  const [gateSnapshotXAU, setGateSnapshotXAU] = useState<GateSnapshot | null>(null);
+  const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidateMeta | null>(null);
+
+  // Forex Teknik sekmesi filtreleri
+  const [forexCategoryFilter, setForexCategoryFilter] = useState<string>("ALL");
+  const [forexSearchQuery, setForexSearchQuery] = useState<string>("");
+
+  // Kripto sekmesi filtreleri
+  const [cryptoSearchQuery, setCryptoSearchQuery] = useState<string>("");
+
+  // Hızlı işlem durumu
+  const [isOrdering, setIsOrdering] = useState(false);
+
   const flashNotice = (text: string, isError = false) => {
     setMt5Message(text);
     setMt5MessageIsError(isError);
@@ -218,14 +263,12 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         setClosedTrades((res.closed_trades || []).filter(
           (t: ClosedTrade) => !symFilter || symFilter.has(String(t.symbol).toUpperCase())
         ));
-        // Sembol filtresi burada da uygulanır (daraltılmış görünüm aynı konsol).
         setPerSymbolToday((res.per_symbol_today || []).filter(
           (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
         ));
         setPerSymbolAllTime((res.per_symbol_all_time || []).filter(
           (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
         ));
-        // Sembolsüz global mesajlar (SCAN özeti, SYSTEM) kalır; filtre dışı sembollü satırlar gizlenir
         setDecisionLogs((res.decision_logs || []).filter(
           (l: DecisionLog) => !symFilter || !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
         ));
@@ -252,11 +295,34 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       setMt5Error(`MT5 bağlantı hatası: ${detail}`);
       setMt5((prev) => ({ ...prev, connected: false }));
     }
+
+    // Teknik ve Radar Verileri
+    try {
+      const [rRes, tRes] = await Promise.all([
+        apiFetch("/api/forex/radar"),
+        apiFetch("/api/forex/tickers"),
+      ]);
+      if (rRes && rRes.candidates) setRadarCandidates(rRes.candidates);
+      if (tRes && tRes.tickers) {
+        const map: Record<string, any> = {};
+        for (const t of tRes.tickers) map[t.symbol] = t;
+        setTickers(map);
+      }
+    } catch (err) {
+      // sessizce geç
+    }
+
+    // XAUUSD Gate Snapshot (özellikle XAUUSD sekmesi için)
+    if (activeTab === "xauusd") {
+      try {
+        const snap = await apiFetch("/api/forex/auto-paper/gate-snapshot/XAUUSD");
+        if (snap && snap.symbol) setGateSnapshotXAU(snap);
+      } catch (err) {
+        // sessizce geç
+      }
+    }
   };
 
-  // PERFORMANS (2026-10-08): 1.5 sn'lik interval arka planda da dönüyordu ve
-  // iki endpoint'i (auto-paper/status + mt5/status) her turda çekiyordu.
-  // usePolling: arka planda durur, üst üste binen turları engeller; 3 sn yeterli.
   usePolling(fetchStatus, 3000);
 
   // MT5 Otomatik Emir İletimini Aç / Kapat
@@ -278,16 +344,16 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         );
       }
     } catch (err) {
-      const detail = err instanceof Error ? err.message : "Motor anahtarı başarısız";
-      flashNotice(`Motor aç/kapat hatası: ${detail}`, true);
+      const detail = err instanceof Error ? err.message : "Değiştirilemedi";
+      flashNotice(`MT5 otomatik işlem değiştirilemedi: ${detail}`, true);
     } finally {
       setIsTogglingMt5(false);
     }
   };
 
-  // MT5 Belirli Bileti Kapat
-  const closeMt5Ticket = async (ticket: number) => {
-    if (!confirm(`Bilet #${ticket} nolu IC Markets MT5 pozisyonunu kapatmak istiyor musunuz?`)) return;
+  // Pozisyon Kapatma
+  const closeMt5Position = async (ticket: number) => {
+    if (!confirm(`Bilet #${ticket} nolu MT5 pozisyonunu kapatmak istiyor musunuz?`)) return;
     try {
       await apiFetch("/api/forex/mt5/close", {
         method: "POST",
@@ -297,212 +363,199 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       flashNotice(`Bilet #${ticket} kapatma emri MT5 köprüsüne iletildi.`);
       fetchStatus();
     } catch (err) {
-      const detail = err instanceof Error ? err.message : "Pozisyon kapatılamadı";
-      flashNotice(`Pozisyon kapatma hatası: ${detail}`, true);
+      const detail = err instanceof Error ? err.message : "Kapatılamadı";
+      flashNotice(`Pozisyon kapatılamadı: ${detail}`, true);
     }
   };
 
-  // Tüm MT5 Pozisyonlarını Tek Tıkla Kapat
   const closeAllMt5Positions = async () => {
     const count = mt5.open_positions?.length || 0;
-    if (!confirm(`Açık olan TÜM (${count}) IC Markets MT5 pozisyonunu tek seferde kapatmak istiyor musunuz?`)) return;
+    if (count === 0) return;
+    if (!confirm(`Açık olan TÜM (${count}) IC Markets MT5 pozisyonunu kapatmak istiyor musunuz?`)) return;
     try {
-      await apiFetch("/api/forex/mt5/close-all", {
-        method: "POST",
-      });
-      flashNotice(`Tüm (${count}) MT5 pozisyonunu kapatma emri köprüye iletildi.`);
+      await apiFetch("/api/forex/mt5/close-all", { method: "POST" });
+      flashNotice(`Tüm (${count}) MT5 pozisyonunu kapatma emri iletildi.`);
       fetchStatus();
     } catch (err) {
-      const detail = err instanceof Error ? err.message : "Toplu kapatma başarısız";
-      flashNotice(`Tümünü kapatma hatası: ${detail}`, true);
+      const detail = err instanceof Error ? err.message : "Kapatılamadı";
+      flashNotice(`Pozisyonlar kapatılamadı: ${detail}`, true);
     }
   };
 
-  // Otonom Motoru Aç / Kapat
-  const toggleAutoEngine = async () => {
+  // Hızlı Emir Gönderme (Örn: XAUUSD için)
+  const sendQuickOrder = async (symbol: string, direction: "BUY" | "SELL", lots: number) => {
+    if (!confirm(`${symbol} için ${lots} lot ${direction} emri göndermek istiyor musunuz?`)) return;
+    setIsOrdering(true);
     try {
-      const targetState = !autoEnabled;
-      const res = await apiFetch("/api/forex/auto-paper/toggle", {
+      const res = await apiFetch("/api/forex/mt5/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: targetState }),
+        body: JSON.stringify({ symbol, direction, lots, comment: "MANUAL_QUICK" }),
       });
-      if (res) {
-        setAutoEnabled(res.enabled);
-        setAutoStatus(res.status);
-        flashNotice(res.enabled ? "Otonom motor açıldı." : "Otonom motor kapatıldı.");
-      }
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Motor anahtarı başarısız";
-      flashNotice(`Motor aç/kapat hatası: ${detail}`, true);
-    }
-  };
-
-  // Pozisyonu Manuel Kapat
-  const closePosition = async (id: string) => {
-    try {
-      await apiFetch("/api/forex/auto-paper/close-position", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      flashNotice("Pozisyon kapatma emri iletildi.");
-      fetchStatus();
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Pozisyon kapatılamadı";
-      flashNotice(`Pozisyon kapatma hatası: ${detail}`, true);
-    }
-  };
-
-  // Kapanan İşlemleri CSV Olarak İndir
-  const downloadCsv = () => {
-    try {
-      const headers = [
-        "Bilet No",
-        "Parite",
-        "Sembol",
-        "Yön",
-        "Lot",
-        "Giriş Fiyatı",
-        "Çıkış Fiyatı",
-        "Kapanış Zamanı (UTC+3)",
-        "Çıkış Nedeni",
-        "Kâr/Zarar (Pip)",
-        "Net Getiri (USD)",
-        "Sonuç",
-      ];
-      const rows = closedTrades.map((t) => [
-        t.id,
-        t.display || t.symbol,
-        t.symbol,
-        t.direction,
-        t.lots,
-        t.entry_price,
-        t.exit_price,
-        formatUtc3(t.exit_time),
-        t.exit_reason,
-        `${t.pnl_pips >= 0 ? "+" : ""}${t.pnl_pips}`,
-        `${t.pnl_usd >= 0 ? "+" : ""}${t.pnl_usd.toFixed(2)}`,
-        t.pnl_usd >= 0 ? "KAZANÇ (WIN)" : "KAYIP (LOSS)",
-      ]);
-      const csvContent =
-        "\uFEFF" +
-        [headers.join(";"), ...rows.map((r) => r.map((cell) => `"${cell}"`).join(";"))].join("\r\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const dateStr = new Date().toISOString().slice(0, 10);
-      link.setAttribute("href", url);
-      link.setAttribute("download", `forex_scalper_kapanan_islemler_${dateStr}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("CSV indirme hatası:", e);
-      alert("CSV indirilirken bir hata oluştu.");
-    }
-  };
-
-  // Hesabı Sıfırla
-  const resetAccount = async () => {
-    if (confirm("Forex demo hesabını $10,000 başlangıç bakiyesiyle sıfırlamak istiyor musunuz?")) {
-      try {
-        await apiFetch("/api/forex/auto-paper/reset", {
-          method: "POST",
-        });
-        flashNotice("Hesap sıfırlama emri iletildi.");
+      if (res && res.status === "ok") {
+        flashNotice(`✓ ${symbol} ${direction} ${lots} lot emri MT5 köprüsüne iletildi.`);
         fetchStatus();
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : "Hesap sıfırlanamadı";
-        flashNotice(`Sıfırlama hatası: ${detail}`, true);
+      } else {
+        flashNotice(`Emir iletilemedi: ${res?.message || "Bilinmeyen hata"}`, true);
       }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Hata";
+      flashNotice(`Emir gönderilemedi: ${detail}`, true);
+    } finally {
+      setIsOrdering(false);
     }
   };
+
+  // CSV İndirme
+  const downloadCsv = () => {
+    if (closedTrades.length === 0) return;
+    const header = "İşlem ID;Sembol;Yön;Lot;Giriş;Çıkış;Kapanış Zamanı;Çıkış Nedeni;Net Kâr ($);Pip\n";
+    const rows = closedTrades
+      .map(
+        (t) =>
+          `"${t.id}";"${t.symbol}";"${t.direction}";${t.lots};${t.entry_price};${t.exit_price};"${formatUtc3(
+            t.exit_time
+          )}";"${t.exit_reason || ""}";${t.pnl_usd.toFixed(2)};${t.pnl_pips.toFixed(1)}`
+      )
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + header + rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Forex_Kapali_Islemler_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // XAUUSD adayı ve ticker verisi
+  const xauCandidate = useMemo(() => {
+    return radarCandidates.find((c) => c.symbol === "XAUUSD") || null;
+  }, [radarCandidates]);
+
+  const xauTicker = useMemo(() => {
+    return tickers["XAUUSD"] || null;
+  }, [tickers]);
+
+  // Forex Pariteleri (Kripto ve Altın hariç veya dahil filtrelenmiş)
+  const filteredForexCandidates = useMemo(() => {
+    return radarCandidates.filter((c) => {
+      // Kripto olmayanlar
+      const isCrypto = c.category === "crypto" || CRYPTO_SYMBOLS.some((cs) => cs.sym === c.symbol);
+      if (isCrypto) return false;
+
+      // Kategori filtresi
+      if (forexCategoryFilter !== "ALL") {
+        if (forexCategoryFilter === "major" && c.category !== "major") return false;
+        if (forexCategoryFilter === "cross" && c.category !== "cross") return false;
+        if (forexCategoryFilter === "commodity" && c.category !== "commodity") return false;
+        if (forexCategoryFilter === "index" && c.category !== "index") return false;
+        if (forexCategoryFilter === "jpy" && !c.symbol.includes("JPY")) return false;
+        if (forexCategoryFilter === "eur" && !c.symbol.includes("EUR")) return false;
+        if (forexCategoryFilter === "gbp" && !c.symbol.includes("GBP")) return false;
+      }
+
+      // Arama filtresi
+      if (forexSearchQuery.trim()) {
+        const q = forexSearchQuery.trim().toLowerCase();
+        return `${c.symbol} ${c.display} ${c.name}`.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [radarCandidates, forexCategoryFilter, forexSearchQuery]);
+
+  // Kripto Pariteleri (10'lu hafta sonu portföyü)
+  const cryptoCandidatesList = useMemo(() => {
+    return CRYPTO_SYMBOLS.map((def) => {
+      const cand = radarCandidates.find((c) => c.symbol === def.sym) || null;
+      const tick = tickers[def.sym] || null;
+      return {
+        ...def,
+        candidate: cand,
+        ticker: tick,
+      };
+    }).filter((c) => {
+      if (cryptoSearchQuery.trim()) {
+        const q = cryptoSearchQuery.trim().toLowerCase();
+        return `${c.sym} ${c.name}`.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [radarCandidates, tickers, cryptoSearchQuery]);
 
   const activeSessions = sessions.filter((s) => s.active);
 
   return (
-    <div className="space-y-6 pb-12 font-mono">
-      {/* ÜST BAŞLIK & MASTER OTONOM KONTROL KARTI */}
-      <div className="p-5 rounded-2xl bg-white dark:bg-gradient-to-r dark:from-emerald-950/40 dark:via-bunker-900/90 dark:to-blue-950/40 border border-slate-300 dark:border-emerald-500/40 shadow-sm dark:shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-13 h-13 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-            🤖
+    <div className="space-y-5 pb-16 font-sans">
+      {/* ÜST BAŞLIK VE KONTROL PANELİ */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-indigo-950/40 border border-blue-500/20 backdrop-blur-md shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(59,130,246,0.3)]">
+            💼
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                {title || "IC MARKETS MT5 · MERKEZİ OTONOM İZLEME"}
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold font-mono text-white tracking-tight">
+                {title || "FOREX PORTFÖY & ALGORİTMA KOMUTA"}
               </h1>
               <span
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${
-                  autoEnabled
-                    ? "bg-emerald-50 text-emerald-800 border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/40 shadow-sm animate-pulse"
-                    : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700"
-                }`}
-              >
-                {autoEnabled ? "● OTONOM ÇALIŞIYOR" : "○ OTONOM DURDURULDU"}
-              </span>
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
                   mt5.connected
-                    ? "bg-emerald-50 text-emerald-800 border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40"
-                    : "bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-500/20 dark:text-rose-300 dark:border-rose-500/40"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
+                    : "bg-rose-500/20 text-rose-300 border-rose-400/40"
                 }`}
               >
-                {mt5.connected
-                  ? `🟢 MT5 KÖPRÜ BAĞLI (${mt5.last_ping_seconds_ago !== null ? `${mt5.last_ping_seconds_ago}s önce` : "Canlı"})`
-                  : "⚪ MT5 KÖPRÜSÜ ÇEVRİMDIŞI"}
+                {mt5.connected ? "MT5 CANLI BAĞLI" : "MT5 KÖPRÜSÜ BEKLENİYOR"}
               </span>
             </div>
-            <p className="text-xs text-slate-700 dark:text-bunker-muted font-semibold mt-1">
-              Tüm sembollerin merkezi otonom izleme konsolu · Hesap: <span className="text-sky-600 dark:text-cyan-300 font-bold font-mono">{mt5.account?.login ?? "—"}</span> ({mt5.account?.server ?? "—"}) · Sahip: <span className="text-slate-900 dark:text-white font-bold">{mt5.account?.name ?? "—"}</span> · M1 / M5 Çoklu Zaman Dilimi & Dinamik SL
+            <p className="text-xs text-bunker-muted font-mono mt-0.5">
+              IC Markets MT5 canlı veri hattı, çoklu strateji motorları ve 7/24 piyasa takibi
             </p>
           </div>
         </div>
 
-        {/* Master Eylemler */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Hızlı İşlem & Ayar Düğmeleri */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={toggleAutoEngine}
-            className={`px-4 py-2 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 shadow-lg ${
-              autoEnabled
-                ? "bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
-                : "bg-emerald-500/25 text-emerald-300 border-emerald-400/50 hover:bg-emerald-500/35 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+            onClick={toggleMt5Auto}
+            disabled={isTogglingMt5 || !mt5.connected}
+            className={`px-3.5 py-2 rounded-xl font-mono text-xs font-bold transition-all shadow-md flex items-center gap-2 ${
+              mt5.auto_trade
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
+                : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
             }`}
           >
-            <span>{autoEnabled ? "⏹ Otonomu Durdur" : "▶ Otonom Scalper'ı Başlat"}</span>
+            <span>{mt5.auto_trade ? "🟢 Otonom Scalper Aktif" : "⏸️ Otonom Scalper Durduruldu"}</span>
           </button>
 
-          {mt5.open_positions && mt5.open_positions.length > 0 && (
-            <button
-              type="button"
-              onClick={closeAllMt5Positions}
-              className="px-3.5 py-2 rounded-xl bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm"
-            >
-              <span>🛑 Tüm MT5 Pozisyonlarını Kapat ({mt5.open_positions.length})</span>
-            </button>
-          )}
+          <Link
+            href="/settings"
+            className="px-3 py-2 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-slate-200 border border-bunker-700 text-xs font-bold transition-all flex items-center gap-1.5"
+            title="Forex & Algoritma Ayarlarını Aç"
+          >
+            <span>⚙️</span>
+            <span>Ayarlar</span>
+          </Link>
 
           <button
             type="button"
-            onClick={() => setShowMt5Guide(!showMt5Guide)}
-            className="px-3 py-2 rounded-xl bg-bunker-900 border border-bunker-800 text-bunker-muted hover:text-blue-400 text-xs flex items-center gap-1"
+            onClick={() => setShowMt5Guide((p) => !p)}
+            className="px-2.5 py-2 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-bunker-muted hover:text-white border border-bunker-700 text-xs font-bold"
+            title="Yardım & Rehber"
           >
-            <span>ℹ️ Rehber</span>
+            ❓
           </button>
         </div>
       </div>
 
+      {/* BİLDİRİM / HATA ÇUBUĞU */}
       {(mt5Error || mt5Message) && (
         <div
           role="alert"
           className={`px-4 py-2 rounded-xl border font-mono text-xs ${
             mt5Error || mt5MessageIsError
-              ? "bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-300"
-              : "bg-emerald-500/10 border-emerald-500/40 text-emerald-800 dark:text-emerald-300"
+              ? "bg-rose-500/10 border-rose-500/40 text-rose-300"
+              : "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
           }`}
         >
           {mt5Error && <p>{mt5Error}</p>}
@@ -510,978 +563,973 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         </div>
       )}
 
-      {/* Rehber / Yardım Paneli */}
+      {/* REHBER PANELİ */}
       {showMt5Guide && (
         <div className="p-4 rounded-xl bg-bunker-950 border border-blue-500/30 text-xs text-bunker-muted space-y-2">
           <div className="font-bold text-white flex items-center gap-1.5">
-            <span>🚀 IC Markets MT5 Köprüsü Nasıl Çalışır?</span>
+            <span>🚀 IC Markets MT5 ve 4 Sekmeli Komuta Merkezi Nasıl Çalışır?</span>
           </div>
           <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
-            <li>Bilgisayarınızda proje klasöründeki <span className="text-emerald-400 font-mono font-bold">run_mt5_bridge.bat</span> dosyasını çift tıklayarak çalıştırın.</li>
-            <li>Açılan konsol penceresi, bilgisayarınızdaki IC Markets MT5 terminaline bağlanır. Hesap numarası bağlantı kurulunca yukarıda görünür.</li>
-            <li>MetaTrader 5 terminalinde üst menüdeki <span className="text-yellow-400 font-bold">&quot;Algo Trading&quot; (Otomatik İşlem)</span> butonunun yeşil yandığından emin olun (Komut dosyasında otomatik yapılandırıldı).</li>
-            <li>Yukarıdaki <span className="text-emerald-400 font-bold">&quot;Otonom Scalper&apos;ı Başlat&quot;</span> butonuna bastığınızda, sistemin tespit ettiği tüm teyitli sinyaller doğrudan IC Markets demo hesabınızda canlı piyasa emri olarak açılır, kârda başabaş (BE) ve dinamik iz süren stop (Trailing) uygulanır!</li>
+            <li><strong>Portföy &amp; İşlemler:</strong> Hesap bakiyesi, kâr/zarar, sembol başarı kartları ve anlık açık pozisyonları izleyip yönetebilirsiniz.</li>
+            <li><strong>XAUUSD Komuta Merkezi:</strong> Altın paritesi için 18-kapılı filtre durumunu, teknik göstergeleri ve sistemin tüm karar loglarını saniye saniye denetler.</li>
+            <li><strong>Forex Çiftleri:</strong> Tüm majör ve çapraz paritelerin anlık trendini, skorunu ve RSI seviyelerini tek ızgarada sunar.</li>
+            <li><strong>Kripto Çiftleri (7/24):</strong> Hafta sonları Forex kapalıyken devrede olan 10 IC Markets kripto varlığında FVG ve S3 durumunu gösterir.</li>
           </ol>
         </div>
       )}
 
-      {/* IC MARKETS MT5 CANLI METRİKLERİ */}
-      {(() => {
-        const liveBal = mt5.account ? Number(mt5.account.balance) : null;
-        const liveEq = mt5.account ? Number(mt5.account.equity) : null;
-        const liveMargin = mt5.account ? Number(mt5.account.free_margin) : null;
-        const livePnl = (mt5.open_positions || []).reduce((acc, p) => acc + Number(p.pnl_usd ?? (p as any).profit ?? 0), 0);
-        return (
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">IC Markets Bakiye</span>
-              <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                {liveBal == null ? "—" : `$${liveBal.toFixed(2)}`} <span className="text-xs font-normal text-slate-500 dark:text-bunker-muted">{mt5.account?.currency || ""}</span>
-              </span>
-              <span className="text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5">Kapanan net MT5 bakiye</span>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Özsermaye (Equity)</span>
-              <span className={`text-lg font-black font-mono ${liveEq != null && liveBal != null && liveEq >= liveBal ? "text-sky-600 dark:text-cyan-300" : "text-rose-600 dark:text-rose-400"}`}>
-                {liveEq == null ? "—" : `$${liveEq.toFixed(2)}`}
-              </span>
-              <span className="text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Açık MT5 PnL (Anlık)</span>
-              <span className={`text-lg font-black font-mono ${livePnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
-              </span>
-              <span className="text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5">{mt5.open_positions?.length || 0} açık MT5 işlemi</span>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Hesap / Sunucu</span>
-              <span className="text-base font-black text-slate-900 dark:text-white tracking-wide">
-                {mt5.account?.login ?? "—"}
-              </span>
-              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 block mt-0.5 truncate">{mt5.account?.server ?? "—"}</span>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Kaldıraç & Sahip</span>
-              <span className="text-base font-black text-amber-600 dark:text-yellow-300">
-                {mt5.account?.leverage != null ? `1:${mt5.account.leverage}` : "—"}
-              </span>
-              <span className="text-[10px] font-bold text-slate-800 dark:text-bunker-muted block mt-0.5 truncate">{mt5.account?.name ?? "—"}</span>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Aktif Seanslar</span>
-              <div className="flex items-center gap-1 mt-1 overflow-x-auto">
-                {activeSessions.length > 0 ? (
-                  activeSessions.map((s) => (
-                    <span
-                      key={s.name}
-                      className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30 whitespace-nowrap"
-                    >
-                      {s.flag} {s.name}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[11px] font-semibold text-slate-600 dark:text-bunker-muted">24/5 Açık</span>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* BAŞARI ORANI — BUGÜN & TÜM ZAMANLAR (2026-10-13)
-          Kullanıcı isteği: başarı oranı "o günkü ve tüm zamanlar" olarak
-          AYRI gösterilsin. Kaynak status ucunun aynı defteri: bugün `daily_*`,
-          tüm zamanlar üst-düzey alanlar → iki blok birbirini tutar. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {/* 4 ANA SEKME BAŞLIKLARI */}
+      <div className="flex flex-wrap gap-2 border-b border-bunker-800 pb-2">
         {[
-          {
-            title: "BAŞARI ORANI — BUGÜN",
-            badge: "Bugün (UTC)",
-            badgeCls: "bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30",
-            rate: dailyWinRate,
-            w: dailyWins,
-            l: dailyLosses,
-            n: dailyTrades,
-            pnlUsd: dailyPnlUsd,
-            pnlPips: dailyPnlPips,
-            accent: "text-slate-900 dark:text-white",
-          },
-          {
-            title: "BAŞARI ORANI — TÜM ZAMANLAR",
-            badge: "Kayıtlı defter",
-            badgeCls: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700",
-            rate: winRate,
-            w: wins,
-            l: losses,
-            n: totalTrades,
-            pnlUsd: realizedPnlUsd,
-            pnlPips: realizedPnlPips,
-            accent: "text-slate-900 dark:text-white",
-          },
-        ].map((b) => {
-          const hasTrades = b.n > 0;
-          const rateTone = !hasTrades
-            ? "text-slate-500 dark:text-bunker-muted"
-            : b.rate >= 50
-            ? "text-emerald-600 dark:text-emerald-400"
-            : "text-rose-600 dark:text-rose-400";
-          return (
-            <div
-              key={b.title}
-              className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm"
+          { id: "portfolio", label: "💼 Portföy & İşlemler", badge: `${mt5.open_positions?.length || 0} Açık` },
+          { id: "xauusd", label: "🥇 XAUUSD Komuta & Loglar", badge: xauCandidate ? `Skor ${xauCandidate.score}` : "Canlı" },
+          { id: "forex_tech", label: "💱 Forex Çiftleri Teknik Analiz", badge: `${filteredForexCandidates.length} Parite` },
+          { id: "crypto_tech", label: "⚡ Kripto Çiftleri (7/24)", badge: "10 Varlık" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id as TabKey)}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all border flex items-center gap-2 ${
+              activeTab === tab.id
+                ? "bg-blue-600/25 text-blue-300 border-blue-500/60 shadow-lg shadow-blue-500/10"
+                : "bg-bunker-900/60 text-bunker-muted border-bunker-800 hover:text-white hover:bg-bunker-800"
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                activeTab === tab.id
+                  ? "bg-blue-500/30 text-blue-200"
+                  : "bg-bunker-800 text-bunker-muted"
+              }`}
             >
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase">
-                  {b.title}
-                </span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${b.badgeCls}`}>
-                  {b.badge}
-                </span>
-              </div>
-              <div className="flex items-baseline gap-3 mt-1">
-                <span className={`text-2xl font-black font-mono ${rateTone}`}>
-                  {hasTrades ? `%${b.rate.toFixed(1)}` : "—"}
-                </span>
-                <span className="text-[11px] font-semibold text-slate-600 dark:text-bunker-muted font-mono">
-                  {hasTrades ? `${b.w}K / ${b.l}Z (${b.n} İşlem)` : "Kapanan işlem yok"}
-                </span>
-              </div>
-              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                <span className="font-bold text-slate-700 dark:text-bunker-muted">NET KÂRLILIK</span>
-                <span
-                  className={`font-mono font-black ${
-                    b.pnlUsd >= 0
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-rose-600 dark:text-rose-400"
-                  }`}
-                >
-                  {b.pnlUsd >= 0 ? "+" : ""}${b.pnlUsd.toFixed(2)}
-                </span>
-                <span
-                  className={`font-mono font-bold ${
-                    b.pnlPips >= 0
-                      ? "text-emerald-700 dark:text-emerald-400/80"
-                      : "text-rose-700 dark:text-rose-400/80"
-                  }`}
-                  title="Pip toplamı semboller arası farklı ölçekte olabilir"
-                >
-                  {b.pnlPips >= 0 ? "+" : ""}
-                  {b.pnlPips.toFixed(1)} pip
-                </span>
-              </div>
-            </div>
-          );
-        })}
+              {tab.badge}
+            </span>
+          </button>
+        ))}
       </div>
 
-      {/* SEMBOL BAZLI GÜNLÜK KPI KARTLARI (2026-10-12) */}
-      {(() => {
-        const kpis = perSymbolToday;
-        const closedToday = kpis.reduce((a, k) => a + k.trades, 0);
-        const openToday = kpis.reduce((a, k) => a + k.open_count, 0);
-        const netToday = kpis.reduce((a, k) => a + k.pnl_usd, 0);
-        // Kartlar, hemen üstteki bakiye kartlarıyla AYNI iskeleti kullanır
-        // (p-3.5 / rounded-xl / bg-white|bunker-900/80 / shadow-sm) ve aynı
-        // tipografi sırasını izler: üst etiket → büyük mono sayı → alt açıklama.
-        const CARD =
-          "p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm";
-        const LABEL =
-          "text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block truncate";
-        const SUB = "text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5";
-        return (
+      {/* ========================================================================= */}
+      {/* SEKME 1: GENEL PORTFÖY, AÇIK İŞLEMLER VE SEMBOL BAŞARI KARTLARI */}
+      {/* ========================================================================= */}
+      {activeTab === "portfolio" && (
+        <div className="space-y-5 animate-in fade-in duration-150">
+          {/* IC Markets MT5 Canlı Metrikleri */}
+          {(() => {
+            const liveBal = mt5.account ? Number(mt5.account.balance) : balance;
+            const liveEq = mt5.account ? Number(mt5.account.equity) : equity;
+            const liveMargin = mt5.account ? Number(mt5.account.free_margin) : null;
+            const livePnl = (mt5.open_positions || []).reduce(
+              (acc, p) => acc + Number(p.pnl_usd ?? (p as any).profit ?? 0),
+              0
+            );
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">IC Markets Bakiye</span>
+                  <span className="text-lg font-black text-emerald-400 font-mono">
+                    {liveBal == null ? "—" : `$${liveBal.toFixed(2)}`} <span className="text-xs font-normal text-bunker-muted">{mt5.account?.currency || "USD"}</span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Özsermaye (Equity)</span>
+                  <span className={`text-lg font-black font-mono ${liveEq != null && liveBal != null && liveEq >= liveBal ? "text-cyan-300" : "text-rose-400"}`}>
+                    {liveEq == null ? "—" : `$${liveEq.toFixed(2)}`}
+                  </span>
+                  <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Açık PnL (Anlık)</span>
+                  <span className={`text-lg font-black font-mono ${livePnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
+                  </span>
+                  <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">{mt5.open_positions?.length || 0} açık işlem</span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Hesap / Sunucu</span>
+                  <span className="text-base font-black text-white tracking-wide">
+                    {mt5.account?.login ?? "—"}
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-400 block mt-0.5 truncate">{mt5.account?.server ?? "—"}</span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Kaldıraç &amp; Sahip</span>
+                  <span className="text-base font-black text-yellow-300">
+                    {mt5.account?.leverage != null ? `1:${mt5.account.leverage}` : "—"}
+                  </span>
+                  <span className="text-[10px] font-bold text-bunker-muted block mt-0.5 truncate">{mt5.account?.name ?? "—"}</span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Aktif Seanslar</span>
+                  <div className="flex items-center gap-1 mt-1 overflow-x-auto">
+                    {activeSessions.length > 0 ? (
+                      activeSessions.map((s) => (
+                        <span
+                          key={s.name}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap"
+                        >
+                          {s.flag} {s.name}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[11px] font-semibold text-bunker-muted">7/24 Açık</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Günlük ve Tüm Zamanlar Başarı Kartları */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[
+              {
+                title: "GÜNLÜK SİSTEM BAŞARISI",
+                badge: "Bugün (UTC)",
+                badgeCls: "bg-blue-500/15 text-blue-300 border-blue-400/30",
+                rate: dailyWinRate,
+                w: dailyWins,
+                l: dailyLosses,
+                n: dailyTrades,
+                pnlUsd: dailyPnlUsd,
+                pnlPips: dailyPnlPips,
+              },
+              {
+                title: "TÜM ZAMANLAR BAŞARI ORANI",
+                badge: "Kayıtlı Defter",
+                badgeCls: "bg-bunker-800 text-bunker-muted border-bunker-700",
+                rate: winRate,
+                w: wins,
+                l: losses,
+                n: totalTrades,
+                pnlUsd: realizedPnlUsd,
+                pnlPips: realizedPnlPips,
+              },
+            ].map((b) => {
+              const hasTrades = b.n > 0;
+              const rateTone = !hasTrades
+                ? "text-bunker-muted"
+                : b.rate >= 50
+                ? "text-emerald-400"
+                : "text-rose-400";
+              return (
+                <div key={b.title} className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold text-bunker-muted uppercase">{b.title}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${b.badgeCls}`}>
+                      {b.badge}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-3 mt-1">
+                    <span className={`text-2xl font-black font-mono ${rateTone}`}>
+                      {hasTrades ? `%${b.rate.toFixed(1)}` : "—"}
+                    </span>
+                    <span className="text-[11px] font-semibold text-bunker-muted font-mono">
+                      {hasTrades ? `${b.w}K / ${b.l}Z (${b.n} İşlem)` : "Kapanan işlem yok"}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 pt-1.5 border-t border-bunker-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                    <span className="font-bold text-bunker-muted">NET KÂRLILIK</span>
+                    <span className={`font-mono font-black ${b.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {b.pnlUsd >= 0 ? "+" : ""}${b.pnlUsd.toFixed(2)}
+                    </span>
+                    <span className={`font-mono font-bold ${b.pnlPips >= 0 ? "text-emerald-400/80" : "text-rose-400/80"}`}>
+                      {b.pnlPips >= 0 ? "+" : ""}{b.pnlPips.toFixed(1)} pip
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Sembol Bazlı Performans Kartları */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
                 <span className="text-base">📊</span>
-                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Sembol Bazlı Günlük Performans
+                <h2 className="text-sm font-black text-white uppercase tracking-wider">
+                  Sembol Bazlı Başarı Kartları
                 </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30">
-                  Bugün (UTC)
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-400/30">
+                  Bugün &amp; Tüm Zamanlar
                 </span>
-                {kpis.length > 0 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700">
-                    {closedToday} kapanan · {openToday} açık
-                  </span>
-                )}
               </div>
-              <span className="text-[10px] text-slate-600 dark:text-bunker-muted italic">
-                Kartlar bugün kapanan işlemleri kapsar · açık pozisyonlar ayrı sayılır (kazanma oranına girmez)
-              </span>
             </div>
 
-            {/* Izgara, üstteki bakiye satırının yoğunluğunu en geniş kırılımda
-                birebir taklit eder (xl:6); sembol kartları daha fazla metin
-                taşıdığı için md'de 3'e düşer. */}
-            {kpis.length === 0 ? (
-              <div className="p-8 rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 text-center text-xs text-slate-600 dark:text-bunker-muted">
-                <p className="text-sm font-bold text-slate-900 dark:text-white">Bugün henüz işlem sonuçlanmadı.</p>
-                <p className="mt-1 font-medium">Piyasa kapalı olabilir ya da motor yeni sinyal bekliyor.</p>
+            {perSymbolToday.length === 0 ? (
+              <div className="p-6 rounded-2xl border border-bunker-800 bg-bunker-900/70 text-center text-xs text-bunker-muted">
+                <p className="text-sm font-bold text-white">Bugün henüz sonuçlanan işlem bulunmuyor.</p>
+                <p className="mt-1">Piyasa kapalı olabilir ya da motor yeni sinyal bekliyor.</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                {kpis.map((k) => {
+                {perSymbolToday.map((k) => {
                   const hasTrades = k.trades > 0;
                   const hasOpen = k.open_count > 0;
-                  const wrTone = !hasTrades
-                    ? "text-slate-500 dark:text-bunker-muted"
-                    : k.win_rate >= 50
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400";
-                  const pfText = k.profit_factor_infinite
-                    ? "∞"
-                    : hasTrades
-                    ? k.profit_factor.toFixed(2)
-                    : "—";
-                  // Kartın ana sayısı: kapanan net kâr; kapanan yoksa açık anlık K/Z.
+                  const wrTone = !hasTrades ? "text-bunker-muted" : k.win_rate >= 50 ? "text-emerald-400" : "text-rose-400";
                   const mainUsd = hasTrades ? k.pnl_usd : k.open_pnl_usd;
-                  const mainText = hasTrades
-                    ? `${k.pnl_usd >= 0 ? "+" : ""}$${k.pnl_usd.toFixed(2)}`
-                    : hasOpen
-                    ? `${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}`
-                    : "—";
-                  const mainTone = !hasTrades && !hasOpen
-                    ? "text-slate-400 dark:text-bunker-muted"
-                    : mainUsd >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400";
-                  const exitTimeShort = k.last_exit_time
-                    ? String(formatUtc3(k.last_exit_time).split(" ").pop())
-                    : "";
-                  // Tüm zamanlar dilimi (2026-10-13): kart artık hem BUGÜN hem
-                  // TÜM ZAMANLAR başarı oranını/netini taşır. Aynı defterden
-                  // (backend `per_symbol_all_time`) → tutarlı.
+                  const mainTone = !hasTrades && !hasOpen ? "text-bunker-muted" : mainUsd >= 0 ? "text-emerald-400" : "text-rose-400";
                   const all = perSymbolAllTime.find((a) => a.symbol === k.symbol) || null;
-                  const allHasTrades = (all?.trades ?? 0) > 0;
-                  const allRateTone = !allHasTrades
-                    ? "text-slate-500 dark:text-bunker-muted"
-                    : (all!.win_rate >= 50)
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400";
+
                   return (
-                    <div key={k.symbol} className={CARD}>
-                      {/* Üst etiket — bakiye kartlarındaki gibi: SEMBOL + durum rozeti */}
+                    <div key={k.symbol} className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
                       <div className="flex items-start justify-between gap-1.5">
-                        <span className={LABEL} title={k.display || k.symbol}>
-                          {k.symbol}
-                        </span>
+                        <span className="text-[11px] font-bold text-white uppercase block truncate">{k.symbol}</span>
                         {hasOpen ? (
-                          <span
-                            className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-400/40"
-                            title={`${k.open_count} açık pozisyon · anlık ${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}`}
-                          >
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
                             ⚡ {k.open_count} AÇIK
                           </span>
                         ) : hasTrades ? (
-                          <span
-                            className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-100 text-slate-700 border border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700"
-                            title="Bugün kapanan işlem sayısı"
-                          >
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-bunker-800 text-bunker-muted border border-bunker-700">
                             {k.trades} İŞLEM
                           </span>
                         ) : null}
                       </div>
 
-                      {/* Büyük mono sayı — bakiye kartlarındaki tipografiyle aynı */}
-                      <span className={`text-lg font-black font-mono ${mainTone}`}>{mainText}</span>
-
-                      {/* Alt açıklama satırı — bakiye kartlarındaki gibi tek satır özet */}
-                      <span className={SUB}>
-                        {hasTrades
-                          ? `${k.pnl_pips >= 0 ? "+" : ""}${k.pnl_pips} pip · ${k.wins}K/${k.losses}Z · PF ${pfText}`
-                          : hasOpen
-                          ? "Yalnız açık pozisyon · kapanan yok"
-                          : "Bugün işlem yok"}
+                      <span className={`text-lg font-black font-mono block mt-1 ${mainTone}`}>
+                        {hasTrades ? `${k.pnl_usd >= 0 ? "+" : ""}$${k.pnl_usd.toFixed(2)}` : hasOpen ? `${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}` : "—"}
                       </span>
 
-                      {/* TÜM ZAMANLAR satırı — kullanıcı isteği (2026-10-13):
-                          başarı oranı bugün VE tüm zamanlar olarak ayrı. */}
-                      <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800/70">
-                        <div className="flex items-center justify-between gap-2 text-[9px]">
-                          <span className="font-black text-slate-600 dark:text-bunker-muted uppercase tracking-wider">
-                            Tüm Zamanlar
-                          </span>
-                          <span className={`font-mono font-black ${allRateTone}`}>
-                            {allHasTrades ? `%${all!.win_rate.toFixed(1)}` : "—"}
-                          </span>
-                        </div>
-                        <div className="text-[9px] font-semibold text-slate-600 dark:text-bunker-muted font-mono">
-                          {allHasTrades
-                            ? `${all!.wins}K / ${all!.losses}Z (${all!.trades} İşlem)`
-                            : "Kapanan işlem yok"}
-                        </div>
-                        {allHasTrades && (
-                          <div className="text-[9px] font-mono flex items-center gap-1.5">
-                            <span className="text-slate-500 dark:text-bunker-muted">Net</span>
-                            <span
-                              className={
-                                all!.pnl_usd >= 0
-                                  ? "text-emerald-700 dark:text-emerald-400 font-bold"
-                                  : "text-rose-700 dark:text-rose-400 font-bold"
-                              }
-                            >
-                              {all!.pnl_usd >= 0 ? "+" : ""}${all!.pnl_usd.toFixed(2)}
-                            </span>
-                            <span
-                              className={
-                                all!.pnl_pips >= 0
-                                  ? "text-emerald-700/90 dark:text-emerald-400/80"
-                                  : "text-rose-700/90 dark:text-rose-400/80"
-                              }
-                            >
-                              {all!.pnl_pips >= 0 ? "+" : ""}
-                              {all!.pnl_pips.toFixed(1)} pip
+                      <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">
+                        {hasTrades ? `${k.pnl_pips >= 0 ? "+" : ""}${k.pnl_pips} pip · ${k.wins}K/${k.losses}Z` : "İşlem yok"}
+                      </span>
+
+                      {all && (
+                        <div className="mt-1.5 pt-1.5 border-t border-bunker-800/70 text-[9px]">
+                          <div className="flex justify-between items-center text-bunker-muted">
+                            <span>Tüm Zamanlar</span>
+                            <span className={all.win_rate >= 50 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                              %{all.win_rate.toFixed(0)} ({all.trades})
                             </span>
                           </div>
-                        )}
-                      </div>
-
-                      {/* İnce detay şeridi */}
-                      <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-bunker-800/70 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[9px] font-semibold text-slate-600 dark:text-bunker-muted">
-                        {hasTrades ? (
-                          <span className="flex items-center gap-2">
-                            <span title="Günün en iyi işlemi">
-                              ▲{" "}
-                              <span className="font-mono text-emerald-700 dark:text-emerald-400">
-                                ${k.best_trade_usd.toFixed(2)}
-                              </span>
-                            </span>
-                            <span title="Günün en kötü işlemi">
-                              ▼{" "}
-                              <span className="font-mono text-rose-700 dark:text-rose-400">
-                                ${k.worst_trade_usd.toFixed(2)}
-                              </span>
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="italic">Kapanan işlem yok</span>
-                        )}
-                        <span className="flex items-center gap-2 font-mono">
-                          {hasTrades && (
-                            <span className={wrTone} title="Bugün kapanan işlemlerde kazanma oranı">
-                              WR %{k.win_rate.toFixed(0)}
-                            </span>
-                          )}
-                          {hasOpen && (
-                            <span
-                              className={k.open_pnl_usd >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}
-                              title={`${k.open_count} açık pozisyonun anlık K/Z`}
-                            >
-                              ⚡{k.open_pnl_usd >= 0 ? "+" : ""}${k.open_pnl_usd.toFixed(2)}
-                            </span>
-                          )}
-                          {hasTrades && exitTimeShort && (
-                            <span title={`Son çıkış: ${k.last_exit_reason || "—"}`}>{exitTimeShort}</span>
-                          )}
-                        </span>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
+          </div>
 
-            {/* Gün toplamı — kartların toplamı üstteki günlük KPI ile aynı defterden */}
-            {kpis.length > 0 && (
-              <div className="flex flex-wrap items-center justify-end gap-3 px-1 text-[11px] font-bold text-slate-700 dark:text-bunker-muted">
-                <span>Gün toplamı:</span>
-                <span className={`font-mono ${netToday >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                  {netToday >= 0 ? "+" : ""}${netToday.toFixed(2)}
-                </span>
-                <span className="text-slate-400 dark:text-bunker-700">·</span>
-                <span>{closedToday} kapanan işlem</span>
+          {/* Canlı Açık MT5 Pozisyonları */}
+          <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 overflow-hidden shadow-xl">
+            <div className="p-4 border-b border-bunker-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">⚡</span>
+                <h2 className="text-sm font-black text-white uppercase tracking-wider">
+                  Canlı IC Markets MT5 Açık Pozisyonları ({mt5.open_positions?.length || 0})
+                </h2>
+              </div>
+
+              {mt5.open_positions && mt5.open_positions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={closeAllMt5Positions}
+                  className="px-3 py-1 rounded-lg bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>🛑 Tüm Pozisyonları Kapat ({mt5.open_positions.length})</span>
+                </button>
+              )}
+            </div>
+
+            {(!mt5.open_positions || mt5.open_positions.length === 0) ? (
+              <div className="p-10 text-center text-bunker-muted text-xs space-y-1">
+                <p className="text-sm font-bold text-white">Şu an açık bir MT5 pozisyonu bulunmuyor.</p>
+                <p>Otonom motor canlı sinyalleri izliyor. Teyitli sinyal geldiğinde işlem anında açılır.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[11px] font-black">
+                    <tr>
+                      <th className="py-3 px-4">Bilet</th>
+                      <th className="py-3 px-3">Parite</th>
+                      <th className="py-3 px-3">Yön</th>
+                      <th className="py-3 px-3">Rozet / Koruma</th>
+                      <th className="py-3 px-3">Lot</th>
+                      <th className="py-3 px-3">Giriş</th>
+                      <th className="py-3 px-3">Güncel</th>
+                      <th className="py-3 px-3">SL / TP</th>
+                      <th className="py-3 px-3">Kâr ($ / Pip)</th>
+                      <th className="py-3 px-4 text-right">Aksiyon</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-bunker-800/60">
+                    {mt5.open_positions.map((p) => {
+                      const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
+                      const isProfit = pnlVal >= 0;
+                      const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
+                      const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
+
+                      return (
+                        <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
+                          <td className="py-3 px-4 text-cyan-300 font-black">#{p.ticket}</td>
+                          <td className="py-3 px-3">
+                            <span className="font-black text-white text-sm">{p.symbol}</span>
+                            {(p.strategy_label || p.strategy) && (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
+                                {p.strategy_label || p.strategy}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                                p.direction === "BUY"
+                                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                  : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                              }`}
+                            >
+                              {p.direction}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            {isTrailing ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                                🏃 TRAILING STOP
+                              </span>
+                            ) : isBE ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                                🛡️ BAŞABAŞ (BE)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-bunker-800 text-bunker-muted">
+                                🛑 Sabit SL
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-white font-bold">{p.lots} Lot</td>
+                          <td className="py-3 px-3 text-bunker-muted">{p.entry_price}</td>
+                          <td className="py-3 px-3 text-white font-bold">{p.current_price}</td>
+                          <td className="py-3 px-3 text-xs">
+                            <div className="text-rose-400">SL: {p.sl_price || "—"}</div>
+                            <div className="text-emerald-400">TP: {p.tp_price || "—"}</div>
+                          </td>
+                          <td className={`py-3 px-3 ${isProfit ? "text-emerald-400" : "text-rose-400"} font-black`}>
+                            <div>{isProfit ? "+" : ""}${pnlVal.toFixed(2)}</div>
+                            {p.pnl_pips != null && (
+                              <div className="text-[10px] font-normal">{Number(p.pnl_pips) >= 0 ? "+" : ""}{p.pnl_pips} p</div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => closeMt5Position(p.ticket)}
+                              className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 text-xs font-bold transition-all"
+                            >
+                              Kapat
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
-        );
-      })()}
 
-      {/* CANLI IC MARKETS MT5 AÇIK POZİSYONLARI */}
-      <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 overflow-hidden shadow-sm dark:shadow-xl">
-        <div className="p-4 border-b border-slate-200 dark:border-bunker-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">⚡</span>
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-              <span>Canlı IC Markets MT5 Açık Pozisyonları ({mt5.open_positions?.length || 0})</span>
-            </h2>
-            <span className="text-[10px] text-emerald-800 dark:text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300 dark:border-emerald-500/30">
-              {mt5.account ? `${mt5.account.server} · ${mt5.account.login}` : "bağlantı yok"}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {mt5.open_positions && mt5.open_positions.length > 0 && (
-              <button
-                type="button"
-                onClick={closeAllMt5Positions}
-                className="px-3 py-1 rounded-lg bg-rose-50 dark:bg-rose-600/25 border border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <span>🛑 Tüm MT5 Pozisyonlarını Kapat ({mt5.open_positions.length})</span>
-              </button>
-            )}
-            <span className="text-xs text-blue-600 dark:text-blue-400 font-bold animate-pulse">
-              {autoEnabled ? "Canlı Takip Devrede" : "Otonom Beklemede"}
-            </span>
-          </div>
-        </div>
-
-        {(!mt5.open_positions || mt5.open_positions.length === 0) ? (
-          <div className="p-12 text-center text-slate-600 dark:text-bunker-muted text-xs space-y-1">
-            <p className="text-sm font-bold text-slate-900 dark:text-white">Şu an açık bir IC Markets MT5 pozisyonu bulunmuyor.</p>
-            <p className="text-slate-600 dark:text-bunker-muted font-medium">
-              {autoEnabled
-                ? "Otonom scalper radar sinyallerini ve seans fırsatlarını denetliyor. Sinyal geldiğinde emir anında IC Markets hesabınızda açılır."
-                : "Otonom motor şu an durdurulmuş durumda. Başlatmak için yukarıdaki '▶ Otonom Scalper'ı Başlat' butonunu kullanabilirsiniz."}
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Masaüstü Tablo Görünümü */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100 dark:bg-bunker-950/80 text-slate-800 dark:text-bunker-muted uppercase border-b border-slate-300 dark:border-bunker-800 text-[11px] font-black">
-                  <tr>
-                    <th className="py-3 px-4">Bilet</th>
-                    <th className="py-3 px-3">Parite</th>
-                    <th className="py-3 px-3">Yön</th>
-                    <th className="py-3 px-3">Koruma / Rozet</th>
-                    <th className="py-3 px-3">Lot</th>
-                    <th className="py-3 px-3">Giriş Fiyatı</th>
-                    <th className="py-3 px-3">Güncel Fiyat</th>
-                    <th className="py-3 px-3">SL / TP Seviyeleri</th>
-                    <th className="py-3 px-3">Kâr ($ / Pip)</th>
-                    <th className="py-3 px-4 text-right">Aksiyon</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-bunker-800/60">
-                  {mt5.open_positions.map((p) => {
-                    const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
-                    const isProfit = pnlVal >= 0;
-                    const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
-                    const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
-
-                    return (
-                      <tr key={p.ticket} className="hover:bg-slate-50 dark:hover:bg-bunker-800/40 transition-colors">
-                        <td className="py-3 px-4 font-mono text-[11px] text-sky-600 dark:text-cyan-300 font-black">#{p.ticket}</td>
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-black text-slate-900 dark:text-white text-sm">{p.symbol}</span>
-                            {(p.strategy_label || (p as any).strategy) && (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-600/50 whitespace-nowrap">
-                                {p.strategy_label || (p as any).strategy}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                              p.direction === "BUY"
-                                ? "bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30"
-                                : "bg-rose-50 text-rose-800 border border-rose-300 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30"
-                            }`}
-                          >
-                            {p.direction}
-                          </span>
-                        </td>
-
-                        {/* DİNAMİK ROZET (TRAILING / BREAKEVEN / SABİT SL) */}
-                        <td className="py-3 px-3">
-                          {isTrailing ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-300 dark:bg-gradient-to-r dark:from-amber-500/25 dark:via-orange-500/30 dark:to-amber-500/20 dark:text-amber-300 dark:border-amber-400/50 shadow-sm tracking-wide">
-                              <span className="text-xs">🏃</span>
-                              <span>TRAILING STOP</span>
-                            </span>
-                          ) : isBE ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-900 border border-sky-300 dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-cyan-400/40 shadow-sm tracking-wide">
-                              <span className="text-xs">🛡️</span>
-                              <span>BAŞABAŞ (BE)</span>
-                              <span className="text-[9px] px-1 py-0.2 rounded bg-sky-200 text-sky-900 dark:bg-cyan-400/20 dark:text-cyan-200 font-bold">SIFIR RİSK</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-bunker-800 dark:text-bunker-muted dark:border-bunker-700/60">
-                              <span>🛑 Sabit SL</span>
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">{p.lots} Lot</td>
-                        <td className="py-3 px-3 font-mono font-semibold text-slate-800 dark:text-bunker-muted">{p.entry_price}</td>
-                        <td className="py-3 px-3 font-black font-mono text-slate-900 dark:text-white">{p.current_price}</td>
-
-                        {/* SL / TP SEVİYELERİ (KORUMA VURGULARIYLA) */}
-                        <td className="py-3 px-3 font-mono text-xs">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5">
-                              {isTrailing ? (
-                                <span className="text-amber-300 font-bold flex items-center gap-1">
-                                  <span>SL: {p.sl_price || "-"}</span>
-                                  <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-amber-500/20 border border-amber-500/30 text-amber-200">
-                                    🏃 Takipte
-                                  </span>
-                                </span>
-                              ) : isBE ? (
-                                <span className="text-cyan-300 font-bold flex items-center gap-1">
-                                  <span>SL: {p.sl_price || "-"}</span>
-                                  <span className="text-[9px] font-sans font-bold px-1 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-200">
-                                    🛡️ BE Kilitli
-                                  </span>
-                                </span>
-                              ) : (
-                                <span className="text-rose-300">SL: {p.sl_price || "-"}</span>
-                              )}
-                            </div>
-                            <span className="text-emerald-300">TP: {p.tp_price || "-"}</span>
-                          </div>
-                        </td>
-
-                        {/* KÂR ($ / PİP) */}
-                        <td className={`py-3 px-3 font-mono ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-                          <div className="font-bold text-sm">
-                            {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
-                          </div>
-                          {p.pnl_pips != null && (
-                            <div className={`text-[10px] font-semibold ${Number(p.pnl_pips) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                              {Number(p.pnl_pips) >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)} p
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => closeMt5Ticket(p.ticket)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
-                          >
-                            Kapat ✕
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobil Kart Görünümü */}
-            <div className="md:hidden space-y-3 p-3">
-              {mt5.open_positions.map((p) => {
-                const pnlVal = Number(p.pnl_usd ?? (p as any).profit ?? 0);
-                const isProfit = pnlVal >= 0;
-                const isTrailing = p.protection === "TRAILING" || !!p.trailing_activated;
-                const isBE = (p.protection === "BREAKEVEN" || !!p.breakeven_activated) && !isTrailing;
-
-                return (
-                  <div
-                    key={p.ticket}
-                    className="p-3.5 rounded-2xl border border-bunker-800 bg-bunker-900/90 shadow-lg font-mono text-xs space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white">{p.symbol}</span>
-                        <span className="text-[10px] font-mono text-cyan-300">#{p.ticket}</span>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          p.direction === "BUY"
-                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                            : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                        }`}
-                      >
-                        {p.direction} · {p.lots} Lot
-                      </span>
-                    </div>
-
-                    {/* Koruma Durumu Rozeti */}
-                    <div>
-                      {isTrailing ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                          🏃 TRAILING STOP
-                        </span>
-                      ) : isBE ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
-                          🛡️ BAŞABAŞ KİLİTLİ
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-bunker-muted">🛑 Sabit Stop</span>
-                      )}
-                    </div>
-
-                    {/* Kâr / Zarar */}
-                    <div className="flex items-center justify-between p-2 rounded-xl bg-bunker-950/70 border border-bunker-800/80">
-                      <div>
-                        <span className="text-[10px] text-bunker-muted block">Anlık Getiri</span>
-                        <span className={`text-base font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
-                          {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
-                        </span>
-                      </div>
-                      {p.pnl_pips != null && (
-                        <div className="text-right">
-                          <span className="text-[10px] text-bunker-muted block">Pip Değeri</span>
-                          <span className={`text-sm font-bold ${Number(p.pnl_pips) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                            {Number(p.pnl_pips) >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)} p
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Fiyatlar ve Seviyeler */}
-                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-bunker-800/60">
-                      <div>
-                        <span className="text-bunker-muted">Giriş: </span>
-                        <span className="text-white font-bold">{p.entry_price}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-bunker-muted">Güncel: </span>
-                        <span className="text-white font-bold">{p.current_price}</span>
-                      </div>
-                      <div>
-                        <span className="text-rose-300">SL: </span>
-                        <span className="text-slate-200">{p.sl_price || "-"}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-emerald-300">TP: </span>
-                        <span className="text-slate-200">{p.tp_price || "-"}</span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => closeMt5Ticket(p.ticket)}
-                      className="w-full py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 font-bold text-xs transition-colors touch-target active:scale-95 flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      <span>🛑</span>
-                      <span>Pozisyonu Kapat</span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* KARAR GÜNLÜĞÜ (DECISION STREAM) VE GEÇMİŞ İŞLEMLER */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Canlı Otonom Karar & Tarama Günlüğü */}
-        <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 p-4 shadow-sm dark:shadow-xl flex flex-col h-[460px]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-bunker-800 pb-2.5 mb-2 gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📜</span>
-              <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                Otonom Karar & Tarama Akışı (Decision Stream)
-              </h3>
-            </div>
-            <span className="text-[10px] font-bold text-slate-600 dark:text-bunker-muted">
-              {decisionLogs.length} Olay Kaydedildi
-            </span>
-          </div>
-
-          {/* Kategori Filtre Butonları */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-1.5 border-b border-slate-200 dark:border-bunker-800/60 scrollbar-none text-[10px]">
-            <span className="text-[10px] font-bold text-slate-400 dark:text-bunker-muted whitespace-nowrap pl-0.5">
-              Akış:
-            </span>
-            {[
-              { id: "ALL", label: "Tümü", icon: "🌐" },
-              { id: "SCAN", label: "Taramalar", icon: "🔍" },
-              { id: "ENTRY", label: "Girişler", icon: "⚡" },
-              { id: "PROTECT", label: "Koruma", icon: "🛡️" },
-              { id: "EXIT", label: "Çıkışlar", icon: "🎯" },
-              { id: "GATE", label: "Engeller", icon: "⛔" },
-            ].map((tab) => {
-              const count =
-                tab.id === "ALL"
-                  ? decisionLogs.length
-                  : decisionLogs.filter((l) => l.category === tab.id).length;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setLogFilter(tab.id)}
-                  className={`px-2 py-0.5 rounded-md transition-all font-bold whitespace-nowrap flex items-center gap-1 ${
-                    logFilter === tab.id
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 dark:bg-bunker-950/60 dark:text-bunker-muted dark:hover:text-white dark:border-transparent"
-                  }`}
-                >
-                  <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
-                  <span className="opacity-80 text-[9px]">({count})</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Strateji Filtre Butonları (Tüm Stratejiler Tarama Filtresi) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 border-b border-slate-200 dark:border-bunker-800/60 scrollbar-none text-[10px]">
-            <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 whitespace-nowrap pl-0.5">
-              Strateji:
-            </span>
-            {[
-              { id: "ALL", label: "Tüm Stratejiler", icon: "🌐", match: [] },
-              { id: "RADAR", label: "M1/M5 Radar", icon: "🛰️", match: ["RADAR", "M1_M5", "ÇOKLU"] },
-              { id: "S3", label: "S3 SuperTrend", icon: "🧭", match: ["S3", "SUPERTREND"] },
-              { id: "LONDON", label: "London Breakout", icon: "🌅", match: ["LONDON", "LBRK", "ASYA"] },
-              { id: "EMA_ADX", label: "EMA+ADX M5", icon: "📐", match: ["EMA_ADX", "EMA+ADX", "EAP"] },
-              { id: "DONCHIAN", label: "Donchian ADX", icon: "🎯", match: ["DONCHIAN", "DONCH"] },
-            ].map((stTab) => {
-              const count =
-                stTab.id === "ALL"
-                  ? decisionLogs.length
-                  : decisionLogs.filter((l) => {
-                      const sKey = ((l.strategy || "") + " " + (l.strategy_label || "") + " " + (l.message || "")).toUpperCase();
-                      return stTab.match.some((m) => sKey.includes(m));
-                    }).length;
-              return (
-                <button
-                  key={stTab.id}
-                  type="button"
-                  onClick={() => setStrategyFilter(stTab.id)}
-                  className={`px-2 py-0.5 rounded-md transition-all font-bold whitespace-nowrap flex items-center gap-1 ${
-                    strategyFilter === stTab.id
-                      ? "bg-purple-600 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 dark:bg-bunker-950/60 dark:text-bunker-muted dark:hover:text-white dark:border-transparent"
-                  }`}
-                >
-                  <span>{stTab.icon}</span>
-                  <span>{stTab.label}</span>
-                  <span className="opacity-80 text-[9px]">({count})</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
-            {(() => {
-              const categoryFiltered =
-                logFilter === "ALL"
-                  ? decisionLogs
-                  : decisionLogs.filter((l) => l.category === logFilter);
-
-              const filtered =
-                strategyFilter === "ALL"
-                  ? categoryFiltered
-                  : categoryFiltered.filter((l) => {
-                      const sKey = ((l.strategy || "") + " " + (l.strategy_label || "") + " " + (l.message || "")).toUpperCase();
-                      if (strategyFilter === "RADAR") return sKey.includes("RADAR") || sKey.includes("M1_M5") || sKey.includes("PİYASA TARAMASI");
-                      if (strategyFilter === "S3") return sKey.includes("S3") || sKey.includes("SUPERTREND");
-                      if (strategyFilter === "LONDON") return sKey.includes("LONDON") || sKey.includes("LBRK") || sKey.includes("ASYA");
-                      if (strategyFilter === "EMA_ADX") return sKey.includes("EMA_ADX") || sKey.includes("EMA+ADX") || sKey.includes("EAP");
-                      if (strategyFilter === "DONCHIAN") return sKey.includes("DONCHIAN") || sKey.includes("DONCH");
-                      return true;
-                    });
-
-              if (filtered.length === 0) {
-                return (
-                  <div className="text-center py-14 text-bunker-muted text-xs">
-                    Bu filtre kriterlerine ait bir kayıt henüz bulunmuyor.
-                  </div>
-                );
-              }
-
-              // En son log her zaman en üstte (azalan sıralama)
-              const sorted = [...filtered].sort((a, b) => {
-                const tsA = a.created_at_ts ?? 0;
-                const tsB = b.created_at_ts ?? 0;
-                if (tsA && tsB && tsA !== tsB) return tsB - tsA;
-                return (b.time || "").localeCompare(a.time || "");
-              });
-
-              const catColors: Record<string, string> = {
-                SCAN: "border-sky-300 bg-sky-50 text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200",
-                ENTRY: "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
-                EXIT: "border-blue-300 bg-blue-50 text-blue-950 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
-                PROTECT: "border-cyan-300 bg-cyan-50 text-cyan-950 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-300",
-                GATE: "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
-                SYSTEM: "border-slate-300 bg-slate-100 text-slate-800 dark:border-bunker-700 dark:bg-bunker-800/40 dark:text-bunker-muted",
-              };
-
-              const catIcons: Record<string, string> = {
-                SCAN: "🔍",
-                ENTRY: "⚡",
-                EXIT: "🎯",
-                PROTECT: "🛡️",
-                GATE: "⛔",
-                SYSTEM: "⚙️",
-              };
-
-              const getStratBadgeColor = (lbl: string) => {
-                const u = lbl.toUpperCase();
-                if (u.includes("S3")) return "bg-indigo-100 text-indigo-900 border-indigo-300 dark:bg-indigo-950/70 dark:text-indigo-300 dark:border-indigo-600/60";
-                if (u.includes("LONDON") || u.includes("ASYA")) return "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-600/60";
-                if (u.includes("EMA")) return "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-600/60";
-                if (u.includes("DONCHIAN")) return "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 dark:bg-fuchsia-950/70 dark:text-fuchsia-300 dark:border-fuchsia-600/60";
-                return "bg-sky-100 text-sky-900 border-sky-300 dark:bg-sky-950/70 dark:text-sky-300 dark:border-sky-600/60";
-              };
-
-              return sorted.map((log) => {
-                const icon = catIcons[log.category] || "•";
-                const stratLbl = log.strategy_label || (log as any).metadata?.strategy_label || "";
-                return (
-                  <div
-                    key={log.id}
-                    className={`p-2.5 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 transition-all ${
-                      catColors[log.category] || "border-bunker-800 bg-bunker-900"
-                    }`}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <span className="font-bold uppercase tracking-wider text-[10px]">
-                          {icon} [{log.category}]
-                        </span>
-                        {log.symbol && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-slate-200 text-slate-800 dark:bg-bunker-800 dark:text-slate-200 border border-slate-300 dark:border-bunker-700">
-                            {log.symbol}
-                          </span>
-                        )}
-                        {stratLbl && (
-                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border whitespace-nowrap inline-flex items-center gap-1 ${getStratBadgeColor(stratLbl)}`}>
-                            <span>🎯</span>
-                            <span>{stratLbl}</span>
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-slate-800 dark:text-slate-200 font-medium">{log.message}</div>
-                    </div>
-                    <span className="text-[10px] opacity-70 whitespace-nowrap font-mono">{formatUtc3(log.time)}</span>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>
-
-        {/* Kapanan İşlemler Geçmişi */}
-        <div className="rounded-2xl border border-slate-300 dark:border-bunker-800 bg-white dark:bg-bunker-900/70 p-4 shadow-sm dark:shadow-xl flex flex-col h-[460px]">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-bunker-800 pb-3 mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🏁</span>
-              <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                Kapanan Scalp İşlemleri ({closedTrades.length})
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
+          {/* Kapanan İşlemler Tablosu */}
+          <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-bunker-800 pb-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🏁</span>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                  Kapanan Scalp İşlemleri ({closedTrades.length})
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={downloadCsv}
                 disabled={closedTrades.length === 0}
-                className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100 dark:bg-blue-600/30 dark:text-blue-300 dark:border-blue-400/40 dark:hover:bg-blue-600/50 transition-all disabled:opacity-40 flex items-center gap-1 shadow-sm"
-                title="Kapanan İşlemleri CSV İndir"
+                className="px-3 py-1 rounded-lg text-xs font-bold bg-blue-600/30 text-blue-300 border border-blue-400/40 hover:bg-blue-600/50 transition-all disabled:opacity-40 flex items-center gap-1.5"
               >
                 <span>📥</span>
-                <span>CSV</span>
+                <span>CSV İndir</span>
               </button>
-              <Link
-                href="/forex/reports"
-                className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 dark:bg-bunker-800 dark:hover:bg-bunker-700 dark:text-white dark:border-transparent transition-all flex items-center gap-1"
-                title="Tüm İşlem Raporları ve Analitik"
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-1 text-xs">
+              {closedTrades.length === 0 ? (
+                <div className="text-center py-8 text-bunker-muted">Henüz kapanmış bir işlem bulunmuyor.</div>
+              ) : (
+                closedTrades.slice(0, 30).map((tr: any, idx: number) => {
+                  const pnlVal = Number(tr.pnl_usd ?? tr.profit ?? 0);
+                  const isWin = pnlVal >= 0;
+                  return (
+                    <div
+                      key={tr.id ?? tr.ticket ?? idx}
+                      className="p-2.5 rounded-lg border border-bunker-800 bg-bunker-950/60 flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-white">{tr.symbol}</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${tr.direction === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
+                            {tr.direction}
+                          </span>
+                          <span className="text-bunker-muted text-[10px]">{tr.lots} Lot</span>
+                          <span className="text-bunker-muted text-[10px]">({tr.exit_reason || "MT5 Kapanış"})</span>
+                        </div>
+                        <div className="text-[10px] text-bunker-muted mt-0.5">
+                          {tr.entry_price} → {tr.exit_price} ({formatUtc3(tr.exit_time)})
+                        </div>
+                      </div>
+                      <div className={`font-black text-xs font-mono text-right ${isWin ? "text-emerald-400" : "text-rose-400"}`}>
+                        {isWin ? "+" : ""}${pnlVal.toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SEKME 2: XAUUSD TEKNİK VERİLERİ VE SİSTEM ALGORİTMALARININ TARAMA LOGLARI */}
+      {/* ========================================================================= */}
+      {activeTab === "xauusd" && (
+        <div className="space-y-5 animate-in fade-in duration-150">
+          {/* XAUUSD Canlı Fiyat & Gösterge Başlığı */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-yellow-950/20 to-slate-900 border border-amber-500/30 shadow-xl flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(245,158,11,0.3)]">
+                🥇
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-black text-white">XAUUSD — ONS ALTIN KOMUTA MERKEZİ</h2>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                    SPOT / MT5
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-bunker-muted font-mono mt-0.5">
+                  <span>Fiyat: <strong className="text-white text-sm">${xauCandidate?.price?.toFixed(2) || xauTicker?.bid?.toFixed(2) || "—"}</strong></span>
+                  <span>Spread: <strong className="text-amber-300">{xauCandidate?.spread_pips ?? xauTicker?.spread_pips ?? "—"} pip</strong></span>
+                  <span>Trend: <strong className={xauCandidate?.trend === "BULL" ? "text-emerald-400" : "text-rose-400"}>{xauCandidate?.trend || "Nötr"}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Hızlı İşlem Düğmeleri */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isOrdering || !mt5.connected}
+                onClick={() => sendQuickOrder("XAUUSD", "BUY", 0.01)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1 disabled:opacity-40"
               >
-                <span>📊</span>
-                <span>Raporlar →</span>
-              </Link>
+                ▲ Hızlı BUY 0.01
+              </button>
+              <button
+                type="button"
+                disabled={isOrdering || !mt5.connected}
+                onClick={() => sendQuickOrder("XAUUSD", "SELL", 0.01)}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1 disabled:opacity-40"
+              >
+                ▼ Hızlı SELL 0.01
+              </button>
+              {xauCandidate && (
+                <button
+                  type="button"
+                  onClick={() => setChartModalCandidate(xauCandidate)}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 hover:bg-blue-600/50 text-xs font-bold transition-all"
+                >
+                  📈 Grafik
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
-            {closedTrades.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 dark:text-bunker-muted font-medium">
-                Henüz kapanmış bir işlem bulunmuyor.
-              </div>
-            ) : (
-              closedTrades.map((tr: any, idx: number) => {
-                const pnlVal = Number(tr.pnl_usd ?? tr.profit ?? 0);
-                const isWin = pnlVal >= 0;
-                const pnlPips = tr.pnl_pips != null ? Number(tr.pnl_pips) : null;
-                const keyId = tr.id ?? tr.ticket ?? `deal-${idx}`;
-                const symDisplay = tr.display ?? tr.symbol ?? "FX";
-                const dir = tr.direction ?? "BUY";
-                const lotsVal = tr.lots ?? 0.01;
-                const entryP = tr.entry_price ?? tr.price ?? "-";
-                const exitP = tr.exit_price ?? tr.price ?? "-";
-                const timeStr = tr.exit_time ?? tr.time ?? "-";
-                const reasonStr = tr.exit_reason_title ?? tr.exit_reason ?? "IC Markets MT5";
+          {/* XAUUSD 6'lı Teknik İndikatör Kartları */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 font-mono">
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">RSI (5M / 15M)</span>
+              <span className="text-lg font-black text-cyan-300 block mt-1">
+                {xauCandidate?.rsi_5m ? xauCandidate.rsi_5m.toFixed(1) : "—"}
+              </span>
+              <span className="text-[10px] text-bunker-muted">15M: {xauCandidate?.rsi_15m ? xauCandidate.rsi_15m.toFixed(1) : "—"}</span>
+            </div>
 
-                return (
-                  <div
-                    key={keyId}
-                    className="p-2.5 rounded-lg border border-slate-200 dark:border-bunker-800 bg-slate-50/70 dark:bg-bunker-950/60 flex items-center justify-between hover:border-slate-300 dark:hover:border-bunker-700 transition-colors"
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">SuperTrend Yönü</span>
+              <span className={`text-lg font-black block mt-1 ${xauCandidate?.supertrend_dir && xauCandidate.supertrend_dir > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {xauCandidate?.supertrend_dir && xauCandidate.supertrend_dir > 0 ? "▲ BOĞA" : "▼ AYI"}
+              </span>
+              <span className="text-[10px] text-bunker-muted">M5 Teyitli</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">ADX Trend Gücü</span>
+              <span className={`text-lg font-black block mt-1 ${xauCandidate?.adx && xauCandidate.adx >= 25 ? "text-emerald-400" : "text-yellow-400"}`}>
+                {xauCandidate?.adx ? xauCandidate.adx.toFixed(1) : "—"}
+              </span>
+              <span className="text-[10px] text-bunker-muted">{xauCandidate?.adx && xauCandidate.adx >= 25 ? "Güçlü Trend" : "Yatay / Chop"}</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">ATR Volatilite</span>
+              <span className="text-lg font-black text-amber-300 block mt-1">
+                {xauCandidate?.atr_pips ? `${xauCandidate.atr_pips} p` : "—"}
+              </span>
+              <span className="text-[10px] text-bunker-muted">Dinamik Stop Çarpanı</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">Radar Skoru</span>
+              <span className="text-lg font-black text-purple-300 block mt-1">
+                {xauCandidate?.score ? `${xauCandidate.score}/100` : "—"}
+              </span>
+              <span className="text-[10px] text-bunker-muted">Eşik: 75.0</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
+              <span className="text-[10px] text-bunker-muted uppercase block">CSM Dolar Farkı</span>
+              <span className={`text-lg font-black block mt-1 ${xauCandidate?.csm_diff && xauCandidate.csm_diff > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {xauCandidate?.csm_diff ? `${xauCandidate.csm_diff > 0 ? "+" : ""}${xauCandidate.csm_diff.toFixed(1)}` : "—"}
+              </span>
+              <span className="text-[10px] text-bunker-muted">Altın vs USD Akışı</span>
+            </div>
+          </div>
+
+          {/* XAUUSD 18-Kapı Zincir Durumu (GateSnapshotCard) */}
+          {gateSnapshotXAU && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                <span>🛡️</span>
+                <span>XAUUSD Otonom Karar Kapıları Zinciri</span>
+              </h3>
+              <GateSnapshotCard snapshot={gateSnapshotXAU} />
+            </div>
+          )}
+
+          {/* Sistem Algoritmaları Tarama & Karar Logları */}
+          <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bunker-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📜</span>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                  Sistem Algoritmaları Karar &amp; Tarama Logları ({decisionLogs.length})
+                </h3>
+              </div>
+
+              {/* Kategori Filtresi */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {["ALL", "ENTRY", "EXIT", "PROTECT", "GATE", "SCAN", "SYSTEM"].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setLogFilter(cat)}
+                    className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${
+                      logFilter === cat
+                        ? "bg-blue-600 text-white border-blue-400"
+                        : "bg-bunker-950 text-bunker-muted border-bunker-800 hover:text-white"
+                    }`}
                   >
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-black text-slate-900 dark:text-white text-xs">{symDisplay}</span>
-                        <span
-                          className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
-                            dir === "BUY"
-                              ? "bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-400"
-                              : "bg-rose-50 text-rose-800 border border-rose-300 dark:bg-rose-500/15 dark:text-rose-400"
-                          }`}
-                        >
-                          {dir}
-                        </span>
-                        {(tr.strategy_label || tr.strategy) && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-600/50">
-                            {tr.strategy_label || tr.strategy}
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Strateji Filtresi */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs pb-1">
+              {[
+                { id: "ALL", label: "Tüm Stratejiler" },
+                { id: "RADAR", label: "Klasik Radar" },
+                { id: "S3", label: "S3 SuperTrend" },
+                { id: "LONDON", label: "London Box" },
+                { id: "EMA_ADX", label: "EMA+ADX" },
+                { id: "DONCHIAN", label: "Donchian" },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setStrategyFilter(st.id)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all border ${
+                    strategyFilter === st.id
+                      ? "bg-purple-600/30 text-purple-300 border-purple-400"
+                      : "bg-bunker-950/60 text-bunker-muted border-bunker-800 hover:text-white"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Log Listesi */}
+            <div className="max-h-96 overflow-y-auto space-y-2 pr-1 text-xs">
+              {(() => {
+                const filtered = decisionLogs.filter((l) => {
+                  if (logFilter !== "ALL" && l.category !== logFilter) return false;
+                  if (strategyFilter !== "ALL") {
+                    const txt = `${l.strategy || ""} ${l.strategy_label || ""} ${l.message || ""}`.toUpperCase();
+                    if (!txt.includes(strategyFilter)) return false;
+                  }
+                  return true;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-10 text-bunker-muted text-xs">
+                      Seçili filtrelere uygun karar logu bulunmuyor.
+                    </div>
+                  );
+                }
+
+                return filtered.map((log) => {
+                  const catColors: Record<string, string> = {
+                    SCAN: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+                    ENTRY: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+                    EXIT: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+                    PROTECT: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+                    GATE: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+                    SYSTEM: "border-bunker-700 bg-bunker-800/40 text-bunker-muted",
+                  };
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-2.5 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 transition-all ${
+                        catColors[log.category] || "border-bunker-800 bg-bunker-900"
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="font-bold uppercase tracking-wider text-[10px]">
+                            [{log.category}]
                           </span>
-                        )}
-                        <span className="text-[10px] font-semibold text-slate-700 dark:text-bunker-muted">{lotsVal} Lot</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-bunker-800 text-slate-700 dark:text-bunker-muted font-bold">
-                          {reasonStr}
+                          {log.symbol && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-bunker-800 text-slate-200 border border-bunker-700">
+                              {log.symbol}
+                            </span>
+                          )}
+                          {log.strategy_label && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
+                              {log.strategy_label}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-slate-200 font-medium">{log.message}</div>
+                      </div>
+                      <span className="text-[10px] opacity-70 whitespace-nowrap font-mono">{formatUtc3(log.time)}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SEKME 3: FOREX ÇİFTLERİ TEKNİK ANALİZ KARTLARI */}
+      {/* ========================================================================= */}
+      {activeTab === "forex_tech" && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Arama & Kategori Filtre Çubuğu */}
+          <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {[
+                { id: "ALL", label: "Tümü" },
+                { id: "major", label: "Majörler" },
+                { id: "jpy", label: "JPY Krosları" },
+                { id: "eur", label: "EUR Krosları" },
+                { id: "gbp", label: "GBP Krosları" },
+                { id: "commodity", label: "Emtia" },
+                { id: "index", label: "Endeksler" },
+              ].map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setForexCategoryFilter(c.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                    forexCategoryFilter === c.id
+                      ? "bg-blue-600/30 text-blue-300 border-blue-400"
+                      : "bg-bunker-950 text-bunker-muted border-bunker-800 hover:text-white"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              placeholder="🔍 Parite ara (EUR, GBP, JPY...)"
+              value={forexSearchQuery}
+              onChange={(e) => setForexSearchQuery(e.target.value)}
+              className="bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white placeholder-bunker-600 outline-none focus:border-blue-400 w-52"
+            />
+          </div>
+
+          {/* Forex Pariteleri Izgarası */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filteredForexCandidates.map((c) => {
+              const isBuy = c.action === "BUY";
+              const isSell = c.action === "SELL";
+              const rsi = c.rsi_5m ?? c.rsi_15m;
+              const tick = tickers[c.symbol];
+
+              return (
+                <div
+                  key={c.symbol}
+                  className="p-4 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-bunker-700 transition-all shadow-sm space-y-3"
+                >
+                  {/* Başlık Satırı */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-black text-white">{c.display || c.symbol}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
+                          {c.category}
                         </span>
                       </div>
-                      <div className="text-[10px] text-slate-600 dark:text-bunker-muted font-medium mt-0.5">
-                        Giriş: {entryP} → Çıkış: {exitP} ({formatUtc3(timeStr)})
-                      </div>
+                      <span className="text-[11px] text-bunker-muted block">{c.name}</span>
                     </div>
 
                     <div className="text-right">
-                      <div
-                        className={`font-black text-xs ${
-                          isWin ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                        }`}
-                      >
-                        {isWin ? "+" : ""}${pnlVal.toFixed(2)}
-                      </div>
-                      {pnlPips !== null && (
-                        <div
-                          className={`text-[10px] font-bold ${
-                            pnlPips >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"
-                          }`}
-                        >
-                          {pnlPips >= 0 ? "+" : ""}
-                          {pnlPips} p
-                        </div>
-                      )}
+                      <span className="text-sm font-black text-white font-mono block">
+                        {c.price || tick?.bid || "—"}
+                      </span>
+                      <span className="text-[10px] text-cyan-400 font-mono font-bold block">
+                        {c.spread_pips ?? tick?.spread_pips ?? "—"}p spread
+                      </span>
                     </div>
                   </div>
-                );
-              })
-            )}
+
+                  {/* Sinyal ve Skor Çubuğu */}
+                  <div className="p-2 rounded-lg bg-bunker-950/70 border border-bunker-800 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                          isBuy
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
+                            : isSell
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-400/40"
+                            : "bg-bunker-800 text-bunker-muted"
+                        }`}
+                      >
+                        {isBuy ? "▲ AL SİNYALİ" : isSell ? "▼ SAT SİNYALİ" : "BEKLE"}
+                      </span>
+                      <span className="text-bunker-muted font-mono text-[11px] font-bold">
+                        Skor: {c.score}/100
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setChartModalCandidate(c)}
+                      className="px-2.5 py-1 rounded bg-blue-600/30 text-blue-300 border border-blue-400/40 text-[11px] font-bold hover:bg-blue-600/50 transition-all flex items-center gap-1"
+                    >
+                      <span>📈</span>
+                      <span>Grafik</span>
+                    </button>
+                  </div>
+
+                  {/* İndikatör Grid */}
+                  <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-mono">
+                    <div className="p-1.5 rounded bg-bunker-950 border border-bunker-800/80">
+                      <span className="text-bunker-muted block">RSI 5M</span>
+                      <span className={`font-bold ${rsi && (rsi >= 70 || rsi <= 30) ? "text-amber-300" : "text-white"}`}>
+                        {rsi ? rsi.toFixed(0) : "—"}
+                      </span>
+                    </div>
+                    <div className="p-1.5 rounded bg-bunker-950 border border-bunker-800/80">
+                      <span className="text-bunker-muted block">S.Trend</span>
+                      <span className={`font-bold ${c.supertrend_dir > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {c.supertrend_dir > 0 ? "Boğa" : "Ayı"}
+                      </span>
+                    </div>
+                    <div className="p-1.5 rounded bg-bunker-950 border border-bunker-800/80">
+                      <span className="text-bunker-muted block">ADX</span>
+                      <span className={`font-bold ${c.adx >= 25 ? "text-emerald-400" : "text-bunker-muted"}`}>
+                        {c.adx ? c.adx.toFixed(0) : "—"}
+                      </span>
+                    </div>
+                    <div className="p-1.5 rounded bg-bunker-950 border border-bunker-800/80">
+                      <span className="text-bunker-muted block">ATR</span>
+                      <span className="text-white font-bold">{c.atr_pips ? `${c.atr_pips}p` : "—"}</span>
+                    </div>
+                  </div>
+
+                  {/* Hedef ve Stop Seviyeleri */}
+                  <div className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-bunker-800/60">
+                    <span className="text-emerald-400 font-bold">Hedef TP: {c.pip_target ? `+${c.pip_target}p` : "—"}</span>
+                    <span className="text-rose-400 font-bold">Stop: {c.stop_loss_pips ? `-${c.stop_loss_pips}p` : "—"}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SEKME 4: 7/24 HAFTA SONU KRİPTO ÇİFTLERİ TEKNİK ANALİZİ */}
+      {/* ========================================================================= */}
+      {activeTab === "crypto_tech" && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Kripto Portföy Bannerı */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-slate-900 border border-purple-500/30 shadow-xl flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-400/50 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(168,85,247,0.3)]">
+                ⚡
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-black text-white">IC MARKETS 7/24 KRİPTO PORTFÖYÜ</h2>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                    HAFTA SONU KESİNTİSİZ
+                  </span>
+                </div>
+                <p className="text-xs text-bunker-muted font-mono mt-0.5">
+                  Fırsat kaçırmayan FVG Pullback ve S3 SuperTrend motorları — Güvenli %2 risk bütçesi ile 7/24 canlı işlem
+                </p>
+              </div>
+            </div>
+
+            <input
+              type="text"
+              placeholder="🔍 Kripto ara (SOL, ETH, BTC...)"
+              value={cryptoSearchQuery}
+              onChange={(e) => setCryptoSearchQuery(e.target.value)}
+              className="bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white placeholder-bunker-600 outline-none focus:border-purple-400 w-52"
+            />
+          </div>
+
+          {/* Kripto Pariteleri Kart Izgarası */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {cryptoCandidatesList.map((item) => {
+              const c = item.candidate;
+              const tick = item.ticker;
+              const priceVal = c?.price ?? tick?.bid ?? 0.0;
+              const spreadVal = c?.spread_pips ?? tick?.spread_pips ?? 0.0;
+              const isBuy = c?.action === "BUY";
+              const isSell = c?.action === "SELL";
+
+              return (
+                <div
+                  key={item.sym}
+                  className="p-4 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-purple-500/40 transition-all shadow-sm space-y-3"
+                >
+                  {/* Başlık ve Fiyat */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl">{item.icon}</span>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-black text-white text-base">{item.sym}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/30 text-purple-300 font-bold border border-purple-600/40">
+                            7/24
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-bunker-muted">{item.name}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right font-mono">
+                      <span className="text-base font-black text-white block">
+                        ${priceVal > 0 ? priceVal.toFixed(item.digits) : "—"}
+                      </span>
+                      <span className="text-[10px] text-purple-300 font-bold block">
+                        {spreadVal}p spread
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Strateji Durumları: FVG & S3 */}
+                  <div className="p-2.5 rounded-lg bg-bunker-950/70 border border-bunker-800 space-y-1.5 text-xs font-mono">
+                    <div className="flex items-center justify-between">
+                      <span className="text-bunker-muted flex items-center gap-1">
+                        <span>⚡</span>
+                        <span>FVG Pullback:</span>
+                      </span>
+                      <span className="text-emerald-400 font-bold">1.8R TP Takipte</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-bunker-muted flex items-center gap-1">
+                        <span>🚀</span>
+                        <span>S3 SuperTrend:</span>
+                      </span>
+                      <span className={`font-bold ${c?.supertrend_dir && c.supertrend_dir > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {c?.supertrend_dir && c.supertrend_dir > 0 ? "▲ Boğa Yönü" : "▼ Ayı Yönü"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-bunker-800/60">
+                      <span className="text-bunker-muted">Akıllı Kalite Kalkanı:</span>
+                      <span className="text-cyan-300 font-bold">Aktif (%0.30 EMA)</span>
+                    </div>
+                  </div>
+
+                  {/* Sinyal & Skor & Grafik Butonu */}
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
+                          isBuy
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
+                            : isSell
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-400/40"
+                            : "bg-bunker-800 text-bunker-muted"
+                        }`}
+                      >
+                        {isBuy ? "▲ AL SİNYALİ" : isSell ? "▼ SAT SİNYALİ" : "BEKLE"}
+                      </span>
+                      <span className="text-bunker-muted font-mono text-[11px] font-bold">
+                        Skor: {c?.score || 75}/100
+                      </span>
+                    </div>
+
+                    {c && (
+                      <button
+                        type="button"
+                        onClick={() => setChartModalCandidate(c)}
+                        className="px-2.5 py-1 rounded bg-purple-600/30 text-purple-300 border border-purple-400/40 text-[11px] font-bold hover:bg-purple-600/50 transition-all flex items-center gap-1"
+                      >
+                        <span>📈</span>
+                        <span>Grafik</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ALT BAĞLANTILAR */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-bunker-muted pt-2 border-t border-bunker-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-bunker-muted pt-4 border-t border-bunker-800">
         <div className="flex items-center gap-4">
           <Link href="/forex" className="hover:text-blue-400 transition-colors">
-            ← Forex Radar & Canlı Piyasa
+            ← Forex Radar &amp; Canlı Piyasa
           </Link>
           <span className="text-bunker-700">|</span>
           <Link href="/forex/reports" className="hover:text-blue-300 font-bold text-blue-400 transition-colors flex items-center gap-1">
-            📊 Tüm İşlem Raporları & CSV İndir →
+            📊 Tüm İşlem Raporları &amp; Analitik →
           </Link>
         </div>
         <Link href="/forex/charts" className="hover:text-blue-400 transition-colors">
           Grafik Ekranı (1 / 2 / 4) →
         </Link>
       </div>
+
+      {/* GRAFİK MODALI */}
+      {chartModalCandidate && (
+        <ForexChartModal
+          candidate={chartModalCandidate}
+          onClose={() => setChartModalCandidate(null)}
+        />
+      )}
     </div>
   );
 }

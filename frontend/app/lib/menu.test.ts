@@ -75,7 +75,6 @@ describe("menu — rol görünürlüğü", () => {
       "/",
       "/forex/portfolio",
       "/metamobil",
-      "/forex/btc-gold",
       "/forex",
       "/forex/charts",
       "/chat",
