@@ -687,9 +687,11 @@ export default function ForexNativeChart({
         }
       } catch {}
     };
-    const t = setInterval(fetchTicker, 2500);
+    const t = setInterval(() => {
+      if (!document.hidden) fetchTicker();
+    }, 2500);
     return () => clearInterval(t);
-  }, [symbol, livePrice, syncLiveIndicators]);
+  }, [symbol, syncLiveIndicators]);
 
   // Grafik Tuvalini Başlat (lightweight-charts)
   useEffect(() => {
@@ -763,7 +765,7 @@ export default function ForexNativeChart({
     // Kullanıcı niyeti yalnız gerçek girdi olaylarından (tekerlek/pointer) okunur.
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (!range) return;
-      const count = lastCandleRef.current ? 100 : 0;
+      const count = candlesRef.current.length;
       if (range.to != null && count > 0) {
         setIsScrolledBack(range.to < count - 3);
       }

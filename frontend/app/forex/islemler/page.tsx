@@ -59,6 +59,10 @@ const STRATEGY_LABELS: Record<string, string> = {
   S3_5M: "S3 SuperTrend+RSI (M5)",
   S3_15M: "S3 SuperTrend+RSI (M15)",
   DONCHIAN_ADX: "Donchian ADX Kırılımı",
+  LONDON_BREAKOUT: "London Breakout (M5)",
+  LONDON_SIGN: "NY Sign Momentum",
+  SQUEEZE_KC_M15: "Keltner Squeeze (M15)",
+  RADAR: "M1/M5 Çoklu Radar",
   M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
   MANUAL: "Manuel Giriş",
   IC_MARKETS_MT5: "IC Markets MT5",
@@ -382,8 +386,6 @@ export default function ForexIslemlerPage() {
         const winRate =
           item.closedTrades > 0
             ? (item.wins / item.closedTrades) * 100
-            : item.openPnlUsd >= 0
-            ? 100
             : 0;
         const netPnlUsd = item.realizedPnlUsd + item.openPnlUsd;
         return {
@@ -409,9 +411,9 @@ export default function ForexIslemlerPage() {
   const filteredClosedTrades = useMemo(() => {
     return closedTrades.filter((t) => {
       if (filterOutcome === "ALL") return true;
-      const isWin = Number(t.pnl_usd ?? 0) >= 0 || t.outcome === "WIN";
-      if (filterOutcome === "WIN") return isWin;
-      if (filterOutcome === "LOSS") return !isWin;
+      const pnl = Number(t.pnl_usd ?? 0);
+      if (filterOutcome === "WIN") return pnl > 0 || t.outcome === "WIN";
+      if (filterOutcome === "LOSS") return pnl < 0 || t.outcome === "LOSS";
       return true;
     });
   }, [closedTrades, filterOutcome]);

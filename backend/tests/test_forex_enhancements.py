@@ -1772,8 +1772,94 @@ class TestChandelierTrailingBridge(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(mt5_bridge._compute_atr_pips("EURUSD", 0.0001), 0.0)
 
 
+class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCase):
+    """2026-10-16 Canlı Veri Hattı Regresyon Testleri:
+    1) `sync_mt5_bridge` içinde `XAUUSD|5m` anahtarı `.upper()` yüzünden `XAUUSD|5M`
+       olarak yazılıp `_closed_broker_bars` / `_fetch_mt5_candles` tarafından hiç
+       bulunamıyordu ('Piyasa verisi alınamıyor — sinyal üretilemiyor').
+    2) MT5 broker saat dilimi (UTC+3 = +10800 sn) `opened >= now_bucket` filtresinde
+       en son 36 M5 mumunu 'gelecekte' sanıp siliyordu.
+    3) `_bars_have_gap` 300 barlık geçmişin tamamına baktığı için XAUUSD/NAS100/US30
+       günlük 1 saatlik rollover molasını 7/24 `bar_gap=True` olarak işaretliyordu.
+    4) DXY (`DXY_Z6`) ve `AUDCAD` köprü/izleme evreninde tam eşleşmeli.
+    """
+
+    def setUp(self):
+        forex._MT5_CANDLES_CACHE.clear()
+        forex._TECHNICAL_CACHE.clear()
+        forex._CLOSED_TICK_BARS.clear()
+        forex._OPEN_TICK_BUCKET.clear()
+
+    def tearDown(self):
+        forex._MT5_CANDLES_CACHE.clear()
+        forex._TECHNICAL_CACHE.clear()
+        forex._CLOSED_TICK_BARS.clear()
+        forex._OPEN_TICK_BUCKET.clear()
+
+    async def test_sync_mt5_bridge_stores_lowercase_interval_and_shifts_utc3_bars(self):
+        from unittest import mock
+        now_bucket = (int(time.time()) // 300) * 300
+        utc3_offset = 10800  # IC Markets UTC+3
+        # 60 adet 5m bar, broker saatinde (UTC+3): son bar şu anki açık kova, önceki 59 bar kapanmış
+        raw_bars = [
+            {
+                "time": (now_bucket - (59 - i) * 300) + utc3_offset,
+                "open": 4200.0 + i * 0.5,
+                "high": 4201.0 + i * 0.5,
+                "low": 4199.0 + i * 0.5,
+                "close": 4200.5 + i * 0.5,
+            }
+            for i in range(60)
+        ]
+        req = forex.MT5SyncRequest(
+            candles={"XAUUSD|5m": raw_bars, "DXY_Z6|5m": raw_bars},
+            ticks={"XAUUSD": {"bid": 4229.5, "ask": 4229.8, "last": 4229.8}},
+        )
+        with mock.patch.object(forex, "_mt5_sync_authorized", return_value=True):
+            await forex.sync_mt5_bridge(req, request=None)
+
+        self.assertIn("XAUUSD|5m", forex._MT5_CANDLES_CACHE)
+        self.assertIn("DXY|5m", forex._MT5_CANDLES_CACHE)
+
+        closed = forex._closed_broker_bars("XAUUSD", "5m", 300)
+        self.assertEqual(len(closed), 59, "UTC+3 ofseti düşülmeli ve 59 kapanmış bar korunmalı")
+        self.assertEqual(closed[-1]["time"], now_bucket - 300)
+
+        fetched = forex._fetch_mt5_candles("XAUUSD", "5m", 50)
+        self.assertIsNotNone(fetched)
+        self.assertEqual(len(fetched), 50)
+        self.assertEqual(fetched[-1]["time"], now_bucket)
+
+    def test_bars_have_gap_ignores_old_daily_rollover_break_but_catches_recent_gap(self):
+        base = 1700000000
+        bars = []
+        t = base
+        for i in range(100):
+            # 30. barda günlük 1 saatlik (3900 sn) piyasa arası simülasyonu
+            t += 3900 if i == 30 else 300
+            bars.append({"time": t, "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0})
+        self.assertFalse(
+            forex._bars_have_gap(bars, 300),
+            "Saatler önceki günlük rollover molası son barlarda bar_gap=True üretmemeli",
+        )
+        # Son barda gerçek kopukluk varsa yakalamalı
+        bars.append({"time": t + 1800, "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0})
+        self.assertTrue(forex._bars_have_gap(bars, 300))
+
+    def test_dxy_watch_and_bridge_symbol_specs(self):
+        watch = forex._get_forex_watch()
+        watch_pairs = {(w["symbol"], w["interval"]) for w in watch}
+        self.assertIn(("DXY", "5m"), watch_pairs)
+        self.assertIn(("XAUUSD", "5m"), watch_pairs)
+        self.assertIn(("BTCUSD", "5m"), watch_pairs)
+        self.assertEqual(forex.canonical_symbol("DXY_Z6"), "DXY")
+        self.assertEqual(mt5_bridge.to_app_symbol("DXY_Z6"), "DXY")
+        self.assertEqual(mt5_bridge.get_symbol_trading_specs("AUDCAD")["pip_val"], 7.0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

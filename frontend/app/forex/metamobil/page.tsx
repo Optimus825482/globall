@@ -277,7 +277,8 @@ export default function MetaMobilePage() {
     }
 
     try {
-      const tradesData = await apiFetch("/api/forex/auto-paper/trades?period=today&limit=250");
+      const periodParam = historyPeriod.toLowerCase();
+      const tradesData = await apiFetch(`/api/forex/auto-paper/trades?period=${encodeURIComponent(periodParam)}&limit=250`);
       if (Array.isArray(tradesData?.open_positions)) {
         setOpenPositions(tradesData.open_positions);
       }
@@ -293,7 +294,7 @@ export default function MetaMobilePage() {
       setAccount((prev) => {
         const bal = Number(statusData.balance ?? prev.balance);
         const eq = Number(statusData.equity ?? statusData.balance ?? prev.equity);
-        const pnl = Number(statusData.open_pnl ?? (eq - bal));
+        const pnl = Number(statusData.open_pnl_usd ?? statusData.open_pnl ?? (eq - bal));
         const marg = Number(statusData.margin ?? prev.margin);
         const freeMarg = Number(statusData.free_margin ?? (eq - marg));
         const level = marg > 0 ? (eq / marg) * 100 : 0;
@@ -323,7 +324,7 @@ export default function MetaMobilePage() {
     }
 
     setLinkError(failures.length ? `bağlantı yok: ${failures[0]}` : "");
-  }, []);
+  }, [historyPeriod]);
 
   // Periyodik Canlı Veri Yenileme
   // PERFORMANS (2026-10-08): 2 sn'lik çıplak interval arka planda da dönüyordu
@@ -348,6 +349,10 @@ export default function MetaMobilePage() {
       time: "",
     };
   }, [quotes, selectedSymbol]);
+
+  const orderQuote = useMemo(() => {
+    return quotes.find((q) => q.symbol === newOrderSymbol) || activeQuote;
+  }, [quotes, newOrderSymbol, activeQuote]);
 
   // Yeni Emir Açma İşlemi
   const handleExecuteOrder = async (direction: "BUY" | "SELL") => {
@@ -1188,13 +1193,13 @@ export default function MetaMobilePage() {
                 <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
                   <span className="text-[10px] font-bold text-rose-400 block uppercase">BİD (SATIŞ)</span>
                   <span className="text-xl font-black font-mono text-rose-300">
-                    {formatPrice(activeQuote.bid, activeQuote.symbol)}
+                    {formatPrice(orderQuote.bid, orderQuote.symbol)}
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30">
                   <span className="text-[10px] font-bold text-blue-400 block uppercase">ASK (ALIŞ)</span>
                   <span className="text-xl font-black font-mono text-blue-300">
-                    {formatPrice(activeQuote.ask, activeQuote.symbol)}
+                    {formatPrice(orderQuote.ask, orderQuote.symbol)}
                   </span>
                 </div>
               </div>

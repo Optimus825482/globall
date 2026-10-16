@@ -66,6 +66,10 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
       }
     } catch (err: any) {
       console.error("EV Shield status error:", err);
+      setFeedback({
+        type: "error",
+        message: err?.message ? `EV Kalkanı verisi alınamadı: ${err.message}` : "EV Kalkanı verisi alınamadı",
+      });
     } finally {
       setLoading(false);
     }

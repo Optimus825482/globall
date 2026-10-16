@@ -1304,9 +1304,17 @@ export default function ForexRadarPage() {
               <option value="EURUSD">EUR/USD</option>
               <option value="GBPUSD">GBP/USD</option>
               <option value="USDJPY">USD/JPY</option>
-              <option value="XAUUSD">XAU/USD (Altın)</option>
-              <option value="USDCAD">USD/CAD</option>
+              <option value="USDCHF">USD/CHF</option>
               <option value="AUDUSD">AUD/USD</option>
+              <option value="USDCAD">USD/CAD</option>
+              <option value="NZDUSD">NZD/USD</option>
+              <option value="AUDCAD">AUD/CAD</option>
+              <option value="GBPJPY">GBP/JPY</option>
+              <option value="EURJPY">EUR/JPY</option>
+              <option value="XAUUSD">XAU/USD (Altın)</option>
+              <option value="BTCUSD">BTC/USD</option>
+              <option value="NAS100">NAS100</option>
+              <option value="US30">US30</option>
             </select>
           </div>
         </div>

@@ -62,8 +62,8 @@ const ALL_SYMBOLS = [
 const ALL_SYMBOL_KEYS = ALL_SYMBOLS.map((s) => s.sym);
 
 const MAJORS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"];
-// Odak seti: XAU + BTC + JPY krosları (donchian modu sembolleri).
-const FOCUS_SYMBOLS = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY"];
+// Odak seti: XAU + BTC + JPY krosları + AUDCAD (klasik + donchian odak sembolleri).
+const FOCUS_SYMBOLS = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "AUDCAD"];
 
 interface AutoSettingsPanelProps {
   show: boolean;

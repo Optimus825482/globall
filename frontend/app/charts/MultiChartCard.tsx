@@ -502,7 +502,8 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         if (!config.symbol) return;
         const reqId = ++klineReqIdRef.current;
         try {
-            const cleanSym = config.symbol.replace(/[\/_]/g, "").toUpperCase();
+            const rawSym = config.symbol.includes(":") ? (config.symbol.split(":").pop() || config.symbol) : config.symbol;
+            const cleanSym = rawSym.replace(/[\/_]/g, "").toUpperCase();
             let bars: Bar[];
             if (forexMode) {
                 const res = await apiRequest(`${API_BASE}/api/forex/klines?symbol=${encodeURIComponent(cleanSym)}&interval=${config.interval}&limit=300`);

@@ -451,6 +451,10 @@ _MT5_TO_APP_SYMBOLS: Dict[str, str] = {
     "USDIDX": "DXY",
     "DOLLARIDX": "DXY",
     "DXY": "DXY",
+    "DXY_Z6": "DXY",
+    "DXY_H7": "DXY",
+    "DXY_M7": "DXY",
+    "DXY_U7": "DXY",
 }
 
 
@@ -469,6 +473,8 @@ def canonical_symbol(symbol: str) -> str:
     if s in _MT5_TO_APP_SYMBOLS:
         return _MT5_TO_APP_SYMBOLS[s]
     base = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    if base.startswith("DXY_") or (base.startswith("DXY") and len(base) <= 6):
+        return "DXY"
     return _MT5_TO_APP_SYMBOLS.get(base, base or s)
 
 
@@ -583,27 +589,51 @@ def _closed_tick_bars(sym: str, bucket_sec: int) -> List[Dict[str, Any]]:
     return list(_CLOSED_TICK_BARS.get((canonical_symbol(sym), bucket_sec), []))
 
 
+def _broker_bars_utc_offset(raw: List[Dict[str, Any]], now_bucket: int, bucket_sec: int) -> int:
+    """MT5 copy_rates zamanları broker sunucu saatindeyse (UTC+2/+3) farkı (sn) bulur."""
+    max_opened = 0
+    for bar in raw:
+        try:
+            t = int(bar.get("time", 0))
+            if t > max_opened:
+                max_opened = t
+        except (TypeError, ValueError):
+            continue
+    if max_opened > now_bucket + int(bucket_sec):
+        off = int(round((max_opened - now_bucket) / 1800.0) * 1800)
+        if 0 < off <= 14 * 3600:
+            return off
+    return 0
+
+
 def _closed_broker_bars(sym: str, interval: str, bucket_sec: int) -> List[Dict[str, Any]]:
     """Köprüden gelen kapanmış mumlar. Oluşan kova göstergeye girmez."""
     raw = _fetch_mt5_candles(canonical_symbol(sym), interval, 1000)
     if not raw:
         return []
     now_bucket = int(time.time() // int(bucket_sec)) * int(bucket_sec)
+    offset = _broker_bars_utc_offset(raw, now_bucket, int(bucket_sec))
     closed: List[Dict[str, Any]] = []
     for bar in raw:
         try:
-            opened = int(bar.get("time", 0))
+            opened = int(bar.get("time", 0)) - offset
             close_px = float(bar.get("close", 0.0))
         except (TypeError, ValueError):
             continue
         if opened <= 0 or opened >= now_bucket or close_px <= 0:
             continue
-        closed.append(bar)
+        if offset:
+            item = dict(bar)
+            item["time"] = opened
+            closed.append(item)
+        else:
+            closed.append(bar)
     return closed
 
 
 def _bars_have_gap(bars: List[Dict[str, Any]], bucket_sec: int) -> bool:
-    times = [int(b.get("time", 0)) for b in bars]
+    recent = bars[-6:] if len(bars) > 6 else bars
+    times = [int(b.get("time", 0)) for b in recent]
     for prev, nxt in zip(times, times[1:]):
         if nxt - prev > bucket_sec:
             return True
@@ -619,7 +649,10 @@ def _verify_tick_bars_against_bridge(sym: str, interval: str, bars: List[Dict[st
     if not mt5_bars:
         _TICK_MISMATCH.pop(app, None)
         return
-    by_time = {int(b.get("time", 0)): b for b in mt5_bars}
+    bucket_sec = 900 if str(interval).lower() in ("15m", "15") else 300
+    now_bucket = int(time.time() // bucket_sec) * bucket_sec
+    offset = _broker_bars_utc_offset(mt5_bars, now_bucket, bucket_sec)
+    by_time = {(int(b.get("time", 0)) - offset): b for b in mt5_bars}
     last = bars[-1]
     other = by_time.get(int(last.get("time", 0)))
     if not other:
@@ -2744,7 +2777,7 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
                 price_placeholder = True
                 tick_ts = 0.0
         bars5 = _closed_tick_bars(sym, 300)
-        bar_gap = _bars_have_gap(bars5, 300) if bars5 else False
+        bar_gap = bool(tech.get("bar_gap")) if tech else (_bars_have_gap(bars5, 300) if bars5 else False)
         tick_mismatch = sym in _TICK_MISMATCH
         spread_known = (not price_placeholder) and sym in _LIVE_SPREAD_PIPS
         spread_pips = float(_LIVE_SPREAD_PIPS[sym]) if spread_known else 0.0
@@ -2914,13 +2947,8 @@ _MT5_CANDLES_TTL = 30.0  # Köprü ~1.5 sn'de bir push eder; 30 sn bayat toleran
 _FOREX_VIEWED: Dict[Tuple[str, str], float] = {}
 _FOREX_VIEWED_TTL = 120.0
 # Köprüye tek turda istenebilecek azami (sembol, periyot) çifti. 2026-10-14:
-# 12 → 24. Motorun KALICI çiftleri tek başına 10 slot tutuyordu (S3 5m+15m ×
-# XAUUSD/BTCUSD/US30/GBPUSD = 8, squeeze_kc M15 × NAS100/USDCHF = 2) ve kırpma
-# (`out[:MAX]`) İZLENEN çiftleri EN SONA koyduğu için panelde grafiği açılan
-# sembolün çifti köprü listesine neredeyse HİÇ giremiyordu. Sonuç: grafik düzgün
-# açılıyor ama gecikmeli Yahoo (vadeli) beslemesine düşüyor ve anlık
-# güncellenmiyordu (canlı tick yaması da %0.15 baz-farkı kapısından geçmiyordu).
-_MT5_WATCH_MAX = 24
+# 12 → 24 → 28 (DXY + tüm 14 radar sembolü + S3/Squeeze M15 + açık grafik).
+_MT5_WATCH_MAX = 28
 
 
 def _note_forex_viewed(symbol: str, interval: str) -> None:
@@ -2928,7 +2956,7 @@ def _note_forex_viewed(symbol: str, interval: str) -> None:
     sym = str(symbol or "").replace("/", "").replace("_", "").replace("-", "").strip().upper()
     if not sym or not interval:
         return
-    _FOREX_VIEWED[(sym, interval)] = time.time()
+    _FOREX_VIEWED[(sym, str(interval).strip().lower())] = time.time()
 
 
 def _get_forex_watch() -> List[Dict[str, str]]:
@@ -2955,9 +2983,9 @@ def _get_forex_watch() -> List[Dict[str, str]]:
         if (sym, tf) not in seen:
             seen.add((sym, tf))
             out.append({"symbol": sym, "interval": tf})
-    # 2) Karar fonksiyonlarının 5m mumları. Radar, Donchian, EMA ve London
-    #    bu seriyi okur; tik kovasının dolması beklenmez.
-    decision_5m = set(RADAR_SCAN_SYMBOLS)
+    # 2) Karar fonksiyonlarının 5m mumları. Radar, Donchian, EMA, London ve DXY
+    #    rejim filtresi bu seriyi okur; tik kovasının dolması beklenmez.
+    decision_5m = set(RADAR_SCAN_SYMBOLS) | {"DXY"}
     if _AUTO_SETTINGS.lb_enabled:
         decision_5m.update(str(s).upper() for s in (_AUTO_SETTINGS.lb_symbols or []))
     if _AUTO_SETTINGS.ema_adx_enabled:
@@ -3078,12 +3106,29 @@ def _refresh_squeeze_kc_state(ticks: Dict[str, Dict[str, Any]]) -> None:
 
 def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[List[Dict[str, Any]]]:
     """Köprüden taze gelen broker mumlarını döndür (yoksa/bayatsa `None`)."""
-    entry = _MT5_CANDLES_CACHE.get(f"{clean_sym}|{interval}")
+    sym_key = canonical_symbol(clean_sym)
+    tf_key = str(interval or "").strip().lower()
+    entry = _MT5_CANDLES_CACHE.get(f"{sym_key}|{tf_key}") or _MT5_CANDLES_CACHE.get(f"{sym_key}|{tf_key.upper()}")
     if not entry:
         return None
     ts, bars = entry
     if not bars or (time.time() - ts) > _MT5_CANDLES_TTL:
         return None
+    bucket_map = {
+        "1m": 60, "3m": 180, "5m": 300, "15m": 900,
+        "30m": 1800, "1h": 3600, "60m": 3600, "4h": 14400, "240m": 14400,
+        "1d": 86400, "d": 86400,
+    }
+    bucket_sec = bucket_map.get(tf_key, 300)
+    now_bucket = (int(time.time()) // bucket_sec) * bucket_sec
+    utc_off = _broker_bars_utc_offset(bars, now_bucket, bucket_sec)
+    if utc_off:
+        shifted = []
+        for b in bars[-limit:]:
+            bc = dict(b)
+            bc["time"] = int(b["time"]) - utc_off
+            shifted.append(bc)
+        return shifted
     return bars[-limit:]
 
 
@@ -3203,8 +3248,13 @@ def _forex_klines_from_ticks(
 
 
 def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
-    """Grafik mumları. Kaynak MT5 tik kovasıdır; dış veri hattı çağrılmaz."""
-    bars, _err = _forex_klines_from_ticks(symbol, interval, limit)
+    """Grafik mumları. Önce MT5 broker mum önbelleği (varsa daha derin geçmiş), yoksa tik kovası."""
+    _note_forex_viewed(symbol, interval)
+    clean_sym = _clean_forex_chart_symbol(symbol)
+    bars, err = _forex_klines_from_ticks(symbol, interval, limit)
+    broker = _fetch_mt5_candles(clean_sym, interval, limit)
+    if broker and (err or len(broker) > len(bars)):
+        return broker
     return bars
 
 
@@ -3227,16 +3277,15 @@ async def get_forex_klines(
     bars, err = _forex_klines_from_ticks(symbol, interval, limit)
     source = "mt5_tick" if bars else "yok"
     # Tik kovası sunucu açılınca birikir; 5m için 30 kapanmış bar ~2,5 saat sürer.
-    # Köprü aynı anda MT5 geçmiş mumunu (copy_rates) gönderir. Grafik onu gösterir.
-    # Sinyal yolu bu önbelleği kullanmaz; o hâlâ yalnız tik kovasına bakar.
-    if err:
-        broker = _fetch_mt5_candles(clean_sym, interval, limit)
-        if broker:
-            bars = broker
-            err = None
-            source = "mt5_candle"
-        elif err == "MT5 tik yok":
-            err = "MT5 geçmişi bekleniyor"
+    # Köprü aynı anda MT5 geçmiş mumunu (copy_rates) gönderir. Broker mum serisi
+    # tik kovasından daha derinse (veya tik geçmişi kısaysa) grafik onu gösterir.
+    broker = _fetch_mt5_candles(clean_sym, interval, limit)
+    if broker and (err or len(broker) > len(bars)):
+        bars = broker
+        err = None
+        source = "mt5_candle"
+    elif err == "MT5 tik yok":
+        err = "MT5 geçmişi bekleniyor"
     meta = next((s for s in FOREX_SYMBOLS if s["symbol"] == clean_sym), None)
     live = _LIVE_PRICES_CACHE.get(clean_sym) if _PRICE_SOURCE.get(clean_sym) == "mt5_tick" else None
     current_price = float(live) if live else (bars[-1]["close"] if bars else None)
@@ -4634,6 +4683,8 @@ def get_symbol_gate_snapshot(
         regime = (dxy or {}).get("regime", "—")
         if veto == "dxy_conflict":
             gates.append(_gate("dxy", "block", f"{action} yönü dolar rejimiyle ({regime}) çelişiyor"))
+        elif veto == "dxy_no_data":
+            gates.append(_gate("dxy", "block", "DXY verisi yok — majör parite girişi engellendi"))
         elif veto == "dxy_strict_neutral":
             gates.append(_gate("dxy", "pass", f"Nötr rejim ({regime}) — skor eşiğine +5.0 ek yük"))
         else:
@@ -5424,9 +5475,9 @@ async def _forex_auto_paper_loop():
             # aynı semantik). `open_ts` köprüden taşınır (broker sunucu zamanı düzeltilmiş).
             if _AUTO_SETTINGS.ls_enabled and _MT5_STATE.get("connected"):
                 _ls_hold_sec = float(_AUTO_SETTINGS.ls_hold_hours) * 3600.0
-                _ls_srv_offset = 0.0  # open_ts köprüde zaten UTC'ye indirilmiş
                 if _ls_hold_sec > 0:
                     for mpos in list(_MT5_STATE.get("open_positions", [])):
+                        m_sym = str(mpos.get("symbol", "")).upper()
                         m_tag = str(mpos.get("strategy_tag", "") or "").strip().upper()
                         if not m_tag.startswith("LSGN"):
                             continue
@@ -5434,6 +5485,8 @@ async def _forex_auto_paper_loop():
                         m_open_ts = float(mpos.get("open_ts", 0) or 0)
                         if not m_t or m_open_ts <= 0:
                             continue
+                        if m_open_ts > now_ts + 600:
+                            m_open_ts -= max(0.0, round((m_open_ts - now_ts) / 3600.0) * 3600.0)
                         if now_ts - m_open_ts < _ls_hold_sec:
                             continue
                         already_closing = any(
@@ -5545,47 +5598,6 @@ async def _forex_auto_paper_loop():
                         day=_m_day, day_counts=_m_st["counts"], max_per_day=int(_AUTO_SETTINGS.donchian_max_per_day),
                         hour_utc=_m_now.hour, is_jpy=("JPY" in _m_sym.upper()),
                     )
-                    # Görünürlük: mod ne beklediğini 25 sn'de bir insan-okur cümleyle söyler;
-                    # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
-                    _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
-                    _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 25.0
-                    if _m_wait_throttled:
-                        _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
-                        _m_disp = _m_t["display"] if _m_t else _m_sym
-                        _m_side = "üstünde" if _m_price > float(_m_tech["donch_mid"]) else "altında"
-                        if _m_not_allowed:
-                            _log_auto_decision(
-                                "SCAN",
-                                f"⚠️ [{_m_disp}] Donchian modu aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
-                                symbol=_m_sym,
-                                strategy="DONCHIAN_ADX",
-                                strategy_label="Donchian ADX Kırılımı",
-                            )
-                        else:
-                            # 2026-10-10 denetim P2-1: log gerçek kapıyı söylemeli — eskiden
-                            # None dönüşü her zaman "orta hat kesişimi bekleniyor" diye yazılıyor,
-                            # ADX-altı/seans/gün-limiti gerçek sebepken yanıltıyordu.
-                            # Ayrıca log ADX varsayılanı (0) karar varsayılanıyla (25.0) çelişiyordu.
-                            _m_adx_val = float(_m_tech.get("adx", 25.0))
-                            _m_adx_txt = f"ADX {_m_adx_val:.0f}"
-                            _m_hour = datetime.datetime.now(datetime.timezone.utc).hour
-                            _m_is_jpy = ("JPY" in _m_sym.upper())
-                            _m_session_ok = (0 <= _m_hour < 16) if _m_is_jpy else (7 <= _m_hour < 16)
-                            if _m_adx_val < 18.0:
-                                _m_wait = f"ADX {_m_adx_val:.0f} < 18 eşiği — trend gücü yetersiz"
-                            elif not _m_session_ok:
-                                _m_wait = f"seans dışı (UTC {_m_hour}; pencere {'00-16' if _m_is_jpy else '07-16'})"
-                            elif _m_st["counts"].get("BUY", 0) >= 2 and _m_st["counts"].get("SELL", 0) >= 2:
-                                _m_wait = "günlük yön limiti doldu (2+2)"
-                            else:
-                                _m_wait = ("fiyat orta hattın üstüne dönüp yeniden kırılınca SAT" if _m_price <= float(_m_tech["donch_mid"]) else "fiyat orta hattın altına sarkıp yeniden kırılınca AL")
-                            _log_auto_decision(
-                                "SCAN",
-                                f"🎯 [{_m_disp}] Donchian modu bekliyor: fiyat orta hattın {_m_side} ({_m_price:.3f} / orta {float(_m_tech['donch_mid']):.3f}), {_m_adx_txt} → {_m_wait}.",
-                                symbol=_m_sym,
-                                strategy="DONCHIAN_ADX",
-                                strategy_label="Donchian ADX Kırılımı",
-                            )
                     if _m_action:
                         _m_atr = float(_m_tech.get("atr", 0.0))
                         _m_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _m_sym), None)
@@ -5610,6 +5622,48 @@ async def _forex_auto_paper_loop():
                             strategy="DONCHIAN_ADX",
                             strategy_label="Donchian ADX Kırılımı",
                         )
+                    else:
+                        # Görünürlük: mod ne beklediğini 25 sn'de bir insan-okur cümleyle söyler;
+                        # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
+                        _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                        _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 25.0
+                        if _m_wait_throttled:
+                            _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
+                            _m_disp = _m_t["display"] if _m_t else _m_sym
+                            _m_side = "üstünde" if _m_price > float(_m_tech["donch_mid"]) else "altında"
+                            if _m_not_allowed:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚠️ [{_m_disp}] Donchian modu aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                    symbol=_m_sym,
+                                    strategy="DONCHIAN_ADX",
+                                    strategy_label="Donchian ADX Kırılımı",
+                                )
+                            else:
+                                # 2026-10-10 denetim P2-1: log gerçek kapıyı söylemeli — eskiden
+                                # None dönüşü her zaman "orta hat kesişimi bekleniyor" diye yazılıyor,
+                                # ADX-altı/seans/gün-limiti gerçek sebepken yanıltıyordu.
+                                # Ayrıca log ADX varsayılanı (0) karar varsayılanıyla (25.0) çelişiyordu.
+                                _m_adx_val = float(_m_tech.get("adx", 25.0))
+                                _m_adx_txt = f"ADX {_m_adx_val:.0f}"
+                                _m_hour = datetime.datetime.now(datetime.timezone.utc).hour
+                                _m_is_jpy = ("JPY" in _m_sym.upper())
+                                _m_session_ok = (0 <= _m_hour < 16) if _m_is_jpy else (7 <= _m_hour < 16)
+                                if _m_adx_val < 18.0:
+                                    _m_wait = f"ADX {_m_adx_val:.0f} < 18 eşiği — trend gücü yetersiz"
+                                elif not _m_session_ok:
+                                    _m_wait = f"seans dışı (UTC {_m_hour}; pencere {'00-16' if _m_is_jpy else '07-16'})"
+                                elif _m_st["counts"].get("BUY", 0) >= 2 and _m_st["counts"].get("SELL", 0) >= 2:
+                                    _m_wait = "günlük yön limiti doldu (2+2)"
+                                else:
+                                    _m_wait = ("fiyat orta hattın üstüne dönüp yeniden kırılınca SAT" if _m_price <= float(_m_tech["donch_mid"]) else "fiyat orta hattın altına sarkıp yeniden kırılınca AL")
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"🎯 [{_m_disp}] Donchian modu bekliyor: fiyat orta hattın {_m_side} ({_m_price:.3f} / orta {float(_m_tech['donch_mid']):.3f}), {_m_adx_txt} → {_m_wait}.",
+                                    symbol=_m_sym,
+                                    strategy="DONCHIAN_ADX",
+                                    strategy_label="Donchian ADX Kırılımı",
+                                )
 
             # EMA+ADX geri-çekilme (M5) akışı (2026-10-08 canlıya alım — XAUUSD):
             # klasik + donchian akışları KORUNUR; bu üçüncü bir aday kaynağıdır.
@@ -5833,18 +5887,19 @@ async def _forex_auto_paper_loop():
                         _lb_st["box_hi"] = 0.0
                         _lb_st["box_lo"] = 0.0
                         _lb_st["counts"] = {}
-                    # Tetik penceresi dışında sinyal üretilmez; kutu pencerede ilk kez doldurulur.
-                    if _lb_hour < _AUTO_SETTINGS.lb_box_end_utc:
-                        _lb_bars = _s3_bars_for(_lb_sym, "5m", limit=220)
-                        if _lb_bars and len(_lb_bars) >= 10:
-                            _lb_box = [b for b in _lb_bars
+                    # Kutu 00:00→box_end UTC penceresinde veya sunucu 07:00 UTC sonrası yeniden
+                    # başlatıldığında geçmiş barlardan doldurulur.
+                    _lb_bars_now = _s3_bars_for(_lb_sym, "5m", limit=220)
+                    if _lb_hour < _AUTO_SETTINGS.lb_box_end_utc or float(_lb_st.get("box_hi") or 0.0) <= 0.0:
+                        if _lb_bars_now and len(_lb_bars_now) >= 10:
+                            _lb_box = [b for b in _lb_bars_now
                                        if datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).toordinal() == _lb_day
                                        and datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).hour < _AUTO_SETTINGS.lb_box_end_utc]
                             if len(_lb_box) >= 6:
                                 _lb_st["box_hi"] = max(float(b["high"]) for b in _lb_box)
                                 _lb_st["box_lo"] = min(float(b["low"]) for b in _lb_box)
-                        continue
-                    _lb_bars_now = _s3_bars_for(_lb_sym, "5m", limit=220)
+                        if _lb_hour < _AUTO_SETTINGS.lb_box_end_utc:
+                            continue
                     _lb_last = _lb_bars_now[-1] if _lb_bars_now else None
                     _lb_close = float(_lb_last["close"]) if _lb_last else 0.0
                     _lb_bar = int(_lb_last["time"]) if _lb_last else 0
@@ -6628,9 +6683,14 @@ async def _forex_auto_paper_loop():
                     if veto_reason in ("dxy_conflict", "dxy_no_data"):
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_dxy", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_dxy"] = now_ts
+                            _dxy_msg = (
+                                "DXY Kalkanı: DXY verisi yok — majör parite girişi engellendi."
+                                if veto_reason == "dxy_no_data"
+                                else f"DXY Kalkanı: {direction} yönü dolar rejimiyle ({(dxy_regime or {}).get('regime', '—')}) çelişiyor. İşlem engellendi."
+                            )
                             _log_auto_decision(
                                 "GATE",
-                                f"[{cand['display']}][{_c_strat_lbl}] DXY Kalkanı: {direction} yönü dolar rejimiyle ({dxy_regime.get('regime')}) çelişiyor. İşlem engellendi.",
+                                f"[{cand['display']}][{_c_strat_lbl}] {_dxy_msg}",
                                 symbol=sym,
                                 strategy=_c_strat,
                                 strategy_label=_c_strat_lbl,
@@ -7737,6 +7797,17 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
             if st_copy.get("day") != day:
                 st_copy = {"day": day, "box_hi": 0.0, "box_lo": 0.0, "counts": {}}
             box_hi, box_lo = float(st_copy.get("box_hi") or 0.0), float(st_copy.get("box_lo") or 0.0)
+            if box_hi <= 0.0:
+                lb_bars = _s3_bars_for(sym, "5m", limit=220)
+                if lb_bars and len(lb_bars) >= 10:
+                    lb_box = [
+                        b for b in lb_bars
+                        if datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).toordinal() == day
+                        and datetime.datetime.fromtimestamp(b["time"], datetime.timezone.utc).hour < int(s.lb_box_end_utc)
+                    ]
+                    if len(lb_box) >= 6:
+                        box_hi = max(float(b["high"]) for b in lb_box)
+                        box_lo = min(float(b["low"]) for b in lb_box)
             counts = dict(st_copy.get("counts", {}))
             act = london_breakout_entry(
                 close=float(t.get("ask", 0.0)), box_hi=box_hi, box_lo=box_lo,
@@ -8605,6 +8676,9 @@ async def get_forex_trades_report(
             {"code": "EMA_ADX_PULLBACK_M5", "label": "EMA+ADX Pullback (M5)"},
             {"code": "S3_SUPERTREND_RSI", "label": "S3 SuperTrend+RSI"},
             {"code": "DONCHIAN_ADX", "label": "Donchian ADX Kırılımı"},
+            {"code": "LONDON_BREAKOUT", "label": "London Breakout (M5)"},
+            {"code": "LONDON_SIGN", "label": "NY Sign Momentum"},
+            {"code": "SQUEEZE_KC_M15", "label": "Keltner Squeeze (M15)"},
             {"code": "M1_M5_RADAR_SCALPER", "label": "M1/M5 Çoklu Radar"},
             {"code": "MANUAL", "label": "Manuel Giriş"},
             {"code": "IC_MARKETS_MT5", "label": "IC Markets MT5"},
@@ -8757,6 +8831,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
     Kimlik paylaşılan köprü sırasıdır (oturum değil). Sır yoksa veya başlık
     uyuşmazsa durum değişmez: connected yazılmaz, emir kuyruğu boşalmaz.
     """
+    global _LAST_TECH_FETCH_TIME
     now_ts = time.time()
     if not _mt5_sync_authorized(request):
         raise HTTPException(status_code=401, detail="Köprü doğrulanamadı")
@@ -8767,18 +8842,18 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
         _MT5_STATE["account"].update(req.account)
     _MT5_STATE["open_positions"] = req.positions
 
-    # Broker mumlarını önbelleğe al (panel grafiği bu veriyi Yahoo yerine kullanır →
-    # geçmiş + canlı AYNI broker kotasyonu, baz farkı yok). Anahtar "SYMBOL|interval".
+    # Broker mumlarını önbelleğe al (panel grafiği + sinyal motoru bu veriyi kullanır →
+    # geçmiş + canlı AYNI broker kotasyonu, baz farkı yok). Anahtar "SYMBOL|interval" (interval küçük harf).
     if req.candles:
         now_c = time.time()
         for ckey, cbar_list in req.candles.items():
-            key_up = str(ckey).upper().replace("/", "").replace("_", "").replace("-", "").strip()
+            raw_key = str(ckey or "").strip()
             # Beklenen biçim "XAUUSD|5m"; köprü sembolü zaten normalize eder.
-            if "|" not in key_up:
+            if "|" not in raw_key:
                 continue
-            parts = key_up.split("|", 1)
-            sym_part = parts[0].replace(" ", "")
-            tf_part = parts[1].strip()
+            parts = raw_key.split("|", 1)
+            sym_part = parts[0].upper().replace("/", "").replace("_", "").replace("-", "").replace(" ", "").strip()
+            tf_part = parts[1].strip().lower()
             if not sym_part or not tf_part:
                 continue
             clean: List[Dict[str, Any]] = []
@@ -8795,6 +8870,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
             if clean:
                 clean.sort(key=lambda x: x["time"])
                 _MT5_CANDLES_CACHE[f"{canonical_symbol(sym_part)}|{tf_part}"] = (now_c, clean)
+        _LAST_TECH_FETCH_TIME = 0.0
 
     # MT5 canlı tick fiyatlarını entegre et
     if req.ticks:

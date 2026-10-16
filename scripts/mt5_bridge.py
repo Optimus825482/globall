@@ -89,7 +89,18 @@ MT5_TIMEFRAMES = {
 
 
 def _get_server_utc_offset() -> int:
-    """MT5 zaman damgaları broker terminal saatiyle birebirdir. Çift kayma olmaması için ofset 0 döner."""
+    """MT5 broker sunucu saati (ör. UTC+2/UTC+3) ile gerçek UTC epoch farkını saniye olarak döner."""
+    try:
+        now_utc = int(time.time())
+        for probe in ("EURUSD", "XAUUSD", "GBPUSD", "BTCUSD"):
+            t = mt5.symbol_info_tick(probe)
+            t_sec = getattr(t, "time", None) if t is not None else None
+            if isinstance(t_sec, (int, float)) and t_sec > 0:
+                diff = int(t_sec) - now_utc
+                if 1800 <= diff <= 50400:
+                    return int(round(diff / 3600.0)) * 3600
+    except Exception:
+        pass
     return 0
 
 
@@ -186,6 +197,7 @@ SYMBOL_ALIAS_MAP = {
     "NAS100": ["USTEC", "NAS100", "US100", "NDX"],
     "USTEC": ["USTEC", "NAS100"],
     "US30": ["US30", "DJ30", "WS30"],
+    "DXY": ["DXY_Z6", "DXY_H7", "DXY_M7", "DXY_U7", "USDX", "DXY"],
     "ETHUSD": ["ETHUSD"],
     "ETH": ["ETHUSD"],
     "BTCUSD": ["BTCUSD"],
@@ -202,6 +214,11 @@ SYMBOL_ALIAS_MAP = {
 REVERSE_SYMBOL_ALIAS_MAP = {
     "USTEC": "NAS100",
     "US30": "US30",
+    "DXY_Z6": "DXY",
+    "DXY_H7": "DXY",
+    "DXY_M7": "DXY",
+    "DXY_U7": "DXY",
+    "USDX": "DXY",
     "XTIUSD": "USOIL",
     "XBRUSD": "UKOIL",
 }
@@ -231,6 +248,8 @@ def to_app_symbol(mt5_symbol: str) -> str:
         return _BROKER_TO_APP_SYMBOL[raw]
     # "BTCUSD.m" / "XAUUSD-ECN" / "US30.cash" → soneki at, bilinen köke bak
     base = raw.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
+    if base.startswith("DXY_"):
+        return "DXY"
     return _BROKER_TO_APP_SYMBOL.get(base, base or raw)
 
 
@@ -261,6 +280,10 @@ def resolve_mt5_symbol(symbol: str) -> str:
             if clean in ("NAS100", "USTEC", "US100", "NDX"):
                 for n in names:
                     if "USTEC" in n:
+                        return n
+            if clean in ("DXY", "USDX"):
+                for n in names:
+                    if n.startswith("DXY_") or n in ("USDX", "DXY"):
                         return n
             for n in names:
                 if clean in n:
@@ -382,6 +405,16 @@ def get_symbol_trading_specs(
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif clean_sym == "AUDCAD":
+        pip_size = 0.0001
+        mult = 1.0
+        digits = 5
+        pip_val = 7.0            # 1 lot = 10 CAD/pip ≈ $7.0 USD (USD/CAD ~1.42)
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(10.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
     else:
@@ -1415,15 +1448,39 @@ def sync_with_server(api_base: str):
     # MT5 Terminalinden anlık canlı fiyatları topla
     ticks_data = {}
     # ETHUSD 2026-10-07'de forex evreninden çıkarıldı — burada da kotasyon istenmez.
-    check_syms = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "BTCUSD", "NAS100", "US30", "XAUUSD"]
+    check_syms = [
+        "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
+        "AUDCAD", "GBPJPY", "EURJPY", "BTCUSD", "NAS100", "US30", "XAUUSD", "DXY",
+    ]
     for s_check in check_syms:
         res_sym = resolve_mt5_symbol(s_check)
         t = mt5.symbol_info_tick(res_sym)
+        if not t or t.bid <= 0:
+            try:
+                mt5.symbol_select(res_sym, True)
+                t = mt5.symbol_info_tick(res_sym)
+            except Exception:
+                pass
         if t and t.bid > 0:
-            t_obj = {"bid": float(t.bid), "ask": float(t.ask), "last": float(t.last if t.last > 0 else t.ask)}
+            ask_p = float(t.ask if t.ask > 0 else t.bid)
+            last_p = float(t.last if t.last > 0 else ask_p)
+            t_obj = {"bid": float(t.bid), "ask": ask_p, "last": last_p}
             ticks_data[s_check] = t_obj
             if res_sym != s_check:
                 ticks_data[res_sym] = t_obj
+        elif s_check == "DXY":
+            # Vadeli DXY kontratında (DXY_Z6 vb.) anlık tick bid=0 dönebilir; son M5 bar kapanışını kullan
+            try:
+                rates = mt5.copy_rates_from_pos(res_sym, mt5.TIMEFRAME_M5, 0, 1)
+                if rates is not None and len(rates) > 0:
+                    close_p = float(rates[-1]["close"])
+                    if close_p > 0:
+                        t_obj = {"bid": close_p, "ask": close_p, "last": close_p}
+                        ticks_data["DXY"] = t_obj
+                        if res_sym != "DXY":
+                            ticks_data[res_sym] = t_obj
+            except Exception:
+                pass
 
     payload = {
         "account": account_data,
@@ -1431,7 +1488,7 @@ def sync_with_server(api_base: str):
         "deals": deals,
         "ticks": ticks_data,
         "candles": _next_watch_candles(),
-        "version": "1.0.1",
+        "version": "1.0.2",
         # 2026-10-10 P0-1: önceki turda çalıştırılan emirlerin sonuçları.
         # Backend başarısız OPEN_ORDER'da soğumayı geri açar → hayalet pozisyon yok.
         "command_results": list(_COMMAND_RESULTS),
@@ -1444,6 +1501,21 @@ def sync_with_server(api_base: str):
         or os.environ.get("FOREX_MT5_SYNC_TOKEN", "").strip()
         or os.environ.get("BINANCE_TR_BRIDGE_SECRET", "").strip()
     )
+    if not bridge_token and os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment") as reg_key:
+                for env_name in ("MT5_BRIDGE_TOKEN", "FOREX_MT5_SYNC_TOKEN", "BINANCE_TR_BRIDGE_SECRET"):
+                    try:
+                        val, _ = winreg.QueryValueEx(reg_key, env_name)
+                        if val and str(val).strip():
+                            bridge_token = str(val).strip()
+                            os.environ[env_name] = bridge_token
+                            break
+                    except FileNotFoundError:
+                        continue
+        except Exception:
+            pass
     if bridge_token:
         headers["X-Bridge-Token"] = bridge_token
     req = urllib.request.Request(
@@ -1459,8 +1531,12 @@ def sync_with_server(api_base: str):
             # Backend "panelde şu mumlar bakılıyor" der → sonraki senkronda broker'dan çekilir
             watch = data.get("candle_watch")
             if isinstance(watch, list):
+                was_empty = len(CANDLE_WATCH) == 0
                 CANDLE_WATCH.clear()
                 CANDLE_WATCH.extend(watch)
+                if was_empty and CANDLE_WATCH:
+                    global _CANDLE_TICK
+                    _CANDLE_TICK = _CANDLE_PUSH_EVERY - 1
             # Sunucu sonuçları aldı → kuyruğu boşalt (yoksa her turda tekrar gönderilir)
             _COMMAND_RESULTS.clear()
             return True, data.get("commands", []), data.get("settings", {}), None

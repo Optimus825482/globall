@@ -74,7 +74,7 @@ export default function ForexChartModal({
           riskReward={candidate.risk_reward == null ? undefined : String(candidate.risk_reward)}
           pipTarget={candidate.pip_target ?? undefined}
           stopLossPips={candidate.stop_loss_pips ?? undefined}
-          separatePageHref={`/forex/charts?symbol=${candidate.tv_symbol || candidate.symbol}`}
+          separatePageHref={`/forex/charts?symbol=${candidate.symbol}`}
           onOpenLotCalculator={onOpenLotCalculator}
           onClose={onClose}
         />

@@ -347,8 +347,20 @@ export default function ForexRadarModal() {
           </span>
           <span>
             ST:{" "}
-            <strong className={isBuy ? "text-emerald-400" : "text-rose-400"}>
-              {isBuy ? "BOĞA" : "AYI"}
+            <strong
+              className={
+                (activeSignal.supertrend_dir ?? 0) > 0
+                  ? "text-emerald-400"
+                  : (activeSignal.supertrend_dir ?? 0) < 0
+                  ? "text-rose-400"
+                  : "text-slate-400"
+              }
+            >
+              {(activeSignal.supertrend_dir ?? 0) > 0
+                ? "BOĞA"
+                : (activeSignal.supertrend_dir ?? 0) < 0
+                ? "AYI"
+                : "NÖTR"}
             </strong>
           </span>
           <span>
