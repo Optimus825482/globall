@@ -1117,6 +1117,91 @@ class TestADXAndSuperTrend(unittest.IsolatedAsyncioTestCase):
 class TestTickPrimaryGuards(unittest.IsolatedAsyncioTestCase):
     """Tik birincil kaynak, Wilder ADX, kısa Pearson ve köprü fail-closed."""
 
+    async def test_rsi_uses_closed_broker_candles_when_ticks_are_short(self):
+        """5m tik kovası 30 bar dolmadan RSI, kapanmış MT5 mumundan gelir.
+
+        Açık (oluşan) mum hesaba girmez. Yükselen kapanmış seri RSI'yi 50'nin
+        üstüne taşır; oluşan mumun çöküşü dahil edilirse RSI çöker.
+        """
+        sym = "XAUUSD"
+        forex._TECHNICAL_CACHE.pop(sym, None)
+        forex._CLOSED_TICK_BARS.pop((sym, 300), None)
+        forex._OPEN_TICK_BUCKET.pop((sym, 300), None)
+        forex._TICK_CACHE.pop(sym, None)
+        now = time.time()
+        bucket = int(now // 300) * 300
+        closed = []
+        for i in range(40, 0, -1):
+            px = 4000.0 + (40 - i)
+            closed.append({
+                "time": bucket - i * 300,
+                "open": px,
+                "high": px + 1.0,
+                "low": px - 0.5,
+                "close": px + 0.4,
+                "volume": 0.0,
+            })
+        forming = {
+            "time": bucket,
+            "open": 4100.0,
+            "high": 4100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 0.0,
+        }
+        forex._MT5_CANDLES_CACHE[f"{sym}|5m"] = (now, closed + [forming])
+        forex._PRICE_SOURCE[sym] = "mt5_tick"
+        forex._PRICE_TS[sym] = now
+        forex._LIVE_PRICES_CACHE[sym] = 4173.0
+        forex._LIVE_SPREAD_PIPS[sym] = 0.5
+        forex._LAST_TECH_FETCH_TIME = 0.0
+        try:
+            ticks = await forex._generate_realistic_ticks()
+            row = ticks[sym]
+            tech = forex._TECHNICAL_CACHE[sym]
+            self.assertGreater(row["rsi"], 80.0)
+            self.assertNotEqual(row["macd_verdict"], "NÖTR (Veri Bekleniyor)")
+            self.assertEqual(tech["source"], "mt5_candle")
+            self.assertEqual(tech["signal_bar_time"], closed[-1]["time"])
+        finally:
+            forex._MT5_CANDLES_CACHE.pop(f"{sym}|5m", None)
+            forex._TECHNICAL_CACHE.pop(sym, None)
+            forex._PRICE_SOURCE.pop(sym, None)
+            forex._PRICE_TS.pop(sym, None)
+            forex._LIVE_PRICES_CACHE.pop(sym, None)
+            forex._LIVE_SPREAD_PIPS.pop(sym, None)
+
+    def test_strategy_bars_use_broker_candles_when_ticks_are_short(self):
+        """London / Squeeze / S3 barları tik kovası dolmadan kapanmış mumdan gelir."""
+        sym = "XAUUSD"
+        forex._CLOSED_TICK_BARS.pop((sym, 300), None)
+        forex._CLOSED_TICK_BARS.pop((sym, 900), None)
+        forex._OPEN_TICK_BUCKET.pop((sym, 300), None)
+        forex._OPEN_TICK_BUCKET.pop((sym, 900), None)
+        now = time.time()
+        bucket = int(now // 300) * 300
+        closed = []
+        for i in range(40, 0, -1):
+            px = 4100.0 + (40 - i) * 0.2
+            closed.append({
+                "time": bucket - i * 300,
+                "open": px,
+                "high": px + 0.8,
+                "low": px - 0.4,
+                "close": px + 0.2,
+                "volume": 0.0,
+            })
+        forming = {"time": bucket, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 0.0}
+        forex._MT5_CANDLES_CACHE[f"{sym}|5m"] = (now, closed + [forming])
+        try:
+            bars = forex._s3_bars_for(sym, "5m", limit=220)
+            self.assertIsNotNone(bars)
+            self.assertGreaterEqual(len(bars), 30)
+            self.assertEqual(bars[-1]["time"], closed[-1]["time"])
+            self.assertNotEqual(bars[-1]["close"], 1.0)
+        finally:
+            forex._MT5_CANDLES_CACHE.pop(f"{sym}|5m", None)
+
     def test_score_path_does_not_call_yahoo(self):
         import inspect
         refresh = inspect.getsource(forex._refresh_live_rates_if_needed)

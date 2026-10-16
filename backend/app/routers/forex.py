@@ -569,6 +569,25 @@ def _closed_tick_bars(sym: str, bucket_sec: int) -> List[Dict[str, Any]]:
     return list(_CLOSED_TICK_BARS.get((canonical_symbol(sym), bucket_sec), []))
 
 
+def _closed_broker_bars(sym: str, interval: str, bucket_sec: int) -> List[Dict[str, Any]]:
+    """Köprüden gelen kapanmış mumlar. Oluşan kova göstergeye girmez."""
+    raw = _fetch_mt5_candles(canonical_symbol(sym), interval, 1000)
+    if not raw:
+        return []
+    now_bucket = int(time.time() // int(bucket_sec)) * int(bucket_sec)
+    closed: List[Dict[str, Any]] = []
+    for bar in raw:
+        try:
+            opened = int(bar.get("time", 0))
+            close_px = float(bar.get("close", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if opened <= 0 or opened >= now_bucket or close_px <= 0:
+            continue
+        closed.append(bar)
+    return closed
+
+
 def _bars_have_gap(bars: List[Dict[str, Any]], bucket_sec: int) -> bool:
     times = [int(b.get("time", 0)) for b in bars]
     for prev, nxt in zip(times, times[1:]):
@@ -2612,10 +2631,14 @@ def _sync_fetch_live_rates() -> Dict[str, float]:
 
 
 def _rebuild_tech_from_ticks(sym: str) -> None:
-    """Skor/ADX/SuperTrend/Donchian/EMA yalnız kapanmış tik kovalarından."""
+    """Skor/RSI/ADX/MACD kapanmış MT5 5m mumundan. Mum kısaysa tik kovası yedek."""
     app = canonical_symbol(sym)
-    bars = _closed_tick_bars(app, 300)
-    _verify_tick_bars_against_bridge(app, "5m", bars)
+    bars = _closed_broker_bars(app, "5m", 300)
+    source = "mt5_candle"
+    if len(bars) < _MIN_CLOSED_BARS_5M:
+        bars = _closed_tick_bars(app, 300)
+        source = "mt5_tick"
+        _verify_tick_bars_against_bridge(app, "5m", bars)
     if len(bars) < _MIN_CLOSED_BARS_5M:
         _TECHNICAL_CACHE.pop(app, None)
         return
@@ -2630,7 +2653,7 @@ def _rebuild_tech_from_ticks(sym: str) -> None:
         return
     tick_ts = float(_PRICE_TS.get(app, 0.0) or 0.0)
     tech["updated_at"] = tick_ts
-    tech["source"] = "mt5_tick"
+    tech["source"] = source
     tech["bar_gap"] = _bars_have_gap(bars, 300)
     _TECHNICAL_CACHE[app] = tech
     _CLOSES_CACHE[app] = closes
@@ -2907,7 +2930,20 @@ def _get_forex_watch() -> List[Dict[str, str]]:
         if (sym, tf) not in seen:
             seen.add((sym, tf))
             out.append({"symbol": sym, "interval": tf})
-    # 2) Motorun kalıcı çiftleri (panel kapalıyken de sinyal üretimi için).
+    # 2) Karar fonksiyonlarının 5m mumları. Radar, Donchian, EMA ve London
+    #    bu seriyi okur; tik kovasının dolması beklenmez.
+    decision_5m = set(RADAR_SCAN_SYMBOLS)
+    if _AUTO_SETTINGS.lb_enabled:
+        decision_5m.update(str(s).upper() for s in (_AUTO_SETTINGS.lb_symbols or []))
+    if _AUTO_SETTINGS.ema_adx_enabled:
+        decision_5m.update(str(s).upper() for s in (_AUTO_SETTINGS.ema_adx_symbols or []))
+    decision_5m.update(str(s).upper() for s in (_AUTO_SETTINGS.mode_symbols or []))
+    for sym in sorted(s for s in decision_5m if s):
+        key = (sym, "5m")
+        if key not in seen:
+            seen.add(key)
+            out.append({"symbol": sym, "interval": "5m"})
+    # 3) Motorun kalıcı çiftleri (panel kapalıyken de sinyal üretimi için).
     if _AUTO_SETTINGS.s3_enabled:
         for sym in list(_AUTO_SETTINGS.s3_symbols_5m) + list(_AUTO_SETTINGS.s3_symbols_15m):
             s = str(sym).upper()
@@ -2928,14 +2964,14 @@ def _get_forex_watch() -> List[Dict[str, str]]:
 
 
 def _s3_bars_for(sym: str, interval: str, limit: int = 260) -> Optional[List[Dict[str, Any]]]:
-    """Strateji barları yalnız MT5 tik kovalarından. Kısa geçmiş = kol susar.
-
-    Köprüdeki hazır mum gösterge kaynağı değildir; kapanış doğrulaması için okunur.
-    """
+    """London, Squeeze ve S3 barları. Önce kapanmış MT5 mumu, yoksa tik kovası."""
     bucket = 900 if str(interval) in ("15m", "15") else 300
-    bars = _closed_tick_bars(sym, bucket)
-    _verify_tick_bars_against_bridge(sym, interval, bars)
+    iv = "15m" if bucket == 900 else "5m"
     min_bars = _MIN_CLOSED_BARS_5M if bucket == 300 else 20
+    bars = _closed_broker_bars(sym, iv, bucket)
+    if len(bars) < min_bars:
+        bars = _closed_tick_bars(sym, bucket)
+        _verify_tick_bars_against_bridge(sym, iv, bars)
     if len(bars) < min_bars:
         return None
     return bars[-limit:]

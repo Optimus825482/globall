@@ -966,7 +966,9 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             forex._AUTO_SETTINGS.s3_enabled = False
             pairs_off = {(w["symbol"], w["interval"]) for w in forex._get_forex_watch()}
             self.assertNotIn(("GBPUSD", "15m"), pairs_off)
-            self.assertNotIn(("XAUUSD", "5m"), pairs_off)
+            # Radar RSI/MACD broker 5m mumundan hesaplanır; S3 kapalı olsa da istenir.
+            self.assertIn(("XAUUSD", "5m"), pairs_off)
+            self.assertIn(("BTCUSD", "5m"), pairs_off)
             # Açıkken kalıcı motor çiftleri panel bakmasa da listede kalır.
             forex._AUTO_SETTINGS.s3_enabled = True
             pairs = {(w["symbol"], w["interval"]) for w in forex._get_forex_watch()}
