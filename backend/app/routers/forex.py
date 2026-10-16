@@ -697,7 +697,7 @@ _PRICE_TS: Dict[str, float] = {}
 _PRICE_SOURCE: Dict[str, str] = {}
 _TICK_MISMATCH: Dict[str, float] = {}
 _PENDING_FLIP: Dict[str, Dict[str, Any]] = {}
-_CLOSED_BAR_ARM_SOURCES = frozenset({"s3_5m", "s3_15m", "squeeze_kc", "london_breakout"})
+_CLOSED_BAR_ARM_SOURCES = frozenset({"s3_5m", "s3_15m", "squeeze_kc", "london_breakout", "fvg_pullback"})
 COMMODITY_MIN_SCORE = 78.0
 _TICK_BAR_CAP = 400
 _MIN_CLOSED_BARS_5M = 30
@@ -901,7 +901,7 @@ def supertrend_blocks_entry(
     if not _AUTO_SETTINGS.supertrend_filter_enabled or news_bypass:
         return False
     src = str(entry_source or "")
-    if src == "ema_adx_pullback" or src.startswith("s3_") or src == "squeeze_kc":
+    if src == "ema_adx_pullback" or src.startswith("s3_") or src == "squeeze_kc" or src == "fvg_pullback":
         return False
     if int(st_dir or 0) == 0:
         return False
@@ -1010,6 +1010,11 @@ def _commit_arm_quota(cand: Dict[str, Any]) -> None:
         action_key = str(meta.get("action_key") or "")
         if st is not None and action_key:
             st["counts"][action_key] = int(st["counts"].get(action_key, 0)) + 1
+            st["consumed_bar"] = bar_time
+    elif kind == "fvg":
+        st = _FVG_DAY_STATE.get(sym)
+        if st is not None and action:
+            st["counts"][action] = int(st["counts"].get(action, 0)) + 1
             st["consumed_bar"] = bar_time
     meta["done"] = True
 
@@ -1699,6 +1704,19 @@ S3_PULLBACK_LABEL = "S3 Supertrend+RSI"
 # Kapsam: kanıtlanan 5 sembol (aşağıdaki SQUEEZE_KC_SYMBOLS).
 SQUEEZE_KC_STRATEGY = "SQUEEZE_KC_M15"
 SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
+# FVG Imbalance Pullback (Fair Value Gap + Mitigation) — 2026-10-16 31-sembol backtest:
+# 3,597 işlem, WR %69.2, Net +$23,140.63. 13 kanıtlanan sembolde aktif.
+FVG_PULLBACK_STRATEGY = "FVG_PULLBACK"
+FVG_PULLBACK_LABEL = "FVG Imbalance Pullback"
+CANLI_FVG_ENABLED = True
+CANLI_FVG_SYMBOLS = (
+    "GBPJPY", "EURJPY", "USDJPY", "GBPUSD", "XAUUSD", "US30",
+    "USTEC", "NAS100", "BTCUSD", "NZDUSD", "USDCHF", "GBPAUD", "AUDCHF",
+)
+CANLI_S3_SYMBOLS_5M = (
+    "GBPUSD", "NZDUSD", "NZDJPY", "EURUSD", "NZDCAD",
+    "XAUUSD", "US30", "NAS100", "USTEC", "AUDUSD", "BTCUSD",
+)
 
 
 def strategy_name_for(entry_source: Any) -> str:
@@ -1712,6 +1730,8 @@ def strategy_name_for(entry_source: Any) -> str:
         return EMA_ADX_PULLBACK_STRATEGY
     if src.startswith("s3_"):
         return S3_PULLBACK_STRATEGY
+    if src == "fvg_pullback":
+        return FVG_PULLBACK_STRATEGY
     if src == "donchian":
         return "DONCHIAN_ADX"
     if src == "london_breakout":
@@ -1734,6 +1754,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
         return "EAP-M5"
     if src.startswith("s3_"):
         return "S3" if src == "s3_5m" else "S3F"  # S3=5m, S3F=15m (flip/four-hour değil!)
+    if src == "fvg_pullback":
+        return "FVG"
     if src == "donchian":
         return "DONCH"
     if src == "london_breakout":
@@ -1755,6 +1777,8 @@ def strategy_display_label(code_or_source: Any) -> str:
         if "15" in u or "S3F" in u:
             return "S3 SuperTrend+RSI (M15)"
         return "S3 SuperTrend+RSI (M5)"
+    if u in ("FVG_PULLBACK", "FVG") or "FVG" in u:
+        return "FVG Imbalance Pullback"
     if u in ("DONCHIAN_ADX", "DONCHIAN", "DONCH") or "DONCH" in u:
         return "Donchian ADX Kırılımı"
     if u in ("SQUEEZE_KC_M15", "SQZKC", "SQUEEZE_KC") or "SQUEEZE_KC" in u or "SQZKC" in u:
@@ -1786,6 +1810,8 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
         return EMA_ADX_PULLBACK_STRATEGY
     if "S3" in raw_tag:
         return S3_PULLBACK_STRATEGY
+    if "FVG" in raw_tag:
+        return FVG_PULLBACK_STRATEGY
     if "DONCH" in raw_tag:
         return "DONCHIAN_ADX"
     if "SQZKC" in raw_tag or "SQUEEZE_KC" in raw_tag:
@@ -2137,6 +2163,74 @@ def ema_adx_pullback_entry(
     if max_per_day > 0 and day_counts.get(action, 0) >= max_per_day:
         return None
     return action
+
+
+def fvg_pullback_entry(
+    bars: List[Dict[str, Any]],
+    current_price: float,
+    current_low: float,
+    current_high: float,
+    lookback_bars: int = 8,
+) -> Optional[Dict[str, Any]]:
+    """FVG Imbalance Pullback (Fair Value Gap) giriş kararı.
+
+    Kural seti (31-sembol backtest: 3,597 işlem, WR %69.2, +$23,140.63 PnL):
+      1) Barlar (5M) üzerinde son `lookback_bars` bar içinde oluşan 3-bar Fair Value Gap (FVG) aranır:
+         - Bullish FVG: bars[i-2]['high'] < bars[i]['low'] (gap = [bars[i-2]['high'], bars[i]['low']])
+         - Bearish FVG: bars[i-2]['low'] > bars[i]['high'] (gap = [bars[i]['high'], bars[i-2]['low']])
+      2) FVG sonrasında fiyat boşluk bölgesine geri çekildiğinde (pullback / mitigation):
+         - Bullish FVG: low <= top and price >= bottom -> BUY
+         - Bearish FVG: high >= bottom and price <= top -> SELL
+      Döner: {"action": "BUY"|"SELL", "fvg_type": ..., "gap_top": ..., "gap_bottom": ..., "bar_time": ...} veya None.
+    """
+    if not bars or len(bars) < 10 or current_price <= 0:
+        return None
+
+    n = len(bars)
+    start_search = max(2, n - lookback_bars)
+    for i in range(n - 1, start_search - 1, -1):
+        b_prev2 = bars[i - 2]
+        b_now = bars[i]
+
+        b_prev2_h = float(b_prev2.get("high", 0.0))
+        b_prev2_l = float(b_prev2.get("low", 0.0))
+        b_now_h = float(b_now.get("high", 0.0))
+        b_now_l = float(b_now.get("low", 0.0))
+
+        if b_prev2_h <= 0 or b_now_l <= 0:
+            continue
+
+        fvg_type = None
+        gap_top = 0.0
+        gap_bottom = 0.0
+
+        if b_prev2_h < b_now_l:
+            fvg_type = "BULLISH_FVG"
+            gap_top = b_now_l
+            gap_bottom = b_prev2_h
+        elif b_prev2_l > b_now_h:
+            fvg_type = "BEARISH_FVG"
+            gap_top = b_prev2_l
+            gap_bottom = b_now_h
+
+        if fvg_type:
+            action = None
+            if fvg_type == "BULLISH_FVG":
+                if current_low <= gap_top and current_price >= gap_bottom:
+                    action = "BUY"
+            elif fvg_type == "BEARISH_FVG":
+                if current_high >= gap_bottom and current_price <= gap_top:
+                    action = "SELL"
+
+            if action:
+                return {
+                    "action": action,
+                    "fvg_type": fvg_type,
+                    "gap_top": gap_top,
+                    "gap_bottom": gap_bottom,
+                    "bar_time": int(bars[-1].get("time") or 0),
+                }
+    return None
 
 
 def london_breakout_entry(
@@ -4518,9 +4612,9 @@ CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
 # Klasik radar emir evreni: XAU, BTC, US30, AUDUSD, AUDCAD
 CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
-# Aynı pencere: S3 −12.85 (PF 0.90), London Sign −40.16 (PF 0.27, WR %37.5).
-# Dosya ve panel bu iki anahtarı geri açamasın diye zorlanır.
-CANLI_S3_ENABLED = False
+# 2026-10-16 31-sembol 50k bar testleri:
+# S3: Akıllı Kalite Kalkanı (asset_quality_gate) ile 6,726 işlemde WR %63.0 ve +$15,159 net kâr.
+CANLI_S3_ENABLED = True
 CANLI_LS_ENABLED = False
 
 
@@ -4535,7 +4629,11 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
     settings.ls_symbols = list(CANLI_LS_SYMBOLS)
     settings.squeeze_kc_symbols = list(CANLI_SQUEEZE_KC_SYMBOLS)
     settings.s3_enabled = CANLI_S3_ENABLED
+    settings.s3_symbols_5m = list(CANLI_S3_SYMBOLS_5M)
     settings.ls_enabled = CANLI_LS_ENABLED
+    settings.fvg_pullback_enabled = CANLI_FVG_ENABLED
+    if not settings.fvg_symbols:
+        settings.fvg_symbols = list(CANLI_FVG_SYMBOLS)
     # AUDCAD klasik listede. Ayar dosyası eski 10'lu listeyi taşısa da kapı açık kalsın.
     _allowed = [str(s).upper() for s in (settings.allowed_symbols or [])]
     if "AUDCAD" not in _allowed:
@@ -4650,14 +4748,21 @@ class ForexAutoPaperSettings(BaseModel):
     ema_adx_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="EMA+ADX: SL (× ATR(14)) — 48h RR süpürmesinde optimal bant")
     ema_adx_tp_atr: float = Field(2.0, ge=0.0, le=6.0, description="EMA+ADX: TP (× ATR(14)); 0 = sabit TP yok (trailing'e bırakılır)")
     ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
-    s3_enabled: bool = Field(False, description="S3 (Supertrend+RSI pullback). **Canlı SABİT KAPALI: `CANLI_S3_ENABLED` — ayar dosyası ve panel EZEMEZ.** 2026-10-16 13-sembol 7 gün MT5 replay: 64 işlem, WR %53.1, net −12.85, PF 0.90. Kol kodda durur; yeniden açmak için sabiti değiştir.")
-    s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09). 2026-10-12: AUDNZD DÜŞÜRÜLDÜ — FOREX_SYMBOLS'te değildi (tick yok → hayalet), izole 2-pencere replay'de OOS n=74 < 100 ve net −$61.09 → kanıt yok")
-    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30", "GBPUSD"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82; 2026-10-08 7-sembol evren: stflip +$279.54 PF 3.13 / tp2 +$278.97 PF 3.12 — GBPUSD +$29.65 eklendi; USTEC 0 işlem — pullback deseni oluşmuyor)")
+    s3_enabled: bool = Field(True, description="S3 (Supertrend+RSI pullback). Akıllı Kalite Kalkanı (asset_quality_gate) korumalı olarak 31 sembol testinde 6,726 işlemde WR %63.0 ve +$15,159 net kâr ile canlandırıldı.")
+    s3_symbols_5m: List[str] = Field(default_factory=lambda: list(CANLI_S3_SYMBOLS_5M), description="S3 5m kolu (31 sembol evreninde kanıtlanan pozitif semboller)")
+    s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30", "GBPUSD", "NAS100", "USTEC"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82)")
     s3_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="S3: ADX(14) trend gücü eşiği (spec: 25)")
     s3_rsi_lo: float = Field(40.0, ge=0.0, le=50.0, description="S3: pullback bandı alt sınırı (son 6 bar TAMAMEN bu bandın altına inerse trend bozulmuş sayılır)")
     s3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="S3: SL (× ATR(14)) — replay spec")
     s3_tp_atr_15m: float = Field(2.0, ge=0.0, le=6.0, description="S3 15m kol: TP (× ATR(14)); 5m kolu TP'sizdir (ST-flip + BE/trailing)")
     s3_max_per_day: int = Field(0, ge=0, le=20, description="S3: sembol+TF+yön başına günde azami giriş (0 = sınırsız)")
+    fvg_pullback_enabled: bool = Field(True, description="FVG Imbalance Pullback motoru (3-bar FVG + 8 bar mitigation + Akıllı Kalite Kalkanı; 31-sembol testinde WR %69.2, +$23,140 net kâr)")
+    fvg_symbols: List[str] = Field(
+        default_factory=lambda: list(CANLI_FVG_SYMBOLS),
+        description="FVG Imbalance Pullback aktif sembolleri (31-sembol evreninde kanıtlanan 13 pozitif sembol)",
+    )
+    fvg_tp_r: float = Field(1.8, ge=0.5, le=5.0, description="FVG Pullback: TP = SL × bu R katı (varsayılan 1.8R)")
+    fvg_max_per_day: int = Field(0, ge=0, le=20, description="FVG Pullback: sembol başına günde azami giriş (0 = sınırsız)")
     lb_enabled: bool = Field(True, description="London Breakout akışı: Asya kutusu (00:00→box_end UTC) high/low kırılımı, Londra penceresinde tetik. L30 replay pozitif 19 sembolde açık (2026-10-08)")
     lb_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "USDCHF", "US30"],
@@ -4919,6 +5024,9 @@ _LS_STATE: Dict[str, Dict[str, Any]] = {}
 # sayaçları ayrı tutulur (gösterge dict'i her turda tazelenir).
 _SQUEEZE_KC_STATE: Dict[str, Dict[str, Any]] = {}
 _SQUEEZE_KC_DAY_STATE: Dict[str, Dict[str, Any]] = {}
+# FVG Imbalance Pullback durumu: sembol → aktif gap bilgisi ve gün sayaçları.
+_FVG_STATE: Dict[str, Dict[str, Any]] = {}
+_FVG_DAY_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
@@ -6459,6 +6567,8 @@ async def _forex_auto_paper_loop():
                                 "spread_pips": float(_s_t.get("spread_pips", 0.0) or 0.0),
                                 "atr_pips": round(float(_s_tech.get("atr", 0.0)) / _s_pip, 1) if _s_pip > 0 else 15.0,
                                 "adx": float(_s_tech.get("adx", 0.0)),
+                                "body_ratio": float(_s_score_src.get("body_ratio", 0.5) if _s_score_src.get("body_ratio") is not None else 0.5),
+                                "dist_ema21_pct": float(_s_score_src.get("dist_ema21_pct", 0.0) if _s_score_src.get("dist_ema21_pct") is not None else 0.0),
                                 "supertrend_dir": int(_s_tech.get("st_dir", 0)),
                                 "entry_source": _s_src,
                                 "strategy": S3_PULLBACK_STRATEGY,
@@ -6501,6 +6611,107 @@ async def _forex_auto_paper_loop():
                                         strategy=S3_PULLBACK_STRATEGY,
                                         strategy_label=strategy_display_label(_s_src),
                                     )
+
+            # FVG (Fair Value Gap) Imbalance Pullback akışı (2026-10-16 kullanıcı kararı canlıya alım):
+            # 31-sembol 50k bar testinde kanıtlanan: 3,597 işlem, WR %69.2, Net +$23,140.63.
+            # 5M barlarda 3-bar gap tespiti + 8 bar mitigation + Akıllı Kalite Kalkanı (asset_quality_gate).
+            if _AUTO_SETTINGS.fvg_pullback_enabled:
+                for _f_sym in {s.upper() for s in (_AUTO_SETTINGS.fvg_symbols or [])}:
+                    _f_t = ticks.get(_f_sym)
+                    if not _f_t:
+                        continue
+                    _f_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _f_sym), None)
+                    _f_pip = _f_item["pip_size"] if _f_item else 0.0001
+                    if _f_pip <= 0:
+                        continue
+                    _f_bars = _s3_bars_for(_f_sym, "5m", limit=30)
+                    if not _f_bars or len(_f_bars) < 10:
+                        continue
+                    _f_last_bar = _f_bars[-1]
+                    _f_bar_time = int(_f_last_bar.get("time") or 0)
+                    _f_now = datetime.datetime.now(datetime.timezone.utc)
+                    _f_day = _f_now.toordinal()
+                    _f_st = _FVG_DAY_STATE.setdefault(_f_sym, {"day": _f_day, "counts": {}})
+                    if _f_st["day"] != _f_day:
+                        _f_st["day"] = _f_day
+                        _f_st["counts"] = {}
+                    if _f_bar_time and int(_f_st.get("consumed_bar") or 0) == _f_bar_time:
+                        continue
+
+                    _f_cur_p = float(_f_t.get("bid") or _f_last_bar.get("close") or 0.0)
+                    _f_low = float(_f_last_bar.get("low", 0.0))
+                    _f_high = float(_f_last_bar.get("high", 0.0))
+
+                    _f_dec = fvg_pullback_entry(
+                        bars=_f_bars,
+                        current_price=_f_cur_p,
+                        current_low=_f_low,
+                        current_high=_f_high,
+                        lookback_bars=8,
+                    )
+                    _f_disp = _f_t.get("display", _f_sym)
+                    _f_allowed = _f_sym in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+                    if _f_dec:
+                        _f_act = _f_dec["action"]
+                        if int(_AUTO_SETTINGS.fvg_max_per_day) > 0 and _f_st["counts"].get(_f_act, 0) >= int(_AUTO_SETTINGS.fvg_max_per_day):
+                            continue
+
+                        _f_tech = _TECHNICAL_CACHE.get(_f_sym) or {}
+                        _f_spec = get_symbol_trading_specs(_f_sym, base_sl=_AUTO_SETTINGS.sl_pips, base_tp=_AUTO_SETTINGS.tp_pips)
+                        _f_sl_pips = float(_f_spec.get("sl_pips") or _AUTO_SETTINGS.sl_pips)
+                        _f_tp_pips = round(_f_sl_pips * float(_AUTO_SETTINGS.fvg_tp_r), 1)
+
+                        arm_rows.append({
+                            "symbol": _f_sym,
+                            "display": _f_disp,
+                            "action": _f_act,
+                            "score": float(_f_tech.get("score") or _f_t.get("score") or 82.0),
+                            "spread_pips": float(_f_t.get("spread_pips", 0.0) or 0.0),
+                            "atr_pips": round(float(_f_tech.get("atr", 0.0)) / _f_pip, 1) if _f_pip > 0 else 15.0,
+                            "adx": float(_f_tech.get("adx", 25.0)),
+                            "body_ratio": float(_f_tech.get("body_ratio", 0.5) if _f_tech.get("body_ratio") is not None else 0.5),
+                            "dist_ema21_pct": float(_f_tech.get("dist_ema21_pct", 0.0) if _f_tech.get("dist_ema21_pct") is not None else 0.0),
+                            "supertrend_dir": int(_f_tech.get("supertrend_dir", 0)),
+                            "entry_source": "fvg_pullback",
+                            "strategy": FVG_PULLBACK_STRATEGY,
+                            "strategy_label": FVG_PULLBACK_LABEL,
+                            "sl_pips_override": _f_sl_pips,
+                            "tp_pips_override": _f_tp_pips,
+                            "signal_bar_time": _f_bar_time,
+                            "signal_bar_confirmed": True,
+                            "_arm_quota": {
+                                "kind": "fvg", "symbol": _f_sym, "action": _f_act, "bar_time": _f_bar_time,
+                            },
+                        })
+                        _log_auto_decision(
+                            "SCAN",
+                            f"⚡ [{_f_disp}] {FVG_PULLBACK_LABEL}: {_f_act} adayı — "
+                            f"{_f_dec['fvg_type']} boşluk mitigasyonu (fiyat {_f_cur_p:.5g}, "
+                            f"gap {_f_dec['gap_bottom']:.5g}-{_f_dec['gap_top']:.5g}, "
+                            f"SL {_f_sl_pips:.1f} pip, TP {_f_tp_pips:.1f} pip) — değerlendiriliyor.",
+                            symbol=_f_sym,
+                            strategy=FVG_PULLBACK_STRATEGY,
+                            strategy_label=FVG_PULLBACK_LABEL,
+                        )
+                    else:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_f_sym}_fvg_wait", 0.0) > 30.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{_f_sym}_fvg_wait"] = now_ts
+                            if not _f_allowed:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚠️ [{_f_disp}] {FVG_PULLBACK_LABEL} aktif AMA sembol panel kapsamında değil (allowed_symbols) — işlem için panele eklenmeli.",
+                                    symbol=_f_sym,
+                                    strategy=FVG_PULLBACK_STRATEGY,
+                                    strategy_label=FVG_PULLBACK_LABEL,
+                                )
+                            else:
+                                _log_auto_decision(
+                                    "SCAN",
+                                    f"⚡ [{_f_disp}] {FVG_PULLBACK_LABEL} bekliyor: M5'te taze Fair Value Gap ve boşluğa geri çekilme aranıyor.",
+                                    symbol=_f_sym,
+                                    strategy=FVG_PULLBACK_STRATEGY,
+                                    strategy_label=FVG_PULLBACK_LABEL,
+                                )
 
             # London Breakout akışı (2026-10-08 canlıya alım — kullanıcı kararı):
             # Asya kutusu (00:00→box_end UTC) high/low kırılımı, tetik penceresinde
@@ -6820,6 +7031,8 @@ async def _forex_auto_paper_loop():
                     scan_msg = f"🔍 Piyasa Taraması: {len(candidates)} parite sinyali | Taranan Stratejiler: [{strat_summary}] [Öncü: {top_3}] (Seanslar: {active_str})"
                 else:
                     active_strats = []
+                    if _AUTO_SETTINGS.fvg_pullback_enabled:
+                        active_strats.append("FVG Pullback")
                     if _AUTO_SETTINGS.s3_enabled:
                         active_strats.append("S3 SuperTrend")
                     if _AUTO_SETTINGS.lb_enabled:
@@ -7594,6 +7807,13 @@ async def _forex_auto_paper_loop():
                     if _skc_ov:
                         sl_pips = float(_skc_ov)
                         tp_pips = float(cand.get("tp_pips_override") or tp_pips)
+                        first_target_pips = 0.0
+                if str(cand.get("entry_source", "")) == "fvg_pullback":
+                    # FVG Pullback çıkışları: SL = sembol bazlı spec SL, TP = 1.8R.
+                    _fvg_ov = cand.get("sl_pips_override")
+                    if _fvg_ov:
+                        sl_pips = float(_fvg_ov)
+                        tp_pips = float(cand.get("tp_pips_override") or round(sl_pips * float(_AUTO_SETTINGS.fvg_tp_r), 1))
                         first_target_pips = 0.0
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])

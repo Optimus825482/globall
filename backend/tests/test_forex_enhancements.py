@@ -1562,7 +1562,8 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.squeeze_kc_symbols, list(forex.CANLI_SQUEEZE_KC_SYMBOLS))
         turned_on = forex.ForexAutoPaperSettings(s3_enabled=True, ls_enabled=True)
         forex._apply_canli_sabitler(turned_on)
-        self.assertFalse(turned_on.s3_enabled)
+        self.assertEqual(turned_on.s3_enabled, forex.CANLI_S3_ENABLED)
+        self.assertTrue(turned_on.s3_enabled)
         self.assertFalse(turned_on.ls_enabled)
 
         # (b) Panel/POST gövdesi bu iki alanı değiştirmeye çalışsa da sabit kazanmalı
@@ -1573,7 +1574,7 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         # Sabit olmayan alan normal şekilde geçmeli (kontrol)
         self.assertEqual(merged.min_score, 80.0)
         forced_off = forex.merge_settings_payload({"s3_enabled": True, "ls_enabled": True})
-        self.assertFalse(forced_off.s3_enabled)
+        self.assertEqual(forced_off.s3_enabled, forex.CANLI_S3_ENABLED)
         self.assertFalse(forced_off.ls_enabled)
         self.assertEqual(list(forex.CANLI_CLASSIC_SYMBOLS),
                          ["XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD"])
@@ -1995,6 +1996,104 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         ok, reason = forex.asset_quality_gate("USTEC", "BUY", body_ratio=0.45, dist_ema21_pct=0.55, adx=25.0)
         self.assertFalse(ok)
         self.assertIn("Aşırı Uzama Kalkanı", reason)
+
+    # -------------------------------------------------------------------------
+    # 26. STRATEGY 2 (FVG PULLBACK) & S3 REVITALIZED INTEGRATION TESTS
+    # -------------------------------------------------------------------------
+    def test_fvg_pullback_entry_detection(self):
+        """Test bullish and bearish FVG detection and price mitigation."""
+        # Bullish FVG: bar[-3] high < bar[-1] low
+        bars_bullish = [
+            {"time": 1000 + i * 300, "open": 1.2480, "high": 1.2490, "low": 1.2470, "close": 1.2485}
+            for i in range(10)
+        ]
+        # Bar 10: high is 1.2500
+        bars_bullish.append({"time": 4000, "open": 1.2485, "high": 1.2500, "low": 1.2480, "close": 1.2495})
+        # Bar 11: big surge
+        bars_bullish.append({"time": 4300, "open": 1.2495, "high": 1.2530, "low": 1.2495, "close": 1.2525})
+        # Bar 12: low is 1.2515 > 1.2500 (Bullish FVG zone: [1.2500, 1.2515])
+        bars_bullish.append({"time": 4600, "open": 1.2525, "high": 1.2540, "low": 1.2515, "close": 1.2535})
+
+        # Price pulls back into gap [1.2500, 1.2515]
+        res = forex.fvg_pullback_entry(
+            bars=bars_bullish,
+            current_price=1.2510,
+            current_low=1.2505,
+            current_high=1.2520,
+            lookback_bars=8,
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(res["action"], "BUY")
+        self.assertEqual(res["fvg_type"], "BULLISH_FVG")
+        self.assertEqual(res["gap_bottom"], 1.2500)
+        self.assertEqual(res["gap_top"], 1.2515)
+
+        # Price outside gap -> None
+        res_none = forex.fvg_pullback_entry(
+            bars=bars_bullish,
+            current_price=1.2550,
+            current_low=1.2540,
+            current_high=1.2560,
+            lookback_bars=8,
+        )
+        self.assertIsNone(res_none)
+
+        # Bearish FVG: bar[-3] low > bar[-1] high
+        bars_bearish = [
+            {"time": 1000 + i * 300, "open": 1.2600, "high": 1.2610, "low": 1.2590, "close": 1.2605}
+            for i in range(10)
+        ]
+        # Bar 10: low is 1.2580
+        bars_bearish.append({"time": 4000, "open": 1.2600, "high": 1.2605, "low": 1.2580, "close": 1.2585})
+        # Bar 11: big drop
+        bars_bearish.append({"time": 4300, "open": 1.2585, "high": 1.2585, "low": 1.2540, "close": 1.2545})
+        # Bar 12: high is 1.2560 < 1.2580 (Bearish FVG zone: [1.2560, 1.2580])
+        bars_bearish.append({"time": 4600, "open": 1.2545, "high": 1.2560, "low": 1.2535, "close": 1.2540})
+
+        # Price rallies back into gap [1.2560, 1.2580]
+        res_bear = forex.fvg_pullback_entry(
+            bars=bars_bearish,
+            current_price=1.2570,
+            current_low=1.2555,
+            current_high=1.2575,
+            lookback_bars=8,
+        )
+        self.assertIsNotNone(res_bear)
+        self.assertEqual(res_bear["action"], "SELL")
+        self.assertEqual(res_bear["fvg_type"], "BEARISH_FVG")
+        self.assertEqual(res_bear["gap_bottom"], 1.2560)
+        self.assertEqual(res_bear["gap_top"], 1.2580)
+
+    def test_fvg_strategy_naming_and_labels(self):
+        """Verify strategy constants, comment tags, and display labels for FVG."""
+        self.assertEqual(forex.strategy_name_for("fvg_pullback"), forex.FVG_PULLBACK_STRATEGY)
+        self.assertEqual(forex.strategy_comment_tag("fvg_pullback"), "FVG")
+        self.assertEqual(forex.strategy_display_label("fvg_pullback"), forex.FVG_PULLBACK_LABEL)
+        self.assertEqual(forex.strategy_from_mt5_deal({"comment": "FVG"}), forex.FVG_PULLBACK_STRATEGY)
+        self.assertEqual(forex.strategy_from_mt5_deal({"strategy_tag": "FVG"}), forex.FVG_PULLBACK_STRATEGY)
+
+    def test_fvg_supertrend_exemption(self):
+        """Verify FVG strategy is exempt from external SuperTrend block."""
+        self.assertFalse(forex.supertrend_blocks_entry("fvg_pullback", "BUY", -1))
+        self.assertFalse(forex.supertrend_blocks_entry("fvg_pullback", "SELL", 1))
+
+    def test_fvg_quota_committing(self):
+        """Verify _commit_arm_quota correctly tracks and consumes FVG bar quota."""
+        forex._FVG_DAY_STATE["GBPUSD"] = {"day": 100, "counts": {}}
+        cand = {
+            "symbol": "GBPUSD",
+            "entry_source": "fvg_pullback",
+            "_arm_quota": {
+                "kind": "fvg",
+                "symbol": "GBPUSD",
+                "action": "BUY",
+                "bar_time": 9999,
+            },
+        }
+        forex._commit_arm_quota(cand)
+        self.assertEqual(forex._FVG_DAY_STATE["GBPUSD"]["counts"]["BUY"], 1)
+        self.assertEqual(forex._FVG_DAY_STATE["GBPUSD"]["consumed_bar"], 9999)
+        self.assertTrue(cand["_arm_quota"]["done"])
 
 
 if __name__ == "__main__":

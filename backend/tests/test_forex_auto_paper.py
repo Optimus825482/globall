@@ -903,7 +903,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
     def test_s3_settings_defaults_and_watch(self):
         """S3 canlı taşıma ayarları: semboller, köprü izleme listesi kalıcılığı."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertFalse(cfg.s3_enabled)
+        self.assertTrue(cfg.s3_enabled)
         self.assertIn("XAUUSD", cfg.s3_symbols_5m)
         self.assertIn("XAUUSD", cfg.s3_symbols_15m)
         self.assertIn("BTCUSD", cfg.s3_symbols_15m)
