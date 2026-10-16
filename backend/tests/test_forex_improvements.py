@@ -1395,5 +1395,76 @@ class TestTickPrimaryGuards(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bars[0]["time"] % 300, 0)
 
 
+class TestCSMAndDSSConfluence(unittest.TestCase):
+    """8x8 Para Birimi Güç Matrisi (CSM) ve DSS Confluence skorlama testleri."""
+
+    def test_compute_currency_strength_matrix_basic(self):
+        ticks = {
+            "EURUSD": {"change_pct": 1.2},
+            "GBPUSD": {"change_pct": 0.8},
+            "USDJPY": {"change_pct": 0.5},
+            "AUDUSD": {"change_pct": -0.4},
+        }
+        res = forex.compute_currency_strength_matrix(ticks)
+        self.assertIn("matrix", res)
+        self.assertIn("ranking", res)
+        matrix = res["matrix"]
+        self.assertIn("EUR", matrix)
+        self.assertIn("USD", matrix)
+        self.assertIn("GBP", matrix)
+        # EUR +1.2 against USD, so EUR should be stronger than USD
+        self.assertGreater(matrix["EUR"], matrix["USD"])
+        # Ranking should contain all major currencies
+        self.assertEqual(len(res["ranking"]), 8)
+
+    def test_get_symbol_csm_differential(self):
+        ticks = {
+            "EURUSD": {"change_pct": 2.0},
+        }
+        csm = forex.compute_currency_strength_matrix(ticks)
+        diff, bias = forex.get_symbol_csm_differential("EURUSD", csm)
+        self.assertGreater(diff, 0.0)
+        self.assertEqual(bias, "BULLISH")
+
+        # Non-major / crypto against USD
+        # If USD is negative (-16.0), diff for BTCUSD is -(-16.0) = +16.0
+        diff_btc, bias_btc = forex.get_symbol_csm_differential("BTCUSD", csm)
+        self.assertGreater(diff_btc, 0.0)
+        self.assertEqual(bias_btc, "BULLISH")
+
+    def test_calculate_dss_score_and_tiers(self):
+        # A+ Setup: sym="EURUSD", action="BUY", htf_trend="BULLISH", csm_diff=15.0, rsi=58, macd=0.0005, fvg="BULLISH_FVG", supertrend=1, spread=1.0, atr=15.0
+        score, tier = forex.calculate_dss_score(
+            sym="EURUSD",
+            action="BUY",
+            htf_trend="BULLISH",
+            csm_diff=15.0,
+            rsi_5m=58.0,
+            macd_hist=0.0005,
+            fvg_type="BULLISH_FVG",
+            supertrend_dir=1,
+            spread_pips=1.0,
+            atr_pips=15.0,
+        )
+        self.assertGreaterEqual(score, 80.0)
+        self.assertEqual(tier, "A+")
+
+        # Counter-bias setup should have lower score
+        score_weak, tier_weak = forex.calculate_dss_score(
+            sym="EURUSD",
+            action="BUY",
+            htf_trend="BEARISH",
+            csm_diff=-15.0,
+            rsi_5m=30.0,
+            macd_hist=-0.0005,
+            fvg_type="BEARISH_FVG",
+            supertrend_dir=-1,
+            spread_pips=4.0,
+            atr_pips=5.0,
+        )
+        self.assertLess(score_weak, 65.0)
+        self.assertEqual(tier_weak, "WATCH")
+
+
 if __name__ == "__main__":
     unittest.main()

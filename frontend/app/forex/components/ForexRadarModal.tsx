@@ -49,6 +49,11 @@ interface RadarCandidate {
   rsi_15m?: number | null;
   rsi?: number;
   has_open_position?: boolean;
+  csm_diff?: number;
+  csm_bias?: string;
+  fvg_type?: string;
+  dss_score?: number;
+  dss_tier?: string;
   news_info?: NewsInfo;
 }
 
@@ -300,6 +305,16 @@ export default function ForexRadarModal() {
               {activeSignal.category && (
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-bunker-800 text-bunker-300 uppercase">
                   {activeSignal.category}
+                </span>
+              )}
+              {activeSignal.dss_tier === "A+" && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse">
+                  👑 A+ KURUMSAL
+                </span>
+              )}
+              {activeSignal.csm_diff != null && activeSignal.csm_diff !== 0 && (
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${activeSignal.csm_diff > 0 ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300" : "bg-rose-950/40 border-rose-500/40 text-rose-300"}`}>
+                  CSM: {activeSignal.csm_diff > 0 ? `+${activeSignal.csm_diff}` : activeSignal.csm_diff}
                 </span>
               )}
             </div>

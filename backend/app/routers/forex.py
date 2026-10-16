@@ -442,6 +442,7 @@ FOREX_SYMBOLS = [
 RADAR_SCAN_SYMBOLS = {
     "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "AUDCAD",
 }
+ALL_RADAR_SYMBOLS = {s["symbol"] for s in FOREX_SYMBOLS}
 
 
 _RETIRED_FOREX_SYMBOLS = [
@@ -1184,6 +1185,179 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     if bias == "USD_SHORT" and regime == "USD_STRONG":
         return "dxy_conflict"
     return None
+
+
+MAJOR_CURRENCIES: Tuple[str, ...] = ("USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD")
+
+
+def compute_currency_strength_matrix(ticks: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Any]:
+    """8 ana para biriminin (USD, EUR, GBP, JPY, AUD, CAD, CHF, NZD)
+    çapraz-kesitsel göreli güç matrisini ve sıralamasını hesaplar (CSM).
+
+    Tüm 28 majör/çapraz FX paritesinin değişim yüzdelerini ayrıştırarak
+    para birimlerinin izole sermaye akış gücünü (market-neutral de-meaned score) üretir.
+    """
+    raw_scores: Dict[str, float] = {c: 0.0 for c in MAJOR_CURRENCIES}
+    counts: Dict[str, int] = {c: 0 for c in MAJOR_CURRENCIES}
+
+    for sym_raw, t in (ticks or {}).items():
+        sym = str(sym_raw).upper()
+        if len(sym) == 6 and sym[:3] in MAJOR_CURRENCIES and sym[3:6] in MAJOR_CURRENCIES:
+            base_c = sym[:3]
+            quote_c = sym[3:6]
+            chg = float(t.get("change_pct", 0.0) or 0.0)
+            raw_scores[base_c] += chg
+            counts[base_c] += 1
+            raw_scores[quote_c] -= chg
+            counts[quote_c] += 1
+
+    avg_scores: Dict[str, float] = {}
+    for c in MAJOR_CURRENCIES:
+        avg_scores[c] = (raw_scores[c] / counts[c]) if counts[c] > 0 else 0.0
+
+    market_mean = sum(avg_scores.values()) / max(1, len(avg_scores))
+    relative_matrix: Dict[str, float] = {}
+    for c in MAJOR_CURRENCIES:
+        relative_matrix[c] = round((avg_scores[c] - market_mean) * 8.0, 1)
+
+    ranking = sorted(relative_matrix.items(), key=lambda item: item[1], reverse=True)
+    rank_map = {c: i + 1 for i, (c, _) in enumerate(ranking)}
+
+    return {
+        "matrix": relative_matrix,
+        "ranking": ranking,
+        "ranks": rank_map,
+        "strongest": ranking[0][0] if ranking else "USD",
+        "weakest": ranking[-1][0] if ranking else "JPY",
+        "updated_at": time.time(),
+    }
+
+
+def get_symbol_csm_differential(sym: str, csm_data: Optional[Dict[str, Any]]) -> Tuple[float, str]:
+    """Verilen sembol için para birimi güç farkını (Base - Quote) döner."""
+    sym_u = str(sym).upper()
+    matrix = (csm_data or {}).get("matrix", {})
+    if len(sym_u) == 6 and sym_u[:3] in MAJOR_CURRENCIES and sym_u[3:6] in MAJOR_CURRENCIES:
+        base_c = sym_u[:3]
+        quote_c = sym_u[3:6]
+        diff = round(matrix.get(base_c, 0.0) - matrix.get(quote_c, 0.0), 1)
+        bias = "BULLISH" if diff >= 10.0 else ("BEARISH" if diff <= -10.0 else "NEUTRAL")
+        return diff, bias
+    elif "XAU" in sym_u or "GOLD" in sym_u or "BTC" in sym_u or "US30" in sym_u or "USTEC" in sym_u:
+        usd_str = matrix.get("USD", 0.0)
+        diff = round(-usd_str, 1)
+        bias = "BULLISH" if diff >= 10.0 else ("BEARISH" if diff <= -10.0 else "NEUTRAL")
+        return diff, bias
+    return 0.0, "NEUTRAL"
+
+
+def calculate_dss_score(
+    sym: str,
+    action: str,
+    htf_trend: str,
+    csm_diff: float,
+    rsi_5m: float,
+    macd_hist: float,
+    fvg_type: str,
+    supertrend_dir: int,
+    spread_pips: float,
+    atr_pips: float,
+) -> Tuple[float, str]:
+    """Kurumsal Karar Destek Sistemi (DSS) çoklu faktör ve A+ kurulum puanlayıcısı.
+
+    Ağırlık Dağılımı:
+    1. Makro Trend Uyumu (%25): 15M HTF trendi işlem yönüyle uyumlu mu?
+    2. Para Birimi Güç Matrisi (CSM) Uyumu (%25): Kurumsal sermaye akışı bu yönde mi?
+    3. Momentum ve Osilatör (%20): RSI sağlıklı geri çekilme bölgesinde mi (40-62)?
+    4. Yapısal Seviye & FVG (%15): Fair Value Gap veya SuperTrend desteği var mı?
+    5. Spread & Volatilite Kalitesi (%15): Spread ATR'nin %15'inden dar mı?
+
+    Dönüş: (dss_score: 0-100, dss_tier: 'A+' | 'B' | 'WATCH')
+    """
+    if action not in ("BUY", "SELL"):
+        return 50.0, "WATCH"
+
+    # 1. Makro Trend (25 Pts)
+    macro_pts = 0.0
+    if (action == "BUY" and htf_trend == "BULLISH") or (action == "SELL" and htf_trend == "BEARISH"):
+        macro_pts = 25.0
+    elif htf_trend == "NEUTRAL":
+        macro_pts = 8.0
+    else:
+        macro_pts = 0.0
+
+    # 2. Para Birimi Güç Matrisi (25 Pts)
+    csm_pts = 0.0
+    if action == "BUY":
+        if csm_diff >= 15.0:
+            csm_pts = 25.0
+        elif csm_diff >= 5.0:
+            csm_pts = 18.0
+        elif csm_diff >= -5.0:
+            csm_pts = 10.0
+        else:
+            csm_pts = 0.0
+    elif action == "SELL":
+        if csm_diff <= -15.0:
+            csm_pts = 25.0
+        elif csm_diff <= -5.0:
+            csm_pts = 18.0
+        elif csm_diff <= 5.0:
+            csm_pts = 10.0
+        else:
+            csm_pts = 0.0
+
+    # 3. Momentum & Osilatör (20 Pts)
+    mom_pts = 0.0
+    if action == "BUY":
+        if 40.0 <= rsi_5m <= 62.0:
+            mom_pts += 12.0
+        elif rsi_5m < 40.0:
+            mom_pts += 6.0
+        if macd_hist > 0:
+            mom_pts += 8.0
+    elif action == "SELL":
+        if 38.0 <= rsi_5m <= 60.0:
+            mom_pts += 12.0
+        elif rsi_5m > 60.0:
+            mom_pts += 6.0
+        if macd_hist < 0:
+            mom_pts += 8.0
+
+    # 4. Yapısal Seviye & FVG (15 Pts)
+    struct_pts = 0.0
+    if action == "BUY":
+        if fvg_type == "BULLISH_FVG":
+            struct_pts += 8.0
+        if supertrend_dir == 1:
+            struct_pts += 7.0
+    elif action == "SELL":
+        if fvg_type == "BEARISH_FVG":
+            struct_pts += 8.0
+        if supertrend_dir == -1:
+            struct_pts += 7.0
+
+    # 5. Spread & Volatilite Kalitesi (15 Pts)
+    spread_pts = 0.0
+    eff_atr = max(1.0, atr_pips)
+    spread_ratio = spread_pips / eff_atr
+    if spread_ratio <= 0.12:
+        spread_pts = 15.0
+    elif spread_ratio <= 0.20:
+        spread_pts = 10.0
+    elif spread_ratio <= 0.30:
+        spread_pts = 5.0
+
+    total_dss = round(macro_pts + csm_pts + mom_pts + struct_pts + spread_pts, 1)
+
+    if total_dss >= 80.0 and action in ("BUY", "SELL"):
+        tier = "A+"
+    elif total_dss >= 65.0 and action in ("BUY", "SELL"):
+        tier = "B"
+    else:
+        tier = "WATCH"
+
+    return total_dss, tier
 
 
 # Sembol EV kalkanı muafiyet ve sıfırlama durumu (yalnız dict mutasyonu)
@@ -2693,9 +2867,25 @@ def _compute_technical_indicators(
     first_open = float(opens[0]) if opens else float(c[0])
     change_pct = round(((last_price - first_open) / first_open) * 100.0, 2) if first_open > 0 else 0.0
 
+    # 5c. FVG (Fair Value Gap) Algılayıcı (3-bar kurumsal dengesizlik analizi)
+    fvg_type = "NONE"
+    fvg_gap = 0.0
+    if len(h) >= 3 and len(l) >= 3:
+        if h[-3] < l[-1]:
+            fvg_type = "BULLISH_FVG"
+            fvg_gap = round(float(l[-1] - h[-3]), 6)
+        elif l[-3] > h[-1]:
+            fvg_type = "BEARISH_FVG"
+            fvg_gap = round(float(l[-3] - h[-1]), 6)
+
     # 6. Multi-Timeframe Scoring & Trend Synthesis (OPTIMIZED)
     bullish_pts = 0
     bearish_pts = 0
+
+    if fvg_type == "BULLISH_FVG" and htf_trend == "BULLISH":
+        bullish_pts += 10
+    elif fvg_type == "BEARISH_FVG" and htf_trend == "BEARISH":
+        bearish_pts += 10
 
     # (a) HTF 15M Trend Filter (30 Pts) - Trend direction gate
     if htf_trend == "BULLISH":
@@ -2859,6 +3049,8 @@ def _compute_technical_indicators(
         "cci": round(cci, 1),
         "adx": round(adx_val, 1),
         "supertrend_dir": int(st_dir),
+        "fvg_type": fvg_type,
+        "fvg_gap": fvg_gap,
         "atr": atr,
         # Son barın OHLC'si (EMA+ADX geri-çekilme giriş modu — 2026-10-08): dokunma
         # (EMA21'i kesme) ve onay (bar trend yönünde kapanış) bu bardan okunur.
@@ -3565,6 +3757,12 @@ def _evaluate_signal_gate(
     if cand.get("spread_known") is False or cand.get("spread_pips", 99.0) > effective_max_spread:
         reasons.append("spread")
 
+    # Spread / Hedef Kâr Oranı Kalkanı: Scalping'de spread TP hedefinin %20'sini aşarsa işlem veto edilir
+    pip_target = float(cand.get("pip_target", 0.0) or 0.0)
+    cur_spread = float(cand.get("spread_pips", 0.0) or 0.0)
+    if pip_target > 0 and cur_spread > 0 and (cur_spread / pip_target) > 0.20:
+        reasons.append("spread_cost_too_high")
+
     weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
     req_score = required_entry_score(sym, weak_bump)
     if cand.get("score", 0.0) < req_score:
@@ -3648,13 +3846,14 @@ _GATE_LABELS: Dict[str, str] = {
     "open_position": "Bu sembolde zaten açık pozisyon var",
     "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD, AUDCAD)",
     "news_opposing": "Ekonomik takvim verisine zıt yön (30 dk koruma aktif)",
+    "spread_cost_too_high": "Spread hedef kârın %20'sinden yüksek (aşırı maliyet)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
 # sanmasın, "bu parite şu an giriş kalitesinde değil" ile "zaten pozisyonum
 # var"ı ayırt edebilsin.
 _MARKET_BLOCKERS = frozenset({
-    "direction", "score", "spread", "adx", "supertrend",
+    "direction", "score", "spread", "spread_cost_too_high", "adx", "supertrend",
     "dxy", "major_session", "major_min_atr", "correlation",
     "veri", "bayat", "bar_gap", "news_opposing",
 })
@@ -3731,10 +3930,11 @@ async def get_forex_radar(use_cache: bool = True):
     except Exception:
         _nb_mod = None
 
+    csm_data = compute_currency_strength_matrix(ticks)
     candidates = []
     for sym, t in ticks.items():
         sym_u = sym.upper()
-        if sym_u not in RADAR_SCAN_SYMBOLS:
+        if sym_u not in ALL_RADAR_SYMBOLS:
             continue
         score = t.get("score", 45.0)
         trend = t.get("trend", "NEUTRAL")
@@ -3787,6 +3987,22 @@ async def get_forex_radar(use_cache: bool = True):
             atr_pips=atr_pips,
         )
 
+        csm_diff, csm_bias = get_symbol_csm_differential(sym_u, csm_data)
+        fvg_type = t.get("fvg_type", "NONE")
+        fvg_gap = float(t.get("fvg_gap", 0.0) or 0.0)
+        dss_score, dss_tier = calculate_dss_score(
+            sym=sym_u,
+            action=action,
+            htf_trend=t.get("htf_trend", "NEUTRAL"),
+            csm_diff=csm_diff,
+            rsi_5m=float(t.get("rsi", 50.0)),
+            macd_hist=float(t.get("macd_hist", 0.0) or 0.0),
+            fvg_type=fvg_type,
+            supertrend_dir=st_dir,
+            spread_pips=spread,
+            atr_pips=atr_pips,
+        )
+
         base = {
             "symbol": sym,
             "display": t["display"],
@@ -3800,6 +4016,12 @@ async def get_forex_radar(use_cache: bool = True):
             "trend": trend,
             "action": action,
             "news_info": news_info,
+            "csm_diff": csm_diff,
+            "csm_bias": csm_bias,
+            "fvg_type": fvg_type,
+            "fvg_gap": fvg_gap,
+            "dss_score": dss_score,
+            "dss_tier": dss_tier,
             "rsi_5m": t.get("rsi", 50.0),
             "rsi_15m": t.get("rsi", 50.0),
             "source": t.get("source", "yok"),
@@ -3854,9 +4076,11 @@ async def get_forex_radar(use_cache: bool = True):
             "score" not in gate["blocked_by"] and action in ("BUY", "SELL")
         )
         base["motor_acar"] = bool(gate["signal_ready"])
-        # 2026-10-16 13-sembol / 7 gün MT5 replay: klasik para XAU/BTC/US30/AUD'da.
-        # GBPUSD klasik −5…−26; panel STRONG dese bile motor bu dördün dışında açmaz.
-        if sym_u not in CANLI_CLASSIC_SYMBOLS:
+        # Klasik evren veya DSS A+ Kurumsal Kurulum kontrolü
+        # Kullanıcı şartı: Tüm 31 sembol kârlı stratejilerde ve A+ kurulumlarda işlem açabilir!
+        if sym_u in CANLI_CLASSIC_SYMBOLS or dss_tier == "A+":
+            base["motor_acar"] = bool(gate["signal_ready"])
+        else:
             base["motor_acar"] = False
             base["primary_blocker"] = "classic_scope"
             base["blocker_text"] = _GATE_LABELS["classic_scope"]
@@ -3880,6 +4104,7 @@ async def get_forex_radar(use_cache: bool = True):
         "scan_note": _radar_scan_note(candidates, current_utc_hour),
         "sessions": _get_market_sessions(),
         "dxy": dxy_regime,
+        "csm": csm_data,
         "thresholds": {
             "min_score": _AUTO_SETTINGS.min_score,
             "btc_min_score": _AUTO_SETTINGS.btc_min_score,
@@ -5830,11 +6055,10 @@ async def _forex_auto_paper_loop():
             _mode_syms = {s.upper() for s in (_AUTO_SETTINGS.mode_symbols or [])}
             _mode_excl = {s.upper() for s in (_AUTO_SETTINGS.mode_exclusive or [])}
             _classic_ok = {s.upper() for s in CANLI_CLASSIC_SYMBOLS}
-            # Klasik adaylar yalnız kanıtlı dörtlüde kalır. Diğer kollar (EMA, Squeeze,
-            # London Breakout, Donchian) kendi sembol listeleriyle aşağıda eklenir.
+            # Klasik adaylar kanıtlı listede kalır VEYA DSS A+ kurumsal kurulumuna sahipse işleme alınır
             candidates = [
                 c for c in candidates
-                if str(c.get("symbol", "")).upper() in _classic_ok
+                if str(c.get("symbol", "")).upper() in _classic_ok or c.get("dss_tier") == "A+"
             ]
             if _mode_excl:
                 candidates = [c for c in candidates if str(c.get("symbol", "")).upper() not in _mode_excl]

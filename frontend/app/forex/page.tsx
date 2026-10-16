@@ -58,6 +58,12 @@ interface ForexCandidate {
   primary_blocker: string | null;
   blocker_text: string;
   required_score?: number | null;
+  csm_diff?: number;
+  csm_bias?: string;
+  fvg_type?: string;
+  fvg_gap?: number;
+  dss_score?: number;
+  dss_tier?: string;
   news_info?: {
     has_active_news?: boolean;
     alignment?: "SUPPORTIVE" | "OPPOSING" | "NEUTRAL" | string;
@@ -281,6 +287,7 @@ export default function ForexRadarPage() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [scanNote, setScanNote] = useState<string>("");
   const [thresholds, setThresholds] = useState<RadarThresholds | null>(null);
+  const [csm, setCsm] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [radarError, setRadarError] = useState("");
   const [strategyScanError, setStrategyScanError] = useState("");
@@ -349,6 +356,7 @@ export default function ForexRadarPage() {
         setSessions(data.sessions || []);
         setScanNote(data.scan_note || "");
         setThresholds(data.thresholds || null);
+        setCsm(data.csm || null);
         setLastUpdated(new Date());
         setRadarError("");
       }
@@ -787,6 +795,55 @@ export default function ForexRadarPage() {
         )}
       </div>
 
+      {/* 8x8 PARA BİRİMİ GÜÇ MATRİSİ (CSM - CURRENCY STRENGTH METER) */}
+      {csm && csm.ranking && csm.ranking.length > 0 && (
+        <div className="p-4 rounded-2xl bg-bunker-900/90 border border-blue-500/30 shadow-xl font-mono">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-bunker-800">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🌐</span>
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Para Birimi Güç Matrisi (CSM - Currency Strength Meter)
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30">
+                8 Para Birimi · Kurumsal Akış Sıralaması
+              </span>
+            </div>
+            <div className="text-[11px] text-bunker-muted flex items-center gap-3">
+              <span>Lider: <strong className="text-emerald-400">#{csm.ranks?.[csm.strongest] ?? 1} {csm.strongest}</strong></span>
+              <span>En Zayıf: <strong className="text-rose-400">#{csm.ranks?.[csm.weakest] ?? 8} {csm.weakest}</strong></span>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+            {csm.ranking.map(([curr, score]: [string, number], idx: number) => {
+              const isPositive = score > 0;
+              const isTop = idx === 0;
+              const isBottom = idx === csm.ranking.length - 1;
+              return (
+                <div
+                  key={curr}
+                  className={`p-2.5 rounded-xl border text-center transition-all ${
+                    isTop
+                      ? "bg-emerald-950/40 border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                      : isBottom
+                      ? "bg-rose-950/40 border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
+                      : "bg-bunker-950/50 border-bunker-800"
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[10px] text-bunker-muted mb-0.5">
+                    <span>#{idx + 1}</span>
+                    {isTop ? <span className="text-emerald-400 font-bold">LİDER</span> : isBottom ? <span className="text-rose-400 font-bold">DİP</span> : null}
+                  </div>
+                  <div className="text-sm font-black text-white">{curr}</div>
+                  <div className={`text-xs font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                    {score > 0 ? `+${score.toFixed(1)}` : score.toFixed(1)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* GÜÇLÜ SİNYAL KARTLARI — radarın özü, en üstte */}
       {strongSignals.length > 0 && (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/10 overflow-hidden shadow-xl">
@@ -817,11 +874,21 @@ export default function ForexRadarPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-white text-base">{c.display}</span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
                           {c.category}
                         </span>
+                        {c.dss_tier === "A+" && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.3)]">
+                            👑 A+ KURUMSAL
+                          </span>
+                        )}
+                        {c.dss_tier === "B" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-500/20 border border-blue-400/40 text-blue-300">
+                            ✨ B KURULUM
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-bunker-muted truncate">{c.name}</div>
                     </div>
@@ -882,6 +949,14 @@ export default function ForexRadarPage() {
                     <span className={st.tone}>ST {st.text}</span>
                     <span className="text-bunker-muted">RSI (5 dk) {fmtRsi(c)}</span>
                     <span className="text-bunker-muted">HTF {c.htf_trend}</span>
+                    {c.csm_diff != null && c.csm_diff !== 0 && (
+                      <span className={`font-bold ${c.csm_diff > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        CSM {c.csm_diff > 0 ? `+${c.csm_diff.toFixed(1)}` : c.csm_diff.toFixed(1)}
+                      </span>
+                    )}
+                    {c.fvg_type && c.fvg_type !== "NONE" && (
+                      <span className="text-purple-300 font-bold">⚡ FVG {c.fvg_type === "BULLISH_FVG" ? "Boğa" : "Ayı"}</span>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
