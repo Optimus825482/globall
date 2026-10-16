@@ -1241,12 +1241,12 @@ def get_symbol_csm_differential(sym: str, csm_data: Optional[Dict[str, Any]]) ->
         base_c = sym_u[:3]
         quote_c = sym_u[3:6]
         diff = round(matrix.get(base_c, 0.0) - matrix.get(quote_c, 0.0), 1)
-        bias = "BULLISH" if diff >= 10.0 else ("BEARISH" if diff <= -10.0 else "NEUTRAL")
+        bias = "BULLISH" if diff >= 1.0 else ("BEARISH" if diff <= -1.0 else "NEUTRAL")
         return diff, bias
     elif "XAU" in sym_u or "GOLD" in sym_u or "BTC" in sym_u or "US30" in sym_u or "USTEC" in sym_u:
         usd_str = matrix.get("USD", 0.0)
         diff = round(-usd_str, 1)
-        bias = "BULLISH" if diff >= 10.0 else ("BEARISH" if diff <= -10.0 else "NEUTRAL")
+        bias = "BULLISH" if diff >= 1.0 else ("BEARISH" if diff <= -1.0 else "NEUTRAL")
         return diff, bias
     return 0.0, "NEUTRAL"
 
@@ -1289,20 +1289,20 @@ def calculate_dss_score(
     # 2. Para Birimi Güç Matrisi (25 Pts)
     csm_pts = 0.0
     if action == "BUY":
-        if csm_diff >= 15.0:
+        if csm_diff >= 1.5:
             csm_pts = 25.0
-        elif csm_diff >= 5.0:
+        elif csm_diff >= 0.3:
             csm_pts = 18.0
-        elif csm_diff >= -5.0:
+        elif csm_diff >= -0.5:
             csm_pts = 10.0
         else:
             csm_pts = 0.0
     elif action == "SELL":
-        if csm_diff <= -15.0:
+        if csm_diff <= -1.5:
             csm_pts = 25.0
-        elif csm_diff <= -5.0:
+        elif csm_diff <= -0.3:
             csm_pts = 18.0
-        elif csm_diff <= 5.0:
+        elif csm_diff <= 0.5:
             csm_pts = 10.0
         else:
             csm_pts = 0.0
