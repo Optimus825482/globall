@@ -113,11 +113,13 @@ class Account:
 
 
 def get_risk_pct_for_symbol(sym: str) -> float:
-    """FX için %10, BTC/US30/USTEC/XAU için %3 risk bütçesi."""
+    """FX %15, XAUUSD %5, BTCUSD/US30/USTEC %2 risk bütçesi."""
     sym_u = str(sym).upper()
-    if any(k in sym_u for k in ("BTC", "US30", "NAS100", "USTEC", "XAU", "GOLD")):
-        return 0.03  # %3 risk
-    return 0.10      # FX Pariteleri için %10 risk
+    if any(k in sym_u for k in ("BTC", "US30", "NAS100", "USTEC")):
+        return 0.02  # %2 risk ($20 başlangıç)
+    elif any(k in sym_u for k in ("XAU", "GOLD")):
+        return 0.05  # %5 risk ($50 başlangıç)
+    return 0.15      # Forex Pariteleri için %15 risk ($150 başlangıç)
 
 
 def calculate_lots(balance: float, sl_pips: float, pip_val: float, spec: Dict[str, Any], sym: str) -> float:
@@ -577,7 +579,7 @@ def run_24h_replay():
 
     # --- 6. Results & Statistical Comparison ---
     print("\n" + "=" * 80)
-    print("📊 [4/4] 24 SAATLİK REPLAY PERFORMANS RAPORU (1.000$ Bakiye | FX: %10 Risk, BTC/US30/USTEC/XAU: %3 Risk | 15 Dk Soğuma)")
+    print("📊 [4/4] 24 SAATLİK REPLAY PERFORMANS RAPORU (1.000$ Bakiye | FX: %15, XAU: %5, BTC/US30/USTEC: %2 Risk | 15 Dk Soğuma)")
     print("=" * 80)
 
     for acc in (acc_baseline, acc_dss):
