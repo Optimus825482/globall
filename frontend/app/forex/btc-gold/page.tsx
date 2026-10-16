@@ -69,7 +69,7 @@ interface MT5State {
     free_margin: number;
     leverage: number;
     currency: string;
-  };
+  } | null;
   open_positions: Array<{
     ticket: number;
     symbol: string;
@@ -142,7 +142,9 @@ interface RadarCandidate {
   score: number;
   trend: string;
   action: string;
-  rsi_15m: number;
+  rsi_5m?: number | null;
+  rsi_15m?: number | null;
+  required_score?: number | null;
   macd_verdict: string;
   cmo: number;
   cci: number;
@@ -187,7 +189,7 @@ function SemiCircleGauge({
   ],
   statusText,
 }: {
-  value: number;
+  value: number | null;
   min?: number;
   max?: number;
   label: string;
@@ -195,7 +197,9 @@ function SemiCircleGauge({
   zones?: Array<{ from: number; to: number; color: string; label?: string }>;
   statusText?: string;
 }) {
-  const safeVal = typeof value === "number" && !isNaN(value) ? value : min;
+  const numeric = typeof value === "number" && !Number.isNaN(value) ? value : null;
+  const missing = numeric == null;
+  const safeVal = numeric ?? min;
   const clamped = Math.max(min, Math.min(max, safeVal));
   const pct = (clamped - min) / (max - min || 1);
 
@@ -328,9 +332,9 @@ function SemiCircleGauge({
       <div className="flex flex-col items-center justify-center mt-1 w-full">
         <div className="flex items-baseline justify-center gap-0.5">
           <span className="text-xl font-black font-mono tracking-tight text-white drop-shadow-md">
-            {clamped.toFixed(1)}
+            {missing ? "veri yok" : clamped.toFixed(1)}
           </span>
-          {unit && <span className="text-[10px] text-bunker-muted font-bold font-mono">{unit}</span>}
+          {unit && !missing && <span className="text-[10px] text-bunker-muted font-bold font-mono">{unit}</span>}
         </div>
 
         {/* Durum Rozeti */}
@@ -342,7 +346,7 @@ function SemiCircleGauge({
             color: activeColor,
           }}
         >
-          {statusText || currentZone?.label || "Aktif"}
+          {missing ? "veri yok" : (statusText || currentZone?.label || "Aktif")}
         </span>
       </div>
     </div>
@@ -816,28 +820,17 @@ export default function BtcGoldForexPage() {
     connected: false,
     last_ping_seconds_ago: null,
     auto_trade: false,
-    account: {
-      login: 53077151,
-      name: "ERKAN ERDEM",
-      server: "ICMarketsSC-Demo",
-      balance: 1000.0,
-      equity: 1000.0,
-      margin: 0.0,
-      free_margin: 1000.0,
-      leverage: 5000,
-      currency: "USD",
-    },
+    account: null,
     open_positions: [],
     closed_deals: [],
     pending_commands_count: 0,
   });
   const [mt5Message, setMt5Message] = useState<string | null>(null);
+  const [mt5Error, setMt5Error] = useState("");
 
   // Otonom Sistem Durumu
   const [autoStatus, setAutoStatus] = useState<string>("Yükleniyor…");
   const [autoEnabled, setAutoEnabled] = useState<boolean>(false);
-  const [balance, setBalance] = useState<number>(1000.0);
-  const [equity, setEquity] = useState<number>(1000.0);
   const [openPnlUsd, setOpenPnlUsd] = useState<number>(0.0);
   const [openPnlPips, setOpenPnlPips] = useState<number>(0.0);
   const [realizedPnlUsd, setRealizedPnlUsd] = useState<number>(0.0);
@@ -923,8 +916,6 @@ export default function BtcGoldForexPage() {
       if (res) {
         setAutoStatus(res.status || "Hazır");
         setAutoEnabled(Boolean(res.enabled));
-        setBalance(res.balance ?? 1000.0);
-        setEquity(res.equity ?? res.balance ?? 1000.0);
         setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
         setOpenPnlPips(res.open_pnl_pips ?? 0.0);
         setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
@@ -969,6 +960,7 @@ export default function BtcGoldForexPage() {
       if (mt5Res) {
         setMt5({
           ...mt5Res,
+          account: mt5Res.account ?? null,
           open_positions: (mt5Res.open_positions || []).filter((p: any) =>
             symFilter.has(String(p.symbol).toUpperCase())
           ),
@@ -976,9 +968,12 @@ export default function BtcGoldForexPage() {
             symFilter.has(String(d.symbol).toUpperCase())
           ),
         });
+        setMt5Error("");
       }
     } catch (err) {
-      // MT5 offline olabilir
+      const detail = err instanceof Error ? err.message : "MT5 durumu alınamadı";
+      setMt5Error(`bağlantı yok: ${detail}`);
+      setMt5((prev) => ({ ...prev, connected: false }));
     }
 
     // 3. Canlı Radar ve Ticker Göstergeleri
@@ -1191,9 +1186,12 @@ export default function BtcGoldForexPage() {
   };
 
   const activeSessions = sessions.filter((s) => s.active);
-  const liveBal = Number(mt5.account?.balance ?? balance ?? 1000.0);
-  const liveEq = Number(mt5.account?.equity ?? liveBal);
-  const liveMargin = Number(mt5.account?.free_margin ?? liveBal);
+  const liveBal = typeof mt5.account?.balance === "number" ? mt5.account.balance : null;
+  const liveEq = typeof mt5.account?.equity === "number" ? mt5.account.equity : null;
+  const liveMargin = typeof mt5.account?.free_margin === "number" ? mt5.account.free_margin : null;
+  const accountLabel = mt5.account?.login != null
+    ? String(mt5.account.login)
+    : (mt5Error || !mt5.connected ? "bağlantı yok" : "—");
   const totalOpenPnl = (mt5.open_positions || []).reduce(
     (acc, p) => acc + Number(p.pnl_usd ?? (p as any).profit ?? 0),
     0
@@ -1240,7 +1238,7 @@ export default function BtcGoldForexPage() {
             <p className="text-xs text-bunker-muted mt-1">
               Hedef Varlıklar: <span className="text-amber-300 font-bold">Ons Altın (XAUUSD)</span> &amp;{" "}
               <span className="text-orange-400 font-bold">Bitcoin (BTCUSD)</span> · Hesap:{" "}
-              <span className="text-cyan-300 font-bold">{mt5.account?.login || 53077151}</span> · Dinamik Breakeven &amp; Trailing Stop
+              <span className={`font-bold ${mt5.account?.login != null ? "text-cyan-300" : "text-bunker-muted"}`}>{accountLabel}</span> · Dinamik Breakeven &amp; Trailing Stop
             </p>
           </div>
         </div>
@@ -1282,6 +1280,11 @@ export default function BtcGoldForexPage() {
       </div>
 
       {/* Mesaj Bildirimleri */}
+      {mt5Error && (
+        <div role="alert" className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-bold">
+          {mt5Error}
+        </div>
+      )}
       {mt5Message && (
         <div className="p-3 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-bold animate-fadeIn">
           {mt5Message}
@@ -1298,17 +1301,20 @@ export default function BtcGoldForexPage() {
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
           <span className="text-[10px] text-bunker-muted uppercase block">IC Markets Bakiye</span>
           <span className="text-lg font-bold text-emerald-400 font-mono">
-            ${liveBal.toFixed(2)} <span className="text-xs font-normal text-bunker-muted">{mt5.account?.currency || "USD"}</span>
+            {liveBal == null ? "—" : `$${liveBal.toFixed(2)}`}
+            {liveBal != null && mt5.account?.currency ? (
+              <span className="text-xs font-normal text-bunker-muted"> {mt5.account.currency}</span>
+            ) : null}
           </span>
           <span className="text-[9px] text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
           <span className="text-[10px] text-bunker-muted uppercase block">Özsermaye (Equity)</span>
-          <span className={`text-lg font-bold font-mono ${liveEq >= liveBal ? "text-cyan-300" : "text-rose-400"}`}>
-            ${liveEq.toFixed(2)}
+          <span className={`text-lg font-bold font-mono ${liveEq != null && liveBal != null && liveEq >= liveBal ? "text-cyan-300" : liveEq == null ? "text-bunker-muted" : "text-rose-400"}`}>
+            {liveEq == null ? "—" : `$${liveEq.toFixed(2)}`}
           </span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">Serbest: ${liveMargin.toFixed(2)}</span>
+          <span className="text-[9px] text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
@@ -1595,13 +1601,12 @@ export default function BtcGoldForexPage() {
             for (const g of gate?.gates || []) gateMap[g.key] = { status: g.status, detail: g.detail };
             const gs = gate?.settings;
 
-            // Eşik MOTORDAN gelir: skor kapısının detayı motorun kendi cümlesidir
-            // ("50.8 < 78 (min_score 78)"), bu yüzden eşiği oradan okuyoruz.
-            // XAU'nun eşiği motorda sabit 78.0 olduğu için ayardan okumak yanlış olurdu.
-            // İki biçim var: geçen kapı "96.0 ≥ 76 (...)" / engelleyen "50.8 < 78 (...)".
-            // Karşılaştırma işaretinden sonraki sayı iki durumda da eşiktir.
-            const scoreThreshold =
-              Number((gateMap["score"]?.detail || "").match(/[<>≥≤]\s*([\d.]+)/)?.[1]) || null;
+            const requiredFromGate = (gate as { required_score?: number } | null)?.required_score
+              ?? (gs as { required_score?: number } | undefined)?.required_score
+              ?? candidate?.required_score;
+            const scoreThreshold = typeof requiredFromGate === "number" && Number.isFinite(requiredFromGate)
+              ? requiredFromGate
+              : null;
             // Soğuma süresi: ayardan; ayar alanı yoksa (eski backend) kapı
             // cümlesindeki "… 60 sn kuralı" ifadesinden okunur — panel tire
             // göstermek yerine motorun gerçekte uyguladığı kuralı yazar.
@@ -1609,46 +1614,50 @@ export default function BtcGoldForexPage() {
               (isGold ? gs?.gold_cooldown_sec : gs?.btc_cooldown_sec) ??
               Number((gateMap["cooldown"]?.detail || "").match(/(\d+(?:\.\d+)?)\s*sn/)?.[1]);
 
-            // Rakamlar & Değerler
-            const curPrice = tick?.ask || candidate?.price || (isGold ? 2735.6 : 68450.0);
-            const bidPrice = tick?.bid || candidate?.bid || curPrice;
-            const askPrice = tick?.ask || candidate?.ask || curPrice;
-            const spreadPips = tick?.spread_pips ?? candidate?.spread_pips ?? (isGold ? 1.5 : 12.0);
-            const changePct = tick?.change_pct ?? 0.45;
+            const finiteOrNull = (v: unknown): number | null =>
+              typeof v === "number" && Number.isFinite(v) ? v : null;
+            const curPrice = finiteOrNull(tick?.ask) ?? finiteOrNull(candidate?.price);
+            const bidPrice = finiteOrNull(tick?.bid) ?? finiteOrNull(candidate?.bid);
+            const askPrice = finiteOrNull(tick?.ask) ?? finiteOrNull(candidate?.ask);
+            const spreadPips = finiteOrNull(tick?.spread_pips) ?? finiteOrNull(candidate?.spread_pips);
+            const changePct = finiteOrNull(tick?.change_pct);
 
-            // İndikatörler
-            const score = candidate?.score ?? tick?.score ?? 72.0;
-            const trend = candidate?.trend ?? tick?.trend ?? "BULLISH";
-            const action = candidate?.action ?? tick?.action ?? (trend === "BULLISH" ? "BUY" : "HOLD");
-            const rsi = candidate?.rsi_15m ?? tick?.rsi ?? 58.4;
-            const adx = candidate?.adx ?? tick?.adx ?? 28.5;
-            const supertrendDir = candidate?.supertrend_dir ?? tick?.supertrend_dir ?? 1;
-            const macdVerdict = candidate?.macd_verdict ?? tick?.macd_verdict ?? "POZİTİF (Alım Güçleniyor)";
-            const cmo = candidate?.cmo ?? tick?.cmo ?? 18.0;
-            const cci = candidate?.cci ?? tick?.cci ?? 75.0;
+            const score = finiteOrNull(candidate?.score) ?? finiteOrNull(tick?.score);
+            const trend = hasLive ? (candidate?.trend ?? tick?.trend ?? "NEUTRAL") : "NEUTRAL";
+            const action = hasLive ? (candidate?.action ?? tick?.action ?? "HOLD") : "HOLD";
+            const rsi = finiteOrNull(candidate?.rsi_5m) ?? finiteOrNull(candidate?.rsi_15m) ?? finiteOrNull(tick?.rsi);
+            const adx = finiteOrNull(candidate?.adx) ?? finiteOrNull(tick?.adx);
+            const supertrendDir = finiteOrNull(candidate?.supertrend_dir) ?? finiteOrNull(tick?.supertrend_dir);
+            const macdVerdict = candidate?.macd_verdict ?? tick?.macd_verdict ?? null;
+            const cmo = finiteOrNull(candidate?.cmo) ?? finiteOrNull(tick?.cmo);
+            const cci = finiteOrNull(candidate?.cci) ?? finiteOrNull(tick?.cci);
 
             // --- DİNAMİK YÖN (2026-10-13) ---------------------------------
             // MACD histogramının ATR'ye oranı ham momentumu verir; -1..+1'e
             // sıkıştırılır. XAU ile BTC'nin histogram büyüklükleri kıyaslanamaz
             // (farklı fiyat/ATR ölçeği), ATR'ye bölmek bu ölçek farkını siler.
             const clamp1 = (v: number) => Math.max(-1, Math.min(1, isNaN(v) ? 0 : v));
-            const macdHist = Number(candidate?.macd_hist ?? tick?.macd_hist ?? 0);
-            const atrRaw = Number(candidate?.atr ?? tick?.atr ?? 0);
-            const momentumNorm = atrRaw > 0 ? clamp1(macdHist / atrRaw) : 0;
+            const macdHist = finiteOrNull(candidate?.macd_hist) ?? finiteOrNull(tick?.macd_hist);
+            const atrRaw = finiteOrNull(candidate?.atr) ?? finiteOrNull(tick?.atr);
+            const momentumNorm = macdHist != null && atrRaw != null && atrRaw > 0 ? clamp1(macdHist / atrRaw) : 0;
             // Yön barı TEK göstergeye bağlanmaz (o zaman gürültüye açık olurdu):
             // trend + SuperTrend + MACD momentum + RSI konumu + CMO'nun eşit
-            // ağırlıklı ortalamasıdır. Hepsi motorun canlı ürettiği alanlardır.
+            // ağırlıklı ortalamasıdır. Alan yoksa o gösterge nötr sayılır, sahte
+            // sayı üretilmez.
             const trendSign = trend === "BULLISH" ? 1 : trend === "BEARISH" ? -1 : 0;
-            const stSign = supertrendDir > 0 ? 1 : supertrendDir < 0 ? -1 : 0;
-            const rsiNorm = clamp1((rsi - 50) / 50);
-            const cmoNorm = clamp1(cmo / 50);
+            const stSign = supertrendDir == null ? 0 : supertrendDir > 0 ? 1 : supertrendDir < 0 ? -1 : 0;
+            const rsiNorm = rsi == null ? 0 : clamp1((rsi - 50) / 50);
+            const cmoNorm = cmo == null ? 0 : clamp1(cmo / 50);
             const dirScore = hasLive
               ? (trendSign + stSign + momentumNorm + rsiNorm + cmoNorm) / 5
               : 0;
+            const macdText = macdHist == null || atrRaw == null || atrRaw <= 0
+              ? "veri yok"
+              : `${macdHist >= 0 ? "+" : ""}${(macdHist / atrRaw).toFixed(2)} ATR`;
             const dirDetail = hasLive
               ? `Trend ${trend === "BULLISH" ? "Boğa" : trend === "BEARISH" ? "Ayı" : "Yatay"} · SuperTrend ${
-                  supertrendDir > 0 ? "Boğa" : "Ayı"
-                } · MACD ${macdHist >= 0 ? "+" : ""}${(atrRaw > 0 ? macdHist / atrRaw : 0).toFixed(2)} ATR · RSI ${rsi.toFixed(0)}`
+                  supertrendDir == null ? "veri yok" : supertrendDir > 0 ? "Boğa" : supertrendDir < 0 ? "Ayı" : "Yatay"
+                } · MACD ${macdText} · RSI ${rsi == null ? "veri yok" : rsi.toFixed(0)}`
               : "Canlı veri bekleniyor";
 
             // MACD momentum barının yüzdesi: 50 = nötr, 100 = tam boğa, 0 = tam ayı.
@@ -1757,8 +1766,11 @@ export default function BtcGoldForexPage() {
                       <span className="text-[10px] text-bunker-muted uppercase block">Canlı Piyasa Fiyatı</span>
                       <div className="flex items-baseline gap-2">
                         <span className="text-2xl font-black font-mono text-white tracking-tight drop-shadow">
-                          ${curPrice.toLocaleString(undefined, { minimumFractionDigits: isGold ? 2 : 1, maximumFractionDigits: isGold ? 2 : 1 })}
+                          {curPrice == null
+                            ? "veri yok"
+                            : `$${curPrice.toLocaleString(undefined, { minimumFractionDigits: isGold ? 2 : 1, maximumFractionDigits: isGold ? 2 : 1 })}`}
                         </span>
+                        {changePct != null && (
                         <span
                           className={`text-xs font-bold font-mono ${
                             changePct >= 0 ? "text-emerald-400" : "text-rose-400"
@@ -1767,23 +1779,24 @@ export default function BtcGoldForexPage() {
                           {changePct >= 0 ? "▲ +" : "▼ "}
                           {changePct.toFixed(2)}%
                         </span>
+                        )}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-4 text-xs font-mono">
                       <div>
                         <span className="text-[10px] text-bunker-muted block">BID</span>
-                        <span className="text-emerald-400 font-bold">{bidPrice}</span>
+                        <span className="text-emerald-400 font-bold">{bidPrice == null ? "veri yok" : bidPrice}</span>
                       </div>
                       <div className="text-bunker-700">|</div>
                       <div>
                         <span className="text-[10px] text-bunker-muted block">ASK</span>
-                        <span className="text-rose-400 font-bold">{askPrice}</span>
+                        <span className="text-rose-400 font-bold">{askPrice == null ? "veri yok" : askPrice}</span>
                       </div>
                       <div className="text-bunker-700">|</div>
                       <div>
                         <span className="text-[10px] text-bunker-muted block">SPREAD</span>
-                        <span className="text-cyan-300 font-bold">{spreadPips} p</span>
+                        <span className="text-cyan-300 font-bold">{spreadPips == null ? "veri yok" : `${spreadPips} p`}</span>
                       </div>
                     </div>
                   </div>
@@ -1803,6 +1816,7 @@ export default function BtcGoldForexPage() {
                         // sayı); ticker'daki kopya biraz geriden gelebiliyor.
                         const engineScore = Number((gScore?.detail || "").match(/^\s*([\d.]+)/)?.[1]);
                         const shownScore = Number.isFinite(engineScore) ? engineScore : score;
+                        const shownScoreText = shownScore == null ? "—" : shownScore.toFixed(0);
                         const lossStreakDetail = gateMap["loss_streak"]?.detail || "";
                         const streakNow = Number(lossStreakDetail.match(/(\d+)\s*\//)?.[1] ?? 0);
                         const cdBlocked = gateMap["cooldown"]?.status === "block";
@@ -1811,11 +1825,11 @@ export default function BtcGoldForexPage() {
                             k: "score",
                             label: isGold ? "SKOR / EŞİK" : "SKOR / BTC EŞİĞİ",
                             value:
-                              scoreThreshold !== null && !scoreHidden
-                                ? `${shownScore.toFixed(0)} / ${scoreThreshold.toFixed(0)}`
-                                : `${shownScore.toFixed(0)} / —`,
+                              scoreThreshold !== null && shownScore != null && !scoreHidden
+                                ? `${shownScoreText} / ${scoreThreshold.toFixed(0)}`
+                                : `${shownScoreText} / —`,
                             tone:
-                              scoreThreshold !== null && shownScore >= scoreThreshold
+                              scoreThreshold !== null && shownScore != null && shownScore >= scoreThreshold
                                 ? "text-emerald-300"
                                 : "text-rose-300",
                           },
@@ -1903,7 +1917,7 @@ export default function BtcGoldForexPage() {
                         { from: 45, to: 68, color: "#eab308" },
                         { from: 68, to: 100, color: "#10b981" },
                       ]}
-                      statusText={score >= 70 ? "Yüksek Teyit" : score >= 50 ? "Nötr Seviye" : "Düşük Güven"}
+                      statusText={score == null ? "veri yok" : score >= 70 ? "Yüksek Teyit" : score >= 50 ? "Nötr Seviye" : "Düşük Güven"}
                     />
 
                     {/* Gauge 2: RSI */}
@@ -1911,13 +1925,13 @@ export default function BtcGoldForexPage() {
                       value={rsi}
                       min={0}
                       max={100}
-                      label="RSI (15M)"
+                      label="RSI (5 dk)"
                       zones={[
                         { from: 0, to: 30, color: "#8b5cf6" },
                         { from: 30, to: 70, color: "#06b6d4" },
                         { from: 70, to: 100, color: "#f43f5e" },
                       ]}
-                      statusText={rsi < 30 ? "Aşırı Satım" : rsi > 70 ? "Aşırı Alım" : "Dengeli Bölge"}
+                      statusText={rsi == null ? "veri yok" : rsi < 30 ? "Aşırı Satım" : rsi > 70 ? "Aşırı Alım" : "Dengeli Bölge"}
                     />
 
                     {/* Gauge 3: ADX Trend Gücü */}
@@ -1931,7 +1945,7 @@ export default function BtcGoldForexPage() {
                         { from: 20, to: 35, color: "#3b82f6" },
                         { from: 35, to: 60, color: "#10b981" },
                       ]}
-                      statusText={adx > 30 ? "Güçlü Trend" : adx > 20 ? "Oluşan Trend" : "Yatay / Sıkışma"}
+                      statusText={adx == null ? "veri yok" : adx > 30 ? "Güçlü Trend" : adx > 20 ? "Oluşan Trend" : "Yatay / Sıkışma"}
                     />
                   </div>
                 </div>
@@ -1949,12 +1963,12 @@ export default function BtcGoldForexPage() {
                     <ProgressBarCard
                       title="MACD Momentum"
                       icon="🌊"
-                      valueText={macdVerdict}
+                      valueText={macdVerdict ?? "veri yok"}
                       subText="Momentum Yönü"
                       percentage={macdBarPct}
                       leftLabel="-1 ATR"
                       rightLabel="+1 ATR"
-                      needleLabel={`${macdHist >= 0 ? "+" : ""}${(atrRaw > 0 ? macdHist / atrRaw : 0).toFixed(2)} ATR`}
+                      needleLabel={macdText}
                       barColor={momentumNorm > NEUTRAL_DEAD_ZONE ? "emerald" : momentumNorm < -NEUTRAL_DEAD_ZONE ? "rose" : "amber"}
                       diverging
                       endLabels={{ left: "◀ AYI SATIŞ", right: "BOĞA ALIŞ ▶" }}
@@ -1966,13 +1980,13 @@ export default function BtcGoldForexPage() {
                     <ProgressBarCard
                       title="Chande (CMO) & CCI"
                       icon="⚡"
-                      valueText={`CMO: ${cmo.toFixed(1)} | CCI: ${cci.toFixed(0)}`}
-                      subText={cmo > 0 ? "Pozitif İvme" : "Negatif İvme"}
-                      percentage={Math.max(0, Math.min(100, (cmo + 50)))}
+                      valueText={cmo == null && cci == null ? "veri yok" : `CMO: ${cmo == null ? "—" : cmo.toFixed(1)} | CCI: ${cci == null ? "—" : cci.toFixed(0)}`}
+                      subText={cmo == null ? "veri yok" : cmo > 0 ? "Pozitif İvme" : "Negatif İvme"}
+                      percentage={cmo == null ? 50 : Math.max(0, Math.min(100, (cmo + 50)))}
                       leftLabel="-50"
                       rightLabel="+50"
-                      needleLabel={`CMO ${cmo >= 0 ? "+" : ""}${cmo.toFixed(1)}`}
-                      barColor={cmo >= 0 ? "emerald" : "rose"}
+                      needleLabel={cmo == null ? "veri yok" : `CMO ${cmo >= 0 ? "+" : ""}${cmo.toFixed(1)}`}
+                      barColor={cmo == null ? "amber" : cmo >= 0 ? "emerald" : "rose"}
                       diverging
                       endLabels={{ left: "◀ NEGATİF İVME", right: "POZİTİF İVME ▶" }}
                     />

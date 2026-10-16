@@ -235,7 +235,8 @@ class Config:
     # Binance TR klonuna HTTP webhook olarak iletilir.
     BINANCE_TR_BRIDGE_ENABLED = os.getenv("BINANCE_TR_BRIDGE_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
     BINANCE_TR_BRIDGE_URL = os.getenv("BINANCE_TR_BRIDGE_URL", "https://scalper.erkanerdem.online/api/bridge/global-signal").strip()
-    BINANCE_TR_BRIDGE_SECRET = os.getenv("BINANCE_TR_BRIDGE_SECRET", "guclu-bir-kopru-gizli-anahtari").strip()
+    # Sabit yedek yok: sır tanımlı değilse köprü fail-closed (gönderim yok).
+    BINANCE_TR_BRIDGE_SECRET = os.getenv("BINANCE_TR_BRIDGE_SECRET", "").strip()
     BINANCE_TR_BRIDGE_TIMEOUT = float(os.getenv("BINANCE_TR_BRIDGE_TIMEOUT", "5.0"))
     BINANCE_TR_BRIDGE_MIN_SCORE = float(os.getenv("BINANCE_TR_BRIDGE_MIN_SCORE", "0.0"))
     BINANCE_TR_BRIDGE_COOLDOWN_SEC = float(os.getenv("BINANCE_TR_BRIDGE_COOLDOWN_SEC", "10.0"))
@@ -1045,3 +1046,15 @@ PRODUCTION_MODE = os.getenv(
 ).strip().lower() in {"production", "prod"}
 _admin_password = os.getenv("SCALPER_ADMIN_PASSWORD", "")
 enforce_admin_password_policy(_admin_password, production=PRODUCTION_MODE)
+
+# Geliştirme ortamında canlı emir / köprü açıksa süreci düşürme (yerel giriş
+# kilitlenmesin). Demo dışı MT5 hesabına emir yazılmaz; burada yalnız uyarı.
+if not PRODUCTION_MODE:
+    _live_on = os.getenv("LIVE_TRADING", "false").strip().lower() in ("1", "true", "yes", "on")
+    _bridge_on = os.getenv("BINANCE_TR_BRIDGE_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+    if _live_on or _bridge_on:
+        print(
+            "[config] UYARI: SCALPER_ENV development iken canlı emir veya köprü açık. "
+            "Demo dışı hesaba emir gönderilmez; yerel varsayılan giriş açık kalır.",
+            flush=True,
+        )

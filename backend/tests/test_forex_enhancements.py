@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pathlib
 import sys
 import time
@@ -14,6 +15,17 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app.routers import forex
 from scripts import mt5_bridge
+
+
+class _BridgeHeaders:
+    def __init__(self, token: str):
+        self.headers = {"x-bridge-token": token}
+
+
+def _bridge_request():
+    token = "unit-test-bridge-token"
+    os.environ["MT5_BRIDGE_TOKEN"] = token
+    return _BridgeHeaders(token)
 
 
 class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
@@ -1300,7 +1312,7 @@ class TestBridgeSettingsPayload(unittest.IsolatedAsyncioTestCase):
         try:
             payload = await forex.sync_mt5_bridge(forex.MT5SyncRequest(
                 account={"balance": 1000.0, "equity": 1000.0}, positions=[], deals=[],
-            ))
+            ), _bridge_request())
             self.assertIn("tp_cancel_on_trail", payload["settings"])
             self.assertIsInstance(payload["settings"]["tp_cancel_on_trail"], bool)
         finally:

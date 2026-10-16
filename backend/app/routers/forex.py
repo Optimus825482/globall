@@ -10,9 +10,9 @@ Provides:
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import csv
 import datetime
+import hmac
 import io
 import json
 import logging
@@ -21,7 +21,6 @@ import os
 import random
 import tempfile
 import time
-import urllib.request
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -432,6 +431,11 @@ _MT5_TO_APP_SYMBOLS: Dict[str, str] = {
     # bilinmeyen sembol sızmasın diye burada USOIL'a kanonikleştirilir.
     "UKOIL": "USOIL",
     "UKOUSD": "USOIL",
+    # DXY'nin MT5 adı brokera göre değişir. Altın bu haritayla DXY'ye bağlanmaz.
+    "USDX": "DXY",
+    "USDIDX": "DXY",
+    "DOLLARIDX": "DXY",
+    "DXY": "DXY",
 }
 
 
@@ -451,6 +455,284 @@ def canonical_symbol(symbol: str) -> str:
         return _MT5_TO_APP_SYMBOLS[s]
     base = s.split(".")[0].split("+")[0].split("-")[0].replace("#", "").strip()
     return _MT5_TO_APP_SYMBOLS.get(base, base or s)
+
+
+# Tik → kapanmış kovalar. Açık kova göstergeye girmez.
+_CLOSED_TICK_BARS: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+_OPEN_TICK_BUCKET: Dict[Tuple[str, int], Dict[str, float]] = {}
+_PRICE_TS: Dict[str, float] = {}
+_PRICE_SOURCE: Dict[str, str] = {}
+_TICK_MISMATCH: Dict[str, float] = {}
+_PENDING_FLIP: Dict[str, Dict[str, Any]] = {}
+_CLOSED_BAR_ARM_SOURCES = frozenset({"s3_5m", "s3_15m", "squeeze_kc", "london_breakout"})
+COMMODITY_MIN_SCORE = 78.0
+_TICK_BAR_CAP = 400
+_MIN_CLOSED_BARS_5M = 30
+
+
+def _token_equal(provided: str, secret: str) -> bool:
+    if not provided or not secret:
+        return False
+    a = provided.encode("utf-8")
+    b = secret.encode("utf-8")
+    if len(a) != len(b):
+        return False
+    return hmac.compare_digest(a, b)
+
+
+def _configured_mt5_secret() -> str:
+    """Paylaşılan sır. Kaynakta sabit yedek yok; boşsa köprü kapalıdır."""
+    for key in ("MT5_BRIDGE_TOKEN", "FOREX_MT5_SYNC_TOKEN", "BINANCE_TR_BRIDGE_SECRET"):
+        val = os.getenv(key, "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _mt5_sync_authorized(request: Any) -> bool:
+    secret = _configured_mt5_secret()
+    if not secret or request is None:
+        return False
+    headers = getattr(request, "headers", None) or {}
+    provided = ""
+    try:
+        provided = (
+            headers.get("x-bridge-token")
+            or headers.get("X-Bridge-Token")
+            or headers.get("x-bridge-secret")
+            or headers.get("X-Bridge-Secret")
+            or ""
+        )
+    except Exception:
+        provided = ""
+    return _token_equal(str(provided), secret)
+
+
+def _non_demo_live_blocked(server: Any) -> bool:
+    """Development iken demo olmayan MT5 hesabına emir yazılmaz."""
+    try:
+        from app.config import PRODUCTION_MODE
+    except Exception:
+        return False
+    if PRODUCTION_MODE:
+        return False
+    text = str(server or "").strip()
+    if not text:
+        return False
+    return "demo" not in text.lower()
+
+
+def _fold_tick_into_bucket(sym: str, bucket_sec: int, ts: float, price: float) -> None:
+    key = (sym, bucket_sec)
+    start = int(ts // bucket_sec) * bucket_sec
+    cur = _OPEN_TICK_BUCKET.get(key)
+    if cur is None or int(cur.get("time", -1)) != start:
+        if cur is not None:
+            closed = _CLOSED_TICK_BARS.setdefault(key, [])
+            closed.append({
+                "time": int(cur["time"]),
+                "open": float(cur["open"]),
+                "high": float(cur["high"]),
+                "low": float(cur["low"]),
+                "close": float(cur["close"]),
+            })
+            if len(closed) > _TICK_BAR_CAP:
+                del closed[:-_TICK_BAR_CAP]
+        _OPEN_TICK_BUCKET[key] = {
+            "time": start, "open": price, "high": price, "low": price, "close": price,
+        }
+        return
+    cur["high"] = max(float(cur["high"]), price)
+    cur["low"] = min(float(cur["low"]), price)
+    cur["close"] = price
+
+
+def _note_mt5_tick(sym: str, bid: Optional[float], ask: Optional[float], ts: float) -> None:
+    """Kanonic sembole tik yazar. default_price buraya girmez."""
+    app = canonical_symbol(sym)
+    if not app:
+        return
+    bid_f = float(bid) if bid and float(bid) > 0 else 0.0
+    ask_f = float(ask) if ask and float(ask) > 0 else 0.0
+    mid = (bid_f + ask_f) / 2.0 if bid_f > 0 and ask_f > 0 else (ask_f or bid_f)
+    if mid <= 0:
+        return
+    _LIVE_PRICES_CACHE[app] = mid
+    _PRICE_TS[app] = float(ts)
+    _PRICE_SOURCE[app] = "mt5_tick"
+    for bucket in (60, 300, 900):
+        _fold_tick_into_bucket(app, bucket, float(ts), mid)
+
+
+def _closed_tick_bars(sym: str, bucket_sec: int) -> List[Dict[str, Any]]:
+    return list(_CLOSED_TICK_BARS.get((canonical_symbol(sym), bucket_sec), []))
+
+
+def _bars_have_gap(bars: List[Dict[str, Any]], bucket_sec: int) -> bool:
+    times = [int(b.get("time", 0)) for b in bars]
+    for prev, nxt in zip(times, times[1:]):
+        if nxt - prev > bucket_sec:
+            return True
+    return False
+
+
+def _verify_tick_bars_against_bridge(sym: str, interval: str, bars: List[Dict[str, Any]]) -> None:
+    """Köprü mumu yalnız tik türevinin kapanışını doğrular; kaynak olmaz."""
+    app = canonical_symbol(sym)
+    if not bars:
+        return
+    mt5_bars = _fetch_mt5_candles(app, interval, 40)
+    if not mt5_bars:
+        _TICK_MISMATCH.pop(app, None)
+        return
+    by_time = {int(b.get("time", 0)): b for b in mt5_bars}
+    last = bars[-1]
+    other = by_time.get(int(last.get("time", 0)))
+    if not other:
+        return
+    px = float(last.get("close") or 0.0)
+    ref = float(other.get("close") or 0.0)
+    if px <= 0 or ref <= 0:
+        return
+    if abs(ref - px) / px > 0.002:
+        _TICK_MISMATCH[app] = time.time()
+    else:
+        _TICK_MISMATCH.pop(app, None)
+
+
+def required_entry_score(symbol: str, weak_bump: float = 0.0) -> float:
+    """Panel kapısı ve motor aynı eşiği okur. Emtia tabanı tek sabittir."""
+    sym = str(symbol or "").upper()
+    if sym == "BTCUSD":
+        base = _AUTO_SETTINGS.btc_min_score if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
+    else:
+        is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym or "USOIL" in sym)
+        base = COMMODITY_MIN_SCORE if is_commodity else _AUTO_SETTINGS.min_score
+    return float(base) + float(weak_bump or 0.0)
+
+
+def supertrend_blocks_entry(
+    entry_source: Any,
+    direction: str,
+    st_dir: int,
+    *,
+    news_bypass: bool = False,
+) -> bool:
+    """SuperTrend istisnası tek yerde: EAP, S3 ve Squeeze kendi yönünü taşır."""
+    if not _AUTO_SETTINGS.supertrend_filter_enabled or news_bypass:
+        return False
+    src = str(entry_source or "")
+    if src == "ema_adx_pullback" or src.startswith("s3_") or src == "squeeze_kc":
+        return False
+    if int(st_dir or 0) == 0:
+        return False
+    if direction == "BUY" and int(st_dir) < 0:
+        return True
+    if direction == "SELL" and int(st_dir) > 0:
+        return True
+    return False
+
+
+def entry_data_blocked(tick: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Spread yok, default/günlük kur, bayat tik veya 5m boşluğu girişi kapatır.
+
+    Alan hiç yoksa (eski birim testi) kesmez. Radar her tikte alanı yazar.
+    """
+    if not tick:
+        return "veri"
+    if "source" in tick and tick.get("source") != "mt5_tick":
+        return "veri"
+    if tick.get("price_placeholder"):
+        return "veri"
+    if tick.get("tick_mismatch"):
+        return "veri"
+    if tick.get("spread_known") is False:
+        return "spread"
+    if "age_sec" in tick:
+        age = tick.get("age_sec")
+        try:
+            age_f = float(age) if age is not None else None
+        except (TypeError, ValueError):
+            age_f = None
+        if age_f is None or age_f > _TECH_STALE_SEC:
+            return "bayat"
+    if tick.get("bar_gap"):
+        return "bar_gap"
+    return None
+
+
+def _order_entry_arms(
+    radar_rows: List[Dict[str, Any]],
+    arm_rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Sembol başına kol listesi. Kapanmış bar kolları canlı kesişimin önünde.
+
+    Aynı öncelikte mevcut döngü sırası (eklenme sırası) korunur. Skor 200 yazılmaz.
+    """
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    seq = 0
+    for row in list(radar_rows or []):
+        item = dict(row)
+        item["_seq"] = seq
+        seq += 1
+        grouped.setdefault(str(item.get("symbol", "")).upper(), []).append(item)
+    for row in list(arm_rows or []):
+        item = dict(row)
+        item["_seq"] = seq
+        seq += 1
+        grouped.setdefault(str(item.get("symbol", "")).upper(), []).append(item)
+    ordered: List[Dict[str, Any]] = []
+    for _sym, rows in grouped.items():
+        rows.sort(key=lambda r: (
+            0 if str(r.get("entry_source") or "") in _CLOSED_BAR_ARM_SOURCES else 1,
+            int(r.get("_seq", 0)),
+        ))
+        ordered.extend(rows)
+    return ordered
+
+
+def _commit_arm_quota(cand: Dict[str, Any]) -> None:
+    """Sayaç yalnız emir kuyruğa (veya paper kayda) girince, mum başına bir kez."""
+    meta = cand.get("_arm_quota") or {}
+    if not meta or meta.get("done"):
+        return
+    kind = str(meta.get("kind") or "")
+    sym = str(meta.get("symbol") or "")
+    action = str(meta.get("action") or "")
+    bar_time = meta.get("bar_time")
+    if kind == "donchian":
+        st = _DONCHIAN_STATE.get(sym)
+        if st is not None and action:
+            st["counts"][action] = int(st["counts"].get(action, 0)) + 1
+            st["consumed_bar"] = bar_time
+    elif kind == "ema":
+        st = _EMA_ADX_STATE.get(sym)
+        if st is not None and action:
+            st["counts"][action] = int(st["counts"].get(action, 0)) + 1
+            st["consumed_bar"] = bar_time
+    elif kind == "lb":
+        st = _LB_STATE.get(sym)
+        if st is not None and action:
+            st["counts"][action] = int(st["counts"].get(action, 0)) + 1
+            st["consumed_bar"] = bar_time
+    elif kind == "ls":
+        st = _LS_STATE.get(sym)
+        if st is not None:
+            st["entered"] = True
+            st["consumed_bar"] = bar_time
+    elif kind == "squeeze":
+        st = _SQUEEZE_KC_DAY_STATE.get(sym)
+        day_key = str(meta.get("day_key") or "")
+        if st is not None and day_key:
+            st["counts"][day_key] = int(st["counts"].get(day_key, 0)) + 1
+            st["consumed_bar"] = bar_time
+    elif kind == "s3":
+        st = _S3_DAY_STATE.get(str(meta.get("key") or ""))
+        action_key = str(meta.get("action_key") or "")
+        if st is not None and action_key:
+            st["counts"][action_key] = int(st["counts"].get(action_key, 0)) + 1
+            st["consumed_bar"] = bar_time
+    meta["done"] = True
 
 
 YAHOO_SYMBOL_MAP = {
@@ -565,7 +847,7 @@ def get_dxy_regime() -> Optional[Dict[str, Any]]:
     - USD_STRONG: DXY 15M trendi boğa ve momentum teyitli → USD lehine baskı
     - USD_WEAK:   DXY 15M trendi ayı ve momentum teyitli → USD aleyhine baskı
     - USD_NEUTRAL: Sıkışık/ belirsiz rejim → filtre etkisiz
-    Veri yoksa None döner (fail-open).
+    Veri yoksa None döner. Majörlerde bu, veto (giriş yok) demektir.
     """
     tech = _TECHNICAL_CACHE.get("DXY")
     if not tech:
@@ -598,7 +880,9 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     """DXY rejimine göre giriş denetimi (saf fonksiyon — test edilebilir).
 
     Dönen değer:
-    - None: İzin var (DXY verisi yoksa da fail-open olarak izin).
+    - None: İzin var. Majörde DXY verisi yoksa None DEĞİL, "dxy_no_data" döner.
+    - "dxy_no_data": MT5'te DXY yok / rejim yok ve sembol majör. Giriş yok.
+      Altın ve DXY_EXEMPT semboller bu vetoya girmez.
     - "dxy_conflict": Pozisyon DXY rejimiyle ÇELİŞİYOR → giriş veto.
         (USD_LONG isteği + USD_WEAK rejimi, veya USD_SHORT isteği + USD_STRONG rejimi)
     - "dxy_strict_neutral": Zayıf sembol (USDJPY/USDCHF) ve rejim nötr →
@@ -611,7 +895,8 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     if any(w in s for w in DXY_EXEMPT_SYMBOLS):
         return None
     if not dxy:
-        # DXY verisi hiç yoksa kalkan devre dışı (fail-open)
+        if str(symbol).upper() in FX_MAJORS_SET:
+            return "dxy_no_data"
         return None
     if dxy.get("regime", "USD_NEUTRAL") == "USD_NEUTRAL":
         if any(w in s for w in DXY_STRICT_SYMBOLS):
@@ -1112,7 +1397,7 @@ def _squeeze_kc_tech_for(sym: str) -> Optional[Dict[str, Any]]:
     bars_full = _s3_bars_for(sym, "15m", limit=260)
     if not bars_full:
         return None
-    closed = bars_full[:-1]
+    closed = bars_full
     period = int(_AUTO_SETTINGS.squeeze_kc_period)
     # Replay kapısı `ci < period + 30` → kapanmış bar sayısı yetersizse pas.
     if len(closed) < period + 30:
@@ -1122,7 +1407,12 @@ def _squeeze_kc_tech_for(sym: str) -> Optional[Dict[str, Any]]:
                                   float(_AUTO_SETTINGS.squeeze_kc_mult))
     if not ser:
         return None
-    return {"series": ser, "bars": len(closed), "updated_at": time.time()}
+    return {
+        "series": ser,
+        "bars": len(closed),
+        "bar_time": int(closed[-1].get("time", 0)) if closed else 0,
+        "updated_at": float(_PRICE_TS.get(canonical_symbol(sym), 0.0) or 0.0),
+    }
 
 
 def squeeze_kc_entry(tech: Optional[Dict[str, Any]], pip_size: float,
@@ -1206,16 +1496,13 @@ def _s3_st_dir_series(bars: List[Dict[str, Any]], period: int = 10, mult: float 
             final_upper, final_lower = upper, lower
             direction = 1 if c[i] >= hl2[i] else -1
         else:
+            # `_compute_supertrend` ile aynı ratchet (yorum birebir diyorsa kod da).
+            final_upper = upper if (upper < final_upper or prev_close > final_upper) else final_upper
+            final_lower = lower if (lower > final_lower or prev_close < final_lower) else final_lower
             if c[i] > final_upper:
                 direction = 1
             elif c[i] < final_lower:
                 direction = -1
-            if direction > 0:
-                final_lower = max(final_lower, lower)
-                final_upper = hl2[i] + mult * atr_i
-            else:
-                final_upper = min(final_upper, upper)
-                final_lower = hl2[i] - mult * atr_i
         out[i] = direction
     return out
 
@@ -1630,7 +1917,8 @@ def get_atr_exit_levels(
     eff_sl = max(float(sl_pips), round(atr_pips * sl_atr_mult, 1))
     min_tp = round(eff_sl * rr_floor, 1)
     atr_tp = round(atr_pips * tp_atr_mult, 1)
-    eff_tp = max(min_tp, min(float(tp_pips), max(atr_tp, min_tp)))
+    # 1.5R tabanı korunur; spec TP'nin üstüne çıkılmaz (taban spec'i ezerse spec kazanır).
+    eff_tp = min(float(tp_pips), max(min_tp, atr_tp))
     first_target = min(eff_tp, max(round(eff_sl * 0.9, 1), round(atr_pips * 1.0, 1)))
     first_target = max(1.0, first_target)
     return {
@@ -1942,9 +2230,10 @@ def _compute_adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period
     minus_w = float(np.sum(minus_dm[:period]))
     tr_w = float(np.sum(tr[:period]))
     for i in range(period, len(tr)):
-        plus_w = plus_w - plus_w / period + float(plus_dm[i - 1])
-        minus_w = minus_w - minus_w / period + float(minus_dm[i - 1])
-        tr_w = tr_w - tr_w / period + float(tr[i - 1])
+        # Tohum [:period] son elemanı (i-1) ikinci kez eklenmez; güncel gözlem i'dir.
+        plus_w = plus_w - plus_w / period + float(plus_dm[i])
+        minus_w = minus_w - minus_w / period + float(minus_dm[i])
+        tr_w = tr_w - tr_w / period + float(tr[i])
         if tr_w > 0:
             pdi = 100.0 * plus_w / tr_w
             mdi = 100.0 * minus_w / tr_w
@@ -2084,21 +2373,8 @@ def _compute_technical_indicators(
     signal_line = _calc_ema(macd_line, 9)
     hist = float(macd_line[-1] - signal_line[-1])
 
-    # 4b. RSI(14) serisi (Wilder) + EMA200 — S3 (Supertrend+RSI pullback) giriş modu.
-    # Replay kuralı son 6 barın RSI geçmişini tarar → seri gerekir; EMA200 trend
-    # tarafı filtresi (replay: kapanış EMA200'ün trend tarafında) için seviye.
-    rsi_series: List[float] = []
-    if len(deltas) >= 14:
-        rg = np.where(deltas > 0, deltas, 0.0)
-        rl = np.where(deltas < 0, -deltas, 0.0)
-        ag = float(np.mean(rg[:14]))
-        al = float(np.mean(rl[:14]))
-        for i in range(14, len(deltas)):
-            ag = (ag * 13.0 + float(rg[i])) / 14.0
-            al = (al * 13.0 + float(rl[i])) / 14.0
-        rs_i = ag / al if al != 0 else 100.0
-        rsi_series.append(100.0 - (100.0 / (1.0 + rs_i)))
-    ema200 = float(_calc_ema(c, min(len(c), 200))[-1])
+    # S3 kendi RSI yolunu (`_s3_rsi_wilder`) kullanır. Buradaki tek elemanlı
+    # RSI listesi dönüş sözlüğüne girmiyordu; ölü seri kaldırıldı.
 
     # 5. ATR 14
     # Varsayılan (ATR_USE_WILDER=True): Wilder yumuşatması — ilk 14 TR'nin
@@ -2319,152 +2595,64 @@ _LAST_FETCH_FAIL_LOG: Dict[str, float] = {}
 
 
 def _sync_fetch_candles_for_symbol(fx_sym: str, yf_sym: str) -> Optional[Dict[str, Any]]:
-    """Yahoo 5m mum verisi çeker. query1 başarısızsa query2 host'u denenir (datacenter IP'lerde
-    futures uçları (GC=F) FX uçlarından yavaş/instabil — tek host + kısa timeout sembolü sessizce
-    öldürüyordu: altın günlerce HOLD'da kaldı, log bile yazmıyordu)."""
-    last_err: Optional[Exception] = None
-    for host in ("query1", "query2"):
-        url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=2d"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                result = data["chart"]["result"][0]
-                quote = result["indicators"]["quote"][0]
-                timestamps = result.get("timestamp") or []
-                raw_opens = quote.get("open", [])
-                raw_highs = quote.get("high", [])
-                raw_lows = quote.get("low", [])
-                raw_closes = quote.get("close", [])
-                now_ts = time.time()
-                bars = []
-                for i, raw_ts in enumerate(timestamps):
-                    if i >= len(raw_opens) or i >= len(raw_highs) or i >= len(raw_lows) or i >= len(raw_closes):
-                        continue
-                    try:
-                        bar_ts = int(raw_ts)
-                        o, h, l, c = raw_opens[i], raw_highs[i], raw_lows[i], raw_closes[i]
-                        if any(v is None for v in (o, h, l, c)) or bar_ts + 300 > now_ts:
-                            continue
-                        o, h, l, c = float(o), float(h), float(l), float(c)
-                        if not all(math.isfinite(v) for v in (o, h, l, c)) or min(o, h, l, c) <= 0:
-                            continue
-                    except (TypeError, ValueError, OverflowError):
-                        continue
-                    bars.append((bar_ts, o, h, l, c))
-                bars.sort(key=lambda bar: bar[0])
-                bars = bars[-250:]
-                timestamps = [bar[0] for bar in bars]
-                opens = [bar[1] for bar in bars]
-                highs = [bar[2] for bar in bars]
-                lows = [bar[3] for bar in bars]
-                closes = [bar[4] for bar in bars]
-                if len(closes) >= 15:
-                    _CLOSES_CACHE[fx_sym] = closes
-                    return _compute_technical_indicators(closes, highs, lows, opens, fx_sym, bar_times=timestamps)
-        except Exception as exc:
-            last_err = exc
-            continue
-    now = time.time()
-    if now - _LAST_FETCH_FAIL_LOG.get(fx_sym, 0.0) > 300.0:
-        _LAST_FETCH_FAIL_LOG[fx_sym] = now
-        logger.warning("Yahoo veri hattı hatası: %s (%s) — %s", fx_sym, yf_sym, last_err)
+    """Emekli. Mum ve gösterge artık MT5 tik kovalarından gelir; HTTP yok."""
+    del fx_sym, yf_sym
     return None
 
 
 def _sync_fetch_all_technical_data() -> Dict[str, Dict[str, Any]]:
-    results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-        future_map = {
-            executor.submit(_sync_fetch_candles_for_symbol, fx, yf): fx
-            for fx, yf in YAHOO_SYMBOL_MAP.items()
-        }
-        # Sürüm notu: as_completed(timeout=6.0) kullanılıyordu — yavaş bir sembol (GC=F)
-        # zaman aşımını yakıp kalan sembollerin taze verisini de kaybettiriyordu.
-        # Her fetch kendi urlopen timeout'uyla sınırlı olduğundan dış sınır gereksiz.
-        for fut in concurrent.futures.as_completed(future_map):
-            fx = future_map[fut]
-            try:
-                tech = fut.result()
-                if tech:
-                    results[fx] = tech
-            except Exception:
-                pass
-    return results
+    """Emekli. Skor yolu `_rebuild_tech_from_ticks` kullanır."""
+    return {}
 
 
 def _sync_fetch_live_rates() -> Dict[str, float]:
-    """Fetch real-world live FX rates from ECB/Frankfurter and fallback feeds."""
-    rates_map: Dict[str, float] = {}
-    try:
-        req = urllib.request.Request(
-            "https://api.frankfurter.app/latest?from=USD",
-            headers={"User-Agent": "ScalperGlobal-Forex/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            r = data.get("rates", {})
-            if "EUR" in r and r["EUR"] > 0:
-                rates_map["EURUSD"] = round(1.0 / float(r["EUR"]), 5)
-            if "GBP" in r and r["GBP"] > 0:
-                rates_map["GBPUSD"] = round(1.0 / float(r["GBP"]), 5)
-            if "JPY" in r and r["JPY"] > 0:
-                rates_map["USDJPY"] = round(float(r["JPY"]), 3)
-            if "CHF" in r and r["CHF"] > 0:
-                rates_map["USDCHF"] = round(float(r["CHF"]), 5)
-            if "AUD" in r and r["AUD"] > 0:
-                rates_map["AUDUSD"] = round(1.0 / float(r["AUD"]), 5)
-            if "CAD" in r and r["CAD"] > 0:
-                rates_map["USDCAD"] = round(float(r["CAD"]), 5)
-            if "NZD" in r and r["NZD"] > 0:
-                rates_map["NZDUSD"] = round(1.0 / float(r["NZD"]), 5)
-    except Exception:
-        pass
-    return rates_map
+    """Emekli. Canlı fiyat yalnız MT5 tikidir; Frankfurter çağrılmaz."""
+    return {}
+
+
+def _rebuild_tech_from_ticks(sym: str) -> None:
+    """Skor/ADX/SuperTrend/Donchian/EMA yalnız kapanmış tik kovalarından."""
+    app = canonical_symbol(sym)
+    bars = _closed_tick_bars(app, 300)
+    _verify_tick_bars_against_bridge(app, "5m", bars)
+    if len(bars) < _MIN_CLOSED_BARS_5M:
+        _TECHNICAL_CACHE.pop(app, None)
+        return
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    closes = [float(b["close"]) for b in bars]
+    times = [int(b["time"]) for b in bars]
+    tech = _compute_technical_indicators(closes, highs, lows, opens, app, bar_times=times)
+    if not tech:
+        _TECHNICAL_CACHE.pop(app, None)
+        return
+    tick_ts = float(_PRICE_TS.get(app, 0.0) or 0.0)
+    tech["updated_at"] = tick_ts
+    tech["source"] = "mt5_tick"
+    tech["bar_gap"] = _bars_have_gap(bars, 300)
+    _TECHNICAL_CACHE[app] = tech
+    _CLOSES_CACHE[app] = closes
 
 
 async def _refresh_live_rates_if_needed():
-    """Update live prices and technical indicators cache asynchronously."""
-    global _LAST_LIVE_FETCH_TIME, _LIVE_PRICES_CACHE, _TECHNICAL_CACHE, _LAST_TECH_FETCH_TIME
+    """Göstergeyi MT5 tik kovalarından tazeler. Yahoo ve Frankfurter çağrılmaz."""
+    global _LAST_LIVE_FETCH_TIME, _LAST_TECH_FETCH_TIME
     now = time.time()
-
-    # 1. Update Technical Indicators from Yahoo Finance candles every 15s
-    if now - _LAST_TECH_FETCH_TIME > 15.0 or not _TECHNICAL_CACHE:
-        _LAST_TECH_FETCH_TIME = now
-        try:
-            fresh_tech = await asyncio.to_thread(_sync_fetch_all_technical_data)
-            if fresh_tech:
-                # Bu turda BAŞARISIZ olan semboller (`_TECH_STALE_SEC`'ten eski) cache'ten
-                # tahliye edilir: DXY dahil. Aksi halde DX-Y.NYB fetch'i bir kez
-                # başarısız olunca `get_dxy_regime` sonsuza kadar son değeri döndürüp
-                # rejimi donduruk bırakıyordu (#10). Tahliye edilen sembolün tick'i
-                # varsayılana düşer (HOLD) ve veri gelince yeniden dolar.
-                expired = [s for s in _TECHNICAL_CACHE if _tech_is_stale(s, now)]
-                for s in expired:
-                    _TECHNICAL_CACHE.pop(s, None)
-                _TECHNICAL_CACHE.update(fresh_tech)
-                mt5_connected = _MT5_STATE.get("connected") and (now - _MT5_STATE.get("last_ping", 0.0) < 60.0)
-                for sym, tech in fresh_tech.items():
-                    # MT5 köprüsü bağlı ve canlı broker kotasyonları akıyorsa,
-                    # Yahoo vadeli (GC=F vb.) fiyatı broker spot fiyatının üzerine yazılmamalıdır.
-                    if not (mt5_connected and sym in _LIVE_PRICES_CACHE):
-                        _LIVE_PRICES_CACHE[sym] = tech["price"]
-            # Korelasyon matrisi yalnızca bayatladığında yenilenir (varsayılan 30 dk)
-            _FX_CORR.maybe_refresh(_CLOSES_CACHE)
-        except Exception:
-            pass
-
-    # 2. Update ECB Frankfurter rates every 20s as robust fallback
-    if now - _LAST_LIVE_FETCH_TIME > 20.0 or not _LIVE_PRICES_CACHE:
-        _LAST_LIVE_FETCH_TIME = now
-        try:
-            fresh_fx = await asyncio.to_thread(_sync_fetch_live_rates)
-            if fresh_fx:
-                for sym, p in fresh_fx.items():
-                    if sym not in _LIVE_PRICES_CACHE:
-                        _LIVE_PRICES_CACHE[sym] = p
-        except Exception:
-            pass
+    if now - _LAST_TECH_FETCH_TIME < 2.0 and _TECHNICAL_CACHE:
+        return
+    _LAST_TECH_FETCH_TIME = now
+    _LAST_LIVE_FETCH_TIME = now
+    try:
+        for item in FOREX_SYMBOLS:
+            _rebuild_tech_from_ticks(item["symbol"])
+        _rebuild_tech_from_ticks("DXY")
+        expired = [s for s in list(_TECHNICAL_CACHE) if _tech_is_stale(s, now)]
+        for s in expired:
+            _TECHNICAL_CACHE.pop(s, None)
+        _FX_CORR.maybe_refresh(_CLOSES_CACHE)
+    except Exception:
+        pass
 
 
 async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
@@ -2489,16 +2677,30 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
 
         tech = _TECHNICAL_CACHE.get(sym)
         if tech and _tech_is_stale(sym, now):
-            # Bayat gösterge: sinyal skoru/ATR güvenilmez (bkz. #5). Bu sembol için
-            # gösterge varsayılanına düşülür (aşağıdaki `else` dalı → HOLD/50);
-            # fiyat yine canlı kalır ve bir sonraki başarılı fetch'te düzelir.
             tech = None
-        live_p = _LIVE_PRICES_CACHE.get(sym) or (tech["price"] if tech else item["default_price"])
-
-        spread_pips = _LIVE_SPREAD_PIPS.get(sym) or (
-            1.2 if item["category"] == "major" else (2.5 if item["category"] == "commodity" else (12.0 if item["category"] == "crypto" else 3.0))
-        )
-        spread_val = spread_pips * pip
+        tick_ts = float(_PRICE_TS.get(sym, 0.0) or 0.0)
+        source = _PRICE_SOURCE.get(sym, "yok")
+        price_placeholder = source != "mt5_tick" or tick_ts <= 0
+        if price_placeholder:
+            tech = None
+            live_p = float(item["default_price"])
+            source = "default"
+            tick_ts = 0.0
+        else:
+            live_p = float(_LIVE_PRICES_CACHE.get(sym) or 0.0)
+            if live_p <= 0:
+                tech = None
+                live_p = float(item["default_price"])
+                source = "default"
+                price_placeholder = True
+                tick_ts = 0.0
+        bars5 = _closed_tick_bars(sym, 300)
+        bar_gap = _bars_have_gap(bars5, 300) if bars5 else False
+        tick_mismatch = sym in _TICK_MISMATCH
+        spread_known = (not price_placeholder) and sym in _LIVE_SPREAD_PIPS
+        spread_pips = float(_LIVE_SPREAD_PIPS[sym]) if spread_known else 0.0
+        spread_val = spread_pips * pip if spread_known else 0.0
+        age_sec = (now - tick_ts) if tick_ts > 0 else None
 
         bid_p = round(live_p - spread_val / 2.0, digits)
         ask_p = round(live_p + spread_val / 2.0, digits)
@@ -2533,7 +2735,7 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             cmo = 0.0
             cci = 0.0
             macd_hist_val = 0.0
-            adx = 25.0
+            adx = 0.0
             st_dir = 0
             change_pct = 0.0
             high_p = round(live_p * 1.002, digits)
@@ -2576,7 +2778,13 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "signal_bar_confirmed": signal_bar_confirmed,
             "atr": atr_val,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
-            "updated_at": now,
+            "source": "mt5_tick" if source == "mt5_tick" else source,
+            "age_sec": None if age_sec is None else round(age_sec, 1),
+            "spread_known": spread_known,
+            "price_placeholder": price_placeholder,
+            "bar_gap": bool(bar_gap or (tech or {}).get("bar_gap")),
+            "tick_mismatch": tick_mismatch,
+            "updated_at": tick_ts,
         }
 
     return _TICK_CACHE
@@ -2608,17 +2816,32 @@ async def get_market_sessions():
     }
 
 
+def _public_ticker_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Katalog varsayılan fiyatı piyasa verisi gibi gösterme."""
+    out = dict(row)
+    if out.get("source") != "mt5_tick" or out.get("price_placeholder"):
+        out["bid"] = None
+        out["ask"] = None
+        out["price"] = None
+        out["high"] = None
+        out["low"] = None
+        out["source"] = "yok"
+        out["error"] = "MT5 tik yok"
+    return out
+
+
 @router.get("/tickers")
 async def get_forex_tickers(category: Optional[str] = None):
-    """Return live tickers with bid/ask, spreads and daily changes."""
+    """Canlı kotasyon. Fiyat yalnız MT5 tikinden gelir."""
     ticks = await _generate_realistic_ticks()
-    results = list(ticks.values())
+    results = [_public_ticker_row(t) for t in ticks.values()]
     if category:
         results = [t for t in results if t["category"] == category]
     return {
         "tickers": results,
         "sessions": _get_market_sessions(),
         "timestamp": time.time(),
+        "source": "mt5_tick",
     }
 
 
@@ -2704,26 +2927,17 @@ def _get_forex_watch() -> List[Dict[str, str]]:
 
 
 def _s3_bars_for(sym: str, interval: str, limit: int = 260) -> Optional[List[Dict[str, Any]]]:
-    """S3 göstergeleri için bar dizisi: ÖNCE köprü broker mumları, yoksa Yahoo.
+    """Strateji barları yalnız MT5 tik kovalarından. Kısa geçmiş = kol susar.
 
-    Köprü `candle_watch`'e S3 sembolleri kalıcı yazılır (bkz. `_get_forex_watch`)
-    → panel kapalıyken bile XAUUSD/BTCUSD 5m+15m mumları broker'dan akar.
+    Köprüdeki hazır mum gösterge kaynağı değildir; kapanış doğrulaması için okunur.
     """
-    mt5_bars = _fetch_mt5_candles(sym, interval, limit)
-    if mt5_bars and len(mt5_bars) >= 30:
-        return mt5_bars
-    try:
-        bars = _fetch_forex_klines(sym, interval, limit)
-        if bars and len(bars) >= 30:
-            return [
-                {"time": int(b.get("time", 0)), "open": float(b.get("open", 0.0)),
-                 "high": float(b.get("high", 0.0)), "low": float(b.get("low", 0.0)),
-                 "close": float(b.get("close", 0.0))}
-                for b in bars
-            ]
-    except Exception:
-        pass
-    return None
+    bucket = 900 if str(interval) in ("15m", "15") else 300
+    bars = _closed_tick_bars(sym, bucket)
+    _verify_tick_bars_against_bridge(sym, interval, bars)
+    min_bars = _MIN_CLOSED_BARS_5M if bucket == 300 else 20
+    if len(bars) < min_bars:
+        return None
+    return bars[-limit:]
 
 
 def _s3_resample_15m(bars5: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -2749,18 +2963,16 @@ def _s3_tech_for(sym: str, tf: str) -> Optional[Dict[str, Any]]:
     bars = _s3_bars_for(sym, tf)
     if not bars or len(bars) < 215:
         return None
-    # Son bar hâlâ şekilleniyor olabilir: MT5 copy_rates_from_pos(pos=0) oluşan
-    # barı da verir. Kapanmış son bar = len-2 (sunucu ts'inden emin olamayız,
-    # replay `ci-1` disiplini birebir korunur).
-    closed = bars[:-1]
-    if len(closed) < 215:
-        return None
+    # Tik kovası açık mumu zaten dışarıda bırakır. Son eleman son kapanmış bardır.
+    closed = bars
     closes = [float(b["close"]) for b in closed]
+    highs = [float(b["high"]) for b in closed]
+    lows = [float(b["low"]) for b in closed]
     rsi_s = _s3_rsi_wilder(closes, 14)
     ema_s = _s3_ema_series(closes, 200)
     atr_s = _s3_atr_series(closed, 14)
     st_s = _s3_st_dir_series(closed, 10, 3.0)
-    tech = _TECHNICAL_CACHE.get(sym) or {}
+    adx_val = _compute_adx(highs, lows, closes, 14)
     return {
         "st_dir": int(st_s[-1]),
         "close": closes[-1],
@@ -2768,10 +2980,11 @@ def _s3_tech_for(sym: str, tf: str) -> Optional[Dict[str, Any]]:
         "rsi_now": rsi_s[-1],
         "rsi_prev": rsi_s[-2] if len(rsi_s) >= 2 else None,
         "rsi_window": rsi_s[-7:-1],
-        "adx": float(tech.get("adx", 0.0)) if tf == "5m" else float(tech.get("adx", 0.0)),
+        "adx": float(adx_val),
         "atr": float(atr_s[-1]),
         "bars": len(closed),
-        "updated_at": time.time(),
+        "bar_time": int(closed[-1].get("time", 0)),
+        "updated_at": float(_PRICE_TS.get(canonical_symbol(sym), 0.0) or 0.0),
     }
 
 
@@ -2838,9 +3051,16 @@ def _resample_bars(bars: List[Dict[str, Any]], bucket_sec: int) -> List[Dict[str
 
 
 
-def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
-    clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
-    alias_map = {
+# Grafik periyodu → saniye. 1m/5m/15m doğrudan tik kovasıdır.
+# 3m, 1m kovalarından; 30m ve üstü 5m kovalarından tam kova birleştirilir.
+_KLINE_NATIVE_SEC = {"1m": 60, "5m": 300, "15m": 900}
+_KLINE_FROM_1M = {"3m": 180}
+_KLINE_FROM_5M = {"30m": 1800, "1h": 3600, "60m": 3600, "4h": 14400, "240m": 14400, "1d": 86400, "D": 86400}
+
+
+def _clean_forex_chart_symbol(symbol: str) -> str:
+    raw = str(symbol or "").replace("/", "").replace("_", "").replace("-", "").strip().upper()
+    alias = {
         "GOLD": "XAUUSD",
         "ALTIN": "XAUUSD",
         "SILVER": "XAGUSD",
@@ -2848,137 +3068,82 @@ def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> 
         "BTC": "BTCUSD",
         "ETH": "ETHUSD",
     }
-    clean_sym = alias_map.get(clean_sym, clean_sym)
+    return canonical_symbol(alias.get(raw, raw))
 
-    yf_sym = YAHOO_SYMBOL_MAP.get(clean_sym)
-    if not yf_sym:
-        for k, v in YAHOO_SYMBOL_MAP.items():
-            if k.upper() == clean_sym:
-                yf_sym = v
-                clean_sym = k
-                break
-    if not yf_sym:
-        yf_sym = f"{clean_sym}=X"
 
-    cache_key = f"{clean_sym}:{interval}"
-    now = time.time()
-    if cache_key in _KLINES_CACHE:
-        cached_ts, cached_bars = _KLINES_CACHE[cache_key]
-        if now - cached_ts < _KLINES_CACHE_TTL and cached_bars:
-            return cached_bars[-limit:]
+def _closed_full_buckets(bars: List[Dict[str, Any]], bucket_sec: int, source_sec: int) -> List[Dict[str, Any]]:
+    """Kaynak mumları tam kova dolunca birleştirir. Eksik kova kapanmış sayılmaz."""
+    need = max(1, int(bucket_sec) // int(source_sec))
+    grouped = _resample_bars(bars, bucket_sec)
+    # _resample_bars kısmi kovayı da yazar. Tam dolu olanları kaynak sayıdan seç.
+    by_time: Dict[int, List[Dict[str, Any]]] = {}
+    for b in bars:
+        start = (int(b["time"]) // bucket_sec) * bucket_sec
+        by_time.setdefault(start, []).append(b)
+    full_times = {t for t, group in by_time.items() if len(group) >= need}
+    return [b for b in grouped if int(b["time"]) in full_times]
 
-    # 1) MT5 (BROKER) KAYNAĞI — ÖNCELİKLİ (2026-10-07, kullanıcı isteği):
-    # Köprü, panelin baktığı çiftler için broker'ın GERÇEK XAUUSD/EURUSD mumlarını
-    # push eder. Bu kaynak hem geçmiş hem canlı olduğu için vadeli↔spot baz farkı
-    # SIFIR olur (aşağıdaki basis-shift bloğuna hiç gerek kalmaz) ve grafik, işlem
-    # gören fiyatla birebir aynı olur. Köprü yoksa/bayatsa Yahoo'ya düşülür.
-    mt5_bars = _fetch_mt5_candles(clean_sym, interval, limit)
-    if mt5_bars:
-        return mt5_bars
 
-    interval_map = {
-        "1m": ("1m", "2d"),
-        # 2026-10-14: "3m" eklendi. Yahoo'da M3 barı YOK; 1m çekilip 180 sn'lik
-        # kovalara birleştirilir (aşağıdaki resample bloğu). Bu satır olmadan
-        # anahtar varsayılana düşer ve 3m isteği sessizce "5m barları 3m sanılır"
-        # hâline gelirdi — eksen 3 dakika der, veri 5 dakikadır.
-        "3m": ("1m", "7d"),
-        "5m": ("5m", "5d"),
-        "15m": ("15m", "10d"),
-        "30m": ("30m", "20d"),
-        "1h": ("60m", "60d"),
-        "60m": ("60m", "60d"),
-        "4h": ("60m", "120d"),
-        "240m": ("60m", "120d"),
-        "1d": ("1d", "1y"),
-        "D": ("1d", "1y"),
-    }
-    yf_interval, yf_range = interval_map.get(interval, ("5m", "5d"))
+def _forex_klines_from_ticks(
+    symbol: str, interval: str = "5m", limit: int = 250,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Mum serisi yalnız MT5 tik kovalarından. Kısa geçmiş boş seri ve hata döner."""
+    clean = _clean_forex_chart_symbol(symbol)
+    iv = str(interval or "5m")
+    if iv in _KLINE_NATIVE_SEC:
+        source_sec = _KLINE_NATIVE_SEC[iv]
+        closed = _closed_tick_bars(clean, source_sec)
+        min_bars = 20 if source_sec == 900 else _MIN_CLOSED_BARS_5M
+    elif iv in _KLINE_FROM_1M:
+        source_sec = 60
+        raw = _closed_tick_bars(clean, source_sec)
+        min_bars = _MIN_CLOSED_BARS_5M
+        closed = _closed_full_buckets(raw, _KLINE_FROM_1M[iv], source_sec) if len(raw) >= min_bars else []
+    elif iv in _KLINE_FROM_5M:
+        source_sec = 300
+        raw = _closed_tick_bars(clean, source_sec)
+        min_bars = _MIN_CLOSED_BARS_5M
+        closed = _closed_full_buckets(raw, _KLINE_FROM_5M[iv], source_sec) if len(raw) >= min_bars else []
+    else:
+        return [], "Periyot tik kovasında yok"
 
-    bars: List[Dict[str, Any]] = []
-    digits = 5
-    if clean_sym in ("USDJPY", "GBPJPY", "EURJPY"):
-        digits = 3
-    elif clean_sym in ("XAUUSD", "NAS100", "US30", "SPX500", "BTCUSD", "ETHUSD", "USOIL"):
-        digits = 2
+    has_tick = _PRICE_SOURCE.get(clean) == "mt5_tick"
+    if iv in _KLINE_NATIVE_SEC and len(closed) < min_bars:
+        if not closed and not has_tick:
+            return [], "MT5 tik yok"
+        return [], "MT5 tik geçmişi kısa"
+    if iv not in _KLINE_NATIVE_SEC and not closed:
+        raw_there = bool(_closed_tick_bars(clean, source_sec))
+        if not raw_there and not has_tick:
+            return [], "MT5 tik yok"
+        return [], "MT5 tik geçmişi kısa"
 
-    for host in ("query1", "query2"):
-        url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval={yf_interval}&range={yf_range}"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                res = data["chart"]["result"][0]
-                timestamps = res.get("timestamp", [])
-                quote = res["indicators"]["quote"][0]
-                opens = quote.get("open", [])
-                highs = quote.get("high", [])
-                lows = quote.get("low", [])
-                closes = quote.get("close", [])
-                volumes = quote.get("volume", [0] * len(timestamps))
+    bars = [{
+        "time": int(b["time"]),
+        "open": float(b["open"]),
+        "high": float(b["high"]),
+        "low": float(b["low"]),
+        "close": float(b["close"]),
+        "volume": float(b.get("volume") or 0.0),
+    } for b in closed]
+    if iv in _KLINE_NATIVE_SEC:
+        forming = _OPEN_TICK_BUCKET.get((clean, source_sec))
+        if forming:
+            bars.append({
+                "time": int(forming["time"]),
+                "open": float(forming["open"]),
+                "high": float(forming["high"]),
+                "low": float(forming["low"]),
+                "close": float(forming["close"]),
+                "volume": 0.0,
+            })
+    return bars[-limit:], None
 
-                for i, t in enumerate(timestamps):
-                    if i >= len(opens) or i >= len(highs) or i >= len(lows) or i >= len(closes):
-                        continue
-                    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
-                    v = volumes[i] if i < len(volumes) and volumes[i] is not None else 0
-                    if None not in (o, h, l, c):
-                        bars.append({
-                            "time": int(t),
-                            "open": round(float(o), digits),
-                            "high": round(float(h), digits),
-                            "low": round(float(l), digits),
-                            "close": round(float(c), digits),
-                            "volume": float(v) if v else 0.0,
-                        })
-                if bars:
-                    break
-        except Exception:
-            continue
 
-    # Yahoo'nun vermediği periyotları kaynak periyottan türet.
-    #   3m  ← 1m barı 180 sn'lik kovalara birleştirir
-    #   4h  ← 60m barı 14400 sn'lik kovalara birleştirir
-    _bucket_sec = {"3m": 180, "4h": 14400, "240m": 14400}.get(interval)
-    if _bucket_sec and bars:
-        bars = _resample_bars(bars, _bucket_sec)
-
-    if bars:
-        live_tick = _LIVE_PRICES_CACHE.get(clean_sym)
-        if live_tick and live_tick > 0 and len(bars) > 0:
-            last_bar = bars[-1]
-            live_close = round(float(live_tick), digits)
-            # VADELİ ↔ SPOT BAZ FARKI (2026-10-07): XAUUSD geçmişi Yahoo `GC=F`
-            # (COMEX vadeli altın) ile çekilirken canlı fiyat MT5 spot kotasyonudur.
-            # İkisi arasında sürekli bir baz farkı vardır (ör. vadeli 4135 / spot
-            # 4108 → ~%0.6). Eskiden YALNIZ son mumun close/high/low'u canlı fiyata
-            # çekiliyordu; bu, düz seyreden seride tek mumda ~26$'lik SAHTE bir
-            # flash-crash çubuğu üretiyor, Bollinger/MACD'yi de tek barda patlatıyordu.
-            # Çözüm: fark küçükse (normal tick) yalnız son mum güncellenir; fark baz
-            # farkı kadar büyükse (ama uçuk/bad-tick değilse) TÜM seri aynı delta ile
-            # kaydırılır → mum şekilleri korunur, seviye spota hizalanır.
-            ref_close = float(last_bar["close"])
-            delta = live_close - ref_close
-            rel = abs(delta) / ref_close if ref_close > 0 else 0.0
-            if rel > _KLINE_BASIS_SHIFT_REL and rel <= _KLINE_MAX_TICK_REL:
-                shift = round(delta, digits)
-                for b in bars:
-                    b["open"] = round(float(b["open"]) + shift, digits)
-                    b["high"] = round(float(b["high"]) + shift, digits)
-                    b["low"] = round(float(b["low"]) + shift, digits)
-                    b["close"] = round(float(b["close"]) + shift, digits)
-            elif rel <= _KLINE_MAX_TICK_REL:
-                last_bar["close"] = live_close
-                last_bar["high"] = max(last_bar["high"], live_close)
-                last_bar["low"] = min(last_bar["low"], live_close)
-            # rel > MAX_TICK_REL → uçuk/bad tick; seriyi kirletmemek için yok say.
-
-        _KLINES_CACHE[cache_key] = (now, bars)
-        return bars[-limit:]
-
-    if cache_key in _KLINES_CACHE:
-        return _KLINES_CACHE[cache_key][1][-limit:]
-    return []
+def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> List[Dict[str, Any]]:
+    """Grafik mumları. Kaynak MT5 tik kovasıdır; dış veri hattı çağrılmaz."""
+    bars, _err = _forex_klines_from_ticks(symbol, interval, limit)
+    return bars
 
 
 @router.get("/klines")
@@ -2996,17 +3161,19 @@ async def get_forex_klines(
         _ws_note_viewed(symbol, interval)
     except Exception:
         pass
-    loop = asyncio.get_running_loop()
-    bars = await loop.run_in_executor(None, _fetch_forex_klines, symbol, interval, limit)
-    clean_sym = symbol.replace("/", "").replace("_", "").replace("-", "").strip().upper()
+    clean_sym = _clean_forex_chart_symbol(symbol)
+    bars, err = _forex_klines_from_ticks(symbol, interval, limit)
     meta = next((s for s in FOREX_SYMBOLS if s["symbol"] == clean_sym), None)
-    current_price = bars[-1]["close"] if bars else (meta.get("default_price", 0.0) if meta else 0.0)
+    live = _LIVE_PRICES_CACHE.get(clean_sym) if _PRICE_SOURCE.get(clean_sym) == "mt5_tick" else None
+    current_price = float(live) if live else (bars[-1]["close"] if bars else None)
     return {
         "symbol": clean_sym,
         "interval": interval,
         "count": len(bars),
         "candles": bars,
         "current_price": current_price,
+        "source": "mt5_tick" if bars or live else "yok",
+        "error": err,
         "meta": meta,
     }
 
@@ -3042,9 +3209,10 @@ def _evaluate_signal_gate(
     if direction not in ("BUY", "SELL"):
         reasons.append("direction")
 
+    veto = None
     if _AUTO_SETTINGS.dxy_filter_enabled:
         veto = dxy_entry_veto(sym, direction, dxy_regime)
-        if veto == "dxy_conflict":
+        if veto in ("dxy_conflict", "dxy_no_data"):
             reasons.append("dxy")
 
     gate = major_entry_gate_decision(
@@ -3060,27 +3228,24 @@ def _evaluate_signal_gate(
         max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym)
         else _AUTO_SETTINGS.max_spread_pips
     )
-    if cand.get("spread_pips", 99.0) > effective_max_spread:
+    if cand.get("spread_known") is False or cand.get("spread_pips", 99.0) > effective_max_spread:
         reasons.append("spread")
 
-    is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
-    if sym == "BTCUSD":
-        req_score = _AUTO_SETTINGS.btc_min_score if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
-    else:
-        req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
-    # DXY nötr rejimde zayıf semboller (altın/JPY/CHF) +5.0 ekstra puan ister.
-    if _AUTO_SETTINGS.dxy_filter_enabled and dxy_entry_veto(sym, direction, dxy_regime) == "dxy_strict_neutral":
-        req_score += 5.0
+    weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
+    req_score = required_entry_score(sym, weak_bump)
     if cand.get("score", 0.0) < req_score:
         reasons.append("score")
 
-    if _AUTO_SETTINGS.adx_filter_enabled and float(cand.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
+    if _AUTO_SETTINGS.adx_filter_enabled and float(cand.get("adx", 0.0)) < _AUTO_SETTINGS.adx_min:
         reasons.append("adx")
 
     st_dir = int(cand.get("supertrend_dir", 0))
-    if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0:
-        if (direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0):
-            reasons.append("supertrend")
+    if supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir):
+        reasons.append("supertrend")
+
+    data_reason = entry_data_blocked(cand)
+    if data_reason and data_reason not in reasons:
+        reasons.append(data_reason)
 
     if _AUTO_SETTINGS.correlation_guard:
         bias = get_usd_bias(sym, direction)
@@ -3148,6 +3313,7 @@ _GATE_LABELS: Dict[str, str] = {
 _MARKET_BLOCKERS = frozenset({
     "direction", "score", "spread", "adx", "supertrend",
     "dxy", "major_session", "major_min_atr", "correlation",
+    "veri", "bayat", "bar_gap",
 })
 
 # PERFORMANS (2026-10-08): /radar yanıtı için kısa TTL'li önbellek. Birden çok
@@ -3242,7 +3408,14 @@ async def get_forex_radar(use_cache: bool = True):
             "score": score,
             "trend": trend,
             "action": action,
+            "rsi_5m": t.get("rsi", 50.0),
             "rsi_15m": t.get("rsi", 50.0),
+            "source": t.get("source", "yok"),
+            "age_sec": t.get("age_sec"),
+            "spread_known": t.get("spread_known", False),
+            "price_placeholder": bool(t.get("price_placeholder")),
+            "bar_gap": bool(t.get("bar_gap")),
+            "tick_mismatch": bool(t.get("tick_mismatch")),
             "macd_verdict": t.get("macd_verdict", "NÖTR (Beklemede)"),
             # Ham MACD histogramı: kokpit "MACD Momentum" barı bunu ATR'ye
             # bölerek gösterir (bkz. tick sözlüğü — aynı alan, aynı birim).
@@ -3284,6 +3457,12 @@ async def get_forex_radar(use_cache: bool = True):
             base["tier"] = "WATCH"
         else:
             base["tier"] = "WAIT"
+        base["skor_gecti"] = (
+            "score" not in gate["blocked_by"] and action in ("BUY", "SELL")
+        )
+        base["motor_acar"] = bool(gate["signal_ready"])
+        if base["tier"] == "STRONG" and not base["motor_acar"]:
+            base["tier"] = "WAIT"
 
         candidates.append(base)
 
@@ -3305,7 +3484,7 @@ async def get_forex_radar(use_cache: bool = True):
         "thresholds": {
             "min_score": _AUTO_SETTINGS.min_score,
             "btc_min_score": _AUTO_SETTINGS.btc_min_score,
-            "commodity_min_score": 78.0,
+            "commodity_min_score": COMMODITY_MIN_SCORE,
             "max_spread_pips": _AUTO_SETTINGS.max_spread_pips,
             "adx_filter_enabled": _AUTO_SETTINGS.adx_filter_enabled,
             "adx_min": _AUTO_SETTINGS.adx_min,
@@ -3466,15 +3645,16 @@ async def get_btc_gold_auto_comment():
 
     symbols_out: Dict[str, Any] = {}
     for sym in ("XAUUSD", "BTCUSD"):
-        tick = ticks.get(sym) or _TECHNICAL_CACHE.get(sym)
-        if not tick:
+        tick = ticks.get(sym) or {}
+        if not tick or tick.get("source") != "mt5_tick" or tick.get("price_placeholder"):
             symbols_out[sym] = {
                 "symbol": sym,
                 "display": sym,
                 "action": "HOLD",
                 "score": 0.0,
                 "strength_label": "BELİRSİZ",
-                "comment": "Veri hattı henüz hazır değil — birkaç saniye sonra tekrar denenecek.",
+                "comment": "MT5 tik yok — fiyat gösterilmiyor.",
+                "error": "MT5 tik yok",
             }
             continue
         min_score = _AUTO_SETTINGS.btc_min_score if sym == "BTCUSD" else _AUTO_SETTINGS.min_score
@@ -3491,7 +3671,7 @@ async def get_btc_gold_auto_comment():
         else:
             dxy_note = "Dolar sıkışık — yönlü baskı yok."
     session_note = f"Aktif seans: {', '.join(active_sessions)}." if active_sessions else "Seanslar arasında geçiş — likidite düşük olabilir."
-    source_note = "Fiyat kaynağı: MT5 canlı köprü." if mt5_ok else "Fiyat kaynağı: Yahoo/Binance veri hattı (MT5 köprüsü kapalı)."
+    source_note = "Fiyat kaynağı: MT5 tik." if mt5_ok else "Fiyat kaynağı: MT5 tik yok."
 
     return {
         "interval_sec": 60,
@@ -4416,12 +4596,8 @@ def get_symbol_gate_snapshot(
 
     # --- 9. Skor
     score = float(tick.get("score", 0.0) or 0.0)
-    if is_btc:
-        req_score = float(_AUTO_SETTINGS.btc_min_score) if _AUTO_SETTINGS.btc_min_score > 0 else float(_AUTO_SETTINGS.min_score)
-        thr_lbl = f"btc_min_score {req_score:.0f}"
-    else:
-        req_score = 78.0 if (is_gold or "OIL" in sym or "USOIL" in sym) else float(_AUTO_SETTINGS.min_score)
-        thr_lbl = f"min_score {req_score:.0f}"
+    req_score = required_entry_score(sym)
+    thr_lbl = f"{'btc_min_score' if sym == 'BTCUSD' else 'min_score'} {req_score:.0f}"
     if score <= 0:
         gates.append(_gate("score", "na", "Skor verisi yok"))
     elif score < req_score:
@@ -4444,7 +4620,7 @@ def get_symbol_gate_snapshot(
         gates.append(_gate("supertrend", "off", "SuperTrend teyidi kapalı"))
     elif not action or st_dir == 0:
         gates.append(_gate("supertrend", "na", "Yön teyidi yok — teyit kapısı değerlendirilemedi"))
-    elif (action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0):
+    elif supertrend_blocks_entry("", action, st_dir):
         gates.append(_gate("supertrend", "block",
                            f"{action} yönü SuperTrend ({'BOĞA' if st_dir > 0 else 'AYI'}) ile ters"))
     else:
@@ -4718,7 +4894,7 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
     spread = float(gold_tick.get("spread_pips", 2.5))
     if spread > _AUTO_SETTINGS.max_spread_pips:
         reasons.append(f"spread çok geniş ({spread:.1f} pip)")
-    if float(gold_tick.get("score", 0.0)) < 78.0:
+    if float(gold_tick.get("score", 0.0)) < required_entry_score("XAUUSD"):
         reasons.append(f"sinyal skoru yetersiz ({float(gold_tick.get('score', 0.0)):.0f})")
     if _AUTO_SETTINGS.adx_filter_enabled and float(gold_tick.get("adx", 25.0)) < _AUTO_SETTINGS.adx_min:
         reasons.append(f"trend gücü zayıf (ADX {float(gold_tick.get('adx', 0.0)):.0f})")
@@ -5219,6 +5395,8 @@ async def _forex_auto_paper_loop():
             radar_res = await get_forex_radar(use_cache=False)
             candidates = radar_res.get("candidates", [])
             dxy_regime = radar_res.get("dxy")
+            arm_rows: List[Dict[str, Any]] = []
+            _opened_cycle: set = set()
 
             # Donchian+ADX giriş modu (2026-10-07 kalibrasyonu): mode_symbols için radar
             # adayına EK aday üretir; mode_exclusive sembollerin klasik adayları düşürülür.
@@ -5230,27 +5408,35 @@ async def _forex_auto_paper_loop():
                 for _m_sym in _mode_syms:
                     _m_t = ticks.get(_m_sym)
                     _m_tech = _TECHNICAL_CACHE.get(_m_sym) or {}
-                    if not _m_t or not _m_tech or _m_tech.get("donch_mid") is None:
+                    if not _m_t or not _m_tech or _m_tech.get("donch_mid") is None or not _m_tech.get("signal_bar_confirmed"):
                         continue
-                    _m_price = (_m_t.get("bid", 0.0) + _m_t.get("ask", 0.0)) / 2.0 or _m_tech.get("price", 0.0)
+                    _m_bar = int(_m_tech.get("signal_bar_time") or 0)
+                    _m_price = float(_m_tech.get("price") or 0.0)
                     _m_pip_size = _m_tech.get("pip_size") or next((i["pip_size"] for i in FOREX_SYMBOLS if i["symbol"] == _m_sym), 0.0001)
-                    if _m_price <= 0 or _m_pip_size <= 0:
+                    if _m_price <= 0 or _m_pip_size <= 0 or _m_bar <= 0:
                         continue
                     _m_now = datetime.datetime.now(datetime.timezone.utc)
                     _m_day = _m_now.toordinal()
-                    _m_st = _DONCHIAN_STATE.setdefault(_m_sym, {"prev_close": None, "prev_mid": None, "day": _m_day, "counts": {}})
+                    _m_st = _DONCHIAN_STATE.setdefault(_m_sym, {"prev_close": None, "prev_mid": None, "day": _m_day, "counts": {}, "cursor_bar": 0})
                     if _m_st["day"] != _m_day:
                         _m_st["day"] = _m_day
                         _m_st["counts"] = {}
+                    if int(_m_st.get("consumed_bar") or 0) == _m_bar:
+                        continue
+                    if int(_m_st.get("cursor_bar") or 0) != _m_bar:
+                        if _m_st.get("cursor_close") is not None:
+                            _m_st["prev_close"] = _m_st.get("cursor_close")
+                            _m_st["prev_mid"] = _m_st.get("cursor_mid")
+                        _m_st["cursor_bar"] = _m_bar
+                        _m_st["cursor_close"] = _m_price
+                        _m_st["cursor_mid"] = float(_m_tech["donch_mid"])
                     _m_action = donchian_adx_entry(
                         prev_close=_m_st["prev_close"], prev_mid=_m_st["prev_mid"],
                         close=_m_price, mid=float(_m_tech["donch_mid"]),
-                        adx=float(_m_tech.get("adx", 25.0)), adx_min=float(_AUTO_SETTINGS.donchian_adx_min),
+                        adx=float(_m_tech.get("adx", 0.0)), adx_min=float(_AUTO_SETTINGS.donchian_adx_min),
                         day=_m_day, day_counts=_m_st["counts"], max_per_day=int(_AUTO_SETTINGS.donchian_max_per_day),
                         hour_utc=_m_now.hour, is_jpy=("JPY" in _m_sym.upper()),
                     )
-                    _m_st["prev_close"] = _m_price
-                    _m_st["prev_mid"] = float(_m_tech["donch_mid"])
                     # Görünürlük: mod ne beklediğini 25 sn'de bir insan-okur cümleyle söyler;
                     # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
                     _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
@@ -5293,20 +5479,22 @@ async def _forex_auto_paper_loop():
                                 strategy_label="Donchian ADX Kırılımı",
                             )
                     if _m_action:
-                        _m_st["counts"][_m_action] = _m_st["counts"].get(_m_action, 0) + 1
                         _m_atr = float(_m_tech.get("atr", 0.0))
                         _m_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _m_sym), None)
-                        candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _m_sym] + [{
+                        arm_rows.append({
                             "symbol": _m_sym,
                             "display": _m_item["display"] if _m_item else _m_sym,
                             "action": _m_action,
-                            "score": 200.0,
-                            "spread_pips": _LIVE_SPREAD_PIPS.get(_m_sym, 2.0),
+                            "score": float(_m_tech.get("score") or 0.0),
+                            "spread_pips": float(_m_t.get("spread_pips", 0.0) or 0.0),
                             "atr_pips": round(_m_atr / _m_pip_size, 1) if _m_pip_size > 0 else 15.0,
-                            "adx": float(_m_tech.get("adx", 25.0)),
+                            "adx": float(_m_tech.get("adx", 0.0)),
                             "supertrend_dir": int(_m_tech.get("supertrend_dir", 0)),
                             "entry_source": "donchian",
-                        }]
+                            "signal_bar_time": _m_bar,
+                            "signal_bar_confirmed": True,
+                            "_arm_quota": {"kind": "donchian", "symbol": _m_sym, "action": _m_action, "bar_time": _m_bar},
+                        })
                         _log_auto_decision(
                             "SCAN",
                             f"🎯 [{_m_item['display'] if _m_item else _m_sym}] Donchian kırılımı: {_m_action} adayı (ADX {_m_tech.get('adx', 0):.0f}) — değerlendiriliyor.",
@@ -5321,12 +5509,16 @@ async def _forex_auto_paper_loop():
                 for _e_sym in {s.upper() for s in (_AUTO_SETTINGS.ema_adx_symbols or [])}:
                     _e_tech = _TECHNICAL_CACHE.get(_e_sym) or {}
                     _e_t = ticks.get(_e_sym)
-                    if not _e_t or not _e_tech or not _e_tech.get("ema21"):
+                    if not _e_t or not _e_tech or not _e_tech.get("ema21") or not _e_tech.get("signal_bar_confirmed"):
                         continue
-                    _e_price = (_e_t.get("bid", 0.0) + _e_t.get("ask", 0.0)) / 2.0 or _e_tech.get("price", 0.0)
+                    _e_bar = int(_e_tech.get("signal_bar_time") or 0)
+                    _e_price = float(_e_tech.get("price") or 0.0)
+                    _e_open = float(_e_tech.get("open_last") or 0.0)
+                    _e_high = float(_e_tech.get("high_last") or 0.0)
+                    _e_low = float(_e_tech.get("low_last") or 0.0)
                     _e_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _e_sym), None)
                     _e_pip_size = _e_tech.get("pip_size") or (_e_item["pip_size"] if _e_item else 0.0001)
-                    if _e_price <= 0 or _e_pip_size <= 0:
+                    if _e_price <= 0 or _e_open <= 0 or _e_high <= 0 or _e_low <= 0 or _e_pip_size <= 0 or _e_bar <= 0:
                         continue
                     _e_now = datetime.datetime.now(datetime.timezone.utc)
                     _e_day = _e_now.toordinal()
@@ -5334,6 +5526,8 @@ async def _forex_auto_paper_loop():
                     if _e_st["day"] != _e_day:
                         _e_st["day"] = _e_day
                         _e_st["counts"] = {}
+                    if int(_e_st.get("consumed_bar") or 0) == _e_bar:
+                        continue
                     _e_atr = float(_e_tech.get("atr", 0.0))
                     _e_action = ema_adx_pullback_entry(
                         ema8=float(_e_tech.get("ema8", 0.0)),
@@ -5342,9 +5536,9 @@ async def _forex_auto_paper_loop():
                         adx=float(_e_tech.get("adx", 0.0)),
                         adx_min=float(_AUTO_SETTINGS.ema_adx_adx_min),
                         close=_e_price,
-                        open_=float(_e_tech.get("open_last", 0.0)) or _e_price,
-                        high=float(_e_tech.get("high_last", 0.0)) or _e_price,
-                        low=float(_e_tech.get("low_last", 0.0)) or _e_price,
+                        open_=_e_open,
+                        high=_e_high,
+                        low=_e_low,
                         atr_price=_e_atr,
                         touch_atr=float(_AUTO_SETTINGS.ema_adx_touch_atr),
                         day_counts=_e_st["counts"],
@@ -5353,19 +5547,21 @@ async def _forex_auto_paper_loop():
                     _e_disp = _e_t.get("display", _e_sym)
                     _e_allowed = _e_sym in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
                     if _e_action:
-                        _e_st["counts"][_e_action] = _e_st["counts"].get(_e_action, 0) + 1
-                        candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _e_sym] + [{
+                        arm_rows.append({
                             "symbol": _e_sym,
                             "display": _e_disp,
                             "action": _e_action,
-                            "score": 200.0,
-                            "spread_pips": _LIVE_SPREAD_PIPS.get(_e_sym, 2.0),
+                            "score": float(_e_tech.get("score") or 0.0),
+                            "spread_pips": float(_e_t.get("spread_pips", 0.0) or 0.0),
                             "atr_pips": round(_e_atr / _e_pip_size, 1) if _e_pip_size > 0 else 15.0,
-                            "adx": float(_e_tech.get("adx", 25.0)),
+                            "adx": float(_e_tech.get("adx", 0.0)),
                             "supertrend_dir": int(_e_tech.get("supertrend_dir", 0)),
                             "entry_source": "ema_adx_pullback",
                             "strategy": EMA_ADX_PULLBACK_STRATEGY,
-                        }]
+                            "signal_bar_time": _e_bar,
+                            "signal_bar_confirmed": True,
+                            "_arm_quota": {"kind": "ema", "symbol": _e_sym, "action": _e_action, "bar_time": _e_bar},
+                        })
                         _log_auto_decision(
                             "SCAN",
                             f"📐 [{_e_disp}] {EMA_ADX_PULLBACK_LABEL}: {_e_action} adayı "
@@ -5430,6 +5626,10 @@ async def _forex_auto_paper_loop():
                         if _s_st["day"] != _s_day:
                             _s_st["day"] = _s_day
                             _s_st["counts"] = {}
+                        _s_bar = int(_s_tech.get("bar_time") or 0)
+                        if _s_bar and int(_s_st.get("consumed_bar") or 0) == _s_bar:
+                            continue
+                        _s_counts = dict(_s_st.get("counts") or {})
                         _s_action = s3_pullback_entry(
                             st_dir=int(_s_tech.get("st_dir", 0)),
                             close=float(_s_tech.get("close", 0.0)),
@@ -5443,29 +5643,33 @@ async def _forex_auto_paper_loop():
                             rsi_lo=float(_AUTO_SETTINGS.s3_rsi_lo),
                             atr_price=float(_s_tech.get("atr", 0.0)),
                             pip_size=float(_s_pip),
-                            day_counts=_s_st["counts"],
+                            day_counts=_s_counts,
                             max_per_day=int(_AUTO_SETTINGS.s3_max_per_day),
                             action_key=_s_src,
                         )
                         _s_disp = _s_t.get("display", _s_sym)
                         _s_allowed = _s_sym in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
                         if _s_action:
-                            # 2026-10-10 denetim P1-8: sembol-bazlı TAM dedup (donchian/EAP ile aynı).
-                            # Eskiden yalnız kendi s3_ adayı düşürülüyordu → aynı sembolde farklı
-                            # akış adayları (klasik/donchian/LB) yan yana kalıp çapraz-flip churn üretiyordu.
-                            candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _s_sym] + [{
+                            _s_score_src = _TECHNICAL_CACHE.get(_s_sym) or {}
+                            arm_rows.append({
                                 "symbol": _s_sym,
                                 "display": _s_disp,
                                 "action": _s_action,
-                                "score": 200.0,
-                                "spread_pips": _LIVE_SPREAD_PIPS.get(_s_sym, 2.0),
+                                "score": float(_s_score_src.get("score") or _s_t.get("score") or 0.0),
+                                "spread_pips": float(_s_t.get("spread_pips", 0.0) or 0.0),
                                 "atr_pips": round(float(_s_tech.get("atr", 0.0)) / _s_pip, 1) if _s_pip > 0 else 15.0,
-                                "adx": float(_s_tech.get("adx", 25.0)),
+                                "adx": float(_s_tech.get("adx", 0.0)),
                                 "supertrend_dir": int(_s_tech.get("st_dir", 0)),
                                 "entry_source": _s_src,
                                 "strategy": S3_PULLBACK_STRATEGY,
                                 "s3_tf": _s_tf,
-                            }]
+                                "signal_bar_time": _s_bar,
+                                "signal_bar_confirmed": True,
+                                "_arm_quota": {
+                                    "kind": "s3", "symbol": _s_sym, "action": _s_action,
+                                    "key": _s_key, "action_key": _s_src, "bar_time": _s_bar,
+                                },
+                            })
                             _log_auto_decision(
                                 "SCAN",
                                 f"🧭 [{_s_disp}] {S3_PULLBACK_LABEL} ({_s_tf}): {_s_action} adayı "
@@ -5532,8 +5736,14 @@ async def _forex_auto_paper_loop():
                                 _lb_st["box_hi"] = max(float(b["high"]) for b in _lb_box)
                                 _lb_st["box_lo"] = min(float(b["low"]) for b in _lb_box)
                         continue
+                    _lb_bars_now = _s3_bars_for(_lb_sym, "5m", limit=220)
+                    _lb_last = _lb_bars_now[-1] if _lb_bars_now else None
+                    _lb_close = float(_lb_last["close"]) if _lb_last else 0.0
+                    _lb_bar = int(_lb_last["time"]) if _lb_last else 0
+                    if _lb_bar and int(_lb_st.get("consumed_bar") or 0) == _lb_bar:
+                        continue
                     _lb_action = london_breakout_entry(
-                        close=float(_lb_t.get("ask", 0.0)),
+                        close=_lb_close,
                         box_hi=float(_lb_st.get("box_hi") or 0.0),
                         box_lo=float(_lb_st.get("box_lo") or 0.0),
                         hour_utc=_lb_hour,
@@ -5543,26 +5753,28 @@ async def _forex_auto_paper_loop():
                         max_per_day=int(_AUTO_SETTINGS.lb_max_per_day),
                     )
                     if _lb_action:
-                        _lb_st["counts"][_lb_action] = _lb_st["counts"].get(_lb_action, 0) + 1
                         _lb_box_h = float(_lb_st["box_hi"]) - float(_lb_st["box_lo"])
                         _lb_sl_pips = (_lb_box_h * float(_AUTO_SETTINGS.lb_sl_box_frac)) / _lb_pip if _lb_pip > 0 else 10.0
                         _lb_tp_pips = _lb_sl_pips * float(_AUTO_SETTINGS.lb_tp_r)
-                        _lb_atr = float((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("atr", 0.0))
-                        # 2026-10-10 denetim P1-8: sembol-bazlı TAM dedup (donchian/EAP/S3 ile aynı).
-                        candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _lb_sym] + [{
+                        _lb_tech = _TECHNICAL_CACHE.get(_lb_sym) or {}
+                        _lb_atr = float(_lb_tech.get("atr", 0.0))
+                        arm_rows.append({
                             "symbol": _lb_sym,
                             "display": _lb_disp,
                             "action": _lb_action,
-                            "score": 200.0,
-                            "spread_pips": _LIVE_SPREAD_PIPS.get(_lb_sym, 2.0),
+                            "score": float(_lb_tech.get("score") or _lb_t.get("score") or 0.0),
+                            "spread_pips": float(_lb_t.get("spread_pips", 0.0) or 0.0),
                             "atr_pips": round(_lb_atr / _lb_pip, 1) if _lb_pip > 0 else 15.0,
-                            "adx": float((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("adx", 25.0)),
-                            "supertrend_dir": int((_TECHNICAL_CACHE.get(_lb_sym) or {}).get("supertrend_dir", 0)),
+                            "adx": float(_lb_tech.get("adx", 0.0)),
+                            "supertrend_dir": int(_lb_tech.get("supertrend_dir", 0)),
                             "entry_source": "london_breakout",
                             "strategy": LONDON_BREAKOUT_STRATEGY,
                             "sl_pips_override": round(_lb_sl_pips, 1),
                             "tp_pips_override": round(_lb_tp_pips, 1),
-                        }]
+                            "signal_bar_time": _lb_bar,
+                            "signal_bar_confirmed": True,
+                            "_arm_quota": {"kind": "lb", "symbol": _lb_sym, "action": _lb_action, "bar_time": _lb_bar},
+                        })
                         _log_auto_decision(
                             "SCAN",
                             f"🌅 [{_lb_disp}] {LONDON_BREAKOUT_LABEL}: {_lb_action} adayı — Asya kutusu "
@@ -5649,31 +5861,31 @@ async def _forex_auto_paper_loop():
                             ent_end_min=_ls_ent_hi,
                             day_entered=bool(_ls_st.get("entered")),
                         )
-                        if _ls_action:
-                            _ls_st["entered"] = True
-                            _ls_atr = float((_TECHNICAL_CACHE.get(_ls_sym) or {}).get("atr", 0.0))
+                        if _ls_action and not _ls_st.get("entered"):
+                            _ls_tech = _TECHNICAL_CACHE.get(_ls_sym) or {}
+                            _ls_atr = float(_ls_tech.get("atr", 0.0))
                             _ls_sl_pips = (float(_AUTO_SETTINGS.ls_sl_atr) * _ls_atr / _ls_pip) if _ls_pip > 0 else 0.0
-                            if _ls_sl_pips <= 0:
-                                _ls_st["entered"] = False  # ATR yoksa giriş yok (SL hesaplanamaz)
-                            else:
-                                candidates = [c for c in candidates if str(c.get("symbol", "")).upper() != _ls_sym] + [{
+                            _ls_bar = int(_ls_tech.get("signal_bar_time") or 0)
+                            if _ls_sl_pips > 0 and int(_ls_st.get("consumed_bar") or 0) != _ls_bar:
+                                arm_rows.append({
                                     "symbol": _ls_sym,
                                     "display": _ls_disp,
                                     "action": _ls_action,
-                                    "score": 200.0,
-                                    "spread_pips": _LIVE_SPREAD_PIPS.get(_ls_sym, 2.0),
+                                    "score": float(_ls_tech.get("score") or _ls_t.get("score") or 0.0),
+                                    "spread_pips": float(_ls_t.get("spread_pips", 0.0) or 0.0),
                                     "atr_pips": round(_ls_atr / _ls_pip, 1) if _ls_pip > 0 else 15.0,
-                                    "adx": float((_TECHNICAL_CACHE.get(_ls_sym) or {}).get("adx", 25.0)),
-                                    "supertrend_dir": int((_TECHNICAL_CACHE.get(_ls_sym) or {}).get("supertrend_dir", 0)),
+                                    "adx": float(_ls_tech.get("adx", 0.0)),
+                                    "supertrend_dir": int(_ls_tech.get("supertrend_dir", 0)),
                                     "entry_source": "london_sign",
                                     "strategy": LONDON_SIGN_STRATEGY,
                                     "strategy_label": LONDON_SIGN_LABEL,
                                     "sl_pips_override": round(_ls_sl_pips, 1),
-                                    # TP YOK (0): chandelier trailing taşır — replay spec.
                                     "tp_pips_override": 0.0,
-                                    # EoD zaman-stopu (replay spec: girişten ls_hold_hours saat).
                                     "hold_minutes": int(float(_AUTO_SETTINGS.ls_hold_hours) * 60),
-                                }]
+                                    "signal_bar_time": _ls_bar,
+                                    "signal_bar_confirmed": bool(_ls_tech.get("signal_bar_confirmed")),
+                                    "_arm_quota": {"kind": "ls", "symbol": _ls_sym, "action": _ls_action, "bar_time": _ls_bar},
+                                })
                                 _ls_sign_txt = "+" if _ls_action == "BUY" else "-"
                                 _log_auto_decision(
                                     "SCAN",
@@ -5734,33 +5946,33 @@ async def _forex_auto_paper_loop():
                     if _skc_st["day"] != _skc_day:
                         _skc_st["day"] = _skc_day
                         _skc_st["counts"] = {}
+                    _skc_bar = int(_skc_tech.get("bar_time") or 0)
+                    if _skc_bar and int(_skc_st.get("consumed_bar") or 0) == _skc_bar:
+                        continue
                     _skc_dec = squeeze_kc_entry(_skc_tech, float(_skc_pip), _skc_st["counts"])
                     if _skc_dec:
-                        _skc_st["counts"][_skc_dec["day_key"]] = int(_skc_st["counts"].get(_skc_dec["day_key"], 0)) + 1
-                        candidates = [c for c in candidates
-                                      if str(c.get("symbol", "")).upper() != _skc_sym] + [{
+                        _skc_tech5 = _TECHNICAL_CACHE.get(_skc_sym) or {}
+                        arm_rows.append({
                             "symbol": _skc_sym,
                             "display": _skc_disp,
                             "action": _skc_dec["action"],
-                            "score": 200.0,
-                            "spread_pips": _LIVE_SPREAD_PIPS.get(_skc_sym, 2.0),
-                            "atr_pips": round(float((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("atr", 0.0)) / _skc_pip, 1) if _skc_pip > 0 else 15.0,
-                            "adx": float((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("adx", 25.0)),
-                            # ST(10,3) bu stratejinin KENDİ yön motoru DEĞİL: kanıt
-                            # ST-filtresi kapalı koşuldu (`--combined` harness varsayılanı
-                            # `TUN_ST_FILTER=False`) → aday gerçek ST yönünü taşır ama
-                            # ST kapısı bu koldan atlanır (aşağıda `_is_sqzkc`).
-                            # NOT (2026-10-14): canlı döngüde squeeze_kc EN SON çalışır
-                            # ve bu satır sembolün ÖNCEKİ adayını (klasik radar dahil)
-                            # yerinden eder; harness paritesi (`--combined`) aynı sırayı
-                            # ve yerinden etmeyi uygular (bkz. ARM_KEYS notu).
-                            "supertrend_dir": int((_TECHNICAL_CACHE.get(_skc_sym) or {}).get("supertrend_dir", 0)),
+                            "score": float(_skc_tech5.get("score") or _skc_t.get("score") or 0.0),
+                            "spread_pips": float(_skc_t.get("spread_pips", 0.0) or 0.0),
+                            "atr_pips": round(float(_skc_tech5.get("atr", 0.0)) / _skc_pip, 1) if _skc_pip > 0 else 15.0,
+                            "adx": float(_skc_tech5.get("adx", 0.0)),
+                            "supertrend_dir": int(_skc_tech5.get("supertrend_dir", 0)),
                             "entry_source": "squeeze_kc",
                             "strategy": SQUEEZE_KC_STRATEGY,
                             "strategy_label": SQUEEZE_KC_LABEL,
                             "sl_pips_override": _skc_dec["sl_pips"],
                             "tp_pips_override": _skc_dec["tp_pips"],
-                        }]
+                            "signal_bar_time": _skc_bar,
+                            "signal_bar_confirmed": True,
+                            "_arm_quota": {
+                                "kind": "squeeze", "symbol": _skc_sym, "action": _skc_dec["action"],
+                                "day_key": _skc_dec.get("day_key"), "bar_time": _skc_bar,
+                            },
+                        })
                         _log_auto_decision(
                             "SCAN",
                             f"🌀 [{_skc_disp}] {SQUEEZE_KC_LABEL}: {_skc_dec['action']} adayı — "
@@ -5793,6 +6005,8 @@ async def _forex_auto_paper_loop():
                                     strategy=SQUEEZE_KC_STRATEGY,
                                     strategy_label=SQUEEZE_KC_LABEL,
                                 )
+
+            candidates = _order_entry_arms(candidates, arm_rows)
 
             # Periyodik Canlı Tarama Özeti (Her 20 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 20.0:
@@ -5887,7 +6101,7 @@ async def _forex_auto_paper_loop():
                         _LAST_DATA_GAP_LOG[sym_item] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"📡 [{t_item['display']}] Veri Hattı: Yahoo mum verisi alınamıyor — bu sembol sinyal üretemiyor (veri gelince otomatik devam eder).",
+                            f"📡 [{t_item['display']}] Veri Hattı: MT5 tik geçmişi kısa veya yok — bu sembol sinyal üretemiyor (tik gelince otomatik devam eder).",
                             symbol=sym_item,
                         )
 
@@ -5923,6 +6137,21 @@ async def _forex_auto_paper_loop():
 
                 new_action = cand.get("action", "")  # "BUY" or "SELL"
                 if new_action not in ("BUY", "SELL"):
+                    continue
+                if sym in _opened_cycle:
+                    continue
+                _tick_row = ticks.get(sym) or {}
+                _data_why = entry_data_blocked(_tick_row)
+                if _data_why or _tech_is_stale(sym, now_ts):
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_veri", 0.0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_veri"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] Tik verisi yok, bayat veya 5m kovasinda bosluk — giris acilmadi.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
                     continue
 
                 # XAU ana RADAR sinyali yalnızca zaman damgalı, kapanmış M5
@@ -5978,9 +6207,14 @@ async def _forex_auto_paper_loop():
                         continue
 
                 if sym in all_active_syms:
+                    _pend_flip = _PENDING_FLIP.get(sym)
+                    if _pend_flip and str(_pend_flip.get("direction") or "") == new_action and not _pend_flip.get("close_ok"):
+                        continue
                     existing_dirs = set()
                     matching_auto = [p for p in _AUTO_STATE.get("open_positions", []) if p.get("symbol", "").upper() == sym]
                     matching_mt5 = [p for p in _MT5_STATE.get("open_positions", []) if p.get("symbol", "").upper() == sym]
+                    if _pend_flip and _pend_flip.get("close_ok") and str(_pend_flip.get("direction") or "") == new_action:
+                        matching_mt5 = []
                     matching_pending = [c for c in _MT5_STATE.get("pending_commands", []) if c.get("action") == "OPEN_ORDER" and c.get("symbol", "").upper() == sym]
 
                     for p in matching_auto:
@@ -6016,11 +6250,12 @@ async def _forex_auto_paper_loop():
                                     exit_p = (t_sym["bid"] if ap.get("direction") == "BUY" else t_sym["ask"]) if t_sym else None
                                     await _close_position_internal(ap["id"], "REVERSAL_FLIP", exit_p)
 
-                            # MT5 açık ZIT pozisyonu varsa kapatma komutu ilet
+                            _flip_tickets: List[Any] = []
                             for mp in matching_mt5:
                                 if mp.get("direction", "").upper() in opposite_dirs:
                                     t_id = mp.get("ticket")
                                     if t_id:
+                                        _flip_tickets.append(t_id)
                                         already_closing = any(
                                             c.get("ticket") == t_id and c.get("action") == "CLOSE_ORDER"
                                             for c in _MT5_STATE.get("pending_commands", [])
@@ -6030,25 +6265,22 @@ async def _forex_auto_paper_loop():
                                                 "id": f"CMD-CLOSE-{t_id}-FLIP",
                                                 "action": "CLOSE_ORDER",
                                                 "ticket": t_id,
+                                                "symbol": sym,
                                             })
 
-                            # Eski ZIT yöndeki bekleyen emirler varsa temizle
                             _MT5_STATE["pending_commands"] = [
                                 c for c in _MT5_STATE.get("pending_commands", [])
                                 if not (c.get("action") == "OPEN_ORDER" and c.get("symbol", "").upper() == sym and c.get("direction") != new_action)
                             ]
 
-                            # Anında ters yöne geçebilmek için sembol soğumasını sıfırla
+                            if _flip_tickets:
+                                _PENDING_FLIP[sym] = {
+                                    "direction": new_action,
+                                    "tickets": list(_flip_tickets),
+                                    "close_ok": False,
+                                }
+                                continue
                             _LAST_SYMBOL_ENTRY_TIME[sym] = 0.0
-                            if "XAU" in sym or "GOLD" in sym:
-                                _LAST_GOLD_EXIT_TIME = 0.0
-                            # 2026-10-10 denetim P1-6: BTC ters-dönüşünde de çıkış soğumasını
-                            # sıfırla — yoksa flip karşı bacağı kapatıp 60 sn boyunca düz kalıyordu
-                            # (yorumun vaat ettiği "anında ters yön" BTC'de gerçekleşmiyordu).
-                            if "BTC" in sym:
-                                _LAST_BTC_EXIT_TIME = 0.0
-
-                            # Döngü devam eder ve aşağıda yeni new_action (BUY/SELL) emrini açar!
                         else:
                             # Zıt yönlü ama maliyet kapısı (spread) aşılıyor — mevcut işlemi bozma.
                             # (flip_ignore_min_score açıkken skor asla bu kapıya takılmaz;
@@ -6285,7 +6517,7 @@ async def _forex_auto_paper_loop():
                 weak_symbol_score_bump = 0.0
                 if _AUTO_SETTINGS.dxy_filter_enabled:
                     veto_reason = dxy_entry_veto(sym, direction, dxy_regime)
-                    if veto_reason == "dxy_conflict":
+                    if veto_reason in ("dxy_conflict", "dxy_no_data"):
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_dxy", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_dxy"] = now_ts
                             _log_auto_decision(
@@ -6368,15 +6600,8 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # 7. Skor Eşiği (Ons Altın ve Emtialar için min 78.0 yüksek teyit)
-                # DXY nötr rejimdeki zayıf semboller (XAUUSD/USDJPY/USDCHF) +5.0 ekstra skor ister.
-                is_commodity = is_gold or ("OIL" in sym or "USOIL" in sym)
-                if sym == "BTCUSD":
-                    # Paneldeki btc_min_score ayarı varsa doğrudan BTC'ye özel eşik olarak çalışır
-                    req_score = _AUTO_SETTINGS.btc_min_score if _AUTO_SETTINGS.btc_min_score > 0 else _AUTO_SETTINGS.min_score
-                else:
-                    req_score = 78.0 if is_commodity else _AUTO_SETTINGS.min_score
-                req_score += weak_symbol_score_bump
+                # 7. Skor eşiği — panel ile aynı fonksiyon (emtia tabanı tek sabitte).
+                req_score = required_entry_score(sym, weak_symbol_score_bump)
                 if cand["score"] < req_score and not _news_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
@@ -6413,21 +6638,17 @@ async def _forex_auto_paper_loop():
                 # alındı (harness varsayılanı TUN_ST_FILTER=False) → canlıda filtre
                 # açıkken uygulanırsa test edilen davranıştan sapar.
                 st_dir = int(cand.get("supertrend_dir", 0))
-                _is_eap = str(cand.get("entry_source", "")) == "ema_adx_pullback"
-                _is_s3 = str(cand.get("entry_source", "")).startswith("s3_")
-                _is_sqzkc = str(cand.get("entry_source", "")) == "squeeze_kc"
-                if _AUTO_SETTINGS.supertrend_filter_enabled and st_dir != 0 and not _is_eap and not _is_s3 and not _is_sqzkc:
-                    if ((direction == "BUY" and st_dir < 0) or (direction == "SELL" and st_dir > 0)) and not _news_bypass:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
-                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
-                            _log_auto_decision(
-                                "GATE",
-                                f"[{cand['display']}][{_c_strat_lbl}] SuperTrend Teyidi: {direction} yönü SuperTrend yönüyle ({'BOĞA' if st_dir > 0 else 'AYI'}) çelişiyor. İşlem engellendi.",
-                                symbol=sym,
-                                strategy=_c_strat,
-                                strategy_label=_c_strat_lbl,
-                            )
-                        continue
+                if supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir, news_bypass=_news_bypass):
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] SuperTrend Teyidi: {direction} yönü SuperTrend yönüyle ({'BOĞA' if st_dir > 0 else 'AYI'}) çelişiyor. İşlem engellendi.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
+                    continue
 
                 # 8. Dinamik Lot & Sert Lot Tavanı (Hard Lot Cap)
                 t = ticks.get(sym)
@@ -6599,6 +6820,17 @@ async def _forex_auto_paper_loop():
 
                 # IC Markets MT5 bağlıysa doğrudan MT5 emir kuyruğuna ekle
                 if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
+                    if _non_demo_live_blocked((_MT5_STATE.get("account") or {}).get("server")):
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_nondemo", 0) > 60.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_nondemo"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}][{_c_strat_lbl}] Development modunda demo olmayan hesaba emir yazilmadi.",
+                                symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
+                            )
+                        continue
                     cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
                     # Çıkış planı: köprünün dynamic-exits spec'iyle BİREBİR değerler (ATR'siz,
                     # base_sl=8 default — 2 pencere replay kazananı A davranışı). Değerler pozisyon
@@ -6704,6 +6936,10 @@ async def _forex_auto_paper_loop():
                     _invalidate_status_cache()
 
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
+                _commit_arm_quota(cand)
+                _opened_cycle.add(sym)
+                if (_PENDING_FLIP.get(sym) or {}).get("close_ok"):
+                    _PENDING_FLIP.pop(sym, None)
                 if sym == "XAUUSD" and not _c_src:
                     _LAST_XAU_RADAR_SIGNAL_BAR[sym] = int(cand.get("signal_bar_time") or 0)
 
@@ -8407,10 +8643,15 @@ class MT5ToggleAutoRequest(BaseModel):
 
 
 @router.post("/mt5/sync")
-async def sync_mt5_bridge(req: MT5SyncRequest):
-    """Windows MT5 köprüsünden gelen canlı veriyi alır ve bekleyen emirleri iletir."""
-    global _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME
+async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
+    """Windows MT5 köprüsünden gelen canlı veriyi alır ve bekleyen emirleri iletir.
+
+    Kimlik paylaşılan köprü sırasıdır (oturum değil). Sır yoksa veya başlık
+    uyuşmazsa durum değişmez: connected yazılmaz, emir kuyruğu boşalmaz.
+    """
     now_ts = time.time()
+    if not _mt5_sync_authorized(request):
+        raise HTTPException(status_code=401, detail="Köprü doğrulanamadı")
     _MT5_STATE["connected"] = True
     _MT5_STATE["last_ping"] = now_ts
 
@@ -8445,18 +8686,15 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
                 clean.append({"time": t, "open": o, "high": h, "low": l, "close": c, "volume": 0.0})
             if clean:
                 clean.sort(key=lambda x: x["time"])
-                _MT5_CANDLES_CACHE[f"{sym_part}|{tf_part}"] = (now_c, clean)
+                _MT5_CANDLES_CACHE[f"{canonical_symbol(sym_part)}|{tf_part}"] = (now_c, clean)
 
     # MT5 canlı tick fiyatlarını entegre et
     if req.ticks:
         for sym_code, tick_dict in req.ticks.items():
             sym_up = str(sym_code).upper()
-            live_val = tick_dict.get("ask") or tick_dict.get("last") or tick_dict.get("bid")
-            if live_val and live_val > 0:
-                _LIVE_PRICES_CACHE[sym_up] = float(live_val)
-            # Köprüden GERÇEK spread (pip) — panel varsayım yerine broker gerçekliğini kullanır
             bid_v = tick_dict.get("bid")
             ask_v = tick_dict.get("ask")
+            _note_mt5_tick(sym_up, bid_v, ask_v or tick_dict.get("last"), now_ts)
             if bid_v and ask_v and float(ask_v) > float(bid_v) > 0:
                 app_sym = canonical_symbol(sym_up)
                 pip_size = get_symbol_trading_specs(app_sym)["pip_size"]
@@ -8528,15 +8766,12 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             try:
                 _cr_action = str(_cr.get("action", "")).upper()
                 _cr_sym = str(_cr.get("symbol", "")).upper()
-                _cr_ok = bool(_cr.get("success", True))
+                _cr_ok = bool(_cr.get("success", False))
                 _cr_err = _cr.get("error") or _cr.get("retcode")
+                _cr_ticket = _cr.get("ticket")
                 if not _cr_ok:
                     if _cr_action == "OPEN_ORDER" and _cr_sym:
                         _LAST_SYMBOL_ENTRY_TIME.pop(_cr_sym, None)
-                        if "XAU" in _cr_sym or "GOLD" in _cr_sym:
-                            _LAST_GOLD_EXIT_TIME = 0.0
-                        if "BTC" in _cr_sym:
-                            _LAST_BTC_EXIT_TIME = 0.0
                     _log_auto_decision(
                         "SYSTEM",
                         f"❌ MT5 emri BAŞARISIZ: {_cr_action} {_cr_sym} — {_cr_err} "
@@ -8544,6 +8779,16 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
                         symbol=_cr_sym or None,
                     )
                 else:
+                    if _cr_action == "CLOSE_ORDER" and _cr_ticket is not None:
+                        _cr_ticket_s = str(_cr_ticket)
+                        for _pf_sym, _pf in list(_PENDING_FLIP.items()):
+                            tickets = {str(t) for t in (_pf.get("tickets") or [])}
+                            if _cr_ticket_s in tickets:
+                                done = {str(t) for t in (_pf.get("done") or [])}
+                                done.add(_cr_ticket_s)
+                                _pf["done"] = list(done)
+                                if tickets and done >= tickets:
+                                    _pf["close_ok"] = True
                     _log_auto_decision(
                         "SYSTEM",
                         f"✅ MT5 emri uygulandı: {_cr_action} {_cr_sym}"
@@ -8553,9 +8798,16 @@ async def sync_mt5_bridge(req: MT5SyncRequest):
             except Exception as _cr_exc:  # pragma: no cover - savunmacı
                 _log_auto_decision("SYSTEM", f"⚠️ Emir sonucu işlenemedi: {_cr_exc}")
 
-    # Bekleyen emirleri al ve boşalt
-    commands = list(_MT5_STATE["pending_commands"])
-    _MT5_STATE["pending_commands"].clear()
+    server_name = (_MT5_STATE.get("account") or {}).get("server")
+    if _non_demo_live_blocked(server_name):
+        _log_auto_decision(
+            "SYSTEM",
+            "Development modunda demo olmayan hesaba bekleyen emir iletilmedi.",
+        )
+        commands = []
+    else:
+        commands = list(_MT5_STATE["pending_commands"])
+        _MT5_STATE["pending_commands"].clear()
 
     return {
         "status": "ok",

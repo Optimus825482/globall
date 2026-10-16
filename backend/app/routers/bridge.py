@@ -46,8 +46,9 @@ async def get_bridge_status():
 
 
 @router.post("/test-ping")
-async def post_test_ping(req: BridgeTestPingRequest):
+async def post_test_ping(req: BridgeTestPingRequest, request: Request):
     """Dispatch a test ping to Binance TR to verify network/auth connectivity."""
+    require_admin(request)
     res = await tr_bridge.test_ping_tr(
         symbol=req.symbol or "SOLUSDT",
         url_override=req.url,
@@ -59,11 +60,7 @@ async def post_test_ping(req: BridgeTestPingRequest):
 @router.post("/config")
 async def update_bridge_configuration(req: BridgeConfigRequest, request: Request):
     """Update bridge parameters at runtime (saved to database). Admin only."""
-    try:
-        require_admin(request)
-    except Exception:
-        # Fallback if admin check allows session or in dev
-        pass
+    require_admin(request)
 
     new_cfg = await tr_bridge.update_bridge_config(
         enabled=req.enabled,
@@ -82,6 +79,7 @@ async def update_bridge_configuration(req: BridgeConfigRequest, request: Request
 @router.post("/dispatch")
 async def manual_dispatch(req: BridgeDispatchRequest, request: Request):
     """Manually dispatch a signal to Binance TR for testing/verification."""
+    require_admin(request)
     result = await tr_bridge.send_signal_to_tr(
         symbol=req.symbol,
         signal_type=req.signal_type,

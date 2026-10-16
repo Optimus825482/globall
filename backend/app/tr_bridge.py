@@ -178,6 +178,9 @@ async def send_signal_to_tr(
     if not url:
         _STATS["total_skipped_disabled"] += 1
         return {"ok": False, "skipped": True, "reason": "no_url_configured"}
+    if not str(cfg.get("secret") or "").strip():
+        _STATS["total_skipped_disabled"] += 1
+        return {"ok": False, "skipped": True, "reason": "no_secret"}
 
     # Score threshold check (if score is present and rule applies)
     if score is not None and score < cfg["min_score"] and not force:
@@ -346,6 +349,8 @@ async def test_ping_tr(
 
     if not target_url:
         return {"ok": False, "error": "Hedef URL tanımlanmamış."}
+    if not str(target_secret or "").strip():
+        return {"ok": False, "error": "Köprü sırrı yok; test ping gönderilmedi."}
 
     base_asset, tr_symbol = map_to_tr_symbol(symbol)
     now = time.time()

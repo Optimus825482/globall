@@ -285,6 +285,7 @@ export default function ForexNativeChart({
   const [candles, setCandles] = useState<CandleBar[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quoteError, setQuoteError] = useState("");
 
   // Göstergeler: MT5 mobil akışı — `IndicatorPicker` ile eklenen HER indikatör
   // (kütüphanedeki 450+ dahil) kendi paneli/çizgisiyle çizilir. Varsayılan:
@@ -417,14 +418,21 @@ export default function ForexNativeChart({
   // Mum Verisi Yükleme
   const loadKlines = useCallback(async (tf: Timeframe, silent = false) => {
     if (!silent) setLoading(true);
-    setError(null);
     try {
       const data = await apiFetch(`/api/forex/klines?symbol=${encodeURIComponent(symbol)}&interval=${tf}&limit=250`);
-      if (data && Array.isArray(data.candles) && data.candles.length > 0) {
+      const apiError = typeof data?.error === "string" ? data.error.trim() : "";
+      const rawCandles = Array.isArray(data?.candles) ? data.candles : [];
+      if (apiError && rawCandles.length === 0) {
+        setError(apiError);
+        if (data?.current_price == null) setLivePrice(null);
+        return;
+      }
+      if (rawCandles.length > 0) {
         // SONLULUK KAPISI: backend eksik/`None` alan döndürürse `Number(undefined)`
         // = NaN olur; NaN'lı bir mum seriye girerse lightweight-charts onu boyarken
         // "Value is undefined" istisnası fırlatır (grafik her karede patlar).
         // Bozuk mumlar seriye HİÇ girmesin.
+        setError(null);
         const parsed: CandleBar[] = data.candles
           .map((c: any) => ({
             time: Number(c.time) as UTCTimestamp,
@@ -606,6 +614,21 @@ export default function ForexNativeChart({
         if (res && Array.isArray(res.tickers)) {
           const tick = res.tickers.find((t: any) => t.symbol === symbol.toUpperCase());
           if (tick) {
+            const tickError = typeof tick.error === "string" ? tick.error.trim() : "";
+            const bidKnown = Number(tick.bid);
+            const askKnown = Number(tick.ask);
+            const priceKnown = Number(tick.price);
+            const hasQuote = (Number.isFinite(priceKnown) && priceKnown > 0)
+              || (Number.isFinite(bidKnown) && bidKnown > 0)
+              || (Number.isFinite(askKnown) && askKnown > 0);
+            if (tickError && !hasQuote) {
+              setQuoteError(tickError);
+              setLivePrice(null);
+              setLiveBid(null);
+              setLiveAsk(null);
+              return;
+            }
+            setQuoteError("");
             // FİYAT KAPISI: tick nesnesi `price` taşımazsa (yalnız bid/ask yayınlanır)
             // eskiden `tick.price` = `undefined` doğrudan mumun `close` alanına yazılıyor,
             // `series.update()` ile seriye giriyor ve lightweight-charts mumu boyarken
@@ -886,11 +909,15 @@ export default function ForexNativeChart({
 
           {/* Canlı Fiyat Rozeti */}
           <div className="flex items-center gap-2.5 bg-bunker-950 px-3 py-1 rounded-lg border border-bunker-800">
+            {quoteError && livePrice == null ? (
+              <span className="text-xs font-bold text-rose-300">{quoteError}</span>
+            ) : (
             <span className={`text-base font-black transition-colors ${
               lastTickDir === "up" ? "text-emerald-400" : lastTickDir === "down" ? "text-rose-400" : "text-white"
             }`}>
               {formatPriceBySymbol(livePrice, symbol)}
             </span>
+            )}
             {liveBid != null && liveAsk != null && (
               <span className="text-[11px] text-bunker-muted hidden md:inline">
                 ({formatPriceBySymbol(liveBid, symbol)} / {formatPriceBySymbol(liveAsk, symbol)})

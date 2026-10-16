@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import Link from "next/link";
+import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 
 interface CalendarEvent {
   id: string;
@@ -64,31 +66,20 @@ export default function ForexCalendarPage() {
   const [error, setError] = useState("");
   const [filterStars, setFilterStars] = useState<number | null>(null);
 
-  /* API'den takvim verisini çek */
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchNews() {
-      try {
-        const res = await fetch("/api/forex/news?refresh=1", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!cancelled) {
-          setEvents(data.news || []);
-          setError("");
-        }
-      } catch (e) {
-        if (!cancelled) setError("Takvim verisi alınamadı");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const fetchNews = useCallback(async () => {
+    try {
+      const data = await apiFetch("/api/forex/news?refresh=1");
+      setEvents(Array.isArray(data?.news) ? data.news : []);
+      setError("");
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : "";
+      setError(detail ? `Takvim verisi alınamadı: ${detail}` : "Takvim verisi alınamadı");
+    } finally {
+      setLoading(false);
     }
-    fetchNews();
-    const t = setInterval(fetchNews, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
   }, []);
+
+  usePolling(fetchNews, 60_000);
 
   const filtered = filterStars
     ? events.filter((e) => (e.stars || (e.impact === "High" ? 3 : 2)) === filterStars)
@@ -236,12 +227,19 @@ export default function ForexCalendarPage() {
       )}
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-sm text-center">
-          {error}
+        <div role="alert" className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-sm text-center space-y-3">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => { setLoading(true); void fetchNews(); }}
+            className="px-4 py-1.5 rounded-lg bg-rose-500/20 border border-rose-400/40 font-bold text-xs"
+          >
+            Tekrar Dene
+          </button>
         </div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && !error && filtered.length === 0 && (
         <div className="text-bunker-muted font-mono text-sm text-center py-12">
           Seçilen filtreye uygun olay bulunamadı.
         </div>

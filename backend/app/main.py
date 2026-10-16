@@ -288,8 +288,6 @@ async def require_admin_session(request: Request, call_next):
         "/api/auth/status",
         "/api/auth/login",
         "/api/forex/mt5/sync",
-        "/api/forex/auto-paper/trades",
-        "/api/forex/auto-paper/status",
         "/api/forex/auto-paper/gate-snapshot/BTCUSD",
         "/api/forex/auto-paper/gate-snapshot/XAUUSD",
         "/api/forex/tickers",

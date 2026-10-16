@@ -93,7 +93,7 @@ interface MT5State {
     free_margin: number;
     leverage: number;
     currency: string;
-  };
+  } | null;
   open_positions: Array<{
     ticket: number;
     symbol: string;
@@ -137,23 +137,15 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     connected: false,
     last_ping_seconds_ago: null,
     auto_trade: false,
-    account: {
-      login: 53077151,
-      name: "ERKAN ERDEM",
-      server: "ICMarketsSC-Demo",
-      balance: 1000.0,
-      equity: 1000.0,
-      margin: 0.0,
-      free_margin: 1000.0,
-      leverage: 5000,
-      currency: "USD",
-    },
+    account: null,
     open_positions: [],
     closed_deals: [],
     pending_commands_count: 0,
   });
   const [isTogglingMt5, setIsTogglingMt5] = useState(false);
   const [mt5Message, setMt5Message] = useState<string | null>(null);
+  const [mt5MessageIsError, setMt5MessageIsError] = useState(false);
+  const [mt5Error, setMt5Error] = useState("");
   const [showMt5Guide, setShowMt5Guide] = useState(false);
 
   // Otonom Sistem Durumu
@@ -191,13 +183,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
   // Parametre paneli 2026-10-07'de /forex/ayarlar sayfasına taşındı —
   // bu sayfa yalnızca izler, motor ayarlarını düzenlemez.
-  const [showManualForm, setShowManualForm] = useState(false);
-
-  // Manuel İşlem Formu (symbols verilirse varsayılan ilk izinli sembol olur)
-  const [manualSym, setManualSym] = useState(symbols && symbols.length ? symbols[0] : "EURUSD");
-  const [manualLots, setManualLots] = useState(0.5);
-  const [manualSlPips, setManualSlPips] = useState(15);
-  const [manualTpPips, setManualTpPips] = useState(25);
+  const flashNotice = (text: string, isError = false) => {
+    setMt5Message(text);
+    setMt5MessageIsError(isError);
+    window.setTimeout(() => setMt5Message(null), isError ? 8000 : 5000);
+  };
 
   const fetchStatus = async () => {
     try {
@@ -205,8 +195,9 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       if (res) {
         setAutoStatus(res.status || "Hazır");
         setAutoEnabled(Boolean(res.enabled));
-        setBalance(res.balance ?? 10000.0);
-        setEquity(res.equity ?? res.balance ?? 10000.0);
+        if (typeof res.balance === "number") setBalance(res.balance);
+        if (typeof res.equity === "number") setEquity(res.equity);
+        else if (typeof res.balance === "number") setEquity(res.balance);
         setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
         setOpenPnlPips(res.open_pnl_pips ?? 0.0);
         setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
@@ -241,16 +232,25 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         setSessions(res.sessions || []);
       }
     } catch (err) {
-      console.error("Forex auto-paper status alınamadı:", err);
+      const detail = err instanceof Error ? err.message : "Durum alınamadı";
+      setAutoStatus(`bağlantı yok: ${detail}`);
     }
 
     try {
       const mt5Res = await apiFetch("/api/forex/mt5/status");
       if (mt5Res) {
-        setMt5(mt5Res);
+        setMt5({
+          ...mt5Res,
+          account: mt5Res.account ?? null,
+          open_positions: mt5Res.open_positions || [],
+          closed_deals: mt5Res.closed_deals || [],
+        });
+        setMt5Error("");
       }
     } catch (err) {
-      // MT5 köprüsü sorgulama
+      const detail = err instanceof Error ? err.message : "MT5 durumu alınamadı";
+      setMt5Error(`MT5 bağlantı hatası: ${detail}`);
+      setMt5((prev) => ({ ...prev, connected: false }));
     }
   };
 
@@ -271,15 +271,15 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       });
       if (res) {
         setMt5((prev) => ({ ...prev, auto_trade: res.auto_trade }));
-        setMt5Message(
+        flashNotice(
           res.auto_trade
-            ? "⚡ IC Markets MT5 otomatik emir iletimi AÇILDI. Scalper sinyalleri gerçek MT5 Demo hesabınızda açılacak."
-            : "🛑 IC Markets MT5 otomatik emir iletimi DURDURULDU."
+            ? "IC Markets MT5 otomatik emir iletimi açıldı."
+            : "IC Markets MT5 otomatik emir iletimi durduruldu."
         );
-        setTimeout(() => setMt5Message(null), 5000);
       }
     } catch (err) {
-      console.error("MT5 toggle hatası:", err);
+      const detail = err instanceof Error ? err.message : "Motor anahtarı başarısız";
+      flashNotice(`Motor aç/kapat hatası: ${detail}`, true);
     } finally {
       setIsTogglingMt5(false);
     }
@@ -294,11 +294,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticket }),
       });
-      setMt5Message(`Bilet #${ticket} kapatma emri MT5 köprüsüne iletildi.`);
-      setTimeout(() => setMt5Message(null), 4000);
+      flashNotice(`Bilet #${ticket} kapatma emri MT5 köprüsüne iletildi.`);
       fetchStatus();
     } catch (err) {
-      console.error("MT5 close hatası:", err);
+      const detail = err instanceof Error ? err.message : "Pozisyon kapatılamadı";
+      flashNotice(`Pozisyon kapatma hatası: ${detail}`, true);
     }
   };
 
@@ -310,11 +310,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       await apiFetch("/api/forex/mt5/close-all", {
         method: "POST",
       });
-      setMt5Message(`🛑 Tüm (${count}) MT5 pozisyonunu kapatma emri köprüye iletildi.`);
-      setTimeout(() => setMt5Message(null), 5000);
+      flashNotice(`Tüm (${count}) MT5 pozisyonunu kapatma emri köprüye iletildi.`);
       fetchStatus();
     } catch (err) {
-      console.error("MT5 close-all hatası:", err);
+      const detail = err instanceof Error ? err.message : "Toplu kapatma başarısız";
+      flashNotice(`Tümünü kapatma hatası: ${detail}`, true);
     }
   };
 
@@ -330,9 +330,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       if (res) {
         setAutoEnabled(res.enabled);
         setAutoStatus(res.status);
+        flashNotice(res.enabled ? "Otonom motor açıldı." : "Otonom motor kapatıldı.");
       }
     } catch (err) {
-      console.error("Toggle hatası:", err);
+      const detail = err instanceof Error ? err.message : "Motor anahtarı başarısız";
+      flashNotice(`Motor aç/kapat hatası: ${detail}`, true);
     }
   };
 
@@ -344,9 +346,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
+      flashNotice("Pozisyon kapatma emri iletildi.");
       fetchStatus();
     } catch (err) {
-      console.error("Pozisyon kapatma hatası:", err);
+      const detail = err instanceof Error ? err.message : "Pozisyon kapatılamadı";
+      flashNotice(`Pozisyon kapatma hatası: ${detail}`, true);
     }
   };
 
@@ -407,31 +411,12 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         await apiFetch("/api/forex/auto-paper/reset", {
           method: "POST",
         });
+        flashNotice("Hesap sıfırlama emri iletildi.");
         fetchStatus();
       } catch (err) {
-        console.error("Hesap sıfırlama hatası:", err);
+        const detail = err instanceof Error ? err.message : "Hesap sıfırlanamadı";
+        flashNotice(`Sıfırlama hatası: ${detail}`, true);
       }
-    }
-  };
-
-  // Manuel İşlem Açma (Otonom motora ekleme)
-  const openManualTrade = async (direction: "BUY" | "SELL") => {
-    try {
-      // Ticker fiyatını al
-      const tickersRes = await apiFetch("/api/forex/tickers");
-      const tick = (tickersRes?.tickers || []).find((t: any) => t.symbol === manualSym);
-      if (!tick) return;
-
-      const pipSize = tick.pip_size || 0.0001;
-      const digits = tick.digits || 5;
-      const entryPrice = direction === "BUY" ? tick.ask : tick.bid;
-      const slPrice = direction === "BUY" ? entryPrice - manualSlPips * pipSize : entryPrice + manualSlPips * pipSize;
-      const tpPrice = direction === "BUY" ? entryPrice + manualTpPips * pipSize : entryPrice - manualTpPips * pipSize;
-
-      // Pozisyon açma isteği (State'e doğrudan veya backend aracılığıyla)
-      alert(`${direction} işlemi hazırlandı: ${manualLots} Lot @ ${entryPrice}`);
-    } catch (err) {
-      console.error("Manuel işlem açma hatası:", err);
     }
   };
 
@@ -472,7 +457,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               </span>
             </div>
             <p className="text-xs text-slate-700 dark:text-bunker-muted font-semibold mt-1">
-              Tüm sembollerin merkezi otonom izleme konsolu · Hesap: <span className="text-sky-600 dark:text-cyan-300 font-bold font-mono">{mt5.account?.login || 53077151}</span> ({mt5.account?.server || "ICMarketsSC-Demo"}) · Sahip: <span className="text-slate-900 dark:text-white font-bold">{mt5.account?.name || "ERKAN ERDEM"}</span> · M1 / M5 Çoklu Zaman Dilimi & Dinamik SL
+              Tüm sembollerin merkezi otonom izleme konsolu · Hesap: <span className="text-sky-600 dark:text-cyan-300 font-bold font-mono">{mt5.account?.login ?? "—"}</span> ({mt5.account?.server ?? "—"}) · Sahip: <span className="text-slate-900 dark:text-white font-bold">{mt5.account?.name ?? "—"}</span> · M1 / M5 Çoklu Zaman Dilimi & Dinamik SL
             </p>
           </div>
         </div>
@@ -511,6 +496,20 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         </div>
       </div>
 
+      {(mt5Error || mt5Message) && (
+        <div
+          role="alert"
+          className={`px-4 py-2 rounded-xl border font-mono text-xs ${
+            mt5Error || mt5MessageIsError
+              ? "bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-300"
+              : "bg-emerald-500/10 border-emerald-500/40 text-emerald-800 dark:text-emerald-300"
+          }`}
+        >
+          {mt5Error && <p>{mt5Error}</p>}
+          {mt5Message && <p>{mt5Message}</p>}
+        </div>
+      )}
+
       {/* Rehber / Yardım Paneli */}
       {showMt5Guide && (
         <div className="p-4 rounded-xl bg-bunker-950 border border-blue-500/30 text-xs text-bunker-muted space-y-2">
@@ -519,7 +518,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           </div>
           <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
             <li>Bilgisayarınızda proje klasöründeki <span className="text-emerald-400 font-mono font-bold">run_mt5_bridge.bat</span> dosyasını çift tıklayarak çalıştırın.</li>
-            <li>Açılan konsol penceresi, bilgisayarınızdaki IC Markets MT5 terminaline otomatik olarak bağlanır (<span className="text-cyan-300 font-mono">53077151</span> hesabı).</li>
+            <li>Açılan konsol penceresi, bilgisayarınızdaki IC Markets MT5 terminaline bağlanır. Hesap numarası bağlantı kurulunca yukarıda görünür.</li>
             <li>MetaTrader 5 terminalinde üst menüdeki <span className="text-yellow-400 font-bold">&quot;Algo Trading&quot; (Otomatik İşlem)</span> butonunun yeşil yandığından emin olun (Komut dosyasında otomatik yapılandırıldı).</li>
             <li>Yukarıdaki <span className="text-emerald-400 font-bold">&quot;Otonom Scalper&apos;ı Başlat&quot;</span> butonuna bastığınızda, sistemin tespit ettiği tüm teyitli sinyaller doğrudan IC Markets demo hesabınızda canlı piyasa emri olarak açılır, kârda başabaş (BE) ve dinamik iz süren stop (Trailing) uygulanır!</li>
           </ol>
@@ -528,26 +527,26 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
       {/* IC MARKETS MT5 CANLI METRİKLERİ */}
       {(() => {
-        const liveBal = Number(mt5.account?.balance ?? balance ?? 1000.0);
-        const liveEq = Number(mt5.account?.equity ?? liveBal);
-        const liveMargin = Number(mt5.account?.free_margin ?? liveBal);
+        const liveBal = mt5.account ? Number(mt5.account.balance) : null;
+        const liveEq = mt5.account ? Number(mt5.account.equity) : null;
+        const liveMargin = mt5.account ? Number(mt5.account.free_margin) : null;
         const livePnl = (mt5.open_positions || []).reduce((acc, p) => acc + Number(p.pnl_usd ?? (p as any).profit ?? 0), 0);
         return (
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
               <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">IC Markets Bakiye</span>
               <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                ${liveBal.toFixed(2)} <span className="text-xs font-normal text-slate-500 dark:text-bunker-muted">{mt5.account?.currency || "USD"}</span>
+                {liveBal == null ? "—" : `$${liveBal.toFixed(2)}`} <span className="text-xs font-normal text-slate-500 dark:text-bunker-muted">{mt5.account?.currency || ""}</span>
               </span>
               <span className="text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5">Kapanan net MT5 bakiye</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
               <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Özsermaye (Equity)</span>
-              <span className={`text-lg font-black font-mono ${liveEq >= liveBal ? "text-sky-600 dark:text-cyan-300" : "text-rose-600 dark:text-rose-400"}`}>
-                ${liveEq.toFixed(2)}
+              <span className={`text-lg font-black font-mono ${liveEq != null && liveBal != null && liveEq >= liveBal ? "text-sky-600 dark:text-cyan-300" : "text-rose-600 dark:text-rose-400"}`}>
+                {liveEq == null ? "—" : `$${liveEq.toFixed(2)}`}
               </span>
-              <span className="text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5">Serbest: ${liveMargin.toFixed(2)}</span>
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
@@ -561,17 +560,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
               <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Hesap / Sunucu</span>
               <span className="text-base font-black text-slate-900 dark:text-white tracking-wide">
-                {mt5.account?.login || 53077151}
+                {mt5.account?.login ?? "—"}
               </span>
-              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 block mt-0.5 truncate">{mt5.account?.server || "ICMarketsSC-Demo"}</span>
+              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 block mt-0.5 truncate">{mt5.account?.server ?? "—"}</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
               <span className="text-[11px] font-bold text-slate-700 dark:text-bunker-muted uppercase block">Kaldıraç & Sahip</span>
               <span className="text-base font-black text-amber-600 dark:text-yellow-300">
-                1:{mt5.account?.leverage || 5000}
+                {mt5.account?.leverage != null ? `1:${mt5.account.leverage}` : "—"}
               </span>
-              <span className="text-[10px] font-bold text-slate-800 dark:text-bunker-muted block mt-0.5 truncate">{mt5.account?.name || "ERKAN ERDEM"}</span>
+              <span className="text-[10px] font-bold text-slate-800 dark:text-bunker-muted block mt-0.5 truncate">{mt5.account?.name ?? "—"}</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-white dark:bg-bunker-900/80 border border-slate-300 dark:border-bunker-800 shadow-sm">
@@ -912,7 +911,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               <span>Canlı IC Markets MT5 Açık Pozisyonları ({mt5.open_positions?.length || 0})</span>
             </h2>
             <span className="text-[10px] text-emerald-800 dark:text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300 dark:border-emerald-500/30">
-              ICMarketsSC-Demo · 53077151
+              {mt5.account ? `${mt5.account.server} · ${mt5.account.login}` : "bağlantı yok"}
             </span>
           </div>
 

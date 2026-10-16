@@ -1,4 +1,6 @@
 import asyncio
+import inspect
+import os
 import pathlib
 import sys
 import unittest
@@ -8,6 +10,17 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.routers import forex
+
+
+class _BridgeHeaders:
+    def __init__(self, token: str):
+        self.headers = {"x-bridge-token": token}
+
+
+def _bridge_request():
+    token = "unit-test-bridge-token"
+    os.environ["MT5_BRIDGE_TOKEN"] = token
+    return _BridgeHeaders(token)
 
 
 class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
@@ -537,7 +550,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
                 {"ticket": 11, "symbol": "BTCUSD", "profit": -18.0, "time": now - 3500,
                  "exit_reason": "🛑 Zarar Durdur (SL)", "exit_reason_title": "🛑 Zarar Durdur (SL)"},
             ]
-            await forex.sync_mt5_bridge(forex.MT5SyncRequest(deals=list(historical)))
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(deals=list(historical)), _bridge_request())
             self.assertEqual(forex._SYMBOL_LOSS_STREAK.get("BTCUSD", 0), 0)
             self.assertEqual(forex._SYMBOL_LOSS_COOLDOWN_UNTIL.get("BTCUSD", 0.0), 0.0)
 
@@ -552,7 +565,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
                 # Kronolojik sırada önce gelen -5.36 sonra +7.0 kazanç → seri sıfırlanır:
                 # (ticket 23 TP, en yeni) → net birikim 0
             ]
-            await forex.sync_mt5_bridge(forex.MT5SyncRequest(deals=list(historical) + fresh))
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(deals=list(historical) + fresh), _bridge_request())
             # 3 SL sonra sayaç: tick 21,20,22 → 3. SL tetikler → sıfırlanır + cooldown
             self.assertEqual(forex._SYMBOL_LOSS_STREAK.get("BTCUSD", 0), 0)
             self.assertGreater(forex._SYMBOL_LOSS_COOLDOWN_UNTIL.get("BTCUSD", 0.0), now)
@@ -1002,11 +1015,14 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([b["time"] for b in off], [900, 1080, 1260])
 
     def test_resample_map_covers_3m_and_4h(self):
-        """`interval_map` 3m'i 1m kaynağına bağlamalı; 4h resample'ı bozulmamalı."""
-        import inspect
-        src = inspect.getsource(forex._fetch_forex_klines)
-        self.assertIn('"3m": ("1m", "7d")', src.replace("'", '"'))
-        self.assertIn('_bucket_sec = {"3m": 180, "4h": 14400, "240m": 14400}', src)
+        """3m, 1m tik kovasından 180 sn; 4h, 5m kovadan 14400 sn. Dış veri hattı yok."""
+        self.assertEqual(forex._KLINE_FROM_1M["3m"], 180)
+        self.assertEqual(forex._KLINE_FROM_5M["4h"], 14400)
+        src = inspect.getsource(forex._forex_klines_from_ticks)
+        self.assertNotIn("finance.yahoo", src)
+        self.assertNotIn("frankfurter", src)
+        fetch_src = inspect.getsource(forex._fetch_forex_klines)
+        self.assertNotIn("finance.yahoo", fetch_src)
 
     def test_s3_resample_15m(self):
         """5m→15m birleştirme: open ilk, high max, low min, close son."""
@@ -1178,9 +1194,9 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         açıkken kola uygulanırsa test edilen davranıştan sapar (S3/EAP istisnasıyla
         aynı gerekçe).
         """
-        src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
-        self.assertIn('_is_sqzkc = str(cand.get("entry_source", "")) == "squeeze_kc"', src)
-        self.assertIn("and not _is_sqzkc", src)
+        src = inspect.getsource(forex.supertrend_blocks_entry)
+        self.assertIn('src == "squeeze_kc"', src)
+        self.assertIn("return False", src)
 
     def test_donchian_adx_entry_rules(self):
         """Donchian+ADX canlı giriş kararı (replay kazananı ile aynı kural)."""
@@ -1342,12 +1358,12 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
                  "success": False, "error": "Not enough money"},
                 {"id": "CMD-2", "action": "OPEN_ORDER", "symbol": "XAUUSD",
                  "success": False, "error": "Invalid volume"},
-            ]))
-            # Başarısız giriş → soğuma geri açıldı
+            ]), _bridge_request())
+            # Başarısız giriş yalnız o emrin giriş soğumasını geri alır.
             self.assertNotIn("BTCUSD", forex._LAST_SYMBOL_ENTRY_TIME)
             self.assertNotIn("XAUUSD", forex._LAST_SYMBOL_ENTRY_TIME)
-            self.assertEqual(forex._LAST_BTC_EXIT_TIME, 0.0)
-            self.assertEqual(forex._LAST_GOLD_EXIT_TIME, 0.0)
+            self.assertEqual(forex._LAST_BTC_EXIT_TIME, now)
+            self.assertEqual(forex._LAST_GOLD_EXIT_TIME, now)
 
             # Başarılı emir soğumayı SIFIRLAMAMALI (yalnız hata yolu düzeltir)
             forex._LAST_SYMBOL_ENTRY_TIME["BTCUSD"] = now
@@ -1355,7 +1371,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
             await forex.sync_mt5_bridge(forex.MT5SyncRequest(command_results=[
                 {"id": "CMD-3", "action": "OPEN_ORDER", "symbol": "BTCUSD",
                  "success": True, "retcode": 10009},
-            ]))
+            ]), _bridge_request())
             self.assertEqual(forex._LAST_SYMBOL_ENTRY_TIME.get("BTCUSD"), now)
             self.assertEqual(forex._LAST_BTC_EXIT_TIME, now)
         finally:
@@ -1437,7 +1453,9 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         produced |= {forex.canonical_symbol(k) for k in
                      ("BTCUSD", "BTCUSD.m", "XAUUSD.a", "US30.cash", "USTEC",
                       "XTIUSD", "XBRUSD", "UKOIL", "UKOUSD", "GOLD", "BTC", "WTI", "BRENT")}
-        escaped = sorted(x for x in produced if x and x not in universe)
+        # DXY işlem evreninde değil; yalnız rejim verisi. Altın bu ada bağlanmaz.
+        data_only = {"DXY"}
+        escaped = sorted(x for x in produced if x and x not in universe and x not in data_only)
         self.assertEqual(escaped, [], f"kanonikleştirme evren dışına sızdı: {escaped}")
 
     def test_donchian_thresholds_come_from_settings(self):

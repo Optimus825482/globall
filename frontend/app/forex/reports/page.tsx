@@ -114,6 +114,8 @@ export default function ForexReportsPage() {
   const [kpi, setKpi] = useState<ReportKPI | null>(null);
   const [kpiScope, setKpiScope] = useState<KpiScope | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [reportError, setReportError] = useState("");
+  const [knownSymbols, setKnownSymbols] = useState<Array<{ key: string; label: string }>>([]);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
@@ -123,6 +125,7 @@ export default function ForexReportsPage() {
   const [selectedReason, setSelectedReason] = useState<string>("ALL");
   const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
 
   // Dönem filtresi (KPI kartları dahil tüm raporu kapsar)
   const [period, setPeriod] = useState<string>("all");
@@ -135,6 +138,11 @@ export default function ForexReportsPage() {
   const customRangeReady = isSingleDate
     ? !!selectedSingleDate
     : (!isCustomPeriod || (!!dateFrom && !!dateTo));
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const shiftSingleDate = (days: number) => {
     try {
@@ -161,7 +169,7 @@ export default function ForexReportsPage() {
       if (selectedOutcome !== "ALL") qParams.append("outcome", selectedOutcome);
       if (selectedReason !== "ALL") qParams.append("reason", selectedReason);
       if (selectedStrategy !== "ALL") qParams.append("strategy", selectedStrategy);
-      if (searchQuery.trim()) qParams.append("search", searchQuery.trim());
+      if (debouncedSearch.trim()) qParams.append("search", debouncedSearch.trim());
       
       if (isSingleDate) {
         qParams.append("period", "custom");
@@ -179,13 +187,27 @@ export default function ForexReportsPage() {
       const url = `/api/forex/auto-paper/trades?${qParams.toString()}`;
       const res = await apiFetch(url);
       if (res) {
-        setTrades(res.trades || []);
+        const nextTrades: ClosedTrade[] = Array.isArray(res.trades) ? res.trades : [];
+        setTrades(nextTrades);
         setKpi(res.kpi || null);
         setKpiScope(res.kpi_scope || null);
         setOpenPositions(res.open_positions || []);
+        setKnownSymbols((prev) => {
+          const map = new Map(prev.map((item) => [item.key, item.label]));
+          for (const trade of nextTrades) {
+            const key = String(trade.symbol || "").toUpperCase();
+            if (!key || map.has(key)) continue;
+            map.set(key, trade.display || key);
+          }
+          return [...map.entries()]
+            .map(([key, label]) => ({ key, label }))
+            .sort((a, b) => a.key.localeCompare(b.key, "tr"));
+        });
+        setReportError("");
       }
     } catch (err) {
-      console.error("Forex rapor verisi alınamadı:", err);
+      const detail = err instanceof Error ? err.message : "Rapor verisi alınamadı";
+      setReportError(`Rapor verisi alınamadı: ${detail}`);
     } finally {
       setLoading(false);
     }
@@ -193,7 +215,7 @@ export default function ForexReportsPage() {
 
   useEffect(() => {
     if (customRangeReady) fetchReport();
-  }, [selectedSymbol, selectedOutcome, selectedReason, selectedStrategy, searchQuery, period, selectedSingleDate, dateFrom, dateTo]);
+  }, [selectedSymbol, selectedOutcome, selectedReason, selectedStrategy, debouncedSearch, period, selectedSingleDate, dateFrom, dateTo]);
 
   // PERFORMANS (2026-10-08): Otomatik yenileme usePolling ile — arka planda
   // durur, üst üste binen turlar engellenir. Filtre bağımlılıkları callback
@@ -298,18 +320,12 @@ export default function ForexReportsPage() {
     }
   };
 
-  // Mevcut sembol listesi
   const availableSymbols = [
     { key: "ALL", label: "Tüm Pariteler" },
-    { key: "EURUSD", label: "EUR/USD" },
-    { key: "GBPUSD", label: "GBP/USD" },
-    { key: "USDJPY", label: "USD/JPY" },
-    { key: "XAUUSD", label: "Altın (XAU)" },
-    { key: "USDCAD", label: "USD/CAD" },
-    { key: "AUDUSD", label: "AUD/USD" },
-    { key: "USDCHF", label: "USD/CHF" },
-    { key: "NZDUSD", label: "NZD/USD" },
-    { key: "XAGUSD", label: "Gümüş (XAG)" },
+    ...knownSymbols,
+    ...(selectedSymbol !== "ALL" && !knownSymbols.some((item) => item.key === selectedSymbol)
+      ? [{ key: selectedSymbol, label: selectedSymbol }]
+      : []),
   ];
 
   return (
@@ -764,9 +780,28 @@ export default function ForexReportsPage() {
           </span>
         </div>
 
+        {reportError && trades.length > 0 && (
+          <p role="alert" className="px-4 py-2 font-mono text-xs text-rose-300 border-b border-rose-500/30 bg-rose-500/10">
+            {reportError} Ekrandaki liste son başarılı yanıttan.
+          </p>
+        )}
+
         {loading ? (
           <div className="p-16 text-center text-bunker-muted font-mono text-sm animate-pulse">
             İşlem verileri yükleniyor…
+          </div>
+        ) : reportError && trades.length === 0 ? (
+          <div role="alert" className="p-16 text-center space-y-3">
+            <div className="text-4xl">⚠️</div>
+            <p className="text-sm font-bold text-rose-300">{reportError}</p>
+            <p className="text-xs text-bunker-muted">Bu boş bir rapor değil. İstek başarısız oldu.</p>
+            <button
+              type="button"
+              onClick={() => { setLoading(true); void fetchReport(); }}
+              className="inline-block mt-2 px-4 py-2 rounded-xl bg-rose-600/30 border border-rose-400/40 text-rose-200 font-bold text-xs"
+            >
+              Tekrar Dene
+            </button>
           </div>
         ) : trades.length === 0 ? (
           <div className="p-16 text-center space-y-3">

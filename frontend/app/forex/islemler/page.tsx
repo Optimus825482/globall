@@ -75,8 +75,8 @@ interface KPIStats {
   losses: number;
   win_rate: number;
   total_pnl_usd: number;
-  balance: number;
-  equity: number;
+  balance: number | null;
+  equity: number | null;
   open_positions_count: number;
   open_pnl_usd: number;
 }
@@ -170,6 +170,8 @@ export default function ForexIslemlerPage() {
   // Global Tema Context'i
   const { isLight: isLightMode, toggleTheme } = useTheme();
   const [loading, setLoading] = useState<boolean>(true);
+  const [dataError, setDataError] = useState("");
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -185,8 +187,8 @@ export default function ForexIslemlerPage() {
     losses: 0,
     win_rate: 0,
     total_pnl_usd: 0,
-    balance: 10000,
-    equity: 10000,
+    balance: null,
+    equity: null,
     open_positions_count: 0,
     open_pnl_usd: 0,
   });
@@ -249,8 +251,12 @@ export default function ForexIslemlerPage() {
           losses: lossesCount,
           win_rate: winRatePct,
           total_pnl_usd: totalPnl,
-          balance: statusRes?.balance ?? reportRes.kpi?.balance ?? prev.balance,
-          equity: statusRes?.equity ?? reportRes.kpi?.equity ?? prev.equity,
+          balance: typeof statusRes?.balance === "number"
+            ? statusRes.balance
+            : (typeof reportRes.kpi?.balance === "number" ? reportRes.kpi.balance : prev.balance),
+          equity: typeof statusRes?.equity === "number"
+            ? statusRes.equity
+            : (typeof reportRes.kpi?.equity === "number" ? reportRes.kpi.equity : prev.equity),
           open_positions_count: Array.isArray(reportRes.open_positions) ? reportRes.open_positions.length : prev.open_positions_count,
         }));
       } else if (statusRes) {
@@ -262,8 +268,8 @@ export default function ForexIslemlerPage() {
           losses: k?.lost_trades ?? 0,
           win_rate: k?.win_rate_pct ?? 0,
           total_pnl_usd: statusRes.daily_pnl ?? 0,
-          balance: statusRes.balance ?? prev.balance,
-          equity: statusRes.equity ?? prev.equity,
+          balance: typeof statusRes.balance === "number" ? statusRes.balance : prev.balance,
+          equity: typeof statusRes.equity === "number" ? statusRes.equity : prev.equity,
         }));
       }
 
@@ -272,8 +278,11 @@ export default function ForexIslemlerPage() {
       }
 
       setLastUpdated(new Date());
+      setLoadedOnce(true);
+      setDataError("");
     } catch (err) {
-      console.error("Forex işlemler verisi çekme hatası:", err);
+      const detail = err instanceof Error ? err.message : "İşlem verisi alınamadı";
+      setDataError(`İşlem verisi alınamadı: ${detail}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -673,7 +682,7 @@ export default function ForexIslemlerPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400">
-              ${kpi.equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {kpi.equity == null ? "—" : `$${kpi.equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </span>
           </div>
           <div className="mt-2.5 flex items-center justify-between text-xs">
@@ -681,9 +690,12 @@ export default function ForexIslemlerPage() {
               Hesap Bakiyesi:
             </span>
             <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-              ${kpi.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {kpi.balance == null ? "—" : `$${kpi.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </span>
           </div>
+          {dataError && (
+            <p role="alert" className="mt-2 text-[11px] font-bold text-rose-500">{dataError}</p>
+          )}
         </div>
 
         {/* KART 4: TOPLAM AÇIK İŞLEMLERİN PnL'İ */}
@@ -818,10 +830,23 @@ export default function ForexIslemlerPage() {
           </div>
         </div>
 
-        {loading ? (
+        {loading && !loadedOnce ? (
           <div className="p-12 text-center text-xs">
             <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
             <p className={theme.textSecondary}>Açık pozisyonlar taranıyor…</p>
+          </div>
+        ) : dataError && !loadedOnce ? (
+          <div role="alert" className="p-10 text-center space-y-2">
+            <div className="text-3xl">⚠️</div>
+            <p className={`text-sm font-bold text-rose-500`}>{dataError}</p>
+            <p className={`text-xs ${theme.textSecondary}`}>Boş liste gerçek veri değil. İstek başarısız oldu.</p>
+            <button
+              type="button"
+              onClick={() => { void fetchData(false); }}
+              className="mt-2 px-4 py-2 rounded-lg border border-rose-400/50 text-rose-400 text-xs font-bold"
+            >
+              Tekrar Dene
+            </button>
           </div>
         ) : openPositions.length === 0 ? (
           <div className="p-10 text-center space-y-2">
@@ -1203,10 +1228,21 @@ export default function ForexIslemlerPage() {
           </div>
         </div>
 
-        {closedTrades.length === 0 ? (
+        {dataError && !loadedOnce ? (
+          <div role="alert" className="p-10 text-center space-y-2">
+            <p className="text-sm font-bold text-rose-500">{dataError}</p>
+            <button
+              type="button"
+              onClick={() => { void fetchData(false); }}
+              className="px-4 py-2 rounded-lg border border-rose-400/50 text-rose-400 text-xs font-bold"
+            >
+              Tekrar Dene
+            </button>
+          </div>
+        ) : closedTrades.length === 0 ? (
           <div className="p-10 text-center space-y-1">
             <p className={`text-sm font-bold ${theme.textPrimary}`}>
-              Bugün saat 00:01'den sonra henüz kapanan forex işlemi bulunmuyor.
+              Bugün saat 00:01&apos;den sonra henüz kapanan forex işlemi bulunmuyor.
             </p>
             <p className={`text-xs ${theme.textSecondary}`}>
               Açık pozisyonlar kâr/stop seviyelerine ulaştığında burada listelenecektir.

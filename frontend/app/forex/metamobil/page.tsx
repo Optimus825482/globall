@@ -112,19 +112,32 @@ interface AccountSummary {
   is_connected: boolean;
 }
 
-// Varsayılan Başlangıç Sembolleri (MetaTrader 5 Klasik Majörler & Emtia)
-const INITIAL_SYMBOLS: QuoteItem[] = [
-  { symbol: "EURUSD", display: "EURUSD", name: "Euro vs US Dollar", category: "major", bid: 1.08642, ask: 1.08654, spread_pips: 1.2, high: 1.08980, low: 1.08320, digits: 5, time: "10:35:14" },
-  { symbol: "GBPUSD", display: "GBPUSD", name: "Great Britain Pound vs US Dollar", category: "major", bid: 1.29415, ask: 1.29432, spread_pips: 1.7, high: 1.29850, low: 1.29110, digits: 5, time: "10:35:14" },
-  { symbol: "USDJPY", display: "USDJPY", name: "US Dollar vs Japanese Yen", category: "major", bid: 153.245, ask: 153.262, spread_pips: 1.7, high: 153.850, low: 152.910, digits: 3, time: "10:35:14" },
-  { symbol: "XAUUSD", display: "XAUUSD", name: "Gold (Oz) vs US Dollar", category: "commodity", bid: 2736.45, ask: 2736.85, spread_pips: 4.0, high: 2748.20, low: 2724.50, digits: 2, time: "10:35:14" },
-  { symbol: "BTCUSD", display: "BTCUSD", name: "Bitcoin vs US Dollar", category: "crypto", bid: 67420.00, ask: 67435.00, spread_pips: 15.0, high: 68100.00, low: 66800.00, digits: 2, time: "10:35:14" },
-  { symbol: "AUDUSD", display: "AUDUSD", name: "Australian Dollar vs US Dollar", category: "major", bid: 0.65421, ask: 0.65435, spread_pips: 1.4, high: 0.65780, low: 0.65150, digits: 5, time: "10:35:14" },
-  { symbol: "USDCHF", display: "USDCHF", name: "US Dollar vs Swiss Franc", category: "major", bid: 0.86542, ask: 0.86558, spread_pips: 1.6, high: 0.86890, low: 0.86240, digits: 5, time: "10:35:14" },
-  { symbol: "USDCAD", display: "USDCAD", name: "US Dollar vs Canadian Dollar", category: "major", bid: 1.38521, ask: 1.38539, spread_pips: 1.8, high: 1.38950, low: 1.38120, digits: 5, time: "10:35:14" },
-  { symbol: "GBPJPY", display: "GBPJPY", name: "Great Britain Pound vs Yen", category: "cross", bid: 198.345, ask: 198.372, spread_pips: 2.7, high: 199.120, low: 197.800, digits: 3, time: "10:35:14" },
-  { symbol: "USOIL", display: "USOIL", name: "Crude Oil (WTI) vs US Dollar", category: "commodity", bid: 71.45, ask: 71.49, spread_pips: 4.0, high: 72.80, low: 70.60, digits: 2, time: "10:35:14" },
-];
+function digitsForSymbol(symbol: string): number {
+  const s = symbol.toUpperCase();
+  if (s.includes("JPY")) return 3;
+  if (
+    s.includes("XAU") || s.includes("XAG") || s.includes("BTC") || s.includes("ETH") ||
+    s.includes("OIL") || s.includes("NAS") || s.includes("US30")
+  ) {
+    return 2;
+  }
+  return 5;
+}
+
+const EMPTY_ACCOUNT: AccountSummary = {
+  balance: 0,
+  equity: 0,
+  margin: 0,
+  free_margin: 0,
+  margin_level: 0,
+  open_pnl: 0,
+  server_name: "",
+  account_id: 0,
+  leverage: "",
+  currency: "USD",
+  ping_ms: 0,
+  is_connected: false,
+};
 
 // MT5 Fiyat Basamağı Ayrıştırıcı: Örn: 1.08645 -> { main: "1.08", big: "64", sub: "5" }
 function splitMt5Price(val: number, digits: number = 5) {
@@ -181,23 +194,13 @@ export default function MetaMobilePage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>("M5");
   
   // Veri Durumları
-  const [quotes, setQuotes] = useState<QuoteItem[]>(INITIAL_SYMBOLS);
+  const [quotes, setQuotes] = useState<QuoteItem[]>([]);
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
-  const [account, setAccount] = useState<AccountSummary>({
-    balance: 10000.0,
-    equity: 10042.50,
-    margin: 180.0,
-    free_margin: 9862.50,
-    margin_level: 5579.16,
-    open_pnl: 42.50,
-    server_name: "MetaQuotes-Demo",
-    account_id: 1084291,
-    leverage: "1:100",
-    currency: "USD",
-    ping_ms: 24,
-    is_connected: true,
-  });
+  const [account, setAccount] = useState<AccountSummary>(EMPTY_ACCOUNT);
+  const [linkError, setLinkError] = useState("");
+  const [quotesFetched, setQuotesFetched] = useState(false);
+  const [closeError, setCloseError] = useState("");
 
   // Geçmiş Süre Filtresi
   const [historyPeriod, setHistoryPeriod] = useState<"TODAY" | "WEEK" | "MONTH" | "ALL">("TODAY");
@@ -226,80 +229,100 @@ export default function MetaMobilePage() {
 
   // API Verilerini Çekme (Radar Fiyatları, Hesap Durumu, Pozisyonlar)
   const refreshAllData = useCallback(async () => {
+    const failures: string[] = [];
+
     try {
-      // 1. Radar Fiyatları
-      const radarData = await apiFetch("/api/forex/radar").catch(() => null);
+      const radarData = await apiFetch("/api/forex/radar");
       if (radarData && Array.isArray(radarData.candidates)) {
         setQuotes((prev) => {
-          return prev.map((item) => {
-            const found = radarData.candidates.find((c: any) => c.symbol === item.symbol);
-            if (!found) return item;
-            const newBid = Number(found.bid ?? found.price ?? item.bid);
-            const newAsk = Number(found.ask ?? found.price ?? item.ask);
+          const prevBySymbol = new Map(prev.map((item) => [item.symbol, item]));
+          return radarData.candidates.map((found: any) => {
+            const symbol = String(found.symbol || "");
+            const item = prevBySymbol.get(symbol);
+            const newBid = Number(found.bid ?? found.price ?? 0);
+            const newAsk = Number(found.ask ?? found.price ?? 0);
             let flashBid: "up" | "down" | null = null;
             let flashAsk: "up" | "down" | null = null;
-            if (newBid > item.bid) flashBid = "up";
-            else if (newBid < item.bid) flashBid = "down";
-            if (newAsk > item.ask) flashAsk = "up";
-            else if (newAsk < item.ask) flashAsk = "down";
-
+            if (item && newBid > item.bid) flashBid = "up";
+            else if (item && newBid < item.bid) flashBid = "down";
+            if (item && newAsk > item.ask) flashAsk = "up";
+            else if (item && newAsk < item.ask) flashAsk = "down";
             return {
-              ...item,
+              symbol,
+              display: String(found.display || symbol),
+              name: String(found.name || item?.name || symbol),
+              category: String(found.category || item?.category || ""),
               bid: newBid,
               ask: newAsk,
-              spread_pips: Number(found.spread_pips ?? item.spread_pips),
-              trend: found.trend ?? item.trend,
+              spread_pips: Number(found.spread_pips ?? item?.spread_pips ?? 0),
+              high: Number(found.high ?? item?.high ?? 0),
+              low: Number(found.low ?? item?.low ?? 0),
+              digits: Number(found.digits) || digitsForSymbol(symbol),
               time: new Date().toLocaleTimeString("tr-TR"),
+              trend: found.trend ?? item?.trend,
               flash_bid: flashBid,
               flash_ask: flashAsk,
-            };
+            } satisfies QuoteItem;
           });
         });
-        // Flash efektlerini kısa süre sonra temizle (eskiden ayrı bir useEffect
-        // her quotes değişiminde yeni timer kuruyordu; tek yerde temizlenir).
         setTimeout(() => {
           setQuotes((prev) =>
             prev.map((q) => (q.flash_bid || q.flash_ask ? { ...q, flash_bid: null, flash_ask: null } : q))
           );
         }, 600);
-      }
-
-      // 2. Açık ve Kapanan İşlemler
-      const tradesData = await apiFetch("/api/forex/auto-paper/trades?period=today&limit=250").catch(() => null);
-      if (tradesData) {
-        if (Array.isArray(tradesData.open_positions)) {
-          setOpenPositions(tradesData.open_positions);
-        }
-        if (Array.isArray(tradesData.trades)) {
-          setClosedTrades(tradesData.trades);
-        }
-      }
-
-      // 3. Hesap Durumu
-      const statusData = await apiFetch("/api/forex/auto-paper/status").catch(() => null);
-      if (statusData) {
-        setAccount((prev) => {
-          const bal = Number(statusData.balance ?? prev.balance);
-          const eq = Number(statusData.equity ?? prev.equity);
-          const pnl = Number(statusData.open_pnl ?? (eq - bal));
-          const marg = Number(statusData.margin ?? prev.margin);
-          const freeMarg = Number(statusData.free_margin ?? (eq - marg));
-          const level = marg > 0 ? (eq / marg) * 100 : 9999;
-          return {
-            ...prev,
-            balance: bal,
-            equity: eq,
-            open_pnl: pnl,
-            margin: marg,
-            free_margin: freeMarg,
-            margin_level: level,
-            is_connected: true,
-          };
-        });
+        setQuotesFetched(true);
       }
     } catch (err) {
-      console.warn("MetaMobil veri yenileme uyarısı:", err);
+      failures.push(err instanceof Error ? err.message : "Kotasyon alınamadı");
     }
+
+    try {
+      const tradesData = await apiFetch("/api/forex/auto-paper/trades?period=today&limit=250");
+      if (Array.isArray(tradesData?.open_positions)) {
+        setOpenPositions(tradesData.open_positions);
+      }
+      if (Array.isArray(tradesData?.trades)) {
+        setClosedTrades(tradesData.trades);
+      }
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : "İşlem listesi alınamadı");
+    }
+
+    try {
+      const statusData = await apiFetch("/api/forex/auto-paper/status");
+      setAccount((prev) => {
+        const bal = Number(statusData.balance ?? prev.balance);
+        const eq = Number(statusData.equity ?? statusData.balance ?? prev.equity);
+        const pnl = Number(statusData.open_pnl ?? (eq - bal));
+        const marg = Number(statusData.margin ?? prev.margin);
+        const freeMarg = Number(statusData.free_margin ?? (eq - marg));
+        const level = marg > 0 ? (eq / marg) * 100 : 0;
+        const server = String(statusData.server_name || statusData.server || prev.server_name || "");
+        const login = Number(statusData.account_id ?? statusData.login ?? prev.account_id ?? 0);
+        const leverageRaw = statusData.leverage;
+        const leverage = leverageRaw == null || leverageRaw === ""
+          ? prev.leverage
+          : String(leverageRaw).startsWith("1:") ? String(leverageRaw) : `1:${leverageRaw}`;
+        return {
+          ...prev,
+          balance: Number.isFinite(bal) ? bal : 0,
+          equity: Number.isFinite(eq) ? eq : 0,
+          open_pnl: Number.isFinite(pnl) ? pnl : 0,
+          margin: Number.isFinite(marg) ? marg : 0,
+          free_margin: Number.isFinite(freeMarg) ? freeMarg : 0,
+          margin_level: Number.isFinite(level) ? level : 0,
+          server_name: server,
+          account_id: Number.isFinite(login) ? login : 0,
+          leverage,
+          is_connected: true,
+        };
+      });
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : "Hesap durumu alınamadı");
+      setAccount((prev) => ({ ...prev, is_connected: false }));
+    }
+
+    setLinkError(failures.length ? `bağlantı yok: ${failures[0]}` : "");
   }, []);
 
   // Periyodik Canlı Veri Yenileme
@@ -311,7 +334,19 @@ export default function MetaMobilePage() {
 
   // Güncel seçili sembol verisi
   const activeQuote = useMemo(() => {
-    return quotes.find((q) => q.symbol === selectedSymbol) || quotes[0] || INITIAL_SYMBOLS[0];
+    return quotes.find((q) => q.symbol === selectedSymbol) || quotes[0] || {
+      symbol: selectedSymbol,
+      display: selectedSymbol,
+      name: "",
+      category: "",
+      bid: 0,
+      ask: 0,
+      spread_pips: 0,
+      high: 0,
+      low: 0,
+      digits: digitsForSymbol(selectedSymbol),
+      time: "",
+    };
   }, [quotes, selectedSymbol]);
 
   // Yeni Emir Açma İşlemi
@@ -329,20 +364,19 @@ export default function MetaMobilePage() {
           sl: orderSl ? Number(orderSl) : undefined,
           tp: orderTp ? Number(orderTp) : undefined,
         }),
-      }).catch(async () => {
-        // Fallback: Yerel demo / paper emir simulasyonu
-        return { success: true, message: "Demo emir işleme alındı" };
       });
-
-      setOrderStatusMsg(`✓ Emir İletildi: #${Math.floor(100000 + Math.random() * 900000)} ${direction} ${orderLots} ${newOrderSymbol}`);
+      const ticket = res?.ticket ?? res?.order_id ?? res?.id;
+      const ticketText = ticket != null && ticket !== "" ? `#${ticket} ` : "";
+      setOrderStatusMsg(`Emir iletildi: ${ticketText}${direction} ${orderLots} ${newOrderSymbol}`);
       setTimeout(() => {
         setNewOrderModalOpen(false);
         setOrderStatusMsg(null);
-        setActiveTab("TRADE"); // Otomatik olarak Ticaret sekmesine git
+        setActiveTab("TRADE");
         refreshAllData();
       }, 700);
-    } catch (err: any) {
-      setOrderStatusMsg(`Hata: ${err.message || "İşlem açılamadı"}`);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "İşlem açılamadı";
+      setOrderStatusMsg(`Hata: ${detail}`);
     }
   };
 
@@ -350,21 +384,23 @@ export default function MetaMobilePage() {
   const handleClosePosition = async (pos: OpenPosition) => {
     playClickSound();
     try {
-      await apiFetch("/api/forex/auto-paper/close-position", {
-        method: "POST",
-        body: JSON.stringify({ id: pos.id, ticket: pos.ticket }),
-      }).catch(async () => {
+      try {
+        await apiFetch("/api/forex/auto-paper/close-position", {
+          method: "POST",
+          body: JSON.stringify({ id: pos.id, ticket: pos.ticket }),
+        });
+      } catch {
         await apiFetch("/api/forex/mt5/close", {
           method: "POST",
           body: JSON.stringify({ ticket: pos.ticket || pos.id }),
         });
-      });
+      }
+      setCloseError("");
       setClosingPosition(null);
       refreshAllData();
-    } catch {
-      // Fallback
-      setClosingPosition(null);
-      refreshAllData();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Pozisyon kapatılamadı";
+      setCloseError(`Hata: ${detail}`);
     }
   };
 
@@ -391,16 +427,17 @@ export default function MetaMobilePage() {
             >
               ←
             </Link>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+            <span className={`w-2 h-2 rounded-full ${account.is_connected ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" : "bg-rose-400"}`} />
             <div className="leading-tight">
               <div className="text-[12px] font-bold text-slate-100 flex items-center gap-1.5">
-                <span>{account.server_name}</span>
+                <span>{account.is_connected ? (account.server_name || "bağlı") : "bağlantı yok"}</span>
                 <span className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">
-                  {account.leverage}
+                  {account.is_connected && account.leverage ? account.leverage : "—"}
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 font-mono">
-                #{account.account_id} · {account.ping_ms} ms
+                {account.is_connected && account.account_id ? `#${account.account_id}` : "veri yok"}
+                {account.is_connected && account.ping_ms ? ` · ${account.ping_ms} ms` : ""}
               </div>
             </div>
           </div>
@@ -433,6 +470,11 @@ export default function MetaMobilePage() {
 
         {/* 3. İÇERİK ALANI (TAB VIEW CONTENT) */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-bunker-950">
+          {linkError && (
+            <div role="alert" className="px-3 py-2 bg-rose-950/80 border-b border-rose-500/40 text-rose-200 text-[11px] font-bold">
+              {linkError}
+            </div>
+          )}
 
           {/* ========================================================= */}
           {/* SEKME 1: KOTASYONLAR (QUOTES)                             */}
@@ -448,6 +490,12 @@ export default function MetaMobilePage() {
                 </div>
               </div>
 
+              {quotes.length === 0 && (
+                <div className="p-10 text-center text-sm text-slate-400 space-y-2">
+                  <div className="text-2xl">{linkError ? "⚠️" : "…"}</div>
+                  <p className="font-bold text-white">{linkError ? "bağlantı yok" : quotesFetched ? "Kotasyon yok" : "Kotasyonlar yükleniyor"}</p>
+                </div>
+              )}
               {quotes.map((q) => {
                 const bidSplit = splitMt5Price(q.bid, q.digits);
                 const askSplit = splitMt5Price(q.ask, q.digits);
@@ -657,22 +705,22 @@ export default function MetaMobilePage() {
               <div className="p-3.5 bg-bunker-900 space-y-1.5 font-mono text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400 font-sans">Bakiye:</span>
-                  <span className="font-bold text-white">${account.balance.toFixed(2)}</span>
+                  <span className="font-bold text-white">{account.is_connected ? `$${account.balance.toFixed(2)}` : "—"}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400 font-sans">Varlık:</span>
-                  <span className="font-bold text-white">${account.equity.toFixed(2)}</span>
+                  <span className="font-bold text-white">{account.is_connected ? `$${account.equity.toFixed(2)}` : "—"}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400 font-sans">Serbest Teminat:</span>
-                  <span className="font-bold text-white">${account.free_margin.toFixed(2)}</span>
+                  <span className="font-bold text-white">{account.is_connected ? `$${account.free_margin.toFixed(2)}` : "—"}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400 font-sans">Teminat Seviyesi:</span>
-                  <span className="font-bold text-emerald-400">%{account.margin_level.toFixed(1)}</span>
+                  <span className="font-bold text-emerald-400">{account.is_connected ? `%${account.margin_level.toFixed(1)}` : "—"}</span>
                 </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-bunker-800">
@@ -682,7 +730,7 @@ export default function MetaMobilePage() {
                       account.open_pnl >= 0 ? "text-emerald-400" : "text-rose-400"
                     }`}
                   >
-                    {account.open_pnl >= 0 ? "+" : ""}${account.open_pnl.toFixed(2)} USD
+                    {account.is_connected ? `${account.open_pnl >= 0 ? "+" : ""}$${account.open_pnl.toFixed(2)} USD` : "—"}
                   </span>
                 </div>
               </div>
@@ -718,7 +766,7 @@ export default function MetaMobilePage() {
                   return (
                     <div
                       key={pos.id || pos.ticket}
-                      onClick={() => setClosingPosition(pos)}
+                      onClick={() => { setCloseError(""); setClosingPosition(pos); }}
                       className="p-3 hover:bg-bunker-950 active:bg-bunker-800 cursor-pointer transition-colors flex items-center justify-between"
                     >
                       {/* Sol: Sembol, buy/sell lot, giriş -> güncel */}
@@ -869,26 +917,26 @@ export default function MetaMobilePage() {
               <div className="p-3.5 rounded-xl bg-bunker-900 border border-bunker-800 space-y-2">
                 <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
                   <div className="font-bold text-white text-sm">Hesap Bilgileri</div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
-                    BAĞLI
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${account.is_connected ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-300"}`}>
+                    {account.is_connected ? "BAĞLI" : "BAĞLANTI YOK"}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-slate-300 font-mono">
                   <div>
                     <span className="text-slate-400 block text-[10px]">HESAP NO</span>
-                    #{account.account_id}
+                    {account.is_connected && account.account_id ? `#${account.account_id}` : "—"}
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">SUNUCU</span>
-                    {account.server_name}
+                    {account.is_connected ? (account.server_name || "—") : "bağlantı yok"}
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">KALDIRAÇ</span>
-                    {account.leverage}
+                    {account.is_connected && account.leverage ? account.leverage : "—"}
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">GECİKME (PING)</span>
-                    {account.ping_ms} ms
+                    {account.is_connected ? `${account.ping_ms} ms` : "—"}
                   </div>
                 </div>
               </div>
@@ -1179,7 +1227,7 @@ export default function MetaMobilePage() {
 
               {/* Durum Bildirimi */}
               {orderStatusMsg && (
-                <div className="p-2 rounded-lg bg-blue-500/20 text-blue-300 text-center font-bold text-xs">
+                <div className={`p-2 rounded-lg text-center font-bold text-xs ${orderStatusMsg.startsWith("Hata") ? "bg-rose-500/20 text-rose-300" : "bg-blue-500/20 text-blue-300"}`}>
                   {orderStatusMsg}
                 </div>
               )}
@@ -1252,6 +1300,10 @@ export default function MetaMobilePage() {
                   </span>
                 </div>
               </div>
+
+              {closeError && (
+                <p role="alert" className="text-center text-xs font-bold text-rose-300">{closeError}</p>
+              )}
 
               {/* Dev MT5 Kapat Butonu */}
               <button

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
     createChart,
     CandlestickSeries,
@@ -388,12 +389,15 @@ const INDICATOR_DEFS: IndicatorDef[] = [
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MultiChartCard({ config, availableSymbols, isMaximized, onToggleMaximize, onUpdateConfig, ordinal }: MultiChartCardProps) {
+    const pathname = usePathname();
+    const forexMode = (pathname || "").startsWith("/forex");
     const cardRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
     const seriesMapRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
     const [loading, setLoading] = useState(true);
+    const [klineError, setKlineError] = useState<string | null>(null);
     const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
     const [indicatorMenuOpen, setIndicatorMenuOpen] = useState(false);
     const [searchFilter, setSearchFilter] = useState("");
@@ -499,13 +503,46 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         const reqId = ++klineReqIdRef.current;
         try {
             const cleanSym = config.symbol.replace(/[\/_]/g, "").toUpperCase();
+            let bars: Bar[];
+            if (forexMode) {
+                const res = await apiRequest(`${API_BASE}/api/forex/klines?symbol=${encodeURIComponent(cleanSym)}&interval=${config.interval}&limit=300`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const payload = await res.json();
+                if (reqId !== klineReqIdRef.current) return;
+                const apiError = typeof payload?.error === "string" ? payload.error.trim() : "";
+                const candlesRaw = Array.isArray(payload?.candles) ? payload.candles : [];
+                if (apiError && candlesRaw.length === 0) {
+                    setKlineError(apiError);
+                    setPriceData(null);
+                    setLoading(false);
+                    return;
+                }
+                if (!candlesRaw.length || !candleSeriesRef.current || !chartRef.current) {
+                    setLoading(false);
+                    return;
+                }
+                bars = candlesRaw.map((c: { time?: number; open?: number; high?: number; low?: number; close?: number; volume?: number }) => ({
+                    time: Math.floor(Number(c.time)),
+                    open: Number(c.open),
+                    high: Number(c.high),
+                    low: Number(c.low),
+                    close: Number(c.close),
+                    volume: Number(c.volume ?? 0),
+                }));
+            } else {
             const res = await apiRequest(`${API_BASE}/api/market-klines/${cleanSym}?interval=${config.interval}&limit=300`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const payload = await res.json();
             if (reqId !== klineReqIdRef.current) return;
+            setKlineError(null);
             const candlesRaw = payload.candles || [];
-            if (!candlesRaw.length || !candleSeriesRef.current || !chartRef.current) return;
-            const bars: Bar[] = candlesRaw.map((k: number[]) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+            if (!candlesRaw.length || !candleSeriesRef.current || !chartRef.current) {
+                setLoading(false);
+                return;
+            }
+            bars = candlesRaw.map((k: number[]) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+            }
+            setKlineError(null);
             const previous = lastBarsRef.current;
             const previousLast = previous.length ? previous[previous.length - 1] : null;
             const currentLast = bars[bars.length - 1];
@@ -553,11 +590,13 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
             }
             setLoading(false);
         } catch (err) {
-            console.error(`MultiChartCard [${config.symbol}] error:`, err);
+            if (reqId !== klineReqIdRef.current) return;
+            const detail = err instanceof Error ? err.message : "Mum verisi alınamadı";
+            setKlineError(`Grafik verisi alınamadı: ${detail}`);
             setLoading(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [config.symbol, config.interval]);
+    }, [config.symbol, config.interval, forexMode]);
 
     // ── Rebuild indicators ────────────────────────────────────────────────────
     const rebuildIndicators = useCallback((bars: Bar[]) => {
@@ -762,12 +801,16 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     const cats = ["Tümü", ...Array.from(new Set(INDICATOR_DEFS.map(d => d.category)))];
     const visibleDefs = indicatorCat === "Tümü" ? INDICATOR_DEFS : INDICATOR_DEFS.filter(d => d.category === indicatorCat);
 
+    const resolveSymbol = (raw: string) => {
+        const clean = raw.trim().toUpperCase();
+        if (!clean || forexMode) return clean;
+        if (!clean.endsWith("TRY") && availableSymbols.includes(clean + "TRY")) return clean + "TRY";
+        return clean;
+    };
+
     const handleSelectSymbol = (raw: string) => {
-        let clean = raw.trim().toUpperCase();
+        const clean = resolveSymbol(raw);
         if (!clean) return;
-        if (!clean.endsWith("TRY") && availableSymbols.includes(clean + "TRY")) {
-            clean = clean + "TRY";
-        }
         onUpdateConfig({ symbol: clean });
         setSymbolSearchOpen(false);
         setSearchFilter("");
@@ -824,12 +867,10 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                         onClick={() => handleSelectSymbol(searchFilter)}
                                         className="w-full text-left px-2 py-1 mb-2 rounded text-[11px] font-mono bg-neon-green/15 text-neon-green hover:bg-neon-green/25 font-bold border border-neon-green/30 transition-colors"
                                     >
-                                        ⚡ {(() => {
-                                            const up = searchFilter.trim().toUpperCase();
-                                            return !up.endsWith("TRY") && availableSymbols.includes(up + "TRY") ? up + "TRY" : up;
-                                        })()} Aç
+                                        ⚡ {resolveSymbol(searchFilter) || searchFilter.trim().toUpperCase()} Aç
                                     </button>
                                 )}
+                                {!forexMode && (
                                 <div className="flex flex-wrap gap-1 mb-2">
                                     {["BTCTRY","ETHTRY","SOLTRY","AVAXTRY","PEPETRY","XRPTRY"].map(s => (
                                         <button key={s} type="button" onClick={() => handleSelectSymbol(s)}
@@ -838,6 +879,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                         </button>
                                     ))}
                                 </div>
+                                )}
                                 <div className="max-h-56 overflow-y-auto space-y-0.5">
                                     {filteredSymbols.slice(0, 50).map(s => (
                                         <button key={s} type="button" onClick={() => handleSelectSymbol(s)}
@@ -852,7 +894,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                     </div>
                     {priceData && (
                         <div className="flex items-center gap-1.5 font-mono">
-                            <span className="text-white font-bold text-xs">₺{formatPrice(priceData.last)}</span>
+                            <span className="text-white font-bold text-xs">{forexMode ? "" : "₺"}{formatPrice(priceData.last)}</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${priceData.changePct >= 0 ? "bg-neon-green/15 text-neon-green border border-neon-green/30" : "bg-neon-red/15 text-neon-red border border-neon-red/30"}`}>
                                 {priceData.changePct >= 0 ? "+" : ""}{priceData.changePct.toFixed(2)}%
                             </span>
@@ -999,6 +1041,18 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bunker-900 border border-bunker-700 text-white font-mono text-xs">
                             <span className="w-2 h-2 rounded-full bg-neon-green animate-ping" />Mumlar Yükleniyor...
                         </div>
+                    </div>
+                )}
+                {klineError && !loading && (
+                    <div className="absolute inset-0 bg-bunker-950/80 flex flex-col items-center justify-center gap-3 px-4 text-center">
+                        <p role="alert" className="font-mono text-xs text-rose-300">{klineError}</p>
+                        <button
+                            type="button"
+                            onClick={() => { setLoading(true); setKlineError(null); void fetchKlines(); }}
+                            className="px-3 py-1.5 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-200 font-mono text-xs font-bold"
+                        >
+                            Tekrar Dene
+                        </button>
                     </div>
                 )}
             </div>

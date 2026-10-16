@@ -112,10 +112,9 @@ services:
       postgres_global:
         condition: service_healthy
     environment:
-      # SCALPER_ENV=production mevcut parolayla açılmayı REDDEDER —
-      # `config.py:enforce_admin_password_policy` import sırasında
-      # RuntimeError fırlatır ve uvicorn hiç açılmaz. Parola güçlendirilip
-      # bu değer "production" yapılmalıdır.
+      # Yerel varsayılan development kalır. production'a körlemesine çekmek
+      # zayıf parolayla girişi kilitler. Development iken canlı/demo dışı emir
+      # kodda reddedilir (config uyarısı + forex sync).
       SCALPER_ENV: ${SCALPER_ENV:-development}
       SCALPER_DB_PATH: /data/scalper_db_v4.sqlite
       # ⚠️ ASLA düz metin parola YAZILMAZ — bu URL env'den bileşik kurulur.

@@ -62,6 +62,11 @@ class FXCorrelationMonitor:
         for i, a in enumerate(syms):
             for b in syms[i + 1:]:
                 r = _pearson(returns_map[a], returns_map[b])
+                if r is None:
+                    # Kısa örnek 0.0 yazılırsa kalkan "nötr" sanıp geçirirdi.
+                    self._corr.setdefault(a, {}).pop(b, None)
+                    self._corr.setdefault(b, {}).pop(a, None)
+                    continue
                 self._corr.setdefault(a, {})[b] = r
                 self._corr.setdefault(b, {})[a] = r
 
@@ -133,14 +138,18 @@ def _returns(closes: List[float]) -> List[float]:
             for i in range(1, len(closes))]
 
 
-def _pearson(xs: List[float], ys: List[float]) -> float:
-    """NaN çiftleri aynı indekste maskeleyerek Pearson korelasyonu; incek veride 0.0 döner."""
+def _pearson(xs: List[float], ys: List[float]) -> Optional[float]:
+    """NaN çiftleri aynı indekste maskeleyerek Pearson korelasyonu.
+
+    20 çiftten kısa seri 0.0 değil None döner. `cluster_check` None görünce
+    girişi engeller (fail-closed).
+    """
     n = min(len(xs), len(ys))
     if n < 20:
-        return 0.0
+        return None
     pairs = [(x, y) for x, y in zip(xs[-n:], ys[-n:]) if not (math.isnan(x) or math.isnan(y))]
     if len(pairs) < 20:
-        return 0.0
+        return None
     px = [p[0] for p in pairs]
     py = [p[1] for p in pairs]
     m = len(pairs)

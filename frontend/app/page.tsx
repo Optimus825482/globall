@@ -80,8 +80,8 @@ interface KPIStats {
   profit_factor_infinite?: boolean;
   gross_profit_usd?: number;
   gross_loss_usd?: number;
-  balance: number;
-  equity: number;
+  balance: number | null;
+  equity: number | null;
   open_positions_count: number;
   open_pnl_usd: number;
   avg_win_usd?: number;
@@ -372,6 +372,7 @@ const EventCountdownBadge = React.memo(function EventCountdownBadge({
 
 export default function HomePage() {
   const [loading, setLoading] = useState<boolean>(true);
+  const [homeDataError, setHomeDataError] = useState("");
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -386,8 +387,8 @@ export default function HomePage() {
     total_pnl_usd: 0,
     total_pnl_pips: 0,
     profit_factor: 0,
-    balance: 10000,
-    equity: 10000,
+    balance: null,
+    equity: null,
     open_positions_count: 0,
     open_pnl_usd: 0,
   });
@@ -488,8 +489,12 @@ export default function HomePage() {
           profit_factor_infinite: pf >= 999,
           gross_profit_usd: grossProfit,
           gross_loss_usd: grossLoss,
-          balance: statusRes?.balance ?? reportRes.kpi?.balance ?? prev.balance,
-          equity: statusRes?.equity ?? reportRes.kpi?.equity ?? prev.equity,
+          balance: typeof statusRes?.balance === "number"
+            ? statusRes.balance
+            : (typeof reportRes.kpi?.balance === "number" ? reportRes.kpi.balance : prev.balance),
+          equity: typeof statusRes?.equity === "number"
+            ? statusRes.equity
+            : (typeof reportRes.kpi?.equity === "number" ? reportRes.kpi.equity : prev.equity),
           open_positions_count: Array.isArray(reportRes.open_positions) ? reportRes.open_positions.length : prev.open_positions_count,
           open_pnl_usd: Array.isArray(reportRes.open_positions)
             ? reportRes.open_positions.reduce((acc: number, p: any) => acc + Number(p.pnl_usd ?? 0), 0)
@@ -507,8 +512,8 @@ export default function HomePage() {
           total_pnl_pips: statusRes.daily_pips ?? 0,
           profit_factor: k?.profit_factor ?? 0,
           profit_factor_infinite: !!k?.profit_factor_infinite,
-          balance: statusRes.balance ?? prev.balance,
-          equity: statusRes.equity ?? prev.equity,
+          balance: typeof statusRes.balance === "number" ? statusRes.balance : prev.balance,
+          equity: typeof statusRes.equity === "number" ? statusRes.equity : prev.equity,
         }));
       }
 
@@ -517,8 +522,10 @@ export default function HomePage() {
       }
 
       setLastUpdated(new Date());
+      setHomeDataError("");
     } catch (err) {
-      console.error("Ana sayfa Forex verisi yükleme hatası:", err);
+      const detail = err instanceof Error ? err.message : "Hesap verisi alınamadı";
+      setHomeDataError(`Hesap verisi alınamadı: ${detail}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -557,7 +564,23 @@ export default function HomePage() {
         }
       }
 
-      // 2 Yıldızlı Konuşmaları ve Veri İçermeyen Olayları Filtrele (Kullanıcı Talebi)
+      const q = calendarSearch.trim().toLowerCase();
+      if (q) {
+        const blob = [
+          item.title,
+          item.original_title,
+          item.currency,
+          item.country,
+          item.country_name,
+          ...(item.affected_symbols || []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+
+        // 2 Yıldızlı Konuşmaları ve Veri İçermeyen Olayları Filtrele (Kullanıcı Talebi)
       const stars = item.stars || (item.impact === "High" ? 3 : 2);
       if (stars === 2) {
         const t = (item.title || "").toLowerCase();
@@ -952,12 +975,19 @@ export default function HomePage() {
           </div>
           <div className="mt-2.5">
             <div className="text-2xl sm:text-3xl font-black text-amber-950 dark:text-amber-200 tracking-tight">
-              ${kpi.equity ? kpi.equity.toFixed(2) : kpi.balance.toFixed(2)}
+              {kpi.equity == null && kpi.balance == null
+                ? "—"
+                : `$${Number(kpi.equity ?? kpi.balance).toFixed(2)}`}
             </div>
             <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-bunker-muted">
               <span>Bakiye:</span>
-              <span className="text-slate-900 dark:text-white font-bold">${kpi.balance ? kpi.balance.toFixed(2) : "10,000.00"}</span>
+              <span className="text-slate-900 dark:text-white font-bold">
+                {kpi.balance == null ? "—" : `$${kpi.balance.toFixed(2)}`}
+              </span>
             </div>
+            {homeDataError && (
+              <p role="alert" className="mt-2 text-[11px] font-bold text-rose-600 dark:text-rose-300">{homeDataError}</p>
+            )}
           </div>
         </div>
       </section>

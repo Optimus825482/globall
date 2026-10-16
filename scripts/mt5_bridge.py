@@ -1438,10 +1438,18 @@ def sync_with_server(api_base: str):
     }
 
     req_url = f"{api_base.rstrip('/')}/api/forex/mt5/sync"
+    headers = {"Content-Type": "application/json", "User-Agent": "ScalperMT5Bridge/1.0"}
+    bridge_token = (
+        os.environ.get("MT5_BRIDGE_TOKEN", "").strip()
+        or os.environ.get("FOREX_MT5_SYNC_TOKEN", "").strip()
+        or os.environ.get("BINANCE_TR_BRIDGE_SECRET", "").strip()
+    )
+    if bridge_token:
+        headers["X-Bridge-Token"] = bridge_token
     req = urllib.request.Request(
         req_url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "ScalperMT5Bridge/1.0"},
+        headers=headers,
         method="POST",
     )
 

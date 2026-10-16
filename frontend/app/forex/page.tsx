@@ -27,29 +27,37 @@ interface ForexCandidate {
   bid: number;
   ask: number;
   spread_pips: number;
+  /** Ticker kotasyonu yoksa backend "MT5 tik yok" yazabilir. */
+  error?: string | null;
   score: number;
   trend: string;
   action: "BUY" | "SELL" | "HOLD";
-  rsi_15m: number;
+  /** 5 dk RSI. Eski yanıtta yalnız `rsi_15m` olabilir. */
+  rsi_5m?: number | null;
+  rsi_15m?: number | null;
   macd_verdict: string;
   cmo: number;
   cci: number;
   adx: number;
   supertrend_dir: number;
   htf_trend: string;
-  pip_target: number;
-  stop_loss_pips: number;
-  risk_reward: string;
+  pip_target?: number | null;
+  stop_loss_pips?: number | null;
+  risk_reward?: string | number | null;
   atr_pips: number;
   tv_symbol: string;
   // Kapı değerlendirmesi (otonom motorun gerçek giriş kararı)
   tier: Tier;
+  /** Motor bu adayla emir açacak mı. Alan yoksa `tier === "STRONG"` esas alınır. */
+  motor_acar?: boolean;
+  /** Skor eşiği geçti mi. Alan yoksa skor ile `required_score` karşılaştırılır. */
+  skor_gecti?: boolean;
   signal_ready: boolean;
   gate_passed: boolean;
   blocked_by: string[];
   primary_blocker: string | null;
   blocker_text: string;
-  required_score: number;
+  required_score?: number | null;
 }
 
 interface RadarThresholds {
@@ -112,10 +120,56 @@ function adxTone(adx: number): string {
   return "text-bunker-muted";
 }
 
+function optNum(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** Gösterim: `rsi_5m` varsa o, yoksa `rsi_15m`. İkisi de yoksa tire. */
+function fmtRsi(c: { rsi_5m?: number | null; rsi_15m?: number | null }): string {
+  const n = optNum(c.rsi_5m) ?? optNum(c.rsi_15m);
+  return n == null ? "—" : n.toFixed(0);
+}
+
+function fmtTp(v: unknown): string {
+  const n = optNum(v);
+  return n == null ? "—" : `+${n}p`;
+}
+
+function fmtSl(v: unknown): string {
+  const n = optNum(v);
+  return n == null ? "—" : `-${n}p`;
+}
+
+function fmtRr(v: unknown): string {
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return "—";
+}
+
+function radarQuote(c: { bid?: number | null; ask?: number | null; error?: string | null }): { text: string; failed: boolean } {
+  const err = typeof c.error === "string" ? c.error.trim() : "";
+  const bid = formatPrice(c.bid);
+  const ask = formatPrice(c.ask);
+  if (err && bid === "—" && ask === "—") return { text: err, failed: true };
+  return { text: `${bid} / ${ask}`, failed: false };
+}
+
+/** Bildirim ve güçlü sinyal: alan varsa yalnız `motor_acar === true`. */
+function motorOpens(c: { motor_acar?: boolean; tier?: string }): boolean {
+  if (typeof c.motor_acar === "boolean") return c.motor_acar;
+  return c.tier === "STRONG";
+}
+
+function scorePassed(c: ForexCandidate): boolean {
+  if (typeof c.skor_gecti === "boolean") return c.skor_gecti;
+  const req = optNum(c.required_score);
+  return req != null && c.score >= req;
+}
+
 /** Skor rengi: giriş eşiğine göre — eşiği geçen yeşil, yaklaşan sarı. */
-function scoreTone(score: number, required: number): string {
-  if (score >= required) return "text-emerald-400";
-  if (score >= required - 10) return "text-yellow-400";
+function scoreTone(score: number, required: number | null, passed: boolean): string {
+  if (passed) return "text-emerald-400";
+  if (required != null && score >= required - 10) return "text-yellow-400";
   return "text-bunker-muted";
 }
 
@@ -220,6 +274,10 @@ export default function ForexRadarPage() {
   const [scanNote, setScanNote] = useState<string>("");
   const [thresholds, setThresholds] = useState<RadarThresholds | null>(null);
   const [loading, setLoading] = useState(true);
+  const [radarError, setRadarError] = useState("");
+  const [strategyScanError, setStrategyScanError] = useState("");
+  const [scanNowNotice, setScanNowNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [calcError, setCalcError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Filtreler
@@ -251,8 +309,14 @@ export default function ForexRadarPage() {
       // "hiçbir şey olmadı" izlenimi doğmasın).
       setArmFilter("ALL");
       setScanNowResult(res);
+      const rows = Number(res?.total_rows ?? res?.rows?.length ?? 0);
+      setScanNowNotice({
+        ok: true,
+        text: `Tarama tamamlandı. ${rows} satır döndü.`,
+      });
     } catch (err) {
-      console.error("Manuel tarama hatası:", err);
+      const detail = err instanceof Error ? err.message : "Tarama başarısız";
+      setScanNowNotice({ ok: false, text: `Tarama başarısız: ${detail}` });
     } finally {
       setScanning(false);
     }
@@ -262,8 +326,10 @@ export default function ForexRadarPage() {
     try {
       const res = await apiFetch("/api/forex/auto-paper/strategy-scan");
       if (res && res.rows) setScanNowResult(res);
+      setStrategyScanError("");
     } catch (err) {
-      console.error("Strateji taraması yükleme hatası:", err);
+      const detail = err instanceof Error ? err.message : "Strateji taraması alınamadı";
+      setStrategyScanError(`Strateji taraması alınamadı: ${detail}`);
     }
   };
 
@@ -276,9 +342,11 @@ export default function ForexRadarPage() {
         setScanNote(data.scan_note || "");
         setThresholds(data.thresholds || null);
         setLastUpdated(new Date());
+        setRadarError("");
       }
     } catch (err) {
-      console.error("Forex radar yükleme hatası:", err);
+      const detail = err instanceof Error ? err.message : "Radar verisi alınamadı";
+      setRadarError(`Radar verisi alınamadı: ${detail}`);
     } finally {
       setLoading(false);
     }
@@ -306,8 +374,11 @@ export default function ForexRadarPage() {
         }),
       });
       setCalcResult(res);
+      setCalcError("");
     } catch (err) {
-      console.error("Lot hesaplama hatası:", err);
+      setCalcResult(null);
+      const detail = err instanceof Error ? err.message : "Lot hesaplanamadı";
+      setCalcError(`Lot hesaplanamadı: ${detail}`);
     }
   };
 
@@ -316,7 +387,10 @@ export default function ForexRadarPage() {
   }, [calcBalance, calcRiskPct, calcSlPips, calcSymbol]);
 
   // Güçlü sinyaller — filtrelerden bağımsız, radarın özü.
-  const strongSignals = useMemo(() => candidates.filter((c) => c.tier === "STRONG"), [candidates]);
+  const strongSignals = useMemo(
+    () => candidates.filter((c) => motorOpens(c)),
+    [candidates],
+  );
 
   // Kol özeti: her giriş kolu kaç sembol taradı / kaç canlı aday üretti.
   // Sıralama ARM_ORDER (motor akışı), tanımsız kollar sona alfabetik eklenir —
@@ -422,6 +496,32 @@ export default function ForexRadarPage() {
           ))}
         </div>
       </div>
+
+      {scanNowNotice && (
+        <p
+          role="status"
+          className={`px-4 py-2 rounded-xl border font-mono text-xs ${
+            scanNowNotice.ok
+              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+              : "bg-rose-500/10 border-rose-500/40 text-rose-300"
+          }`}
+        >
+          {scanNowNotice.text}
+        </p>
+      )}
+
+      {strategyScanError && (
+        <div role="alert" className="px-4 py-3 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 font-mono text-xs flex flex-wrap items-center justify-between gap-2">
+          <span>{strategyScanError}</span>
+          <button
+            type="button"
+            onClick={() => { void fetchStrategyScan(); }}
+            className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/40 font-bold"
+          >
+            Tekrar Dene
+          </button>
+        </div>
+      )}
 
       {/* TÜM TARAMA SİSTEMLERİ — giriş kollarının canlı durumu.
           Eskiden yalnız "Şimdi Tara" sonrası görünürdü; artık sayfa açıkken
@@ -733,16 +833,16 @@ export default function ForexRadarPage() {
                     <div>
                       <span className="text-[10px] text-bunker-muted block">SKOR</span>
                       <span className="text-lg font-black text-emerald-400">{c.score.toFixed(1)}</span>
-                      <span className="text-[10px] text-bunker-muted block">eşik {c.required_score}</span>
+                      <span className="text-[10px] text-bunker-muted block">eşik {optNum(c.required_score) ?? "—"}</span>
                     </div>
                     <div>
                       <span className="text-[10px] text-bunker-muted block">HEDEF (TP)</span>
-                      <span className="text-sm font-bold text-emerald-400">+{c.pip_target}p</span>
-                      <span className="text-[10px] text-bunker-muted block">R/R {c.risk_reward}</span>
+                      <span className="text-sm font-bold text-emerald-400">{fmtTp(c.pip_target)}</span>
+                      <span className="text-[10px] text-bunker-muted block">R/R {fmtRr(c.risk_reward)}</span>
                     </div>
                     <div>
                       <span className="text-[10px] text-bunker-muted block">STOP (SL)</span>
-                      <span className="text-sm font-bold text-rose-400">-{c.stop_loss_pips}p</span>
+                      <span className="text-sm font-bold text-rose-400">{fmtSl(c.stop_loss_pips)}</span>
                       <span className="text-[10px] text-bunker-muted block">ATR {c.atr_pips}p</span>
                     </div>
                   </div>
@@ -751,13 +851,13 @@ export default function ForexRadarPage() {
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
                     <span className={adxTone(c.adx)}>ADX {c.adx.toFixed(0)}</span>
                     <span className={st.tone}>ST {st.text}</span>
-                    <span className="text-bunker-muted">RSI {c.rsi_15m.toFixed(0)}</span>
+                    <span className="text-bunker-muted">RSI (5 dk) {fmtRsi(c)}</span>
                     <span className="text-bunker-muted">HTF {c.htf_trend}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
-                    <span className="text-white font-bold">
-                      {c.bid} / {c.ask}
+                    <span className={`font-bold ${radarQuote(c).failed ? "text-rose-300" : "text-white"}`}>
+                      {radarQuote(c).text}
                     </span>
                     <span className="text-cyan-400 font-bold">{c.spread_pips}p spread</span>
                     <button
@@ -833,17 +933,42 @@ export default function ForexRadarPage() {
           </div>
         </div>
 
-        {loading ? (
+        {radarError && candidates.length > 0 && (
+          <p role="alert" className="px-4 py-2 font-mono text-xs text-rose-300 border-b border-rose-500/30 bg-rose-500/10">
+            {radarError} Son başarılı tarama ekranda duruyor.
+          </p>
+        )}
+
+        {loading && candidates.length === 0 ? (
           <div className="p-12 text-center font-mono text-sm text-bunker-muted">
             <div className="inline-block w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mb-2" />
             <p>Forex pariteleri taranıyor…</p>
           </div>
+        ) : radarError && candidates.length === 0 ? (
+          <div role="alert" className="p-12 text-center space-y-3 font-mono">
+            <div className="text-3xl">⚠️</div>
+            <p className="text-sm font-bold text-rose-300">{radarError}</p>
+            <p className="text-xs text-bunker-muted">
+              Bu bir filtre sonucu değil. Radar isteği başarısız oldu.
+            </p>
+            <button
+              type="button"
+              onClick={() => { setLoading(true); void fetchRadar(); }}
+              className="px-4 py-2 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-200 font-bold text-xs"
+            >
+              Tekrar Dene
+            </button>
+          </div>
         ) : visible.length === 0 ? (
           <div className="p-12 text-center space-y-2 font-mono">
             <div className="text-3xl">🔍</div>
-            <p className="text-sm font-bold text-white">Bu filtreyle eşleşen sembol yok.</p>
+            <p className="text-sm font-bold text-white">
+              {filtersActive ? "Bu filtreyle eşleşen sembol yok." : "Radar şu an sembol döndürmedi."}
+            </p>
             <p className="text-xs text-bunker-muted">
-              Filtreleri temizleyip tüm taramayı görebilirsiniz.
+              {filtersActive
+                ? "Filtreleri temizleyip tüm taramayı görebilirsiniz."
+                : "Bağlantı var; tarama listesi boş."}
             </p>
           </div>
         ) : (
@@ -860,7 +985,7 @@ export default function ForexRadarPage() {
                     <th className="py-3 px-3">Spread</th>
                     <th className="py-3 px-2">ADX</th>
                     <th className="py-3 px-2">S.Trend</th>
-                    <th className="py-3 px-2">RSI</th>
+                    <th className="py-3 px-2">RSI (5 dk)</th>
                     <th className="py-3 px-3">Hedef / Stop</th>
                     <th className="py-3 px-3">Skor</th>
                     <th className="py-3 px-3">Durum / Engel</th>
@@ -922,9 +1047,8 @@ export default function ForexRadarPage() {
                           )}
                         </td>
 
-                        <td className="py-3.5 px-3 font-semibold text-white text-[11px] whitespace-nowrap">
-                          {formatPrice(c.bid)} <span className="text-bunker-600">/</span>{" "}
-                          {formatPrice(c.ask)}
+                        <td className={`py-3.5 px-3 font-semibold text-[11px] whitespace-nowrap ${radarQuote(c).failed ? "text-rose-300" : "text-white"}`}>
+                          {radarQuote(c).text}
                         </td>
 
                         <td className="py-3.5 px-3 text-cyan-400 font-bold">
@@ -940,14 +1064,14 @@ export default function ForexRadarPage() {
                         </td>
 
                         <td className="py-3.5 px-2 text-bunker-muted">
-                          {c.rsi_15m.toFixed(0)}
+                          {fmtRsi(c)}
                         </td>
 
                         <td className="py-3.5 px-3 whitespace-nowrap">
-                          <span className="text-emerald-400 font-bold">+{c.pip_target}p</span>
+                          <span className="text-emerald-400 font-bold">{fmtTp(c.pip_target)}</span>
                           <span className="text-bunker-600"> / </span>
-                          <span className="text-rose-400 font-bold">-{c.stop_loss_pips}p</span>
-                          <div className="text-[10px] text-bunker-muted">R/R {c.risk_reward}</div>
+                          <span className="text-rose-400 font-bold">{fmtSl(c.stop_loss_pips)}</span>
+                          <div className="text-[10px] text-bunker-muted">R/R {fmtRr(c.risk_reward)}</div>
                         </td>
 
                         <td className="py-3.5 px-3">
@@ -955,16 +1079,16 @@ export default function ForexRadarPage() {
                             <div className="w-12 bg-bunker-800 rounded-full h-1.5 overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${
-                                  c.score >= c.required_score ? "bg-emerald-400" : "bg-blue-400"
+                                  scorePassed(c) ? "bg-emerald-400" : "bg-blue-400"
                                 }`}
                                 style={{ width: `${Math.min(100, c.score)}%` }}
                               />
                             </div>
-                            <span className={`font-bold ${scoreTone(c.score, c.required_score)}`}>
+                            <span className={`font-bold ${scoreTone(c.score, optNum(c.required_score), scorePassed(c))}`}>
                               {c.score.toFixed(1)}
                             </span>
                           </div>
-                          <div className="text-[10px] text-bunker-muted">eşik {c.required_score}</div>
+                          <div className="text-[10px] text-bunker-muted">eşik {optNum(c.required_score) ?? "—"}</div>
                         </td>
 
                         <td className="py-3.5 px-3">
@@ -1047,8 +1171,8 @@ export default function ForexRadarPage() {
                           ⏸ BEKLE
                         </span>
                       )}
-                      <span className="text-white font-bold text-xs">
-                        {formatPrice(c.bid)} / {formatPrice(c.ask)}
+                      <span className={`font-bold text-xs ${radarQuote(c).failed ? "text-rose-300" : "text-white"}`}>
+                        {radarQuote(c).text}
                       </span>
                       <span className="text-cyan-400 font-bold text-xs">{c.spread_pips}p</span>
                     </div>
@@ -1056,7 +1180,7 @@ export default function ForexRadarPage() {
                     <div className="grid grid-cols-4 gap-2 text-xs p-2 rounded-xl bg-bunker-950/70 border border-bunker-800/80">
                       <div>
                         <span className="text-[10px] text-bunker-muted block">SKOR</span>
-                        <span className={`font-bold ${scoreTone(c.score, c.required_score)}`}>
+                        <span className={`font-bold ${scoreTone(c.score, optNum(c.required_score), scorePassed(c))}`}>
                           {c.score.toFixed(1)}
                         </span>
                       </div>
@@ -1071,19 +1195,19 @@ export default function ForexRadarPage() {
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">RSI</span>
-                        <span className="font-bold text-bunker-muted">{c.rsi_15m.toFixed(0)}</span>
+                        <span className="text-[10px] text-bunker-muted block">RSI (5 dk)</span>
+                        <span className="font-bold text-bunker-muted">{fmtRsi(c)}</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
                         <span className="text-[10px] text-bunker-muted block">Hedef (TP)</span>
-                        <span className="text-emerald-400 font-bold">+{c.pip_target}p</span>
+                        <span className="text-emerald-400 font-bold">{fmtTp(c.pip_target)}</span>
                       </div>
                       <div className="text-right">
                         <span className="text-[10px] text-bunker-muted block">Stop (SL)</span>
-                        <span className="text-rose-400 font-bold">-{c.stop_loss_pips}p</span>
+                        <span className="text-rose-400 font-bold">{fmtSl(c.stop_loss_pips)}</span>
                       </div>
                     </div>
 
@@ -1094,7 +1218,7 @@ export default function ForexRadarPage() {
                     )}
 
                     <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
-                      <span className="text-bunker-muted">R/R {c.risk_reward}</span>
+                      <span className="text-bunker-muted">R/R {fmtRr(c.risk_reward)}</span>
                       <button
                         type="button"
                         onClick={() => setChartModalCandidate(c)}
@@ -1149,6 +1273,11 @@ export default function ForexRadarPage() {
               onChange={(e) => setCalcRiskPct(Number(e.target.value) || 0)}
               className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:border-blue-400 outline-none"
             />
+            {calcRiskPct >= 10 && (
+              <p className="mt-1 text-[10px] font-mono text-amber-300">
+                Varsayılan risk %10. Tek işlemde bakiyenin büyük kısmı riske girer.
+              </p>
+            )}
           </div>
 
           <div>
@@ -1181,6 +1310,10 @@ export default function ForexRadarPage() {
             </select>
           </div>
         </div>
+
+        {calcError && (
+          <p role="alert" className="font-mono text-xs text-rose-300">{calcError}</p>
+        )}
 
         {calcResult && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-xl bg-bunker-950/70 border border-bunker-800/80 font-mono text-xs">

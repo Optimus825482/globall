@@ -11,8 +11,10 @@ Kapsam:
 """
 import asyncio
 import datetime
+import os
 import pathlib
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -24,9 +26,22 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.app.routers import forex
+from fastapi import HTTPException
+
 from backend.app.forex_correlation import FXCorrelationMonitor
+from backend.app.routers import forex
 from scripts import mt5_bridge
+
+
+class _BridgeHeaders:
+    def __init__(self, token: str):
+        self.headers = {"x-bridge-token": token}
+
+
+def _bridge_request():
+    token = "unit-test-bridge-token"
+    os.environ["MT5_BRIDGE_TOKEN"] = token
+    return _BridgeHeaders(token)
 
 
 def _up_series(n=60, step=0.001, base=1.0):
@@ -293,7 +308,9 @@ class TestDXYRegimeFilter(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(forex.dxy_entry_veto("EURUSD", "BUY", {"regime": "USD_NEUTRAL"}))
 
     def test_no_dxy_data_fails_open(self):
-        self.assertIsNone(forex.dxy_entry_veto("USDJPY", "BUY", None))
+        self.assertEqual(forex.dxy_entry_veto("USDJPY", "BUY", None), "dxy_no_data")
+        self.assertEqual(forex.dxy_entry_veto("EURUSD", "SELL", None), "dxy_no_data")
+        self.assertIsNone(forex.dxy_entry_veto("XAUUSD", "BUY", None))
 
     def test_major_entry_gate_session(self):
         # Majör olmayan semboller her zaman serbest
@@ -348,9 +365,9 @@ class TestRadarSignalGate(unittest.TestCase):
 
     def _gate(self, sym="EURUSD", hour=12, cand=None, **kw):
         # Saat 12 UTC → majör seans penceresi (7-20) içinde.
-        # DXY None → rejim filtresi devre dışı kalır (canlı ağ çağrısı yok).
+        # Nötr DXY: majörde veri yok vetosu bu kapı testlerini kilitlemesin.
         return forex._evaluate_signal_gate(
-            sym, cand or self._cand(), hour, None, **kw)
+            sym, cand or self._cand(), hour, {"regime": "USD_NEUTRAL"}, **kw)
 
     def test_all_gates_open_is_signal_ready(self):
         res = self._gate()
@@ -477,11 +494,11 @@ class TestATRExitEngine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(levels["first_target_pips"], 40.5)
 
     def test_btc_noise_protection_expands_sl(self):
-        # BTC ATR 300 pip: SL 40 → 330'a genişler (gürültü stoplarını önler), TP 130 → 495
+        # BTC ATR 300 pip: SL 40 → 330. TP spec 130'un üstüne çıkmaz (1.5R tabanı spec'i ezmez).
         levels = forex.get_atr_exit_levels(300.0, 40.0, 130.0)
         self.assertEqual(levels["sl_pips"], 330.0)
-        self.assertEqual(levels["tp_pips"], 495.0)
-        self.assertGreaterEqual(levels["tp_pips"], levels["sl_pips"] * 1.5)
+        self.assertEqual(levels["tp_pips"], 130.0)
+        self.assertLessEqual(levels["tp_pips"], 130.0)
 
     def test_zero_atr_passthrough(self):
         levels = forex.get_atr_exit_levels(0.0, 8.0, 20.0)
@@ -831,11 +848,13 @@ class TestManualScanNow(unittest.TestCase):
         had_tech = sym in forex._TECHNICAL_CACHE
         tech_before = dict(forex._TECHNICAL_CACHE.get(sym) or {})
 
+        _today = datetime.datetime.now(datetime.timezone.utc)
+
         class _FixedDT(datetime.datetime):
             @classmethod
             def now(cls, tz=None):
-                # 14:05 UTC — giriş penceresi (14:00–14:30) içinde
-                return cls(2026, 10, 13, 14, 5, tzinfo=datetime.timezone.utc)
+                # 14:05 UTC — giriş penceresi (14:00–14:30) içinde, gün state ile aynı.
+                return cls(_today.year, _today.month, _today.day, 14, 5, tzinfo=datetime.timezone.utc)
 
         try:
             forex._TECHNICAL_CACHE.pop(sym, None)  # ATR yok
@@ -1079,7 +1098,7 @@ class TestADXAndSuperTrend(unittest.IsolatedAsyncioTestCase):
         """MT5 köprüsüne giden ayar senkronu yeni bayrakları taşır."""
         req = forex.MT5SyncRequest(account={}, positions=[], ticks={}, deals=[])
         try:
-            res = await forex.sync_mt5_bridge(req)
+            res = await forex.sync_mt5_bridge(req, _bridge_request())
             settings = res["settings"]
             for key in ("atr_exit_enabled", "partial_tp_enabled", "dxy_filter_enabled", "correlation_guard",
                         "tp_cancel_on_trail"):
@@ -1094,6 +1113,190 @@ class TestADXAndSuperTrend(unittest.IsolatedAsyncioTestCase):
         import inspect
         src = inspect.getsource(forex._forex_auto_paper_loop)
         self.assertIn('"partial_pips"', src)
+
+
+class TestTickPrimaryGuards(unittest.IsolatedAsyncioTestCase):
+    """Tik birincil kaynak, Wilder ADX, kısa Pearson ve köprü fail-closed."""
+
+    def test_score_path_does_not_call_yahoo(self):
+        import inspect
+        refresh = inspect.getsource(forex._refresh_live_rates_if_needed)
+        self.assertIn("_rebuild_tech_from_ticks", refresh)
+        self.assertNotIn("_sync_fetch", refresh)
+        self.assertNotIn("query1.finance.yahoo", refresh)
+        bars = inspect.getsource(forex._s3_bars_for)
+        self.assertNotIn("_fetch_forex_klines", bars)
+        self.assertNotIn("query1.finance.yahoo", bars)
+        klines = inspect.getsource(forex._fetch_forex_klines)
+        self.assertNotIn("finance.yahoo", klines)
+        self.assertNotIn("frankfurter", inspect.getsource(forex._sync_fetch_live_rates))
+
+    def test_compute_adx_same_direction_as_canonical(self):
+        from backend.app.technical_analysis import _adx
+        n = 80
+        closes = [100.0 + i * 0.4 for i in range(n)]
+        highs = [c + 0.15 for c in closes]
+        lows = [c - 0.05 for c in closes]
+        fx = forex._compute_adx(highs, lows, closes, 14)
+        ta = _adx(highs, lows, closes, 14)
+        ta_adx = float(ta["adx"]) if isinstance(ta, dict) else float(ta)
+        self.assertGreater(fx, 20.0)
+        self.assertGreater(ta_adx, 20.0)
+        flat = [100.0] * n
+        self.assertEqual(forex._compute_adx(flat, flat, flat, 14), 0.0)
+        self.assertLess(abs(fx - ta_adx), 5.0)
+
+    def test_supertrend_series_matches_compute(self):
+        bars = []
+        for i in range(40):
+            c = 1.10 + i * 0.001
+            bars.append({"time": 1_700_000_000 + i * 300, "open": c - 0.0002,
+                         "high": c + 0.0004, "low": c - 0.0003, "close": c})
+        dirs = forex._s3_st_dir_series(bars, 10, 3.0)
+        st_dir, _level = forex._compute_supertrend(
+            [b["high"] for b in bars], [b["low"] for b in bars], [b["close"] for b in bars], 10, 3.0,
+        )
+        self.assertEqual(dirs[-1], st_dir)
+        self.assertNotEqual(st_dir, 0)
+
+    def test_short_pearson_is_none_and_blocks(self):
+        from backend.app.forex_correlation import _pearson
+        self.assertIsNone(_pearson(list(range(10)), list(range(10))))
+        mon = FXCorrelationMonitor()
+        ok, why = mon.cluster_check("EURUSD", "USD_SHORT", [("GBPUSD", "USD_SHORT")])
+        self.assertFalse(ok)
+        self.assertIn("no_corr", why)
+
+    def test_canonical_tick_lands_on_app_symbol(self):
+        ts = time.time()
+        forex._note_mt5_tick("USTEC", 18000.0, 18002.0, ts)
+        forex._note_mt5_tick("XAUUSD.m", 2300.0, 2300.4, ts)
+        self.assertEqual(forex._PRICE_SOURCE.get("NAS100"), "mt5_tick")
+        self.assertEqual(forex._PRICE_SOURCE.get("XAUUSD"), "mt5_tick")
+        self.assertIn("NAS100", forex._LIVE_PRICES_CACHE)
+        self.assertIn("XAUUSD", forex._LIVE_PRICES_CACHE)
+
+    def test_s3_15m_does_not_reuse_5m_bars(self):
+        key5 = ("GBPCAD", 300)
+        key15 = ("GBPCAD", 900)
+        forex._CLOSED_TICK_BARS.pop(key5, None)
+        forex._CLOSED_TICK_BARS.pop(key15, None)
+        forex._OPEN_TICK_BUCKET.pop(key5, None)
+        forex._OPEN_TICK_BUCKET.pop(key15, None)
+        base = 1_700_000_000
+        for i in range(230):
+            px = 1.2 + i * 0.0002
+            forex._fold_tick_into_bucket("GBPCAD", 900, base + i * 900, px)
+        forex._fold_tick_into_bucket("GBPCAD", 900, base + 230 * 900, 1.3)
+        self.assertIsNone(forex._s3_tech_for("GBPCAD", "5m"))
+        self.assertIsNotNone(forex._s3_tech_for("GBPCAD", "15m"))
+
+    async def test_unauthorized_sync_does_not_drain(self):
+        keys = ("MT5_BRIDGE_TOKEN", "FOREX_MT5_SYNC_TOKEN", "BINANCE_TR_BRIDGE_SECRET")
+        saved = {k: os.environ.get(k) for k in keys}
+        pending = [{"id": "KEEP-ME", "action": "OPEN_ORDER", "symbol": "EURUSD"}]
+        forex._MT5_STATE["connected"] = False
+        forex._MT5_STATE["pending_commands"] = list(pending)
+        try:
+            for k in keys:
+                os.environ.pop(k, None)
+            with self.assertRaises(HTTPException) as ctx:
+                await forex.sync_mt5_bridge(forex.MT5SyncRequest(
+                    ticks={"EURUSD": {"bid": 1.1, "ask": 1.1002}},
+                ))
+            self.assertEqual(ctx.exception.status_code, 401)
+            self.assertFalse(forex._MT5_STATE["connected"])
+            self.assertEqual(forex._MT5_STATE["pending_commands"], pending)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            forex._MT5_STATE["pending_commands"] = []
+            forex._MT5_STATE["connected"] = False
+
+    async def test_missing_command_success_is_failure(self):
+        now = time.time()
+        forex._LAST_SYMBOL_ENTRY_TIME["EURUSD"] = now
+        forex._LAST_GOLD_EXIT_TIME = now
+        try:
+            await forex.sync_mt5_bridge(forex.MT5SyncRequest(command_results=[
+                {"id": "CMD-X", "action": "OPEN_ORDER", "symbol": "EURUSD"},
+            ]), _bridge_request())
+            self.assertNotIn("EURUSD", forex._LAST_SYMBOL_ENTRY_TIME)
+            self.assertEqual(forex._LAST_GOLD_EXIT_TIME, now)
+        finally:
+            forex._LAST_SYMBOL_ENTRY_TIME.pop("EURUSD", None)
+
+    async def test_placeholder_price_does_not_arm(self):
+        forex._RADAR_CACHE = None
+        forex._LAST_TECH_FETCH_TIME = 0.0
+        sym = "GBPUSD"
+        forex._TECHNICAL_CACHE.pop(sym, None)
+        forex._PRICE_SOURCE.pop(sym, None)
+        forex._PRICE_TS.pop(sym, None)
+        forex._LIVE_PRICES_CACHE.pop(sym, None)
+        forex._LIVE_SPREAD_PIPS.pop(sym, None)
+        forex._CLOSED_TICK_BARS.pop((sym, 300), None)
+        forex._CLOSED_TICK_BARS.pop((sym, 900), None)
+        forex._OPEN_TICK_BUCKET.pop((sym, 300), None)
+        forex._OPEN_TICK_BUCKET.pop((sym, 900), None)
+        ticks = await forex._generate_realistic_ticks()
+        row = ticks[sym]
+        self.assertEqual(row["action"], "HOLD")
+        self.assertNotEqual(row["source"], "mt5_tick")
+        self.assertFalse(row["spread_known"])
+        self.assertEqual(row["updated_at"], 0.0)
+        radar = await forex.get_forex_radar(use_cache=False)
+        card = next(c for c in radar["candidates"] if c["symbol"] == sym)
+        self.assertIn("rsi_5m", card)
+        self.assertEqual(card["rsi_5m"], card["rsi_15m"])
+        self.assertIn("age_sec", card)
+        self.assertIn("skor_gecti", card)
+        self.assertIn("motor_acar", card)
+        self.assertFalse(card["motor_acar"])
+
+    async def test_klines_and_tickers_fail_closed_without_ticks(self):
+        forex._CLOSED_TICK_BARS.pop(("EURUSD", 60), None)
+        forex._CLOSED_TICK_BARS.pop(("EURUSD", 300), None)
+        forex._CLOSED_TICK_BARS.pop(("EURUSD", 900), None)
+        forex._OPEN_TICK_BUCKET.pop(("EURUSD", 300), None)
+        forex._PRICE_SOURCE.pop("EURUSD", None)
+        forex._LIVE_PRICES_CACHE.pop("EURUSD", None)
+        bars, err = forex._forex_klines_from_ticks("EURUSD", "5m", 50)
+        self.assertEqual(bars, [])
+        self.assertEqual(err, "MT5 tik yok")
+        payload = await forex.get_forex_klines(symbol="EURUSD", interval="5m", limit=50)
+        self.assertEqual(payload["candles"], [])
+        self.assertEqual(payload["error"], "MT5 tik yok")
+        self.assertIsNone(payload["current_price"])
+        tickers = await forex.get_forex_tickers()
+        eurusd = next(t for t in tickers["tickers"] if t["symbol"] == "EURUSD")
+        self.assertIsNone(eurusd["price"])
+        self.assertEqual(eurusd["error"], "MT5 tik yok")
+
+    def test_klines_use_closed_tick_buckets(self):
+        sym = "NZDUSD"
+        for sec in (60, 300, 900):
+            forex._CLOSED_TICK_BARS.pop((sym, sec), None)
+            forex._OPEN_TICK_BUCKET.pop((sym, sec), None)
+        forex._PRICE_SOURCE[sym] = "mt5_tick"
+        forex._LIVE_PRICES_CACHE[sym] = 0.61
+        base = 1_700_000_000
+        for i in range(20):
+            forex._fold_tick_into_bucket(sym, 300, base + i * 300, 0.60 + i * 0.0001)
+        forex._fold_tick_into_bucket(sym, 300, base + 20 * 300, 0.62)
+        short, short_err = forex._forex_klines_from_ticks(sym, "5m", 100)
+        self.assertEqual(short, [])
+        self.assertEqual(short_err, "MT5 tik geçmişi kısa")
+        for i in range(21, 40):
+            forex._fold_tick_into_bucket(sym, 300, base + i * 300, 0.60 + i * 0.0001)
+        forex._fold_tick_into_bucket(sym, 300, base + 40 * 300, 0.64)
+        bars, err = forex._forex_klines_from_ticks(sym, "5m", 100)
+        self.assertIsNone(err)
+        self.assertGreaterEqual(len(bars), 30)
+        self.assertEqual(bars[0]["time"] % 300, 0)
 
 
 if __name__ == "__main__":

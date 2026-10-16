@@ -3,7 +3,8 @@
 // ============================================================================
 // UYGULAMA İÇİ FOREX RADAR SİNYAL BİLDİRİM MODALI (POPUP)
 // 2026-10-07: Push bildirimi yerine, Forex radarına takılan güçlü sinyallerde
-// (Skor >= 75, Tier: STRONG) doğrudan uygulama içinde açılan bildirim penceresi.
+// Bildirim yalnız motor_acar===true iken açılır. Alan yoksa tier==="STRONG".
+// Skor eşiği (75) tek başına pencere açmaz.
 // ============================================================================
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
@@ -23,15 +24,31 @@ interface RadarCandidate {
   action: "BUY" | "SELL" | "HOLD";
   score: number;
   tier: string;
+  motor_acar?: boolean;
+  required_score?: number | null;
   price: number;
-  spread_pips: number;
+  spread_pips?: number;
+  pip_target?: number | null;
+  stop_loss_pips?: number | null;
+  risk_reward?: string | number | null;
   tp_pips?: number;
   sl_pips?: number;
   rr_ratio?: number;
   adx?: number;
   supertrend_dir?: number;
+  rsi_5m?: number | null;
+  rsi_15m?: number | null;
   rsi?: number;
   has_open_position?: boolean;
+}
+
+function optNum(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function opensOrder(c: RadarCandidate): boolean {
+  if (typeof c.motor_acar === "boolean") return c.motor_acar === true;
+  return c.tier === "STRONG";
 }
 
 export function playRadarSound() {
@@ -119,7 +136,8 @@ export default function ForexRadarModal() {
       );
 
       const now = Date.now();
-      // Yalnızca güçlü (STRONG veya skor >= 75) BUY/SELL sinyallerini filtrele.
+      // Güçlü sinyal: motor_acar===true. Alan yoksa tier==="STRONG".
+      // score>=75 tek başına bildirim açmaz.
       // KRİTİK KURAL (2026-10-07): İşlem açılmış olan sembol için (has_open_position,
       // active_symbols içinde olan veya tier === 'ACTIVE') YENİDEN RADAR BİLDİRİMİ GÖNDERİLMEZ!
       const strongOnes: RadarCandidate[] = res.candidates.filter(
@@ -129,10 +147,7 @@ export default function ForexRadarModal() {
           if (hasOpenPos) {
             return false; // İşlem açılmış sembolü doğrudan ele
           }
-          return (
-            (c.tier === "STRONG" || c.score >= 75.0) &&
-            (c.action === "BUY" || c.action === "SELL")
-          );
+          return opensOrder(c) && (c.action === "BUY" || c.action === "SELL");
         }
       );
 
@@ -198,9 +213,24 @@ export default function ForexRadarModal() {
     notifSettings.enabled && !activeSignal ? 4000 : null
   );
 
+  useEffect(() => {
+    if (!activeSignal) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActiveSignal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeSignal]);
+
   if (!activeSignal) return null;
 
   const isBuy = activeSignal.action === "BUY";
+  const tp = optNum(activeSignal.pip_target) ?? optNum(activeSignal.tp_pips);
+  const sl = optNum(activeSignal.stop_loss_pips) ?? optNum(activeSignal.sl_pips);
+  const rrRaw = activeSignal.risk_reward ?? activeSignal.rr_ratio;
+  const rrText = rrRaw == null || rrRaw === "" ? "—" : String(rrRaw);
+  const rsi = optNum(activeSignal.rsi_5m) ?? optNum(activeSignal.rsi_15m) ?? optNum(activeSignal.rsi);
+  const threshold = optNum(activeSignal.required_score);
 
   return (
     <div
@@ -288,23 +318,23 @@ export default function ForexRadarModal() {
           <div className="p-2.5 rounded-xl bg-bunker-900/60 border border-bunker-800">
             <span className="text-[10px] text-bunker-muted uppercase block font-bold">Skor</span>
             <span className="text-lg font-black text-cyan-300">{activeSignal.score.toFixed(1)}</span>
-            <span className="text-[9px] text-bunker-muted block">eşik 75</span>
+            <span className="text-[9px] text-bunker-muted block">eşik {threshold ?? "—"}</span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
             <span className="text-[10px] text-emerald-400 uppercase block font-bold">Hedef (TP)</span>
             <span className="text-lg font-black text-emerald-300">
-              +{activeSignal.tp_pips || 20}p
+              {tp == null ? "—" : `+${tp}p`}
             </span>
             <span className="text-[9px] text-emerald-400/80 block">
-              R/R 1:{activeSignal.rr_ratio || 2.5}
+              R/R {rrText}
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
             <span className="text-[10px] text-rose-400 uppercase block font-bold">Stop (SL)</span>
             <span className="text-lg font-black text-rose-300">
-              -{activeSignal.sl_pips || 8}p
+              {sl == null ? "—" : `-${sl}p`}
             </span>
             <span className="text-[9px] text-rose-400/80 block">Korumalı</span>
           </div>
@@ -313,7 +343,7 @@ export default function ForexRadarModal() {
         {/* Teknik İndikatörler */}
         <div className="flex items-center justify-between text-[11px] text-bunker-300 px-1 py-1 border-t border-bunker-800/60">
           <span>
-            ADX: <strong className="text-white">{activeSignal.adx?.toFixed(0) || "36"}</strong>
+            ADX: <strong className="text-white">{optNum(activeSignal.adx)?.toFixed(0) ?? "—"}</strong>
           </span>
           <span>
             ST:{" "}
@@ -322,10 +352,10 @@ export default function ForexRadarModal() {
             </strong>
           </span>
           <span>
-            RSI: <strong className="text-white">{activeSignal.rsi?.toFixed(0) || "42"}</strong>
+            RSI (5 dk): <strong className="text-white">{rsi == null ? "—" : rsi.toFixed(0)}</strong>
           </span>
           <span>
-            Spread: <strong className="text-white">{activeSignal.spread_pips?.toFixed(1) || "0.1"}p</strong>
+            Spread: <strong className="text-white">{optNum(activeSignal.spread_pips) == null ? "—" : `${optNum(activeSignal.spread_pips)?.toFixed(1)}p`}</strong>
           </span>
         </div>
 

@@ -19,24 +19,6 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
-    },
-    {
-      "src": "/icons/Android/Icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/Android/Icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/Android/Icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -44,14 +26,14 @@
       "name": "Radar & Hız Avcısı",
       "short_name": "Radar",
       "description": "Canlı fırsat ve hız avcısı radarı",
-      "url": "/monitoring",
+      "url": "/forex",
       "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     },
     {
       "name": "Sanal Portföy",
       "short_name": "Portföy",
       "description": "Açık pozisyonlar ve sanal bakiye",
-      "url": "/portfolio",
+      "url": "/forex/portfolio",
       "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     },
     {

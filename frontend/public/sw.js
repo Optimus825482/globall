@@ -49,10 +49,10 @@ self.addEventListener("push", function (event) {
   };
 
   var show = function () {
-    // PWA kapalý olsa bile sesli bildirim: Android/Chrome ses dosyasý destekler,
-    // iOS Safari vibrate ile destekler; her ikisini birden saðlýyoruz.
+    // PWA kapalı olsa bile sesli bildirim: Android/Chrome ses dosyası destekler,
+    // iOS Safari vibrate ile destekler; her ikisini birden sağlıyoruz.
     var notifOpts = {
-      body: data.body || data.message || "Yeni market alarmý",
+      body: data.body || data.message || "Yeni market alarmı",
       icon: "/icon.svg",
       badge: "/icon.svg",
       vibrate: [300, 150, 300, 150, 500, 150, 300],
@@ -60,16 +60,16 @@ self.addEventListener("push", function (event) {
       requireInteraction: true,
       renotify: true,
       silent: false,
-      data: { url: data.url || "/alerts" }
+      data: { url: data.url && data.url !== "/alerts" ? data.url : "/forex" }
     };
-    // Android/Chrome: ses dosyasý (sound alaný)
+    // Android/Chrome: ses dosyası (sound alanı)
     if (data.sound) notifOpts.sound = data.sound;
-    // ML olaslýk varsa baþlýða ekle
+    // ML olasılık varsa başlığa ekle
     if (data.ml_hit_probability != null) {
       var prob = Math.round(Number(data.ml_hit_probability) * 100);
       notifOpts.body = "[ML %" + prob + "] " + (notifOpts.body || "");
     }
-    return self.registration.showNotification(data.title || "SCALPER GLOBAL AGENT alarmý", notifOpts);
+    return self.registration.showNotification(data.title || "SCALPER GLOBAL AGENT alarmı", notifOpts);
   };
 
   event.waitUntil(
@@ -82,7 +82,8 @@ self.addEventListener("push", function (event) {
 
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  var target = (event.notification.data && event.notification.data.url) || "/alerts";
+  var target = (event.notification.data && event.notification.data.url) || "/forex";
+  if (target === "/alerts") target = "/forex";
   // 2026-09-16: eskiden her tıklama `clients.openWindow` ile YENİ SEKME açıyordu.
   // Doğrusu: açık bir pencere varsa onu ODAKLA ve hedef URL'e yönlendir; yoksa aç.
   event.waitUntil(
