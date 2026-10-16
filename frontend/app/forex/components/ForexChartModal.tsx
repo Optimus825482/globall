@@ -30,7 +30,7 @@ export interface ForexCandidateMeta {
   atr_pips: number;
   tv_symbol?: string;
   tier: "STRONG" | "ACTIVE" | "WATCH" | "WAIT";
-  required_score?: number;
+  required_score?: number | null;
 }
 
 interface ForexChartModalProps {
