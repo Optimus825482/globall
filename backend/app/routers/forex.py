@@ -1255,6 +1255,36 @@ def get_symbol_csm_differential(sym: str, csm_data: Optional[Dict[str, Any]]) ->
     return 0.0, "NEUTRAL"
 
 
+def crypto_quality_gate(
+    symbol: str,
+    action: str,
+    body_ratio: float,
+    dist_ema21_pct: float,
+    adx: float,
+) -> Tuple[bool, str]:
+    """Kripto (BTC/ETH) Scalping Akıllı Kalite Kalkanı (3 Kapı):
+
+    1. Mum Gövde Teyidi (Wick / Doji Shield): body_ratio >= 0.35
+       Doji, ince gövdeli ve fitil tuzaklarını engeller (88 kaybı önledi).
+    2. Pullback Sweet-Spot / Aşırı Uzama Kelepçesi (FOMO Shield): |dist_ema21_pct| <= 0.30%
+       Fiyat 5M EMA21'den %0.30'dan fazla koptuğunda tepeden alım/dipten satımı önler (96 kaybı önledi).
+    3. ADX Trend Gücü Kapısı (Chop Shield): adx >= 20.0
+       Trendsiz testere piyasalarında stop yemeyi engeller (105 kaybı önledi).
+    """
+    sym = str(symbol or "").upper()
+    if "BTC" not in sym and "ETH" not in sym:
+        return True, ""
+    if action not in ("BUY", "SELL"):
+        return True, ""
+    if adx < 20.0:
+        return False, f"ADX Kalkanı: BTC trend gücü yetersiz (ADX {adx:.1f} < 20.0) — testere piyasası"
+    if abs(dist_ema21_pct) > 0.30:
+        return False, f"Aşırı Uzama Kalkanı: BTC EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.30%) — FOMO girişi engellendi"
+    if body_ratio < 0.35:
+        return False, f"Fitil/Doji Kalkanı: BTC mum gövdesi zayıf ({body_ratio*100:.0f}% < %35) — sahte kırılım fitili engellendi"
+    return True, ""
+
+
 def calculate_dss_score(
     sym: str,
     action: str,
@@ -1266,6 +1296,9 @@ def calculate_dss_score(
     supertrend_dir: int,
     spread_pips: float,
     atr_pips: float,
+    adx: float = 25.0,
+    body_ratio: float = 0.5,
+    dist_ema21_pct: float = 0.0,
 ) -> Tuple[float, str]:
     """Kurumsal Karar Destek Sistemi (DSS) çoklu faktör ve A+ kurulum puanlayıcısı.
 
@@ -1359,6 +1392,11 @@ def calculate_dss_score(
     elif total_dss >= 65.0 and action in ("BUY", "SELL"):
         tier = "B"
     else:
+        tier = "WATCH"
+
+    # Kripto Akıllı Kalite Kalkanı (BTC/ETH için 3 kapı testi)
+    ok_crypto, _ = crypto_quality_gate(sym, action, body_ratio, dist_ema21_pct, adx)
+    if not ok_crypto:
         tier = "WATCH"
 
     return total_dss, tier
@@ -3048,6 +3086,13 @@ def _compute_technical_indicators(
             direction_guard_reason = f"SuperTrend kalkanı: 5M SuperTrend karşı yönde ({'BOĞA' if st_dir > 0 else 'AYI'})"
             macd_verdict = direction_guard_reason
 
+    o_last = float(opens[-1]) if opens else last_price
+    h_last = float(highs[-1]) if highs else float(np.max(h))
+    l_last = float(lows[-1]) if lows else float(np.min(l))
+    bar_span = max(1e-9, h_last - l_last)
+    body_ratio = round(abs(last_price - o_last) / bar_span, 3)
+    dist_ema21_pct = round(((last_price - ema21) / ema21) * 100.0, 3) if (ema21 and ema21 > 0) else 0.0
+
     return {
         "price": last_price,
         "high": float(np.max(h)),
@@ -3057,6 +3102,8 @@ def _compute_technical_indicators(
         "ema9": ema9,
         "ema21": ema21,
         "ema50": ema50,
+        "dist_ema21_pct": dist_ema21_pct,
+        "body_ratio": body_ratio,
         "rsi": round(rsi, 1),
         "macd_hist": round(hist, 6),
         "macd_verdict": macd_verdict,
@@ -3069,9 +3116,9 @@ def _compute_technical_indicators(
         "atr": atr,
         # Son barın OHLC'si (EMA+ADX geri-çekilme giriş modu — 2026-10-08): dokunma
         # (EMA21'i kesme) ve onay (bar trend yönünde kapanış) bu bardan okunur.
-        "open_last": float(opens[-1]) if opens else last_price,
-        "high_last": float(highs[-1]) if highs else float(np.max(h)),
-        "low_last": float(lows[-1]) if lows else float(np.min(l)),
+        "open_last": o_last,
+        "high_last": h_last,
+        "low_last": l_last,
         # Donchian(20) orta hat + önceki barın orta hattı (donchian_adx giriş modu — 2026-10-07)
         "donch_mid": round((max(highs[-20:]) + min(lows[-20:])) / 2.0, 6) if len(highs) >= 20 else None,
         "donch_mid_prev": round((max(highs[-21:-1]) + min(lows[-21:-1])) / 2.0, 6) if len(highs) >= 21 else None,
@@ -3225,6 +3272,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             direction_guard_reason = str(tech.get("direction_guard_reason", ""))
             signal_bar_time = tech.get("signal_bar_time")
             signal_bar_confirmed = bool(tech.get("signal_bar_confirmed", False))
+            body_ratio = float(tech.get("body_ratio", 0.5) if tech.get("body_ratio") is not None else 0.5)
+            dist_ema21_pct = float(tech.get("dist_ema21_pct", 0.0) if tech.get("dist_ema21_pct") is not None else 0.0)
         else:
             score = 50.0
             trend = "NEUTRAL"
@@ -3243,6 +3292,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             direction_guard_reason = ""
             signal_bar_time = None
             signal_bar_confirmed = False
+            body_ratio = 0.5
+            dist_ema21_pct = 0.0
 
         _TICK_CACHE[sym] = {
             "symbol": sym,
@@ -3275,6 +3326,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "direction_guard_reason": direction_guard_reason,
             "signal_bar_time": signal_bar_time,
             "signal_bar_confirmed": signal_bar_confirmed,
+            "body_ratio": body_ratio,
+            "dist_ema21_pct": dist_ema21_pct,
             "atr": atr_val,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "source": "mt5_tick" if source == "mt5_tick" else source,
@@ -3790,6 +3843,14 @@ def _evaluate_signal_gate(
     if supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir):
         reasons.append("supertrend")
 
+    # Kripto Akıllı Kalite Kalkanı (BTC / ETH: Gövde teyidi, Aşırı uzama, ADX)
+    c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
+    c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
+    c_adx = float(cand.get("adx", 25.0) if cand.get("adx") is not None else 25.0)
+    ok_crypto, _ = crypto_quality_gate(sym, direction, c_body, c_dist, c_adx)
+    if not ok_crypto:
+        reasons.append("crypto_quality")
+
     data_reason = entry_data_blocked(cand)
     if data_reason and data_reason not in reasons:
         reasons.append(data_reason)
@@ -3862,6 +3923,7 @@ _GATE_LABELS: Dict[str, str] = {
     "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD, AUDCAD)",
     "news_opposing": "Ekonomik takvim verisine zıt yön (30 dk koruma aktif)",
     "spread_cost_too_high": "Spread hedef kârın %20'sinden yüksek (aşırı maliyet)",
+    "crypto_quality": "Kripto kalite kalkanı (gövde/aşırı uzama/ADX yetersiz)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -3870,7 +3932,7 @@ _GATE_LABELS: Dict[str, str] = {
 _MARKET_BLOCKERS = frozenset({
     "direction", "score", "spread", "spread_cost_too_high", "adx", "supertrend",
     "dxy", "major_session", "major_min_atr", "correlation",
-    "veri", "bayat", "bar_gap", "news_opposing",
+    "veri", "bayat", "bar_gap", "news_opposing", "crypto_quality",
 })
 
 # PERFORMANS (2026-10-08): /radar yanıtı için kısa TTL'li önbellek. Birden çok
@@ -4005,6 +4067,9 @@ async def get_forex_radar(use_cache: bool = True):
         csm_diff, csm_bias = get_symbol_csm_differential(sym_u, csm_data)
         fvg_type = t.get("fvg_type", "NONE")
         fvg_gap = float(t.get("fvg_gap", 0.0) or 0.0)
+        t_adx = float(t.get("adx", 25.0) if t.get("adx") is not None else 25.0)
+        t_body = float(t.get("body_ratio", 0.5) if t.get("body_ratio") is not None else 0.5)
+        t_dist = float(t.get("dist_ema21_pct", 0.0) if t.get("dist_ema21_pct") is not None else 0.0)
         dss_score, dss_tier = calculate_dss_score(
             sym=sym_u,
             action=action,
@@ -4016,6 +4081,9 @@ async def get_forex_radar(use_cache: bool = True):
             supertrend_dir=st_dir,
             spread_pips=spread,
             atr_pips=atr_pips,
+            adx=t_adx,
+            body_ratio=t_body,
+            dist_ema21_pct=t_dist,
         )
 
         base = {
@@ -4054,7 +4122,9 @@ async def get_forex_radar(use_cache: bool = True):
             "atr": float(t.get("atr", 0.0) or 0.0),
             "cmo": t.get("cmo", 0.0),
             "cci": t.get("cci", 0.0),
-            "adx": t.get("adx", 25.0),
+            "adx": t_adx,
+            "body_ratio": t_body,
+            "dist_ema21_pct": t_dist,
             "supertrend_dir": st_dir,
             "htf_trend": t.get("htf_trend", "NEUTRAL"),
             "direction_guard_reason": t.get("direction_guard_reason", ""),
@@ -7363,6 +7433,22 @@ async def _forex_auto_paper_loop():
                         _log_auto_decision(
                             "GATE",
                             f"[{cand['display']}][{_c_strat_lbl}] SuperTrend Teyidi: {direction} yönü SuperTrend yönüyle ({'BOĞA' if st_dir > 0 else 'AYI'}) çelişiyor. İşlem engellendi.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
+                    continue
+
+                # 7d. Kripto (BTC/ETH) Akıllı Kalite Kalkanı (Gövde, FOMO Uzama, ADX)
+                c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
+                c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
+                ok_crypto, crypto_msg = crypto_quality_gate(sym, direction, c_body, c_dist, adx_val)
+                if not ok_crypto and not _news_bypass:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_crypto_quality", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_crypto_quality"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] {crypto_msg}. İşlem engellendi.",
                             symbol=sym,
                             strategy=_c_strat,
                             strategy_label=_c_strat_lbl,

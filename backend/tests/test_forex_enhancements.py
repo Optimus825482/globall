@@ -1874,6 +1874,88 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         self.assertEqual(mt5_bridge.get_symbol_trading_specs("AUDCAD")["pip_val"], 7.0)
 
 
+    def test_crypto_quality_gate_checks(self):
+        # Non-crypto symbols are bypassed
+        ok, _ = forex.crypto_quality_gate("EURUSD", "BUY", body_ratio=0.1, dist_ema21_pct=0.8, adx=10.0)
+        self.assertTrue(ok)
+
+        # BTC with low ADX (< 20.0)
+        ok, reason = forex.crypto_quality_gate("BTCUSD", "BUY", body_ratio=0.5, dist_ema21_pct=0.1, adx=18.5)
+        self.assertFalse(ok)
+        self.assertIn("ADX Kalkanı", reason)
+
+        # BTC with overextended distance from EMA21 (> 0.30%)
+        ok, reason = forex.crypto_quality_gate("BTCUSD", "BUY", body_ratio=0.5, dist_ema21_pct=0.45, adx=26.0)
+        self.assertFalse(ok)
+        self.assertIn("Aşırı Uzama Kalkanı", reason)
+
+        # BTC with weak body / wick / doji (< 0.35)
+        ok, reason = forex.crypto_quality_gate("BTCUSD", "BUY", body_ratio=0.25, dist_ema21_pct=0.15, adx=26.0)
+        self.assertFalse(ok)
+        self.assertIn("Fitil/Doji Kalkanı", reason)
+
+        # BTC with all 3 gates satisfied
+        ok, reason = forex.crypto_quality_gate("BTCUSD", "BUY", body_ratio=0.45, dist_ema21_pct=0.15, adx=26.0)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_crypto_quality_gate_downgrades_dss_tier(self):
+        # Setup that would normally qualify as A+ (score >= 80)
+        # Macro=25, CSM=25, Mom=20, Struct=15, Spread=15 -> 100 pts
+        score, tier = forex.calculate_dss_score(
+            sym="BTCUSD",
+            action="BUY",
+            htf_trend="BULLISH",
+            csm_diff=2.0,
+            rsi_5m=50.0,
+            macd_hist=0.5,
+            fvg_type="BULLISH_FVG",
+            supertrend_dir=1,
+            spread_pips=1.0,
+            atr_pips=20.0,
+            adx=15.0,  # Fails crypto quality gate!
+            body_ratio=0.5,
+            dist_ema21_pct=0.1,
+        )
+        self.assertGreaterEqual(score, 80.0)
+        self.assertEqual(tier, "WATCH", "Kripto kalite kalkanı geçilmediğinde tier WATCH'a düşmeli")
+
+        # Now with valid crypto quality gates
+        score2, tier2 = forex.calculate_dss_score(
+            sym="BTCUSD",
+            action="BUY",
+            htf_trend="BULLISH",
+            csm_diff=2.0,
+            rsi_5m=50.0,
+            macd_hist=0.5,
+            fvg_type="BULLISH_FVG",
+            supertrend_dir=1,
+            spread_pips=1.0,
+            atr_pips=20.0,
+            adx=25.0,
+            body_ratio=0.5,
+            dist_ema21_pct=0.1,
+        )
+        self.assertGreaterEqual(score2, 80.0)
+        self.assertEqual(tier2, "A+", "Kalite kalkanları geçildiğinde tier A+ olmalı")
+
+    def test_crypto_quality_gate_in_signal_gate(self):
+        cand = {
+            "action": "BUY",
+            "score": 95.0,
+            "atr_pips": 20.0,
+            "spread_pips": 1.0,
+            "spread_known": True,
+            "supertrend_dir": 1,
+            "adx": 25.0,
+            "body_ratio": 0.20,  # Weak body doji / wick trap
+            "dist_ema21_pct": 0.10,
+        }
+        res = forex._evaluate_signal_gate("BTCUSD", cand, current_utc_hour=14, dxy_regime=None)
+        self.assertFalse(res["signal_ready"])
+        self.assertIn("crypto_quality", res["blocked_by"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

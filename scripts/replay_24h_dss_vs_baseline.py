@@ -296,6 +296,8 @@ def run_replay(days: int = 7, target_symbols: Optional[List[str]] = None):
                 "atr": tech.get("atr", 10.0),
                 "atr_pips": tech.get("atr_pips", tech.get("atr", 10.0)),
                 "adx": tech.get("adx", 20.0),
+                "body_ratio": tech.get("body_ratio", 0.5),
+                "dist_ema21_pct": tech.get("dist_ema21_pct", 0.0),
                 "supertrend": tech.get("supertrend", cur_bar[4]),
                 "supertrend_dir": tech.get("supertrend_dir", 0),
                 "fvg_type": tech.get("fvg_type", "NONE"),
@@ -502,6 +504,9 @@ def run_replay(days: int = 7, target_symbols: Optional[List[str]] = None):
                 supertrend_dir=supertrend_dir,
                 spread_pips=spread,
                 atr_pips=atr,
+                adx=float(t.get("adx", 20.0)),
+                body_ratio=float(t.get("body_ratio", 0.5)),
+                dist_ema21_pct=float(t.get("dist_ema21_pct", 0.0)),
             )
 
             # DSS Quality Gates:
@@ -523,8 +528,17 @@ def run_replay(days: int = 7, target_symbols: Optional[List[str]] = None):
             if is_in_cooldown:
                 acc_dss.cooldown_blocks_count += 1
 
+            # 5. Kripto (BTC/ETH) Akıllı Kalite Kalkanı (Gövde, FOMO Uzama, ADX)
+            ok_crypto, _ = forex.crypto_quality_gate(
+                sym,
+                action,
+                body_ratio=float(t.get("body_ratio", 0.5)),
+                dist_ema21_pct=float(t.get("dist_ema21_pct", 0.0)),
+                adx=float(t.get("adx", 20.0)),
+            )
+
             # Evaluate entry
-            if is_valid_tier and spread_ratio_ok and st_aligned and not is_in_cooldown and len(acc_dss.positions) < MAX_CONCURRENT_POSITIONS:
+            if is_valid_tier and spread_ratio_ok and st_aligned and ok_crypto and not is_in_cooldown and len(acc_dss.positions) < MAX_CONCURRENT_POSITIONS:
                 if not any(p.symbol == sym for p in acc_dss.positions):
                     # Volatility-adapted breathing exits (Dynamic Exit Architect)
                     atr_exits = forex.get_atr_exit_levels(atr, spec["sl_pips"], spec["tp_pips"])
