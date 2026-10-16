@@ -162,6 +162,211 @@ FOREX_SYMBOLS = [
         "tv_symbol": "FX:AUDCAD",
         "default_price": 0.91000,
     },
+    # Ek kros pariteleri (31 sembol IC Markets tam evreni)
+    {
+        "symbol": "CHFJPY",
+        "display": "CHF/JPY",
+        "name": "Swiss Franc / Japanese Yen",
+        "category": "cross",
+        "base": "CHF",
+        "quote": "JPY",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "FX:CHFJPY",
+        "default_price": 191.930,
+    },
+    {
+        "symbol": "CADJPY",
+        "display": "CAD/JPY",
+        "name": "Canadian Dollar / Japanese Yen",
+        "category": "cross",
+        "base": "CAD",
+        "quote": "JPY",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "FX:CADJPY",
+        "default_price": 111.560,
+    },
+    {
+        "symbol": "AUDJPY",
+        "display": "AUD/JPY",
+        "name": "Australian Dollar / Japanese Yen",
+        "category": "cross",
+        "base": "AUD",
+        "quote": "JPY",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "FX:AUDJPY",
+        "default_price": 109.980,
+    },
+    {
+        "symbol": "NZDJPY",
+        "display": "NZD/JPY",
+        "name": "New Zealand Dollar / Japanese Yen",
+        "category": "cross",
+        "base": "NZD",
+        "quote": "JPY",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "FX:NZDJPY",
+        "default_price": 89.580,
+    },
+    {
+        "symbol": "EURGBP",
+        "display": "EUR/GBP",
+        "name": "Euro / British Pound",
+        "category": "cross",
+        "base": "EUR",
+        "quote": "GBP",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:EURGBP",
+        "default_price": 0.84430,
+    },
+    {
+        "symbol": "EURCHF",
+        "display": "EUR/CHF",
+        "name": "Euro / Swiss Franc",
+        "category": "cross",
+        "base": "EUR",
+        "quote": "CHF",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:EURCHF",
+        "default_price": 0.92700,
+    },
+    {
+        "symbol": "EURCAD",
+        "display": "EUR/CAD",
+        "name": "Euro / Canadian Dollar",
+        "category": "cross",
+        "base": "EUR",
+        "quote": "CAD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:EURCAD",
+        "default_price": 1.59460,
+    },
+    {
+        "symbol": "EURAUD",
+        "display": "EUR/AUD",
+        "name": "Euro / Australian Dollar",
+        "category": "cross",
+        "base": "EUR",
+        "quote": "AUD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:EURAUD",
+        "default_price": 1.61750,
+    },
+    {
+        "symbol": "EURNZD",
+        "display": "EUR/NZD",
+        "name": "Euro / New Zealand Dollar",
+        "category": "cross",
+        "base": "EUR",
+        "quote": "NZD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:EURNZD",
+        "default_price": 1.98580,
+    },
+    {
+        "symbol": "GBPCHF",
+        "display": "GBP/CHF",
+        "name": "British Pound / Swiss Franc",
+        "category": "cross",
+        "base": "GBP",
+        "quote": "CHF",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:GBPCHF",
+        "default_price": 1.09780,
+    },
+    {
+        "symbol": "GBPAUD",
+        "display": "GBP/AUD",
+        "name": "British Pound / Australian Dollar",
+        "category": "cross",
+        "base": "GBP",
+        "quote": "AUD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:GBPAUD",
+        "default_price": 1.91580,
+    },
+    {
+        "symbol": "GBPCAD",
+        "display": "GBP/CAD",
+        "name": "British Pound / Canadian Dollar",
+        "category": "cross",
+        "base": "GBP",
+        "quote": "CAD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:GBPCAD",
+        "default_price": 1.88860,
+    },
+    {
+        "symbol": "GBPNZD",
+        "display": "GBP/NZD",
+        "name": "British Pound / New Zealand Dollar",
+        "category": "cross",
+        "base": "GBP",
+        "quote": "NZD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:GBPNZD",
+        "default_price": 2.35210,
+    },
+    {
+        "symbol": "AUDNZD",
+        "display": "AUD/NZD",
+        "name": "Australian Dollar / New Zealand Dollar",
+        "category": "cross",
+        "base": "AUD",
+        "quote": "NZD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:AUDNZD",
+        "default_price": 1.22780,
+    },
+    {
+        "symbol": "AUDCHF",
+        "display": "AUD/CHF",
+        "name": "Australian Dollar / Swiss Franc",
+        "category": "cross",
+        "base": "AUD",
+        "quote": "CHF",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:AUDCHF",
+        "default_price": 0.57300,
+    },
+    {
+        "symbol": "NZDCHF",
+        "display": "NZD/CHF",
+        "name": "New Zealand Dollar / Swiss Franc",
+        "category": "cross",
+        "base": "NZD",
+        "quote": "CHF",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:NZDCHF",
+        "default_price": 0.46670,
+    },
+    {
+        "symbol": "CADCHF",
+        "display": "CAD/CHF",
+        "name": "Canadian Dollar / Swiss Franc",
+        "category": "cross",
+        "base": "CAD",
+        "quote": "CHF",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:CADCHF",
+        "default_price": 0.58130,
+    },
     # Commodities / Precious Metals
     {
         "symbol": "XAUUSD",
@@ -234,12 +439,10 @@ FOREX_SYMBOLS = [
 # teknik rapor ve emekli kayıt uyumluluğu FOREX_SYMBOLS üzerinden sürer.
 # Motora sinyal üretilen liste budur — işlem kapısı (allowed_symbols) ayrıca
 # devrede olduğundan buradaki genişlik tek başına risk açmaz.
-# 2026-10-12: NZDJPY/AUDNZD çıkarıldı — FOREX_SYMBOLS'te değiller (tick yok),
-# radar satırı hiç üretemiyorlardı; liste artık tick üretebilen evrenin alt kümesi.
-# GBPUSD panelde görünür ama klasik emir açmaz: emir evreni CANLI_CLASSIC_SYMBOLS.
 RADAR_SCAN_SYMBOLS = {
     "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "AUDCAD",
 }
+
 
 _RETIRED_FOREX_SYMBOLS = [
     # XAGUSD 2026-10-07'de kullanıcı kararıyla emekliye ayrıldı (radar/panel temizliği);
@@ -1906,12 +2109,16 @@ def get_symbol_trading_specs(
         eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
-    elif clean_sym == "AUDCAD":
-        # CAD kotasyon: 1 pip = 10 CAD = yaklaşık 10/USDCAD USD. 2026-10-16 replay ortalaması 7.03.
+    elif len(clean_sym) == 6 and clean_sym[3:6] in ("CAD", "CHF", "GBP", "NZD", "AUD", "EUR"):
+        quote = clean_sym[3:6]
         pip_size = 0.0001
         mult = 1.0
         digits = 5
-        pip_val = 7.0
+        # Quote dövize göre yaklaşık 1 pip ($/lot) değeri:
+        # GBP: 10 * GBPUSD (~13.3), CHF: 10 / USDCHF (~12.1), CAD: 10 / USDCAD (~7.1)
+        # NZD: 10 * NZDUSD (~5.7), AUD: 10 * AUDUSD (~7.0), EUR: 10 * EURUSD (~11.3)
+        pip_vals = {"GBP": 13.3, "CHF": 12.1, "CAD": 7.0, "NZD": 5.7, "AUD": 7.0, "EUR": 11.3}
+        pip_val = pip_vals.get(quote, 10.0)
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
@@ -2948,7 +3155,7 @@ _FOREX_VIEWED: Dict[Tuple[str, str], float] = {}
 _FOREX_VIEWED_TTL = 120.0
 # Köprüye tek turda istenebilecek azami (sembol, periyot) çifti. 2026-10-14:
 # 12 → 24 → 28 (DXY + tüm 14 radar sembolü + S3/Squeeze M15 + açık grafik).
-_MT5_WATCH_MAX = 28
+_MT5_WATCH_MAX = 64
 
 
 def _note_forex_viewed(symbol: str, interval: str) -> None:
@@ -3888,13 +4095,8 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 CANLI_CHANDELIER_ATR_MULT = 0.3
 CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 # Keltner Squeeze (M15) canlı sembol sabiti — kanıt 5 kanonik sembolde toplandı
-# (XAUUSD tek başına +$83.90 OOS / +$52.06 IS taşıyordu). LS gibi ZORLANIR: sunucudaki
-# ayar dosyası ve panel gövdesi bu listeyi ezemez; değiştirmek için koddaki sabit düzenlenir.
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
-# Klasik radar emir evreni (2026-10-16, 13 sembol × 7 gün MT5 M5 replay).
-# Klasik net +522; bunun +484'ü XAU, kalanı BTC +80 / US30 +85 / AUD +44.
-# GBPUSD, JPY krosu ve diğer majörler klasik defterde eksi. NAS100 klasik düz
-# (+8) ama EMA+ADX ve Squeeze orada duruyor — allowed_symbols DARALTILMAZ.
+# Klasik radar emir evreni: XAU, BTC, US30, AUDUSD, AUDCAD
 CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
 # Aynı pencere: S3 −12.85 (PF 0.90), London Sign −40.16 (PF 0.27, WR %37.5).
 # Dosya ve panel bu iki anahtarı geri açamasın diye zorlanır.
@@ -4001,14 +4203,14 @@ class ForexAutoPaperSettings(BaseModel):
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
                                  "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"],
-        description="İşleme izin verilen pariteler. 2026-10-12: 13 kros (NZDJPY, AUDNZD, GBPCHF, EURCAD, CHFJPY, CADJPY, GBPNZD, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — bunlar FOREX_SYMBOLS'te olmadığı için tick üretilmiyor, dolayısıyla panelde 'seçili' görünseler de ASLA işlem açamıyorlardı (hayalet). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=74) → kanıt yok, eklenmedi. 2026-10-13: NAS100 (= MT5 'USTEC', Nasdaq 100; bkz. mt5_bridge SYMBOL_ALIAS_MAP) EKLENDİ — kullanıcı kararı 'USTEC tüm kollarda aç'; tam-canlı-defter A/B: W1 OOS +$207 / W2 −$56 (klasik kol tek başına işaret dönüyor, ama LS/EMA+ADX/Donchian kollarıyla birlikte net pozitif). DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
+        description="İşleme izin verilen pariteler. DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
     )
     mode_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "GBPJPY", "EURJPY", "NAS100"],
-        description="Donchian+ADX giriş modunun AKTİF olduğu semboller (2026-10-10 denetim P0-2: BTCUSD ÇIKARILDI — 32g izole replay'de BTC donchian −$27.50/113 işlem, klasik kol +$396; mod JPY krosları için kalibre edilmişti). 2026-10-13: NAS100 eklendi (izole 2-pencere: W1 +$23.37 n32, W2 +$2.57 n47 → işaret-tutarlı pozitif).",
+        default_factory=lambda: ["XAUUSD", "GBPJPY", "EURJPY", "NAS100", "CHFJPY", "USDJPY"],
+        description="Donchian+ADX giriş modunun AKTİF olduğu semboller (JPY krosları ve endeksler).",
     )
     mode_exclusive: List[str] = Field(
-        default_factory=lambda: ["GBPJPY", "EURJPY"],
+        default_factory=lambda: ["GBPJPY", "EURJPY", "CHFJPY"],
         description="YALNIZ donchian_adx moduyla işlem açılan semboller (klasik skor sinyali bu çiftlerde replay'de kanıtlanmış negatif beklentiye sahip — kapalı kalır)",
     )
     donchian_adx_min: float = Field(18.0, ge=0.0, le=60.0, description="Donchian+ADX modu ADX(14) eşiği (2026-10-10 denetim P2-9: kodda sabitti, diğer akışlar ayardan okuyordu — kalibre değer 18.0 korunur)")
@@ -4034,7 +4236,7 @@ class ForexAutoPaperSettings(BaseModel):
     lb_enabled: bool = Field(True, description="London Breakout akışı: Asya kutusu (00:00→box_end UTC) high/low kırılımı, Londra penceresinde tetik. L30 replay pozitif 19 sembolde açık (2026-10-08)")
     lb_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "USDCHF", "US30"],
-        description="London Breakout sembolleri (2026-10-08 L30 replay pozitifleri; GBPJPY −$11 hariç tutuldu — çift donchian-exclusive). 2026-10-12: 11 kros (GBPCHF, EURCAD, CHFJPY, GBPNZD, CADJPY, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — FOREX_SYMBOLS'te olmadıkları için tick almıyorlardı (hayalet), izole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=25) → kanıt yok)",
+        description="London Breakout sembolleri (2026-10-08 L30 replay pozitifleri; GBPJPY −$11 hariç tutuldu — çift donchian-exclusive). Panelden doğrulanmış kârlı kroslar (AUDCAD, EURCAD, GBPAUD, GBPCAD, EURAUD, AUDJPY, NZDUSD, EURNZD, AUDNZD, GBPNZD) eklenebilir.",
     )
     lb_box_end_utc: int = Field(7, ge=0, le=12, description="London Breakout: Asya kutusu bitiş saati (UTC); 00:00'dan bu saate kadar high/low")
     lb_entry_end_utc: int = Field(11, ge=1, le=18, description="London Breakout: tetik penceresi bitiş saati (UTC); box_end'den bu saate kadar kutu dışına kapanış arar")

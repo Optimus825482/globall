@@ -397,20 +397,20 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
     def test_universe_invariant_strips_phantoms(self):
         """`_enforce_universe_invariant` hayalet pariteleri atar (2026-10-12 kilidi)."""
         cfg = forex.ForexAutoPaperSettings(
-            allowed_symbols=["XAUUSD", "GBPCHF", "NZDJPY", "GBPUSD", "AUDNZD"]
+            allowed_symbols=["XAUUSD", "FAKESYM1", "NOTREAL2", "GBPUSD", "PHANTOM3"]
         )
         dropped = forex._enforce_universe_invariant(cfg)
-        self.assertEqual(sorted(dropped), ["AUDNZD", "GBPCHF", "NZDJPY"])
+        self.assertEqual(sorted(dropped), ["FAKESYM1", "NOTREAL2", "PHANTOM3"])
         self.assertEqual(sorted(cfg.allowed_symbols), ["GBPUSD", "XAUUSD"])
 
     def test_merge_settings_strips_phantom_symbols(self):
         """PANEL bug'ı: kullanıcı panelden hayalet kros seçse bile motor kabul etmez."""
         merged = forex.merge_settings_payload(
-            {"allowed_symbols": ["XAUUSD", "EURCAD", "BTCUSD"]}
+            {"allowed_symbols": ["XAUUSD", "PHANTOM_PAIR", "BTCUSD"]}
         )
         self.assertIn("XAUUSD", merged.allowed_symbols)
         self.assertIn("BTCUSD", merged.allowed_symbols)
-        self.assertNotIn("EURCAD", merged.allowed_symbols)
+        self.assertNotIn("PHANTOM_PAIR", merged.allowed_symbols)
 
     def test_retired_symbols_are_out_of_universe_but_specs_kept(self):
         """ETHUSD, USOIL ve SPX500 2026-10-07'de forex evreninden çıkarıldı.

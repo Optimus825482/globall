@@ -4262,7 +4262,7 @@ def main():
         print(f"\n[RAPOR] {args.out}")
         return
     if new_v.get("max_drawdown_usd") is not None:
-        print(f"NEW Özkaynak: ${new_v['equity_start']:.2f} → ${new_v['equity_end']:.2f} | Maks. Düşüş: ${new_v['max_drawdown_usd']:.2f}")
+        print(f"NEW Özkaynak: ${new_v['equity_start']:.2f} -> ${new_v['equity_end']:.2f} | Maks. Düşüş: ${new_v['max_drawdown_usd']:.2f}")
     if new_v.get("daily_pnl"):
         print("\nGÜNLÜK PnL (NEW):")
         for d, pnl in new_v["daily_pnl"].items():
@@ -4272,7 +4272,7 @@ def main():
     print(f"{'KAPI':12s} {'ENGEL':>6s} {'GÖLGE İŞLEM':>11s} {'GÖLGE WR':>9s} {'GÖLGE PnL':>10s}  YORUM")
     print("-" * 76)
     for gate, g in report["gate_attribution"].items():
-        verdict = "✓ doğru eledi" if g["shadow_pnl_usd"] < 0 else "✗ kâr kesiyor — eşik gevşetilmeli"
+        verdict = "[OK] dogru eledi" if g["shadow_pnl_usd"] < 0 else "[X] kar kesiyor - esik gevsetilmeli"
         print(f"{gate:12s} {g['blocked']:>6d} {g['shadow_trades']:>11d} {g['shadow_win_rate']:>8.1f}% {g['shadow_pnl_usd']:>+10.2f}  {verdict}")
 
     print("\nSembol bazlı NEW:")

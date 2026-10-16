@@ -407,11 +407,16 @@ def get_symbol_trading_specs(
         eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
-    elif clean_sym == "AUDCAD":
+    elif len(clean_sym) == 6 and clean_sym[3:6] in ("CAD", "CHF", "GBP", "NZD", "AUD", "EUR"):
+        quote = clean_sym[3:6]
         pip_size = 0.0001
         mult = 1.0
         digits = 5
-        pip_val = 7.0            # 1 lot = 10 CAD/pip ≈ $7.0 USD (USD/CAD ~1.42)
+        # Quote dövize göre yaklaşık 1 pip ($/lot) değeri:
+        # GBP: 10 * GBPUSD (~13.3), CHF: 10 / USDCHF (~12.1), CAD: 10 / USDCAD (~7.1)
+        # NZD: 10 * NZDUSD (~5.7), AUD: 10 * AUDUSD (~7.0), EUR: 10 * EURUSD (~11.3)
+        pip_vals = {"GBP": 13.3, "CHF": 12.1, "CAD": 7.0, "NZD": 5.7, "AUD": 7.0, "EUR": 11.3}
+        pip_val = pip_vals.get(quote, 10.0)
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(10.0, round(base_be_floored * mult, 1))
@@ -1449,8 +1454,20 @@ def sync_with_server(api_base: str):
     ticks_data = {}
     # ETHUSD 2026-10-07'de forex evreninden çıkarıldı — burada da kotasyon istenmez.
     check_syms = [
+        # Majors (7)
         "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
-        "AUDCAD", "GBPJPY", "EURJPY", "BTCUSD", "NAS100", "US30", "XAUUSD", "DXY",
+        # Commodities / Crypto / Indices (4)
+        "XAUUSD", "BTCUSD", "NAS100", "US30",
+        # JPY Crosses (5)
+        "GBPJPY", "EURJPY", "CHFJPY", "CADJPY", "AUDJPY", "NZDJPY",
+        # EUR Crosses (5)
+        "EURGBP", "EURCHF", "EURCAD", "EURAUD", "EURNZD",
+        # GBP Crosses (4)
+        "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+        # Other Crosses (5)
+        "AUDCAD", "AUDNZD", "AUDCHF", "NZDCHF", "CADCHF",
+        # USD Index
+        "DXY",
     ]
     for s_check in check_syms:
         res_sym = resolve_mt5_symbol(s_check)
