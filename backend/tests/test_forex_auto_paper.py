@@ -492,8 +492,8 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(f_norm("[so 50.0]"), "SL_HIT")
         self.assertEqual(f_norm("so hit"), "SL_HIT")
 
-        # Varsayılan max_positions_per_symbol = 1 (tek scalper pozisyonu)
-        self.assertEqual(forex.ForexAutoPaperSettings().max_positions_per_symbol, 1)
+        # Varsayılan max_positions_per_symbol = 2 (kârlı trend piramitleme)
+        self.assertEqual(forex.ForexAutoPaperSettings().max_positions_per_symbol, 2)
 
         # Yön bazlı seri zarar takibi
         forex._SYMBOL_LOSS_STREAK.clear()

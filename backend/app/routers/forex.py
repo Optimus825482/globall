@@ -4901,7 +4901,7 @@ class ForexAutoPaperSettings(BaseModel):
     risk_gold_pct: float = Field(7.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %7")
     risk_crypto_index_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %2")
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
-    max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli scalper pozisyonu)")
+    max_positions_per_symbol: int = Field(2, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 2: Kârlı trend piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     flip_ignore_min_score: bool = Field(True, description="Zıt sinyal flip'inde skor eşiğini yoksay (2026-10-14 kullanıcı kararı: 'herhangi bir stratejiden zıt sinyal gelirse açık işlem kapanıp yeni sinyalle açılsın'). True = açık pozisyon varken zıt yönde sinyal GELDİĞİ anında flip (skor eşiği aranmaz). Spread/maliyet kapısı, korelasyon kalkanı, seri-SL soğuması, risk normalizasyonu ve lot bütçesi korunur — bunlar risk kapısıdır, atlanmaz.")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
