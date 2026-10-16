@@ -138,7 +138,7 @@ def calculate_lots(balance: float, sl_pips: float, pip_val: float, spec: Dict[st
 
 def fetch_symbol_bars(sym: str, yf_sym: str) -> Optional[List[Tuple[float, float, float, float, float]]]:
     """Fetch 5m bars for symbol from Yahoo Finance or fallback to cached json."""
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=2d"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=5d"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=12) as resp:
@@ -161,7 +161,7 @@ def fetch_symbol_bars(sym: str, yf_sym: str) -> Optional[List[Tuple[float, float
 
 def load_all_bars() -> Dict[str, List[Tuple[float, float, float, float, float]]]:
     """Load fresh 5m bars for all symbols, falling back to cache if needed."""
-    print("⏳ [1/4] Canlı piyasa verileri çekiliyor (Son 24-48 Saat 5M Barlar)...")
+    print("⏳ [1/4] Canlı piyasa verileri çekiliyor (Son 48-72 Saat 5M Barlar)...")
     data: Dict[str, List[Tuple[float, float, float, float, float]]] = {}
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
@@ -182,7 +182,7 @@ def load_all_bars() -> Dict[str, List[Tuple[float, float, float, float, float]]]
             with open(cache_path, "r", encoding="utf-8") as f:
                 cached = json.load(f)
             for sym, cbars in cached.items():
-                if sym not in data or len(data[sym]) < 200:
+                if sym not in data or len(data[sym]) < 400:
                     data[sym] = [tuple(b) for b in cbars]
         except Exception as e:
             print(f"⚠️ Cache fallback hatası: {e}")
@@ -198,23 +198,23 @@ def run_24h_replay():
         print("❌ HATA: Test verisi bulunamadı!")
         return
 
-    # Find the common 24-hour window (last 288 bars)
+    # Find the common 48-hour window (last 576 bars)
     # Find latest common timestamp
     all_ts = set()
     for sym, bars in data.items():
         all_ts.update(b[0] for b in bars)
     sorted_ts = sorted(list(all_ts))
     
-    # Take the last 288 bars (~24 hours)
-    if len(sorted_ts) > 288:
-        replay_ts = sorted_ts[-288:]
+    # Take the last 576 bars (~48 hours)
+    if len(sorted_ts) > 576:
+        replay_ts = sorted_ts[-576:]
     else:
         replay_ts = sorted_ts
         
     start_dt = datetime.datetime.fromtimestamp(replay_ts[0], datetime.timezone.utc)
     end_dt = datetime.datetime.fromtimestamp(replay_ts[-1], datetime.timezone.utc)
-    print(f"\n📅 [2/4] Replay Zaman Aralığı: {start_dt.strftime('%Y-%m-%d %H:%M')} -> {end_dt.strftime('%Y-%m-%d %H:%M')} UTC (24 Saat)")
-    print(f"💰 Başlangıç Bakiyesi: ${STARTING_BALANCE:,.2f} | Risk: %{RISK_PCT*100:.0f} (${STARTING_BALANCE*RISK_PCT:,.2f} / İşlem)")
+    print(f"\n📅 [2/4] Replay Zaman Aralığı: {start_dt.strftime('%Y-%m-%d %H:%M')} -> {end_dt.strftime('%Y-%m-%d %H:%M')} UTC (48 Saat)")
+    print(f"💰 Başlangıç Bakiyesi: ${STARTING_BALANCE:,.2f} | FX: %15, XAU: %5, BTC/US30/USTEC: %2 Risk")
 
     # Systems to test
     acc_baseline = Account(name="Mevcut Sistem (Baseline / Klasik)")
@@ -329,15 +329,15 @@ def run_24h_replay():
                         
                         # BE and Trailing update
                         if acc.name.startswith("Yeni"):
-                            # Asimetri Düzeltmesi (DSS): Erken 1.5 pip yerine en az 0.9R / 1.0 ATR kârda BE tetiklenir
-                            be_trigger_pips = max(pos.sl0_pips * 0.9, pos.entry_atr * 1.0)
+                            # Asimetri Düzeltmesi (DSS): 0.40R veya 0.8 ATR kârda BE tetiklenir (forex.py calculate_breakeven_target paritesi)
+                            be_trigger_pips = max(pos.sl0_pips * 0.40, pos.entry_atr * 0.8)
                             if pnl_pips >= be_trigger_pips and not pos.be_locked:
                                 pos.be_locked = True
-                                # Kâr kilidi: 1$ yerine en az 0.35R kâr kilitlenir (ör. 10 pip SL'de +3.5 pip / ~$35)
-                                lock_pips = max(2.5, pos.sl0_pips * 0.35)
+                                # Kâr kilidi: en az 0.20R kâr kilitlenir (ör. 10 pip SL'de +2.0 pip / ~$30)
+                                lock_pips = max(1.5, pos.sl0_pips * 0.20)
                                 pos.sl_price = round(pos.entry_price + (lock_pips * pos.pip_size), pos.digits)
-                            # Trailing stop: 1.3R kâr aşıldığında tepe noktasından 1.0 ATR mesafeden takip eder
-                            if pos.be_locked and pnl_pips >= pos.sl0_pips * 1.3:
+                            # Trailing stop: 1.0R kâr aşıldığında tepe noktasından 1.0 ATR mesafeden takip eder
+                            if pos.be_locked and pnl_pips >= pos.sl0_pips * 1.0:
                                 trail_sl = round(b_c - (pos.entry_atr * 1.0 * pos.pip_size), pos.digits)
                                 if trail_sl > pos.sl_price:
                                     pos.sl_price = trail_sl
@@ -363,12 +363,12 @@ def run_24h_replay():
                             pos.mfe_pips = pnl_pips
                         
                         if acc.name.startswith("Yeni"):
-                            be_trigger_pips = max(pos.sl0_pips * 0.9, pos.entry_atr * 1.0)
+                            be_trigger_pips = max(pos.sl0_pips * 0.40, pos.entry_atr * 0.8)
                             if pnl_pips >= be_trigger_pips and not pos.be_locked:
                                 pos.be_locked = True
-                                lock_pips = max(2.5, pos.sl0_pips * 0.35)
+                                lock_pips = max(1.5, pos.sl0_pips * 0.20)
                                 pos.sl_price = round(pos.entry_price - (lock_pips * pos.pip_size), pos.digits)
-                            if pos.be_locked and pnl_pips >= pos.sl0_pips * 1.3:
+                            if pos.be_locked and pnl_pips >= pos.sl0_pips * 1.0:
                                 trail_sl = round(b_c + (pos.entry_atr * 1.0 * pos.pip_size), pos.digits)
                                 if pos.sl_price == 0 or trail_sl < pos.sl_price:
                                     pos.sl_price = trail_sl
@@ -579,7 +579,7 @@ def run_24h_replay():
 
     # --- 6. Results & Statistical Comparison ---
     print("\n" + "=" * 80)
-    print("📊 [4/4] 24 SAATLİK REPLAY PERFORMANS RAPORU (1.000$ Bakiye | FX: %15, XAU: %5, BTC/US30/USTEC: %2 Risk | 15 Dk Soğuma)")
+    print("📊 [4/4] 48 SAATLİK REPLAY PERFORMANS RAPORU (1.000$ Bakiye | FX: %15, XAU: %5, BTC/US30/USTEC: %2 Risk | 15 Dk Soğuma)")
     print("=" * 80)
 
     for acc in (acc_baseline, acc_dss):
