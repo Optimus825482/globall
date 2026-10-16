@@ -423,6 +423,10 @@ export default function ForexNativeChart({
       const apiError = typeof data?.error === "string" ? data.error.trim() : "";
       const rawCandles = Array.isArray(data?.candles) ? data.candles : [];
       if (apiError && rawCandles.length === 0) {
+        if (candlesRef.current.length > 0) {
+          console.warn("Forex kline arka plan uyarısı:", apiError);
+          return;
+        }
         setError(apiError);
         if (data?.current_price == null) setLivePrice(null);
         return;
@@ -1133,13 +1137,16 @@ export default function ForexNativeChart({
           </div>
         )}
 
-        {error && (
+        {error && candles.length === 0 && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/70 gap-3 p-4 text-center">
             <div className="text-3xl">⚠️</div>
             <p className="text-sm font-bold text-rose-400">{error}</p>
             <button
               type="button"
-              onClick={() => loadKlines(timeframe)}
+              onClick={() => {
+                setError(null);
+                loadKlines(timeframe);
+              }}
               className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-500 transition-colors"
             >
               Tekrar Dene

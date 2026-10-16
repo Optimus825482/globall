@@ -513,6 +513,10 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                 const apiError = typeof payload?.error === "string" ? payload.error.trim() : "";
                 const candlesRaw = Array.isArray(payload?.candles) ? payload.candles : [];
                 if (apiError && candlesRaw.length === 0) {
+                    if (lastBarsRef.current && lastBarsRef.current.length > 0) {
+                        setLoading(false);
+                        return;
+                    }
                     setKlineError(apiError);
                     setPriceData(null);
                     setLoading(false);
@@ -1044,7 +1048,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                         </div>
                     </div>
                 )}
-                {klineError && !loading && (
+                {klineError && !loading && (!lastBarsRef.current || lastBarsRef.current.length === 0) && (
                     <div className="absolute inset-0 bg-bunker-950/80 flex flex-col items-center justify-center gap-3 px-4 text-center">
                         <p role="alert" className="font-mono text-xs text-rose-300">{klineError}</p>
                         <button

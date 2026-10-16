@@ -3768,11 +3768,11 @@ _KLINE_MAX_TICK_REL = 0.15        # %15 — bunun üstü bad tick → hiç uygul
 # Bu kaynak kullanılırsa geçmiş + canlı AYNI broker kotasyonudur → vadeli/spot
 # baz farkı SIFIR olur (bkz. _KLINE_BASIS_SHIFT_REL, XAUUSD GC=F sorunu).
 _MT5_CANDLES_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
-_MT5_CANDLES_TTL = 30.0  # Köprü ~1.5 sn'de bir push eder; 30 sn bayat toleransı
+_MT5_CANDLES_TTL = 180.0  # Köprü periyodik push eder; 3 dakika bayat toleransı
 # Panelin son bakılan forex (sembol, periyot) çiftleri: köprüye "ne çekeceğini"
 # söylemek için. TTL dolan çiftler düşer (bant genişliği korunur).
 _FOREX_VIEWED: Dict[Tuple[str, str], float] = {}
-_FOREX_VIEWED_TTL = 120.0
+_FOREX_VIEWED_TTL = 300.0
 # Köprüye tek turda istenebilecek azami (sembol, periyot) çifti. 2026-10-14:
 # 12 → 24 → 28 (DXY + tüm 14 radar sembolü + S3/Squeeze M15 + açık grafik).
 _MT5_WATCH_MAX = 64
@@ -3936,7 +3936,7 @@ def _refresh_squeeze_kc_state(ticks: Dict[str, Dict[str, Any]]) -> None:
             _SQUEEZE_KC_STATE[sym] = tech
 
 
-def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[List[Dict[str, Any]]]:
+def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int, max_age: Optional[float] = None) -> Optional[List[Dict[str, Any]]]:
     """Köprüden taze gelen broker mumlarını döndür (yoksa/bayatsa `None`)."""
     sym_key = canonical_symbol(clean_sym)
     tf_key = str(interval or "").strip().lower()
@@ -3944,7 +3944,8 @@ def _fetch_mt5_candles(clean_sym: str, interval: str, limit: int) -> Optional[Li
     if not entry:
         return None
     ts, bars = entry
-    if not bars or (time.time() - ts) > _MT5_CANDLES_TTL:
+    ttl = max_age if max_age is not None else _MT5_CANDLES_TTL
+    if not bars or (ttl > 0 and (time.time() - ts) > ttl):
         return None
     bucket_map = {
         "1m": 60, "3m": 180, "5m": 300, "15m": 900,
@@ -4085,6 +4086,8 @@ def _fetch_forex_klines(symbol: str, interval: str = "5m", limit: int = 250) -> 
     clean_sym = _clean_forex_chart_symbol(symbol)
     bars, err = _forex_klines_from_ticks(symbol, interval, limit)
     broker = _fetch_mt5_candles(clean_sym, interval, limit)
+    if not broker and (not bars or err):
+        broker = _fetch_mt5_candles(clean_sym, interval, limit, max_age=86400.0)
     if broker and (err or len(broker) > len(bars)):
         return broker
     return bars
@@ -4112,6 +4115,10 @@ async def get_forex_klines(
     # Köprü aynı anda MT5 geçmiş mumunu (copy_rates) gönderir. Broker mum serisi
     # tik kovasından daha derinse (veya tik geçmişi kısaysa) grafik onu gösterir.
     broker = _fetch_mt5_candles(clean_sym, interval, limit)
+    if not broker and (not bars or err):
+        # Fallback: köprü mumları biraz eskiyse bile (ör. hafta sonu veya köprü gecikmesi)
+        # kullanıcıya boş hata ekranı vermek yerine son bilinen mumları ver
+        broker = _fetch_mt5_candles(clean_sym, interval, limit, max_age=86400.0)
     if broker and (err or len(broker) > len(bars)):
         bars = broker
         err = None
