@@ -136,9 +136,9 @@ def calculate_lots(balance: float, sl_pips: float, pip_val: float, spec: Dict[st
     return lots
 
 
-def fetch_symbol_bars(sym: str, yf_sym: str) -> Optional[List[Tuple[float, float, float, float, float]]]:
+def fetch_symbol_bars(sym: str, yf_sym: str, days: int = 7) -> Optional[List[Tuple[float, float, float, float, float]]]:
     """Fetch 5m bars for symbol from Yahoo Finance or fallback to cached json."""
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range=5d"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=5m&range={min(7, max(1, days))}d"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=12) as resp:
@@ -159,13 +159,13 @@ def fetch_symbol_bars(sym: str, yf_sym: str) -> Optional[List[Tuple[float, float
     return None
 
 
-def load_all_bars() -> Dict[str, List[Tuple[float, float, float, float, float]]]:
+def load_all_bars(days: int = 7) -> Dict[str, List[Tuple[float, float, float, float, float]]]:
     """Load fresh 5m bars for all symbols, falling back to cache if needed."""
-    print("⏳ [1/4] Canlı piyasa verileri çekiliyor (Son 48-72 Saat 5M Barlar)...")
+    print(f"⏳ [1/4] Canlı piyasa verileri çekiliyor (Son {days} Gün 5M Barlar)...")
     data: Dict[str, List[Tuple[float, float, float, float, float]]] = {}
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-        futs = {ex.submit(fetch_symbol_bars, s, yf): s for s, yf in ALL_SYMBOLS_MAP.items()}
+        futs = {ex.submit(fetch_symbol_bars, s, yf, days): s for s, yf in ALL_SYMBOLS_MAP.items()}
         for fut in concurrent.futures.as_completed(futs, timeout=60):
             sym = futs[fut]
             try:
@@ -181,8 +181,9 @@ def load_all_bars() -> Dict[str, List[Tuple[float, float, float, float, float]]]
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 cached = json.load(f)
+            min_needed = min(1500, days * 200)
             for sym, cbars in cached.items():
-                if sym not in data or len(data[sym]) < 400:
+                if sym not in data or len(data[sym]) < min_needed:
                     data[sym] = [tuple(b) for b in cbars]
         except Exception as e:
             print(f"⚠️ Cache fallback hatası: {e}")
@@ -191,30 +192,41 @@ def load_all_bars() -> Dict[str, List[Tuple[float, float, float, float, float]]]
     return data
 
 
-def run_24h_replay():
+def run_replay(days: int = 7, target_symbols: Optional[List[str]] = None):
     t_start_wall = time.time()
-    data = load_all_bars()
+    data = load_all_bars(days=days)
     if not data:
         print("❌ HATA: Test verisi bulunamadı!")
         return
 
-    # Find the common 48-hour window (last 576 bars)
-    # Find latest common timestamp
+    target_syms_set = None
+    if target_symbols:
+        target_syms_set = set()
+        for s in target_symbols:
+            su = s.strip().upper()
+            if su in ("USTEC", "NDX", "NASDAQ"):
+                target_syms_set.add("NAS100")
+            else:
+                target_syms_set.add(su)
+
+    # Find the common window
     all_ts = set()
     for sym, bars in data.items():
         all_ts.update(b[0] for b in bars)
     sorted_ts = sorted(list(all_ts))
     
-    # Take the last 576 bars (~48 hours)
-    if len(sorted_ts) > 576:
-        replay_ts = sorted_ts[-576:]
+    bars_needed = days * 288
+    if len(sorted_ts) > bars_needed:
+        replay_ts = sorted_ts[-bars_needed:]
     else:
         replay_ts = sorted_ts
         
     start_dt = datetime.datetime.fromtimestamp(replay_ts[0], datetime.timezone.utc)
     end_dt = datetime.datetime.fromtimestamp(replay_ts[-1], datetime.timezone.utc)
-    print(f"\n📅 [2/4] Replay Zaman Aralığı: {start_dt.strftime('%Y-%m-%d %H:%M')} -> {end_dt.strftime('%Y-%m-%d %H:%M')} UTC (48 Saat)")
-    print(f"💰 Başlangıç Bakiyesi: ${STARTING_BALANCE:,.2f} | FX: %15, XAU: %5, BTC/US30/USTEC: %2 Risk")
+    sym_disp = ", ".join(sorted(target_syms_set)) if target_syms_set else "TÜM 31 SEMBOL"
+    print(f"\n📅 [2/4] Replay Zaman Aralığı: {start_dt.strftime('%Y-%m-%d %H:%M')} -> {end_dt.strftime('%Y-%m-%d %H:%M')} UTC ({days} Gün)")
+    print(f"🎯 Hedef Semboller: {sym_disp}")
+    print(f"💰 Başlangıç Bakiyesi: ${STARTING_BALANCE:,.2f} | FX: %15, XAU: %5, BTC/US30/USTEC: %2 Risk | 15 Dk Soğuma")
 
     # Systems to test
     acc_baseline = Account(name="Mevcut Sistem (Baseline / Klasik)")
@@ -424,6 +436,8 @@ def run_24h_replay():
         # 5. Evaluate New Entries for both systems
         # Check available candidate symbols
         for sym, t in ticks.items():
+            if target_syms_set and sym not in target_syms_set:
+                continue
             action = t.get("action", "HOLD")
             score = float(t.get("score", 0.0))
             if action not in ("BUY", "SELL"):
@@ -686,4 +700,11 @@ def run_24h_replay():
 
 
 if __name__ == "__main__":
-    run_24h_replay()
+    import argparse
+    parser = argparse.ArgumentParser(description="Walk-Forward Replay: Baseline vs DSS")
+    parser.add_argument("--days", type=int, default=7, help="Replay test gün sayısı (varsayılan: 7)")
+    parser.add_argument("--symbols", type=str, default="", help="Test edilecek semboller (virgülle, ör: BTCUSD,US30,NAS100)")
+    args = parser.parse_args()
+
+    sym_list = [s.strip() for s in args.symbols.split(",") if s.strip()] if args.symbols else None
+    run_replay(days=args.days, target_symbols=sym_list)
