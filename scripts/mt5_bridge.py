@@ -1458,7 +1458,9 @@ def sync_with_server(api_base: str):
         "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
         # Commodities / Crypto / Indices (4)
         "XAUUSD", "BTCUSD", "NAS100", "US30",
-        # JPY Crosses (5)
+        # 7/24 & Hafta Sonu Kriptoları (10)
+        "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD",
+        # JPY Crosses (6)
         "GBPJPY", "EURJPY", "CHFJPY", "CADJPY", "AUDJPY", "NZDJPY",
         # EUR Crosses (5)
         "EURGBP", "EURCHF", "EURCAD", "EURAUD", "EURNZD",

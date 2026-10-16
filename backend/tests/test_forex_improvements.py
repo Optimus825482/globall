@@ -736,8 +736,7 @@ class TestManualScanNow(unittest.TestCase):
         strategies = {r["strategy"] for r in rows}
         self.assertIn("RADAR", strategies)
         self.assertIn("DONCHIAN_ADX", strategies)
-        self.assertNotIn("S3_5M", strategies)
-        self.assertNotIn("S3_15M", strategies)
+        self.assertIn("S3_5M", strategies)
         self.assertIn("LONDON_BREAKOUT", strategies)
         # EAP kolu da var (ema_adx_enabled=True)
         self.assertIn(forex.EMA_ADX_PULLBACK_STRATEGY, strategies)
@@ -783,9 +782,9 @@ class TestManualScanNow(unittest.TestCase):
         listesi ile tarayıcının kapsamı ayrışırsa kırılır.
         """
         cfg = forex.ForexAutoPaperSettings()
-        self.assertFalse(cfg.s3_enabled, "2026-10-16 replay: S3 varsayılan kapalı")
+        self.assertTrue(cfg.s3_enabled, "2026-10-16 replay: S3 Kalite Kalkanı ile aktif")
         self.assertFalse(cfg.ls_enabled, "2026-10-16 replay: London Sign varsayılan kapalı")
-        self.assertFalse(forex._AUTO_SETTINGS.s3_enabled)
+        self.assertTrue(forex._AUTO_SETTINGS.s3_enabled)
         self.assertFalse(forex._AUTO_SETTINGS.ls_enabled)
         radar = {"candidates": [], "scan_note": "yok"}
         ticks = {sym: {"display": sym, "bid": 1.1, "ask": 1.1001} for sym in cfg.ls_symbols}
@@ -802,11 +801,11 @@ class TestManualScanNow(unittest.TestCase):
             forex.EMA_ADX_PULLBACK_STRATEGY,
             forex.LONDON_BREAKOUT_STRATEGY,
             forex.SQUEEZE_KC_STRATEGY,
+            "S3_5M",
         }
         missing = expected - strategies
         self.assertEqual(missing, set(), f"taranmayan giriş kolu: {missing}")
-        self.assertNotIn("S3_5M", strategies)
-        self.assertNotIn("S3_15M", strategies)
+        self.assertIn("S3_5M", strategies)
         self.assertNotIn(forex.LONDON_SIGN_STRATEGY, strategies)
 
     def test_ls_state_not_advanced_by_scan(self):

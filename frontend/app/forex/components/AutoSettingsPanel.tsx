@@ -58,14 +58,16 @@ export interface AutoSettings {
   squeeze_kc_bb_mult?: number;
   squeeze_kc_mult?: number;
   squeeze_kc_mom_min?: number;
-  squeeze_kc_tp_r?: number;
+  fvg_pullback_enabled?: boolean;
+  fvg_symbols?: string[];
+  fvg_tp_r?: number;
   [key: string]: any;
 }
 
 export interface SymbolDef {
   sym: string;
   label: string;
-  group: "Majörler" | "Emtia & Endeks" | "JPY Krosları" | "EUR Krosları" | "GBP Krosları" | "Diğer Kroslar";
+  group: "Majörler" | "Emtia & Endeks" | "Kripto (7/24)" | "JPY Krosları" | "EUR Krosları" | "GBP Krosları" | "Diğer Kroslar";
 }
 
 export const ALL_31_SYMBOLS: SymbolDef[] = [
@@ -83,6 +85,18 @@ export const ALL_31_SYMBOLS: SymbolDef[] = [
   { sym: "BTCUSD", label: "Bitcoin (BTC)", group: "Emtia & Endeks" },
   { sym: "NAS100", label: "Nasdaq 100 (USTEC)", group: "Emtia & Endeks" },
   { sym: "US30", label: "Dow Jones (US30)", group: "Emtia & Endeks" },
+
+  // 7/24 Hafta Sonu Kriptoları (10)
+  { sym: "ETHUSD", label: "Ethereum (ETH)", group: "Kripto (7/24)" },
+  { sym: "SOLUSD", label: "Solana (SOL)", group: "Kripto (7/24)" },
+  { sym: "BNBUSD", label: "Binance Coin (BNB)", group: "Kripto (7/24)" },
+  { sym: "XRPUSD", label: "Ripple (XRP)", group: "Kripto (7/24)" },
+  { sym: "LNKUSD", label: "Chainlink (LNK)", group: "Kripto (7/24)" },
+  { sym: "UNIUSD", label: "Uniswap (UNI)", group: "Kripto (7/24)" },
+  { sym: "AVXUSD", label: "Avalanche (AVAX)", group: "Kripto (7/24)" },
+  { sym: "ADAUSD", label: "Cardano (ADA)", group: "Kripto (7/24)" },
+  { sym: "XTZUSD", label: "Tezos (XTZ)", group: "Kripto (7/24)" },
+  { sym: "DATAUSD", label: "Streamr (DATA)", group: "Kripto (7/24)" },
 
   // JPY Krosları (6)
   { sym: "GBPJPY", label: "GBP/JPY", group: "JPY Krosları" },
@@ -113,7 +127,7 @@ export const ALL_31_SYMBOLS: SymbolDef[] = [
   { sym: "CADCHF", label: "CAD/CHF", group: "Diğer Kroslar" },
 ];
 
-const GROUPS = ["Hepsi", "Majörler", "Emtia & Endeks", "JPY Krosları", "EUR Krosları", "GBP Krosları", "Diğer Kroslar"] as const;
+const GROUPS = ["Hepsi", "Majörler", "Emtia & Endeks", "Kripto (7/24)", "JPY Krosları", "EUR Krosları", "GBP Krosları", "Diğer Kroslar"] as const;
 
 interface SymbolMultiSelectorProps {
   selected: string[];
@@ -240,7 +254,7 @@ interface AutoSettingsPanelProps {
   accent?: "amber" | "blue";
 }
 
-type TabKey = "risk" | "radar" | "donchian" | "ema_adx" | "london_box" | "s3" | "squeeze";
+type TabKey = "risk" | "radar" | "fvg" | "donchian" | "ema_adx" | "london_box" | "s3" | "squeeze";
 
 export default function AutoSettingsPanel({
   show,
@@ -253,6 +267,9 @@ export default function AutoSettingsPanel({
   const [form, setForm] = useState<AutoSettings>(() => ({
     ...appliedSettings,
     allowed_symbols: appliedSettings?.allowed_symbols?.length ? appliedSettings.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "NAS100", "AUDCAD"],
+    fvg_pullback_enabled: appliedSettings?.fvg_pullback_enabled ?? true,
+    fvg_symbols: appliedSettings?.fvg_symbols?.length ? appliedSettings.fvg_symbols : ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
+    fvg_tp_r: appliedSettings?.fvg_tp_r ?? 1.8,
   }));
   const [isSaving, setIsSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -262,6 +279,9 @@ export default function AutoSettingsPanel({
       setForm({
         ...appliedSettings,
         allowed_symbols: appliedSettings?.allowed_symbols?.length ? appliedSettings.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "NAS100", "AUDCAD"],
+        fvg_pullback_enabled: appliedSettings?.fvg_pullback_enabled ?? true,
+        fvg_symbols: appliedSettings?.fvg_symbols?.length ? appliedSettings.fvg_symbols : ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
+        fvg_tp_r: appliedSettings?.fvg_tp_r ?? 1.8,
       });
       setSaveMsg(null);
     }
@@ -334,6 +354,9 @@ export default function AutoSettingsPanel({
         s3_symbols_5m: form.s3_symbols_5m || ["XAUUSD"],
         s3_symbols_15m: form.s3_symbols_15m || ["XAUUSD", "BTCUSD", "US30", "GBPUSD"],
         squeeze_kc_symbols: form.squeeze_kc_symbols || ["XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF"],
+        fvg_pullback_enabled: Boolean(form.fvg_pullback_enabled),
+        fvg_symbols: form.fvg_symbols || ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
+        fvg_tp_r: num(form.fvg_tp_r, 1.8),
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {
@@ -397,6 +420,7 @@ export default function AutoSettingsPanel({
         {[
           { id: "risk", label: "🎯 Genel Risk & Çıkış" },
           { id: "radar", label: `📡 Klasik Radar (${form.allowed_symbols?.length || 0})` },
+          { id: "fvg", label: `⚡ FVG Pullback (${form.fvg_symbols?.length || 0})` },
           { id: "donchian", label: `🌊 Donchian ADX (${form.mode_symbols?.length || 0})` },
           { id: "ema_adx", label: `📐 EMA+ADX (${form.ema_adx_symbols?.length || 0})` },
           { id: "london_box", label: `🇬🇧 London Breakout (${form.lb_symbols?.length || 0})` },
@@ -654,6 +678,50 @@ export default function AutoSettingsPanel({
             onChange={(syms) => setField("allowed_symbols", syms)}
             accentClass="text-blue-400"
             chipActiveClass={acc.activeChip}
+          />
+        </div>
+      )}
+
+      {/* TAB: FVG FAIR VALUE GAP PULLBACK (M5) */}
+      {activeTab === "fvg" && (
+        <div className="space-y-3 animate-in fade-in duration-150">
+          <div className="p-3 rounded-xl bg-bunker-950/70 border border-bunker-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(form.fvg_pullback_enabled)}
+                onChange={(e) => setField("fvg_pullback_enabled", e.target.checked)}
+                className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4`}
+              />
+              <div>
+                <span className="text-white font-semibold block">FVG Pullback Motorunu Etkinleştir</span>
+                <span className="text-[10px] text-bunker-muted">
+                  IC Markets 5M kurumsal likidite boşluklarında (Fair Value Gap) pullback ve retest yakalar (Hafta sonu 7/24 kripto destekli)
+                </span>
+              </div>
+            </label>
+
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-bunker-muted whitespace-nowrap">TP Çarpanı (R):</label>
+              <input
+                type="number"
+                step="0.1"
+                min="1.0"
+                max="5.0"
+                value={form.fvg_tp_r ?? 1.8}
+                onChange={(e) => setNumField("fvg_tp_r", e.target.value)}
+                className="w-20 bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1 text-emerald-400 font-bold outline-none text-xs"
+              />
+            </div>
+          </div>
+
+          <SymbolMultiSelector
+            title="FVG Pullback Aktif Semboller (fvg_symbols)"
+            badgeLabel="Kurumsal FVG & Kripto 7/24"
+            selected={form.fvg_symbols || []}
+            onChange={(syms) => setField("fvg_symbols", syms)}
+            accentClass="text-emerald-400"
+            chipActiveClass="bg-emerald-600/30 text-emerald-300 border-emerald-400/50"
           />
         </div>
       )}

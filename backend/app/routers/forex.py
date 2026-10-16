@@ -420,7 +420,127 @@ FOREX_SYMBOLS = [
         "pip_size": 1.0,
         "digits": 2,
         "tv_symbol": "BINANCE:BTCUSDT",
-        "default_price": 66500.0,
+        "default_price": 81500.0,
+    },
+    {
+        "symbol": "ETHUSD",
+        "display": "ETH/USD",
+        "name": "Ethereum / US Dollar",
+        "category": "crypto",
+        "base": "ETH",
+        "quote": "USD",
+        "pip_size": 1.0,
+        "digits": 2,
+        "tv_symbol": "BINANCE:ETHUSDT",
+        "default_price": 2410.0,
+    },
+    {
+        "symbol": "SOLUSD",
+        "display": "SOL/USD",
+        "name": "Solana / US Dollar",
+        "category": "crypto",
+        "base": "SOL",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 4,
+        "tv_symbol": "BINANCE:SOLUSDT",
+        "default_price": 104.0,
+    },
+    {
+        "symbol": "BNBUSD",
+        "display": "BNB/USD",
+        "name": "Binance Coin / US Dollar",
+        "category": "crypto",
+        "base": "BNB",
+        "quote": "USD",
+        "pip_size": 0.10,
+        "digits": 3,
+        "tv_symbol": "BINANCE:BNBUSDT",
+        "default_price": 720.0,
+    },
+    {
+        "symbol": "XRPUSD",
+        "display": "XRP/USD",
+        "name": "Ripple / US Dollar",
+        "category": "crypto",
+        "base": "XRP",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 4,
+        "tv_symbol": "BINANCE:XRPUSDT",
+        "default_price": 1.30,
+    },
+    {
+        "symbol": "LNKUSD",
+        "display": "LINK/USD",
+        "name": "Chainlink / US Dollar",
+        "category": "crypto",
+        "base": "LNK",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "BINANCE:LINKUSDT",
+        "default_price": 12.30,
+    },
+    {
+        "symbol": "UNIUSD",
+        "display": "UNI/USD",
+        "name": "Uniswap / US Dollar",
+        "category": "crypto",
+        "base": "UNI",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 4,
+        "tv_symbol": "BINANCE:UNIUSDT",
+        "default_price": 7.25,
+    },
+    {
+        "symbol": "AVXUSD",
+        "display": "AVAX/USD",
+        "name": "Avalanche / US Dollar",
+        "category": "crypto",
+        "base": "AVX",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 4,
+        "tv_symbol": "BINANCE:AVAXUSDT",
+        "default_price": 10.0,
+    },
+    {
+        "symbol": "ADAUSD",
+        "display": "ADA/USD",
+        "name": "Cardano / US Dollar",
+        "category": "crypto",
+        "base": "ADA",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "BINANCE:ADAUSDT",
+        "default_price": 0.225,
+    },
+    {
+        "symbol": "XTZUSD",
+        "display": "XTZ/USD",
+        "name": "Tezos / US Dollar",
+        "category": "crypto",
+        "base": "XTZ",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "BINANCE:XTZUSDT",
+        "default_price": 0.31,
+    },
+    {
+        "symbol": "DATAUSD",
+        "display": "DATA/USD",
+        "name": "Streamr / US Dollar",
+        "category": "crypto",
+        "base": "DATA",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 4,
+        "tv_symbol": "BINANCE:DATAUSDT",
+        "default_price": 0.18,
     },
 ]
 
@@ -475,18 +595,6 @@ _RETIRED_FOREX_SYMBOLS = [
         "digits": 2,
         "tv_symbol": "TVC:USOIL",
         "default_price": 71.40,
-    },
-    {
-        "symbol": "ETHUSD",
-        "display": "ETH/USD",
-        "name": "Ethereum / US Dollar",
-        "category": "crypto",
-        "base": "ETH",
-        "quote": "USD",
-        "pip_size": 1.0,
-        "digits": 2,
-        "tv_symbol": "BINANCE:ETHUSDT",
-        "default_price": 2700.0,
     },
     {
         "symbol": "SPX500",
@@ -1289,8 +1397,8 @@ def asset_quality_gate(
     if action not in ("BUY", "SELL"):
         return True, ""
 
-    # A) Kripto (BTC / ETH)
-    if "BTC" in sym or "ETH" in sym:
+    # A) Kripto (BTC, ETH, SOL, BNB, XRP, LNK, UNI, AVX, ADA, XTZ, DATA)
+    if any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
         if adx < 20.0:
             return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < 20.0) — testere piyasası"
         if abs(dist_ema21_pct) > 0.30:
@@ -1709,13 +1817,21 @@ SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
 FVG_PULLBACK_STRATEGY = "FVG_PULLBACK"
 FVG_PULLBACK_LABEL = "FVG Imbalance Pullback"
 CANLI_FVG_ENABLED = True
+CANLI_WEEKEND_CRYPTO_SYMBOLS = (
+    "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
+    "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD",
+)
 CANLI_FVG_SYMBOLS = (
     "GBPJPY", "EURJPY", "USDJPY", "GBPUSD", "XAUUSD", "US30",
     "USTEC", "NAS100", "BTCUSD", "NZDUSD", "USDCHF", "GBPAUD", "AUDCHF",
+    # 7/24 & Hafta Sonu Kripto Şampiyonları (Backtest %69.4 WR):
+    "SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BNBUSD", "AVXUSD", "ADAUSD", "DATAUSD", "XRPUSD", "ETHUSD",
 )
 CANLI_S3_SYMBOLS_5M = (
     "GBPUSD", "NZDUSD", "NZDJPY", "EURUSD", "NZDCAD",
     "XAUUSD", "US30", "NAS100", "USTEC", "AUDUSD", "BTCUSD",
+    # 7/24 & Hafta Sonu Kripto S3 Şampiyonları (ETH %83.3, LNK, XRP, SOL, UNI):
+    "ETHUSD", "LNKUSD", "XRPUSD", "SOLUSD", "UNIUSD", "DATAUSD", "ADAUSD", "XTZUSD",
 )
 
 
@@ -2303,7 +2419,7 @@ def get_symbol_risk_pct(symbol: str, settings: Optional[Any] = None) -> float:
     """FX %15, XAUUSD %7, BTC/US30/USTEC/NAS100 %2 dinamik risk bütçesi yüzdesi."""
     s = settings or _AUTO_SETTINGS
     sym_u = str(symbol or "").upper()
-    if any(k in sym_u for k in ("BTC", "US30", "NAS100", "USTEC", "SPX")):
+    if any(k in sym_u for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA", "US30", "NAS100", "USTEC", "SPX")):
         return float(getattr(s, "risk_crypto_index_pct", 2.0))
     elif any(k in sym_u for k in ("XAU", "GOLD")):
         return float(getattr(s, "risk_gold_pct", 7.0))
@@ -2456,6 +2572,96 @@ def get_symbol_trading_specs(
         mult = 2.0
         digits = 2
         pip_val = 1.0            # IC Markets: contract_size 1.0 -> 1 lot * $1.0 = $1.00
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "SOL" in clean_sym:
+        pip_size = 0.01          # 1 pip = $0.01
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01           # contract_size 1.0 -> 1 lot * $0.01 = $0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "BNB" in clean_sym:
+        pip_size = 0.10          # 1 pip = $0.10
+        mult = 2.0
+        digits = 3
+        pip_val = 0.10           # contract_size 1.0 -> 1 lot * $0.10 = $0.10
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "XRP" in clean_sym:
+        pip_size = 0.0001        # 1 pip = $0.0001
+        mult = 2.0
+        digits = 4
+        pip_val = 0.0001         # contract_size 1.0 -> 1 lot * $0.0001 = $0.0001 (min lot 100.0)
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "LNK" in clean_sym or "LINK" in clean_sym:
+        pip_size = 0.01
+        mult = 2.0
+        digits = 3
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "UNI" in clean_sym:
+        pip_size = 0.01
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "AVX" in clean_sym or "AVAX" in clean_sym:
+        pip_size = 0.01
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "ADA" in clean_sym:
+        pip_size = 0.0001
+        mult = 2.0
+        digits = 5
+        pip_val = 0.001          # contract_size 10.0 -> 10 * 0.0001 = 0.001 (min lot 100.0)
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "XTZ" in clean_sym:
+        pip_size = 0.0001
+        mult = 2.0
+        digits = 5
+        pip_val = 0.001          # contract_size 10.0 -> 10 * 0.0001 = 0.001 (min lot 100.0)
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "DATA" in clean_sym:
+        pip_size = 0.0001
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01           # contract_size 100.0 -> 100 * 0.0001 = 0.01
         eff_sl_pips = round(base_sl * mult, 1)
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
@@ -3617,13 +3823,18 @@ def _get_forex_watch() -> List[Dict[str, str]]:
                     seen.add(key)
                     out.append({"symbol": s, "interval": tf})
     if _AUTO_SETTINGS.squeeze_kc_enabled:
-        # Keltner Squeeze (M15) da broker mumlarıyla sinyal üretir → panel kapalıyken
-        # köprünün bu çiftlerin M15 mumlarını çekmesi gerekir (S3 ile aynı gerekçe).
         for sym in list(_AUTO_SETTINGS.squeeze_kc_symbols or []):
             key = (str(sym).upper(), "15m")
             if key not in seen:
                 seen.add(key)
                 out.append({"symbol": key[0], "interval": key[1]})
+    if _AUTO_SETTINGS.fvg_pullback_enabled:
+        for sym in list(_AUTO_SETTINGS.fvg_symbols or []):
+            s = str(sym).upper()
+            key = (s, "5m")
+            if key not in seen:
+                seen.add(key)
+                out.append({"symbol": s, "interval": "5m"})
     return out[:_MT5_WATCH_MAX]
 
 
@@ -4634,7 +4845,7 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
     settings.fvg_pullback_enabled = CANLI_FVG_ENABLED
     if not settings.fvg_symbols:
         settings.fvg_symbols = list(CANLI_FVG_SYMBOLS)
-    # AUDCAD klasik listede. Ayar dosyası eski 10'lu listeyi taşısa da kapı açık kalsın.
+    # AUDCAD canlı sabitidir; ayar dosyası eski olsa da kapı açık kalsın.
     _allowed = [str(s).upper() for s in (settings.allowed_symbols or [])]
     if "AUDCAD" not in _allowed:
         settings.allowed_symbols = list(settings.allowed_symbols or []) + ["AUDCAD"]

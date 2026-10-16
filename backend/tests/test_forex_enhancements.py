@@ -428,7 +428,8 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         """
         universe = [s["symbol"] for s in forex.FOREX_SYMBOLS]
         retired = [s["symbol"] for s in forex._RETIRED_FOREX_SYMBOLS]
-        self.assertEqual(sorted(retired), ["ETHUSD", "SPX500", "USOIL", "XAGUSD"])  # XAGUSD 2026-10-07'de emekli
+        # 2026-10-17: ETHUSD 7/24 hafta sonu kripto portföyü ile aktifleştirildi; emekli evreninde USOIL, SPX500, XAGUSD kalır.
+        self.assertEqual(sorted(retired), ["SPX500", "USOIL", "XAGUSD"])
 
         for sym in retired:
             self.assertNotIn(sym, universe, f"{sym} tarama evreninde olmamalı")
@@ -439,11 +440,10 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
 
         # Radar/emir uçları artık bu sembolleri görmemeli
         self.assertNotIn("USOIL", universe)
-        self.assertNotIn("ETHUSD", universe)
         self.assertNotIn("SPX500", universe)
         self.assertNotIn("XAGUSD", universe)  # 2026-10-07: gümüş de emekli (radar temizliği)
-        # XAUUSD + BTCUSD (özel izleme sayfasının evreni) hâlâ yerinde
-        for keep in ("XAUUSD", "BTCUSD", "EURUSD", "NAS100", "US30"):
+        # XAUUSD + BTCUSD + ETHUSD (7/24 kripto portföyü) yerinde
+        for keep in ("XAUUSD", "BTCUSD", "ETHUSD", "EURUSD", "NAS100", "US30"):
             self.assertIn(keep, universe)
 
     def test_nas100_and_us30_specs_and_alias(self):
