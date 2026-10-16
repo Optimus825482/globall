@@ -107,6 +107,31 @@ class Account:
     max_drawdown_pct: float = 0.0
     blocked_trades_count: int = 0
     blocked_reasons: Dict[str, int] = field(default_factory=dict)
+    streak_losses: Dict[str, int] = field(default_factory=dict)
+    cooldown_until: Dict[str, float] = field(default_factory=dict)
+    cooldown_blocks_count: int = 0
+
+
+def get_risk_pct_for_symbol(sym: str) -> float:
+    """FX için %10, BTC/US30/USTEC/XAU için %3 risk bütçesi."""
+    sym_u = str(sym).upper()
+    if any(k in sym_u for k in ("BTC", "US30", "NAS100", "USTEC", "XAU", "GOLD")):
+        return 0.03  # %3 risk
+    return 0.10      # FX Pariteleri için %10 risk
+
+
+def calculate_lots(balance: float, sl_pips: float, pip_val: float, spec: Dict[str, Any], sym: str) -> float:
+    """FX için %10, BTC/US30/USTEC/XAU için %3 risk ile dinamik lot hesabı."""
+    risk_pct = get_risk_pct_for_symbol(sym)
+    risk_usd = balance * risk_pct
+    if sl_pips <= 0 or pip_val <= 0:
+        return spec.get("min_lot", 0.01)
+    
+    raw_lots = risk_usd / (sl_pips * pip_val)
+    min_lot = spec.get("min_lot", 0.01)
+    max_lot = min(spec.get("max_lot", 10.0), 10.0)  # Broker koruma tavanı
+    lots = round(max(min_lot, min(max_lot, raw_lots)), 2)
+    return lots
 
 
 def fetch_symbol_bars(sym: str, yf_sym: str) -> Optional[List[Tuple[float, float, float, float, float]]]:
@@ -162,19 +187,6 @@ def load_all_bars() -> Dict[str, List[Tuple[float, float, float, float, float]]]
 
     print(f"✅ Toplam {len(data)} sembol için veri hazırlandı.")
     return data
-
-
-def calculate_lots(balance: float, sl_pips: float, pip_val: float, spec: Dict[str, Any]) -> float:
-    """1000$ bakiye ve %10 risk ile dinamik lot hesabı."""
-    risk_usd = balance * RISK_PCT  # 1000$ * 0.10 = 100$
-    if sl_pips <= 0 or pip_val <= 0:
-        return spec.get("min_lot", 0.01)
-    
-    raw_lots = risk_usd / (sl_pips * pip_val)
-    min_lot = spec.get("min_lot", 0.01)
-    max_lot = min(spec.get("max_lot", 10.0), 10.0)  # Broker koruma tavanı
-    lots = round(max(min_lot, min(max_lot, raw_lots)), 2)
-    return lots
 
 
 def run_24h_replay():
@@ -313,20 +325,23 @@ def run_24h_replay():
                         if pnl_pips > pos.mfe_pips:
                             pos.mfe_pips = pnl_pips
                         
-                        # BE lock at +1.0R / 12 pips
+                        # BE and Trailing update
                         if acc.name.startswith("Yeni"):
-                            # Dynamic Breakeven & Trailing
-                            if pnl_pips >= max(10.0, pos.entry_atr * 0.8) and not pos.be_locked:
+                            # Asimetri Düzeltmesi (DSS): Erken 1.5 pip yerine en az 0.9R / 1.0 ATR kârda BE tetiklenir
+                            be_trigger_pips = max(pos.sl0_pips * 0.9, pos.entry_atr * 1.0)
+                            if pnl_pips >= be_trigger_pips and not pos.be_locked:
                                 pos.be_locked = True
-                                pos.sl_price = pos.entry_price + (2.0 * pos.pip_size)  # Lock +2 pips
-                            # Trailing stop
-                            if pos.be_locked and pnl_pips >= pos.entry_atr * 1.5:
-                                trail_sl = b_c - (pos.entry_atr * 1.2 * pos.pip_size)
+                                # Kâr kilidi: 1$ yerine en az 0.35R kâr kilitlenir (ör. 10 pip SL'de +3.5 pip / ~$35)
+                                lock_pips = max(2.5, pos.sl0_pips * 0.35)
+                                pos.sl_price = round(pos.entry_price + (lock_pips * pos.pip_size), pos.digits)
+                            # Trailing stop: 1.3R kâr aşıldığında tepe noktasından 1.0 ATR mesafeden takip eder
+                            if pos.be_locked and pnl_pips >= pos.sl0_pips * 1.3:
+                                trail_sl = round(b_c - (pos.entry_atr * 1.0 * pos.pip_size), pos.digits)
                                 if trail_sl > pos.sl_price:
                                     pos.sl_price = trail_sl
                                     pos.trail_active = True
                         else:
-                            # Baseline early $1 BE
+                            # Baseline early $1 BE (Mevcut Sistem)
                             if pnl_pips >= 1.5 and not pos.be_locked:
                                 pos.be_locked = True
                                 pos.sl_price = pos.entry_price + (0.5 * pos.pip_size)
@@ -346,11 +361,13 @@ def run_24h_replay():
                             pos.mfe_pips = pnl_pips
                         
                         if acc.name.startswith("Yeni"):
-                            if pnl_pips >= max(10.0, pos.entry_atr * 0.8) and not pos.be_locked:
+                            be_trigger_pips = max(pos.sl0_pips * 0.9, pos.entry_atr * 1.0)
+                            if pnl_pips >= be_trigger_pips and not pos.be_locked:
                                 pos.be_locked = True
-                                pos.sl_price = pos.entry_price - (2.0 * pos.pip_size)
-                            if pos.be_locked and pnl_pips >= pos.entry_atr * 1.5:
-                                trail_sl = b_c + (pos.entry_atr * 1.2 * pos.pip_size)
+                                lock_pips = max(2.5, pos.sl0_pips * 0.35)
+                                pos.sl_price = round(pos.entry_price - (lock_pips * pos.pip_size), pos.digits)
+                            if pos.be_locked and pnl_pips >= pos.sl0_pips * 1.3:
+                                trail_sl = round(b_c + (pos.entry_atr * 1.0 * pos.pip_size), pos.digits)
                                 if pos.sl_price == 0 or trail_sl < pos.sl_price:
                                     pos.sl_price = trail_sl
                                     pos.trail_active = True
@@ -365,6 +382,16 @@ def run_24h_replay():
                     acc.balance = round(acc.balance + pnl_usd, 2)
                     acc.realized_pnl = round(acc.realized_pnl + pnl_usd, 2)
                     
+                    # Ardışık 2 zararda 15 dk (900 sn) soğuma kuralı (DSS)
+                    if acc.name.startswith("Yeni"):
+                        if pnl_usd < 0 and exit_reason == "SL_HIT":
+                            acc.streak_losses[pos.symbol] = acc.streak_losses.get(pos.symbol, 0) + 1
+                            if acc.streak_losses[pos.symbol] >= 2:
+                                acc.cooldown_until[pos.symbol] = cur_ts + 900.0  # 15 dk (900 sn) soğuma
+                                acc.streak_losses[pos.symbol] = 0
+                        elif pnl_usd > 0:
+                            acc.streak_losses[pos.symbol] = 0
+
                     # Track drawdown
                     if acc.balance > acc.peak_balance:
                         acc.peak_balance = acc.balance
@@ -423,7 +450,7 @@ def run_24h_replay():
                     # Classic SL/TP
                     sl_p = spec["sl_pips"]
                     tp_p = spec["tp_pips"]
-                    lots = calculate_lots(acc_baseline.balance, sl_p, pip_val, spec)
+                    lots = calculate_lots(acc_baseline.balance, sl_p, pip_val, spec, sym)
                     sl_px = cur_price - (sl_p * pip_size) if action == "BUY" else cur_price + (sl_p * pip_size)
                     tp_px = cur_price + (tp_p * pip_size) if action == "BUY" else cur_price - (tp_p * pip_size)
 
@@ -475,14 +502,20 @@ def run_24h_replay():
             # 3. SuperTrend Multi-timeframe Confluence
             st_aligned = (action == "BUY" and supertrend_dir >= 0) or (action == "SELL" and supertrend_dir <= 0)
 
+            # 4. Ardışık 2 Zarar Sonrası 15 Dakika Soğuma Süresi Denetimi
+            is_in_cooldown = acc_dss.cooldown_until.get(sym, 0.0) > cur_ts
+            if is_in_cooldown:
+                acc_dss.cooldown_blocks_count += 1
+
             # Evaluate entry
-            if is_valid_tier and spread_ratio_ok and st_aligned and len(acc_dss.positions) < MAX_CONCURRENT_POSITIONS:
+            if is_valid_tier and spread_ratio_ok and st_aligned and not is_in_cooldown and len(acc_dss.positions) < MAX_CONCURRENT_POSITIONS:
                 if not any(p.symbol == sym for p in acc_dss.positions):
                     # Volatility-adapted breathing exits (Dynamic Exit Architect)
                     atr_exits = forex.get_atr_exit_levels(atr, spec["sl_pips"], spec["tp_pips"])
                     sl_p = atr_exits["sl_pips"]
-                    tp_p = atr_exits["tp_pips"]
-                    lots = calculate_lots(acc_dss.balance, sl_p, pip_val, spec)
+                    # 1.8R dinamik hedef (Asimetri çözümü: kârı erken kesme!)
+                    tp_p = max(atr_exits["tp_pips"], sl_p * 1.8)
+                    lots = calculate_lots(acc_dss.balance, sl_p, pip_val, spec, sym)
                     sl_px = cur_price - (sl_p * pip_size) if action == "BUY" else cur_price + (sl_p * pip_size)
                     tp_px = cur_price + (tp_p * pip_size) if action == "BUY" else cur_price - (tp_p * pip_size)
 
@@ -508,7 +541,9 @@ def run_24h_replay():
                 # If baseline took it but DSS rejected it, track why
                 if score >= min_req_score:
                     acc_dss.blocked_trades_count += 1
-                    if not spread_ratio_ok:
+                    if is_in_cooldown:
+                        acc_dss.blocked_reasons["STREAK_LOSS_COOLDOWN_15M"] = acc_dss.blocked_reasons.get("STREAK_LOSS_COOLDOWN_15M", 0) + 1
+                    elif not spread_ratio_ok:
                         acc_dss.blocked_reasons["SPREAD_COST_TOO_HIGH"] = acc_dss.blocked_reasons.get("SPREAD_COST_TOO_HIGH", 0) + 1
                     elif not is_valid_tier:
                         acc_dss.blocked_reasons["DSS_SCORE_BELOW_TIER"] = acc_dss.blocked_reasons.get("DSS_SCORE_BELOW_TIER", 0) + 1
@@ -542,7 +577,7 @@ def run_24h_replay():
 
     # --- 6. Results & Statistical Comparison ---
     print("\n" + "=" * 80)
-    print("📊 [4/4] 24 SAATLİK REPLAY PERFORMANS RAPORU (1.000$ Bakiye, %10 Risk)")
+    print("📊 [4/4] 24 SAATLİK REPLAY PERFORMANS RAPORU (1.000$ Bakiye | FX: %10 Risk, BTC/US30/USTEC/XAU: %3 Risk | 15 Dk Soğuma)")
     print("=" * 80)
 
     for acc in (acc_baseline, acc_dss):
@@ -580,6 +615,7 @@ def run_24h_replay():
 
         if acc.name.startswith("Yeni"):
             print(f"  • DSS Tarafından Engellenen Zayıf Girişler: {acc.blocked_trades_count} adet")
+            print(f"    └─ 15 Dk Soğuma Kalkanı ile Engellenen Sinyaller : {acc.cooldown_blocks_count} adet")
             print(f"    └─ Engel Nedenleri Dağılımı: {acc.blocked_reasons}")
 
     # Head to head comparison table
