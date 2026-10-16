@@ -1955,6 +1955,47 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         self.assertFalse(res["signal_ready"])
         self.assertIn("crypto_quality", res["blocked_by"])
 
+    def test_asset_quality_gate_xauusd_checks(self):
+        # Gold with weak body / wick (< 0.30)
+        ok, reason = forex.asset_quality_gate("XAUUSD", "BUY", body_ratio=0.22, dist_ema21_pct=0.10, adx=25.0)
+        self.assertFalse(ok)
+        self.assertIn("Fitil Kalkanı", reason)
+
+        # Gold with overextension (> 0.30%)
+        ok, reason = forex.asset_quality_gate("XAUUSD", "BUY", body_ratio=0.45, dist_ema21_pct=0.38, adx=25.0)
+        self.assertFalse(ok)
+        self.assertIn("Aşırı Uzama Kalkanı", reason)
+
+        # Gold with low ADX (< 18.0)
+        ok, reason = forex.asset_quality_gate("XAUUSD", "BUY", body_ratio=0.45, dist_ema21_pct=0.15, adx=15.0)
+        self.assertFalse(ok)
+        self.assertIn("ADX Kalkanı", reason)
+
+        # Gold with valid parameters
+        ok, reason = forex.asset_quality_gate("XAUUSD", "BUY", body_ratio=0.45, dist_ema21_pct=0.15, adx=22.0)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_asset_quality_gate_indices_checks(self):
+        # US30 in London pre-market (08-13 UTC) with low ADX (< 22.0) -> testere koruması
+        ok, reason = forex.asset_quality_gate("US30", "BUY", body_ratio=0.45, dist_ema21_pct=0.15, adx=19.0, hour_utc=10)
+        self.assertFalse(ok)
+        self.assertIn("Londra pre-market testeresi", reason)
+
+        # US30 in NY session (13-21 UTC) with ADX 19.0 -> allowed (threshold is 18.0)
+        ok, reason = forex.asset_quality_gate("US30", "BUY", body_ratio=0.45, dist_ema21_pct=0.15, adx=19.0, hour_utc=15)
+        self.assertTrue(ok)
+
+        # USTEC with weak body (< 0.30)
+        ok, reason = forex.asset_quality_gate("USTEC", "BUY", body_ratio=0.22, dist_ema21_pct=0.15, adx=25.0)
+        self.assertFalse(ok)
+        self.assertIn("Fitil/Doji Kalkanı", reason)
+
+        # USTEC with overextension (> 0.40%)
+        ok, reason = forex.asset_quality_gate("USTEC", "BUY", body_ratio=0.45, dist_ema21_pct=0.55, adx=25.0)
+        self.assertFalse(ok)
+        self.assertIn("Aşırı Uzama Kalkanı", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

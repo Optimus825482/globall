@@ -507,6 +507,7 @@ def run_replay(days: int = 7, target_symbols: Optional[List[str]] = None):
                 adx=float(t.get("adx", 20.0)),
                 body_ratio=float(t.get("body_ratio", 0.5)),
                 dist_ema21_pct=float(t.get("dist_ema21_pct", 0.0)),
+                hour_utc=datetime.datetime.fromtimestamp(cur_ts, datetime.timezone.utc).hour,
             )
 
             # DSS Quality Gates:
@@ -528,17 +529,19 @@ def run_replay(days: int = 7, target_symbols: Optional[List[str]] = None):
             if is_in_cooldown:
                 acc_dss.cooldown_blocks_count += 1
 
-            # 5. Kripto (BTC/ETH) Akıllı Kalite Kalkanı (Gövde, FOMO Uzama, ADX)
-            ok_crypto, _ = forex.crypto_quality_gate(
+            # 5. Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC)
+            cur_hour_utc = datetime.datetime.fromtimestamp(cur_ts, datetime.timezone.utc).hour
+            ok_asset, _ = forex.asset_quality_gate(
                 sym,
                 action,
                 body_ratio=float(t.get("body_ratio", 0.5)),
                 dist_ema21_pct=float(t.get("dist_ema21_pct", 0.0)),
                 adx=float(t.get("adx", 20.0)),
+                hour_utc=cur_hour_utc,
             )
 
             # Evaluate entry
-            if is_valid_tier and spread_ratio_ok and st_aligned and ok_crypto and not is_in_cooldown and len(acc_dss.positions) < MAX_CONCURRENT_POSITIONS:
+            if is_valid_tier and spread_ratio_ok and st_aligned and ok_asset and not is_in_cooldown and len(acc_dss.positions) < MAX_CONCURRENT_POSITIONS:
                 if not any(p.symbol == sym for p in acc_dss.positions):
                     # Volatility-adapted breathing exits (Dynamic Exit Architect)
                     atr_exits = forex.get_atr_exit_levels(atr, spec["sl_pips"], spec["tp_pips"])

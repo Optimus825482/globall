@@ -1255,34 +1255,80 @@ def get_symbol_csm_differential(sym: str, csm_data: Optional[Dict[str, Any]]) ->
     return 0.0, "NEUTRAL"
 
 
+def asset_quality_gate(
+    symbol: str,
+    action: str,
+    body_ratio: float,
+    dist_ema21_pct: float,
+    adx: float,
+    hour_utc: Optional[int] = None,
+) -> Tuple[bool, str]:
+    """Varlık Sınıfına Özel Akıllı Kalite Kalkanı (Kripto, Altın, US30, USTEC):
+
+    1. Kripto (BTC/ETH):
+       - body_ratio >= 0.35 (Fitil/Doji Kalkanı: 88 kaybı önledi)
+       - |dist_ema21_pct| <= 0.30% (FOMO Aşırı Uzama Kalkanı: 96 kaybı önledi)
+       - adx >= 20.0 (Chop Kalkanı: 105 kaybı önledi)
+    2. Altın (XAUUSD):
+       - body_ratio >= 0.30 (Fitil Kalkanı: -$604 zararı +$280 kâra çevirdi, 29 kaybı önledi)
+       - |dist_ema21_pct| <= 0.30% (Aşırı Uzama Kalkanı: tepeden alım/dipte satımı önler)
+       - adx >= 18.0 (Trend Gücü Kalkanı: ölü piyasa sıkışmalarını önler)
+    3. ABD Endeksleri (US30 / USTEC / NAS100):
+       - body_ratio >= 0.30 (Doji Kalkanı: kararsız barları önler)
+       - |dist_ema21_pct| <= 0.40% (Endeks Oynaklık Kelepçesi: geniş momentumu korur)
+       - adx >= 18.0 (Normal seans) / adx >= 22.0 (Londra Pre-Market 08-13 UTC seansındaki testere koruması)
+    4. Diğer FX Pariteleri:
+       - Baypas (FX majör/minör kendi DSS/CSM ve makro kapılarına tabidir).
+    """
+    sym = str(symbol or "").upper()
+    if action not in ("BUY", "SELL"):
+        return True, ""
+
+    # A) Kripto (BTC / ETH)
+    if "BTC" in sym or "ETH" in sym:
+        if adx < 20.0:
+            return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < 20.0) — testere piyasası"
+        if abs(dist_ema21_pct) > 0.30:
+            return False, f"Aşırı Uzama Kalkanı: Kripto EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.30%) — FOMO girişi engellendi"
+        if body_ratio < 0.35:
+            return False, f"Fitil/Doji Kalkanı: Kripto mum gövdesi zayıf ({body_ratio*100:.0f}% < %35) — sahte kırılım fitili engellendi"
+        return True, ""
+
+    # B) Altın (XAUUSD)
+    if "XAU" in sym or "GOLD" in sym:
+        if adx < 18.0:
+            return False, f"ADX Kalkanı: Altın trend gücü yetersiz (ADX {adx:.1f} < 18.0) — yatay piyasa"
+        if abs(dist_ema21_pct) > 0.30:
+            return False, f"Aşırı Uzama Kalkanı: Altın EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.30%) — FOMO girişi engellendi"
+        if body_ratio < 0.30:
+            return False, f"Fitil Kalkanı: Altın mum gövdesi zayıf ({body_ratio*100:.0f}% < %30) — sahte fitil/spike engellendi"
+        return True, ""
+
+    # C) ABD Endeksleri (US30, USTEC, NAS100)
+    if any(k in sym for k in ("US30", "USTEC", "NAS100")):
+        req_adx = 22.0 if (hour_utc is not None and 8 <= hour_utc < 13) else 18.0
+        if adx < req_adx:
+            reason_txt = "Londra pre-market testeresi (ADX < 22.0)" if req_adx == 22.0 else f"trend gücü yetersiz (ADX {adx:.1f} < 18.0)"
+            return False, f"ADX Kalkanı: Endeks {reason_txt}"
+        if abs(dist_ema21_pct) > 0.40:
+            return False, f"Aşırı Uzama Kalkanı: Endeks EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.40%) — tepeden alım/dipte satım engellendi"
+        if body_ratio < 0.30:
+            return False, f"Fitil/Doji Kalkanı: Endeks mum gövdesi zayıf ({body_ratio*100:.0f}% < %30) — kararsız bar engellendi"
+        return True, ""
+
+    return True, ""
+
+
 def crypto_quality_gate(
     symbol: str,
     action: str,
     body_ratio: float,
     dist_ema21_pct: float,
     adx: float,
+    hour_utc: Optional[int] = None,
 ) -> Tuple[bool, str]:
-    """Kripto (BTC/ETH) Scalping Akıllı Kalite Kalkanı (3 Kapı):
-
-    1. Mum Gövde Teyidi (Wick / Doji Shield): body_ratio >= 0.35
-       Doji, ince gövdeli ve fitil tuzaklarını engeller (88 kaybı önledi).
-    2. Pullback Sweet-Spot / Aşırı Uzama Kelepçesi (FOMO Shield): |dist_ema21_pct| <= 0.30%
-       Fiyat 5M EMA21'den %0.30'dan fazla koptuğunda tepeden alım/dipten satımı önler (96 kaybı önledi).
-    3. ADX Trend Gücü Kapısı (Chop Shield): adx >= 20.0
-       Trendsiz testere piyasalarında stop yemeyi engeller (105 kaybı önledi).
-    """
-    sym = str(symbol or "").upper()
-    if "BTC" not in sym and "ETH" not in sym:
-        return True, ""
-    if action not in ("BUY", "SELL"):
-        return True, ""
-    if adx < 20.0:
-        return False, f"ADX Kalkanı: BTC trend gücü yetersiz (ADX {adx:.1f} < 20.0) — testere piyasası"
-    if abs(dist_ema21_pct) > 0.30:
-        return False, f"Aşırı Uzama Kalkanı: BTC EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.30%) — FOMO girişi engellendi"
-    if body_ratio < 0.35:
-        return False, f"Fitil/Doji Kalkanı: BTC mum gövdesi zayıf ({body_ratio*100:.0f}% < %35) — sahte kırılım fitili engellendi"
-    return True, ""
+    """Geriye dönük uyumluluk takma adı (asset_quality_gate çağırır)."""
+    return asset_quality_gate(symbol, action, body_ratio, dist_ema21_pct, adx, hour_utc)
 
 
 def calculate_dss_score(
@@ -1299,6 +1345,7 @@ def calculate_dss_score(
     adx: float = 25.0,
     body_ratio: float = 0.5,
     dist_ema21_pct: float = 0.0,
+    hour_utc: Optional[int] = None,
 ) -> Tuple[float, str]:
     """Kurumsal Karar Destek Sistemi (DSS) çoklu faktör ve A+ kurulum puanlayıcısı.
 
@@ -1394,9 +1441,9 @@ def calculate_dss_score(
     else:
         tier = "WATCH"
 
-    # Kripto Akıllı Kalite Kalkanı (BTC/ETH için 3 kapı testi)
-    ok_crypto, _ = crypto_quality_gate(sym, action, body_ratio, dist_ema21_pct, adx)
-    if not ok_crypto:
+    # Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC testi)
+    ok_quality, _ = asset_quality_gate(sym, action, body_ratio, dist_ema21_pct, adx, hour_utc)
+    if not ok_quality:
         tier = "WATCH"
 
     return total_dss, tier
@@ -3843,12 +3890,12 @@ def _evaluate_signal_gate(
     if supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir):
         reasons.append("supertrend")
 
-    # Kripto Akıllı Kalite Kalkanı (BTC / ETH: Gövde teyidi, Aşırı uzama, ADX)
+    # Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC)
     c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
     c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
     c_adx = float(cand.get("adx", 25.0) if cand.get("adx") is not None else 25.0)
-    ok_crypto, _ = crypto_quality_gate(sym, direction, c_body, c_dist, c_adx)
-    if not ok_crypto:
+    ok_asset, _ = asset_quality_gate(sym, direction, c_body, c_dist, c_adx, hour_utc=current_utc_hour)
+    if not ok_asset:
         reasons.append("crypto_quality")
 
     data_reason = entry_data_blocked(cand)
@@ -3923,7 +3970,7 @@ _GATE_LABELS: Dict[str, str] = {
     "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD, AUDCAD)",
     "news_opposing": "Ekonomik takvim verisine zıt yön (30 dk koruma aktif)",
     "spread_cost_too_high": "Spread hedef kârın %20'sinden yüksek (aşırı maliyet)",
-    "crypto_quality": "Kripto kalite kalkanı (gövde/aşırı uzama/ADX yetersiz)",
+    "crypto_quality": "Varlık kalite kalkanı (gövde/aşırı uzama/ADX yetersiz)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -4084,6 +4131,7 @@ async def get_forex_radar(use_cache: bool = True):
             adx=t_adx,
             body_ratio=t_body,
             dist_ema21_pct=t_dist,
+            hour_utc=current_utc_hour,
         )
 
         base = {
@@ -7439,16 +7487,16 @@ async def _forex_auto_paper_loop():
                         )
                     continue
 
-                # 7d. Kripto (BTC/ETH) Akıllı Kalite Kalkanı (Gövde, FOMO Uzama, ADX)
+                # 7d. Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC)
                 c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
                 c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
-                ok_crypto, crypto_msg = crypto_quality_gate(sym, direction, c_body, c_dist, adx_val)
-                if not ok_crypto and not _news_bypass:
-                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_crypto_quality", 0) > 30.0:
-                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_crypto_quality"] = now_ts
+                ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour)
+                if not ok_asset and not _news_bypass:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_asset_quality", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_asset_quality"] = now_ts
                         _log_auto_decision(
                             "GATE",
-                            f"[{cand['display']}][{_c_strat_lbl}] {crypto_msg}. İşlem engellendi.",
+                            f"[{cand['display']}][{_c_strat_lbl}] {asset_msg}. İşlem engellendi.",
                             symbol=sym,
                             strategy=_c_strat,
                             strategy_label=_c_strat_lbl,
