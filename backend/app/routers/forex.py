@@ -7423,10 +7423,13 @@ async def _forex_auto_paper_loop():
                 _c_strat = strategy_name_for(_c_src)
                 _c_strat_lbl = strategy_display_label(_c_src)
 
-                # Kapsam kapısı kesindir: güçlü sinyal bile allowed_symbols dışına işlem açamaz
-                # (2026-10-07 kalibrasyonu: 28/28 FX çifti klasik sinyalle negatif — bypass yok).
-                if sym not in _AUTO_SETTINGS.allowed_symbols:
-                    continue
+                # Kapsam kapısı: Hafta sonu 7/24 kripto havuzu serbest, hafta içi allowed_symbols aranır.
+                if weekend_now:
+                    if sym not in CANLI_WEEKEND_CRYPTO_SYMBOLS and sym not in _AUTO_SETTINGS.allowed_symbols:
+                        continue
+                else:
+                    if sym not in _AUTO_SETTINGS.allowed_symbols:
+                        continue
 
                 new_action = cand.get("action", "")  # "BUY" or "SELL"
                 if new_action not in ("BUY", "SELL"):
