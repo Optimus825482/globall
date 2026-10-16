@@ -1107,7 +1107,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 <span>🛡️</span>
                 <span>XAUUSD Otonom Karar Kapıları Zinciri</span>
               </h3>
-              <GateSnapshotCard snapshot={gateSnapshotXAU} />
+              <GateSnapshotCard snapshot={gateSnapshotXAU} loading={false} />
             </div>
           )}
 

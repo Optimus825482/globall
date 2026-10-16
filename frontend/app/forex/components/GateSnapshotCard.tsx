@@ -129,11 +129,11 @@ const VERDICT_STYLE: Record<GateSnapshot["verdict_level"], { border: string; bg:
 
 export default function GateSnapshotCard({
   snapshot,
-  loading,
+  loading = false,
   isBtc,
 }: {
   snapshot: GateSnapshot | null;
-  loading: boolean;
+  loading?: boolean;
   isBtc?: boolean;
 }) {
   // Akordeon (2026-10-13): zincir 12+ satır yer kapladığı için varsayılan
