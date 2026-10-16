@@ -563,6 +563,50 @@ export default function AutoSettingsPanel({
             </div>
           </div>
 
+          {/* 30 Dk Ekonomik Takvim Yön Desteği & Haber Koruması */}
+          <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
+              <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <span>🔥</span>
+                <span>Ekonomik Takvim Yön Desteği (30 Dk Momentum & Kalkan)</span>
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
+                Haber Besleyicisi
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+              <label className="inline-flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.news_bias_enabled)}
+                  onChange={(e) => setField("news_bias_enabled", e.target.checked)}
+                  className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`}
+                />
+                <span>
+                  <span className="text-white font-semibold block">Haber Yönü Besleyicisi</span>
+                  <span className="text-[10px] text-bunker-muted">
+                    Açıklanan verileri 30 dk boyunca radar taramasına ve otonom girişe yön desteği olarak besler
+                  </span>
+                </span>
+              </label>
+
+              <label className="inline-flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.news_bias_block_opposing)}
+                  onChange={(e) => setField("news_bias_block_opposing", e.target.checked)}
+                  className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`}
+                />
+                <span>
+                  <span className="text-white font-semibold block">Karşıt Yön Koruması</span>
+                  <span className="text-[10px] text-bunker-muted">
+                    Ekonomik verinin zıttı yöndeki sahte kırılımları ve ters sinyalleri 30 dk engeller
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+
           <SymbolMultiSelector
             title="Klasik Radar Sinyali Üretilen Semboller (allowed_symbols)"
             badgeLabel="Momentum Scalper"

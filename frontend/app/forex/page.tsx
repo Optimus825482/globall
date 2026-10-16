@@ -58,6 +58,14 @@ interface ForexCandidate {
   primary_blocker: string | null;
   blocker_text: string;
   required_score?: number | null;
+  news_info?: {
+    has_active_news?: boolean;
+    alignment?: "SUPPORTIVE" | "OPPOSING" | "NEUTRAL" | string;
+    badge?: string;
+    remaining_min?: number;
+    event_title?: string;
+    events_count?: number;
+  };
 }
 
 interface RadarThresholds {
@@ -828,6 +836,27 @@ export default function ForexRadarPage() {
                     </span>
                   </div>
 
+                  {/* Ekonomik Takvim Haber Yönü Rozeti */}
+                  {c.news_info?.has_active_news && (
+                    <div
+                      className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between text-xs font-bold ${
+                        c.news_info.alignment === "SUPPORTIVE"
+                          ? "bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                          : "bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span>{c.news_info.alignment === "SUPPORTIVE" ? "🔥" : "⚠️"}</span>
+                        <span className="truncate">{c.news_info.badge || c.news_info.event_title}</span>
+                      </div>
+                      {c.news_info.remaining_min != null && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/40 text-white/90 shrink-0">
+                          {c.news_info.remaining_min.toFixed(0)} dk
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Skor + hedef/stop */}
                   <div className="grid grid-cols-3 gap-2 p-2 rounded-lg bg-bunker-950/60 border border-bunker-800/80">
                     <div>
@@ -1017,6 +1046,18 @@ export default function ForexRadarPage() {
                           <div className="text-[10px] text-bunker-muted truncate max-w-[140px]">
                             {c.name}
                           </div>
+                          {c.news_info?.has_active_news && (
+                            <span
+                              className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                c.news_info.alignment === "SUPPORTIVE"
+                                  ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                  : "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                              }`}
+                              title={c.news_info.badge}
+                            >
+                              {c.news_info.alignment === "SUPPORTIVE" ? "🔥" : "⚠️"} {c.news_info.alignment === "SUPPORTIVE" ? "Haber Desteği" : "Zıt Yön Uyarısı"} ({c.news_info.remaining_min?.toFixed(0)}dk)
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-3.5 px-3">

@@ -472,37 +472,61 @@ def format_event_date(date_iso: str) -> str:
 
 
 def map_symbols_for_event(currency: str, title: str) -> List[str]:
-    """Para birimi ve olaya göre etkilenen Forex & Kripto sembollerini çıkarır."""
+    """Para birimi ve olaya göre etkilenen Forex, Emtia, Endeks & Kripto sembollerini çıkarır (31 sembol evreni)."""
     t = title.lower()
     c = currency.upper()
     symbols: List[str] = []
 
     if c == "USD":
-        symbols = ["XAUUSD", "EURUSD", "BTCUSD", "USDJPY", "GBPUSD"]
+        symbols = [
+            "XAUUSD", "BTCUSD", "US30", "NAS100", "EURUSD", "GBPUSD",
+            "USDJPY", "USDCHF", "AUDUSD", "NZDUSD", "USDCAD"
+        ]
     elif c == "EUR":
-        symbols = ["EURUSD", "EURGBP", "EURJPY"]
+        symbols = [
+            "EURUSD", "EURJPY", "EURGBP", "EURCHF", "EURCAD", "EURAUD", "EURNZD"
+        ]
     elif c == "GBP":
-        symbols = ["GBPUSD", "EURGBP", "GBPJPY"]
+        symbols = [
+            "GBPUSD", "EURGBP", "GBPCHF", "GBPJPY", "GBPAUD", "GBPCAD", "GBPNZD"
+        ]
     elif c == "JPY":
-        symbols = ["USDJPY", "EURJPY", "GBPJPY"]
+        symbols = [
+            "USDJPY", "EURJPY", "CHFJPY", "CADJPY", "AUDJPY", "NZDJPY", "GBPJPY"
+        ]
     elif c == "CAD":
-        symbols = ["USDCAD", "USOIL"]
+        symbols = [
+            "USDCAD", "CADJPY", "CADCHF", "AUDCAD", "EURCAD", "GBPCAD", "USOIL"
+        ]
     elif c == "AUD":
-        symbols = ["AUDUSD", "XAUUSD"]
+        symbols = [
+            "AUDUSD", "AUDCAD", "AUDJPY", "AUDNZD", "AUDCHF", "EURAUD", "GBPAUD", "XAUUSD"
+        ]
     elif c == "CHF":
-        symbols = ["USDCHF", "EURCHF"]
+        symbols = [
+            "USDCHF", "CHFJPY", "EURCHF", "GBPCHF", "AUDCHF", "NZDCHF", "CADCHF"
+        ]
+    elif c == "NZD":
+        symbols = [
+            "NZDUSD", "NZDJPY", "NZDCHF", "EURNZD", "GBPNZD", "AUDNZD"
+        ]
     else:
-        symbols = ["EURUSD", "XAUUSD"]
+        symbols = ["EURUSD", "XAUUSD", "BTCUSD"]
 
     if any(k in t for k in ["oil", "petrol", "crude", "energy", "enerji", "eia"]):
         if "USOIL" not in symbols:
             symbols.insert(0, "USOIL")
 
-    if any(k in t for k in ["gold", "altın", "precious"]):
+    if any(k in t for k in ["gold", "altın", "precious", "fed", "faiz", "rate"]):
         if "XAUUSD" not in symbols:
             symbols.insert(0, "XAUUSD")
 
-    return symbols[:5]
+    if any(k in t for k in ["tech", "nasdaq", "endeks", "dow", "istihdam", "cpi", "tüfe"]):
+        for idx in ("NAS100", "US30"):
+            if idx not in symbols:
+                symbols.append(idx)
+
+    return symbols
 
 
 def translate_title(title: str, country_code: str) -> str:

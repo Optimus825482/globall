@@ -30,9 +30,8 @@ except ImportError:  # pragma: no cover - paket dışı çalıştırma
     from . import forex_news  # type: ignore
 
 
-# Açıklamadan sonra yönün geçerli sayıldığı pencere. Kayan yazı bandı da
-# açıklama sonrası 10 dk gösterir; ölçüm/karar tarafında biraz daha geniş
-# tutulur ama spekülatif değil — 15 dk.
+# Açıklamadan sonra yönün geçerli sayıldığı varsayılan pencere (15 dakika = 900 sn).
+# Radar ve aktif taramalarda 30 dakika (1800 sn) besleyici olarak parametrik çağrılır.
 DEFAULT_WINDOW_SEC = 900.0
 
 
@@ -46,30 +45,41 @@ def symbol_direction(currency: str, is_bullish: bool, symbol: str) -> int:
     if not c or not sym:
         return 0
 
-    # Ham petrol: USD güçlenince petrol ↓, CAD güçlenince ↑ (aynı kural
-    # `format_pair_directional_impacts` içinde metin olarak da yazılı).
+    # Ham petrol: USD güçlenince petrol ↓, CAD güçlenince ↑
     if sym == "USOIL":
         if c == "CAD":
             return 1 if is_bullish else -1
-        return -1 if is_bullish else 1
+        if c == "USD":
+            return -1 if is_bullish else 1
+        return 0
 
-    # Altın × AUD: "desteklenir/gevşer" — yön savunulamaz.
+    # Altın: USD güçlenince XAUUSD ↓, USD zayıflayınca XAUUSD ↑
+    if sym == "XAUUSD":
+        if c == "USD":
+            return -1 if is_bullish else 1
+        return 0
+
+    # Bitcoin: USD güçlenince BTCUSD ↓, USD zayıflayınca BTCUSD ↑
+    if sym == "BTCUSD":
+        if c == "USD":
+            return -1 if is_bullish else 1
+        return 0
+
+    # Endeksler ve XAUUSD×AUD: yön savunulamaz → nötr (karışık makro tepki)
+    if sym in ("US30", "NAS100"):
+        return 0
     if sym == "XAUUSD" and c == "AUD":
         return 0
 
-    # Standart 6 karakterli pariteler (BASE + QUOTE). DİKKAT: `NAS100`/`US500`
-    # gibi 6 karakterli ENDEKSLER de bu uzunlukta; iki bacak da harf olmalı,
-    # yoksa "NAS"/"100" diye parçalanıp uydurma yön üretirdi.
+    # Standart 6 karakterli pariteler (BASE + QUOTE)
     if len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha():
         base, quote = sym[:3], sym[3:6]
         if c == base:
             return 1 if is_bullish else -1
         if c == quote:
             return -1 if is_bullish else 1
-        return -1 if is_bullish else 1  # dolaylı korelasyon
+        return 0
 
-    # Endeksler (US30/NAS100) ve tanınmayan semboller: ters korelasyon varsayımı
-    # otonom işlem için yeterince güçlü DEĞİL → nötr.
     return 0
 
 
@@ -94,7 +104,7 @@ def released_biases(
 ) -> Dict[str, Dict[str, Any]]:
     """Açıklanmış + penceredeki olaylardan sembol başına net yön üretir.
 
-    Dönen sözlük: {SEMBOL: {"dir": -1|0|1, "hits": n, "events": [...]}}
+    Dönen sözlük: {SEMBOL: {"dir": -1|0|1, "hits": n, "remaining_sec": int, "remaining_min": float, "events": [...]}}
     Aynı sembole zıt yönde iki olay düşerse `dir` 0'a döner (çelişki = kanıt yok).
     """
     out: Dict[str, Dict[str, Any]] = {}
@@ -119,13 +129,25 @@ def released_biases(
         cur = str(ev.get("currency") or ev.get("country") or "").upper().strip()
         syms = ev.get("affected_symbols") or forex_news.map_symbols_for_event(
             cur, str(ev.get("title") or ""))
+        
+        rem_sec = max(0, int(window_sec - age))
+        rem_min = round(rem_sec / 60.0, 1)
+
         for s in syms or []:
             d = symbol_direction(cur, is_bullish, str(s))
             if d == 0:
                 continue
-            slot = out.setdefault(str(s).upper(), {"dir": 0, "hits": 0, "events": []})
+            slot = out.setdefault(str(s).upper(), {
+                "dir": 0,
+                "hits": 0,
+                "remaining_sec": rem_sec,
+                "remaining_min": rem_min,
+                "events": []
+            })
             slot["dir"] += d
             slot["hits"] += 1
+            slot["remaining_sec"] = max(slot.get("remaining_sec", 0), rem_sec)
+            slot["remaining_min"] = round(slot["remaining_sec"] / 60.0, 1)
             slot["events"].append({
                 "title": ev.get("title"),
                 "currency": cur,
@@ -133,6 +155,8 @@ def released_biases(
                 "label": res.get("label_tr"),
                 "direction": d,
                 "age_sec": int(age),
+                "remaining_sec": rem_sec,
+                "remaining_min": rem_min,
             })
 
     for slot in out.values():

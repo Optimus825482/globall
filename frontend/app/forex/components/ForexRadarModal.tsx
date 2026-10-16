@@ -16,6 +16,15 @@ import {
   InAppNotificationSettings,
 } from "../../lib/notificationSettings";
 
+interface NewsInfo {
+  has_active_news?: boolean;
+  alignment?: "SUPPORTIVE" | "OPPOSING" | "NEUTRAL" | string;
+  badge?: string;
+  remaining_min?: number;
+  event_title?: string;
+  events_count?: number;
+}
+
 interface RadarCandidate {
   symbol: string;
   display: string;
@@ -40,6 +49,7 @@ interface RadarCandidate {
   rsi_15m?: number | null;
   rsi?: number;
   has_open_position?: boolean;
+  news_info?: NewsInfo;
 }
 
 function optNum(v: unknown): number | null {
@@ -312,6 +322,31 @@ export default function ForexRadarModal() {
             </span>
           </div>
         </div>
+
+        {/* Ekonomik Takvim 30 Dk Haber Besleyicisi / Rozet */}
+        {activeSignal.news_info?.has_active_news && (
+          <div
+            className={`p-2.5 rounded-xl border flex items-center justify-between text-xs font-bold transition-all ${
+              activeSignal.news_info.alignment === "SUPPORTIVE"
+                ? "bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                : "bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2)]"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm">
+                {activeSignal.news_info.alignment === "SUPPORTIVE" ? "🔥" : "⚠️"}
+              </span>
+              <span className="truncate max-w-[280px]">
+                {activeSignal.news_info.badge || activeSignal.news_info.event_title}
+              </span>
+            </div>
+            {activeSignal.news_info.remaining_min != null && (
+              <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-black/50 text-white/90 border border-white/10 shrink-0">
+                {activeSignal.news_info.remaining_min.toFixed(0)} dk aktif
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Metrikler (Skor, TP, SL, R/R) */}
         <div className="grid grid-cols-3 gap-2.5 text-center">

@@ -3514,6 +3514,7 @@ def _evaluate_signal_gate(
     current_utc_hour: int,
     dxy_regime: Optional[Dict[str, Any]],
     has_open_position: bool = False,
+    news_bias: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Bir radar adayının otonom giriş kapılarından geçip geçmediğini değerlendirir.
 
@@ -3577,6 +3578,13 @@ def _evaluate_signal_gate(
     if data_reason and data_reason not in reasons:
         reasons.append(data_reason)
 
+    if news_bias and _AUTO_SETTINGS.news_bias_block_opposing:
+        nb_dir = int(news_bias.get("dir", 0) or 0)
+        if nb_dir != 0:
+            dir_sign = 1 if direction == "BUY" else (-1 if direction == "SELL" else 0)
+            if dir_sign != 0 and dir_sign == -nb_dir:
+                reasons.append("news_opposing")
+
     if _AUTO_SETTINGS.correlation_guard:
         bias = get_usd_bias(sym, direction)
         if bias != "USD_NEUTRAL":
@@ -3636,6 +3644,7 @@ _GATE_LABELS: Dict[str, str] = {
     "correlation": "Korelasyon kalkanı: aynı yönde yoğunlaşma",
     "open_position": "Bu sembolde zaten açık pozisyon var",
     "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD, AUDCAD)",
+    "news_opposing": "Ekonomik takvim verisine zıt yön (30 dk koruma aktif)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -3644,7 +3653,7 @@ _GATE_LABELS: Dict[str, str] = {
 _MARKET_BLOCKERS = frozenset({
     "direction", "score", "spread", "adx", "supertrend",
     "dxy", "major_session", "major_min_atr", "correlation",
-    "veri", "bayat", "bar_gap",
+    "veri", "bayat", "bar_gap", "news_opposing",
 })
 
 # PERFORMANS (2026-10-08): /radar yanıtı için kısa TTL'li önbellek. Birden çok
@@ -3708,6 +3717,17 @@ async def get_forex_radar(use_cache: bool = True):
         if c.get("action") == "OPEN_ORDER"
     }
 
+    # Ekonomik takvim 30 dk yön kanıtı (haber besleyicisi)
+    _nb_mod = None
+    try:
+        from app.forex_news import get_forex_news
+        from app import forex_news_bias as _bias_engine
+        _cal_events = await get_forex_news()
+        _bias_engine.refresh_biases(_cal_events, now_ts, window_sec=1800.0)
+        _nb_mod = _bias_engine
+    except Exception:
+        _nb_mod = None
+
     candidates = []
     for sym, t in ticks.items():
         sym_u = sym.upper()
@@ -3719,6 +3739,43 @@ async def get_forex_radar(use_cache: bool = True):
         spread = t.get("spread_pips", 1.5)
         atr_pips = round(t.get("atr", 0.001) / t["pip_size"], 1) if t.get("pip_size", 0) > 0 else 15.0
         st_dir = int(t.get("supertrend_dir", 0))
+
+        # Haber yönü desteği ve zıt yön uyarısı (30 dk besleyici)
+        news_bias_slot = _nb_mod.bias_for(sym_u) if _nb_mod else {"dir": 0, "hits": 0, "events": []}
+        nb_dir = int(news_bias_slot.get("dir", 0) or 0)
+        news_info = {
+            "has_active_news": False,
+            "alignment": "NEUTRAL",
+            "badge": "",
+            "remaining_min": 0.0,
+            "event_title": "",
+            "events_count": int(news_bias_slot.get("hits", 0) or 0),
+        }
+        if nb_dir != 0 and action in ("BUY", "SELL"):
+            ev0 = (news_bias_slot.get("events") or [{}])[0]
+            ev_title = ev0.get("title") or "Ekonomik Veri"
+            rem_min = float(news_bias_slot.get("remaining_min", 0.0) or (ev0.get("remaining_min", 0.0) or 0.0))
+            act_dir = 1 if action == "BUY" else -1
+            if act_dir == nb_dir:
+                score = min(98.0, round(score + 10.0, 1))
+                news_info = {
+                    "has_active_news": True,
+                    "alignment": "SUPPORTIVE",
+                    "badge": f"🔥 {ev_title}: {action} Desteği ({rem_min:.0f} dk)",
+                    "remaining_min": rem_min,
+                    "event_title": ev_title,
+                    "events_count": int(news_bias_slot.get("hits", 0) or 1),
+                }
+            elif act_dir == -nb_dir:
+                score = max(30.0, round(score - 15.0, 1))
+                news_info = {
+                    "has_active_news": True,
+                    "alignment": "OPPOSING",
+                    "badge": f"⚠️ {ev_title}: Zıt Yön Uyarısı ({rem_min:.0f} dk)",
+                    "remaining_min": rem_min,
+                    "event_title": ev_title,
+                    "events_count": int(news_bias_slot.get("hits", 0) or 1),
+                }
 
         spec = get_symbol_trading_specs(
             sym,
@@ -3739,6 +3796,7 @@ async def get_forex_radar(use_cache: bool = True):
             "score": score,
             "trend": trend,
             "action": action,
+            "news_info": news_info,
             "rsi_5m": t.get("rsi", 50.0),
             "rsi_15m": t.get("rsi", 50.0),
             "source": t.get("source", "yok"),
@@ -3772,6 +3830,7 @@ async def get_forex_radar(use_cache: bool = True):
         gate = _evaluate_signal_gate(
             sym_u, base, current_utc_hour, dxy_regime,
             has_open_position=sym_u in active_syms,
+            news_bias=news_bias_slot,
         )
         base.update(gate)
         base["has_open_position"] = bool(sym_u in active_syms)
@@ -9398,14 +9457,20 @@ async def get_macro_forex_news(
 
         # Yön (bias) zenginleştirmesi — açıklanmış olaylar için
         now_ts = _time.time()
-        bias_map = released_biases(items, now_ts)
+        bias_map = released_biases(items, now_ts, window_sec=1800.0)
         for it in items:
-            sym = it.get("symbol") or it.get("affected_symbols", [""])[0]
+            sym = it.get("symbol") or (it.get("affected_symbols", [""])[0] if it.get("affected_symbols") else "")
             if sym and sym in bias_map:
                 b = bias_map[sym]
-                it["bias_direction"] = b["direction"]
-                it["bias_confidence"] = b["confidence"]
-                it["bias_explanation"] = b["explanation"]
+                b_dir = int(b.get("dir", 0) or 0)
+                dir_str = "BUY" if b_dir > 0 else ("SELL" if b_dir < 0 else "NEUTRAL")
+                rem_min = float(b.get("remaining_min", 30.0) or 30.0)
+                it["bias_direction"] = dir_str
+                it["bias_confidence"] = min(100, int(b.get("hits", 1) * 50)) if b_dir != 0 else 0
+                it["bias_explanation"] = (
+                    f"{b.get('hits', 1)} veri açıklaması doğrultusunda {dir_str} yönü destekleniyor ({rem_min:.0f} dk)."
+                    if b_dir != 0 else "Henüz açıklanmamış veya yön belirsiz"
+                )
             else:
                 it["bias_direction"] = "NEUTRAL"
                 it["bias_confidence"] = 0
