@@ -791,6 +791,8 @@ class Config:
     # Binance TR spot komisyonu (Bronz/Standart taker %0.15) - işlem başına
     COMMISSION_PCT = float(os.getenv("COMMISSION_PCT", "0.0015"))
     ESTIMATED_SLIPPAGE_PCT = 0.00025
+    # Replay tam spreadi kesir okur (COMMISSION_PCT ölçeği). Kaynak yüzde-puan: 0.65 = %0.65.
+    BACKTEST_ASSUMED_SPREAD_PCT = DEFAULT_ESTIMATED_SPREAD_PCT / 100.0
     # 2026-09-27: sabit `0.5` TRY'de 50 TRY'lik bir emrin %1'ine denk geliyordu.
     # Global'da emir tabanı 2 USDT'ye indiğinde AYNI 0,5 birim = %25'e
     # çıkıyordu; `min_net_exit_pct(2.0)` = %25,35 döndürüyor ve
