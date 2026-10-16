@@ -222,6 +222,7 @@ FOREX_SYMBOLS = [
 # devrede olduğundan buradaki genişlik tek başına risk açmaz.
 # 2026-10-12: NZDJPY/AUDNZD çıkarıldı — FOREX_SYMBOLS'te değiller (tick yok),
 # radar satırı hiç üretemiyorlardı; liste artık tick üretebilen evrenin alt kümesi.
+# GBPUSD panelde görünür ama klasik emir açmaz: emir evreni CANLI_CLASSIC_SYMBOLS.
 RADAR_SCAN_SYMBOLS = {
     "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD",
 }
@@ -3163,6 +3164,18 @@ async def get_forex_klines(
         pass
     clean_sym = _clean_forex_chart_symbol(symbol)
     bars, err = _forex_klines_from_ticks(symbol, interval, limit)
+    source = "mt5_tick" if bars else "yok"
+    # Tik kovası sunucu açılınca birikir; 5m için 30 kapanmış bar ~2,5 saat sürer.
+    # Köprü aynı anda MT5 geçmiş mumunu (copy_rates) gönderir. Grafik onu gösterir.
+    # Sinyal yolu bu önbelleği kullanmaz; o hâlâ yalnız tik kovasına bakar.
+    if err:
+        broker = _fetch_mt5_candles(clean_sym, interval, limit)
+        if broker:
+            bars = broker
+            err = None
+            source = "mt5_candle"
+        elif err == "MT5 tik yok":
+            err = "MT5 geçmişi bekleniyor"
     meta = next((s for s in FOREX_SYMBOLS if s["symbol"] == clean_sym), None)
     live = _LIVE_PRICES_CACHE.get(clean_sym) if _PRICE_SOURCE.get(clean_sym) == "mt5_tick" else None
     current_price = float(live) if live else (bars[-1]["close"] if bars else None)
@@ -3172,7 +3185,7 @@ async def get_forex_klines(
         "count": len(bars),
         "candles": bars,
         "current_price": current_price,
-        "source": "mt5_tick" if bars or live else "yok",
+        "source": source if bars or live else "yok",
         "error": err,
         "meta": meta,
     }
@@ -3305,6 +3318,7 @@ _GATE_LABELS: Dict[str, str] = {
     "supertrend": "SuperTrend yönüyle çelişiyor",
     "correlation": "Korelasyon kalkanı: aynı yönde yoğunlaşma",
     "open_position": "Bu sembolde zaten açık pozisyon var",
+    "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -3461,6 +3475,12 @@ async def get_forex_radar(use_cache: bool = True):
             "score" not in gate["blocked_by"] and action in ("BUY", "SELL")
         )
         base["motor_acar"] = bool(gate["signal_ready"])
+        # 2026-10-16 13-sembol / 7 gün MT5 replay: klasik para XAU/BTC/US30/AUD'da.
+        # GBPUSD klasik −5…−26; panel STRONG dese bile motor bu dördün dışında açmaz.
+        if sym_u not in CANLI_CLASSIC_SYMBOLS:
+            base["motor_acar"] = False
+            base["primary_blocker"] = "classic_scope"
+            base["blocker_text"] = _GATE_LABELS["classic_scope"]
         if base["tier"] == "STRONG" and not base["motor_acar"]:
             base["tier"] = "WAIT"
 
@@ -3761,18 +3781,29 @@ CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 # (XAUUSD tek başına +$83.90 OOS / +$52.06 IS taşıyordu). LS gibi ZORLANIR: sunucudaki
 # ayar dosyası ve panel gövdesi bu listeyi ezemez; değiştirmek için koddaki sabit düzenlenir.
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
+# Klasik radar emir evreni (2026-10-16, 13 sembol × 7 gün MT5 M5 replay).
+# Klasik net +522; bunun +484'ü XAU, kalanı BTC +80 / US30 +85 / AUD +44.
+# GBPUSD, JPY krosu ve diğer majörler klasik defterde eksi. NAS100 klasik düz
+# (+8) ama EMA+ADX ve Squeeze orada duruyor — allowed_symbols DARALTILMAZ.
+CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD")
+# Aynı pencere: S3 −12.85 (PF 0.90), London Sign −40.16 (PF 0.27, WR %37.5).
+# Dosya ve panel bu iki anahtarı geri açamasın diye zorlanır.
+CANLI_S3_ENABLED = False
+CANLI_LS_ENABLED = False
 
 
 def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaperSettings":
-    """Ayar dosyasını EZEREK iki canlı sabiti zorlar (yukarıdaki gerekçe).
+    """Ayar dosyasını EZEREK canlı sabitleri zorlar (yukarıdaki gerekçe).
 
     Hem açılışta (kalıcı dosya yüklendikten sonra) hem de panel/POST ile ayar
-    kaydedildiğinde çağrılır; gövdede `chandelier_atr_mult`/`ls_symbols` gelse bile
-    sabit kazanır. İkisinin de değerini değiştirmek için koddaki sabit düzenlenir.
+    kaydedildiğinde çağrılır; gövdede bu alanlar gelse bile sabit kazanır.
+    Değer değiştirmek için koddaki sabit düzenlenir.
     """
     settings.chandelier_atr_mult = CANLI_CHANDELIER_ATR_MULT
     settings.ls_symbols = list(CANLI_LS_SYMBOLS)
     settings.squeeze_kc_symbols = list(CANLI_SQUEEZE_KC_SYMBOLS)
+    settings.s3_enabled = CANLI_S3_ENABLED
+    settings.ls_enabled = CANLI_LS_ENABLED
     return settings
 
 
@@ -3878,7 +3909,7 @@ class ForexAutoPaperSettings(BaseModel):
     ema_adx_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="EMA+ADX: SL (× ATR(14)) — 48h RR süpürmesinde optimal bant")
     ema_adx_tp_atr: float = Field(2.0, ge=0.0, le=6.0, description="EMA+ADX: TP (× ATR(14)); 0 = sabit TP yok (trailing'e bırakılır)")
     ema_adx_max_per_day: int = Field(0, ge=0, le=20, description="EMA+ADX: yön başına günde azami giriş (0 = sınırsız, spec)")
-    s3_enabled: bool = Field(True, description="S3 (Supertrend+RSI pullback) akışı: ST(10,3) yön + EMA200 tarafı + ADX≥25 + RSI pullback dönüşü (L30 replay: XAU/BTC üç pencere pozitif)")
+    s3_enabled: bool = Field(False, description="S3 (Supertrend+RSI pullback). **Canlı SABİT KAPALI: `CANLI_S3_ENABLED` — ayar dosyası ve panel EZEMEZ.** 2026-10-16 13-sembol 7 gün MT5 replay: 64 işlem, WR %53.1, net −12.85, PF 0.90. Kol kodda durur; yeniden açmak için sabiti değiştir.")
     s3_symbols_5m: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="S3 5m kolu (TP yok + ST-flip çıkışı; L30: XAU +$90.04 PF 2.09). 2026-10-12: AUDNZD DÜŞÜRÜLDÜ — FOREX_SYMBOLS'te değildi (tick yok → hayalet), izole 2-pencere replay'de OOS n=74 < 100 ve net −$61.09 → kanıt yok")
     s3_symbols_15m: List[str] = Field(default_factory=lambda: ["XAUUSD", "BTCUSD", "US30", "GBPUSD"], description="S3 15m kolu (TP 2.0×ATR; L30: XAU +$58.12 PF 3.08, BTC +$59.28 PF 6.63, US30 +$133.54 PF 4.82; 2026-10-08 7-sembol evren: stflip +$279.54 PF 3.13 / tp2 +$278.97 PF 3.12 — GBPUSD +$29.65 eklendi; USTEC 0 işlem — pullback deseni oluşmuyor)")
     s3_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="S3: ADX(14) trend gücü eşiği (spec: 25)")
@@ -3896,7 +3927,7 @@ class ForexAutoPaperSettings(BaseModel):
     lb_sl_box_frac: float = Field(0.5, ge=0.1, le=1.0, description="London Breakout: SL = kutu yüksekliği × bu oran (süpürme: 0.4 en iyi PF ama 0.5 default spec)")
     lb_tp_r: float = Field(1.5, ge=0.5, le=5.0, description="London Breakout: TP = SL × bu R katı")
     lb_max_per_day: int = Field(1, ge=1, le=5, description="London Breakout: sembol+yön başına günde azami giriş (replay spec: 1)")
-    ls_enabled: bool = Field(True, description="London Sign (NY açılışı sign-momentum, Seeck 2026 uyarlaması) akışı: 13:30-14:00 UTC sign penceresi → 14:00-14:30 giriş, SL 1.5×ATR, sabit TP yok (chandelier trail), EoD kapanış. 2026-10-12 replay: XAUUSD+US30 beş pencerenin beşinde pozitif (60g +$256 PF 2.16 WR %89.5; slip 2p/bacakta PF 1.76)")
+    ls_enabled: bool = Field(False, description="London Sign. **Canlı SABİT KAPALI: `CANLI_LS_ENABLED` — ayar dosyası ve panel EZEMEZ.** 2026-10-16 13-sembol 7 gün MT5 replay: 16 işlem, WR %37.5, net −40.16, PF 0.27 (US30 tek başına −23). Kol kodda durur; yeniden açmak için sabiti değiştir.")
     ls_symbols: List[str] = Field(
         default_factory=lambda: list(CANLI_LS_SYMBOLS),
         description="London Sign sembolleri. **Bu liste canlı SABİT: `CANLI_LS_SYMBOLS` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 2026-10-12 replay: XAUUSD +$182 (WR %91.8 n49) ve US30 +$74 (WR %90 n30) — 60g pencerede iki pozitif. FX majörlerinde NEGATİF (USDJPY/GBPUSD/GBPJPY) → kapsam dışı. BTCUSD nötr/negatif (WR %54) → kapsam dışı. 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — üç pencerede de pozitif (W1 +$83 n21 WR %86, W2 +$58 n25 WR %80, W3 +$43 n10 WR %90); canlı LS defterine eklenince XAU/US30 pnl'i BİREBİR sabit kalıp üstüne +$107/+$58/+$43 ekliyor; slip 2p'de WR sabit %85.7.",
@@ -4089,8 +4120,13 @@ except Exception as _exc:  # pragma: no cover - savunmacı
 # canlı bunları kullansın (dosya kod sabitini maskeliyordu).
 _apply_canli_sabitler(_AUTO_SETTINGS)
 logger.info(
-    "[FX SABİT] chandelier_atr_mult=%.2f, ls_symbols=%s (kod sabiti — ayar dosyası/panel ezemez)",
-    _AUTO_SETTINGS.chandelier_atr_mult, _AUTO_SETTINGS.ls_symbols,
+    "[FX SABİT] chandelier_atr_mult=%.2f, ls_symbols=%s, klasik=%s, s3=%s, ls=%s "
+    "(kod sabiti — ayar dosyası/panel ezemez)",
+    _AUTO_SETTINGS.chandelier_atr_mult,
+    _AUTO_SETTINGS.ls_symbols,
+    list(CANLI_CLASSIC_SYMBOLS),
+    _AUTO_SETTINGS.s3_enabled,
+    _AUTO_SETTINGS.ls_enabled,
 )
 
 # IC Markets MT5 Durumu (Global Köprü Paylaşımı)
@@ -5402,6 +5438,13 @@ async def _forex_auto_paper_loop():
             # adayına EK aday üretir; mode_exclusive sembollerin klasik adayları düşürülür.
             _mode_syms = {s.upper() for s in (_AUTO_SETTINGS.mode_symbols or [])}
             _mode_excl = {s.upper() for s in (_AUTO_SETTINGS.mode_exclusive or [])}
+            _classic_ok = {s.upper() for s in CANLI_CLASSIC_SYMBOLS}
+            # Klasik adaylar yalnız kanıtlı dörtlüde kalır. Diğer kollar (EMA, Squeeze,
+            # London Breakout, Donchian) kendi sembol listeleriyle aşağıda eklenir.
+            candidates = [
+                c for c in candidates
+                if str(c.get("symbol", "")).upper() in _classic_ok
+            ]
             if _mode_excl:
                 candidates = [c for c in candidates if str(c.get("symbol", "")).upper() not in _mode_excl]
             if _mode_syms:

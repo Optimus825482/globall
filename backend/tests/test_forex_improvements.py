@@ -735,8 +735,8 @@ class TestManualScanNow(unittest.TestCase):
         strategies = {r["strategy"] for r in rows}
         self.assertIn("RADAR", strategies)
         self.assertIn("DONCHIAN_ADX", strategies)
-        self.assertIn("S3_5M", strategies)
-        self.assertIn("S3_15M", strategies)
+        self.assertNotIn("S3_5M", strategies)
+        self.assertNotIn("S3_15M", strategies)
         self.assertIn("LONDON_BREAKOUT", strategies)
         # EAP kolu da var (ema_adx_enabled=True)
         self.assertIn(forex.EMA_ADX_PULLBACK_STRATEGY, strategies)
@@ -782,7 +782,10 @@ class TestManualScanNow(unittest.TestCase):
         listesi ile tarayıcının kapsamı ayrışırsa kırılır.
         """
         cfg = forex.ForexAutoPaperSettings()
-        self.assertTrue(cfg.ls_enabled, "varsayılan 'da LS açık — test bunu varsayar")
+        self.assertFalse(cfg.s3_enabled, "2026-10-16 replay: S3 varsayılan kapalı")
+        self.assertFalse(cfg.ls_enabled, "2026-10-16 replay: London Sign varsayılan kapalı")
+        self.assertFalse(forex._AUTO_SETTINGS.s3_enabled)
+        self.assertFalse(forex._AUTO_SETTINGS.ls_enabled)
         radar = {"candidates": [], "scan_note": "yok"}
         ticks = {sym: {"display": sym, "bid": 1.1, "ask": 1.1001} for sym in cfg.ls_symbols}
         for sym in cfg.lb_symbols + cfg.mode_symbols + cfg.ema_adx_symbols \
@@ -796,21 +799,14 @@ class TestManualScanNow(unittest.TestCase):
             "RADAR",
             "DONCHIAN_ADX",
             forex.EMA_ADX_PULLBACK_STRATEGY,
-            "S3_5M",
-            "S3_15M",
             forex.LONDON_BREAKOUT_STRATEGY,
-            forex.LONDON_SIGN_STRATEGY,
             forex.SQUEEZE_KC_STRATEGY,
         }
         missing = expected - strategies
         self.assertEqual(missing, set(), f"taranmayan giriş kolu: {missing}")
-
-        # London Sign satırları sembol başına en az bir kez ve insan-okur olmalı
-        ls_rows = [r for r in rows if r["strategy"] == forex.LONDON_SIGN_STRATEGY]
-        self.assertTrue(ls_rows, "LS kolu hiç satır üretmedi")
-        self.assertEqual({r["symbol"] for r in ls_rows}, {s.upper() for s in cfg.ls_symbols})
-        for r in ls_rows:
-            self.assertTrue(r["status"], f"boş LS status: {r}")
+        self.assertNotIn("S3_5M", strategies)
+        self.assertNotIn("S3_15M", strategies)
+        self.assertNotIn(forex.LONDON_SIGN_STRATEGY, strategies)
 
     def test_ls_state_not_advanced_by_scan(self):
         """LS örneği: tarama `_LS_STATE`'i (sign/entered) değiştirmemeli —
@@ -856,7 +852,9 @@ class TestManualScanNow(unittest.TestCase):
                 # 14:05 UTC — giriş penceresi (14:00–14:30) içinde, gün state ile aynı.
                 return cls(_today.year, _today.month, _today.day, 14, 5, tzinfo=datetime.timezone.utc)
 
+        saved_ls = forex._AUTO_SETTINGS.ls_enabled
         try:
+            forex._AUTO_SETTINGS.ls_enabled = True
             forex._TECHNICAL_CACHE.pop(sym, None)  # ATR yok
             with mock.patch.object(forex.datetime, "datetime", _FixedDT):
                 rows = forex._scan_now_strategy_rows(ticks, radar)
@@ -875,6 +873,7 @@ class TestManualScanNow(unittest.TestCase):
             self.assertEqual(len(ls2), 1)
             self.assertEqual(ls2[0]["action"], "BUY")
         finally:
+            forex._AUTO_SETTINGS.ls_enabled = saved_ls
             if had_tech:
                 forex._TECHNICAL_CACHE[sym] = tech_before
             else:
@@ -1264,13 +1263,24 @@ class TestTickPrimaryGuards(unittest.IsolatedAsyncioTestCase):
         forex._OPEN_TICK_BUCKET.pop(("EURUSD", 300), None)
         forex._PRICE_SOURCE.pop("EURUSD", None)
         forex._LIVE_PRICES_CACHE.pop("EURUSD", None)
+        forex._MT5_CANDLES_CACHE.pop("EURUSD|5m", None)
         bars, err = forex._forex_klines_from_ticks("EURUSD", "5m", 50)
         self.assertEqual(bars, [])
         self.assertEqual(err, "MT5 tik yok")
         payload = await forex.get_forex_klines(symbol="EURUSD", interval="5m", limit=50)
         self.assertEqual(payload["candles"], [])
-        self.assertEqual(payload["error"], "MT5 tik yok")
+        self.assertEqual(payload["error"], "MT5 geçmişi bekleniyor")
         self.assertIsNone(payload["current_price"])
+        now = 1_700_000_000
+        forex._MT5_CANDLES_CACHE["EURUSD|5m"] = (time.time(), [
+            {"time": now + i * 300, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 0.0}
+            for i in range(40)
+        ])
+        filled = await forex.get_forex_klines(symbol="EURUSD", interval="5m", limit=50)
+        self.assertIsNone(filled["error"])
+        self.assertEqual(filled["source"], "mt5_candle")
+        self.assertEqual(len(filled["candles"]), 40)
+        forex._MT5_CANDLES_CACHE.pop("EURUSD|5m", None)
         tickers = await forex.get_forex_tickers()
         eurusd = next(t for t in tickers["tickers"] if t["symbol"] == "EURUSD")
         self.assertIsNone(eurusd["price"])

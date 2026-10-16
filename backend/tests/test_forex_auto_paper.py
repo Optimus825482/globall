@@ -894,7 +894,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
     def test_s3_settings_defaults_and_watch(self):
         """S3 canlı taşıma ayarları: semboller, köprü izleme listesi kalıcılığı."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertTrue(cfg.s3_enabled)
+        self.assertFalse(cfg.s3_enabled)
         self.assertIn("XAUUSD", cfg.s3_symbols_5m)
         self.assertIn("XAUUSD", cfg.s3_symbols_15m)
         self.assertIn("BTCUSD", cfg.s3_symbols_15m)
@@ -962,6 +962,13 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         saved_enabled = forex._AUTO_SETTINGS.s3_enabled
         try:
             forex._FOREX_VIEWED.clear()
+            # S3 kapalıyken yalnız o kola ait çift köprü listesine girmez.
+            forex._AUTO_SETTINGS.s3_enabled = False
+            pairs_off = {(w["symbol"], w["interval"]) for w in forex._get_forex_watch()}
+            self.assertNotIn(("GBPUSD", "15m"), pairs_off)
+            self.assertNotIn(("XAUUSD", "5m"), pairs_off)
+            # Açıkken kalıcı motor çiftleri panel bakmasa da listede kalır.
+            forex._AUTO_SETTINGS.s3_enabled = True
             pairs = {(w["symbol"], w["interval"]) for w in forex._get_forex_watch()}
             self.assertIn(("XAUUSD", "5m"), pairs)
             self.assertIn(("XAUUSD", "15m"), pairs)
@@ -1045,7 +1052,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         # Taze örnekten oku: global _AUTO_SETTINGS başka testlerce mutasyona uğrayabilir
         # (ör. test_auto_paper_settings_update); varsayılan sözleşmesi bu testte kilitlenir.
         cfg = forex.ForexAutoPaperSettings()
-        self.assertTrue(cfg.ls_enabled)
+        self.assertFalse(cfg.ls_enabled)
         # 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — üç pencerede de pozitif, canlı LS
         # defterine eklenince XAU/US30 pnl'i birebir sabit kalıp üstüne +$107/+$58/+$43 ekliyor.
         self.assertEqual(sorted(cfg.ls_symbols), ["NAS100", "US30", "XAUUSD"])

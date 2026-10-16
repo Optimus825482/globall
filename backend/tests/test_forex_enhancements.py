@@ -1543,6 +1543,10 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.chandelier_atr_mult, forex.CANLI_CHANDELIER_ATR_MULT)
         self.assertEqual(s.ls_symbols, list(forex.CANLI_LS_SYMBOLS))
         self.assertEqual(s.squeeze_kc_symbols, list(forex.CANLI_SQUEEZE_KC_SYMBOLS))
+        turned_on = forex.ForexAutoPaperSettings(s3_enabled=True, ls_enabled=True)
+        forex._apply_canli_sabitler(turned_on)
+        self.assertFalse(turned_on.s3_enabled)
+        self.assertFalse(turned_on.ls_enabled)
 
         # (b) Panel/POST gövdesi bu iki alanı değiştirmeye çalışsa da sabit kazanmalı
         merged = forex.merge_settings_payload(
@@ -1551,6 +1555,11 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged.ls_symbols, list(forex.CANLI_LS_SYMBOLS))
         # Sabit olmayan alan normal şekilde geçmeli (kontrol)
         self.assertEqual(merged.min_score, 80.0)
+        forced_off = forex.merge_settings_payload({"s3_enabled": True, "ls_enabled": True})
+        self.assertFalse(forced_off.s3_enabled)
+        self.assertFalse(forced_off.ls_enabled)
+        self.assertEqual(list(forex.CANLI_CLASSIC_SYMBOLS),
+                         ["XAUUSD", "BTCUSD", "US30", "AUDUSD"])
 
         # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
         self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.3)
