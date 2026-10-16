@@ -2095,6 +2095,54 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         self.assertEqual(forex._FVG_DAY_STATE["GBPUSD"]["consumed_bar"], 9999)
         self.assertTrue(cand["_arm_quota"]["done"])
 
+    def test_is_forex_weekend_timing(self):
+        """Verify is_forex_weekend returns True only between Friday 21:00 UTC and Sunday 21:00 UTC."""
+        import datetime
+        # Friday 20:30 UTC -> market open
+        fri_open = datetime.datetime(2026, 10, 16, 20, 30, tzinfo=datetime.timezone.utc)
+        self.assertFalse(forex.is_forex_weekend(fri_open))
+
+        # Friday 21:05 UTC -> market closed
+        fri_closed = datetime.datetime(2026, 10, 16, 21, 5, tzinfo=datetime.timezone.utc)
+        self.assertTrue(forex.is_forex_weekend(fri_closed))
+
+        # Saturday 14:00 UTC -> market closed
+        sat_closed = datetime.datetime(2026, 10, 17, 14, 0, tzinfo=datetime.timezone.utc)
+        self.assertTrue(forex.is_forex_weekend(sat_closed))
+
+        # Sunday 20:55 UTC -> market closed
+        sun_closed = datetime.datetime(2026, 10, 18, 20, 55, tzinfo=datetime.timezone.utc)
+        self.assertTrue(forex.is_forex_weekend(sun_closed))
+
+        # Sunday 21:05 UTC -> market open (Sydney open)
+        sun_open = datetime.datetime(2026, 10, 18, 21, 5, tzinfo=datetime.timezone.utc)
+        self.assertFalse(forex.is_forex_weekend(sun_open))
+
+        # Monday 10:00 UTC -> market open
+        mon_open = datetime.datetime(2026, 10, 19, 10, 0, tzinfo=datetime.timezone.utc)
+        self.assertFalse(forex.is_forex_weekend(mon_open))
+
+    def test_weekend_signal_gate_filtering(self):
+        """Verify _evaluate_signal_gate blocks Forex/Gold during weekend, but allows Crypto 7/24."""
+        cand_fx = {
+            "symbol": "EURUSD", "display": "EUR/USD", "action": "BUY", "score": 95.0,
+            "spread_pips": 1.0, "atr_pips": 20.0, "adx": 30.0, "supertrend_dir": 1,
+            "category": "major",
+        }
+        cand_crypto = {
+            "symbol": "BTCUSD", "display": "BTC/USD", "action": "BUY", "score": 95.0,
+            "spread_pips": 15.0, "atr_pips": 300.0, "adx": 30.0, "supertrend_dir": 1,
+            "category": "crypto",
+        }
+        # On weekend: Forex candidate must be blocked with weekend_closed
+        gate_fx = forex._evaluate_signal_gate("EURUSD", cand_fx, current_utc_hour=12, dxy_regime=None, is_weekend=True)
+        self.assertFalse(gate_fx["signal_ready"])
+        self.assertIn("weekend_closed", gate_fx["blocked_by"])
+
+        # On weekend: Crypto candidate must NOT be blocked with weekend_closed
+        gate_crypto = forex._evaluate_signal_gate("BTCUSD", cand_crypto, current_utc_hour=12, dxy_regime=None, is_weekend=True)
+        self.assertNotIn("weekend_closed", gate_crypto["blocked_by"])
+
 
 if __name__ == "__main__":
     unittest.main()

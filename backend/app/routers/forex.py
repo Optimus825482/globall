@@ -615,14 +615,24 @@ _TICK_CACHE: Dict[str, Dict[str, Any]] = {}
 _LAST_CACHE_TIME = 0.0
 
 
+def is_forex_weekend(now_dt: Optional[datetime.datetime] = None) -> bool:
+    """Forex, altın ve endeks piyasaları hafta sonu kapalı mı?
+    IC Markets ve global FX piyasaları Cuma 21:00 UTC'den Pazar 21:00 UTC'ye kadar kapalıdır.
+    Kripto pariteler (BTCUSD, ETHUSD, SOLUSD vb.) ise 7/24 kesintisiz açıktır.
+    """
+    now_utc = now_dt or datetime.datetime.now(datetime.timezone.utc)
+    current_hour = now_utc.hour + now_utc.minute / 60.0
+    weekday = now_utc.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
+    return (weekday == 4 and current_hour >= 21) or (weekday == 5) or (weekday == 6 and current_hour < 21)
+
+
 def _get_market_sessions() -> List[Dict[str, Any]]:
     """Determine which global forex trading sessions are currently active (UTC)."""
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     current_hour = now_utc.hour + now_utc.minute / 60.0
-    weekday = now_utc.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
 
     # Forex weekend market close check (Friday 21:00 UTC to Sunday 21:00 UTC)
-    is_weekend = (weekday == 4 and current_hour >= 21) or (weekday == 5) or (weekday == 6 and current_hour < 21)
+    is_weekend = is_forex_weekend(now_utc)
 
     sessions_def = [
         {"name": "Sydney", "flag": "🇦🇺", "open_utc": 21, "close_utc": 6, "city": "Sydney"},
@@ -4130,6 +4140,7 @@ def _evaluate_signal_gate(
     dxy_regime: Optional[Dict[str, Any]],
     has_open_position: bool = False,
     news_bias: Optional[Dict[str, Any]] = None,
+    is_weekend: bool = False,
 ) -> Dict[str, Any]:
     """Bir radar adayının otonom giriş kapılarından geçip geçmediğini değerlendirir.
 
@@ -4146,6 +4157,17 @@ def _evaluate_signal_gate(
     bir soğuma kalkanını yeniden başlatıp motoru kilitleyebilirdi.
     """
     reasons: List[str] = []
+
+    # Hafta sonu kapalı Forex & Emtia piyasası kontrolü (7/24 Kripto hariç)
+    sym_u = sym.upper()
+    is_crypto = (
+        sym_u in CANLI_WEEKEND_CRYPTO_SYMBOLS
+        or cand.get("category") == "crypto"
+        or "BTC" in sym_u
+        or "ETH" in sym_u
+    )
+    if is_weekend and not is_crypto:
+        reasons.append("weekend_closed")
 
     # NOT: `_AUTO_SETTINGS.allowed_symbols` (varsayılan: XAUUSD + BTCUSD) burada
     # KAPIDIR — o kısıt yalnızca özel BTC+Altın izleme sayfasına aittir. Genel
@@ -4276,6 +4298,7 @@ _GATE_LABELS: Dict[str, str] = {
     "news_opposing": "Ekonomik takvim verisine zıt yön (30 dk koruma aktif)",
     "spread_cost_too_high": "Spread hedef kârın %20'sinden yüksek (aşırı maliyet)",
     "crypto_quality": "Varlık kalite kalkanı (gövde/aşırı uzama/ADX yetersiz)",
+    "weekend_closed": "Hafta sonu tatili: Forex & Emtia piyasası kapalı (7/24 Kripto aktif)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -4284,7 +4307,7 @@ _GATE_LABELS: Dict[str, str] = {
 _MARKET_BLOCKERS = frozenset({
     "direction", "score", "spread", "spread_cost_too_high", "adx", "supertrend",
     "dxy", "major_session", "major_min_atr", "correlation",
-    "veri", "bayat", "bar_gap", "news_opposing", "crypto_quality",
+    "veri", "bayat", "bar_gap", "news_opposing", "crypto_quality", "weekend_closed",
 })
 
 # PERFORMANS (2026-10-08): /radar yanıtı için kısa TTL'li önbellek. Birden çok
@@ -4337,6 +4360,7 @@ async def get_forex_radar(use_cache: bool = True):
     ticks = await _generate_realistic_ticks()
     dxy_regime = get_dxy_regime()
     current_utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
+    weekend_now = is_forex_weekend()
 
     # Açık pozisyonu olan semboller (MT5 + paper + bekleyen emirler) — motorun
     # anti-duplicate kapısıyla aynı kaynak.
@@ -4494,6 +4518,7 @@ async def get_forex_radar(use_cache: bool = True):
             sym_u, base, current_utc_hour, dxy_regime,
             has_open_position=sym_u in active_syms,
             news_bias=news_bias_slot,
+            is_weekend=weekend_now,
         )
         base.update(gate)
         base["has_open_position"] = bool(sym_u in active_syms)
@@ -4539,7 +4564,7 @@ async def get_forex_radar(use_cache: bool = True):
         # `signals` = motora göre şu an işlem açılabilecek adaylar (radarın özü).
         "signals": signals,
         "active_symbols": list(active_syms),
-        "scan_note": _radar_scan_note(candidates, current_utc_hour),
+        "scan_note": _radar_scan_note(candidates, current_utc_hour, is_weekend=weekend_now),
         "sessions": _get_market_sessions(),
         "dxy": dxy_regime,
         "csm": csm_data,
@@ -4562,7 +4587,7 @@ async def get_forex_radar(use_cache: bool = True):
     return response
 
 
-def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
+def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int, is_weekend: bool = False) -> str:
     """Tarama durumunu tek cümleyle özetler — panelde canlı durum satırı.
 
     Sinyal YOKKEN en sık nedeni söyler; "piyasa kötü" ile "ayarın kapalı"yı
@@ -4576,6 +4601,16 @@ def _radar_scan_note(candidates: List[Dict[str, Any]], utc_hour: int) -> str:
         names = ", ".join(c["display"] for c in strong[:3])
         extra = f" (+{len(strong) - 3} daha)" if len(strong) > 3 else ""
         return f"{len(strong)} güçlü sinyal: {names}{extra}"
+
+    if is_weekend:
+        crypto_strong = [
+            c for c in candidates
+            if c["tier"] == "STRONG" and (c.get("category") == "crypto" or c.get("symbol", "").upper() in CANLI_WEEKEND_CRYPTO_SYMBOLS)
+        ]
+        if crypto_strong:
+            names = ", ".join(c["display"] for c in crypto_strong[:3])
+            return f"⚡ Hafta Sonu 7/24 Kripto Modu: {len(crypto_strong)} güçlü sinyal ({names}) — FX/Emtia kapalı."
+        return "⚡ Hafta Sonu 7/24 Kripto Modu Aktif: Forex, Altın ve Endeksler kapalı. 11 Kripto paritede kırılım ve pullback fırsatları taranıyor."
 
     counts: Dict[str, int] = {}
     for c in candidates:
@@ -6110,6 +6145,11 @@ async def _forex_auto_paper_loop():
             sessions = _get_market_sessions()
             now_ts = time.time()
             _AUTO_STATE["last_scan_time"] = now_ts
+            weekend_now = is_forex_weekend()
+            if weekend_now:
+                _AUTO_STATE["last_status"] = "Çalışıyor (7/24 Kripto Hafta Sonu Modu — FX & Emtia Kapalı)"
+            else:
+                _AUTO_STATE["last_status"] = "Çalışıyor (Canlı Piyasa Taranıyor)"
 
             # ---------------------------------------------------------------
             # 1. AÇIK POZİSYONLARI GÜNCELLE & SL/TP/TRAILING/BE DENETLE
@@ -6478,15 +6518,15 @@ async def _forex_auto_paper_loop():
                     )
                 continue
 
-            # Seans Filtresi Kontrolü
+            # Seans Filtresi Kontrolü (Hafta sonu Forex kapalıdır, ancak Kripto 7/24 açıktır)
             active_names = [s["name"] for s in sessions if s["active"]]
             any_session_active = len(active_names) > 0
-            if _AUTO_SETTINGS.session_filter and not any_session_active:
+            if not weekend_now and _AUTO_SETTINGS.session_filter and not any_session_active:
                 if now_ts - _LAST_SESSION_BLOCK_LOG_TIME > 120:
                     _LAST_SESSION_BLOCK_LOG_TIME = now_ts
                     _log_auto_decision(
                         "GATE",
-                        "Hafta sonu Forex piyasası kapalı. Yeni seans açılışı bekleniyor.",
+                        "Forex piyasası seans dışı. Yeni seans açılışı bekleniyor.",
                     )
                 continue
 
@@ -6522,7 +6562,15 @@ async def _forex_auto_paper_loop():
             ]
             if _mode_excl:
                 candidates = [c for c in candidates if str(c.get("symbol", "")).upper() not in _mode_excl]
+            # Hafta sonu modunda kapalı FX ve Emtia adayları taranmaz; yalnızca 7/24 aktif Kripto taranır
+            if weekend_now:
+                candidates = [
+                    c for c in candidates
+                    if str(c.get("symbol", "")).upper() in CANLI_WEEKEND_CRYPTO_SYMBOLS or c.get("category") == "crypto"
+                ]
             if _mode_syms:
+                if weekend_now:
+                    _mode_syms = {s for s in _mode_syms if s in CANLI_WEEKEND_CRYPTO_SYMBOLS}
                 for _m_sym in _mode_syms:
                     _m_t = ticks.get(_m_sym)
                     _m_tech = _TECHNICAL_CACHE.get(_m_sym) or {}
@@ -6625,7 +6673,10 @@ async def _forex_auto_paper_loop():
             # EMA+ADX geri-çekilme (M5) akışı (2026-10-08 canlıya alım — XAUUSD):
             # klasik + donchian akışları KORUNUR; bu üçüncü bir aday kaynağıdır.
             if _AUTO_SETTINGS.ema_adx_enabled:
-                for _e_sym in {s.upper() for s in (_AUTO_SETTINGS.ema_adx_symbols or [])}:
+                _ema_list = {s.upper() for s in (_AUTO_SETTINGS.ema_adx_symbols or [])}
+                if weekend_now:
+                    _ema_list = {s for s in _ema_list if s in CANLI_WEEKEND_CRYPTO_SYMBOLS}
+                for _e_sym in _ema_list:
                     _e_tech = _TECHNICAL_CACHE.get(_e_sym) or {}
                     _e_t = ticks.get(_e_sym)
                     if not _e_t or not _e_tech or not _e_tech.get("ema21") or not _e_tech.get("signal_bar_confirmed"):
@@ -6729,7 +6780,10 @@ async def _forex_auto_paper_loop():
                     ("5m", _AUTO_SETTINGS.s3_symbols_5m, "s3_5m"),
                     ("15m", _AUTO_SETTINGS.s3_symbols_15m, "s3_15m"),
                 ):
-                    for _s_sym in {s.upper() for s in (_s_syms or [])}:
+                    _s_syms_active = {s.upper() for s in (_s_syms or [])}
+                    if weekend_now:
+                        _s_syms_active = {s for s in _s_syms_active if s in CANLI_WEEKEND_CRYPTO_SYMBOLS}
+                    for _s_sym in _s_syms_active:
                         _s_tech = _S3_STATE.get(f"{_s_sym}|{_s_tf}")
                         _s_t = ticks.get(_s_sym)
                         if not _s_tech or not _s_t:
@@ -6827,7 +6881,10 @@ async def _forex_auto_paper_loop():
             # 31-sembol 50k bar testinde kanıtlanan: 3,597 işlem, WR %69.2, Net +$23,140.63.
             # 5M barlarda 3-bar gap tespiti + 8 bar mitigation + Akıllı Kalite Kalkanı (asset_quality_gate).
             if _AUTO_SETTINGS.fvg_pullback_enabled:
-                for _f_sym in {s.upper() for s in (_AUTO_SETTINGS.fvg_symbols or [])}:
+                _f_syms_active = {s.upper() for s in (_AUTO_SETTINGS.fvg_symbols or [])}
+                if weekend_now:
+                    _f_syms_active = {s for s in _f_syms_active if s in CANLI_WEEKEND_CRYPTO_SYMBOLS}
+                for _f_sym in _f_syms_active:
                     _f_t = ticks.get(_f_sym)
                     if not _f_t:
                         continue
@@ -6929,7 +6986,7 @@ async def _forex_auto_paper_loop():
             # kutu-dışı kapanışta giriş. SL = kutu × frac, TP = SL × R. L30 replay:
             # 19 sembol pozitif; XAU +$39, GBPCHF +$31, EURCAD +$30 (BE'li profil).
             # Kutu/mum köprü broker verisinden (fallback Yahoo) — S3 bar kaynağı ortak.
-            if _AUTO_SETTINGS.lb_enabled:
+            if _AUTO_SETTINGS.lb_enabled and not weekend_now:
                 _lb_now = datetime.datetime.now(datetime.timezone.utc)
                 _lb_day = _lb_now.toordinal()
                 _lb_hour = _lb_now.hour
@@ -7041,7 +7098,7 @@ async def _forex_auto_paper_loop():
             # sabit TP YOK (chandelier trail taşır). Replay 2026-10-12: XAUUSD+US30 beş
             # pencerenin beşinde pozitif (60g +$256 PF 2.16 WR %89.5; slip 2p/bacakta PF 1.76).
             # Bar kaynağı S3/LB ile ortak (köprü broker mumları, fallback Yahoo).
-            if _AUTO_SETTINGS.ls_enabled:
+            if _AUTO_SETTINGS.ls_enabled and not weekend_now:
                 _ls_now = datetime.datetime.now(datetime.timezone.utc)
                 _ls_day = _ls_now.toordinal()
                 _ls_min = _ls_now.hour * 60 + _ls_now.minute
@@ -7157,7 +7214,10 @@ async def _forex_auto_paper_loop():
                 _refresh_squeeze_kc_state(ticks)
                 _skc_allowed = {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
                 _skc_day = datetime.datetime.now(datetime.timezone.utc).toordinal()
-                for _skc_sym in {s.upper() for s in (_AUTO_SETTINGS.squeeze_kc_symbols or [])}:
+                _skc_syms_active = {s.upper() for s in (_AUTO_SETTINGS.squeeze_kc_symbols or [])}
+                if weekend_now:
+                    _skc_syms_active = {s for s in _skc_syms_active if s in CANLI_WEEKEND_CRYPTO_SYMBOLS}
+                for _skc_sym in _skc_syms_active:
                     _skc_tech = _SQUEEZE_KC_STATE.get(_skc_sym)
                     _skc_t = ticks.get(_skc_sym)
                     _skc_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _skc_sym), None)
@@ -7234,7 +7294,7 @@ async def _forex_auto_paper_loop():
             # Periyodik Canlı Tarama Özeti (Her 20 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 20.0:
                 _LAST_SCAN_PULSE_TIME = now_ts
-                active_str = ", ".join(active_names) if active_names else "24/5 Açık"
+                active_str = "7/24 Kripto (Forex/Emtia Kapalı)" if weekend_now else (", ".join(active_names) if active_names else "24/5 Açık")
                 if candidates:
                     top_3 = ", ".join([f"{c['display']} ({strategy_display_label(c.get('entry_source'))} Skor:{c['score']:.0f} {c['action']})" for c in candidates[:3]])
                     unique_strats = list(dict.fromkeys([strategy_display_label(c.get("entry_source")) for c in candidates]))
@@ -7246,18 +7306,19 @@ async def _forex_auto_paper_loop():
                         active_strats.append("FVG Pullback")
                     if _AUTO_SETTINGS.s3_enabled:
                         active_strats.append("S3 SuperTrend")
-                    if _AUTO_SETTINGS.lb_enabled:
+                    if _AUTO_SETTINGS.lb_enabled and not weekend_now:
                         active_strats.append("London Breakout")
                     if _AUTO_SETTINGS.ema_adx_enabled:
                         active_strats.append("EMA+ADX M5")
-                    if _AUTO_SETTINGS.ls_enabled:
+                    if _AUTO_SETTINGS.ls_enabled and not weekend_now:
                         active_strats.append("London Sign")
                     if _AUTO_SETTINGS.squeeze_kc_enabled:
                         active_strats.append("Keltner Squeeze M15")
-                    if _AUTO_SETTINGS.mode_symbols:
+                    if _AUTO_SETTINGS.mode_symbols and not weekend_now:
                         active_strats.append("Donchian ADX")
-                    active_strats.append("M1/M5 Çoklu Radar")
-                    scan_msg = f"🔍 Piyasa Taraması: {len(_AUTO_SETTINGS.allowed_symbols)} parite taranıyor | Aktif Stratejiler: [{' · '.join(active_strats)}] (Seanslar: {active_str})"
+                    active_strats.append("M1/M5 Çoklu Radar" if not weekend_now else "7/24 Kripto Radar")
+                    _allowed_cnt = len(CANLI_WEEKEND_CRYPTO_SYMBOLS) if weekend_now else len(_AUTO_SETTINGS.allowed_symbols)
+                    scan_msg = f"🔍 Piyasa Taraması: {_allowed_cnt} parite taranıyor | Aktif Stratejiler: [{' · '.join(active_strats)}] (Seanslar: {active_str})"
 
                 _log_auto_decision(
                     "SCAN",
@@ -7265,9 +7326,9 @@ async def _forex_auto_paper_loop():
                     strategy="M1_M5_RADAR_SCALPER",
                     strategy_label="M1/M5 Çoklu Radar",
                 )
-                # XAU/USD tarama özeti: her taramada altının durumu tek temiz cümleyle stream'e düşer
+                # XAU/USD tarama özeti: hafta içi her taramada altının durumu tek temiz cümleyle stream'e düşer (hafta sonu kapalı)
                 gold_tick = ticks.get("XAUUSD")
-                if gold_tick:
+                if gold_tick and not weekend_now:
                     if gold_tick.get("macd_verdict") == "NÖTR (Veri Bekleniyor)":
                         gold_msg = "🔍 [XAU/USD] Piyasa verisi alınamıyor — sinyal üretilemiyor"
                     else:
