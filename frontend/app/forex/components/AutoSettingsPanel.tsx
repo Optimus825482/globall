@@ -17,6 +17,7 @@ export interface AutoSettings {
   loss_streak_cooldown_sec?: number;
   be_trigger_r_mult?: number;
   max_open_positions: number;
+  max_positions_per_symbol?: number;
   min_score: number;
   tp_pips: number;
   sl_pips: number;
@@ -343,7 +344,8 @@ export default function AutoSettingsPanel({
         min_score: num(form.min_score, appliedSettings.min_score || 75.0),
         btc_min_score: num(form.btc_min_score, appliedSettings.btc_min_score ?? 76.0),
         max_spread_pips: num(form.max_spread_pips, appliedSettings.max_spread_pips || 10.0),
-        max_open_positions: Math.max(1, Math.round(num(form.max_open_positions, 99))),
+        max_open_positions: Math.max(1, Math.min(99, Math.round(num(form.max_open_positions, 99)))),
+        max_positions_per_symbol: Math.max(1, Math.min(5, Math.round(num(form.max_positions_per_symbol, 2)))),
         gold_cooldown_sec: Math.max(60, num(form.gold_cooldown_sec, 60.0)),
         session_filter: Boolean(form.session_filter),
         allowed_symbols: form.allowed_symbols && form.allowed_symbols.length > 0 ? form.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "NAS100", "AUDCAD"],
@@ -543,9 +545,19 @@ export default function AutoSettingsPanel({
                 type="number" min="1" max="99"
                 value={form.max_open_positions ?? 99}
                 onChange={(e) => setIntField("max_open_positions", e.target.value)}
-                className={`${inputCls} text-white`}
+                className={`${inputCls} text-white font-semibold`}
               />
               <span className="text-[10px] text-bunker-muted">Tüm semboller toplamı</span>
+            </div>
+            <div>
+              <label className="text-[11px] text-bunker-muted block mb-1">Sembol Başına İşlem (Piramit):</label>
+              <input
+                type="number" min="1" max="5"
+                value={form.max_positions_per_symbol ?? 2}
+                onChange={(e) => setIntField("max_positions_per_symbol", e.target.value)}
+                className={`${inputCls} text-emerald-400 font-semibold`}
+              />
+              <span className="text-[10px] text-bunker-muted">Aynı sembolde max işlem (1: Tek, 2-5: Kârlı ekleme)</span>
             </div>
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">Altın Soğuma (sn):</label>

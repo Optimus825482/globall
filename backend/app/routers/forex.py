@@ -8705,7 +8705,7 @@ async def update_forex_auto_paper_settings(payload: Union[ForexAutoPaperSettings
 
     _log_auto_decision(
         "SYSTEM",
-        f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p, Trailing: {new_settings.trailing_stop_pips}p, Min Skor: {new_settings.min_score}",
+        f"Parametreler güncellendi: Risk: %{new_settings.risk_per_trade_pct}, SL: {new_settings.sl_pips}p, TP: {new_settings.tp_pips}p, BE: {new_settings.breakeven_pips}p, Trailing: {new_settings.trailing_stop_pips}p, Min Skor: {new_settings.min_score}, Max Açık: {new_settings.max_open_positions}, Sembol Başına: {new_settings.max_positions_per_symbol}",
     )
     _invalidate_status_cache()
     return {"status": "ok", "settings": _AUTO_SETTINGS.model_dump()}
