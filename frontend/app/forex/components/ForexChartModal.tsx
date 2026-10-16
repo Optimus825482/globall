@@ -15,16 +15,18 @@ export interface ForexCandidateMeta {
   score: number;
   trend: string;
   action: "BUY" | "SELL" | "HOLD";
-  rsi_15m: number;
+  /** 5 dk RSI. Eski yanıtta yalnız `rsi_15m` olabilir; tik yoksa gelmez. */
+  rsi_15m?: number | null;
   macd_verdict: string;
   cmo?: number;
   cci?: number;
   adx: number;
   supertrend_dir: number;
   htf_trend: string;
-  pip_target: number;
-  stop_loss_pips: number;
-  risk_reward: string;
+  /** Tik yoksa backend bu alanları göndermeyebilir. */
+  pip_target?: number | null;
+  stop_loss_pips?: number | null;
+  risk_reward?: string | number | null;
   atr_pips: number;
   tv_symbol?: string;
   tier: "STRONG" | "ACTIVE" | "WATCH" | "WAIT";
@@ -69,9 +71,9 @@ export default function ForexChartModal({
           atrPips={candidate.atr_pips}
           htfTrend={candidate.htf_trend}
           macdVerdict={candidate.macd_verdict}
-          riskReward={candidate.risk_reward}
-          pipTarget={candidate.pip_target}
-          stopLossPips={candidate.stop_loss_pips}
+          riskReward={candidate.risk_reward == null ? undefined : String(candidate.risk_reward)}
+          pipTarget={candidate.pip_target ?? undefined}
+          stopLossPips={candidate.stop_loss_pips ?? undefined}
           separatePageHref={`/forex/charts?symbol=${candidate.tv_symbol || candidate.symbol}`}
           onOpenLotCalculator={onOpenLotCalculator}
           onClose={onClose}
