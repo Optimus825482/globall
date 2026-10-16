@@ -374,9 +374,9 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         OOS n≥100 barını geçemedi → kanıt yok, çıkarıldılar.
         """
         expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
-                    "GBPUSD", "AUDUSD", "USDJPY", "USDCHF"]
+                    "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 10)
+        self.assertEqual(len(cfg.allowed_symbols), 11)
         for s in expected:
             self.assertIn(s, cfg.allowed_symbols)
         # Panel-dürüstlüğü DEĞİŞMEZİ: her izinli sembol gerçekten işlenebilir olmalı
@@ -386,7 +386,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         # Kanıtsız kroslar izin listesinin dışında (2026-10-13: NAS100 EKLENDİ — MT5 'USTEC';
         # USTEC alias'ı FOREX_SYMBOLS'te olmadığı için hâlâ dışarıda)
         for s in ("NZDJPY", "AUDNZD", "GBPCHF", "EURCAD", "CHFJPY", "CADJPY",
-                  "GBPNZD", "GBPAUD", "GBPCAD", "AUDCAD", "EURAUD", "CADCHF",
+                  "GBPNZD", "GBPAUD", "GBPCAD", "EURAUD", "CADCHF",
                   "AUDCHF", "EURUSD", "USDCAD", "NZDUSD",
                   "ETHUSD", "USTEC", "USOIL"):
             self.assertNotIn(s, cfg.allowed_symbols)
@@ -1559,7 +1559,7 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(forced_off.s3_enabled)
         self.assertFalse(forced_off.ls_enabled)
         self.assertEqual(list(forex.CANLI_CLASSIC_SYMBOLS),
-                         ["XAUUSD", "BTCUSD", "US30", "AUDUSD"])
+                         ["XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD"])
 
         # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
         self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.3)

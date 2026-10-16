@@ -87,7 +87,7 @@ const makeSlots = (symbol: string, intervals: string[], indicators: ChartIndicat
 
 const FALLBACK_SYMBOLS = [
     "EURUSD", "XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "NAS100", "US30",
-    "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
+    "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "AUDCAD",
 ];
 
 // Yerel kalıcılık anahtarları. ESKİ zengin sayfanın `scalper_chart_*`

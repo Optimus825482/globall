@@ -117,7 +117,7 @@ function SettingsPageInner() {
             s.allowed_symbols = [
               "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
               "USDCAD", "NZDUSD", "GBPJPY", "EURJPY", "BTCUSD",
-              "NAS100", "US30", "XAUUSD"
+              "NAS100", "US30", "XAUUSD", "AUDCAD"
             ];
           }
           setAppliedForexSettings(s);

@@ -8,7 +8,7 @@ export { formatPrice, pricePrecision };
 
 export const FALLBACK_SYMBOLS = [
     "EURUSD", "XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "NAS100", "US30",
-    "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "BTCTRY", "ETHTRY"
+    "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "AUDCAD", "BTCTRY", "ETHTRY"
 ];
 // 2026-10-14: "3m" eklendi — grafik sayfasındaki TF seti (1-3-5-15-30-H1-H4-D1)
 // ile tek kaynak olması için. Etiketler de o setin etiketleriyle hizalandı.

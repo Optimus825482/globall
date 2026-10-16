@@ -42,6 +42,7 @@ const ALL_SYMBOLS = [
   // JPY kros pariteleri (donchian modu sembolleri — 2026-10-07 eklendi)
   { sym: "GBPJPY", label: "GBP/JPY" },
   { sym: "EURJPY", label: "EUR/JPY" },
+  { sym: "AUDCAD", label: "AUD/CAD" },
   { sym: "BTCUSD", label: "Bitcoin (BTC)" },
   // ETH/USD ve WTI Oil 2026-10-07'de forex evreninden çıkarıldı (kullanıcı
   // kararı) — bu listeden kaldırıldılar ki tekrar açılamasınlar.
@@ -56,6 +57,7 @@ const ALL_SYMBOLS = [
 // (panel yalanı). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi →
 // listeden çıkarıldılar. Yeni çift eklemek için önce backend `FOREX_SYMBOLS`'e
 // + replay kanıtına ihtiyaç var.
+// 2026-10-16: AUDCAD klasik radara alındı (7 gün MT5, n=130, +56.40, PF 1.42).
 
 const ALL_SYMBOL_KEYS = ALL_SYMBOLS.map((s) => s.sym);
 

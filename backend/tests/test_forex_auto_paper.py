@@ -51,7 +51,8 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         res = await forex.update_forex_auto_paper_settings(new_cfg)
         self.assertEqual(res["status"], "ok")
         self.assertEqual(res["settings"]["risk_per_trade_pct"], 1.5)
-        self.assertEqual(res["settings"]["allowed_symbols"], ["EURUSD", "GBPUSD", "XAUUSD"])
+        # AUDCAD klasik sabitidir; panel listesi bunu silemez.
+        self.assertEqual(res["settings"]["allowed_symbols"], ["EURUSD", "GBPUSD", "XAUUSD", "AUDCAD"])
 
     async def test_auto_paper_toggle_and_reset(self):
         # Toggle ON

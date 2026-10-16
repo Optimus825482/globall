@@ -1831,6 +1831,10 @@ def _compute_pip_val_overrides(data: Dict[str, List[Tuple]]) -> Dict[str, float]
                     out[sym] = round(1000.0 / usdjpy, 3)
             elif quote != "USD":
                 q = _avg(f"{quote}USD")
+                if q is None:
+                    inv = _avg(f"USD{quote}")
+                    if inv and inv > 0:
+                        q = 1.0 / inv
                 if q:
                     out[sym] = round(10.0 * q, 3)
         except Exception:
@@ -2176,11 +2180,14 @@ def close_position(book: Book, pos: SimPos, reason: str, exit_price: float, clos
     total = round(pnl_usd + pos.partial_realized_usd, 2)
     book.balance = round(book.balance + total, 2)
     book.realized = round(book.realized + total, 2)
-    st = book.per_symbol.setdefault(pos.symbol, {"n": 0, "wins": 0, "pnl": 0.0})
+    st = book.per_symbol.setdefault(pos.symbol, {"n": 0, "wins": 0, "pnl": 0.0, "gw": 0.0, "gl": 0.0})
     st["n"] = int(st["n"]) + 1
     st["pnl"] = round(st["pnl"] + total, 2)
     if total >= 0:
         st["wins"] = int(st["wins"]) + 1
+        st["gw"] = round(float(st.get("gw", 0.0)) + total, 2)
+    else:
+        st["gl"] = round(float(st.get("gl", 0.0)) + abs(total), 2)
     book.closed.append({
         "symbol": pos.symbol, "direction": pos.direction, "lots": pos.lots,
         "pnl_usd": total, "reason": reason, "trail": pos.trail_active,

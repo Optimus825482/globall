@@ -148,6 +148,20 @@ FOREX_SYMBOLS = [
         "tv_symbol": "FX:EURJPY",
         "default_price": 168.420,
     },
+    # 2026-10-16: klasik radar, 18 krosun 7 günlük MT5 M5 testinde tek kalın eşleşme.
+    # AUDCAD n=130, net +56.40, PF 1.42. Diğer kroslar eşiği (net>0, PF>=1.2, n>=8) geçemedi.
+    {
+        "symbol": "AUDCAD",
+        "display": "AUD/CAD",
+        "name": "Australian Dollar / Canadian Dollar",
+        "category": "cross",
+        "base": "AUD",
+        "quote": "CAD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "FX:AUDCAD",
+        "default_price": 0.91000,
+    },
     # Commodities / Precious Metals
     {
         "symbol": "XAUUSD",
@@ -224,7 +238,7 @@ FOREX_SYMBOLS = [
 # radar satırı hiç üretemiyorlardı; liste artık tick üretebilen evrenin alt kümesi.
 # GBPUSD panelde görünür ama klasik emir açmaz: emir evreni CANLI_CLASSIC_SYMBOLS.
 RADAR_SCAN_SYMBOLS = {
-    "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD",
+    "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "AUDCAD",
 }
 
 _RETIRED_FOREX_SYMBOLS = [
@@ -1859,6 +1873,17 @@ def get_symbol_trading_specs(
         eff_be_pips = max(25.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
+    elif clean_sym == "AUDCAD":
+        # CAD kotasyon: 1 pip = 10 CAD = yaklaşık 10/USDCAD USD. 2026-10-16 replay ortalaması 7.03.
+        pip_size = 0.0001
+        mult = 1.0
+        digits = 5
+        pip_val = 7.0
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
     else:
         # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
         pip_size = 0.0001        # 1 pip = 0.0001 (10 point)
@@ -3354,7 +3379,7 @@ _GATE_LABELS: Dict[str, str] = {
     "supertrend": "SuperTrend yönüyle çelişiyor",
     "correlation": "Korelasyon kalkanı: aynı yönde yoğunlaşma",
     "open_position": "Bu sembolde zaten açık pozisyon var",
-    "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD)",
+    "classic_scope": "Klasik radar bu sembolde kapalı (yalnız XAU, BTC, US30, AUD, AUDCAD)",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -3821,7 +3846,7 @@ CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
 # Klasik net +522; bunun +484'ü XAU, kalanı BTC +80 / US30 +85 / AUD +44.
 # GBPUSD, JPY krosu ve diğer majörler klasik defterde eksi. NAS100 klasik düz
 # (+8) ama EMA+ADX ve Squeeze orada duruyor — allowed_symbols DARALTILMAZ.
-CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD")
+CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
 # Aynı pencere: S3 −12.85 (PF 0.90), London Sign −40.16 (PF 0.27, WR %37.5).
 # Dosya ve panel bu iki anahtarı geri açamasın diye zorlanır.
 CANLI_S3_ENABLED = False
@@ -3840,6 +3865,10 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
     settings.squeeze_kc_symbols = list(CANLI_SQUEEZE_KC_SYMBOLS)
     settings.s3_enabled = CANLI_S3_ENABLED
     settings.ls_enabled = CANLI_LS_ENABLED
+    # AUDCAD klasik listede. Ayar dosyası eski 10'lu listeyi taşısa da kapı açık kalsın.
+    _allowed = [str(s).upper() for s in (settings.allowed_symbols or [])]
+    if "AUDCAD" not in _allowed:
+        settings.allowed_symbols = list(settings.allowed_symbols or []) + ["AUDCAD"]
     return settings
 
 
@@ -3922,7 +3951,7 @@ class ForexAutoPaperSettings(BaseModel):
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
-                                 "GBPUSD", "AUDUSD", "USDJPY", "USDCHF"],
+                                 "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"],
         description="İşleme izin verilen pariteler. 2026-10-12: 13 kros (NZDJPY, AUDNZD, GBPCHF, EURCAD, CHFJPY, CADJPY, GBPNZD, GBPAUD, GBPCAD, AUDCAD, EURAUD, CADCHF, AUDCHF) DÜŞÜRÜLDÜ — bunlar FOREX_SYMBOLS'te olmadığı için tick üretilmiyor, dolayısıyla panelde 'seçili' görünseler de ASLA işlem açamıyorlardı (hayalet). İzole 2-pencere replay'de hiçbiri OOS n≥100 barını geçemedi (en yüksek n=74) → kanıt yok, eklenmedi. 2026-10-13: NAS100 (= MT5 'USTEC', Nasdaq 100; bkz. mt5_bridge SYMBOL_ALIAS_MAP) EKLENDİ — kullanıcı kararı 'USTEC tüm kollarda aç'; tam-canlı-defter A/B: W1 OOS +$207 / W2 −$56 (klasik kol tek başına işaret dönüyor, ama LS/EMA+ADX/Donchian kollarıyla birlikte net pozitif). DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
     )
     mode_symbols: List[str] = Field(

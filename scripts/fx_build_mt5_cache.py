@@ -48,13 +48,28 @@ def server_utc_offset_s() -> int:
     return 0
 
 
-def fetch_m5(sym: str, start: dt.datetime, end: dt.datetime, offset: int):
+_TF = {
+    "m1": "TIMEFRAME_M1",
+    "m3": "TIMEFRAME_M3",
+    "m5": "TIMEFRAME_M5",
+    "m15": "TIMEFRAME_M15",
+}
+
+
+def _mt5_timeframe(name: str) -> int:
+    attr = _TF.get(name.lower())
+    if attr is None or not hasattr(mt5, attr):
+        raise SystemExit(f"[HATA] MT5 zaman dilimi yok: {name}")
+    return getattr(mt5, attr)
+
+
+def fetch_m5(sym: str, start: dt.datetime, end: dt.datetime, offset: int, timeframe: int):
     info = mt5.symbol_info(sym)
     if info is None:
         return None
     if not info.visible:
         mt5.symbol_select(sym, True)
-    rates = mt5.copy_rates_range(sym, mt5.TIMEFRAME_M5, start, end)
+    rates = mt5.copy_rates_range(sym, timeframe, start, end)
     if rates is None or len(rates) == 0:
         return None
     bars = []
@@ -90,7 +105,9 @@ def main():
     ap.add_argument("--start", required=True, help="UTC baslangic (YYYY-MM-DD)")
     ap.add_argument("--end", required=True, help="UTC bitis, dahil degil (YYYY-MM-DD)")
     ap.add_argument("--symbols", required=True, help="Virgullu MT5 sembolleri (XAUUSD,BTCUSD,...)")
-    ap.add_argument("--dst", required=True, help="Cikis 5m onbellek yolu")
+    ap.add_argument("--tf", default="m5", choices=["m1", "m3", "m5", "m15"],
+                    help="MT5 mum periyodu (varsayilan m5)")
+    ap.add_argument("--dst", required=True, help="Cikis onbellek yolu")
     ap.add_argument("--dst-m15", default="", help="Cikis 15m onbellek yolu (bos = uretilmez)")
     args = ap.parse_args()
 
@@ -99,7 +116,8 @@ def main():
         sys.exit(1)
     try:
         offset = server_utc_offset_s()
-        print(f"[MT5] sunucu↔UTC offset = {offset}s ({offset/3600:.1f}h)")
+        timeframe = _mt5_timeframe(args.tf)
+        print(f"[MT5] sunucu↔UTC offset = {offset}s ({offset/3600:.1f}h) | tf={args.tf}")
         start = dt.datetime.strptime(args.start, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
         end = dt.datetime.strptime(args.end, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
         # Broker zaman ekseninde iste: UTC [start,end) -> broker [start+off, end+off)
@@ -108,13 +126,13 @@ def main():
 
         data5 = {}
         for sym in [s.strip().upper() for s in args.symbols.split(",") if s.strip()]:
-            bars = fetch_m5(sym, b_start, b_end, offset)
+            bars = fetch_m5(sym, b_start, b_end, offset, timeframe)
             if not bars:
                 print(f"  {sym:8s} VERI YOK (atlanıyor)")
                 continue
             data5[sym] = bars
             f = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
-            print(f"  {sym:8s} {len(bars):>6} M5  {f(bars[0][0])} -> {f(bars[-1][0])}")
+            print(f"  {sym:8s} {len(bars):>6} {args.tf.upper()}  {f(bars[0][0])} -> {f(bars[-1][0])}")
 
         os.makedirs(os.path.dirname(os.path.abspath(args.dst)), exist_ok=True)
         with open(args.dst, "w", encoding="utf-8") as fh:
