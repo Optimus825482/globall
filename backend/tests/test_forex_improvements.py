@@ -680,9 +680,9 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.correlation_guard)
         self.assertTrue(cfg.atr_exit_enabled)
         self.assertTrue(cfg.partial_tp_enabled)
-        # ADX kalkanı KAPALI (2026-10-06 30g replay eğri taraması: KAPALI en iyi —
-        # seans+minATR+EV kapıları chop kontrolünü devraldı)
-        self.assertFalse(cfg.adx_filter_enabled)
+        # ADX testere kalkanı AÇIK (2026-10-17 kararı: ADX < 20 testerede dinlen — 588 gereksiz işlemi ve -$394 zararı engeller)
+        self.assertTrue(cfg.adx_filter_enabled)
+        self.assertEqual(cfg.adx_min, 20.0)
         self.assertTrue(cfg.supertrend_filter_enabled)
         # TP-iptal canlı VARSAYILAN AÇIK (2026-10-09 kararı: IS/OOS/OOS2/F1 dört pencerede
         # işaret-tutarlı tek kazanan, net + maxDD iyi). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false

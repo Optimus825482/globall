@@ -133,7 +133,7 @@ TUN_SL_ATR_MULT = 1.5
 TUN_TP_ATR_MULT = 1.4
 TUN_RR_FLOOR = 1.5
 TUN_HEADROOM_FOREX = 3.5
-TUN_ADX_MIN = 0.0           # 0 = ADX kalkanı kapalı
+TUN_ADX_MIN = 20.0           # 20.0 = Testere/Choppy kalkanı (ADX < 20'de dinlen)
 TUN_ADX_MIN_SYMS = ""       # Boş = ADX kalkanı TÜM sembollere; "BTCUSD,US30" gibi liste = yalnız bu sembollere (2026-10-10 sinyal kalitesi süpürmesi)
 TUN_ADX_HALFLOT = 0.0       # >0: ADX eşiği altındaki adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5 = yarım lot; A/B/C sinyal sınıflandırması)
 TUN_CLOSE_CONFIRM = False   # True: aday hemen açılmaz; SONRAKİ taze bar sinyal yönünde kapanırsa teyit barının kapanışından girilir (2026-10-10 kapanış-teyidi testi)
@@ -3759,7 +3759,7 @@ def main():
     parser.add_argument("--tp-mult", type=float, default=1.4)
     parser.add_argument("--rr-floor", type=float, default=1.5)
     parser.add_argument("--headroom", type=float, default=3.5)
-    parser.add_argument("--adx-min", type=float, default=0.0, help="ADX eşiği (0 = kapalı)")
+    parser.add_argument("--adx-min", type=float, default=20.0, help="ADX eşiği (varsayılan 20.0: testere kalkanı)")
     parser.add_argument("--adx-syms", default="", help="ADX kalkanını yalnız bu sembollere uygula (virgüllü; boş = tümü)")
     parser.add_argument("--adx-halflot", type=float, default=0.0, help=">0: ADX eşiği altı adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5)")
     parser.add_argument("--close-confirm", action="store_true", help="Kapanış teyidi: aday sonraki barın yön onayı bekler, giriş onay barının kapanışından")

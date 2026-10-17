@@ -1647,22 +1647,20 @@ def ev_guard_decision(stats: Dict[str, Any], min_samples: int, max_win_rate: flo
 def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -> Tuple[int, bool]:
     """Seri-SL sigortası sayacı (saf fonksiyon — test edilebilir).
 
-    Kullanıcı kuralı: aynı sembolde arka arkaya N kez tam-SL veya zararla kapanan işlem
+    Kullanıcı kuralı: aynı sembolde arka arkaya N kez tam-SL ile zararla kapanan işlem
     olursa sembol kısa süreliğine YENİ giriş almaz (normal cooldown'dan bağımsız), süre
     bitince normal değerlendirme devam eder. Kazançla kapanış seriyi sıfırlar.
 
     Kurallar:
-      - pnl > 0.10 → seri sıfırlanır (BE/trailing kazançları da seriyi bozar).
-      - `SL_HIT` veya pnl <= -1.0 (TP ve BE hariç) → seri 1 artar.
+      - pnl > 0 → seri sıfırlanır (BE/trailing kazançları da seriyi bozar).
+      - `SL_HIT` + pnl < 0 → seri 1 artar. BE/trailing çıkışları pnl < 0 üretemez
+        (SL hep giriş üstünde kilitlenir), yani "SL ile zarar" tam-SL kaybıdır.
       - Sayı `limit`e ulaşınca (0, True) döner: soğuma tetiklenir, sayaç sıfırdan başlar.
       - limit <= 0 → mekanizma kapalı; pnl==0 veya diğer nedenler sayacı değiştirmez.
     """
-    if pnl_usd > 0.10:
+    if pnl_usd > 0:
         return 0, False
-    if limit <= 0 or pnl_usd >= 0:
-        return streak, False
-    is_loss = (reason == "SL_HIT") or (pnl_usd <= -1.0 and reason not in ("TP_HIT", "BE_HIT"))
-    if not is_loss:
+    if limit <= 0 or pnl_usd >= 0 or reason != "SL_HIT":
         return streak, False
     streak += 1
     if streak >= limit:
@@ -2769,7 +2767,7 @@ def get_atr_exit_levels(
     atr_pips: Optional[float],
     sl_pips: float,
     tp_pips: float,
-    sl_atr_mult: float = 1.5,
+    sl_atr_mult: float = 1.1,
     tp_atr_mult: float = 1.4,
     rr_floor: float = 1.5,
 ) -> Dict[str, float]:
@@ -4923,8 +4921,8 @@ class ForexAutoPaperSettings(BaseModel):
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
     partial_tp_enabled: bool = Field(True, description="Kısmi kâr alma: ilk hedefte %50 pozisyon kapatılır, SL başabaş kârına çekilir")
-    adx_filter_enabled: bool = Field(False, description="ADX trend gücü kalkanı (2026-10-06 30g replay: tüm eğri tarandı, KAPALI en iyi — +$3.935/maxDD $189; seans+minATR+EV kapıları chop kontrolünü devraldı. Panelden tekrar açılabilir)")
-    adx_min: float = Field(28.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (yalnız adx_filter_enabled=True iken etkin)")
+    adx_filter_enabled: bool = Field(True, description="ADX trend gücü / testere kalkanı: ADX < 20.0 olduğunda testere/yatay rejimde işlem açılmaz. Canlı varsayılan AÇIK (2026-10-17: 588 testere işlemini ve -$394 zararı engeller).")
+    adx_min: float = Field(20.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (Varsayılan 20.0: Testere/Choppy filtresi)")
     supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
     ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
     require_mt5_connection: bool = Field(True, description="MT5 köprüsü bağlı değilken YENİ işlem açılmaz (paper'a sessiz kayma + gerçek MT5 pozisyonunun yanlışlıkla kapanması biter — #7). False yapılırsa eski davranış: köprü yokken paper motoru devreye girer.")
@@ -8028,7 +8026,7 @@ async def _forex_auto_paper_loop():
                             atr_pips, spec["sl_pips"], spec["tp_pips"],
                             sl_atr_mult=_AUTO_SETTINGS.crypto_sl_atr_mult)
                     else:
-                        atr_levels = get_atr_exit_levels(atr_pips, spec["sl_pips"], spec["tp_pips"])
+                        atr_levels = get_atr_exit_levels(atr_pips, spec["sl_pips"], spec["tp_pips"], sl_atr_mult=1.5)
                     sl_pips = atr_levels["sl_pips"]
                     tp_pips = atr_levels["tp_pips"]
                     if _AUTO_SETTINGS.partial_tp_enabled:
