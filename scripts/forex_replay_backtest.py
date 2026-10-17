@@ -2930,14 +2930,18 @@ def run_fade_engine(data: Dict[str, List[Tuple]], entry_start_ts: Optional[float
 def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional[float] = None,
                entry_end_ts: Optional[float] = None, symbol_filter: Optional[set] = None,
                add_symbols: Optional[set] = None,
-               exclude_symbols: Optional[set] = None) -> Dict[str, Any]:
+               exclude_symbols: Optional[set] = None,
+               all_symbols: bool = False) -> Dict[str, Any]:
     # Ek metrikler: NEW defteri için bar-bazlı özkaynak örnekleme (maks. düşüş için)
     eq_ts: List[float] = []
     eq_new: List[float] = []
     last_close: Dict[str, float] = {}
     # Yalnızca canlı motorun izin listesindeki semboller (SPX500/XAGUSD/USOIL işlem yapmaz);
     # --add-symbols ile test adayları eklenebilir (canlı allowed_symbols'a dokunmaz)
-    allowed = set(forex.ForexAutoPaperSettings().allowed_symbols)
+    if all_symbols:
+        allowed = {s.upper() for s in data if s != "DXY"}
+    else:
+        allowed = set(forex.ForexAutoPaperSettings().allowed_symbols)
     if symbol_filter:
         allowed &= {s.upper() for s in symbol_filter}
     if add_symbols:
@@ -3773,6 +3777,7 @@ def main():
     parser.add_argument("--arm-symbols", default="",
                         help="Çoklu-kol sembol tarifi: 's3_5m=XAUUSD;s3_15m=XAUUSD,BTCUSD,US30,GBPUSD;ema_adx_pullback=XAUUSD;london_breakout=XAUUSD,GBPUSD,USDJPY,BTCUSD,USDCHF,US30;donchian_adx=XAUUSD'. Canlı varsayılanları birebir budur.")
     parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
+    parser.add_argument("--all-symbols", action="store_true", help="Tüm veri kümesindeki sembollerde çalış (allowed_symbols kısıtını kaldır)")
     parser.add_argument("--balance", type=float, default=10000.0, help="Başlangıç bakiyesi USD")
     parser.add_argument("--min-score", type=float, default=75.0)
     parser.add_argument("--sl-mult", type=float, default=1.5)
@@ -4263,7 +4268,8 @@ def main():
             report["variants"]["FADE"] = run_fade_engine(data, entry_start_ts, entry_end_ts)
     else:
         report = run_replay(data, args.days, entry_start_ts=entry_start_ts, entry_end_ts=entry_end_ts,
-                            symbol_filter=sym_filter, add_symbols=add_syms, exclude_symbols=excl_syms)
+                            symbol_filter=sym_filter, add_symbols=add_syms, exclude_symbols=excl_syms,
+                            all_symbols=getattr(args, "all_symbols", False))
     report["config"] = cfg_str
     print(f"\n[REPLAY BİTTİ] {time.time() - t0:.1f} sn")
 
