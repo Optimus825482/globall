@@ -1304,6 +1304,9 @@ def dxy_entry_veto(symbol: str, direction: str, dxy: Optional[Dict[str, Any]]) -
     s = str(symbol).upper()
     if any(w in s for w in DXY_EXEMPT_SYMBOLS):
         return None
+    # Hafta sonu DXY piyasasi kapali oldugundan kripto pariteleri DXY vetosundan muaftir
+    if datetime.datetime.now(datetime.timezone.utc).weekday() >= 5 and any(k in s for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
+        return None
     if not dxy:
         if str(symbol).upper() in FX_MAJORS_SET:
             return "dxy_no_data"
@@ -6724,6 +6727,7 @@ async def _forex_auto_paper_loop():
             candidates = [
                 c for c in candidates
                 if str(c.get("symbol", "")).upper() in _classic_ok or c.get("dss_tier") == "A+"
+                or (weekend_now and (str(c.get("symbol", "")).upper() in CANLI_WEEKEND_CRYPTO_SYMBOLS or c.get("category") == "crypto"))
             ]
             if _mode_excl:
                 candidates = [c for c in candidates if str(c.get("symbol", "")).upper() not in _mode_excl]
@@ -8185,7 +8189,13 @@ async def _forex_auto_paper_loop():
                 if _AUTO_SETTINGS.quality_gate_enabled and not _news_bypass:
                     c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
                     c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
-                    ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour)
+                    c_score = float(cand.get("score", 0.0) or 0.0)
+                    is_crypto_sym = sym in CANLI_WEEKEND_CRYPTO_SYMBOLS or any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA"))
+                    if is_crypto_sym and c_score >= 90.0:
+                        ok_asset = (abs(c_dist) <= 0.85 and c_body >= 0.15)
+                        asset_msg = f"Kripto Trend Kalkanı: EMA21 uzama {c_dist:+.2f}% (>0.85%) veya gövde {c_body*100:.0f}% (<15%)"
+                    else:
+                        ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour)
                     if not ok_asset:
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_asset_quality", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_asset_quality"] = now_ts
