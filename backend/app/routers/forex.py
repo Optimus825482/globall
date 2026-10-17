@@ -1420,12 +1420,12 @@ def asset_quality_gate(
 
     # A) Kripto (BTC, ETH, SOL, BNB, XRP, LNK, UNI, AVX, ADA, XTZ, DATA)
     if any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
-        if adx < 20.0:
-            return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < 20.0) — testere piyasası"
-        if abs(dist_ema21_pct) > 0.30:
-            return False, f"Aşırı Uzama Kalkanı: Kripto EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.30%) — FOMO girişi engellendi"
-        if body_ratio < 0.35:
-            return False, f"Fitil/Doji Kalkanı: Kripto mum gövdesi zayıf ({body_ratio*100:.0f}% < %35) — sahte kırılım fitili engellendi"
+        if adx < 15.0:
+            return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < 15.0) — testere piyasası"
+        if abs(dist_ema21_pct) > 0.85:
+            return False, f"Aşırı Uzama Kalkanı: Kripto EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.85%) — FOMO girişi engellendi"
+        if body_ratio < 0.15:
+            return False, f"Fitil/Doji Kalkanı: Kripto mum gövdesi zayıf ({body_ratio*100:.0f}% < %15) — sahte kırılım fitili engellendi"
         return True, ""
 
     # B) Altın (XAUUSD)
