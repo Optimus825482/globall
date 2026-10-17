@@ -2769,7 +2769,7 @@ def get_atr_exit_levels(
     atr_pips: Optional[float],
     sl_pips: float,
     tp_pips: float,
-    sl_atr_mult: float = 1.1,
+    sl_atr_mult: float = 1.5,
     tp_atr_mult: float = 1.4,
     rr_floor: float = 1.5,
 ) -> Dict[str, float]:

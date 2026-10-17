@@ -129,7 +129,7 @@ EV_GUARD = True
 
 # Ayarlanabilir tuning parametreleri (CLI ile override edilir)
 TUN_MIN_SCORE = 70.0
-TUN_SL_ATR_MULT = 1.1
+TUN_SL_ATR_MULT = 1.5
 TUN_TP_ATR_MULT = 1.4
 TUN_RR_FLOOR = 1.5
 TUN_HEADROOM_FOREX = 3.5
@@ -3755,7 +3755,7 @@ def main():
                         help="Çoklu-kol sembol tarifi: 's3_5m=XAUUSD;s3_15m=XAUUSD,BTCUSD,US30,GBPUSD;ema_adx_pullback=XAUUSD;london_breakout=XAUUSD,GBPUSD,USDJPY,BTCUSD,USDCHF,US30;donchian_adx=XAUUSD'. Canlı varsayılanları birebir budur.")
     parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
     parser.add_argument("--min-score", type=float, default=75.0)
-    parser.add_argument("--sl-mult", type=float, default=1.1)
+    parser.add_argument("--sl-mult", type=float, default=1.5)
     parser.add_argument("--tp-mult", type=float, default=1.4)
     parser.add_argument("--rr-floor", type=float, default=1.5)
     parser.add_argument("--headroom", type=float, default=3.5)
