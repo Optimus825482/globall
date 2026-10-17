@@ -2144,6 +2144,52 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         gate_crypto = forex._evaluate_signal_gate("BTCUSD", cand_crypto, current_utc_hour=12, dxy_regime=None, is_weekend=True)
         self.assertNotIn("weekend_closed", gate_crypto["blocked_by"])
 
+    def test_gostergeler_indicator_enhancements(self):
+        """GOSTERGELER.HTML: Test HMA 21 index slope confirmation, European cross session gate, and Cross FX dollar risk cap."""
+        # 1) Test Cross FX dollar risk cap ($20 cap in apply_risk_normalization)
+        # EURAUD cross with wide SL (50 pips, pip_val=6.5) -> raw risk would be 0.20 lots * 50 * 6.5 = $65.0
+        lots, skip = forex.apply_risk_normalization("EURAUD", lots=0.20, sl_pips=50.0, pip_val=6.5, risk_usd=100.0)
+        risk_taken = round(lots * 50.0 * 6.5, 2)
+        self.assertLessEqual(risk_taken, 25.0, f"Cross FX dollar risk must be capped <= $25, got {risk_taken}")
+
+        # 2) Test European cross session gate (EUR/GBP crosses blocked during Asian session 00:00-06:59 UTC)
+        cand_gbpjpy = {
+            "symbol": "GBPJPY", "display": "GBP/JPY", "action": "BUY", "score": 92.0,
+            "spread_pips": 2.0, "atr_pips": 25.0, "adx": 30.0, "supertrend_dir": 1,
+            "category": "cross",
+        }
+        # At 03:00 UTC (Asian night session) -> must be blocked
+        gate_asian = forex._evaluate_signal_gate("GBPJPY", cand_gbpjpy, current_utc_hour=3, dxy_regime=None, is_weekend=False)
+        self.assertIn("major_session", gate_asian["blocked_by"], "GBPJPY must be blocked during Asian session")
+
+        # At 09:00 UTC (London session) -> major_session should not block
+        gate_london = forex._evaluate_signal_gate("GBPJPY", cand_gbpjpy, current_utc_hour=9, dxy_regime=None, is_weekend=False)
+        self.assertNotIn("major_session", gate_london["blocked_by"], "GBPJPY must be allowed during London session")
+
+        # 3) Test Index Hull MA 21 direction confirmation
+        cand_us30_contra = {
+            "symbol": "US30", "display": "US30", "action": "BUY", "score": 92.0,
+            "price": 40000.0, "hma_21": 40100.0, "hma_21_slope": -5.0,
+            "spread_pips": 2.0, "atr_pips": 150.0, "adx": 30.0, "supertrend_dir": 1,
+            "category": "index",
+        }
+        # Price is below HMA and HMA slope is negative -> BUY must be blocked by direction
+        gate_hma = forex._evaluate_signal_gate("US30", cand_us30_contra, current_utc_hour=14, dxy_regime=None, is_weekend=False)
+        self.assertIn("direction", gate_hma["blocked_by"], "Index BUY below falling HMA must be blocked")
+
+        # 4) Test Elder Ray Bull/Bear Power calculation and directional protection
+        closes_falling = [100.0 - i * 0.5 for i in range(30)]
+        highs_falling = [c + 0.1 for c in closes_falling]
+        lows_falling = [c - 0.5 for c in closes_falling]
+        opens_falling = [c + 0.2 for c in closes_falling]
+        tech_falling = forex._compute_technical_indicators(closes_falling, highs_falling, lows_falling, opens_falling, "EURUSD")
+        self.assertIsNotNone(tech_falling)
+        self.assertIn("bull_power", tech_falling)
+        self.assertIn("bear_power", tech_falling)
+        self.assertIn("ema13", tech_falling)
+        # In waterfall falling market, bull power is negative -> BUY must never be allowed
+        self.assertNotEqual(tech_falling["action"], "BUY", "Falling market with negative Bull Power must not produce BUY")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,7 @@ import os
 import sys
 import time
 import urllib.request
+import numpy as np
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -40,6 +41,7 @@ for p in (ROOT, os.path.join(ROOT, "backend")):
 
 from backend.app.routers import forex  # noqa: E402
 from backend.app.forex_correlation import FXCorrelationMonitor  # noqa: E402
+from backend.app import forex_news, forex_news_bias  # noqa: E402
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 INDICATOR_WINDOW = 260      # bar — canlı motor ~576 bar (2d) kullanır; hız için kırpıldı
@@ -60,6 +62,12 @@ TUN_TRAIL_PIPS_OVERRIDE = 0.0  # >0: spec trailing mesafesini (pip) ez - zaman-d
 BASE_TRAIL_PIPS = 20.0
 TUN_COST_AWARE_EXITS = False
 TUN_COST_BE_R = 1.0  # Broker maliyetine duyarlı BE tetik R-oranı (1.0 = 1R kârda kilitle)
+TUN_NEWS_BIAS = False
+TUN_NEWS_CALENDAR_PATH = ""
+TUN_NEWS_WINDOW_SEC = 1800.0
+TUN_NEWS_BLOCK_OPPOSING = True
+TUN_NEWS_BYPASS_FILTERS = False
+TUN_NEWS_SCORE_BUMP = 10.0
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
 # Gerçek spread profili (--spread-profile ile yüklenir): {SYMBOL: avg_pips}; boşsa kategori spread'i kullanılır
@@ -100,7 +108,7 @@ REPLAY_PIP_VAL_OVERRIDE: Dict[str, float] = {}
 # Gölge defter tutulan kapılar (yeni özellikler)
 SHADOW_GATES = ("DXY", "SAAT", "KORELASYON", "ADX", "SUPERTREND", "EV",
                 "SEANS", "VOLATİLİTE", "UZAMA", "REJIM", "VWAP", "ISEANS", "ACILIS",
-                "HTF", "IRAD", "YAS", "SERI", "H1TREND", "RELATR")
+                "HTF", "IRAD", "YAS", "SERI", "H1TREND", "RELATR", "NEWS_OPPOSE", "QUALITY", "DSS", "CHOP")
 
 
 def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -> Tuple[int, bool]:
@@ -136,6 +144,7 @@ TUN_TP_ATR_MULT = 1.4
 TUN_RR_FLOOR = 1.5
 TUN_HEADROOM_FOREX = 3.5
 TUN_ADX_MIN = 20.0           # 20.0 = Testere/Choppy kalkanı (ADX < 20'de dinlen)
+TUN_CHOP_MAX = 0.0          # 2026-10-17: Choppiness Index kalkanı (>0: CHOP >= bu değerde yatay/testerede giriş yok, örn. 61.8)
 TUN_ADX_MIN_SYMS = ""       # Boş = ADX kalkanı TÜM sembollere; "BTCUSD,US30" gibi liste = yalnız bu sembollere (2026-10-10 sinyal kalitesi süpürmesi)
 TUN_ADX_HALFLOT = 0.0       # >0: ADX eşiği altındaki adaylar engellenmez, lot bu çarpanla alınır (örn. 0.5 = yarım lot; A/B/C sinyal sınıflandırması)
 TUN_CLOSE_CONFIRM = False   # True: aday hemen açılmaz; SONRAKİ taze bar sinyal yönünde kapanırsa teyit barının kapanışından girilir (2026-10-10 kapanış-teyidi testi)
@@ -188,6 +197,8 @@ TUN_BE_ATR_CRYPTO = 0.0     # 2026-10-14: BTCUSD/ETHUSD'ye özel BE tetik taban�
 TUN_MAJOR_HOURS = None      # (başlangıç, biti) UTC saat aralığı — majörler yalnız bu pencerede (None = kapalı)
 TUN_MAJOR_MIN_ATR = 0.0     # majörler minimum ATR(pips) — ölü piyasa filtresi (0 = kapalı)
 TUN_MAJOR_MAX_EXT = 0.0     # majörlerde fiyatın EMA21'den maks. ATR-katı uzaması — kovalamama (0 = kapalı)
+TUN_NO_QUALITY = False      # Varlik sinifi kalite kalkanini (QUALITY) atla
+TUN_NO_SESSION = False      # Seans kisitlarini (SEANS/ISEANS) atla
 GATED_EXTRAS: set = set()   # --gate-extras: majör kapılarına (seans+minATR) tabi tutulacak ek adaylar
 
 # 2026-10-06 altın/BTC geliştirme testleri
@@ -274,7 +285,7 @@ TUN_ARM_SYMBOLS: Dict[str, set] = {}
 # en başta, squeeze_kc en sonda: `_combined_arm_candidates` çıktısı sırayla emit
 # edilir ve son ateşleyen sembolün adayını yerinden eder. Canlıda LB → LS gelir (LS
 # harness'ta yok, bilinen ve belgelenmiş boşluk).
-ARM_KEYS = ("donchian_adx", "s3_5m", "s3_15m", "ema_adx_pullback", "london_breakout", "squeeze_kc")
+ARM_KEYS = ("donchian_adx", "s3_5m", "s3_15m", "fvg_pullback", "ema_adx_pullback", "london_breakout", "squeeze_kc")
 TUN_LB_BOX_END_H = 7            # Asya kutusu: 00:00 → 07:00 UTC
 TUN_LB_ENTRY_END_H = 11         # tetik penceresi: 07:00 → 11:00 UTC
 TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
@@ -1515,6 +1526,18 @@ def _arm_eap_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[str, 
         action = "SELL"
     else:
         return None
+    if sym in ("NAS100", "US30", "USTEC"):
+        if float(tech.get("adx") or 0.0) < 28.0:
+            return None
+        hma_vals = _HMA_CACHE.get(sym)
+        if hma_vals and ci - 1 < len(hma_vals) and ci - 2 >= 0:
+            hma_now = hma_vals[ci - 1]
+            hma_prev = hma_vals[ci - 2]
+            hma_slope = hma_now - hma_prev
+            if action == "BUY" and (c < hma_now or hma_slope < 0):
+                return None
+            if action == "SELL" and (c > hma_now or hma_slope > 0):
+                return None
     key = (sym, int(ts // 86400), action)
     if TUN_EAP_MAX_PER_DAY > 0:
         if MODE_DAY_STATE.get(key, 0) >= TUN_EAP_MAX_PER_DAY:
@@ -1589,6 +1612,14 @@ def _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[
         action = "SELL"
     else:
         return None
+    if is_jpy:
+        aroon_vals = _AROON_CACHE.get(sym)
+        if aroon_vals and ci - 1 < len(aroon_vals):
+            aroon_osc = aroon_vals[ci - 1]
+            if action == "BUY" and aroon_osc < 20.0:
+                return None
+            if action == "SELL" and aroon_osc > -20.0:
+                return None
     key = (sym, int(ts // 86400), action)
     if MODE_DAY_STATE.get(key, 0) >= 2:
         return None
@@ -1644,6 +1675,52 @@ def _arm_squeeze_kc_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dic
             "exits": {"sl_pips": sl_pips, "tp_pips": round(TUN_SQZ_KC_TP_R * sl_pips, 1)}}
 
 
+def _arm_fvg_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[str, Any]]:
+    """FVG Imbalance Pullback kolu — canlı `fvg_pullback_entry` ile birebir."""
+    if ci < 12 or pip_size <= 0:
+        return None
+    window = bars[max(0, ci - 20):ci]
+    if len(window) < 10:
+        return None
+    dict_bars = [{"time": int(b[0]), "open": b[1], "high": b[2], "low": b[3], "close": b[4]} for b in window]
+    last_b = dict_bars[-1]
+    dec = forex.fvg_pullback_entry(
+        bars=dict_bars,
+        current_price=float(last_b["close"]),
+        current_low=float(last_b["low"]),
+        current_high=float(last_b["high"]),
+        lookback_bars=8,
+    )
+    if not dec:
+        return None
+    action = dec["action"]
+    # HTF 15M ve SuperTrend yönüyle uyum kontrolü (boğa tuzağı / ters yön FVG engeli)
+    st_dir = int(tech.get("supertrend_dir", 0))
+    htf_trend = str(tech.get("htf_trend", "NEUTRAL"))
+    if action == "BUY" and (st_dir < 0 or htf_trend == "BEARISH"):
+        return None
+    if action == "SELL" and (st_dir > 0 or htf_trend == "BULLISH"):
+        return None
+    if "JPY" in sym.upper():
+        aroon_vals = _AROON_CACHE.get(sym)
+        if aroon_vals and ci - 1 < len(aroon_vals):
+            aroon_osc = aroon_vals[ci - 1]
+            if action == "BUY" and aroon_osc < 20.0:
+                return None
+            if action == "SELL" and aroon_osc > -20.0:
+                return None
+    key = (sym, "fvg", int(ts // 86400), action)
+    if MODE_DAY_STATE.get(key, 0) >= 3:
+        return None
+    MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
+    atr_pips = float(tech.get("atr", 0.0)) / pip_size if pip_size > 0 else 15.0
+    spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
+    sl_pips = round(max(float(spec["sl_pips"]), atr_pips * 1.5), 1)
+    tp_pips = round(sl_pips * 1.8, 1)
+    return {"action": action, "entry_source": "fvg_pullback", "arm": "fvg_pullback",
+            "exits": {"sl_pips": sl_pips, "tp_pips": tp_pips}}
+
+
 def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str, Any]]:
     """`--combined`: bu sembol+bar için TÜM aktif kolların adaylarını üretir.
 
@@ -1655,7 +1732,7 @@ def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str
     u = sym.upper()
     out: List[Dict[str, Any]] = []
     # SIRA = canlı forex.py döngüsü (bkz. ARM_KEYS notu): donchian → s3_5m → s3_15m →
-    # ema_adx_pullback → london_breakout → squeeze_kc. Sonra gelen kol, aynı sembolde
+    # fvg_pullback → ema_adx_pullback → london_breakout → squeeze_kc. Sonra gelen kol, aynı sembolde
     # öncekinin adayını yerinden eder (canlı `candidates = [...] + [yeni]` paritesi).
     if u in TUN_ARM_SYMBOLS.get("donchian_adx", set()):
         cd = _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size)
@@ -1667,6 +1744,10 @@ def _combined_arm_candidates(sym, ts, bars, ci, tech, pip_size) -> List[Dict[str
             out.append(cd)
     if u in TUN_ARM_SYMBOLS.get("s3_15m", set()):
         cd = _arm_s3_candidate(sym, ts, bars, ci, tech, pip_size, "15m")
+        if cd:
+            out.append(cd)
+    if u in TUN_ARM_SYMBOLS.get("fvg_pullback", set()):
+        cd = _arm_fvg_candidate(sym, ts, bars, ci, tech, pip_size)
         if cd:
             out.append(cd)
     if u in TUN_ARM_SYMBOLS.get("ema_adx_pullback", set()):
@@ -1881,6 +1962,7 @@ class SimPos:
     no_fixed_tp: bool = False   # sabit TP yok (tp_pips<=0) — çıkış chandelier trailing'e bırakılır
     time_stop_bars: int = 0     # >0: bu bar sayısı dolunca zorla kapat (Dalga-2 ORB/reopen/fix)
     cost_pips: float = 0.0      # maliyet duyarlı çıkış motoru için spread+komisyon
+    entry_source: str = "classic"
 
 
 class Book:
@@ -1905,8 +1987,13 @@ def be_headroom_pips(symbol: str) -> float:
 def size_lots(symbol: str, sl_pips: float, pip_val: float) -> float:
     risk_pct = forex.get_symbol_risk_pct(symbol)
     risk_usd = BALANCE * (risk_pct / 100.0)
-    raw = risk_usd / (sl_pips * pip_val) if sl_pips > 0 else 0.01
     s = symbol.upper()
+    is_fx = len(s) == 6 and s[:3].isalpha() and s[3:].isalpha()
+    is_cross = is_fx and ("USD" not in s)
+    if is_cross:
+        # Cross FX (EURAUD, EURCAD, GBPAUD vb.) - risk bütçesi $20 ile sınırlandırılır
+        risk_usd = min(risk_usd, 20.0)
+    raw = risk_usd / (sl_pips * pip_val) if sl_pips > 0 else 0.01
     if "NAS" in s or "USTEC" in s or "US30" in s or "SPX" in s:
         return round(max(0.10, min(round(raw * 10) / 10, 2.0)), 2)
     if "OIL" in s or "WTI" in s:
@@ -1955,9 +2042,15 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
     if TUN_SLIP_PIPS > 0:
         entry = (round(entry + TUN_SLIP_PIPS * cand["pip_size"], cand["digits"]) if cand["action"] == "BUY"
                  else round(entry - TUN_SLIP_PIPS * cand["pip_size"], cand["digits"]))
+    risk_mult = float(cand.get("risk_mult", 1.0) or 1.0)
+    risk_usd = BALANCE * (forex.get_symbol_risk_pct(sym) / 100.0) * risk_mult
+    if cand.get("max_risk_usd") is not None and float(cand["max_risk_usd"]) > 0:
+        risk_usd = min(risk_usd, float(cand["max_risk_usd"]))
     lots = size_lots(sym, sl_pips, cand["pip_val"])
+    if risk_mult != 1.0 or cand.get("max_risk_usd") is not None:
+        raw_capped = risk_usd / (sl_pips * cand["pip_val"]) if (sl_pips > 0 and cand["pip_val"] > 0) else 0.01
+        lots = min(lots, round(max(0.01, raw_capped), 2))
     # Canlı motorla aynı risk normalizasyonu (tek kaynak: forex.apply_risk_normalization)
-    risk_usd = BALANCE * (forex.get_symbol_risk_pct(sym) / 100.0)
     lots, risk_skip = forex.apply_risk_normalization(sym, lots, sl_pips, cand["pip_val"], risk_usd)
     if risk_skip:
         return None
@@ -1977,6 +2070,7 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         entry_atr_pips=cand.get("atr_pips", 0.0), no_fixed_tp=no_fixed_tp,
         sl0_pips=float(sl_pips),
         time_stop_bars=int(cand.get("time_stop_bars", 0) or 0),
+        entry_source=str(cand.get("entry_source") or "classic"),
     )
 
 
@@ -2128,8 +2222,8 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = cand
                     pos.be_locked = True
 
-    # (3) Kısmi kâr (yalnızca NEW — OLD'da partial_target_pips=0) — sepet üyesinde atlanır
-    if pos.partial_target_pips > 0 and not pos.partial_taken and not dca_mode and pnl_extreme_pips >= pos.partial_target_pips:
+    # (3) Kısmi kâr (yalnızca NEW ve BE açıkken — TUN_NO_BE aktifken pozisyon bölünmez ve BE çekilmez, tam lot TP/Trailing'e koşar)
+    if not TUN_NO_BE and pos.partial_target_pips > 0 and not pos.partial_taken and not dca_mode and pnl_extreme_pips >= pos.partial_target_pips:
         pos.partial_taken = True
         close_lots = round(pos.lots / 2.0, 2)
         if 0.01 <= close_lots < pos.lots:
@@ -2148,30 +2242,29 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
                     pos.sl_price = lock_sl
             pos.be_locked = True
 
-    # (4) Trailing (BE sonrası): chandelier (MFE − mult×ATR_giriş) veya sabit pip trail — sepet üyesinde atlanır
-    # 2026-10-14 (Kol C — --chand-indep-gate): kapıyı BE kilidinden bağımsızlaştırır.
-    # Açıkken chandelier, MFE > mult×giriş ATR'si olur olmaz kurulur (BE beklemez). Kapalıyken
-    # koşul birebir `pos.be_locked` kalır → mevcut kalibrasyon bozulmaz.
+    # (4) Trailing (BE sonrası veya BE kapalıyken otonom): chandelier veya R-adaptif MFE trail — sepet üyesinde atlanır
     _chand_indep_armed = (
-        TUN_CHAND_INDEP and chandelier_mult > 0 and pos.entry_atr_pips > 0
+        (TUN_CHAND_INDEP or TUN_NO_BE) and chandelier_mult > 0 and pos.entry_atr_pips > 0
         and pos.mfe_pips > chandelier_mult * pos.entry_atr_pips
     )
-    if (pos.be_locked or _chand_indep_armed) and not dca_mode:
+    _trail_no_be_armed = (TUN_NO_BE and eff_trail_pips > 0 and pos.mfe_pips > eff_trail_pips)
+    if (pos.be_locked or _chand_indep_armed or _trail_no_be_armed) and not dca_mode:
         pips_1usd_now = max(0.5, round(1.0 / max(0.0001, pos.lots * pos.pip_val), 1))
+        cost_lock_pips = (pos.cost_pips + 1.0) if TUN_COST_AWARE_EXITS else pips_1usd_now
         if chandelier_mult > 0 and pos.entry_atr_pips > 0:
             # Volatilite-adaptif: kâr tepesinden volatilite nefes payı kadar geri ver
             giveback = chandelier_mult * pos.entry_atr_pips
             cand_pips = pos.mfe_pips - giveback
             if direction == "BUY":
                 cand = round(entry + cand_pips * pip, pos.digits)
-                min_safe = round(entry + pips_1usd_now * pip, pos.digits)
+                min_safe = round(entry + cost_lock_pips * pip, pos.digits)
                 cand = max(cand, min_safe)
                 if cand > pos.sl_price:
                     pos.sl_price = cand
                     pos.trail_active = True
             else:
                 cand = round(entry - cand_pips * pip, pos.digits)
-                min_safe = round(entry - pips_1usd_now * pip, pos.digits)
+                min_safe = round(entry - cost_lock_pips * pip, pos.digits)
                 cand = min(cand, min_safe)
                 if pos.sl_price == 0 or cand < pos.sl_price:
                     pos.sl_price = cand
@@ -2180,14 +2273,14 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
             trail_dist = eff_trail_pips * trail_mult * pip
             if direction == "BUY":
                 cand = round(c - trail_dist, pos.digits)
-                min_safe = round(entry + pips_1usd_now * pip, pos.digits)
+                min_safe = round(entry + cost_lock_pips * pip, pos.digits)
                 cand = max(cand, min_safe)
                 if cand > pos.sl_price and cand > entry:
                     pos.sl_price = cand
                     pos.trail_active = True
             else:
                 cand = round(c + trail_dist, pos.digits)
-                min_safe = round(entry - pips_1usd_now * pip, pos.digits)
+                min_safe = round(entry - cost_lock_pips * pip, pos.digits)
                 cand = min(cand, min_safe)
                 if (pos.sl_price == 0 or cand < pos.sl_price) and cand < entry:
                     pos.sl_price = cand
@@ -2239,6 +2332,7 @@ def close_position(book: Book, pos: SimPos, reason: str, exit_price: float, clos
         "symbol": pos.symbol, "direction": pos.direction, "lots": pos.lots,
         "pnl_usd": total, "reason": reason, "trail": pos.trail_active,
         "closed_ts": closed_ts,
+        "entry_source": pos.entry_source,
     })
     return total
 
@@ -2491,6 +2585,67 @@ FADE_ENABLED = False
 FADE_K_ATR = 2.0              # seans ortalamasından k×ATR sapma → fade
 FADE_SL_ATR = 1.5             # fade sert stopu
 FADE_EARLY_ONLY = False       # yalnız ilk 2 saat (13:30-15:30 UTC) girişleri
+
+
+_HMA_CACHE: Dict[str, List[float]] = {}
+_AROON_CACHE: Dict[str, List[float]] = {}
+_CHOP_CACHE: Dict[str, List[float]] = {}
+
+
+def _compute_wma_series(arr: np.ndarray, period: int) -> np.ndarray:
+    weights = np.arange(1, period + 1)
+    denom = float(weights.sum())
+    out = np.zeros(len(arr))
+    for i in range(period - 1, len(arr)):
+        out[i] = float(np.dot(arr[i - period + 1:i + 1], weights)) / denom
+    return out
+
+
+def _hma_series(closes: List[float], period: int = 21) -> List[float]:
+    c = np.array(closes, dtype=float)
+    p_half = max(2, int(period / 2))
+    p_sqrt = max(2, int(np.sqrt(period)))
+    wma_half = _compute_wma_series(c, p_half)
+    wma_full = _compute_wma_series(c, period)
+    diff = 2.0 * wma_half - wma_full
+    return list(_compute_wma_series(diff, p_sqrt))
+
+
+def _aroon_osc_series(bars: List[Tuple], period: int = 14) -> List[float]:
+    highs = [b[2] for b in bars]
+    lows = [b[3] for b in bars]
+    n = len(bars)
+    out = [0.0] * n
+    for i in range(period, n):
+        h_seg = highs[i - period:i]
+        l_seg = lows[i - period:i]
+        up = (h_seg.index(max(h_seg)) + 1) / period * 100.0
+        dn = (l_seg.index(min(l_seg)) + 1) / period * 100.0
+        out[i] = round(up - dn, 1)
+    return out
+
+
+def _chop_series(bars: List[Tuple], period: int = 14) -> List[float]:
+    highs = [b[2] for b in bars]
+    lows = [b[3] for b in bars]
+    closes = [b[4] for b in bars]
+    n = len(bars)
+    if n < period + 1:
+        return [50.0] * n
+    tr = [highs[0] - lows[0]]
+    for i in range(1, n):
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    chop = [50.0] * n
+    log_p = np.log10(period)
+    for i in range(period, n):
+        sum_tr = sum(tr[i - period + 1:i + 1])
+        max_h = max(highs[i - period + 1:i + 1])
+        min_l = min(lows[i - period + 1:i + 1])
+        range_hl = max_h - min_l
+        if range_hl > 0 and sum_tr > 0:
+            c_val = 100.0 * (np.log10(sum_tr / range_hl) / log_p)
+            chop[i] = round(float(c_val), 1)
+    return chop
 
 
 def _ema_series(vals: List[float], period: int) -> List[float]:
@@ -3116,10 +3271,66 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 med_by_ts[b[0]] = cur_med
             rel_atr_lookup[s] = med_by_ts
 
+    # 2026-10-17: GOSTERGELER.HTML HMA, Aroon ve CHOP Önbelleği (O(1) hızlı erişim)
+    _HMA_CACHE.clear()
+    _AROON_CACHE.clear()
+    _CHOP_CACHE.clear()
+    for s in symbols:
+        if any(idx_name in s for idx_name in ("NAS100", "US30", "USTEC")):
+            _HMA_CACHE[s] = _hma_series([b[4] for b in data[s]], 21)
+        _AROON_CACHE[s] = _aroon_osc_series(data[s], 14)
+        _CHOP_CACHE[s] = _chop_series(data[s], 14)
+
     # Seri-SL sigortası durumu: kapanış tüketimi + sembol soğuma penceresi
     loss_streak: Dict[str, int] = {}
     loss_cd_until: Dict[str, float] = {}
     streak_seen = {"NEW": 0}
+
+    # 2026-10-17: Ekonomik Takvim Yön Motoru Önbelleği
+    news_bias_lookup: Dict[Tuple[str, int], int] = {}
+    if TUN_NEWS_BIAS:
+        try:
+            if os.path.exists(TUN_NEWS_CALENDAR_PATH):
+                with open(TUN_NEWS_CALENDAR_PATH, "r", encoding="utf-8") as _nbf:
+                    _cal_items = json.load(_nbf)
+                _raw_bias: Dict[Tuple[str, int], int] = {}
+                for ev in _cal_items:
+                    ev_ts = forex_news_bias._iso_to_ts(ev.get("date_iso"))
+                    if ev_ts is None:
+                        continue
+                    outcome = ev.get("outcome") or {}
+                    side = outcome.get("side")
+                    if not side:
+                        continue
+                    is_bullish = (side == "bullish")
+                    cur = str(ev.get("currency") or ev.get("country") or "").upper().strip()
+                    syms = ev.get("affected_symbols") or forex_news.map_symbols_for_event(cur, str(ev.get("title") or ""))
+                    start_bar = int(ev_ts // 300) * 300
+                    end_bar = int((ev_ts + TUN_NEWS_WINDOW_SEC) // 300) * 300
+                    for s in syms:
+                        s_u = s.upper()
+                        d = forex_news_bias.symbol_direction(cur, is_bullish, s_u)
+                        if d == 0:
+                            continue
+                        cur_ts = start_bar
+                        while cur_ts <= end_bar:
+                            _raw_bias[(s_u, cur_ts)] = _raw_bias.get((s_u, cur_ts), 0) + d
+                            cur_ts += 300
+                for k, v in _raw_bias.items():
+                    news_bias_lookup[k] = 1 if v > 0 else (-1 if v < 0 else 0)
+                print(f"[REPLAY] Ekonomik Takvim Yön Motoru Devrede: {len(news_bias_lookup)} bar-sembol yuvası aktif (pencere: {TUN_NEWS_WINDOW_SEC/60:.0f} dk)")
+            else:
+                print(f"[UYARI] Ekonomik Takvim dosyası bulunamadı: {TUN_NEWS_CALENDAR_PATH}")
+        except Exception as _nb_err:
+            print(f"[UYARI] Ekonomik Takvim yüklenirken hata: {_nb_err}")
+
+    day_realized_pnl: Dict[int, float] = {}
+    day_peak_pnl: Dict[int, float] = {}
+    day_green_locked: Dict[int, bool] = {}
+    day_halted: Dict[int, bool] = {}
+    sym_day_pnl: Dict[Tuple[str, int], float] = {}
+    sym_day_sl: Dict[Tuple[str, int], int] = {}
+    daily_seen_idx: int = 0
 
     for idx, ts in enumerate(common_ts):
         # Pencere sonu: o haftanın kapanışıyla dur; kalan pozisyonlar aşağıda
@@ -3140,7 +3351,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
 
         if idx < warmup:
             continue
-        hour = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).hour
+        dt_utc = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+        hour = dt_utc.hour
+        minute = dt_utc.minute
+        weekday = dt_utc.weekday()
+        is_weekend = weekday in (5, 6)
+        day_id = int(ts // 86400)
 
         # DXY rejimi (yalnız NEW): test edilmiş get_dxy_regime'i yeniden kullanmak için
         # geçici olarak _TECHNICAL_CACHE["DXY"] set edilir.
@@ -3166,6 +3382,78 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         exit_maps=(exit_maps if book.name == "NEW" else None))
         for sh in shadow_book.values():
             manage_book(sh["book"], by_ts, ts, chandelier_mult=chand, exit_maps=exit_maps)
+
+        # Gün içi taze kapanışları muhasebeleştir (Sembol Gün İçi Devre Kesici & Günlük Kâr Kilidi)
+        while daily_seen_idx < len(books["NEW"].closed):
+            tc = books["NEW"].closed[daily_seen_idx]
+            daily_seen_idx += 1
+            c_ts = float(tc.get("closed_ts") or ts)
+            c_day = int(c_ts // 86400)
+            c_sym = tc["symbol"]
+            c_pnl = float(tc.get("pnl_usd", 0.0))
+            day_realized_pnl[c_day] = round(day_realized_pnl.get(c_day, 0.0) + c_pnl, 2)
+            sym_day_pnl[(c_sym, c_day)] = round(sym_day_pnl.get((c_sym, c_day), 0.0) + c_pnl, 2)
+            if c_pnl < 0:
+                sym_day_sl[(c_sym, c_day)] = sym_day_sl.get((c_sym, c_day), 0) + 1
+            lock_trig = 5.0 if datetime.datetime.fromtimestamp(c_ts, datetime.timezone.utc).weekday() in (5, 6) else 18.0
+            if not books["NEW"].positions and day_realized_pnl[c_day] >= lock_trig:
+                day_green_locked[c_day] = True
+            if not books["NEW"].positions and day_realized_pnl[c_day] > day_peak_pnl.get(c_day, 0.0):
+                day_peak_pnl[c_day] = day_realized_pnl[c_day]
+
+        # 1b) Canlı Gün İçi Kâr Hasadı (Banked Profit Harvest) & Gün Sonu (23:50 UTC) Temiz Defter Kapanışı
+        if TUN_COMBINED and "NEW" in books:
+            b_new = books["NEW"]
+            net_float_now = 0.0
+            for p_op in b_new.positions:
+                mk_op = last_close.get(p_op.symbol, p_op.entry_price)
+                ex_op = round(mk_op - p_op.fill_adjust, p_op.digits) if p_op.direction == "BUY" else round(mk_op + p_op.fill_adjust, p_op.digits)
+                net_float_now += round(float_pnl(p_op, ex_op) + p_op.partial_realized_usd, 2)
+            cur_day_eq = round(day_realized_pnl.get(day_id, 0.0) + net_float_now, 2)
+            lock_trig_now = 5.0 if is_weekend else 18.0
+            if not day_green_locked.get(day_id, False) and cur_day_eq >= lock_trig_now:
+                for p_open in list(b_new.positions):
+                    mk = last_close.get(p_open.symbol, p_open.entry_price)
+                    ex_p = round(mk - p_open.fill_adjust, p_open.digits) if p_open.direction == "BUY" else round(mk + p_open.fill_adjust, p_open.digits)
+                    close_position(b_new, p_open, "GUN_HEDEF_HASAT", ex_p, closed_ts=ts)
+                b_new.positions = []
+                day_green_locked[day_id] = True
+            if cur_day_eq > day_peak_pnl.get(day_id, 0.0):
+                day_peak_pnl[day_id] = cur_day_eq
+            if day_green_locked.get(day_id, False) and b_new.positions:
+                floor_usd = max(3.0 if is_weekend else 10.0, round(day_peak_pnl.get(day_id, lock_trig_now) * 0.55, 2))
+                if cur_day_eq <= floor_usd:
+                    for p_open in list(b_new.positions):
+                        mk = last_close.get(p_open.symbol, p_open.entry_price)
+                        ex_p = round(mk - p_open.fill_adjust, p_open.digits) if p_open.direction == "BUY" else round(mk + p_open.fill_adjust, p_open.digits)
+                        close_position(b_new, p_open, "GUN_KAR_KILIDI", ex_p, closed_ts=ts)
+                    b_new.positions = []
+                    day_halted[day_id] = True
+
+            # 23:50 UTC gün sonu temizliği: ertesi güne gece yarısı (rollover) açık pozisyon ve gap zararı taşınmaz
+            if hour == 23 and minute >= 50 and b_new.positions:
+                for p_open in list(b_new.positions):
+                    mk = last_close.get(p_open.symbol, p_open.entry_price)
+                    ex_p = round(mk - p_open.fill_adjust, p_open.digits) if p_open.direction == "BUY" else round(mk + p_open.fill_adjust, p_open.digits)
+                    close_position(b_new, p_open, "GUN_SONU", ex_p, closed_ts=ts)
+                b_new.positions = []
+                day_halted[day_id] = True
+            # Kapanan pozisyonları tekrar işle
+            while daily_seen_idx < len(b_new.closed):
+                tc = b_new.closed[daily_seen_idx]
+                daily_seen_idx += 1
+                c_ts = float(tc.get("closed_ts") or ts)
+                c_day = int(c_ts // 86400)
+                c_sym = tc["symbol"]
+                c_pnl = float(tc.get("pnl_usd", 0.0))
+                day_realized_pnl[c_day] = round(day_realized_pnl.get(c_day, 0.0) + c_pnl, 2)
+                sym_day_pnl[(c_sym, c_day)] = round(sym_day_pnl.get((c_sym, c_day), 0.0) + c_pnl, 2)
+                if c_pnl < 0:
+                    sym_day_sl[(c_sym, c_day)] = sym_day_sl.get((c_sym, c_day), 0) + 1
+                if not b_new.positions and day_realized_pnl[c_day] >= (5.0 if datetime.datetime.fromtimestamp(c_ts, datetime.timezone.utc).weekday() in (5, 6) else 18.0):
+                    day_green_locked[c_day] = True
+                if not b_new.positions and day_realized_pnl[c_day] > day_peak_pnl.get(c_day, 0.0):
+                    day_peak_pnl[c_day] = day_realized_pnl[c_day]
 
         # Seri-SL sayacını taze kapanışlarla güncelle (giriş kapısı aynı barı görür)
         if TUN_LOSS_STREAK > 0:
@@ -3245,6 +3533,17 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         still_pending.append(p)
                 pending_confirm[vname_p] = still_pending
 
+        # 3a) Para Birimi Güç Matrisi (CSM) — 28 FX paritesinin son 1 saatlik (12 bar) değişiminden hesaplanır
+        csm_ticks_now: Dict[str, Dict[str, Any]] = {}
+        for s_csm in symbols:
+            ci_csm = cursors[s_csm]
+            if ci_csm >= 13 and len(data[s_csm]) >= ci_csm:
+                p_now = float(data[s_csm][ci_csm - 1][4])
+                p_old = float(data[s_csm][ci_csm - 13][4])
+                if p_old > 0:
+                    csm_ticks_now[s_csm] = {"change_pct": ((p_now - p_old) / p_old) * 100.0}
+        csm_data_now = forex.compute_currency_strength_matrix(csm_ticks_now) if csm_ticks_now else None
+
         for sym in symbols:
             if not in_window or not fresh[sym]:
                 continue
@@ -3257,6 +3556,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             highs = [b[2] for b in window]
             lows = [b[3] for b in window]
             opens = [b[1] for b in window]
+            btimes = [int(b[0]) for b in window]
             item = next((i for i in forex.FOREX_SYMBOLS if i["symbol"] == sym), None)
             item = item or REPLAY_SYMBOL_DEFS.get(sym)
             pip_size = item["pip_size"] if item else 0.0001
@@ -3279,7 +3579,8 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             for vname in (("NEW",) if TUN_SKIP_OLD else ("OLD", "NEW")):
                 book = books[vname]
                 tech = forex._compute_technical_indicators(closes, highs, lows, opens, sym,
-                                                           include_momentum=(vname == "NEW"))
+                                                           include_momentum=(vname == "NEW"),
+                                                           bar_times=btimes if vname == "NEW" else None)
                 if not tech:
                     continue
                 def emit(vname, action, score, mode_exits=None, entry_source=None, mode_tsb=0,
@@ -3320,6 +3621,33 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         }
 
                     # ---- Kapı zinciri (NEW: yeni kapılar da devrede; OLD: yalnız ortak kapılar) ----
+                    if vname == "NEW" and TUN_COMBINED:
+                        # 1) Günlük kâr kilidi veya gün sonu (23:40+ UTC) aktifse yeni giriş yok
+                        if day_halted.get(day_id, False) or (hour == 23 and minute >= 40):
+                            return
+                        # 2) Pazar gecesi FX açılış (20:00+ UTC) spread genişlemesi koruması: yalnız BTCUSD açık
+                        if weekday == 6 and sym != "BTCUSD":
+                            return
+                        # 3) Rollover saatleri (21:00-22:59 UTC) hafta içi spread genişlemesi engeli
+                        if not is_weekend and hour in (21, 22):
+                            blocked_events.append(("SAAT", cand("SAAT")))
+                            return
+                        # 4) Varlık sınıfı seans likidite penceresi:
+                        #    US30/NAS100 ve XAUUSD Londra açılışı öncesi (00:00-06:59 UTC) işlem açmaz
+                        if not TUN_NO_SESSION:
+                            if sym in INDEX_GATED and not (7 <= hour < 20):
+                                blocked_events.append(("ISEANS", cand("ISEANS")))
+                                return
+                            if ("XAU" in sym or "GOLD" in sym) and not (7 <= hour < 20):
+                                blocked_events.append(("SEANS", cand("SEANS")))
+                                return
+                        # Avrupa çapraz kurları (EUR/GBP krosları) Londra öncesi Asya seansında (00:00-06:59 UTC) sığ piyasa nedeniyle işlem açmaz
+                            if (("EUR" in sym or "GBP" in sym) and "USD" not in sym) and not (7 <= hour < 20):
+                                blocked_events.append(("SEANS", cand("SEANS")))
+                                return
+                        # 5) Aynı sembolde eşzamanlı tek pozisyon (3x piramit yığılma zararı engeli)
+                        if any(p.symbol == sym for p in book.positions):
+                            return
                     if vname == "NEW" and EV_GUARD:
                         ev_rows = [c["pnl_usd"] for c in book.closed
                                    if c["symbol"] == sym and c.get("closed_ts", 0.0) >= ts - EV_WINDOW_SEC]
@@ -3357,6 +3685,23 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                             weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
                     else:
                         weak_bump = 0.0
+
+                    # 2026-10-17: Ekonomik Takvim Yön Kanıtı Kapısı (live forex.py:7802-7844 paritesi)
+                    _news_bypass = False
+                    if TUN_NEWS_BIAS and vname == "NEW":
+                        nb_dir = news_bias_lookup.get((sym, ts), 0)
+                        if nb_dir != 0:
+                            act_dir = 1 if action == "BUY" else (-1 if action == "SELL" else 0)
+                            if act_dir == nb_dir:
+                                score = min(98.0, round(score + TUN_NEWS_SCORE_BUMP, 1))
+                                if TUN_NEWS_BYPASS_FILTERS:
+                                    _news_bypass = True
+                            elif act_dir == -nb_dir:
+                                score = max(30.0, round(score - 15.0, 1))
+                                if TUN_NEWS_BLOCK_OPPOSING:
+                                    blocked_events.append(("NEWS_OPPOSE", cand("NEWS_OPPOSE")))
+                                    return
+
                     # 5c. Majör güçlendirme kapıları (2026-10-06 araştırma mekanizmaları, yalnız NEW):
                     # Asya seansı chop'u, ölü piyasa ve kovalama (EMA21 uzaması) girişleri eler.
                     # --gate-extras ile eklenen adaylar, --gold-session ile altın da kapsanır.
@@ -3367,11 +3712,17 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     # → majör saat + mutlak min-ATR kapıları bunları budamasın.
                     _mode_own_clock = TUN_ENTRY_MODE in ("eurusd_tod", "reopen_fade", "tokyo_fix",
                                                          "orb_filtered", "squeeze_exp")
-                    if vname == "NEW" and _gate_syms:
+                    if vname == "NEW" and _gate_syms and not _news_bypass:
                         if TUN_MAJOR_HOURS and not _mode_own_clock and not (TUN_MAJOR_HOURS[0] <= hour < TUN_MAJOR_HOURS[1]):
                             blocked_events.append(("SEANS", cand("SEANS")))
                             return
-                        if TUN_MAJOR_MIN_ATR > 0 and not _mode_own_clock and atr_pips < TUN_MAJOR_MIN_ATR:
+                        # Sembol bazli asgari ATR esigi (EURUSD/AUDUSD 1.5p, USDJPY/GBPUSD 2.0p)
+                        sym_min_atr = TUN_MAJOR_MIN_ATR
+                        if sym in ("EURUSD", "AUDUSD", "NZDUSD", "USDCHF", "EURGBP"):
+                            sym_min_atr = min(TUN_MAJOR_MIN_ATR, 1.5) if TUN_MAJOR_MIN_ATR > 0 else 0.0
+                        elif sym in ("USDJPY", "USDCAD", "GBPUSD"):
+                            sym_min_atr = min(TUN_MAJOR_MIN_ATR, 2.0) if TUN_MAJOR_MIN_ATR > 0 else 0.0
+                        if sym_min_atr > 0 and not _mode_own_clock and atr_pips < sym_min_atr:
                             blocked_events.append(("VOLATİLİTE", cand("VOLATİLİTE")))
                             return
                     if vname == "NEW" and _ext_syms and TUN_MAJOR_MAX_EXT > 0 and float(tech.get("ema21", 0.0)) > 0 and atr_pips > 0:
@@ -3421,15 +3772,25 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         score_half_flag = True  # engelleme yok — lot çarpanı ile sınıflandır (skor-bazlı A/B/C lite)
                     if vname == "NEW" and TUN_ST_FILTER:
                         st_dir = int(tech.get("supertrend_dir", 0))
-                        # Canlı parite: `forex.py:6212-6215` bu kaynakları ST kapısından
-                        # muaf tutar (EAP/S3 kendi yön motoru; squeeze_kc kanıtı ST kapalı
-                        # alındı). Muafiyet kapalıyken davranış eskisiyle BİREBİR aynıdır.
-                        _st_exempt = (TUN_ST_EXEMPT_ARMS and (
+                        # Canlı parite: `forex.py:1022` bu kaynakları ST kapısından
+                        # muaf tutar (EAP/S3/FVG kendi yön motoru; squeeze_kc kanıtı ST kapalı
+                        # alındı).
+                        _st_exempt = (
                             entry_source == "ema_adx_pullback"
                             or str(entry_source or "").startswith("s3_")
-                            or entry_source == "squeeze_kc"))
+                            or entry_source == "squeeze_kc"
+                            or entry_source == "fvg_pullback"
+                        )
                         if st_dir != 0 and not _st_exempt and ((action == "BUY" and st_dir < 0) or (action == "SELL" and st_dir > 0)):
                             blocked_events.append(("SUPERTREND", cand("SUPERTREND")))
+                            return
+                    # 7d. Varlık Sınıfı Akıllı Kalite Kalkanı (canlı forex.py:7992 paritesi)
+                    if vname == "NEW" and not _news_bypass and not TUN_NO_QUALITY:
+                        c_body = float(tech.get("body_ratio", 0.5) if tech.get("body_ratio") is not None else 0.5)
+                        c_dist = float(tech.get("dist_ema21_pct", 0.0) if tech.get("dist_ema21_pct") is not None else 0.0)
+                        ok_asset, _ = forex.asset_quality_gate(sym, action, c_body, c_dist, float(tech.get("adx", 25.0)), hour_utc=hour)
+                        if not ok_asset:
+                            blocked_events.append(("QUALITY", cand("QUALITY")))
                             return
                     # MTF trend kapısı (2026-10-08 araştırma): H1 EMA200 durumu tersse giriş yok
                     if vname == "NEW" and TUN_HTF_EMA200_GATE:
@@ -3446,12 +3807,18 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                 blocked_events.append(("RELATR", cand("RELATR")))
                                 return
                     # "Trend bitti" dedektör kapıları (yalnız NEW):
-                    # HTF  — 15M SuperTrend yönü tersse 5M sıçraması sayaç-trend girişidir
+                    # HTF  — 15M SuperTrend yönü tersse 5M sıçraması sayaç-trend girişidir (BTCUSD'de 15M EMA htf_trend kullanılır)
                     if vname == "NEW" and TUN_HTF_ALIGN:
-                        d15 = htf_maps.get(sym, {}).get(int(ts // 900), 0)
-                        if d15 != 0 and ((action == "BUY" and d15 < 0) or (action == "SELL" and d15 > 0)):
-                            blocked_events.append(("HTF", cand("HTF")))
-                            return
+                        if "BTC" in sym:
+                            htf_tr = str(tech.get("htf_trend", "NEUTRAL"))
+                            if (action == "BUY" and htf_tr == "BEARISH") or (action == "SELL" and htf_tr == "BULLISH"):
+                                blocked_events.append(("HTF", cand("HTF")))
+                                return
+                        else:
+                            d15 = htf_maps.get(sym, {}).get(int(ts // 900), 0)
+                            if d15 != 0 and ((action == "BUY" and d15 < 0) or (action == "SELL" and d15 > 0)):
+                                blocked_events.append(("HTF", cand("HTF")))
+                                return
                     # IRAD — fiyat zirve/dibi yenilerken RSI teyit etmiyorsa (uyumsuzluk = tükenme)
                     if vname == "NEW" and TUN_DIV_GATE > 0:
                         div = div_maps.get(sym, {}).get(ts, 0)
@@ -3468,7 +3835,6 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         ok, _r = corr.cluster_check(sym, bias, pos_biases)
                         if not ok:
                             blocked_events.append(("KORELASYON", cand("KORELASYON")))
-                            return
                     same_dir = [p for p in book.positions if p.symbol == sym and p.direction == action]
                     if len(same_dir) >= MAX_PER_SYMBOL_DIR:
                         return
@@ -3490,12 +3856,54 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     candidates[vname].append(cand())
 
                 # Klasik radar kolu (her zaman açık). Tek-mod araştırması: --entry-mode.
+                # Canlı forex.py:6567-6575 paritesi:
+                # - mode_exclusive sembollerde (GBPJPY, EURJPY, CHFJPY) ham klasik radar kapalıdır (Donchian/FVG/Squeeze çalışır)
+                # - CANLI_CLASSIC_SYMBOLS dışındaki semboller klasik radardan yalnız DSS A+ (CSM + HTF + Yapısal onay >= 80) ile girebilir.
                 mode_applies = (TUN_ENTRY_MODE != "classic" and vname == "NEW"
                                 and (not MODE_SYMBOLS or sym in MODE_SYMBOLS))
                 if not mode_applies:
                     _ba = tech.get("action")
                     if _ba in ("BUY", "SELL"):
-                        emit(vname, _ba, float(tech["score"]))
+                        _allow = True
+                        if vname == "NEW" and TUN_COMBINED:
+                            # Canlı forex.py:6643-6646 paritesi: Klasik radar adayları CANLI_CLASSIC_SYMBOLS içinde
+                            # olmalı VEYA DSS A+ (Decision Support Score >= 80) kurumsal kurulumuna sahip olmalıdır.
+                            if sym not in forex.CANLI_CLASSIC_SYMBOLS:
+                                csm_diff, _ = forex.get_symbol_csm_differential(sym, csm_data_now)
+                                atr_p_now = tech["atr"] / pip_size if pip_size > 0 else 15.0
+                                _dss_sc, _dss_tier = forex.calculate_dss_score(
+                                    sym=sym,
+                                    action=_ba,
+                                    htf_trend=str(tech.get("htf_trend", "NEUTRAL")),
+                                    csm_diff=csm_diff,
+                                    rsi_5m=float(tech.get("rsi", 50.0)),
+                                    macd_hist=float(tech.get("macd_hist", 0.0)),
+                                    fvg_type=str(tech.get("fvg_type", "NONE")),
+                                    supertrend_dir=int(tech.get("supertrend_dir", 0)),
+                                    spread_pips=spread_pips,
+                                    atr_pips=atr_p_now,
+                                    adx=float(tech.get("adx", 25.0)),
+                                    body_ratio=float(tech.get("body_ratio", 0.5)),
+                                    dist_ema21_pct=float(tech.get("dist_ema21_pct", 0.0)),
+                                    hour_utc=hour,
+                                )
+                                if _dss_tier != "A+":
+                                    _allow = False
+
+                        if _allow and vname == "NEW":
+                            # 1) GOSTERGELER.HTML: Hull Hareketli Ortalaması (HMA 21) - Endeksler için sıfır-gecikmeli yön teyidi
+                            if any(idx in sym for idx in ("NAS100", "US30", "USTEC")):
+                                hma_vals = _HMA_CACHE.get(sym)
+                                if hma_vals and ci - 1 < len(hma_vals) and ci - 2 >= 0:
+                                    hma_now = hma_vals[ci - 1]
+                                    hma_prev = hma_vals[ci - 2]
+                                    hma_slope = hma_now - hma_prev
+                                    if _ba == "BUY" and (close_now < hma_now or hma_slope < 0):
+                                        _allow = False
+                                    elif _ba == "SELL" and (close_now > hma_now or hma_slope > 0):
+                                        _allow = False
+                        if _allow:
+                            emit(vname, _ba, float(tech["score"]))
                 else:
                     _mc = _entry_mode_candidate(sym, ts, bars, ci, tech, pip_size)
                     if _mc is not None:
@@ -3517,8 +3925,38 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             for cand_d in sorted(candidates[vname], key=lambda x: -x["score"]):
                 if len(book.positions) >= MAX_OPEN_POSITIONS or opened >= TRADES_PER_BAR_CAP:
                     break
+                if vname == "NEW" and TUN_COMBINED:
+                    if day_halted.get(day_id, False):
+                        break
+                    cur_realized = day_realized_pnl.get(day_id, 0.0)
+                    if day_green_locked.get(day_id, False):
+                        floor_usd = max(3.0 if is_weekend else 10.0, round(day_peak_pnl.get(day_id, 18.0) * 0.55, 2))
+                        free_buf = cur_realized - floor_usd
+                        if free_buf < (2.0 if is_weekend else 5.0) or len(book.positions) >= 1:
+                            break
+                        cand_d["max_risk_usd"] = round(free_buf * 0.45, 2)
+                    elif not is_weekend and hour < 7:
+                        if len(book.positions) >= 2:
+                            break
+                    elif not is_weekend and 7 <= hour < 11:
+                        # Londra açılışı (07:00-10:59 UTC): sabah volatilite atağında tek işlem riskini $35 ile sınırla
+                        cand_d["max_risk_usd"] = min(cand_d.get("max_risk_usd", 1000.0), 35.0)
+                        if cur_realized < -20.0:
+                            if len(book.positions) >= 2:
+                                break
+                            cand_d["risk_mult"] = 0.25
                 spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
-                if TUN_COST_AWARE_EXITS:
+                mx = cand_d.get("exits") if vname == "NEW" else None
+                if mx:
+                    # Özel kol çıkışları (FVG 1.8R, Donchian 2x/4x ATR, LB kutu, Squeeze KC, S3):
+                    # Maliyet tabanı (4×spread+komisyon) altında kalmaması garanti edilir.
+                    cost_sl, _, _ = compute_cost_aware_levels(cand_d, spec["sl_pips"], spec["tp_pips"])
+                    sl_pips = max(float(mx["sl_pips"]), cost_sl) if TUN_COST_AWARE_EXITS else float(mx["sl_pips"])
+                    tp_pips = float(mx["tp_pips"])
+                    if tp_pips > 0 and sl_pips > float(mx["sl_pips"]) and float(mx["sl_pips"]) > 0:
+                        tp_pips = round(sl_pips * (float(mx["tp_pips"]) / float(mx["sl_pips"])), 1)
+                    partial = 0.0
+                elif TUN_COST_AWARE_EXITS:
                     sl_pips, tp_pips, partial = compute_cost_aware_levels(cand_d, spec["sl_pips"], spec["tp_pips"])
                 elif vname == "NEW":
                     mx = cand_d.get("exits")
@@ -3637,6 +4075,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             "per_symbol": book.per_symbol,
             "daily_pnl": dict(sorted(daily.items())),
             "daily_stats": dict(sorted(daily_stats.items())),
+            "closed": book.closed,
         }
         by_reason: Dict[str, Dict[str, float]] = {}
         for t in book.closed:
@@ -3712,7 +4151,7 @@ def _bar_index_at_or_before(bars: List[Tuple], ts: float) -> Optional[int]:
 
 def main():
     global TUN_MIN_SCORE, TUN_SL_ATR_MULT, TUN_TP_ATR_MULT, TUN_RR_FLOOR, TUN_HEADROOM_FOREX
-    global TUN_ADX_MIN, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_CLOSE_CONFIRM, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
+    global TUN_ADX_MIN, TUN_CHOP_MAX, TUN_ADX_MIN_SYMS, TUN_ADX_HALFLOT, TUN_CLOSE_CONFIRM, TUN_ST_FILTER, BLOCKED_HOURS, EV_GUARD
     global TUN_ST_EXEMPT_ARMS
     global TUN_SCORE_HALF_BELOW, TUN_SCORE_HALF_MULT
     global TUN_FX_MIN_SCORE, TUN_GOLD_DXY_SOFT, TUN_GOLD_DXY_BUMP, EV_WINDOW_SEC, EV_MAX_WIN_RATE
@@ -3935,6 +4374,15 @@ def main():
     parser.add_argument("--major-max-ext", type=float, default=0.0, help="Majörlerde EMA21'den maks. ATR-katı uzama — kovalamama (0 = kapalı)")
     parser.add_argument("--cost-aware-exits", action="store_true", help="Broker maliyetine duyarlı dinamik SL/TP/BE motoru")
     parser.add_argument("--cost-be-r", type=float, default=1.0, help="Maliyet duyarlı BE tetik R-oranı (varsayılan 1.0 = 1R; erken BE tuzağını önler)")
+    parser.add_argument("--news-bias", action="store_true", help="Ekonomik takvim açıklanmış veri yön kanıtı motorunu aç (live forex.py paritesi)")
+    parser.add_argument("--news-calendar", default="", help="Ekonomik takvim olayları JSON dosyası yolu (boş = outputs/economic_calendar_events_monthly.json)")
+    parser.add_argument("--news-window", type=float, default=1800.0, help="Ekonomik takvim olay etki penceresi (saniye; varsayılan 1800 = 30 dk)")
+    parser.add_argument("--news-no-block-opposing", action="store_true", help="Zıt yönlü takvim olaylarında girişi engellemeyi kapat")
+    parser.add_argument("--news-bypass-filters", action="store_true", help="Destekleyici takvim olaylarında yumuşak seans/min-ATR filtrelerini atla")
+    parser.add_argument("--news-score-bump", type=float, default=10.0, help="Destekleyici takvim olayı skor primi (canlı 10.0)")
+    parser.add_argument("--chop-max", type=float, default=0.0, help="Choppiness Index kalkanı (örn. 61.8; CHOP >= bu değerde yatay/testerede giriş engellenir)")
+    parser.add_argument("--no-quality-gate", action="store_true", help="Varlik kalitesi kalkanini devre disi birak")
+    parser.add_argument("--no-session-filter", action="store_true", help="Seans penceresi filtresini devre disi birak")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
@@ -4086,6 +4534,7 @@ def main():
     TUN_RR_FLOOR = args.rr_floor
     TUN_HEADROOM_FOREX = args.headroom
     TUN_ADX_MIN = args.adx_min
+    TUN_CHOP_MAX = args.chop_max
     TUN_ADX_MIN_SYMS = set(s.strip().upper() for s in args.adx_syms.split(",") if s.strip())
     TUN_ADX_HALFLOT = args.adx_halflot
     TUN_CLOSE_CONFIRM = bool(args.close_confirm)
@@ -4101,6 +4550,13 @@ def main():
     global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT, TUN_SLIP_PIPS
     global TUN_CHAND_INDEP
     global TUN_BE_ATR_GOLD, TUN_BE_ATR_CRYPTO, TUN_COST_AWARE_EXITS, TUN_COST_BE_R
+    global TUN_NEWS_BIAS, TUN_NEWS_CALENDAR_PATH, TUN_NEWS_WINDOW_SEC, TUN_NEWS_BLOCK_OPPOSING, TUN_NEWS_BYPASS_FILTERS, TUN_NEWS_SCORE_BUMP
+    TUN_NEWS_BIAS = bool(args.news_bias)
+    TUN_NEWS_CALENDAR_PATH = str(args.news_calendar).strip() or os.path.join(ROOT, "outputs", "economic_calendar_events_monthly.json")
+    TUN_NEWS_WINDOW_SEC = float(args.news_window)
+    TUN_NEWS_BLOCK_OPPOSING = not bool(args.news_no_block_opposing)
+    TUN_NEWS_BYPASS_FILTERS = bool(args.news_bypass_filters)
+    TUN_NEWS_SCORE_BUMP = float(args.news_score_bump)
     TUN_COST_AWARE_EXITS = bool(args.cost_aware_exits)
     TUN_COST_BE_R = float(args.cost_be_r)
     TUN_CHAND_INDEP = bool(args.chand_indep_gate)
@@ -4122,6 +4578,9 @@ def main():
     EV_WINDOW_SEC = args.ev_window * 3600.0
     EV_MAX_WIN_RATE = args.ev_wr
     TUN_CHANDLIER = args.chandelier
+    global TUN_NO_QUALITY, TUN_NO_SESSION
+    TUN_NO_QUALITY = args.no_quality_gate
+    TUN_NO_SESSION = args.no_session_filter
     if args.major_hours:
         parts = args.major_hours.split("-")
         TUN_MAJOR_HOURS = (int(parts[0]), int(parts[1]))
