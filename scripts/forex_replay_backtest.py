@@ -58,6 +58,7 @@ TUN_MAX_SPREAD_FX = 3.0        # FX giris kapisi: spread bu pip degerini asarsa 
 TUN_SLIP_PIPS = 0.0            # --slip-pips: bacak basina aleyhe kayma (pip) — maliyet stresi (0 = kapali)
 TUN_TRAIL_PIPS_OVERRIDE = 0.0  # >0: spec trailing mesafesini (pip) ez - zaman-dilimi merdiveni testi
 BASE_TRAIL_PIPS = 20.0
+TUN_COST_AWARE_EXITS = False
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
 # Gerçek spread profili (--spread-profile ile yüklenir): {SYMBOL: avg_pips}; boşsa kategori spread'i kullanılır
@@ -1878,6 +1879,7 @@ class SimPos:
     basket_armed: bool = False  # lead'te: sepet P/L tamponu geçti (BE kilidi arm)
     no_fixed_tp: bool = False   # sabit TP yok (tp_pips<=0) — çıkış chandelier trailing'e bırakılır
     time_stop_bars: int = 0     # >0: bu bar sayısı dolunca zorla kapat (Dalga-2 ORB/reopen/fix)
+    cost_pips: float = 0.0      # maliyet duyarlı çıkış motoru için spread+komisyon
 
 
 class Book:
@@ -1915,6 +1917,22 @@ def size_lots(symbol: str, sl_pips: float, pip_val: float) -> float:
     return round(max(0.01, min(raw, 5.0)), 2)
 
 
+def compute_cost_aware_levels(cand: Dict, base_sl: float, base_tp: float) -> Tuple[float, float, float]:
+    sym = cand["symbol"]
+    is_fx = len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()
+    pip_val = cand.get("pip_val", 10.0)
+    comm_p = (7.0 / pip_val) if (is_fx and pip_val > 0) else 0.0
+    tot_cost = cand.get("spread_pips", 2.0) + comm_p
+    atr_p = cand.get("atr_pips") or base_sl
+    mult = TUN_CRYPTO_SL_MULT if (TUN_CRYPTO_SL_MULT > 0 and ("BTC" in sym or "ETH" in sym)) else 1.8
+    cost_floor = tot_cost * 4.0
+    vol_floor = atr_p * mult
+    sl_p = round(max(base_sl, vol_floor, cost_floor), 1)
+    tp_p = round(sl_p * 1.8, 1)
+    part_p = round(tp_p * 0.6, 1)
+    return sl_p, tp_p, part_p
+
+
 def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: float, idx: int) -> Optional[SimPos]:
     sym = cand["symbol"]
     half_spread = cand["spread_pips"] * cand["pip_size"] / 2.0
@@ -1946,12 +1964,15 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
         lots = max(0.01, round(lots * TUN_ADX_HALFLOT, 2))  # düşük kalite sinyal → küçültülmüş lot (A/B/C lite)
     if cand.get("score_halflot"):
         lots = max(0.01, round(lots * TUN_SCORE_HALF_MULT, 2))  # düşük radar skorlu sinyal → küçültülmüş lot (skor-bazlı A/B/C lite)
+    is_fx = len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()
+    comm_p = (7.0 / cand["pip_val"]) if (is_fx and cand["pip_val"] > 0) else 0.0
+    cost_p = cand["spread_pips"] + comm_p
     return SimPos(
         symbol=sym, direction=cand["action"], lots=lots,
         entry_price=entry, sl_price=sl, tp_price=tp, pip_size=cand["pip_size"],
         pip_val=cand["pip_val"], digits=cand["digits"], opened_bar=idx,
         partial_target_pips=partial_pips, fill_adjust=half_spread,
-        slip_pips=TUN_SLIP_PIPS,
+        slip_pips=TUN_SLIP_PIPS, cost_pips=cost_p,
         entry_atr_pips=cand.get("atr_pips", 0.0), no_fixed_tp=no_fixed_tp,
         sl0_pips=float(sl_pips),
         time_stop_bars=int(cand.get("time_stop_bars", 0) or 0),
@@ -2045,7 +2066,21 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
         pos.mfe_pips = pnl_extreme_pips
 
     # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi) — sepet üyesinde atlanır
-    if not TUN_NO_BE and not pos.be_locked and not dca_mode:
+    if TUN_COST_AWARE_EXITS and not TUN_NO_BE and not pos.be_locked and not dca_mode:
+        min_be_trigger = max(pos.cost_pips * 2.5, pos.sl0_pips * 0.45, 4.0)
+        if pnl_extreme_pips >= min_be_trigger:
+            lock_p = pos.cost_pips + 1.0
+            if direction == "BUY":
+                cand_sl = round(entry + lock_p * pip, pos.digits)
+                if cand_sl > pos.sl_price and cand_sl < ext:
+                    pos.sl_price = cand_sl
+                    pos.be_locked = True
+            else:
+                cand_sl = round(entry - lock_p * pip, pos.digits)
+                if (pos.sl_price == 0 or cand_sl < pos.sl_price) and cand_sl > ext:
+                    pos.sl_price = cand_sl
+                    pos.be_locked = True
+    elif not TUN_NO_BE and not pos.be_locked and not dca_mode:
         is_dollar_be = pnl_extreme_pips >= (be_trigger_pips + headroom)
         is_pip_be = eff_be_pips > 0 and pnl_extreme_pips >= eff_be_pips
         # 2026-10-14: AİLE-ÖZEL ATR TABANI — canlı `be_trigger_atr_mult_gold/crypto` ile aynı.
@@ -3184,17 +3219,20 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                                           if pp.symbol == sym_p and pp.direction == cd2["action"]]
                             if len(book_p.positions) < MAX_OPEN_POSITIONS and len(same_dir_p) < MAX_PER_SYMBOL_DIR:
                                 spec_p = forex.get_symbol_trading_specs(sym_p, atr_pips=cd2["atr_pips"])
-                                mx_p = cd2.get("exits")
-                                if mx_p:
-                                    sl_p, tp_p, part_p = mx_p["sl_pips"], mx_p["tp_pips"], 0.0
+                                if TUN_COST_AWARE_EXITS:
+                                    sl_p, tp_p, part_p = compute_cost_aware_levels(cd2, spec_p["sl_pips"], spec_p["tp_pips"])
                                 else:
-                                    sl_mult_eff = TUN_SL_ATR_MULT
-                                    if TUN_CRYPTO_SL_MULT > 0 and ("BTC" in sym_p or "ETH" in sym_p):
-                                        sl_mult_eff = TUN_CRYPTO_SL_MULT
-                                    levels_p = forex.get_atr_exit_levels(
-                                        cd2["atr_pips"], spec_p["sl_pips"], spec_p["tp_pips"],
-                                        sl_atr_mult=sl_mult_eff, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
-                                    sl_p, tp_p, part_p = levels_p["sl_pips"], levels_p["tp_pips"], levels_p["first_target_pips"]
+                                    mx_p = cd2.get("exits")
+                                    if mx_p:
+                                        sl_p, tp_p, part_p = mx_p["sl_pips"], mx_p["tp_pips"], 0.0
+                                    else:
+                                        sl_mult_eff = TUN_SL_ATR_MULT
+                                        if TUN_CRYPTO_SL_MULT > 0 and ("BTC" in sym_p or "ETH" in sym_p):
+                                            sl_mult_eff = TUN_CRYPTO_SL_MULT
+                                        levels_p = forex.get_atr_exit_levels(
+                                            cd2["atr_pips"], spec_p["sl_pips"], spec_p["tp_pips"],
+                                            sl_atr_mult=sl_mult_eff, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
+                                        sl_p, tp_p, part_p = levels_p["sl_pips"], levels_p["tp_pips"], levels_p["first_target_pips"]
                                 pos_p = open_position(cd2, sl_p, tp_p, part_p, idx)
                                 if pos_p is not None:
                                     book_p.positions.append(pos_p)
@@ -3478,7 +3516,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 if len(book.positions) >= MAX_OPEN_POSITIONS or opened >= TRADES_PER_BAR_CAP:
                     break
                 spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
-                if vname == "NEW":
+                if TUN_COST_AWARE_EXITS:
+                    sl_pips, tp_pips, partial = compute_cost_aware_levels(cand_d, spec["sl_pips"], spec["tp_pips"])
+                elif vname == "NEW":
                     mx = cand_d.get("exits")
                     if mx:
                         # Giriş-modu çıkışları: modun kendi SL/TP'si (ATR çıkış motoru devre dışı)
@@ -3515,10 +3555,14 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             if len(sh["book"].positions) >= SHADOW_MAX_CONCURRENT:
                 continue
             spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
-            levels = forex.get_atr_exit_levels(
-                cand_d["atr_pips"], spec["sl_pips"], spec["tp_pips"],
-                sl_atr_mult=TUN_SL_ATR_MULT, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
-            spos = open_position(cand_d, levels["sl_pips"], levels["tp_pips"], levels["first_target_pips"], idx)
+            if TUN_COST_AWARE_EXITS:
+                sl_pips, tp_pips, partial = compute_cost_aware_levels(cand_d, spec["sl_pips"], spec["tp_pips"])
+            else:
+                levels = forex.get_atr_exit_levels(
+                    cand_d["atr_pips"], spec["sl_pips"], spec["tp_pips"],
+                    sl_atr_mult=TUN_SL_ATR_MULT, tp_atr_mult=TUN_TP_ATR_MULT, rr_floor=TUN_RR_FLOOR)
+                sl_pips, tp_pips, partial = levels["sl_pips"], levels["tp_pips"], levels["first_target_pips"]
+            spos = open_position(cand_d, sl_pips, tp_pips, partial, idx)
             if spos is not None:
                 sh["book"].positions.append(spos)
 
@@ -3887,6 +3931,7 @@ def main():
     parser.add_argument("--major-hours", default="7-20", help="Majörler için UTC saat penceresi '7-20' (canlı default 7-20; boş = kapalı)")
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
     parser.add_argument("--major-max-ext", type=float, default=0.0, help="Majörlerde EMA21'den maks. ATR-katı uzama — kovalamama (0 = kapalı)")
+    parser.add_argument("--cost-aware-exits", action="store_true", help="Broker maliyetine duyarlı dinamik SL/TP/BE motoru")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
@@ -4052,7 +4097,8 @@ def main():
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT, TUN_SLIP_PIPS
     global TUN_CHAND_INDEP
-    global TUN_BE_ATR_GOLD, TUN_BE_ATR_CRYPTO
+    global TUN_BE_ATR_GOLD, TUN_BE_ATR_CRYPTO, TUN_COST_AWARE_EXITS
+    TUN_COST_AWARE_EXITS = bool(args.cost_aware_exits)
     TUN_CHAND_INDEP = bool(args.chand_indep_gate)
     TUN_BE_ATR_GOLD = float(args.be_trigger_atr_gold)
     TUN_BE_ATR_CRYPTO = float(args.be_trigger_atr_crypto)
