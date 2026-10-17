@@ -3554,11 +3554,25 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         gross_loss = abs(sum(t["pnl_usd"] for t in book.closed if t["pnl_usd"] < 0))
         pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
         daily: Dict[str, float] = {}
+        daily_stats: Dict[str, Dict[str, Any]] = {}
         for t in book.closed:
             if not t.get("closed_ts"):
                 continue
             d = datetime.datetime.fromtimestamp(t["closed_ts"], datetime.timezone.utc).strftime("%Y-%m-%d")
             daily[d] = round(daily.get(d, 0.0) + t["pnl_usd"], 2)
+            ds = daily_stats.setdefault(d, {"trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "gw": 0.0, "gl": 0.0})
+            ds["trades"] += 1
+            if t["pnl_usd"] >= 0:
+                ds["wins"] += 1
+                ds["gw"] += t["pnl_usd"]
+            else:
+                ds["losses"] += 1
+                ds["gl"] += abs(t["pnl_usd"])
+            ds["pnl"] = round(ds["pnl"] + t["pnl_usd"], 2)
+        for d, ds in daily_stats.items():
+            ds["win_rate"] = round(100.0 * ds["wins"] / ds["trades"], 1) if ds["trades"] else 0.0
+            ds["gw"] = round(ds["gw"], 2)
+            ds["gl"] = round(ds["gl"], 2)
         var = {
             "trades": n,
             "win_rate": round(100 * wins / n, 1) if n else 0.0,
@@ -3568,6 +3582,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             "balance": book.balance,
             "per_symbol": book.per_symbol,
             "daily_pnl": dict(sorted(daily.items())),
+            "daily_stats": dict(sorted(daily_stats.items())),
         }
         by_reason: Dict[str, Dict[str, float]] = {}
         for t in book.closed:
@@ -4269,7 +4284,15 @@ def main():
         return
     if new_v.get("max_drawdown_usd") is not None:
         print(f"NEW Özkaynak: ${new_v['equity_start']:.2f} -> ${new_v['equity_end']:.2f} | Maks. Düşüş: ${new_v['max_drawdown_usd']:.2f}")
-    if new_v.get("daily_pnl"):
+    if new_v.get("daily_stats"):
+        print("\nGÜNLÜK İŞLEM SAYILARI VE KÂRLILIK TABLOSU (NEW):")
+        print(f"{'Tarih':10s} | {'İşlem':6s} | {'W / L':10s} | {'Kazanma %':9s} | {'Brüt Kâr ($)':12s} | {'Brüt Zarar ($)':14s} | {'Net PnL ($)':12s}")
+        print("-" * 88)
+        cum = 0.0
+        for d, ds in new_v["daily_stats"].items():
+            cum += ds["pnl"]
+            print(f"{d:10s} | {ds['trades']:5d}  | {ds['wins']:3d}/{ds['losses']:<4d}  | %{ds['win_rate']:7.1f} | ${ds['gw']:>10.2f} | ${ds['gl']:>12.2f} | ${ds['pnl']:>+10.2f}")
+    elif new_v.get("daily_pnl"):
         print("\nGÜNLÜK PnL (NEW):")
         for d, pnl in new_v["daily_pnl"].items():
             bar = "+" * max(0, int(pnl / 2)) + "-" * max(0, int(-pnl / 2))
