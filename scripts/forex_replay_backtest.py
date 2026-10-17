@@ -59,6 +59,7 @@ TUN_SLIP_PIPS = 0.0            # --slip-pips: bacak basina aleyhe kayma (pip) �
 TUN_TRAIL_PIPS_OVERRIDE = 0.0  # >0: spec trailing mesafesini (pip) ez - zaman-dilimi merdiveni testi
 BASE_TRAIL_PIPS = 20.0
 TUN_COST_AWARE_EXITS = False
+TUN_COST_BE_R = 1.0  # Broker maliyetine duyarlı BE tetik R-oranı (1.0 = 1R kârda kilitle)
 BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
 # Gerçek spread profili (--spread-profile ile yüklenir): {SYMBOL: avg_pips}; boşsa kategori spread'i kullanılır
@@ -1929,7 +1930,7 @@ def compute_cost_aware_levels(cand: Dict, base_sl: float, base_tp: float) -> Tup
     vol_floor = atr_p * mult
     sl_p = round(max(base_sl, vol_floor, cost_floor), 1)
     tp_p = round(sl_p * 1.8, 1)
-    part_p = round(tp_p * 0.6, 1)
+    part_p = round(sl_p * 1.0, 1)  # TP1 tam 1.0R (Kısmi kâr / nefes alanı garantisi)
     return sl_p, tp_p, part_p
 
 
@@ -2065,9 +2066,10 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     if pos.mfe_pips < pnl_extreme_pips:
         pos.mfe_pips = pnl_extreme_pips
 
-    # (2) BE kilidi ($1 net kâr garantisinin üstünde, %40 kâr kilidi) — sepet üyesinde atlanır
+    # (2) BE kilidi (Erken BE Tuzağı Engellendi: en az 1.0R / 1.2x ATR nefes alanı) — sepet üyesinde atlanır
     if TUN_COST_AWARE_EXITS and not TUN_NO_BE and not pos.be_locked and not dca_mode:
-        min_be_trigger = max(pos.cost_pips * 2.5, pos.sl0_pips * 0.45, 4.0)
+        be_r = TUN_COST_BE_R if TUN_COST_BE_R > 0 else 1.0
+        min_be_trigger = max(pos.cost_pips * 3.0, pos.sl0_pips * be_r, pos.entry_atr_pips * 1.2, 5.0)
         if pnl_extreme_pips >= min_be_trigger:
             lock_p = pos.cost_pips + 1.0
             if direction == "BUY":
@@ -2135,7 +2137,7 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
             pos.lots = round(pos.lots - close_lots, 2)
             pos.partial_realized_usd = round(pos.partial_realized_usd + partial_realized, 2)
             remaining_dpp = max(0.0001, pos.lots * pos.pip_val)
-            lock_pips = max(0.5, round(1.0 / remaining_dpp, 1))
+            lock_pips = (pos.cost_pips + 1.0) if TUN_COST_AWARE_EXITS else max(0.5, round(1.0 / remaining_dpp, 1))
             if direction == "BUY":
                 lock_sl = round(entry + lock_pips * pip, pos.digits)
                 if lock_sl > pos.sl_price:
@@ -3932,6 +3934,7 @@ def main():
     parser.add_argument("--major-min-atr", type=float, default=4.0, help="Majörler minimum ATR(pips) tabanı (canlı default 4.0; 0 = kapalı)")
     parser.add_argument("--major-max-ext", type=float, default=0.0, help="Majörlerde EMA21'den maks. ATR-katı uzama — kovalamama (0 = kapalı)")
     parser.add_argument("--cost-aware-exits", action="store_true", help="Broker maliyetine duyarlı dinamik SL/TP/BE motoru")
+    parser.add_argument("--cost-be-r", type=float, default=1.0, help="Maliyet duyarlı BE tetik R-oranı (varsayılan 1.0 = 1R; erken BE tuzağını önler)")
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
@@ -4097,8 +4100,9 @@ def main():
     global TUN_SPEC_ATR, TUN_BE_PIPS_OVERRIDE, TUN_TRAIL_PIPS_OVERRIDE, TUN_BE_USD_FX, TUN_MAX_SPREAD_FX
     global TUN_NO_BE, TUN_BE_TRIGGER, TUN_BE_ATR_MULT, TUN_SLIP_PIPS
     global TUN_CHAND_INDEP
-    global TUN_BE_ATR_GOLD, TUN_BE_ATR_CRYPTO, TUN_COST_AWARE_EXITS
+    global TUN_BE_ATR_GOLD, TUN_BE_ATR_CRYPTO, TUN_COST_AWARE_EXITS, TUN_COST_BE_R
     TUN_COST_AWARE_EXITS = bool(args.cost_aware_exits)
+    TUN_COST_BE_R = float(args.cost_be_r)
     TUN_CHAND_INDEP = bool(args.chand_indep_gate)
     TUN_BE_ATR_GOLD = float(args.be_trigger_atr_gold)
     TUN_BE_ATR_CRYPTO = float(args.be_trigger_atr_crypto)
