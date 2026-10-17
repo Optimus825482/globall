@@ -2426,14 +2426,14 @@ RISK_HARD_MULT = 2.0
 
 
 def get_symbol_risk_pct(symbol: str, settings: Optional[Any] = None) -> float:
-    """FX %15, XAUUSD %7, BTC/US30/USTEC/NAS100 %2 dinamik risk bütçesi yüzdesi."""
+    """FX %10, XAUUSD %10, BTC/US30/USTEC/NAS100 %5 dinamik risk bütçesi yüzdesi."""
     s = settings or _AUTO_SETTINGS
     sym_u = str(symbol or "").upper()
     if any(k in sym_u for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA", "US30", "NAS100", "USTEC", "SPX")):
-        return float(getattr(s, "risk_crypto_index_pct", 2.0))
+        return float(getattr(s, "risk_crypto_index_pct", 5.0))
     elif any(k in sym_u for k in ("XAU", "GOLD")):
-        return float(getattr(s, "risk_gold_pct", 7.0))
-    return float(getattr(s, "risk_per_trade_pct", 15.0))
+        return float(getattr(s, "risk_gold_pct", 10.0))
+    return float(getattr(s, "risk_per_trade_pct", 10.0))
 
 
 def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: float, risk_usd: float) -> Tuple[float, bool]:
@@ -4897,9 +4897,9 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(15.0, ge=0.1, le=30.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %15")
-    risk_gold_pct: float = Field(7.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %7")
-    risk_crypto_index_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %2")
+    risk_per_trade_pct: float = Field(10.0, ge=0.1, le=30.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %10")
+    risk_gold_pct: float = Field(10.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %10")
+    risk_crypto_index_pct: float = Field(5.0, ge=0.1, le=20.0, description="BTCUSD, US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %5")
     max_open_positions: int = Field(99, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(2, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 2: Kârlı trend piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")

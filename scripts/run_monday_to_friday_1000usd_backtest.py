@@ -83,12 +83,7 @@ def run_portfolio_simulation(
         cat = spec.get("category", "major")
         spread = REAL_BROKER_SPREADS.get(sym, 1.5)
         
-        if "XAU" in sym:
-            risk_pct = 7.0
-        elif sym in ("BTCUSD", "US30", "NAS100") or "crypto" in cat:
-            risk_pct = 2.0
-        else:
-            risk_pct = 15.0
+        risk_pct = forex.get_symbol_risk_pct(sym)
             
         symbol_specs[sym] = {
             "spec": spec,

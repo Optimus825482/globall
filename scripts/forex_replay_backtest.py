@@ -1900,16 +1900,19 @@ def be_headroom_pips(symbol: str) -> float:
 
 
 def size_lots(symbol: str, sl_pips: float, pip_val: float) -> float:
-    risk_usd = BALANCE * (RISK_PCT / 100.0)
+    risk_pct = forex.get_symbol_risk_pct(symbol)
+    risk_usd = BALANCE * (risk_pct / 100.0)
     raw = risk_usd / (sl_pips * pip_val) if sl_pips > 0 else 0.01
     s = symbol.upper()
     if "NAS" in s or "USTEC" in s or "US30" in s or "SPX" in s:
-        return round(max(0.10, min(round(raw * 10) / 10, 0.20)), 2)
+        return round(max(0.10, min(round(raw * 10) / 10, 2.0)), 2)
     if "OIL" in s or "WTI" in s:
-        return round(max(0.50, min(raw, 1.0)), 2)
-    if "XAU" in s or "GOLD" in s or "BTC" in s or "ETH" in s:
-        return round(max(0.01, min(raw, 0.02)), 2)
-    return round(max(0.01, min(raw, 0.05)), 2)
+        return round(max(0.50, min(raw, 2.0)), 2)
+    if "XAU" in s or "GOLD" in s:
+        return round(max(0.01, min(raw, 5.0)), 2)
+    if "BTC" in s or "ETH" in s:
+        return round(max(0.01, min(raw, 2.0)), 2)
+    return round(max(0.01, min(raw, 5.0)), 2)
 
 
 def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: float, idx: int) -> Optional[SimPos]:
@@ -1935,7 +1938,8 @@ def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: floa
                  else round(entry - TUN_SLIP_PIPS * cand["pip_size"], cand["digits"]))
     lots = size_lots(sym, sl_pips, cand["pip_val"])
     # Canlı motorla aynı risk normalizasyonu (tek kaynak: forex.apply_risk_normalization)
-    lots, risk_skip = forex.apply_risk_normalization(sym, lots, sl_pips, cand["pip_val"], BALANCE * RISK_PCT / 100.0)
+    risk_usd = BALANCE * (forex.get_symbol_risk_pct(sym) / 100.0)
+    lots, risk_skip = forex.apply_risk_normalization(sym, lots, sl_pips, cand["pip_val"], risk_usd)
     if risk_skip:
         return None
     if cand.get("adx_halflot") and TUN_ADX_HALFLOT > 0:
@@ -3280,7 +3284,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                             "net": round(sum(ev_rows), 2),
                             "win_rate": round(100.0 * sum(1 for p in ev_rows if p >= 0) / len(ev_rows), 1) if ev_rows else 0.0,
                         }
-                        ev_risk_floor = BALANCE * RISK_PCT / 100.0 * EV_LOSS_RISK_MULT
+                        ev_risk_floor = BALANCE * (forex.get_symbol_risk_pct(sym) / 100.0) * EV_LOSS_RISK_MULT
                         if forex.ev_guard_decision(ev_stats, EV_MIN_TRADES, EV_MAX_WIN_RATE, ev_risk_floor):
                             blocked_events.append(("EV", cand("EV")))
                             return
@@ -3769,6 +3773,7 @@ def main():
     parser.add_argument("--arm-symbols", default="",
                         help="Çoklu-kol sembol tarifi: 's3_5m=XAUUSD;s3_15m=XAUUSD,BTCUSD,US30,GBPUSD;ema_adx_pullback=XAUUSD;london_breakout=XAUUSD,GBPUSD,USDJPY,BTCUSD,USDCHF,US30;donchian_adx=XAUUSD'. Canlı varsayılanları birebir budur.")
     parser.add_argument("--gate-extras", default="", help="Virgüllü: --add-symbols ile eklenen sembollerden majör kapılarına (seans+minATR) tabi tutulacaklar")
+    parser.add_argument("--balance", type=float, default=10000.0, help="Başlangıç bakiyesi USD")
     parser.add_argument("--min-score", type=float, default=75.0)
     parser.add_argument("--sl-mult", type=float, default=1.5)
     parser.add_argument("--tp-mult", type=float, default=1.4)
@@ -4111,6 +4116,9 @@ def main():
     global TUN_LOSS_STREAK, TUN_LOSS_STREAK_CD
     TUN_LOSS_STREAK = args.loss_streak
     TUN_LOSS_STREAK_CD = args.loss_streak_cd
+    if args.balance and args.balance > 0:
+        global BALANCE
+        BALANCE = args.balance
     if args.max_open and args.max_open > 0:
         global MAX_OPEN_POSITIONS
         MAX_OPEN_POSITIONS = args.max_open

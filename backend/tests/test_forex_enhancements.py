@@ -556,12 +556,12 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
     def test_default_risk_and_position_limits(self):
-        """Varsayılan risk bütçesi (FX %15, XAU %7, Kripto/Endeks %2), 15dk soğuma ve 0.40R BE."""
+        """Varsayılan risk bütçesi (FX %10, XAU %10, Kripto/Endeks %5), 15dk soğuma ve 0.40R BE."""
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 2)
-        self.assertEqual(cfg.risk_per_trade_pct, 15.0)
-        self.assertEqual(cfg.risk_gold_pct, 7.0)
-        self.assertEqual(cfg.risk_crypto_index_pct, 2.0)
+        self.assertEqual(cfg.risk_per_trade_pct, 10.0)
+        self.assertEqual(cfg.risk_gold_pct, 10.0)
+        self.assertEqual(cfg.risk_crypto_index_pct, 5.0)
         self.assertEqual(cfg.loss_streak_limit, 2)
         self.assertEqual(cfg.loss_streak_cooldown_sec, 900.0)
         self.assertEqual(cfg.be_trigger_r_mult, 0.40)
@@ -570,16 +570,16 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
     def test_get_symbol_risk_pct(self):
-        """Forex %15, XAUUSD %7, BTC/US30/USTEC/NAS100 %2 dinamik risk bütçesi kontrolü."""
-        self.assertEqual(forex.get_symbol_risk_pct("EURUSD"), 15.0)
-        self.assertEqual(forex.get_symbol_risk_pct("GBPUSD"), 15.0)
-        self.assertEqual(forex.get_symbol_risk_pct("AUDCAD"), 15.0)
-        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 7.0)
-        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 7.0)
-        self.assertEqual(forex.get_symbol_risk_pct("BTCUSD"), 2.0)
-        self.assertEqual(forex.get_symbol_risk_pct("US30"), 2.0)
-        self.assertEqual(forex.get_symbol_risk_pct("USTEC"), 2.0)
-        self.assertEqual(forex.get_symbol_risk_pct("NAS100"), 2.0)
+        """Forex %10, XAUUSD %10, BTC/US30/USTEC/NAS100 %5 dinamik risk bütçesi kontrolü."""
+        self.assertEqual(forex.get_symbol_risk_pct("EURUSD"), 10.0)
+        self.assertEqual(forex.get_symbol_risk_pct("GBPUSD"), 10.0)
+        self.assertEqual(forex.get_symbol_risk_pct("AUDCAD"), 10.0)
+        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 10.0)
+        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 10.0)
+        self.assertEqual(forex.get_symbol_risk_pct("BTCUSD"), 5.0)
+        self.assertEqual(forex.get_symbol_risk_pct("US30"), 5.0)
+        self.assertEqual(forex.get_symbol_risk_pct("USTEC"), 5.0)
+        self.assertEqual(forex.get_symbol_risk_pct("NAS100"), 5.0)
 
     def test_same_symbol_pyramiding_limit_three(self):
         """Verify that 3 positions in the same direction are allowed, but the 4th is blocked."""
