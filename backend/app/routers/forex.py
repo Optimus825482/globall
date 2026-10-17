@@ -1647,20 +1647,22 @@ def ev_guard_decision(stats: Dict[str, Any], min_samples: int, max_win_rate: flo
 def loss_streak_on_close(streak: int, reason: str, pnl_usd: float, limit: int) -> Tuple[int, bool]:
     """Seri-SL sigortası sayacı (saf fonksiyon — test edilebilir).
 
-    Kullanıcı kuralı: aynı sembolde arka arkaya N kez tam-SL ile zararla kapanan işlem
+    Kullanıcı kuralı: aynı sembolde arka arkaya N kez tam-SL veya zararla kapanan işlem
     olursa sembol kısa süreliğine YENİ giriş almaz (normal cooldown'dan bağımsız), süre
     bitince normal değerlendirme devam eder. Kazançla kapanış seriyi sıfırlar.
 
     Kurallar:
-      - pnl > 0 → seri sıfırlanır (BE/trailing kazançları da seriyi bozar).
-      - `SL_HIT` + pnl < 0 → seri 1 artar. BE/trailing çıkışları pnl < 0 üretemez
-        (SL hep giriş üstünde kilitlenir), yani "SL ile zarar" tam-SL kaybıdır.
+      - pnl > 0.10 → seri sıfırlanır (BE/trailing kazançları da seriyi bozar).
+      - `SL_HIT` veya pnl <= -1.0 (TP ve BE hariç) → seri 1 artar.
       - Sayı `limit`e ulaşınca (0, True) döner: soğuma tetiklenir, sayaç sıfırdan başlar.
       - limit <= 0 → mekanizma kapalı; pnl==0 veya diğer nedenler sayacı değiştirmez.
     """
-    if pnl_usd > 0:
+    if pnl_usd > 0.10:
         return 0, False
-    if limit <= 0 or pnl_usd >= 0 or reason != "SL_HIT":
+    if limit <= 0 or pnl_usd >= 0:
+        return streak, False
+    is_loss = (reason == "SL_HIT") or (pnl_usd <= -1.0 and reason not in ("TP_HIT", "BE_HIT"))
+    if not is_loss:
         return streak, False
     streak += 1
     if streak >= limit:

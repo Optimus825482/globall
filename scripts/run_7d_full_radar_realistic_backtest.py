@@ -332,25 +332,36 @@ def run_backtest():
                 open_positions = [p for p in open_positions if p["direction"] == signal]
                 same_dir_positions = open_positions
                 
-            # Pyramiding Limit: Max 2 positions per symbol in same direction
-            if len(same_dir_positions) >= 2:
-                continue # Block 3rd position
+            # Pyramiding Limit: Max 3 positions per symbol in same direction
+            if len(same_dir_positions) >= 3:
+                continue # Block 4th position
                 
             # CRITICAL WINNING PYRAMIDING RULE:
-            # If 1 position already exists, it MUST be in solid profit (>= +$0.20)!
-            # Averaging down on a losing position is STRICTLY FORBIDDEN!
+            # - If 1 position exists: It MUST be in solid profit (>= +$0.20) for 2nd layer!
+            # - If 2 positions exist: BOTH positions MUST be in profit (each >= +$0.20) for 3rd layer!
+            # Averaging down on losing positions is STRICTLY FORBIDDEN!
             if len(same_dir_positions) == 1:
                 first_pos = same_dir_positions[0]
-                # Calculate current floating profit of first position
                 if first_pos["direction"] == "BUY":
                     cur_float_pips = ((b_c - half_spread_px) - first_pos["entry_price"]) / pip_size
                 else:
                     cur_float_pips = (first_pos["entry_price"] - (b_c + half_spread_px)) / pip_size
                 cur_float_pnl = cur_float_pips * first_pos["lots"] * pip_val
-                
-                # Check: Is it in profit?
                 if cur_float_pnl < 0.20:
-                    continue # Pyramiding shield blocks entry into losing position!
+                    continue
+            elif len(same_dir_positions) == 2:
+                all_in_profit = True
+                for p in same_dir_positions:
+                    if p["direction"] == "BUY":
+                        f_pips = ((b_c - half_spread_px) - p["entry_price"]) / pip_size
+                    else:
+                        f_pips = (p["entry_price"] - (b_c + half_spread_px)) / pip_size
+                    f_pnl = f_pips * p["lots"] * pip_val
+                    if f_pnl < 0.20:
+                        all_in_profit = False
+                        break
+                if not all_in_profit:
+                    continue # 3. katman için MEVCUT İKİ İŞLEMİN İKİSİ DE kârda olmalı!
                     
             # 4. Position Sizing & Entry
             risk_usd = balance * (risk_pct / 100.0)
@@ -396,9 +407,13 @@ def run_backtest():
         pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_win > 0 else 0.0)
         
         # Pyramiding stats
-        pyramid_trades = [t for t in sym_trades if t.get("layer", 1) == 2]
-        pyr_wins = [t for t in pyramid_trades if t["pnl_usd"] > 0]
-        pyr_pnl = round(sum(t["pnl_usd"] for t in pyramid_trades), 2)
+        l1_trades = [t for t in sym_trades if t.get("layer", 1) == 1]
+        l2_trades = [t for t in sym_trades if t.get("layer", 1) == 2]
+        l3_trades = [t for t in sym_trades if t.get("layer", 1) == 3]
+        
+        l1_pnl = round(sum(t["pnl_usd"] for t in l1_trades), 2)
+        l2_pnl = round(sum(t["pnl_usd"] for t in l2_trades), 2)
+        l3_pnl = round(sum(t["pnl_usd"] for t in l3_trades), 2)
         
         symbol_stats[sym] = {
             "trades": len(sym_trades),
@@ -409,9 +424,9 @@ def run_backtest():
             "pf": pf,
             "spread_pips": spread_pips,
             "spread_shield_blocked": spread_shield_blocked,
-            "pyramid_trades": len(pyramid_trades),
-            "pyramid_wins": len(pyr_wins),
-            "pyramid_pnl": pyr_pnl,
+            "l1_trades": len(l1_trades), "l1_pnl": l1_pnl,
+            "l2_trades": len(l2_trades), "l2_pnl": l2_pnl,
+            "l3_trades": len(l3_trades), "l3_pnl": l3_pnl,
         }
 
     # Portfolio totals
@@ -424,10 +439,13 @@ def run_backtest():
     tot_gross_loss = abs(sum(t["pnl_usd"] for t in tot_losses))
     tot_pf = round(tot_gross_win / tot_gross_loss, 2) if tot_gross_loss > 0 else 99.0
     
-    tot_pyramid = [t for t in closed_trades if t.get("layer", 1) == 2]
-    tot_pyr_wins = [t for t in tot_pyramid if t["pnl_usd"] > 0]
-    tot_pyr_pnl = round(sum(t["pnl_usd"] for t in tot_pyramid), 2)
-    tot_pyr_wr = round(len(tot_pyr_wins) / len(tot_pyramid) * 100.0, 1) if tot_pyramid else 0.0
+    tot_l1 = [t for t in closed_trades if t.get("layer", 1) == 1]
+    tot_l2 = [t for t in closed_trades if t.get("layer", 1) == 2]
+    tot_l3 = [t for t in closed_trades if t.get("layer", 1) == 3]
+    
+    tot_l1_pnl = round(sum(t["pnl_usd"] for t in tot_l1), 2)
+    tot_l2_pnl = round(sum(t["pnl_usd"] for t in tot_l2), 2)
+    tot_l3_pnl = round(sum(t["pnl_usd"] for t in tot_l3), 2)
 
     print("\n" + "=" * 85)
     print("📊 7 GÜNLÜK SEMBOL BAZLI GERÇEKÇİ PERFORMANS TABLOSU (SPREAD & PİRAMİT DAHİL)")
@@ -439,16 +457,20 @@ def run_backtest():
     for sym, st in sorted_syms:
         icon = "🟢" if st["net_pnl"] > 0 else "🔴"
         shield_tag = " (VETO)" if st["spread_shield_blocked"] else ""
-        print(f"{icon} {sym:6s} | {st['spread_pips']:4.1f}p | {st['trades']:5d} | {st['wins']:3d}/{st['losses']:3d} | %{st['win_rate']:4.1f} | ${st['net_pnl']:+9.2f} | {st['pf']:4.2f} | ${st['pyramid_pnl']:+8.2f} ({st['pyramid_trades']} işl){shield_tag}")
+        pyr_total_pnl = st['l2_pnl'] + st['l3_pnl']
+        pyr_total_trades = st['l2_trades'] + st['l3_trades']
+        print(f"{icon} {sym:6s} | {st['spread_pips']:4.1f}p | {st['trades']:5d} | {st['wins']:3d}/{st['losses']:3d} | %{st['win_rate']:4.1f} | ${st['net_pnl']:+9.2f} | {st['pf']:4.2f} | ${pyr_total_pnl:+8.2f} ({pyr_total_trades} işl: L2={st['l2_trades']}, L3={st['l3_trades']}){shield_tag}")
         
     print("=" * 85)
-    print("🏆 GENEL PORTFÖY ÖZETİ (1000$ Bakiye, 7 Günlük Gerçek Replay):")
+    print("🏆 GENEL PORTFÖY ÖZETİ (1000$ Bakiye, 7 Günlük Replay, 3 Kademeli Piramitleme):")
     print(f"   • Toplam Kapanan İşlem : {tot_trades}")
     print(f"   • Kazanan / Kaybeden   : {len(tot_wins)} Kazanç / {len(tot_losses)} Kayıp")
     print(f"   • Kazanma Oranı (WR)   : %{tot_wr}")
     print(f"   • Kâr Faktörü (PF)     : {tot_pf}")
     print(f"   • Toplam Net Kâr       : ${tot_pnl:+,.2f} USD")
-    print(f"   • Kârlı Piramitleme    : {len(tot_pyramid)} işlem açıldı | WR: %{tot_pyr_wr} | Net Katkı: ${tot_pyr_pnl:+,.2f} USD")
+    print(f"   • 1. Katman (Ana İşlem): {len(tot_l1)} işlem | Net: ${tot_l1_pnl:+,.2f} USD")
+    print(f"   • 2. Katman (Piramit 1): {len(tot_l2)} işlem | Net: ${tot_l2_pnl:+,.2f} USD")
+    print(f"   • 3. Katman (Piramit 2): {len(tot_l3)} işlem | Net: ${tot_l3_pnl:+,.2f} USD (İki işlem de kârdayken açılan)")
     print("=" * 85)
     
     # Save output to JSON
@@ -461,10 +483,8 @@ def run_backtest():
             "profit_factor": tot_pf,
             "total_trades": tot_trades,
             "pyramid_stats": {
-                "trades": len(tot_pyramid),
-                "wins": len(tot_pyr_wins),
-                "win_rate": tot_pyr_wr,
-                "net_pnl": tot_pyr_pnl,
+                "l2_trades": len(tot_l2), "l2_pnl": tot_l2_pnl,
+                "l3_trades": len(tot_l3), "l3_pnl": tot_l3_pnl,
             },
             "symbols": symbol_stats,
         }, f, indent=2, ensure_ascii=False)
