@@ -567,6 +567,21 @@ RADAR_SCAN_SYMBOLS = {
     "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "AUDCAD",
 }
 ALL_RADAR_SYMBOLS = {s["symbol"] for s in FOREX_SYMBOLS}
+CANLI_WEEKEND_CRYPTO_SYMBOLS = (
+    "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
+    "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD",
+)
+
+
+def is_crypto_symbol(symbol: str) -> bool:
+    """Sembolün 7/24 kesintisiz kripto evreninde olup olmadığını doğrular."""
+    sym_u = str(symbol or "").upper().replace("/", "").replace("_", "").replace("-", "").strip()
+    return sym_u in CANLI_WEEKEND_CRYPTO_SYMBOLS or any(
+        k in sym_u for k in (
+            "BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "LINK", "UNI", "AVX", "AVAX",
+            "ADA", "XTZ", "DATA", "DOGE", "DOT", "LTC", "BCH", "XLM", "KSM", "POL"
+        )
+    )
 
 
 _RETIRED_FOREX_SYMBOLS = [
@@ -1211,7 +1226,10 @@ DXY_STRICT_SYMBOLS = ("USDJPY", "USDCHF")
 # strict-neutral engeli uygulanmaz. NOT (dürüst kayıt): 30g replay'de endeks muafiyeti −$153/maxDD +$35
 # ölçüldü (gölge: 495 engel −$150 üretecekti); kullanıcı yine de kaldırma kararı verdi ve yerine
 # NAS100'e özel strateji araştırması istedi. Tek satırla geri alınabilir.
-DXY_EXEMPT_SYMBOLS = ("XAU", "GOLD", "BTC", "ETH", "NAS", "USTEC", "US100", "NDX", "US30", "DJ30", "WS30", "DOW")
+DXY_EXEMPT_SYMBOLS = (
+    "XAU", "GOLD", "BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ", "DATA",
+    "NAS", "USTEC", "US100", "NDX", "US30", "DJ30", "WS30", "DOW"
+)
 
 # Majör FX pariteleri — seans penceresi ve volatilite tabanı kapılarının kapsamı.
 FX_MAJORS_SET = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
@@ -2469,6 +2487,10 @@ def apply_risk_normalization(symbol: str, lots: float, sl_pips: float, pip_val: 
         floor_lot, step = 0.10, 0.05
     elif "OIL" in s or "WTI" in s:
         floor_lot, step = 0.50, 0.05
+    elif any(k in s for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
+        floor_lot, step = 100.0, 1.0
+    elif "SOL" in s or "DATA" in s:
+        floor_lot, step = 1.0, 1.0
     else:
         floor_lot, step = 0.01, 0.01
 
@@ -4284,7 +4306,7 @@ def _evaluate_signal_gate(
         reasons.append("major_session")
 
     effective_max_spread = (
-        max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym)
+        max(100.0, _AUTO_SETTINGS.max_spread_pips * 10) if is_crypto_symbol(sym)
         else _AUTO_SETTINGS.max_spread_pips
     )
     if cand.get("spread_known") is False or cand.get("spread_pips", 99.0) > effective_max_spread:
@@ -4902,7 +4924,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 
     # Lot tavanı ve broker sınırları
     is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
-    is_crypto = ("BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
+    is_crypto = is_crypto_symbol(req.symbol)
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
     is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
     if is_index:
@@ -4915,8 +4937,15 @@ async def calculate_lot_size(req: LotCalculatorRequest):
         lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
         safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
     elif is_crypto:
-        lot_ceiling = 50.0
-        safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
+        if any(k in req.symbol.upper() for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
+            lot_ceiling = 1000.0
+            safe_lots = round(max(100.0, min(standard_lots, lot_ceiling)), 2)
+        elif "SOL" in req.symbol.upper() or "DATA" in req.symbol.upper():
+            lot_ceiling = 100.0
+            safe_lots = round(max(1.0, min(standard_lots, lot_ceiling)), 2)
+        else:
+            lot_ceiling = 10.0
+            safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
     else:
         lot_ceiling = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
         safe_lots = round(max(0.01, min(standard_lots, lot_ceiling)), 2)
@@ -5829,7 +5858,7 @@ def get_symbol_gate_snapshot(
 
     # --- 8. Spread
     spread = float(tick.get("spread_pips", 0.0) or 0.0)
-    eff_max_spread = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else float(_AUTO_SETTINGS.max_spread_pips)
+    eff_max_spread = max(100.0, _AUTO_SETTINGS.max_spread_pips * 10) if is_crypto_symbol(sym) else float(_AUTO_SETTINGS.max_spread_pips)
     if spread <= 0:
         gates.append(_gate("spread", "na", "Spread verisi yok"))
     elif spread > eff_max_spread:
@@ -7721,7 +7750,7 @@ async def _forex_auto_paper_loop():
                         # 2026-10-14 kullanıcı kararı: flip_ignore_min_score açıkken skor eşiği
                         # ARANMAZ — herhangi bir stratejiden zıt sinyal gelirse anında flip.
                         # Spread (maliyet) kapısı her iki durumda da korunur.
-                        effective_spread_limit = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
+                        effective_spread_limit = max(100.0, _AUTO_SETTINGS.max_spread_pips * 10) if is_crypto_symbol(sym) else _AUTO_SETTINGS.max_spread_pips
                         _score_gate_ok = bool(_AUTO_SETTINGS.flip_ignore_min_score) or cand.get("score", 0.0) >= _AUTO_SETTINGS.min_score
                         if _score_gate_ok and cand.get("spread_pips", 99.0) <= effective_spread_limit:
                             old_dir_str = "/".join(opposite_dirs)
@@ -8122,7 +8151,7 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 6. Spread Filtresi
-                effective_max_spread = max(50.0, _AUTO_SETTINGS.max_spread_pips * 10) if ("BTC" in sym or "ETH" in sym) else _AUTO_SETTINGS.max_spread_pips
+                effective_max_spread = max(100.0, _AUTO_SETTINGS.max_spread_pips * 10) if is_crypto_symbol(sym) else _AUTO_SETTINGS.max_spread_pips
                 if cand["spread_pips"] > effective_max_spread:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_spread", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_spread"] = now_ts
@@ -8341,7 +8370,7 @@ async def _forex_auto_paper_loop():
                 # Dinamik Lot & Risk Hesaplama (Modalda belirlenen risk yüzdesine göre)
                 is_index = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
                 is_oil = ("USOIL" in sym or "OIL" in sym or "WTI" in sym or "XTI" in sym)
-                is_crypto = ("BTC" in sym or "ETH" in sym)
+                is_crypto = is_crypto_symbol(sym)
                 if is_crypto and not _AUTO_SETTINGS.crypto_tp_enabled and not str(cand.get("entry_source", "")).startswith("s3_") and str(cand.get("entry_source", "")) != "squeeze_kc":
                     # Kriptoda sabit TP kapalı (2026-10-06 30g replay kazananı: BTC −$55.70→−$18.02):
                     # kazanç BE kilidi + trailing ile koşturulur, TP emri kurulmaz.
@@ -8362,8 +8391,15 @@ async def _forex_auto_paper_loop():
                     lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 elif is_crypto:
-                    lot_ceiling = 50.0
-                    mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
+                    if any(k in sym for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
+                        lot_ceiling = 1000.0
+                        mt5_lots = max(100.0, min(round(raw_calc_lots), lot_ceiling))
+                    elif "SOL" in sym or "DATA" in sym:
+                        lot_ceiling = 100.0
+                        mt5_lots = max(1.0, min(round(raw_calc_lots), lot_ceiling))
+                    else:
+                        lot_ceiling = 10.0
+                        mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 else:
                     # Cross FX (CAD/CHF/NZD/JPY) paritelerinde aşırı lot birikimini engelleyen 0.75 lot güvenlik tavanı
                     is_cross_fx = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
@@ -10314,7 +10350,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
                     # 2026-10-10 denetim P2-3: sabit 100.0 tavanı BTC'de (pip_size=1.0)
                     # gerçek >$100 spread'i reddedip sentetik 12.0'a düşürüyordu. Kripto
                     # için tavanı genişlet; yine de bariz veri hatasını (>10.000) ele.
-                    _spread_ceiling = 10000.0 if ("BTC" in app_sym.upper() or "ETH" in app_sym.upper()) else 100.0
+                    _spread_ceiling = 10000.0 if is_crypto_symbol(app_sym) else 100.0
                     if 0.0 < spread_pips <= _spread_ceiling:
                         _LIVE_SPREAD_PIPS[app_sym] = round(spread_pips, 2)
 
@@ -10522,7 +10558,7 @@ async def get_mt5_bridge_status():
 async def send_mt5_order(req: MT5ManualOrderRequest):
     """MT5 köprüsüne yeni bir piyasa emri iletir."""
     is_gold = ("XAU" in req.symbol.upper() or "GOLD" in req.symbol.upper())
-    is_crypto = ("BTC" in req.symbol.upper() or "ETH" in req.symbol.upper())
+    is_crypto = is_crypto_symbol(req.symbol)
     is_oil = ("USOIL" in req.symbol.upper() or "OIL" in req.symbol.upper() or "WTI" in req.symbol.upper() or "XTI" in req.symbol.upper())
     is_index = ("NAS" in req.symbol.upper() or "USTEC" in req.symbol.upper() or "US30" in req.symbol.upper() or "SPX" in req.symbol.upper())
     if is_index:
@@ -10535,8 +10571,15 @@ async def send_mt5_order(req: MT5ManualOrderRequest):
         lot_cap = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
         actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
     elif is_crypto:
-        lot_cap = 50.0
-        actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
+        if any(k in req.symbol.upper() for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
+            lot_cap = 1000.0
+            actual_lots = round(max(100.0, min(req.lots, lot_cap)), 2)
+        elif "SOL" in req.symbol.upper() or "DATA" in req.symbol.upper():
+            lot_cap = 100.0
+            actual_lots = round(max(1.0, min(req.lots, lot_cap)), 2)
+        else:
+            lot_cap = 10.0
+            actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)
     else:
         lot_cap = min(HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
         actual_lots = round(max(0.01, min(req.lots, lot_cap)), 2)

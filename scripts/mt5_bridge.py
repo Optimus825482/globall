@@ -471,7 +471,7 @@ def execute_market_order(cmd: dict) -> dict:
         print(f"  🔄 [SEMBOL EŞLEŞTİRME]: {raw_symbol} -> MT5 Sembolü: {symbol}")
 
     is_gold = ("XAU" in symbol or "GOLD" in symbol)
-    is_crypto = ("BTC" in symbol or "ETH" in symbol)
+    is_crypto = any(k in symbol.upper() for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ", "DATA"))
     # "SPX" dalı emekliye ayrılan SPX500 için KALIR (bkz. forex.py _RETIRED_FOREX_SYMBOLS):
     # köprüde arşiv/manuel kayıt gelebilir; sınıflama doğru kalsın.
     is_index = ("USTEC" in symbol or "NAS100" in symbol or "US30" in symbol or "US100" in symbol or "DJ30" in symbol or "SPX" in symbol)
@@ -534,7 +534,9 @@ def execute_market_order(cmd: dict) -> dict:
     # 10'a kırpıyordu → motor "$X risk" derken gerçek risk başka oluyordu.
     if is_gold:
         configured_cap = float(CURRENT_SETTINGS.get("max_gold_lot", HARD_MAX_GOLD_LOT))
-    elif is_crypto or is_oil:
+    elif is_crypto:
+        configured_cap = max_vol
+    elif is_oil:
         configured_cap = HARD_MAX_FOREX_LOT
     else:
         configured_cap = float(CURRENT_SETTINGS.get("max_forex_lot", HARD_MAX_FOREX_LOT))
@@ -1029,7 +1031,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
 
         # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi)
         is_gold_sym = ("XAU" in sym or "GOLD" in sym)
-        is_crypto_sym = ("BTC" in sym)
+        is_crypto_sym = any(k in sym.upper() for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ", "DATA"))
         # 2026-10-14 (Kol A — canlı↔replay paritesi): replay `pnl_extreme_pips` (bar tepesi)
         # kullanır, canlı `pnl_pips` (poll anı). Aynı formül canlıda sistematik olarak DAHA
         # SIKI kilit üretiyordu → replay'in ölçülmüş pozitifi canlıya taşınmıyordu. Açıkken
