@@ -1424,8 +1424,8 @@ def asset_quality_gate(
     # A) Kripto (BTC, ETH, SOL, BNB, XRP, LNK, UNI, AVX, ADA, XTZ, DATA)
     if any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
         min_adx = 20.0
-        max_dist = 0.85 if score >= 90.0 else 0.30
-        min_body = 0.35
+        max_dist = 0.85 if score >= 80.0 else 0.30
+        min_body = 0.25 if score >= 80.0 else 0.35
         if adx < min_adx:
             return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < {min_adx:.1f}) — testere piyasası"
         if abs(dist_ema21_pct) > max_dist:
@@ -3901,7 +3901,7 @@ def _get_forex_watch() -> List[Dict[str, str]]:
             out.append({"symbol": sym, "interval": tf})
     # 2) Karar fonksiyonlarının 5m mumları. Radar, Donchian, EMA, London ve DXY
     #    rejim filtresi bu seriyi okur; tik kovasının dolması beklenmez.
-    decision_5m = set(RADAR_SCAN_SYMBOLS) | {"DXY"}
+    decision_5m = set(RADAR_SCAN_SYMBOLS) | {"DXY"} | set(CANLI_WEEKEND_CRYPTO_SYMBOLS)
     if _AUTO_SETTINGS.lb_enabled:
         decision_5m.update(str(s).upper() for s in (_AUTO_SETTINGS.lb_symbols or []))
     if _AUTO_SETTINGS.ema_adx_enabled:
@@ -5673,6 +5673,7 @@ _GATE_ORDER: List[Tuple[str, str]] = [
     ("score", "Skor Eşiği"),
     ("adx", "ADX Trend Gücü"),
     ("supertrend", "SuperTrend Yön Teyidi"),
+    ("quality_gate", "Varlık Kalite Kalkanı"),
 ]
 
 
@@ -5898,6 +5899,30 @@ def get_symbol_gate_snapshot(
     else:
         gates.append(_gate("supertrend", "pass",
                            f"{action} yönü SuperTrend ({'BOĞA' if st_dir > 0 else 'AYI'}) ile uyumlu"))
+
+    # --- 12. Varlık Kalite Kalkanı
+    if not _AUTO_SETTINGS.quality_gate_enabled:
+        gates.append(_gate("quality_gate", "off", "Kalite kalkanı kapalı"))
+    elif not action:
+        gates.append(_gate("quality_gate", "na", "Yön teyidi yok — kalite kapısı değerlendirilemedi"))
+    else:
+        c_body = float(tick.get("body_ratio", 0.5) if tick.get("body_ratio") is not None else 0.5)
+        c_dist = float(tick.get("dist_ema21_pct", 0.0) if tick.get("dist_ema21_pct") is not None else 0.0)
+        c_score = float(tick.get("score", 0.0) or 0.0)
+        c_adx = float(tick.get("adx", 25.0) if tick.get("adx") is not None else 25.0)
+        is_crypto_sym = is_crypto_symbol(sym)
+        if is_crypto_sym:
+            if c_score >= 75.0:
+                ok_q = (abs(c_dist) <= 0.85 and c_body >= 0.15)
+                q_msg = f"EMA21 uzama {c_dist:+.2f}% (>0.85%) veya gövde {c_body*100:.0f}% (<15%)" if not ok_q else "Kalite kalkanı onayladı"
+            else:
+                ok_q, q_msg = asset_quality_gate(sym, action, c_body, c_dist, c_adx, score=c_score)
+        else:
+            ok_q, q_msg = asset_quality_gate(sym, action, c_body, c_dist, c_adx, score=c_score)
+        if ok_q:
+            gates.append(_gate("quality_gate", "pass", "Varlık kalite kalkanı onayladı"))
+        else:
+            gates.append(_gate("quality_gate", "block", q_msg or "Varlık kalite kalkanı yetersiz"))
 
     # --- Özet: ilk BLOKE eden kapı = operatörün görmek istediği tek cümle
     first_block = next((g for g in gates if g["status"] == "block"), None)
@@ -7659,7 +7684,7 @@ async def _forex_auto_paper_loop():
                 if not _c_src:
                     signal_bar_time = int(cand.get("signal_bar_time") or 0)
                     last_used_bar = int(_LAST_RADAR_SIGNAL_BAR.get(sym, 0) or _LAST_XAU_RADAR_SIGNAL_BAR.get(sym, 0))
-                    if signal_bar_time > 0 and signal_bar_time <= last_used_bar:
+                    if signal_bar_time > 0 and signal_bar_time <= last_used_bar and not _is_weekend_crypto:
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_same_bar", 0.0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_same_bar"] = now_ts
                             _log_auto_decision(
@@ -8220,11 +8245,14 @@ async def _forex_auto_paper_loop():
                     c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
                     c_score = float(cand.get("score", 0.0) or 0.0)
                     is_crypto_sym = sym in CANLI_WEEKEND_CRYPTO_SYMBOLS or any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA"))
-                    if is_crypto_sym and c_score >= 90.0:
-                        ok_asset = (abs(c_dist) <= 0.85 and c_body >= 0.15)
-                        asset_msg = f"Kripto Trend Kalkanı: EMA21 uzama {c_dist:+.2f}% (>0.85%) veya gövde {c_body*100:.0f}% (<15%)"
+                    if is_crypto_sym:
+                        if c_score >= 75.0:
+                            ok_asset = (abs(c_dist) <= 0.85 and c_body >= 0.15)
+                            asset_msg = f"Kripto Trend Kalkanı: EMA21 uzama {c_dist:+.2f}% (>0.85%) veya gövde {c_body*100:.0f}% (<15%)"
+                        else:
+                            ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour, score=c_score)
                     else:
-                        ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour)
+                        ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour, score=c_score)
                     if not ok_asset:
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_asset_quality", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_asset_quality"] = now_ts
