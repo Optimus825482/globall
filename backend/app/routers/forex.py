@@ -6591,7 +6591,7 @@ async def _forex_auto_paper_loop():
             ), 2)
             cur_day_eq = round(day_realized_now + net_float_now, 2)
             lock_trig_now = 5.0 if weekend_now else 18.0
-            if not _is_unit_test_pos:
+            if not _is_unit_test_pos and not weekend_now:
                 if not _AUTO_STATE.get("open_positions") and day_realized_now >= lock_trig_now:
                     _day_locked_map[cur_day_id] = True
                 if not _day_locked_map.get(cur_day_id, False) and cur_day_eq >= lock_trig_now and _AUTO_STATE.get("open_positions"):
@@ -6700,7 +6700,7 @@ async def _forex_auto_paper_loop():
             # ---------------------------------------------------------------
             # 2. YENİ İŞLEM FIRSATLARI DEĞERLENDİRME & GİRİŞ (IC MARKETS MT5)
             # ---------------------------------------------------------------
-            if _day_halted_map.get(cur_day_id, False) or (current_utc_hour == 23 and current_utc_min >= 40):
+            if not weekend_now and (_day_halted_map.get(cur_day_id, False) or (current_utc_hour == 23 and current_utc_min >= 40)):
                 continue
             if not weekend_now and current_utc_hour in (21, 22):
                 continue
@@ -8343,11 +8343,14 @@ async def _forex_auto_paper_loop():
 
                 # Günlük Kâr Kilidi, Asya Seansı (00:00-06:59 UTC) ve Pre-NY Sabah Savunması (07:00-11:59 UTC)
                 curr_utc_hour = current_utc_hour
-                cur_open_cnt = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
-                if _day_locked_map.get(cur_day_id, False):
-                    floor_usd_now = max(3.0 if weekend_now else 10.0, round(_day_peak_map.get(cur_day_id, 18.0) * 0.55, 2))
+                if weekend_now:
+                    cur_open_cnt = len([p for p in _MT5_STATE.get("open_positions", []) if is_crypto_symbol(p.get("symbol"))]) if _MT5_STATE.get("connected") else len([p for p in _AUTO_STATE.get("open_positions", []) if is_crypto_symbol(p.get("symbol"))])
+                else:
+                    cur_open_cnt = len(_MT5_STATE.get("open_positions", [])) if _MT5_STATE.get("connected") else len(_AUTO_STATE.get("open_positions", []))
+                if not weekend_now and _day_locked_map.get(cur_day_id, False):
+                    floor_usd_now = max(10.0, round(_day_peak_map.get(cur_day_id, 18.0) * 0.55, 2))
                     free_buf = day_realized_now - floor_usd_now
-                    if free_buf < (2.0 if weekend_now else 5.0) or cur_open_cnt >= 1:
+                    if free_buf < 5.0 or cur_open_cnt >= 1:
                         continue
                     risk_usd = min(risk_usd, round(free_buf * 0.45, 2))
                 elif not weekend_now and curr_utc_hour < 7:
@@ -8419,7 +8422,12 @@ async def _forex_auto_paper_loop():
                 if risk_skip and (is_crypto or is_gold):
                     if _AUTO_SETTINGS.crypto_risk_clamp_enabled:
                         if is_crypto:
-                            _floor_lot = 0.01
+                            if any(k in sym for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
+                                _floor_lot = 100.0
+                            elif "SOL" in sym or "DATA" in sym:
+                                _floor_lot = 1.0
+                            else:
+                                _floor_lot = 0.01
                         else:
                             _floor_lot = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, 0.01)
                         # 2026-10-14 DÜZELTME: kelepçe artık bütçe sert tavanına TABİ.
@@ -8428,7 +8436,7 @@ async def _forex_auto_paper_loop():
                         # medyan %9.94, tepe %14.9 — ayar %5 idi). Taban lot sert tavanı
                         # (RISK_HARD_MULT × bütçe) aşıyorsa işlem PAS geçilir; bütçe delinmez.
                         if floor_lot_respects_budget(_floor_lot, sl_pips, pip_val, risk_usd):
-                            mt5_lots = max(0.01, _floor_lot)
+                            mt5_lots = _floor_lot
                             risk_skip = False
                     else:
                         risk_skip = False  # eski davranış (aşırı lot korunur)
