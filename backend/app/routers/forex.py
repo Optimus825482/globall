@@ -1396,36 +1396,24 @@ def asset_quality_gate(
     dist_ema21_pct: float,
     adx: float,
     hour_utc: Optional[int] = None,
+    score: float = 0.0,
 ) -> Tuple[bool, str]:
-    """Varlık Sınıfına Özel Akıllı Kalite Kalkanı (Kripto, Altın, US30, USTEC):
-
-    1. Kripto (BTC/ETH):
-       - body_ratio >= 0.35 (Fitil/Doji Kalkanı: 88 kaybı önledi)
-       - |dist_ema21_pct| <= 0.30% (FOMO Aşırı Uzama Kalkanı: 96 kaybı önledi)
-       - adx >= 20.0 (Chop Kalkanı: 105 kaybı önledi)
-    2. Altın (XAUUSD):
-       - body_ratio >= 0.30 (Fitil Kalkanı: -$604 zararı +$280 kâra çevirdi, 29 kaybı önledi)
-       - |dist_ema21_pct| <= 0.30% (Aşırı Uzama Kalkanı: tepeden alım/dipte satımı önler)
-       - adx >= 18.0 (Trend Gücü Kalkanı: ölü piyasa sıkışmalarını önler)
-    3. ABD Endeksleri (US30 / USTEC / NAS100):
-       - body_ratio >= 0.30 (Doji Kalkanı: kararsız barları önler)
-       - |dist_ema21_pct| <= 0.40% (Endeks Oynaklık Kelepçesi: geniş momentumu korur)
-       - adx >= 18.0 (Normal seans) / adx >= 22.0 (Londra Pre-Market 08-13 UTC seansındaki testere koruması)
-    4. Diğer FX Pariteleri:
-       - Baypas (FX majör/minör kendi DSS/CSM ve makro kapılarına tabidir).
-    """
+    """Varlık Sınıfına Özel Akıllı Kalite Kalkanı (Kripto, Altın, US30, USTEC)."""
     sym = str(symbol or "").upper()
     if action not in ("BUY", "SELL"):
         return True, ""
 
     # A) Kripto (BTC, ETH, SOL, BNB, XRP, LNK, UNI, AVX, ADA, XTZ, DATA)
     if any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
-        if adx < 15.0:
-            return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < 15.0) — testere piyasası"
-        if abs(dist_ema21_pct) > 0.85:
-            return False, f"Aşırı Uzama Kalkanı: Kripto EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±0.85%) — FOMO girişi engellendi"
-        if body_ratio < 0.15:
-            return False, f"Fitil/Doji Kalkanı: Kripto mum gövdesi zayıf ({body_ratio*100:.0f}% < %15) — sahte kırılım fitili engellendi"
+        min_adx = 20.0
+        max_dist = 0.85 if score >= 90.0 else 0.30
+        min_body = 0.35
+        if adx < min_adx:
+            return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < {min_adx:.1f}) — testere piyasası"
+        if abs(dist_ema21_pct) > max_dist:
+            return False, f"Aşırı Uzama Kalkanı: Kripto EMA21'den aşırı uzak ({dist_ema21_pct:+.2f}% > ±{max_dist:.2f}%) — FOMO girişi engellendi"
+        if body_ratio < min_body:
+            return False, f"Fitil/Doji Kalkanı: Kripto mum gövdesi zayıf ({body_ratio*100:.0f}% < %{min_body*100:.0f}) — sahte kırılım fitili engellendi"
         return True, ""
 
     # B) Altın (XAUUSD)
@@ -4305,7 +4293,9 @@ def _evaluate_signal_gate(
     # Spread / Hedef Kâr Oranı Kalkanı: Scalping'de spread TP hedefinin %20'sini aşarsa işlem veto edilir
     pip_target = float(cand.get("pip_target", 0.0) or 0.0)
     cur_spread = float(cand.get("spread_pips", 0.0) or 0.0)
-    if pip_target > 0 and cur_spread > 0 and (cur_spread / pip_target) > 0.20:
+    _is_c_sym = sym in CANLI_WEEKEND_CRYPTO_SYMBOLS or cand.get("category") == "crypto" or any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA"))
+    _max_spread_ratio = 0.85 if _is_c_sym else 0.20
+    if pip_target > 0 and cur_spread > 0 and (cur_spread / pip_target) > _max_spread_ratio:
         reasons.append("spread_cost_too_high")
 
     weak_bump = 5.0 if veto == "dxy_strict_neutral" else 0.0
@@ -4325,7 +4315,8 @@ def _evaluate_signal_gate(
         c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
         c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
         c_adx = float(cand.get("adx", 25.0) if cand.get("adx") is not None else 25.0)
-        ok_asset, _ = asset_quality_gate(sym, direction, c_body, c_dist, c_adx, hour_utc=current_utc_hour)
+        c_score = float(cand.get("score", 0.0) or 0.0)
+        ok_asset, _ = asset_quality_gate(sym, direction, c_body, c_dist, c_adx, hour_utc=current_utc_hour, score=c_score)
         if not ok_asset:
             reasons.append("crypto_quality")
 
@@ -4643,9 +4634,16 @@ async def get_forex_radar(use_cache: bool = True):
             "score" not in gate["blocked_by"] and action in ("BUY", "SELL")
         )
         base["motor_acar"] = bool(gate["signal_ready"])
-        # Klasik evren veya DSS A+ Kurumsal Kurulum kontrolü
-        # Kullanıcı şartı: Tüm 31 sembol kârlı stratejilerde ve A+ kurulumlarda işlem açabilir!
-        if sym_u in CANLI_CLASSIC_SYMBOLS or dss_tier == "A+":
+        # Kullanıcı şartı: Tüm 31 sembol kârlı stratejilerde, hafta sonu tüm 7/24 kriptolar,
+        # allowed_symbols veya DSS (A+/B) kurulumlarında işlem açabilir!
+        is_crypto_sym = sym_u in CANLI_WEEKEND_CRYPTO_SYMBOLS or t.get("category") == "crypto"
+        is_allowed_sym = (
+            sym_u in CANLI_CLASSIC_SYMBOLS
+            or sym_u in _AUTO_SETTINGS.allowed_symbols
+            or is_crypto_sym
+            or dss_tier in ("A+", "B")
+        )
+        if is_allowed_sym:
             base["motor_acar"] = bool(gate["signal_ready"])
         else:
             base["motor_acar"] = False
@@ -6722,11 +6720,11 @@ async def _forex_auto_paper_loop():
             # adayına EK aday üretir; mode_exclusive sembollerin klasik adayları düşürülür.
             _mode_syms = {s.upper() for s in (_AUTO_SETTINGS.mode_symbols or [])}
             _mode_excl = {s.upper() for s in (_AUTO_SETTINGS.mode_exclusive or [])}
-            _classic_ok = {s.upper() for s in CANLI_CLASSIC_SYMBOLS}
-            # Klasik adaylar kanıtlı listede kalır VEYA DSS A+ kurumsal kurulumuna sahipse işleme alınır
+            _classic_ok = {s.upper() for s in CANLI_CLASSIC_SYMBOLS} | {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
+            # Klasik adaylar kanıtlı listede kalır VEYA DSS A+/B kurumsal kurulumuna sahipse işleme alınır
             candidates = [
                 c for c in candidates
-                if str(c.get("symbol", "")).upper() in _classic_ok or c.get("dss_tier") == "A+"
+                if str(c.get("symbol", "")).upper() in _classic_ok or c.get("dss_tier") in ("A+", "B")
                 or (weekend_now and (str(c.get("symbol", "")).upper() in CANLI_WEEKEND_CRYPTO_SYMBOLS or c.get("category") == "crypto"))
             ]
             if _mode_excl:
@@ -7615,7 +7613,9 @@ async def _forex_auto_paper_loop():
                 # Ana RADAR sinyali yalnızca zaman damgalı, kapanmış M5
                 # mumlarından üretilebilir. Stratejiye özel giriş kolları kendi
                 # mum doğrulamalarını kullanır ve bu koşuldan etkilenmez.
-                if not _c_src and not bool(cand.get("signal_bar_confirmed", False)):
+                # Hafta sonu 7/24 kripto pariteleri canlı tik göstergeleriyle işlem yapabilir:
+                _is_weekend_crypto = weekend_now and (sym in CANLI_WEEKEND_CRYPTO_SYMBOLS or cand.get("category") == "crypto")
+                if not _c_src and not bool(cand.get("signal_bar_confirmed", False)) and not _is_weekend_crypto:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_unconfirmed", 0.0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_unconfirmed"] = now_ts
                         _log_auto_decision(
@@ -7630,7 +7630,7 @@ async def _forex_auto_paper_loop():
                 if not _c_src:
                     signal_bar_time = int(cand.get("signal_bar_time") or 0)
                     last_used_bar = int(_LAST_RADAR_SIGNAL_BAR.get(sym, 0) or _LAST_XAU_RADAR_SIGNAL_BAR.get(sym, 0))
-                    if signal_bar_time <= last_used_bar:
+                    if signal_bar_time > 0 and signal_bar_time <= last_used_bar:
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_same_bar", 0.0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_same_bar"] = now_ts
                             _log_auto_decision(
