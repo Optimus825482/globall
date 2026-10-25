@@ -336,10 +336,10 @@ export default function AutoSettingsPanel({
         risk_crypto_index_pct: num(form.risk_crypto_index_pct, appliedSettings.risk_crypto_index_pct || 2.0),
         loss_streak_limit: num(form.loss_streak_limit, appliedSettings.loss_streak_limit || 2),
         loss_streak_cooldown_sec: num(form.loss_streak_cooldown_sec, appliedSettings.loss_streak_cooldown_sec || 900.0),
-        be_trigger_r_mult: num(form.be_trigger_r_mult, appliedSettings.be_trigger_r_mult || 0.40),
+        be_trigger_r_mult: num(form.be_trigger_r_mult, appliedSettings.be_trigger_r_mult ?? 0.40),
         tp_pips: num(form.tp_pips, appliedSettings.tp_pips || 20.0),
         sl_pips: num(form.sl_pips, appliedSettings.sl_pips || 8.0),
-        breakeven_pips: num(form.breakeven_pips, appliedSettings.breakeven_pips || 14.0),
+        breakeven_pips: num(form.breakeven_pips, appliedSettings.breakeven_pips ?? 14.0),
         trailing_stop_pips: num(form.trailing_stop_pips, appliedSettings.trailing_stop_pips || 20.0),
         min_score: num(form.min_score, appliedSettings.min_score || 75.0),
         btc_min_score: num(form.btc_min_score, appliedSettings.btc_min_score ?? 76.0),
@@ -481,12 +481,12 @@ export default function AutoSettingsPanel({
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">Dinamik BE Kâr Kilidi (R):</label>
               <input
-                type="number" step="0.05" min="0.1" max="2.0"
+                type="number" step="0.05" min="0" max="2.0"
                 value={form.be_trigger_r_mult ?? 0.40}
                 onChange={(e) => setNumField("be_trigger_r_mult", e.target.value)}
                 className={`${inputCls} text-cyan-400 font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">Varsayılan: 0.40R</span>
+              <span className="text-[10px] text-bunker-muted">0 = Kapalı (Varsayılan: 0.40R)</span>
             </div>
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">Kâr Al (TP Pips):</label>
@@ -511,12 +511,12 @@ export default function AutoSettingsPanel({
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">Başabaş (BE Pips):</label>
               <input
-                type="number" min="2" max="50"
+                type="number" min="0" max="50"
                 value={form.breakeven_pips ?? ""}
                 onChange={(e) => setNumField("breakeven_pips", e.target.value)}
                 className={`${inputCls} text-cyan-300`}
               />
-              <span className="text-[10px] text-bunker-muted">Stopu girişe çeker</span>
+              <span className="text-[10px] text-bunker-muted">0 = Kapalı (Stopu girişe çeker)</span>
             </div>
 
             <div>

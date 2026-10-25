@@ -398,6 +398,96 @@ def get_symbol_trading_specs(
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
         eff_trail_pips = round(base_trail * mult, 1)
 
+    elif "SOL" in clean_sym:
+        pip_size = 0.01          # 1 pip = $0.01
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "BNB" in clean_sym:
+        pip_size = 0.10          # 1 pip = $0.10
+        mult = 2.0
+        digits = 3
+        pip_val = 0.10
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "XRP" in clean_sym:
+        pip_size = 0.0001        # 1 pip = $0.0001
+        mult = 2.0
+        digits = 4
+        pip_val = 0.0001
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "LNK" in clean_sym or "LINK" in clean_sym:
+        pip_size = 0.01
+        mult = 2.0
+        digits = 3
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "UNI" in clean_sym:
+        pip_size = 0.01
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "AVX" in clean_sym or "AVAX" in clean_sym:
+        pip_size = 0.01
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "ADA" in clean_sym:
+        pip_size = 0.0001
+        mult = 2.0
+        digits = 5
+        pip_val = 0.001
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "XTZ" in clean_sym:
+        pip_size = 0.0001
+        mult = 2.0
+        digits = 5
+        pip_val = 0.001
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
+    elif "DATA" in clean_sym:
+        pip_size = 0.0001
+        mult = 2.0
+        digits = 4
+        pip_val = 0.01
+        eff_sl_pips = round(base_sl * mult, 1)
+        eff_tp_pips = round(base_tp * mult, 1)
+        eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
+        eff_trail_pips = round(base_trail * mult, 1)
+
     elif "USTEC" in clean_sym or "NAS100" in clean_sym or "US100" in clean_sym or "NDX" in clean_sym:
         pip_size = 1.0           # 1 pip = 1.0 index point
         mult = 2.5
@@ -605,16 +695,30 @@ def execute_market_order(cmd: dict) -> dict:
     digits = s_info.digits if s_info else spec["digits"]
     pip_size = spec["pip_size"]
 
+    # Broker minimum stop mesafesi (stops_level) ve point hesaplama
+    point = getattr(s_info, "point", 0.0) or (10.0 ** (-digits))
+    stops_level = getattr(s_info, "stops_level", 0) or 0
+    # MT5 10016 koruması: Stop fiyatı cari fiyata broker stops_level'dan yakın olamaz
+    min_stop_dist = max(stops_level * point, point * 5.0)
+
     if direction == "BUY":
         order_type = mt5.ORDER_TYPE_BUY
         price = tick.ask
-        sl = round(price - (sl_pips * pip_size), digits) if sl_pips > 0 else 0.0
-        tp = round(price + (tp_pips * pip_size), digits) if tp_pips > 0 else 0.0
+        sl_dist = max(sl_pips * pip_size, min_stop_dist) if sl_pips > 0 else 0.0
+        sl = round(price - sl_dist, digits) if sl_pips > 0 else 0.0
+        if sl_pips > 0 and sl >= price:
+            sl = round(price - min_stop_dist, digits)
+        tp_dist = max(tp_pips * pip_size, min_stop_dist) if tp_pips > 0 else 0.0
+        tp = round(price + tp_dist, digits) if tp_pips > 0 else 0.0
     else:
         order_type = mt5.ORDER_TYPE_SELL
         price = tick.bid
-        sl = round(price + (sl_pips * pip_size), digits) if sl_pips > 0 else 0.0
-        tp = round(price - (tp_pips * pip_size), digits) if tp_pips > 0 else 0.0
+        sl_dist = max(sl_pips * pip_size, min_stop_dist) if sl_pips > 0 else 0.0
+        sl = round(price + sl_dist, digits) if sl_pips > 0 else 0.0
+        if sl_pips > 0 and sl <= price:
+            sl = round(price + min_stop_dist, digits)
+        tp_dist = max(tp_pips * pip_size, min_stop_dist) if tp_pips > 0 else 0.0
+        tp = round(price - tp_dist, digits) if tp_pips > 0 else 0.0
 
     # Dolum modunu broker desteğine göre seç (bitmask: 1=FOK, 2=IOC)
     filling = mt5.ORDER_FILLING_IOC
@@ -641,6 +745,34 @@ def execute_market_order(cmd: dict) -> dict:
     }
 
     res = mt5.order_send(req)
+    # 10016: Invalid stops kurtarma (Broker piyasa emrinde anlık stop kabul etmezse stopsız açıp hemen SL/TP ekler)
+    if (not res or res.retcode == 10016) and (sl > 0 or tp > 0):
+        print(f"  ⚠️ [INVALID STOPS DÜZELTME]: Broker doğrudan stop kabul etmedi ({res.comment if res else 'None'}). Stopsız açılıp hemen SL/TP atanıyor...")
+        req_nostops = dict(req)
+        req_nostops["sl"] = 0.0
+        req_nostops["tp"] = 0.0
+        res2 = mt5.order_send(req_nostops)
+        if res2 and res2.retcode == mt5.TRADE_RETCODE_DONE:
+            res = res2
+            time.sleep(0.15)
+            # Pozisyona hemen SL/TP ekle
+            for p in (mt5.positions_get(symbol=symbol) or []):
+                p_dir = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+                if p_dir == direction and abs(float(p.volume) - lots) < 1e-6:
+                    mod_req = {
+                        "action": mt5.TRADE_ACTION_SLTP,
+                        "position": p.ticket,
+                        "symbol": symbol,
+                        "sl": sl,
+                        "tp": tp,
+                    }
+                    mod_res = mt5.order_send(mod_req)
+                    if mod_res and mod_res.retcode == mt5.TRADE_RETCODE_DONE:
+                        print(f"  🎯 [STOPLAR EKLENDİ]: Bilet #{p.ticket} -> SL: {sl}, TP: {tp}")
+                    else:
+                        print(f"  ⚠️ [STOP EKLEME UYARISI]: Bilet #{p.ticket} SLTP ({mod_res.comment if mod_res else 'Hata'}) - Dinamik takip devrede")
+                    break
+
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"  ⚡ [İŞLEM AÇILDI]: Bilet #{res.order} | {symbol} {direction} {lots} Lot @ {price} (TP: {tp}, SL: {sl})")
         # Kısmi Kâr Al hedefini açılan pozisyona bağla (server: partial_pips)
