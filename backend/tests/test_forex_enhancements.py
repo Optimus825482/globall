@@ -2190,11 +2190,90 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         # In waterfall falling market, bull power is negative -> BUY must never be allowed
         self.assertNotEqual(tech_falling["action"], "BUY", "Falling market with negative Bull Power must not produce BUY")
 
+    def test_choppiness_and_kaufman_efficiency_ratio_algorithms(self):
+        """Verify Choppiness Index (CHOP 14) and Kaufman Efficiency Ratio (KER 10) across trending, sawtooth, and edge-case inputs."""
+        # Edge cases: empty, short, and flat zero-range series
+        self.assertEqual(forex.compute_choppiness_index([], [], [], period=14), 50.0)
+        self.assertEqual(forex.compute_choppiness_index([1.0] * 5, [1.0] * 5, [1.0] * 5, period=14), 50.0)
+        self.assertEqual(forex.compute_choppiness_index([1.1000] * 25, [1.1000] * 25, [1.1000] * 25, period=14), 50.0)
+        self.assertEqual(forex.compute_kaufman_efficiency_ratio([], period=10), 0.5)
+        self.assertEqual(forex.compute_kaufman_efficiency_ratio([1.1000] * 5, period=10), 0.5)
+        self.assertEqual(forex.compute_kaufman_efficiency_ratio([1.1000] * 20, period=10), 0.0)
+
+        # Clean monotonic trend -> low CHOP (< 40) and high KER (> 0.85)
+        closes_trend = [1.1000 + i * 0.0010 for i in range(25)]
+        highs_trend = [c + 0.0002 for c in closes_trend]
+        lows_trend = [c - 0.0002 for c in closes_trend]
+        chop_trend = forex.compute_choppiness_index(highs_trend, lows_trend, closes_trend, period=14)
+        ker_trend = forex.compute_kaufman_efficiency_ratio(closes_trend, period=10)
+        self.assertLess(chop_trend, 40.0, f"Trending series must have low CHOP, got {chop_trend}")
+        self.assertGreater(ker_trend, 0.85, f"Trending series must have high KER, got {ker_trend}")
+
+        # Sawtooth / whipsaw range -> high CHOP (> 61.8) and low KER (< 0.15)
+        closes_chop = [1.1000 + (0.0015 if i % 2 == 0 else -0.0015) for i in range(25)]
+        highs_chop = [1.1025 for _ in closes_chop]
+        lows_chop = [1.0975 for _ in closes_chop]
+        chop_whipsaw = forex.compute_choppiness_index(highs_chop, lows_chop, closes_chop, period=14)
+        ker_whipsaw = forex.compute_kaufman_efficiency_ratio(closes_chop, period=10)
+        self.assertGreater(chop_whipsaw, 61.8, f"Sawtooth series must have CHOP > 61.8, got {chop_whipsaw}")
+        self.assertLess(ker_whipsaw, 0.15, f"Sawtooth series must have KER < 0.15, got {ker_whipsaw}")
+
+        # Verify asset_quality_gate blocks severe chop and chop+low KER
+        ok_chop, msg_chop = forex.asset_quality_gate(
+            "AUDCAD", "BUY", body_ratio=0.55, dist_ema21_pct=0.05, adx=26.0,
+            hour_utc=10, score=82.0, chop_14=64.5, ker_10=0.25,
+        )
+        self.assertFalse(ok_chop)
+        self.assertIn("CHOP", msg_chop)
+
+        ok_ker, msg_ker = forex.asset_quality_gate(
+            "EURUSD", "SELL", body_ratio=0.55, dist_ema21_pct=-0.05, adx=26.0,
+            hour_utc=10, score=82.0, chop_14=59.2, ker_10=0.08,
+        )
+        self.assertFalse(ok_ker)
+        self.assertIn("KER", msg_ker)
+
+        ok_trend, _ = forex.asset_quality_gate(
+            "EURUSD", "BUY", body_ratio=0.55, dist_ema21_pct=0.05, adx=28.0,
+            hour_utc=10, score=82.0, chop_14=42.0, ker_10=0.65,
+        )
+        self.assertTrue(ok_trend)
+
+    def test_intraday_circuit_breaker_and_asian_cad_chf_cross_filter(self):
+        """Verify evaluate_intraday_circuit_breaker halts after 2 intraday SLs or -$75 daily loss, and AUDCAD is blocked in Asian session."""
+        # 1) Normal state -> allowed
+        blocked, msg = forex.evaluate_intraday_circuit_breaker("US30", sym_day_sl=1, sym_day_pnl=-25.0, day_realized_pnl=-25.0)
+        self.assertFalse(blocked)
+        self.assertEqual(msg, "")
+
+        # 2) Symbol hits 2 SLs in same UTC day -> blocked for remainder of day
+        blocked_sl, msg_sl = forex.evaluate_intraday_circuit_breaker("US30", sym_day_sl=2, sym_day_pnl=-38.0, day_realized_pnl=-38.0)
+        self.assertTrue(blocked_sl)
+        self.assertIn("US30", msg_sl)
+
+        # 3) Crypto allows 2 SLs but blocks on 3 SLs
+        blocked_btc2, _ = forex.evaluate_intraday_circuit_breaker("BTCUSD", sym_day_sl=2, sym_day_pnl=-20.0, day_realized_pnl=-20.0, is_crypto=True)
+        self.assertFalse(blocked_btc2)
+        blocked_btc3, _ = forex.evaluate_intraday_circuit_breaker("BTCUSD", sym_day_sl=3, sym_day_pnl=-30.0, day_realized_pnl=-30.0, is_crypto=True)
+        self.assertTrue(blocked_btc3)
+
+        # 4) Daily realized loss <= -$75 -> portfolio circuit breaker trips
+        blocked_day, msg_day = forex.evaluate_intraday_circuit_breaker("XAUUSD", sym_day_sl=0, sym_day_pnl=0.0, day_realized_pnl=-78.83)
+        self.assertTrue(blocked_day)
+        self.assertIn("Günlük Zarar Devre Kesici", msg_day)
+
+        # 5) AUDCAD Asian session filter (03:00 UTC blocked, 10:00 UTC allowed)
+        cand_audcad = {
+            "symbol": "AUDCAD", "display": "AUD/CAD", "action": "SELL", "score": 90.0,
+            "spread_pips": 1.8, "atr_pips": 12.0, "adx": 28.0, "supertrend_dir": -1,
+            "category": "cross",
+        }
+        gate_asia = forex._evaluate_signal_gate("AUDCAD", cand_audcad, current_utc_hour=3, dxy_regime=None, is_weekend=False)
+        self.assertIn("major_session", gate_asia["blocked_by"])
+        gate_lon = forex._evaluate_signal_gate("AUDCAD", cand_audcad, current_utc_hour=10, dxy_regime=None, is_weekend=False)
+        self.assertNotIn("major_session", gate_lon["blocked_by"])
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
-
-
 

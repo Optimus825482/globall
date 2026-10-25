@@ -2331,7 +2331,7 @@ def close_position(book: Book, pos: SimPos, reason: str, exit_price: float, clos
     book.closed.append({
         "symbol": pos.symbol, "direction": pos.direction, "lots": pos.lots,
         "pnl_usd": total, "reason": reason, "trail": pos.trail_active,
-        "closed_ts": closed_ts,
+        "closed_ts": closed_ts, "opened_bar": pos.opened_bar,
         "entry_source": pos.entry_source,
     })
     return total
@@ -3271,15 +3271,15 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 med_by_ts[b[0]] = cur_med
             rel_atr_lookup[s] = med_by_ts
 
-    # 2026-10-17: GOSTERGELER.HTML HMA, Aroon ve CHOP Önbelleği (O(1) hızlı erişim)
+    # 2026-10-17: GOSTERGELER.HTML HMA ve Aroon Önbelleği (O(1) hızlı erişim)
     _HMA_CACHE.clear()
     _AROON_CACHE.clear()
     _CHOP_CACHE.clear()
     for s in symbols:
         if any(idx_name in s for idx_name in ("NAS100", "US30", "USTEC")):
             _HMA_CACHE[s] = _hma_series([b[4] for b in data[s]], 21)
-        _AROON_CACHE[s] = _aroon_osc_series(data[s], 14)
-        _CHOP_CACHE[s] = _chop_series(data[s], 14)
+        if "JPY" in s.upper():
+            _AROON_CACHE[s] = _aroon_osc_series(data[s], 14)
 
     # Seri-SL sigortası durumu: kapanış tüketimi + sembol soğuma penceresi
     loss_streak: Dict[str, int] = {}
@@ -3330,6 +3330,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     day_halted: Dict[int, bool] = {}
     sym_day_pnl: Dict[Tuple[str, int], float] = {}
     sym_day_sl: Dict[Tuple[str, int], int] = {}
+    day_sl_count: Dict[int, int] = {}
     daily_seen_idx: int = 0
 
     for idx, ts in enumerate(common_ts):
@@ -3357,11 +3358,16 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
         weekday = dt_utc.weekday()
         is_weekend = weekday in (5, 6)
         day_id = int(ts // 86400)
+        in_window = (entry_start_ts is None or ts >= entry_start_ts) and (entry_end_ts is None or ts < entry_end_ts)
+        if not in_window and not any(b.positions for b in books.values()):
+            eq_ts.append(ts)
+            eq_new.append(books["NEW"].balance)
+            continue
 
         # DXY rejimi (yalnız NEW): test edilmiş get_dxy_regime'i yeniden kullanmak için
         # geçici olarak _TECHNICAL_CACHE["DXY"] set edilir.
         dxy_regime = None
-        if dxy_list:
+        if in_window and dxy_list:
             dxy_i = _bar_index_at_or_before(dxy_list, ts)
             if dxy_i is not None and dxy_i >= 15:
                 w = dxy_list[max(0, dxy_i - INDICATOR_WINDOW):dxy_i + 1]
@@ -3393,9 +3399,12 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             c_pnl = float(tc.get("pnl_usd", 0.0))
             day_realized_pnl[c_day] = round(day_realized_pnl.get(c_day, 0.0) + c_pnl, 2)
             sym_day_pnl[(c_sym, c_day)] = round(sym_day_pnl.get((c_sym, c_day), 0.0) + c_pnl, 2)
-            if c_pnl < 0:
+            if tc.get("reason") == "SL" and c_pnl < -2.0:
                 sym_day_sl[(c_sym, c_day)] = sym_day_sl.get((c_sym, c_day), 0) + 1
+                day_sl_count[c_day] = day_sl_count.get(c_day, 0) + 1
             lock_trig = 5.0 if datetime.datetime.fromtimestamp(c_ts, datetime.timezone.utc).weekday() in (5, 6) else 18.0
+            if not books["NEW"].positions and day_realized_pnl[c_day] <= -75.0 and day_sl_count.get(c_day, 0) >= 3:
+                day_halted[c_day] = True
             if not books["NEW"].positions and day_realized_pnl[c_day] >= lock_trig:
                 day_green_locked[c_day] = True
             if not books["NEW"].positions and day_realized_pnl[c_day] > day_peak_pnl.get(c_day, 0.0):
@@ -3448,8 +3457,11 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 c_pnl = float(tc.get("pnl_usd", 0.0))
                 day_realized_pnl[c_day] = round(day_realized_pnl.get(c_day, 0.0) + c_pnl, 2)
                 sym_day_pnl[(c_sym, c_day)] = round(sym_day_pnl.get((c_sym, c_day), 0.0) + c_pnl, 2)
-                if c_pnl < 0:
+                if tc.get("reason") == "SL" and c_pnl < -2.0:
                     sym_day_sl[(c_sym, c_day)] = sym_day_sl.get((c_sym, c_day), 0) + 1
+                    day_sl_count[c_day] = day_sl_count.get(c_day, 0) + 1
+                if not b_new.positions and day_realized_pnl[c_day] <= -75.0 and day_sl_count.get(c_day, 0) >= 3:
+                    day_halted[c_day] = True
                 if not b_new.positions and day_realized_pnl[c_day] >= (5.0 if datetime.datetime.fromtimestamp(c_ts, datetime.timezone.utc).weekday() in (5, 6) else 18.0):
                     day_green_locked[c_day] = True
                 if not b_new.positions and day_realized_pnl[c_day] > day_peak_pnl.get(c_day, 0.0):
@@ -3477,7 +3489,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 float_pnl(p, last_close.get(p.symbol, p.entry_price)) for p in books["NEW"].positions))
 
         # 2) Korelasyon matrisi (periyodik)
-        if idx % CORR_REFRESH_EVERY == 0:
+        if idx % CORR_REFRESH_EVERY == 0 or not closes_cache:
             for s in symbols:
                 ci = cursors[s]
                 closes_cache[s] = [b[4] for b in data[s][max(0, ci - 250):ci]]
@@ -3487,7 +3499,6 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 pass
 
         # 3) Aday üretimi + kapılar (her iki varyant) — yalnız taze barı ve işlem penceresi içinde
-        in_window = (entry_start_ts is None or ts >= entry_start_ts) and (entry_end_ts is None or ts < entry_end_ts)
         candidates: Dict[str, List[Dict]] = {"OLD": [], "NEW": []} if not TUN_SKIP_OLD else {"NEW": []}
         blocked_events: List[Tuple[str, Dict]] = []
 
@@ -3534,15 +3545,17 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 pending_confirm[vname_p] = still_pending
 
         # 3a) Para Birimi Güç Matrisi (CSM) — 28 FX paritesinin son 1 saatlik (12 bar) değişiminden hesaplanır
-        csm_ticks_now: Dict[str, Dict[str, Any]] = {}
-        for s_csm in symbols:
-            ci_csm = cursors[s_csm]
-            if ci_csm >= 13 and len(data[s_csm]) >= ci_csm:
-                p_now = float(data[s_csm][ci_csm - 1][4])
-                p_old = float(data[s_csm][ci_csm - 13][4])
-                if p_old > 0:
-                    csm_ticks_now[s_csm] = {"change_pct": ((p_now - p_old) / p_old) * 100.0}
-        csm_data_now = forex.compute_currency_strength_matrix(csm_ticks_now) if csm_ticks_now else None
+        csm_data_now = None
+        if in_window:
+            csm_ticks_now: Dict[str, Dict[str, Any]] = {}
+            for s_csm in symbols:
+                ci_csm = cursors[s_csm]
+                if ci_csm >= 13 and len(data[s_csm]) >= ci_csm:
+                    p_now = float(data[s_csm][ci_csm - 1][4])
+                    p_old = float(data[s_csm][ci_csm - 13][4])
+                    if p_old > 0:
+                        csm_ticks_now[s_csm] = {"change_pct": ((p_now - p_old) / p_old) * 100.0}
+            csm_data_now = forex.compute_currency_strength_matrix(csm_ticks_now) if csm_ticks_now else None
 
         for sym in symbols:
             if not in_window or not fresh[sym]:
@@ -3605,7 +3618,6 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     spec = forex.get_symbol_trading_specs(sym, atr_pips=atr_pips)
                     adx_halflot = False
                     score_half_flag = False
-                    # Canlı parite: yerinden etme (aşağıdaki not) kapı zincirinden ÖNCE yapılır.
                     if replace_symbol:
                         candidates[vname] = [c for c in candidates[vname]
                                              if str(c.get("symbol", "")).upper() != sym.upper()]
@@ -3625,6 +3637,17 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         # 1) Günlük kâr kilidi veya gün sonu (23:40+ UTC) aktifse yeni giriş yok
                         if day_halted.get(day_id, False) or (hour == 23 and minute >= 40):
                             return
+                        # 1b) Sembol Gün İçi Devre Kesici & Günlük Zarar Devre Kesici
+                        cb_block, _ = forex.evaluate_intraday_circuit_breaker(
+                            sym,
+                            sym_day_sl.get((sym, day_id), 0),
+                            sym_day_pnl.get((sym, day_id), 0.0),
+                            day_realized_pnl.get(day_id, 0.0),
+                            is_crypto=("BTC" in sym or "ETH" in sym),
+                            max_day_loss_usd=(-75.0 if day_sl_count.get(day_id, 0) >= 3 else -150.0),
+                        )
+                        if cb_block:
+                            return
                         # 2) Pazar gecesi FX açılış (20:00+ UTC) spread genişlemesi koruması: yalnız BTCUSD açık
                         if weekday == 6 and sym != "BTCUSD":
                             return
@@ -3641,8 +3664,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                             if ("XAU" in sym or "GOLD" in sym) and not (7 <= hour < 20):
                                 blocked_events.append(("SEANS", cand("SEANS")))
                                 return
-                        # Avrupa çapraz kurları (EUR/GBP krosları) Londra öncesi Asya seansında (00:00-06:59 UTC) sığ piyasa nedeniyle işlem açmaz
-                            if (("EUR" in sym or "GBP" in sym) and "USD" not in sym) and not (7 <= hour < 20):
+                        # Avrupa ve Kuzey Amerika çapraz kurları (EUR/GBP/CAD/CHF krosları, JPY hariç) Asya seansında (00:00-06:59 UTC) işlem açmaz
+                            if (("EUR" in sym or "GBP" in sym or "CAD" in sym or "CHF" in sym)
+                                    and "USD" not in sym and "JPY" not in sym) and not (7 <= hour < 20):
                                 blocked_events.append(("SEANS", cand("SEANS")))
                                 return
                         # 5) Aynı sembolde eşzamanlı tek pozisyon (3x piramit yığılma zararı engeli)
@@ -3788,7 +3812,15 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if vname == "NEW" and not _news_bypass and not TUN_NO_QUALITY:
                         c_body = float(tech.get("body_ratio", 0.5) if tech.get("body_ratio") is not None else 0.5)
                         c_dist = float(tech.get("dist_ema21_pct", 0.0) if tech.get("dist_ema21_pct") is not None else 0.0)
-                        ok_asset, _ = forex.asset_quality_gate(sym, action, c_body, c_dist, float(tech.get("adx", 25.0)), hour_utc=hour)
+                        c_chop = tech.get("chop_14") if not entry_source else None
+                        c_ker = tech.get("ker_10") if not entry_source else None
+                        if TUN_CHOP_MAX > 0 and c_chop is not None and float(c_chop) > TUN_CHOP_MAX:
+                            blocked_events.append(("CHOP", cand("CHOP")))
+                            return
+                        ok_asset, _ = forex.asset_quality_gate(
+                            sym, action, c_body, c_dist, float(tech.get("adx", 25.0)),
+                            hour_utc=hour, chop_14=c_chop, ker_10=c_ker,
+                        )
                         if not ok_asset:
                             blocked_events.append(("QUALITY", cand("QUALITY")))
                             return
@@ -3835,6 +3867,19 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                         ok, _r = corr.cluster_check(sym, bias, pos_biases)
                         if not ok:
                             blocked_events.append(("KORELASYON", cand("KORELASYON")))
+                            return
+                    _non_usd_fiat = {"EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"}
+                    if vname == "NEW" and TUN_COMBINED and len(sym) == 6 and sym.isalpha() and "USD" not in sym:
+                        c_legs = {leg for leg in (sym[:3], sym[3:]) if leg in _non_usd_fiat}
+                        shared_fx = next(
+                            (p.symbol for p in book.positions
+                             if p.symbol != sym and len(p.symbol) == 6 and p.symbol.isalpha()
+                             and bool(c_legs & {p.symbol[:3], p.symbol[3:]})),
+                            None,
+                        )
+                        if shared_fx:
+                            blocked_events.append(("KORELASYON", cand("KORELASYON")))
+                            return
                     same_dir = [p for p in book.positions if p.symbol == sym and p.direction == action]
                     if len(same_dir) >= MAX_PER_SYMBOL_DIR:
                         return
@@ -3866,9 +3911,11 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     if _ba in ("BUY", "SELL"):
                         _allow = True
                         if vname == "NEW" and TUN_COMBINED:
+                            if sym in forex.CANLI_MODE_EXCLUSIVE_SYMBOLS:
+                                _allow = False
                             # Canlı forex.py:6643-6646 paritesi: Klasik radar adayları CANLI_CLASSIC_SYMBOLS içinde
                             # olmalı VEYA DSS A+ (Decision Support Score >= 80) kurumsal kurulumuna sahip olmalıdır.
-                            if sym not in forex.CANLI_CLASSIC_SYMBOLS:
+                            elif sym not in forex.CANLI_CLASSIC_SYMBOLS:
                                 csm_diff, _ = forex.get_symbol_csm_differential(sym, csm_data_now)
                                 atr_p_now = tech["atr"] / pip_size if pip_size > 0 else 15.0
                                 _dss_sc, _dss_tier = forex.calculate_dss_score(
@@ -3938,13 +3985,17 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     elif not is_weekend and hour < 7:
                         if len(book.positions) >= 2:
                             break
-                    elif not is_weekend and 7 <= hour < 11:
-                        # Londra açılışı (07:00-10:59 UTC): sabah volatilite atağında tek işlem riskini $35 ile sınırla
-                        cand_d["max_risk_usd"] = min(cand_d.get("max_risk_usd", 1000.0), 35.0)
+                    elif not is_weekend and 7 <= hour < 20:
+                        if hour < 11:
+                            # Londra açılışı (07:00-10:59 UTC): sabah volatilite atağında tek işlem riskini $35 ile sınırla
+                            cand_d["max_risk_usd"] = min(cand_d.get("max_risk_usd", 1000.0), 35.0)
                         if cur_realized < -20.0:
                             if len(book.positions) >= 2:
                                 break
+                            cand_d["max_risk_usd"] = min(cand_d.get("max_risk_usd", 1000.0), 35.0)
                             cand_d["risk_mult"] = 0.25
+                        elif 16 <= hour < 20:
+                            cand_d["risk_mult"] = min(cand_d.get("risk_mult", 1.0), 0.50)
                 spec = forex.get_symbol_trading_specs(cand_d["symbol"], atr_pips=cand_d["atr_pips"])
                 mx = cand_d.get("exits") if vname == "NEW" else None
                 if mx:
@@ -4703,8 +4754,10 @@ def main():
     # 2026-10-14: ÖNCE PostgreSQL (MT5 köprüsü verisi). JSON önbelleği elle tazelenir ve
     # pencere dışıysa sessizce 0 işlem dönerdi; `historical_candles` sürekli beslenir.
     data = None
-    if args.source in ("auto", "db"):
+    if args.source == "db" or (args.source == "auto" and not (args.cache and os.path.exists(cache_path))):
         _want = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
+        if not _want:
+            _want = set(ALL_SYMBOL_CODES) if args.all_symbols else set(SYMBOLS.keys())
         _db = fetch_candles_from_db(args.interval)
         if _want:
             _missing = sorted(s for s in _want if s not in _db)

@@ -1407,6 +1407,56 @@ def get_symbol_csm_differential(sym: str, csm_data: Optional[Dict[str, Any]]) ->
     return 0.0, "NEUTRAL"
 
 
+def evaluate_intraday_circuit_breaker(
+    symbol: str,
+    sym_day_sl: int,
+    sym_day_pnl: float,
+    day_realized_pnl: float,
+    *,
+    is_crypto: bool = False,
+    max_sym_sl: int = 2,
+    max_sym_loss_usd: float = -85.0,
+    max_day_loss_usd: float = -75.0,
+) -> Tuple[bool, str]:
+    """Sembol Gün İçi Devre Kesici ve Günlük Realize Zarar Kalkanı (saf fonksiyon — test edilebilir).
+
+    - Günlük realize zarar `max_day_loss_usd` (varsayılan -$75.0) eşiğine ulaştığında günün geri
+      kalanında yeni işlem açılmaz (prop-firm günlük maksimum düşüş disiplini).
+    - Kripto dışı sembollerde aynı UTC gününde `max_sym_sl` (varsayılan 2) kez stop olan veya
+      `max_sym_loss_usd` (varsayılan -$85.0) zarar üreten sembol o gün dinlenmeye alınır.
+    """
+    sym_u = str(symbol or "").upper()
+    if max_day_loss_usd < 0 and day_realized_pnl <= max_day_loss_usd:
+        return True, (
+            f"Günlük Zarar Devre Kesici: Günlük realize zarar limiti aşıldı "
+            f"(${day_realized_pnl:+.2f} <= ${max_day_loss_usd:+.2f})"
+        )
+    if not is_crypto:
+        if max_sym_sl > 0 and sym_day_sl >= max_sym_sl:
+            return True, (
+                f"Sembol Gün İçi Devre Kesici: {sym_u} bugün {sym_day_sl} kez SL oldu "
+                f"(limit {max_sym_sl}) — gün sonuna kadar kilitli"
+            )
+        if max_sym_loss_usd < 0 and sym_day_pnl <= max_sym_loss_usd:
+            return True, (
+                f"Sembol Gün İçi Zarar Kalkanı: {sym_u} bugün ${sym_day_pnl:+.2f} zarar üretti "
+                f"(limit ${max_sym_loss_usd:+.2f}) — gün sonuna kadar kilitli"
+            )
+    else:
+        if max_sym_sl > 0 and sym_day_sl >= (max_sym_sl + 1):
+            return True, (
+                f"Kripto Gün İçi Devre Kesici: {sym_u} bugün {sym_day_sl} kez SL oldu "
+                f"(limit {max_sym_sl + 1})"
+            )
+        crypto_loss_cap = max_sym_loss_usd * 1.5
+        if max_sym_loss_usd < 0 and sym_day_pnl <= crypto_loss_cap:
+            return True, (
+                f"Kripto Gün İçi Zarar Kalkanı: {sym_u} bugün ${sym_day_pnl:+.2f} zarar üretti "
+                f"(limit ${crypto_loss_cap:+.2f})"
+            )
+    return False, ""
+
+
 def asset_quality_gate(
     symbol: str,
     action: str,
@@ -1415,8 +1465,10 @@ def asset_quality_gate(
     adx: float,
     hour_utc: Optional[int] = None,
     score: float = 0.0,
+    chop_14: Optional[float] = None,
+    ker_10: Optional[float] = None,
 ) -> Tuple[bool, str]:
-    """Varlık Sınıfına Özel Akıllı Kalite Kalkanı (Kripto, Altın, US30, USTEC)."""
+    """Varlık Sınıfına Özel Akıllı Kalite Kalkanı (Kripto, Altın, US30, USTEC, FX) + Fraktal CHOP/KER Filtresi."""
     sym = str(symbol or "").upper()
     if action not in ("BUY", "SELL"):
         return True, ""
@@ -1457,6 +1509,12 @@ def asset_quality_gate(
         return True, ""
 
     # D) Tüm FX Majör ve Çapraz Pariteler (28 FX sembolü: GBPJPY, EURJPY, USDJPY, GBPNZD, GBPAUD, EURGBP, EURCHF vb.)
+    # Fraktal Choppiness Index (CHOP 14) & Kaufman Efficiency Ratio (KER 10) Rejim Kalkanı (klasik FX sinyalleri için)
+    if score < 150.0:
+        if chop_14 is not None and chop_14 >= 61.8:
+            return False, f"Choppiness Kalkanı: {sym} aşırı yatay/testere rejiminde (CHOP {chop_14:.1f} >= 61.8)"
+        if chop_14 is not None and ker_10 is not None and chop_14 >= 58.0 and ker_10 < 0.15:
+            return False, f"Kaufman Verimlilik Kalkanı: {sym} yönsüz gürültü rejiminde (CHOP {chop_14:.1f}, KER {ker_10:.2f} < 0.15)"
     # Fitil/Doji tuzağı ve EMA21'den aşırı uzamış FOMO girişlerini engeller.
     if adx < 20.0:
         return False, f"ADX Kalkanı: FX trend gücü yetersiz (ADX {adx:.1f} < 20.0) — testere/yatay rejim"
@@ -3213,6 +3271,65 @@ def _compute_supertrend(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
     return direction, float(st_level)
 
 
+def compute_choppiness_index(
+    highs: Any,
+    lows: Any,
+    closes: Any,
+    period: int = 14,
+) -> float:
+    """Choppiness Index (CHOP 14) fraktal piyasa rejimi göstergesi (saf fonksiyon — test edilebilir).
+
+    Formül: 100 * log10(sum(TR, period) / (max(H, period) - min(L, period))) / log10(period)
+    - CHOP >= 61.8 : Aşırı yatay / testere (konsolidasyon) rejimi
+    - CHOP <= 38.2 : Güçlü doğrusal trend genişlemesi
+    """
+    if period < 2:
+        return 50.0
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    n = min(len(h), len(l), len(c))
+    if n < period + 1:
+        return 50.0
+    h_win = h[-(period + 1):]
+    l_win = l[-(period + 1):]
+    c_win = c[-(period + 1):]
+    tr = np.maximum(
+        h_win[1:] - l_win[1:],
+        np.maximum(np.abs(h_win[1:] - c_win[:-1]), np.abs(l_win[1:] - c_win[:-1])),
+    )
+    sum_tr = float(np.sum(tr))
+    range_hl = float(np.max(h_win[1:]) - np.min(l_win[1:]))
+    if range_hl <= 1e-12 or sum_tr <= 1e-12:
+        return 50.0
+    ratio = max(1.0, sum_tr / range_hl)
+    val = 100.0 * (math.log10(ratio) / math.log10(float(period)))
+    return round(float(max(0.0, min(100.0, val))), 1)
+
+
+def compute_kaufman_efficiency_ratio(
+    closes: Any,
+    period: int = 10,
+) -> float:
+    """Kaufman Efficiency Ratio (KER) yönlü hareket verimliliği oranı [0.0, 1.0].
+
+    Formül: |Close[t] - Close[t-period]| / sum(|Close[i] - Close[i-1]|, i=t-period+1..t)
+    - KER -> 1.0 : Pürüzsüz, tek yönlü kurumsal trend
+    - KER < 0.15 : İleri-geri testere / gürültü rejimi
+    """
+    if period < 1:
+        return 0.5
+    c = np.asarray(closes, dtype=float)
+    if len(c) < period + 1:
+        return 0.5
+    c_win = c[-(period + 1):]
+    net_disp = float(abs(c_win[-1] - c_win[0]))
+    path_len = float(np.sum(np.abs(np.diff(c_win))))
+    if path_len <= 1e-12:
+        return 0.0
+    return round(float(max(0.0, min(1.0, net_disp / path_len))), 3)
+
+
 def _compute_technical_indicators(
     closes: List[float],
     highs: List[float],
@@ -3508,6 +3625,8 @@ def _compute_technical_indicators(
     bar_span = max(1e-9, h_last - l_last)
     body_ratio = round(abs(last_price - o_last) / bar_span, 3)
     dist_ema21_pct = round(((last_price - ema21) / ema21) * 100.0, 3) if (ema21 and ema21 > 0) else 0.0
+    chop_14 = compute_choppiness_index(h, l, c, 14)
+    ker_10 = compute_kaufman_efficiency_ratio(c, 10)
 
     # 2026-10-17: GOSTERGELER.HTML Hull Hareketli Ortalaması (HMA 21) - Endeksler için sıfır-gecikmeli yön teyidi
     hma_21, hma_21_slope = None, None
@@ -3548,6 +3667,8 @@ def _compute_technical_indicators(
         "bear_power": bear_power,
         "dist_ema21_pct": dist_ema21_pct,
         "body_ratio": body_ratio,
+        "chop_14": chop_14,
+        "ker_10": ker_10,
         "rsi": round(rsi, 1),
         "macd_hist": round(hist, 6),
         "macd_verdict": macd_verdict,
@@ -3720,6 +3841,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             signal_bar_confirmed = bool(tech.get("signal_bar_confirmed", False))
             body_ratio = float(tech.get("body_ratio", 0.5) if tech.get("body_ratio") is not None else 0.5)
             dist_ema21_pct = float(tech.get("dist_ema21_pct", 0.0) if tech.get("dist_ema21_pct") is not None else 0.0)
+            chop_14 = tech.get("chop_14")
+            ker_10 = tech.get("ker_10")
         else:
             score = 50.0
             trend = "NEUTRAL"
@@ -3740,6 +3863,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             signal_bar_confirmed = False
             body_ratio = 0.5
             dist_ema21_pct = 0.0
+            chop_14 = None
+            ker_10 = None
 
         _TICK_CACHE[sym] = {
             "symbol": sym,
@@ -3774,6 +3899,8 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "signal_bar_confirmed": signal_bar_confirmed,
             "body_ratio": body_ratio,
             "dist_ema21_pct": dist_ema21_pct,
+            "chop_14": chop_14,
+            "ker_10": ker_10,
             "atr": atr_val,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "source": "mt5_tick" if source == "mt5_tick" else source,
@@ -4299,9 +4426,12 @@ def _evaluate_signal_gate(
             elif direction == "SELL" and (cur_p > hma_v or hma_s > 0):
                 reasons.append("direction")
 
-    # 2026-10-17: Avrupa çapraz kurları (EUR/GBP krosları) Londra öncesi Asya seansında (00:00-06:59 UTC) sığ piyasa kalkanı
-    is_euro_gbp_cross = (len(sym_u) == 6 and sym_u[:3].isalpha() and sym_u[3:].isalpha()
-                         and ("EUR" in sym_u or "GBP" in sym_u) and "USD" not in sym_u)
+    # 2026-10-17: Avrupa ve Kuzey Amerika çapraz kurları (EUR/GBP/CAD/CHF krosları) Londra öncesi Asya seansında (00:00-06:59 UTC) sığ piyasa kalkanı
+    is_euro_gbp_cross = (
+        len(sym_u) == 6 and sym_u[:3].isalpha() and sym_u[3:].isalpha()
+        and ("EUR" in sym_u or "GBP" in sym_u or (("CAD" in sym_u or "CHF" in sym_u) and "JPY" not in sym_u))
+        and "USD" not in sym_u
+    )
     if is_euro_gbp_cross and not (7 <= current_utc_hour < 20):
         reasons.append("major_session")
 
@@ -4332,13 +4462,18 @@ def _evaluate_signal_gate(
     if supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir):
         reasons.append("supertrend")
 
-    # Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC)
+    # Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC, FX)
     if _AUTO_SETTINGS.quality_gate_enabled:
         c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
         c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
         c_adx = float(cand.get("adx", 25.0) if cand.get("adx") is not None else 25.0)
         c_score = float(cand.get("score", 0.0) or 0.0)
-        ok_asset, _ = asset_quality_gate(sym, direction, c_body, c_dist, c_adx, hour_utc=current_utc_hour, score=c_score)
+        c_chop = float(cand["chop_14"]) if cand.get("chop_14") is not None else None
+        c_ker = float(cand["ker_10"]) if cand.get("ker_10") is not None else None
+        ok_asset, _ = asset_quality_gate(
+            sym, direction, c_body, c_dist, c_adx,
+            hour_utc=current_utc_hour, score=c_score, chop_14=c_chop, ker_10=c_ker,
+        )
         if not ok_asset:
             reasons.append("crypto_quality")
 
@@ -4619,6 +4754,8 @@ async def get_forex_radar(use_cache: bool = True):
             "adx": t_adx,
             "body_ratio": t_body,
             "dist_ema21_pct": t_dist,
+            "chop_14": t.get("chop_14"),
+            "ker_10": t.get("ker_10"),
             "supertrend_dir": st_dir,
             "htf_trend": t.get("htf_trend", "NEUTRAL"),
             "direction_guard_reason": t.get("direction_guard_reason", ""),
@@ -4989,6 +5126,8 @@ CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
 # Klasik radar emir evreni: XAU, BTC, US30, AUDUSD, AUDCAD
 CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
+# Mod-özel semboller: ham klasik radar kapalıdır (Donchian/FVG/Squeeze çalışır)
+CANLI_MODE_EXCLUSIVE_SYMBOLS = ("GBPJPY", "EURJPY", "CHFJPY")
 # 2026-10-16 31-sembol 50k bar testleri:
 # S3: Akıllı Kalite Kalkanı (asset_quality_gate) ile 6,726 işlemde WR %63.0 ve +$15,159 net kâr.
 CANLI_S3_ENABLED = True
@@ -6617,6 +6756,8 @@ async def _forex_auto_paper_loop():
             cur_day_eq = round(day_realized_now + net_float_now, 2)
             lock_trig_now = 5.0 if weekend_now else 18.0
             if not _is_unit_test_pos and not weekend_now:
+                if not _AUTO_STATE.get("open_positions") and day_realized_now <= -75.0:
+                    _day_halted_map[cur_day_id] = True
                 if not _AUTO_STATE.get("open_positions") and day_realized_now >= lock_trig_now:
                     _day_locked_map[cur_day_id] = True
                 if not _day_locked_map.get(cur_day_id, False) and cur_day_eq >= lock_trig_now and _AUTO_STATE.get("open_positions"):
@@ -8007,6 +8148,38 @@ async def _forex_auto_paper_loop():
                             )
                         continue
 
+                # 3d. Gün İçi Sembol & Günlük Zarar Devre Kesici (Intraday Circuit Breaker)
+                if not _is_unit_test_pos and not weekend_now and now_ts >= _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0):
+                    _sym_day_trades = [
+                        ct for ct in _AUTO_STATE.get("closed_trades", [])
+                        if str(ct.get("symbol", "")).upper() == sym
+                        and int(float(ct.get("closed_at_ts", 0.0) or 0.0) // 86400) == cur_day_id
+                    ]
+                    _sym_day_sl_cnt = sum(
+                        1 for ct in _sym_day_trades
+                        if str(ct.get("reason", "")).upper() == "SL" and float(ct.get("pnl_usd", 0.0) or 0.0) < 0
+                    )
+                    _sym_day_pnl_val = sum(float(ct.get("pnl_usd", 0.0) or 0.0) for ct in _sym_day_trades)
+                    _cb_block, _cb_msg = evaluate_intraday_circuit_breaker(
+                        sym,
+                        _sym_day_sl_cnt,
+                        _sym_day_pnl_val,
+                        day_realized_now,
+                        is_crypto=is_crypto_symbol(sym),
+                        max_day_loss_usd=-75.0,
+                    )
+                    if _cb_block:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_intraday_cb", 0) > 60.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_intraday_cb"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}][{_c_strat_lbl}] {_cb_msg}",
+                                symbol=sym,
+                                strategy=_c_strat,
+                                strategy_label=_c_strat_lbl,
+                            )
+                        continue
+
                 # 4. DXY (ABD Dolar Endeksi) Rejim Filtresi
                 # Pozisyon DXY rejimiyle çelişiyorsa veto; zayıf semboller nötr rejimde ekstra skor ister.
                 direction = cand.get("action", "")  # BUY or SELL
@@ -8117,12 +8290,13 @@ async def _forex_auto_paper_loop():
                             continue
                     # Evrensel Döviz Küme Kalkanı (Non-USD Cross Exposure Guard):
                     # GBPJPY + EURJPY + CHFJPY veya GBPAUD + EURAUD gibi aynı döviz bacağını paylaşan paritelerde eşzamanlı yığılmayı önler.
-                    if len(sym) == 6 and sym.isalpha():
-                        c_base, c_quote = sym[:3], sym[3:]
+                    _non_usd_fiat = {"EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"}
+                    if len(sym) == 6 and sym.isalpha() and "USD" not in sym:
+                        c_legs = {leg for leg in (sym[:3], sym[3:]) if leg in _non_usd_fiat}
                         shared_fx = next(
                             (ps for ps in open_and_pending_syms
                              if ps != sym and len(ps) == 6 and ps.isalpha()
-                             and (c_base in (ps[:3], ps[3:]) or c_quote in (ps[:3], ps[3:]))),
+                             and bool(c_legs & {ps[:3], ps[3:]})),
                             None,
                         )
                         if shared_fx:
@@ -8145,6 +8319,19 @@ async def _forex_auto_paper_loop():
                         _log_auto_decision(
                             "GATE",
                             f"[{cand['display']}][{_c_strat_lbl}] Seans Likidite Kalkanı: Altın/Endeks yalnız Londra-NY likidite penceresinde (07:00-20:00 UTC) işlem açar.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
+                    continue
+                if (not _news_bypass and current_utc_hour < 7
+                        and ("EUR" in sym or "GBP" in sym or "CAD" in sym or "CHF" in sym)
+                        and "USD" not in sym and "JPY" not in sym):
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_cross_asia", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_cross_asia"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] Asya Çapraz Kalkanı: EUR/GBP/CAD/CHF çapraz pariteleri (JPY hariç) Asya seansında (00:00-06:59 UTC) işlem açmaz.",
                             symbol=sym,
                             strategy=_c_strat,
                             strategy_label=_c_strat_lbl,
@@ -8244,15 +8431,17 @@ async def _forex_auto_paper_loop():
                     c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
                     c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
                     c_score = float(cand.get("score", 0.0) or 0.0)
+                    c_chop = cand.get("chop_14")
+                    c_ker = cand.get("ker_10")
                     is_crypto_sym = sym in CANLI_WEEKEND_CRYPTO_SYMBOLS or any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA"))
                     if is_crypto_sym:
                         if c_score >= 75.0:
                             ok_asset = (abs(c_dist) <= 0.85 and c_body >= 0.15)
                             asset_msg = f"Kripto Trend Kalkanı: EMA21 uzama {c_dist:+.2f}% (>0.85%) veya gövde {c_body*100:.0f}% (<15%)"
                         else:
-                            ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour, score=c_score)
+                            ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour, score=c_score, chop_14=c_chop, ker_10=c_ker)
                     else:
-                        ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour, score=c_score)
+                        ok_asset, asset_msg = asset_quality_gate(sym, direction, c_body, c_dist, adx_val, hour_utc=current_utc_hour, score=c_score, chop_14=c_chop, ker_10=c_ker)
                     if not ok_asset:
                         if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_asset_quality", 0) > 30.0:
                             _LAST_CANDIDATE_LOG_TIME[f"{sym}_asset_quality"] = now_ts
@@ -8385,11 +8574,12 @@ async def _forex_auto_paper_loop():
                     if cur_open_cnt >= 2:
                         continue
                     risk_usd *= 0.25
-                elif not weekend_now and 7 <= curr_utc_hour < 12 and day_realized_now < -35.0:
+                elif not weekend_now and 7 <= curr_utc_hour < 20 and day_realized_now < -35.0:
                     if cur_open_cnt >= 2:
                         continue
+                    risk_usd = min(risk_usd, 35.0) * 0.25
                     if direction == "BUY" or cur_open_cnt >= 1:
-                        risk_usd *= 0.15
+                        risk_usd *= 0.60
                 elif 16 <= curr_utc_hour < 20:
                     risk_usd *= 0.50
 

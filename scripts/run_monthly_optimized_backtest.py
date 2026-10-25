@@ -43,6 +43,7 @@ def run_week(w: Dict[str, Any]) -> Dict[str, Any]:
     cmd = [
         sys.executable,
         os.path.join(ROOT, "scripts", "forex_replay_backtest.py"),
+        "--source", "cache",
         "--cache", os.path.join(ROOT, "outputs", "forex_replay_all31_merged.json"),
         "--start", w["start"],
         "--end", w["end"],
@@ -60,6 +61,8 @@ def run_week(w: Dict[str, Any]) -> Dict[str, Any]:
         "--no-be",
         "--loss-streak", "2",
         "--loss-streak-cd", "900",
+        "--major-hours", "7-20",
+        "--major-min-atr", "4.0",
         "--st-exempt-arms",
         "--news-bias",
         "--news-score-bump", "0.0",
