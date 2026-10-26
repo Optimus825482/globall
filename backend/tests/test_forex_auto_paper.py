@@ -1319,7 +1319,7 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         self.assertIn("GBPJPY", cfg.mode_symbols)
         self.assertIn("GBPJPY", cfg.mode_exclusive)
         self.assertNotIn("XAUUSD", cfg.mode_exclusive)
-        self.assertEqual(cfg.max_open_positions, 99)
+        self.assertEqual(cfg.max_open_positions, 20)
 
 
     def test_no_strong_signal_bypass_regression(self):

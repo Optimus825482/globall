@@ -340,15 +340,15 @@ export default function AutoSettingsPanel({
         tp_pips: num(form.tp_pips, appliedSettings.tp_pips || 20.0),
         sl_pips: num(form.sl_pips, appliedSettings.sl_pips || 8.0),
         breakeven_pips: num(form.breakeven_pips, appliedSettings.breakeven_pips ?? 14.0),
-        trailing_stop_pips: num(form.trailing_stop_pips, appliedSettings.trailing_stop_pips || 20.0),
+        trailing_stop_pips: num(form.trailing_stop_pips, appliedSettings.trailing_stop_pips || 35.0),
         min_score: num(form.min_score, appliedSettings.min_score || 75.0),
         btc_min_score: num(form.btc_min_score, appliedSettings.btc_min_score ?? 76.0),
-        max_spread_pips: num(form.max_spread_pips, appliedSettings.max_spread_pips || 10.0),
-        max_open_positions: Math.max(1, Math.min(99, Math.round(num(form.max_open_positions, 99)))),
+        max_spread_pips: num(form.max_spread_pips, appliedSettings.max_spread_pips || 30.0),
+        max_open_positions: Math.max(1, Math.min(99, Math.round(num(form.max_open_positions, 20)))),
         max_positions_per_symbol: Math.max(1, Math.min(5, Math.round(num(form.max_positions_per_symbol, 2)))),
         gold_cooldown_sec: Math.max(60, num(form.gold_cooldown_sec, 60.0)),
         session_filter: Boolean(form.session_filter),
-        allowed_symbols: form.allowed_symbols && form.allowed_symbols.length > 0 ? form.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "NAS100", "AUDCAD"],
+        allowed_symbols: form.allowed_symbols && form.allowed_symbols.length > 0 ? form.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "AUDNZD", "GBPJPY", "EURJPY", "NAS100", "USDCHF", "AUDCAD"],
         mode_symbols: form.mode_symbols || ["XAUUSD", "GBPJPY", "EURJPY", "NAS100"],
         mode_exclusive: form.mode_exclusive || ["GBPJPY", "EURJPY"],
         ema_adx_symbols: form.ema_adx_symbols || ["XAUUSD", "NAS100"],
@@ -532,7 +532,7 @@ export default function AutoSettingsPanel({
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">Maksimum Spread (Pip):</label>
               <input
-                type="number" step="0.5" min="0.5" max="25"
+                type="number" step="0.5" min="0.5" max="50"
                 value={form.max_spread_pips ?? ""}
                 onChange={(e) => setNumField("max_spread_pips", e.target.value)}
                 className={`${inputCls} text-white`}
@@ -543,7 +543,7 @@ export default function AutoSettingsPanel({
               <label className="text-[11px] text-bunker-muted block mb-1">Maksimum Açık İşlem:</label>
               <input
                 type="number" min="1" max="99"
-                value={form.max_open_positions ?? 99}
+                value={form.max_open_positions ?? 20}
                 onChange={(e) => setIntField("max_open_positions", e.target.value)}
                 className={`${inputCls} text-white font-semibold`}
               />

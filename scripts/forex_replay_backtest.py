@@ -4410,6 +4410,7 @@ def main():
     parser.add_argument("--loss-streak", type=int, default=0, help="N ardışık tam-SL kaybında sembol yeni giriş almaz (0 = kapalı; kullanıcı önerisi: 3)")
     parser.add_argument("--loss-streak-cd", type=float, default=300.0, help="Seri-SL tetiklenince sembol soğuma penceresi (saniye; kullanıcı önerisi: 300)")
     parser.add_argument("--max-open", type=int, default=0, help="Maksimum açık pozisyon cap'i (0 = varsayılan 6; kullanıcı testi: 99 = slot rekabeti yok)")
+    parser.add_argument("--max-per-symbol", type=int, default=0, help="Sembol başına maksimum açık pozisyon / piramit tavanı (0 = varsayılan 3)")
     parser.add_argument("--max-spread", type=float, default=3.0,
                         help="FX spread kapisi (pip). 3.0 = canli. Maliyet stresini IZOLE etmek icin yuksek deger verin.")
     parser.add_argument("--be-usd-fx", type=float, default=1.0,
@@ -4687,6 +4688,9 @@ def main():
     if args.max_open and args.max_open > 0:
         global MAX_OPEN_POSITIONS
         MAX_OPEN_POSITIONS = args.max_open
+    if args.max_per_symbol and args.max_per_symbol > 0:
+        global MAX_PER_SYMBOL_DIR
+        MAX_PER_SYMBOL_DIR = args.max_per_symbol
     TUN_DCA = args.dca
     TUN_DCA_DIST_FRAC = args.dca_dist_frac
     TUN_DCA_LOT_MULT = args.dca_lot_mult

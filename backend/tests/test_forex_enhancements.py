@@ -182,7 +182,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         rr_ratio = cfg.tp_pips / cfg.sl_pips
         self.assertGreaterEqual(rr_ratio, 2.0)
         self.assertEqual(cfg.breakeven_pips, 14.0)
-        self.assertEqual(cfg.trailing_stop_pips, 20.0)
+        self.assertEqual(cfg.trailing_stop_pips, 35.0)
 
     # -------------------------------------------------------------------------
     # 5. REAL TECHNICAL INDICATOR & MTF ENGINE TESTS
@@ -566,7 +566,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.loss_streak_limit, 2)
         self.assertEqual(cfg.loss_streak_cooldown_sec, 900.0)
         self.assertEqual(cfg.be_trigger_r_mult, 0.40)
-        self.assertEqual(cfg.max_open_positions, 99)
+        self.assertEqual(cfg.max_open_positions, 20)
         # LotCalculatorRequest ayrı, manuel hesap aracı (grafik butonu) — kendi varsayılanı kalır.
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
@@ -628,8 +628,8 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
 
         for sym in ["EURUSD", "GBPUSD", "USDJPY"]:
             effective_spread = 20.0 if ("BTC" in sym or "ETH" in sym) else cfg.max_spread_pips
-            self.assertEqual(effective_spread, 10.0, f"{sym} should have standard max spread")
-            self.assertFalse(12.0 <= effective_spread)
+            self.assertEqual(effective_spread, 30.0, f"{sym} should have standard max spread")
+            self.assertFalse(32.0 <= effective_spread)
 
     def test_winning_pyramiding_rule(self):
         """Verify that pyramiding only allows adding to profitable positions, blocking averaging down on losers."""
@@ -1577,8 +1577,7 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         forced_off = forex.merge_settings_payload({"s3_enabled": True, "ls_enabled": True})
         self.assertEqual(forced_off.s3_enabled, forex.CANLI_S3_ENABLED)
         self.assertFalse(forced_off.ls_enabled)
-        self.assertEqual(list(forex.CANLI_CLASSIC_SYMBOLS),
-                         ["XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD"])
+        self.assertEqual(list(forex.CANLI_CLASSIC_SYMBOLS), ["XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD"])
 
         # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
         self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.3)
