@@ -6,7 +6,7 @@ Kapsam: v2 planının 5 özgün BTC stratejisi x M5/M15 (10 hücre) ve 5 özgün
 
 - **Robust kenar bulunamadı: 0 / 90 hücre. Aday (ölçüt 1+2+4) sayısı da 0.** Ölçüt 1'i (PF >= 1.30, net > 0, >= 60 işlem) geçen tek hücre `fx_para_gucu` M15 GBPJPY (91 işlem, PF 1.42, net +79.6 USD); ilk 7 hafta -19.9 USD olduğu için ölçüt 2'de düşüyor, 1 pip kaymada da PF 0.77'ye çöküyor.
 - **Günlük +%50 (1000 USD tabanda +500 USD/gün) hedefi hiçbir yerde tutmadı.** Taban riskte (FX %5, BTC %2) 90 hücrenin hepsinde hedef gün sayısı 0 ve iflas günü (<= -700) sayısı 0. Tüm hücrelerdeki en iyi tek gün: BTC +76.5 USD (`btc_likidite_supurme` M5), FX +88.8 USD (`fx_para_gucu` M30 USDCAD). >= 60 işlemli hücrelerde işlem günü ortalamasının en iyisi +2.05 USD/gün (`fx_para_gucu` M15 USDCAD).
-- Ölçüt 2'yi 15 hücre geçiyor ama 13'ü < 60 işlemli (çoğu 3-7 işlem), yani örneklem olarak anlamsız; >= 60 işlemli ve iki yarısı da pozitif olan yalnız iki hücre var: `btc_xau_oncu` M5 (148 işlem, PF 1.17) ve `btc_verimlilik_rejimi` M15 (77 işlem, PF 1.16). İkisi de PF eşiğinin altında ve 10 USD kaymada PF 0.61 / 0.71'e çöküyor.
+- Ölçüt 2'yi 15 hücre geçiyor ama 13'ü < 60 işlemli (bunların 6'sı <= 7 işlem; en kalabalığı 58), yani örneklem olarak zayıf/anlamsız; >= 60 işlemli ve iki yarısı da pozitif olan yalnız iki hücre var: `btc_xau_oncu` M5 (148 işlem, PF 1.17) ve `btc_verimlilik_rejimi` M15 (77 işlem, PF 1.16). İkisi de PF eşiğinin altında ve 10 USD kaymada PF 0.61 / 0.71'e çöküyor.
 - **`fx_adr_tukenis` yalnızca 3 işlem üretti: "kenar yok" değil, "değerlendirilemez".** Aday sayılmadı. `btc_saat_profili` (15-29 işlem/tf) ve `fx_seans_devri` (37 işlem/tf) de çok seyrek kaldı.
 - Sonuç v1 ile aynı: özgün fikirler de (saat mevsimselliği, stop avı, çapraz varlık öncüsü, para gücü, mum anatomisi, verimlilik rejimi) bu veri ve motor altında robust kenar üretmedi.
 
@@ -25,7 +25,7 @@ Kapsam: v2 planının 5 özgün BTC stratejisi x M5/M15 (10 hücre) ve 5 özgün
 - **Hücre notları (kontrolör kararları):**
   - `fx_adr_tukenis`, brief'ten sapıyor: "uç" günün en yüksek/en düşük **kapanışı** alındı ve TP mesafesi orta nokta mesafesine kırpıldı (brief'in harfi harfine okunuşu 8 pariteyi M15'te tararken yalnız 1 sinyal veriyor). Sonuç 3 işlem (M15 2, M30 1): **değerlendirilemez**, aday değildir.
   - `btc_saat_profili`: sinyal kovanın ilk barında üretilir, motor girişi sinyal barının kapanışından sonraki barın açılışında yaptığı için giriş kovanın **2. barının** açılışına denk gelir; sonuçlar bu zamanlamayla okunmalıdır.
-  - **İşlem sayıları motor kapılarıyla ciddi ölçüde azalıyor** (düzeltilmedi): BTC'de ham sinyallerin %70-90'ı elendi (örn. `btc_likidite_supurme` M5: 2047 sinyal -> 236 işlem); FX'te 14 hafta / 8 parite toplamında `fx_para_gucu` M15 2043 sinyal -> 564 işlem, `fx_adr_tukenis` 45 -> 2. Dolayısıyla sonuç, "stratejinin kendi kenarı" ile "motor filtreleri" karışık bir ölçümdür.
+  - **İşlem sayıları motor kapılarıyla ciddi ölçüde azalıyor** (düzeltilmedi): BTC'de ham sinyallerin %70-90'ı elendi (örn. `btc_likidite_supurme` M5: 2047 sinyal -> 236 işlem); FX'te 14 hafta / 8 parite toplamında `fx_para_gucu` M15 2043 sinyal -> 564 işlem, `fx_adr_tukenis` 45 -> 2 (M15). Dolayısıyla sonuç, "stratejinin kendi kenarı" ile "motor filtreleri" karışık bir ölçümdür.
 - **Özgünlük (eklenti docstring'lerinden; "bu depoda ilk kez" ne denendi):**
 
 | Strateji | Fikir | Özgünlük (bu depoda) |
@@ -84,11 +84,11 @@ Hücre = net 14 hafta (USD) / PF / işlem. `-` = işlem yok. `†` = ölçüt 1 
 
 Strateji x TF toplamları (8 parite, işlem / net USD): `fx_seans_devri` M15 37 / -20.7, M30 37 / +75.9; `fx_pdh_pdl_supurme` M15 289 / +96.9, M30 228 / -84.3; `fx_para_gucu` M15 564 / -413.5, M30 372 / -209.1; `fx_doji_kumesi` M15 62 / -100.2, M30 28 / +23.8; `fx_adr_tukenis` M15 2 / +17.6, M30 1 / +2.4. 80 hücrenin 30'unda net > 0. >= 60 işlemli 10 FX hücresinden yalnız üçünde net > 0 (`fx_para_gucu` M15 GBPJPY PF 1.42, M30 GBPUSD PF 1.28, M15 USDCAD PF 1.25).
 
-Notlar: `fx_para_gucu` en çok işlem üreten ve toplamda en çok kaybettiren aile (USDCHF -292 / -183, EURJPY -130). `fx_pdh_pdl_supurme` işlem sayısı yüksek ama toplam net ~0; USDCAD M15 (+235, PF 2.09) tek bir pariteye özgü ve diğer paritelerde işaret zıt. `fx_seans_devri` ve `fx_doji_kumesi` hücreleri 60 işlemin çok altında (en çok 15); M30'daki yüksek PF'ler (3.1-3.9) 6-8 işlemden gelir ve istatistiksel olarak boştur. `fx_adr_tukenis` 8 pariteden yalnız 2'sinde birer işlem verdi.
+Notlar: `fx_para_gucu` en çok işlem üreten ve toplamda en çok kaybettiren aile (USDCHF -292 / -183, EURJPY -130). `fx_pdh_pdl_supurme` işlem sayısı yüksek ama toplam net ~0; USDCAD M15 (+235, PF 2.09) tek bir pariteye özgü; diğer paritelerde işaret karışık (USDJPY +13 ve GBPJPY +59 de pozitif; GBPUSD -71, USDCHF -76, NZDUSD -32, EURJPY -23, EURUSD -8 negatif). `fx_seans_devri` ve `fx_doji_kumesi` hücreleri 60 işlemin çok altında (en çok 15); M30'daki yüksek PF'ler (3.1-3.9) 6-8 işlemden gelir ve istatistiksel olarak boştur. `fx_adr_tukenis` 8 pariteden yalnız 2'sinde birer işlem verdi.
 
 ## 5. Aday listesi ve kayma stresi
 
-**Aday (ölçüt 1+2+4) yok.** Bu nedenle kayma koşumu, PF'ye göre ilk 3 (>= 60 işlemli) hücre ile ölçüt 2'yi >= 60 işlemle geçen 2 BTC hücresi için "bilgi" olarak yapıldı. Aşağıdakiler **yalnız bilgi amaçlıdır, aday değildir**.
+**Aday (ölçüt 1+2+4) yok.** Bu nedenle kayma koşumu, PF'ye göre ilk 3 (>= 60 işlemli) hücre ile ölçüt 2'yi >= 60 işlemle geçen 2 BTC hücresi için "bilgi" olarak yapıldı. Not: bu "bilgi" seçimi brifteki "PF'ye göre ilk 3" kuralından sapar; script'in kuralı ölçüt 1'i geçen hücre, ya da ölçüt 2'yi >= 60 işlem ve net > 0 ile geçen hücre, artı kayma sonucu birleştirilmiş her hücredir (PF sırasındaki ilk 3 hücre elle koşulup bu şekilde dahil edildi). Aşağıdakiler **yalnız bilgi amaçlıdır, aday değildir**.
 
 | Hücre | Rol | İşlem | PF | Net 14h | İlk 7h | Son 7h | Kayma işlem | Kayma PF | Kayma net | Ölçüt 3 | Sonuç |
 |---|---|---|---|---|---|---|---|---|---|---|---|

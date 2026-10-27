@@ -373,13 +373,48 @@ class VerimlilikTest(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ look-ahead
+def cut_points(sides, n_cuts=150):
+    """Sinyal tasiyan bolge uzerinde ~n_cuts kesim noktasi: yarisi duzgun aralikli, yarisi sinyal barlarindan (+ onceki bar)."""
+    sig = [i for i, v in enumerate(sides) if v != 0]
+    if not sig:  # sinyalsiz tohum: yine de tum aralikta duzgun aralikli kesimler
+        return sorted({1 + (len(sides) - 2) * j // (n_cuts - 1) for j in range(n_cuts)})
+    lo, hi = max(1, sig[0] - 3), len(sides) - 1
+    half = n_cuts // 2
+    even = [lo + (hi - lo) * j // max(1, half - 1) for j in range(half)]
+    pick = [sig[(len(sig) - 1) * j // max(1, n_cuts - half - 1)] for j in range(n_cuts - half)] if len(sig) > 1 else sig
+    near = [i - 1 for i in pick if i - 1 >= lo]  # sinyalsiz komsu bar da sinanir
+    return sorted(set(even) | set(pick) | set(near[::2]))
+
+
 class LookAheadTest(XauLoaderMixin, unittest.TestCase):
     """Kisa seri ile uzun seri (ek gelecek barlar) icin her i'de ayni karar + ayni etkin atr."""
 
+    def _prefix_check(self, name, b, n_cuts=150, xau_full=None):
+        """Cok-kesim on-ek kontrolu: ~n_cuts kesim k icin side(series(b[:k+1]), k) == side(series(b), k) ve
+        etkin atr[k] esit. 1-bar sizintilar yalniz kesim barinda gorunur, bu yuzden cok sayida kesim gerekir.
+        Capraz serili stratejide (xau_full) her kesimde XAU da t <= b[k].t ile kirpilir."""
+        sd = STRATS[name]["side"]
+        if xau_full is not None:
+            self.set_xau(xau_full)
+        s_full = series_of(name, b)
+        sides = [sd(s_full, b, i) for i in range(len(b))]
+        cuts = cut_points(sides, n_cuts)
+        self.assertGreaterEqual(len(cuts), min(n_cuts // 2, 30), name)
+        for k in cuts:
+            if xau_full is not None:
+                self.set_xau([r for r in xau_full if r[0] <= b[k].t])
+            s_k = series_of(name, b[:k + 1])
+            self.assertEqual(sd(s_k, b[:k + 1], k), sides[k], f"{name} on-ek kesim k={k}")
+            self.assertEqual(s_k["atr"][k], s_full["atr"][k], f"{name} on-ek atr k={k}")
+        if xau_full is not None:
+            self.set_xau(xau_full)
+        return sum(1 for k in cuts if sides[k] != 0)  # sinyal tasiyan kesim sayisi
+
     def _check(self, name, seeds=(7, 11), n_long=2400, n_short=1700):
-        total_signals = 0
+        total_signals = psig = 0
         for seed in seeds:
             long_b = random_walk(n_long, seed)
+            psig += self._prefix_check(name, long_b)
             short_b = long_b[:n_short]
             alt_future = random_walk(n_long - n_short, seed + 100)
             alt_future = [eng.Bar(short_b[-1].t + (k + 1) * TF, x.open, x.high, x.low, x.close)
@@ -393,6 +428,7 @@ class LookAheadTest(XauLoaderMixin, unittest.TestCase):
                     self.assertEqual(a, c, f"{name} seed {seed} i={i}")
                     self.assertEqual(s_short["atr"][i], s_long["atr"][i], f"{name} atr i={i}")
                     total_signals += abs(a)
+        self.assertGreater(psig, 0, f"{name}: on-ek kontrolu sinyal tasiyan kesim icermiyor")
         return total_signals
 
     def test_saat_profili(self):
@@ -427,6 +463,7 @@ class LookAheadTest(XauLoaderMixin, unittest.TestCase):
                     f = math.exp(rnd.gauss(0, 0.02))
                     r[1], r[2], r[3], r[4] = [v * f for v in r[1:5]]
             xau_short = [r for r in full if r[0] <= cut_t]
+            self.assertGreater(self._prefix_check(name, long_b, xau_full=full), 0)
             # referans: hem BTC hem XAU kesik
             self.set_xau(xau_short)
             s_ref = series_of(name, short_b)

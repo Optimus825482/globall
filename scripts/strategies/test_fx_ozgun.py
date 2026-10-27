@@ -536,14 +536,50 @@ class AdrTukenisTest(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ look-ahead
+def cut_points(sides, n_cuts=150):
+    """Sinyal tasiyan bolge uzerinde ~n_cuts kesim noktasi: yarisi duzgun aralikli, yarisi sinyal barlarindan (+ onceki bar)."""
+    sig = [i for i, v in enumerate(sides) if v != 0]
+    if not sig:  # sinyalsiz tohum: yine de tum aralikta duzgun aralikli kesimler
+        return sorted({1 + (len(sides) - 2) * j // (n_cuts - 1) for j in range(n_cuts)})
+    lo, hi = max(1, sig[0] - 3), len(sides) - 1
+    half = n_cuts // 2
+    even = [lo + (hi - lo) * j // max(1, half - 1) for j in range(half)]
+    pick = [sig[(len(sig) - 1) * j // max(1, n_cuts - half - 1)] for j in range(n_cuts - half)] if len(sig) > 1 else sig
+    near = [i - 1 for i in pick if i - 1 >= lo]  # sinyalsiz komsu bar da sinanir
+    return sorted(set(even) | set(pick) | set(near[::2]))
+
+
+def prefix_check(tc, name, b, n_cuts=150, setter=None, full_data=None, trunc=None):
+    """Cok-kesim on-ek kontrolu: ~n_cuts kesim k icin side(series(b[:k+1]), k) == side(series(b), k) ve etkin atr[k] esit.
+    1-bar sizintilar yalniz kesim barinda gorunur; bu yuzden cok sayida kesim gerekir.
+    Capraz seri varsa (setter/full_data/trunc): her kesimde diger seriler de t <= b[k].t ile kirpilir."""
+    sd = STRATS[name]["side"]
+    if setter is not None:
+        setter(full_data)
+    s_full = series_of(name, b)
+    sides = [sd(s_full, b, i) for i in range(len(b))]
+    cuts = cut_points(sides, n_cuts)
+    tc.assertGreaterEqual(len(cuts), min(n_cuts // 2, 30), name)
+    for k in cuts:
+        if setter is not None:
+            setter(trunc(full_data, b[k].t))
+        s_k = series_of(name, b[:k + 1])
+        tc.assertEqual(sd(s_k, b[:k + 1], k), sides[k], f"{name} on-ek kesim k={k}")
+        tc.assertEqual(s_k["atr"][k], s_full["atr"][k], f"{name} on-ek atr k={k}")
+    if setter is not None:
+        setter(full_data)
+    return sum(1 for k in cuts if sides[k] != 0)  # sinyal tasiyan kesim sayisi
+
+
 class LookAheadTest(unittest.TestCase):
     """Kisa seri ile uzun seri (ek gelecek barlar) icin her i'de ayni karar + ayni etkin atr."""
 
-    def _check(self, name, n_short, n_ext, seeds=(7, 11), **kw):
-        total_signals = 0
+    def _check(self, name, n_short, n_ext, seeds=(7, 11), n_cuts=150, **kw):
+        total_signals = psig = 0
         sd = STRATS[name]["side"]
         for seed in seeds:
             long_b = random_walk(n_short + n_ext, seed, **kw)
+            psig += prefix_check(self, name, long_b, n_cuts=n_cuts)
             short_b = long_b[:n_short]
             alt_future = random_walk(n_ext, seed + 100, **kw)
             alt_future = [eng.Bar(short_b[-1].t + (k + 1) * TF, x.open, x.high, x.low, x.close)
@@ -556,6 +592,7 @@ class LookAheadTest(unittest.TestCase):
                     self.assertEqual(a, c, f"{name} seed {seed} i={i}")
                     self.assertEqual(s_short["atr"][i], s_long["atr"][i], f"{name} atr i={i}")
                     total_signals += abs(a)
+        self.assertGreater(psig, 0, f"{name}: on-ek kontrolu sinyal tasiyan kesim icermiyor")
         return total_signals
 
     def _mid_day_cuts(self, name, long_b, days, slots, alt_seed=None):
@@ -667,6 +704,18 @@ class ParaGucuLookAheadTest(Fx21Mixin, unittest.TestCase):
                     for i in range(cut):
                         self.assertEqual(ref[i], sd(s_v, own, i), f"{label} {p} seed {seed} i={i}")
         self.assertGreater(total, 0)
+
+    def test_many_cut_prefix_cross_series(self):
+        """Cok-kesim on-ek: her kesim k'da hem kendi seri hem TUM diger pariteler t <= b[k].t ile kirpilir."""
+        name = "fx_para_gucu"
+        psig = 0
+        trunc = lambda d, t: {q: [r for r in rows if r[0] <= t] for q, rows in d.items()}
+        for seed, pairs in ((3, ("EURUSD", "GBPJPY")), (5, ("NZDUSD", "EURUSD"))):
+            full = fx21_random(96 * 12, seed)
+            for p in pairs:
+                psig += prefix_check(self, name, bars_of_rows(full[p]), n_cuts=150,
+                                     setter=self.set_data, full_data=full, trunc=trunc)
+        self.assertGreater(psig, 0)
 
 
 if __name__ == "__main__":

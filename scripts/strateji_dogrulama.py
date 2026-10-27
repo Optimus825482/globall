@@ -176,7 +176,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--slip-ozet", nargs="*", default=[], help="kayma kosumu ozet json'lari (olcut 3)")
     ap.add_argument("--ozet", nargs="+", default=list(DEFAULT_OZET), help="girdi ozet json'lari")
-    ap.add_argument("--out", default=DEFAULT_OUT, help="cikti json (goreli ise outputs/replay_strateji altina)")
+    ap.add_argument("--out", default=DEFAULT_OUT, help="cikti json (yalniz dosya adi ise outputs/replay_strateji altina; dizin iceren goreli yol CWD'ye gore cozulur)")
     ap.add_argument("--slip-tur-oneki", default=DEFAULT_SLIP_PREFIX, help="kayma komutlarinda --tur oneki")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
@@ -214,7 +214,8 @@ def main() -> int:
     bilgi = not adaylar
     sec = adaylar + yakin
     if bilgi:
-        print("\nADAY YOK. 'bilgi' hucreleri (olcut 1 veya 2 gecen) YALNIZ BILGI amaclidir, aday degildir.")
+        print("\nADAY YOK. 'bilgi' hucreleri (olcut 1 gecen; ya da olcut 2 + >=60 islem + net>0; ya da kayma sonucu birlestirilmis "
+              "hucre) YALNIZ BILGI amaclidir, aday degildir.")
     for c in yakin:
         print(f"  BILGI {c['strateji']} {c['tf']} {c['sembol']}: islem {c['islem']} PF {fmt_pf(c['pf'])} net14 {c['net14']} "
               f"c1={c['c1']} c2={c['c2']}")
