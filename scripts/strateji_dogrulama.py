@@ -19,6 +19,13 @@ Kullanim:
   python scripts/strateji_dogrulama.py --slip-ozet outputs/replay_strateji/ozet_turdogrulama_slip_fx_m15.json \
         outputs/replay_strateji/ozet_turdogrulama_slip_btc_m5.json   # olcut 3'u birlestirir
   python scripts/strateji_dogrulama.py --selftest        # sentetik 3 satirla olcut fonksiyonu testi
+Parametreler (v2 ozgun aileler; varsayilanlar v1 davranisini korur):
+  --ozet a.json b.json   girdi ozetleri (varsayilan: ozet_turbtc1.json ozet_turfx_yeni.json)
+  --out dosya.json       cikti (varsayilan: outputs/replay_strateji/dogrulama.json)
+  --slip-tur-oneki ON    basilan kayma komutlarinin --tur oneki (varsayilan: dogrulama_slip)
+  Ornek: python scripts/strateji_dogrulama.py --ozet outputs/replay_strateji/ozet_turbtc_ozgun.json \
+         outputs/replay_strateji/ozet_turfx_ozgun.json --out outputs/replay_strateji/dogrulama_v2.json \
+         --slip-tur-oneki dogrulama2_slip
 Iki asamali kullanim: 1. cagri adaylari ve kayma komutlarini basar; kayma kosumlari bittikten
 sonra ayni komut --slip-ozet ile tekrar calistirilir (kayma ozetleri eski cikti uzerine yazmaz;
 her --tur ayri dosya). Risk olcekleme (2/5/10/20%) adaylar icin (aday yoksa PF'ye gore ilk 3,
@@ -43,7 +50,14 @@ RUIN_USD, MAX_RUIN_DAYS, TARGET_USD = -700.0, 2, 500.0
 BASE_RISK = {"FX": 5.0, "BTC": 2.0}
 SLIP_PIPS = {"FX": 1, "BTC": 10}
 RISKS = (2, 5, 10, 20)
-BTC_STRATS = {"btc_seans_kirilim", "btc_rsi2_bb_donus", "btc_donchian55_trend", "btc_keltner_geri_htf", "btc_nr7_kirilim"}
+DEFAULT_OZET = ("ozet_turbtc1.json", "ozet_turfx_yeni.json")
+DEFAULT_OUT = "dogrulama.json"
+DEFAULT_SLIP_PREFIX = "dogrulama_slip"
+
+
+def grup_of(strat: str) -> str:
+    """BTC stratejileri 'btc_' onekli (v1 ve v2); digerleri FX."""
+    return "BTC" if strat.startswith("btc_") else "FX"
 
 
 def pf_val(x):
@@ -101,10 +115,10 @@ def parse_tag(tag: str, tur: str) -> tuple[str, str, str]:
     return strat, tf, sym
 
 
-def load_cells() -> list[dict]:
+def load_cells(ozets=DEFAULT_OZET) -> list[dict]:
     cells = []
-    for fn in ("ozet_turbtc1.json", "ozet_turfx_yeni.json"):
-        oz = json.load(open(os.path.join(OUT_DIR, fn), encoding="utf-8"))
+    for fn in ozets:
+        oz = json.load(open(fn if os.path.isabs(fn) or os.path.exists(fn) else os.path.join(OUT_DIR, fn), encoding="utf-8"))
         for row in oz["rows"]:
             strat, tf, sym = parse_tag(row["tag"], oz["tur"])
             g = json.load(open(os.path.join(OUT_DIR, f"gun_{row['tag']}.json"), encoding="utf-8"))
@@ -112,7 +126,7 @@ def load_cells() -> list[dict]:
             pf = pf_val(row.get("pf"))
             if row["trades"] == 0 and pf is None:
                 pf = 0.0   # islemsiz hucre: PF tanimsiz, olcut 1'de acikca basarisiz (criteria trades > 0 ister)
-            cell = {"strateji": strat, "tf": tf, "sembol": sym, "grup": "BTC" if strat in BTC_STRATS else "FX",
+            cell = {"strateji": strat, "tf": tf, "sembol": sym, "grup": grup_of(strat),
                     "tag": row["tag"], "islem": row["trades"], "pf": pf, "net_ozet": row["net"], **ws}
             cell.update(criteria(cell["islem"], pf, ws["net14"], ws["net_ilk7"], ws["net_son7"], ws["iflas"]))
             cell["daily"] = g["daily"]
@@ -161,12 +175,15 @@ def fmt_pf(x) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--slip-ozet", nargs="*", default=[], help="kayma kosumu ozet json'lari (olcut 3)")
+    ap.add_argument("--ozet", nargs="+", default=list(DEFAULT_OZET), help="girdi ozet json'lari")
+    ap.add_argument("--out", default=DEFAULT_OUT, help="cikti json (goreli ise outputs/replay_strateji altina)")
+    ap.add_argument("--slip-tur-oneki", default=DEFAULT_SLIP_PREFIX, help="kayma komutlarinda --tur oneki")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
 
-    cells = load_cells()
+    cells = load_cells(a.ozet)
     n_slip = merge_slip(cells, a.slip_ozet) if a.slip_ozet else 0
     cells.sort(key=lambda c: (c["grup"], c["strateji"], c["tf"], c["sembol"]))
 
@@ -187,7 +204,9 @@ def main() -> int:
         print(f"  ADAY {c['strateji']} {c['tf']} {c['sembol']}: islem {c['islem']} PF {fmt_pf(c['pf'])} net14 {c['net14']}")
 
     # Bilgi amacli (aday DEGIL): olcut 1'i gecen ama aday olmayan hucreler + olcut 2'yi gecen >=60 islemli net>0 hucreler.
-    yakin = [c for c in cells if not c["aday"] and (c["c1"] or (c["c2"] and c["islem"] >= MIN_TRADES and c["net14"] > 0))]
+    # Kayma kosumu yapilmis (ornegin PF'ye gore ilk 3 'bilgi' icin elle kosulan) hucreler de bilgi olarak eklenir.
+    yakin = [c for c in cells if not c["aday"] and (c["c1"] or (c["c2"] and c["islem"] >= MIN_TRADES and c["net14"] > 0)
+                                                   or "slip_pf" in c)]
     for c in adaylar:
         c["rol"] = "aday"
     for c in yakin:
@@ -208,7 +227,7 @@ def main() -> int:
         g = gruplar.setdefault((c["grup"], c["tf"], c["sembol"] if c["grup"] == "BTC" else ""), {"s": set(), "y": set()})
         g["s"].add(c["strateji"]); g["y"].add(c["sembol"])
     for (grup, tf, _), g in sorted(gruplar.items()):
-        tur = f"dogrulama_slip_{grup.lower()}_{tf}"
+        tur = f"{a.slip_tur_oneki}_{grup.lower()}_{tf}"
         cache = "outputs/replay_cache_xaubtc_{tf}.json" if grup == "BTC" else "outputs/replay_cache_fx21_{tf}.json"
         extra = f"--all-symbols --slip-pips {SLIP_PIPS[grup]}" + (" --spread-profile outputs/fx_spread_db_1m.json" if grup == "FX" else "")
         print(f'  python scripts/replay_strateji_tarama.py --tur {tur} --tfs {tf} --strategies {",".join(sorted(g["s"]))} '
@@ -224,7 +243,7 @@ def main() -> int:
            "n_hucre": len(cells), "n_aday": len(adaylar), "n_robust": len(robust),
            "aday_yok": bilgi, "hucreler": out_cells,
            "risk_olcek": {f"{c['strateji']}_{c['tf']}_{c['sembol']}": c["risk_olcek"] for c in sec}}
-    path = os.path.join(OUT_DIR, "dogrulama.json")
+    path = a.out if os.path.isabs(a.out) or os.path.dirname(a.out) else os.path.join(OUT_DIR, a.out)
     json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"\nYazildi: {path}")
     return 0
@@ -249,6 +268,11 @@ def selftest() -> int:
     assert rt["20"]["hedef_gun"] == 1 and rt["20"]["iflas_gun"] == 0 and rt["2"]["hedef_gun"] == 0, rt
     rt = risk_table({"2026-07-21": -200.0}, 5.0)
     assert rt["20"]["iflas_gun"] == 1 and rt["10"]["iflas_gun"] == 0, rt
+    assert grup_of("btc_xau_oncu") == "BTC" and grup_of("fx_para_gucu") == "FX" and grup_of("fx_donchian_gunluk") == "FX"
+    assert parse_tag("tbtc_ozgun_btc_xau_oncu_m15_BTCUSD", "btc_ozgun") == ("btc_xau_oncu", "m15", "BTCUSD")
+    assert parse_tag("tfx_ozgun_fx_pdh_pdl_supurme_m30_EURJPY", "fx_ozgun") == ("fx_pdh_pdl_supurme", "m30", "EURJPY")
+    ap_t = argparse.ArgumentParser(); ap_t.add_argument("--ozet", nargs="+", default=list(DEFAULT_OZET))
+    assert ap_t.parse_args([]).ozet == list(DEFAULT_OZET) and ap_t.parse_args(["--ozet", "a.json", "b.json"]).ozet == ["a.json", "b.json"]
     assert parse_tag("tbtc1_btc_keltner_geri_htf_m5_BTCUSD", "btc1") == ("btc_keltner_geri_htf", "m5", "BTCUSD")
     # fail-open durumlari: PF yok / islem yok
     assert pf_val(None) is None and pf_val("n/a") is None and pf_val(999.0) == inf and pf_val(1.2) == 1.2
