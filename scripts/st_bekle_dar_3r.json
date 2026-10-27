@@ -1,0 +1,288 @@
+{
+  "weeks": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD|bekle": {
+      "hits": 0,
+      "min_friday": 628.6,
+      "sum_pnl": -1134.85,
+      "trades": 163,
+      "winners": 37
+    },
+    "BTCUSD|bekle": {
+      "hits": 0,
+      "min_friday": 485.1,
+      "sum_pnl": -233.29,
+      "trades": 166,
+      "winners": 44
+    },
+    "EURUSD|bekle": {
+      "hits": 0,
+      "min_friday": 580.44,
+      "sum_pnl": -101.86,
+      "trades": 167,
+      "winners": 47
+    },
+    "GBPUSD|bekle": {
+      "hits": 0,
+      "min_friday": 592.01,
+      "sum_pnl": -890.93,
+      "trades": 161,
+      "winners": 38
+    },
+    "USDJPY|bekle": {
+      "hits": 0,
+      "min_friday": 423.82,
+      "sum_pnl": 49.35,
+      "trades": 184,
+      "winners": 49
+    },
+    "EURJPY|bekle": {
+      "hits": 0,
+      "min_friday": 454.35,
+      "sum_pnl": -235.01,
+      "trades": 149,
+      "winners": 38
+    },
+    "GBPJPY|bekle": {
+      "hits": 1,
+      "min_friday": 636.67,
+      "sum_pnl": 2715.93,
+      "trades": 163,
+      "winners": 53
+    },
+    "USDCAD|bekle": {
+      "hits": 0,
+      "min_friday": 571.32,
+      "sum_pnl": 390.31,
+      "trades": 184,
+      "winners": 51
+    },
+    "EURCAD|bekle": {
+      "hits": 1,
+      "min_friday": 561.33,
+      "sum_pnl": 585.46,
+      "trades": 171,
+      "winners": 45
+    },
+    "GBPCAD|bekle": {
+      "hits": 0,
+      "min_friday": 521.48,
+      "sum_pnl": -718.23,
+      "trades": 172,
+      "winners": 42
+    },
+    "EURNZD|bekle": {
+      "hits": 0,
+      "min_friday": 490.37,
+      "sum_pnl": -2551.33,
+      "trades": 166,
+      "winners": 32
+    },
+    "GBPNZD|bekle": {
+      "hits": 0,
+      "min_friday": 473.5,
+      "sum_pnl": -2404.19,
+      "trades": 173,
+      "winners": 33
+    },
+    "NZDUSD|bekle": {
+      "hits": 0,
+      "min_friday": 543.17,
+      "sum_pnl": -131.39,
+      "trades": 173,
+      "winners": 43
+    },
+    "XAUUSD|cevir": {
+      "hits": 0,
+      "min_friday": 767.18,
+      "sum_pnl": 16.1,
+      "trades": 94,
+      "winners": 26
+    },
+    "BTCUSD|cevir": {
+      "hits": 0,
+      "min_friday": 703.6,
+      "sum_pnl": 13.1,
+      "trades": 76,
+      "winners": 20
+    },
+    "EURUSD|cevir": {
+      "hits": 0,
+      "min_friday": 698.96,
+      "sum_pnl": -46.07,
+      "trades": 82,
+      "winners": 21
+    },
+    "GBPUSD|cevir": {
+      "hits": 0,
+      "min_friday": 701.61,
+      "sum_pnl": -507.14,
+      "trades": 83,
+      "winners": 20
+    },
+    "USDJPY|cevir": {
+      "hits": 0,
+      "min_friday": 600.5,
+      "sum_pnl": -435.24,
+      "trades": 87,
+      "winners": 21
+    },
+    "EURJPY|cevir": {
+      "hits": 0,
+      "min_friday": 701.72,
+      "sum_pnl": 17.08,
+      "trades": 93,
+      "winners": 25
+    },
+    "GBPJPY|cevir": {
+      "hits": 0,
+      "min_friday": 598.32,
+      "sum_pnl": -1145.96,
+      "trades": 79,
+      "winners": 15
+    },
+    "USDCAD|cevir": {
+      "hits": 0,
+      "min_friday": 694.98,
+      "sum_pnl": 543.16,
+      "trades": 85,
+      "winners": 25
+    },
+    "EURCAD|cevir": {
+      "hits": 0,
+      "min_friday": 833.43,
+      "sum_pnl": 1460.34,
+      "trades": 93,
+      "winners": 31
+    },
+    "GBPCAD|cevir": {
+      "hits": 0,
+      "min_friday": 600.64,
+      "sum_pnl": -1200.3,
+      "trades": 88,
+      "winners": 15
+    },
+    "EURNZD|cevir": {
+      "hits": 0,
+      "min_friday": 524.94,
+      "sum_pnl": -1747.87,
+      "trades": 102,
+      "winners": 18
+    },
+    "GBPNZD|cevir": {
+      "hits": 0,
+      "min_friday": 521.85,
+      "sum_pnl": -2078.79,
+      "trades": 103,
+      "winners": 18
+    },
+    "NZDUSD|cevir": {
+      "hits": 0,
+      "min_friday": 682.68,
+      "sum_pnl": -472.32,
+      "trades": 98,
+      "winners": 24
+    },
+    "XAUUSD|dar": {
+      "hits": 0,
+      "min_friday": 644.57,
+      "sum_pnl": -595.59,
+      "trades": 121,
+      "winners": 28
+    },
+    "BTCUSD|dar": {
+      "hits": 0,
+      "min_friday": 726.34,
+      "sum_pnl": -315.99,
+      "trades": 107,
+      "winners": 27
+    },
+    "EURUSD|dar": {
+      "hits": 0,
+      "min_friday": 650.31,
+      "sum_pnl": -282.09,
+      "trades": 105,
+      "winners": 27
+    },
+    "GBPUSD|dar": {
+      "hits": 0,
+      "min_friday": 565.03,
+      "sum_pnl": -1171.35,
+      "trades": 113,
+      "winners": 24
+    },
+    "USDJPY|dar": {
+      "hits": 0,
+      "min_friday": 577.05,
+      "sum_pnl": 129.95,
+      "trades": 135,
+      "winners": 36
+    },
+    "EURJPY|dar": {
+      "hits": 0,
+      "min_friday": 419.32,
+      "sum_pnl": -1256.37,
+      "trades": 127,
+      "winners": 26
+    },
+    "GBPJPY|dar": {
+      "hits": 0,
+      "min_friday": 504.88,
+      "sum_pnl": -222.39,
+      "trades": 110,
+      "winners": 28
+    },
+    "USDCAD|dar": {
+      "hits": 0,
+      "min_friday": 579.07,
+      "sum_pnl": 214.28,
+      "trades": 110,
+      "winners": 30
+    },
+    "EURCAD|dar": {
+      "hits": 0,
+      "min_friday": 496.35,
+      "sum_pnl": 461.97,
+      "trades": 111,
+      "winners": 27
+    },
+    "GBPCAD|dar": {
+      "hits": 0,
+      "min_friday": 591.77,
+      "sum_pnl": -443.23,
+      "trades": 107,
+      "winners": 26
+    },
+    "EURNZD|dar": {
+      "hits": 0,
+      "min_friday": 457.25,
+      "sum_pnl": -2469.1,
+      "trades": 116,
+      "winners": 20
+    },
+    "GBPNZD|dar": {
+      "hits": 0,
+      "min_friday": 718.47,
+      "sum_pnl": -1204.19,
+      "trades": 98,
+      "winners": 22
+    },
+    "NZDUSD|dar": {
+      "hits": 0,
+      "min_friday": 573.11,
+      "sum_pnl": -1476.68,
+      "trades": 112,
+      "winners": 22
+    }
+  },
+  "passed_all_8": []
+}

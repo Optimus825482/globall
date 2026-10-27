@@ -1,0 +1,2303 @@
+{
+  "test_weeks": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD|15m": {
+      "resolved": "XAUUSD",
+      "hits": 0,
+      "min_friday": 723.4,
+      "sum_pnl": -691.57,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_3R",
+          "lookback_pnl": 582.53,
+          "friday": 956.28,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 104.48
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "don_3R",
+          "lookback_pnl": 730.49,
+          "friday": 978.08,
+          "hit": false,
+          "trades": 8,
+          "winners": 2,
+          "dd": 148.38
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "don_3R",
+          "lookback_pnl": 744.46,
+          "friday": 723.4,
+          "hit": false,
+          "trades": 15,
+          "winners": 2,
+          "dd": 500.61
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 235.9,
+          "friday": 1011.07,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 93.7
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "don_3R",
+          "lookback_pnl": 404.47,
+          "friday": 1044.73,
+          "hit": false,
+          "trades": 14,
+          "winners": 4,
+          "dd": 533.29
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 89.0,
+          "friday": 944.29,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 97.26
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "macd_3R",
+          "lookback_pnl": -8.2,
+          "friday": 732.56,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 310.16
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "st_2R",
+          "lookback_pnl": 167.8,
+          "friday": 918.02,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 171.87
+        }
+      ]
+    },
+    "BTCUSD|15m": {
+      "resolved": "BTCUSD",
+      "hits": 0,
+      "min_friday": 641.8,
+      "sum_pnl": 901.08,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "don_3R",
+          "lookback_pnl": 1320.11,
+          "friday": 1064.46,
+          "hit": false,
+          "trades": 10,
+          "winners": 3,
+          "dd": 193.9
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "don_3R",
+          "lookback_pnl": 1274.44,
+          "friday": 641.8,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 463.84
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "don_3R",
+          "lookback_pnl": 743.0,
+          "friday": 1508.51,
+          "hit": false,
+          "trades": 12,
+          "winners": 6,
+          "dd": 154.53
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 440.66,
+          "friday": 951.66,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 155.4
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "retest_2R",
+          "lookback_pnl": 456.65,
+          "friday": 1165.84,
+          "hit": false,
+          "trades": 9,
+          "winners": 4,
+          "dd": 235.29
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "retest_2R",
+          "lookback_pnl": 659.42,
+          "friday": 1186.04,
+          "hit": false,
+          "trades": 8,
+          "winners": 4,
+          "dd": 164.11
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "retest_2R",
+          "lookback_pnl": 906.37,
+          "friday": 1252.8,
+          "hit": false,
+          "trades": 7,
+          "winners": 4,
+          "dd": 185.15
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 1037.3,
+          "friday": 1129.97,
+          "hit": false,
+          "trades": 5,
+          "winners": 2,
+          "dd": 120.52
+        }
+      ]
+    },
+    "EURUSD|15m": {
+      "resolved": "EURUSD",
+      "hits": 0,
+      "min_friday": 717.36,
+      "sum_pnl": 183.21,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "macd_3R",
+          "lookback_pnl": 356.0,
+          "friday": 717.36,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 308.26
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 404.36,
+          "friday": 1076.27,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 178.38
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 622.75,
+          "friday": 1131.71,
+          "hit": false,
+          "trades": 5,
+          "winners": 2,
+          "dd": 126.31
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 264.65,
+          "friday": 1038.49,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 186.29
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 474.48,
+          "friday": 1352.49,
+          "hit": false,
+          "trades": 9,
+          "winners": 4,
+          "dd": 176.8
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 709.12,
+          "friday": 891.19,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 214.27
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "ema_3R",
+          "lookback_pnl": 561.09,
+          "friday": 986.54,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 108.0
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "st_3R",
+          "lookback_pnl": 984.89,
+          "friday": 989.16,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 111.77
+        }
+      ]
+    },
+    "GBPUSD|15m": {
+      "resolved": "GBPUSD",
+      "hits": 0,
+      "min_friday": 732.23,
+      "sum_pnl": -555.03,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 965.11,
+          "friday": 765.26,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 267.44
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 655.13,
+          "friday": 1036.62,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 209.93
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 634.34,
+          "friday": 1007.38,
+          "hit": false,
+          "trades": 8,
+          "winners": 3,
+          "dd": 225.78
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 671.65,
+          "friday": 875.11,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 143.07
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi2_2R",
+          "lookback_pnl": -101.24,
+          "friday": 950.52,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 49.48
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_2R",
+          "lookback_pnl": 180.34,
+          "friday": 1044.78,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 70.89
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_2R",
+          "lookback_pnl": 344.99,
+          "friday": 1033.07,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 70.77
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "retest_2R",
+          "lookback_pnl": 808.83,
+          "friday": 732.23,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 331.71
+        }
+      ]
+    },
+    "USDJPY|15m": {
+      "resolved": "USDJPY",
+      "hits": 0,
+      "min_friday": 977.1,
+      "sum_pnl": 907.44,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "macd_3R",
+          "lookback_pnl": 420.25,
+          "friday": 1077.13,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 185.6
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "macd_3R",
+          "lookback_pnl": 690.44,
+          "friday": 1038.74,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 207.31
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "macd_3R",
+          "lookback_pnl": 553.26,
+          "friday": 977.1,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 275.53
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 502.76,
+          "friday": 1572.36,
+          "hit": false,
+          "trades": 19,
+          "winners": 12,
+          "dd": 143.97
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1304.25,
+          "friday": 1014.49,
+          "hit": false,
+          "trades": 19,
+          "winners": 8,
+          "dd": 248.23
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1113.03,
+          "friday": 1137.74,
+          "hit": false,
+          "trades": 19,
+          "winners": 9,
+          "dd": 231.5
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 872.95,
+          "friday": 1105.18,
+          "hit": false,
+          "trades": 16,
+          "winners": 8,
+          "dd": 171.02
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 829.77,
+          "friday": 984.7,
+          "hit": false,
+          "trades": 18,
+          "winners": 7,
+          "dd": 254.9
+        }
+      ]
+    },
+    "EURJPY|15m": {
+      "resolved": "EURJPY",
+      "hits": 0,
+      "min_friday": 526.35,
+      "sum_pnl": -51.72,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "st_3R",
+          "lookback_pnl": 15.59,
+          "friday": 1040.44,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 205.89
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "don_3R",
+          "lookback_pnl": 377.47,
+          "friday": 1174.12,
+          "hit": false,
+          "trades": 18,
+          "winners": 6,
+          "dd": 891.84
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "don_3R",
+          "lookback_pnl": 514.9,
+          "friday": 526.35,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 473.65
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "don_3R",
+          "lookback_pnl": 162.31,
+          "friday": 1056.93,
+          "hit": false,
+          "trades": 10,
+          "winners": 3,
+          "dd": 233.21
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "don_3R",
+          "lookback_pnl": 454.89,
+          "friday": 1245.54,
+          "hit": false,
+          "trades": 14,
+          "winners": 5,
+          "dd": 150.47
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 257.78,
+          "friday": 1143.56,
+          "hit": false,
+          "trades": 5,
+          "winners": 2,
+          "dd": 190.46
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 778.01,
+          "friday": 776.06,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 223.94
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 498.08,
+          "friday": 985.28,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 124.36
+        }
+      ]
+    },
+    "GBPJPY|15m": {
+      "resolved": "GBPJPY",
+      "hits": 0,
+      "min_friday": 640.39,
+      "sum_pnl": 283.96,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 502.34,
+          "friday": 970.18,
+          "hit": false,
+          "trades": 8,
+          "winners": 2,
+          "dd": 180.34
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "don_3R",
+          "lookback_pnl": 1596.38,
+          "friday": 731.41,
+          "hit": false,
+          "trades": 16,
+          "winners": 3,
+          "dd": 805.3
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "don_3R",
+          "lookback_pnl": 936.39,
+          "friday": 640.39,
+          "hit": false,
+          "trades": 16,
+          "winners": 2,
+          "dd": 401.36
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "don_3R",
+          "lookback_pnl": 727.85,
+          "friday": 1091.53,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 287.48
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 596.3,
+          "friday": 1913.87,
+          "hit": false,
+          "trades": 23,
+          "winners": 15,
+          "dd": 278.34
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1468.87,
+          "friday": 1144.71,
+          "hit": false,
+          "trades": 16,
+          "winners": 8,
+          "dd": 206.2
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1638.64,
+          "friday": 675.82,
+          "hit": false,
+          "trades": 18,
+          "winners": 5,
+          "dd": 266.01
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1068.03,
+          "friday": 1116.05,
+          "hit": false,
+          "trades": 16,
+          "winners": 8,
+          "dd": 264.18
+        }
+      ]
+    },
+    "USDCAD|15m": {
+      "resolved": "USDCAD",
+      "hits": 0,
+      "min_friday": 608.84,
+      "sum_pnl": -266.88,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "don_2R",
+          "lookback_pnl": 614.92,
+          "friday": 1461.96,
+          "hit": false,
+          "trades": 24,
+          "winners": 11,
+          "dd": 244.63
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "don_2R",
+          "lookback_pnl": 1273.01,
+          "friday": 608.84,
+          "hit": false,
+          "trades": 17,
+          "winners": 3,
+          "dd": 391.16
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "retest_2R",
+          "lookback_pnl": 1237.52,
+          "friday": 797.46,
+          "hit": false,
+          "trades": 13,
+          "winners": 3,
+          "dd": 501.23
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 623.68,
+          "friday": 1411.27,
+          "hit": false,
+          "trades": 21,
+          "winners": 12,
+          "dd": 260.01
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "retest_2R",
+          "lookback_pnl": 1234.52,
+          "friday": 768.36,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 231.64
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1111.38,
+          "friday": 983.35,
+          "hit": false,
+          "trades": 24,
+          "winners": 11,
+          "dd": 186.35
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 757.14,
+          "friday": 925.77,
+          "hit": false,
+          "trades": 23,
+          "winners": 9,
+          "dd": 397.35
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "retest_2R",
+          "lookback_pnl": 544.97,
+          "friday": 776.11,
+          "hit": false,
+          "trades": 15,
+          "winners": 4,
+          "dd": 323.67
+        }
+      ]
+    },
+    "EURCAD|15m": {
+      "resolved": "EURCAD",
+      "hits": 0,
+      "min_friday": 812.81,
+      "sum_pnl": 390.53,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1070.95,
+          "friday": 926.51,
+          "hit": false,
+          "trades": 20,
+          "winners": 8,
+          "dd": 258.01
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 565.59,
+          "friday": 812.81,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 187.19
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 113.21,
+          "friday": 1022.87,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 248.95
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 371.35,
+          "friday": 986.49,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 278.91
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "macd_2R",
+          "lookback_pnl": 83.02,
+          "friday": 935.68,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 184.59
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_3R",
+          "lookback_pnl": -56.26,
+          "friday": 844.09,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 245.18
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "retest_2R",
+          "lookback_pnl": 270.95,
+          "friday": 1466.46,
+          "hit": false,
+          "trades": 12,
+          "winners": 5,
+          "dd": 243.46
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "retest_2R",
+          "lookback_pnl": 666.92,
+          "friday": 1395.62,
+          "hit": false,
+          "trades": 10,
+          "winners": 6,
+          "dd": 198.77
+        }
+      ]
+    },
+    "GBPCAD|15m": {
+      "resolved": "GBPCAD",
+      "hits": 0,
+      "min_friday": 659.11,
+      "sum_pnl": -579.14,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 86.72,
+          "friday": 963.46,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 179.9
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 153.49,
+          "friday": 687.05,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 323.23
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "retest_2R",
+          "lookback_pnl": 219.86,
+          "friday": 834.01,
+          "hit": false,
+          "trades": 15,
+          "winners": 4,
+          "dd": 339.63
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "retest_2R",
+          "lookback_pnl": 202.01,
+          "friday": 983.23,
+          "hit": false,
+          "trades": 10,
+          "winners": 4,
+          "dd": 171.15
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "retest_2R",
+          "lookback_pnl": 148.15,
+          "friday": 941.42,
+          "hit": false,
+          "trades": 12,
+          "winners": 4,
+          "dd": 150.57
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "macd_3R",
+          "lookback_pnl": 428.64,
+          "friday": 1260.66,
+          "hit": false,
+          "trades": 7,
+          "winners": 3,
+          "dd": 162.93
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "macd_3R",
+          "lookback_pnl": 739.2,
+          "friday": 659.11,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 388.23
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "st_3R",
+          "lookback_pnl": 1128.04,
+          "friday": 1091.92,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 66.75
+        }
+      ]
+    },
+    "EURNZD|15m": {
+      "resolved": "EURNZD",
+      "hits": 0,
+      "min_friday": 775.39,
+      "sum_pnl": -688.79,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "macd_2R",
+          "lookback_pnl": 408.14,
+          "friday": 943.79,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 145.39
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "macd_2R",
+          "lookback_pnl": 436.26,
+          "friday": 775.39,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 224.61
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "macd_2R",
+          "lookback_pnl": 15.19,
+          "friday": 993.16,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 106.75
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_2R",
+          "lookback_pnl": -55.77,
+          "friday": 943.72,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 169.36
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_2R",
+          "lookback_pnl": 151.38,
+          "friday": 807.1,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 256.43
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_2R",
+          "lookback_pnl": 126.01,
+          "friday": 974.41,
+          "hit": false,
+          "trades": 5,
+          "winners": 2,
+          "dd": 245.3
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_2R",
+          "lookback_pnl": 241.7,
+          "friday": 970.03,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 129.89
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "st_2R",
+          "lookback_pnl": 14.87,
+          "friday": 903.61,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 109.81
+        }
+      ]
+    },
+    "GBPNZD|15m": {
+      "resolved": "GBPNZD",
+      "hits": 0,
+      "min_friday": 734.65,
+      "sum_pnl": -57.19,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "retest_2R",
+          "lookback_pnl": 675.25,
+          "friday": 1029.59,
+          "hit": false,
+          "trades": 8,
+          "winners": 3,
+          "dd": 181.09
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "macd_3R",
+          "lookback_pnl": 452.91,
+          "friday": 734.65,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 259.1
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "retest_2R",
+          "lookback_pnl": 358.67,
+          "friday": 1137.88,
+          "hit": false,
+          "trades": 11,
+          "winners": 5,
+          "dd": 192.14
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 124.7,
+          "friday": 1091.77,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 71.45
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "ema_3R",
+          "lookback_pnl": 216.47,
+          "friday": 964.99,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 159.94
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "ema_3R",
+          "lookback_pnl": 133.82,
+          "friday": 796.85,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 212.61
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "ema_3R",
+          "lookback_pnl": 44.42,
+          "friday": 859.06,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 198.23
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi2_2R",
+          "lookback_pnl": -195.92,
+          "friday": 1328.02,
+          "hit": false,
+          "trades": 3,
+          "winners": 3,
+          "dd": 19.11
+        }
+      ]
+    },
+    "NZDUSD|15m": {
+      "resolved": "NZDUSD",
+      "hits": 0,
+      "min_friday": 714.46,
+      "sum_pnl": -58.21,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 404.95,
+          "friday": 853.18,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 246.7
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "ema_2R",
+          "lookback_pnl": 109.55,
+          "friday": 1045.28,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 65.51
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "macd_2R",
+          "lookback_pnl": 142.94,
+          "friday": 936.77,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 168.91
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 492.08,
+          "friday": 1523.18,
+          "hit": false,
+          "trades": 17,
+          "winners": 10,
+          "dd": 313.76
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1034.4,
+          "friday": 1127.31,
+          "hit": false,
+          "trades": 14,
+          "winners": 7,
+          "dd": 225.65
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1226.17,
+          "friday": 824.76,
+          "hit": false,
+          "trades": 15,
+          "winners": 5,
+          "dd": 349.89
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 965.8,
+          "friday": 916.85,
+          "hit": false,
+          "trades": 22,
+          "winners": 9,
+          "dd": 522.35
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 392.1,
+          "friday": 714.46,
+          "hit": false,
+          "trades": 17,
+          "winners": 5,
+          "dd": 289.96
+        }
+      ]
+    },
+    "XAUUSD|5m": {
+      "resolved": "XAUUSD",
+      "hits": 0,
+      "min_friday": 774.45,
+      "sum_pnl": 1398.75,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_3R",
+          "lookback_pnl": 1526.43,
+          "friday": 1058.25,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 134.8
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "ema_3R",
+          "lookback_pnl": 1176.65,
+          "friday": 1124.3,
+          "hit": false,
+          "trades": 5,
+          "winners": 2,
+          "dd": 108.0
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "ema_3R",
+          "lookback_pnl": 386.06,
+          "friday": 1120.13,
+          "hit": false,
+          "trades": 9,
+          "winners": 3,
+          "dd": 204.94
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 433.76,
+          "friday": 774.45,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 340.67
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1776.18,
+          "friday": 1513.85,
+          "hit": false,
+          "trades": 52,
+          "winners": 25,
+          "dd": 351.2
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 2268.37,
+          "friday": 807.57,
+          "hit": false,
+          "trades": 59,
+          "winners": 23,
+          "dd": 583.83
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 2217.05,
+          "friday": 1044.62,
+          "hit": false,
+          "trades": 62,
+          "winners": 28,
+          "dd": 674.84
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1986.33,
+          "friday": 1955.58,
+          "hit": false,
+          "trades": 61,
+          "winners": 31,
+          "dd": 691.54
+        }
+      ]
+    },
+    "BTCUSD|5m": {
+      "resolved": "BTCUSD",
+      "hits": 0,
+      "min_friday": 545.68,
+      "sum_pnl": -1229.22,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 202.59,
+          "friday": 816.43,
+          "hit": false,
+          "trades": 15,
+          "winners": 3,
+          "dd": 378.67
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 336.43,
+          "friday": 545.68,
+          "hit": false,
+          "trades": 27,
+          "winners": 4,
+          "dd": 466.69
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "rsi2_3R",
+          "lookback_pnl": -135.54,
+          "friday": 820.32,
+          "hit": false,
+          "trades": 17,
+          "winners": 4,
+          "dd": 497.91
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_2R",
+          "lookback_pnl": 36.24,
+          "friday": 1139.0,
+          "hit": false,
+          "trades": 6,
+          "winners": 3,
+          "dd": 133.11
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 178.68,
+          "friday": 817.21,
+          "hit": false,
+          "trades": 51,
+          "winners": 20,
+          "dd": 374.87
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 901.97,
+          "friday": 772.56,
+          "hit": false,
+          "trades": 25,
+          "winners": 7,
+          "dd": 458.68
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 897.72,
+          "friday": 728.52,
+          "hit": false,
+          "trades": 15,
+          "winners": 3,
+          "dd": 325.09
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "ema_2R",
+          "lookback_pnl": 830.44,
+          "friday": 1131.06,
+          "hit": false,
+          "trades": 9,
+          "winners": 4,
+          "dd": 138.71
+        }
+      ]
+    },
+    "EURUSD|5m": {
+      "resolved": "EURUSD",
+      "hits": 0,
+      "min_friday": 233.87,
+      "sum_pnl": 111.66,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "st_3R",
+          "lookback_pnl": 320.82,
+          "friday": 752.9,
+          "hit": false,
+          "trades": 13,
+          "winners": 2,
+          "dd": 633.76
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "st_3R",
+          "lookback_pnl": 509.64,
+          "friday": 910.83,
+          "hit": false,
+          "trades": 13,
+          "winners": 3,
+          "dd": 217.96
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "ema_3R",
+          "lookback_pnl": 203.91,
+          "friday": 1238.01,
+          "hit": false,
+          "trades": 7,
+          "winners": 3,
+          "dd": 308.89
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 235.43,
+          "friday": 699.57,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 334.85
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 221.38,
+          "friday": 1158.42,
+          "hit": false,
+          "trades": 12,
+          "winners": 4,
+          "dd": 232.03
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 733.64,
+          "friday": 1997.33,
+          "hit": false,
+          "trades": 20,
+          "winners": 9,
+          "dd": 286.68
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 1952.69,
+          "friday": 233.87,
+          "hit": false,
+          "trades": 15,
+          "winners": 6,
+          "dd": 462.41
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 1839.69,
+          "friday": 1120.73,
+          "hit": false,
+          "trades": 56,
+          "winners": 25,
+          "dd": 425.64
+        }
+      ]
+    },
+    "GBPUSD|5m": {
+      "resolved": "GBPUSD",
+      "hits": 0,
+      "min_friday": 590.31,
+      "sum_pnl": -973.64,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "rsi2_2R",
+          "lookback_pnl": 137.11,
+          "friday": 590.31,
+          "hit": false,
+          "trades": 16,
+          "winners": 2,
+          "dd": 471.64
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_2R",
+          "lookback_pnl": -17.75,
+          "friday": 1109.16,
+          "hit": false,
+          "trades": 18,
+          "winners": 7,
+          "dd": 210.83
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "ema_3R",
+          "lookback_pnl": -216.11,
+          "friday": 1175.03,
+          "hit": false,
+          "trades": 8,
+          "winners": 3,
+          "dd": 164.12
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": 21.7,
+          "friday": 615.39,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 384.61
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "retest_2R",
+          "lookback_pnl": 918.19,
+          "friday": 605.22,
+          "hit": false,
+          "trades": 35,
+          "winners": 9,
+          "dd": 414.6
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "retest_2R",
+          "lookback_pnl": 896.24,
+          "friday": 603.06,
+          "hit": false,
+          "trades": 38,
+          "winners": 10,
+          "dd": 589.65
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "macd_3R",
+          "lookback_pnl": 742.52,
+          "friday": 1481.68,
+          "hit": false,
+          "trades": 14,
+          "winners": 6,
+          "dd": 315.94
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "macd_3R",
+          "lookback_pnl": 888.29,
+          "friday": 846.51,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 306.73
+        }
+      ]
+    },
+    "USDJPY|5m": {
+      "resolved": "USDJPY",
+      "hits": 0,
+      "min_friday": 724.0,
+      "sum_pnl": 945.61,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_3R",
+          "lookback_pnl": 144.3,
+          "friday": 1348.67,
+          "hit": false,
+          "trades": 7,
+          "winners": 4,
+          "dd": 215.86
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "ema_3R",
+          "lookback_pnl": 740.96,
+          "friday": 1014.46,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 179.3
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "ema_3R",
+          "lookback_pnl": 578.66,
+          "friday": 1556.19,
+          "hit": false,
+          "trades": 10,
+          "winners": 5,
+          "dd": 221.63
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "st_3R",
+          "lookback_pnl": 1674.09,
+          "friday": 875.63,
+          "hit": false,
+          "trades": 9,
+          "winners": 2,
+          "dd": 301.49
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_3R",
+          "lookback_pnl": 1345.25,
+          "friday": 724.0,
+          "hit": false,
+          "trades": 17,
+          "winners": 3,
+          "dd": 281.08
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_3R",
+          "lookback_pnl": 1073.56,
+          "friday": 1293.38,
+          "hit": false,
+          "trades": 17,
+          "winners": 6,
+          "dd": 445.92
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_3R",
+          "lookback_pnl": 1026.77,
+          "friday": 1362.23,
+          "hit": false,
+          "trades": 8,
+          "winners": 4,
+          "dd": 178.89
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 457.11,
+          "friday": 771.05,
+          "hit": false,
+          "trades": 20,
+          "winners": 4,
+          "dd": 685.78
+        }
+      ]
+    },
+    "EURJPY|5m": {
+      "resolved": "EURJPY",
+      "hits": 1,
+      "min_friday": 278.53,
+      "sum_pnl": 535.23,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "macd_3R",
+          "lookback_pnl": -667.61,
+          "friday": 920.93,
+          "hit": false,
+          "trades": 11,
+          "winners": 3,
+          "dd": 168.57
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "rsi2_3R",
+          "lookback_pnl": -283.72,
+          "friday": 1864.29,
+          "hit": false,
+          "trades": 21,
+          "winners": 9,
+          "dd": 328.17
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 669.63,
+          "friday": 592.73,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 448.21
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 397.9,
+          "friday": 2118.72,
+          "hit": true,
+          "trades": 19,
+          "winners": 9,
+          "dd": 395.38
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 1719.74,
+          "friday": 783.96,
+          "hit": false,
+          "trades": 22,
+          "winners": 5,
+          "dd": 583.5
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 1359.7,
+          "friday": 805.44,
+          "hit": false,
+          "trades": 19,
+          "winners": 4,
+          "dd": 300.83
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "don_3R",
+          "lookback_pnl": 475.69,
+          "friday": 278.53,
+          "hit": false,
+          "trades": 39,
+          "winners": 4,
+          "dd": 812.87
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 712.77,
+          "friday": 1170.63,
+          "hit": false,
+          "trades": 23,
+          "winners": 7,
+          "dd": 435.44
+        }
+      ]
+    },
+    "GBPJPY|5m": {
+      "resolved": "GBPJPY",
+      "hits": 0,
+      "min_friday": 237.21,
+      "sum_pnl": -762.69,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_2R",
+          "lookback_pnl": -232.23,
+          "friday": 985.49,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 112.7
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "don_2R",
+          "lookback_pnl": 945.96,
+          "friday": 237.21,
+          "hit": false,
+          "trades": 56,
+          "winners": 10,
+          "dd": 1122.44
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "don_2R",
+          "lookback_pnl": 123.86,
+          "friday": 255.62,
+          "hit": false,
+          "trades": 44,
+          "winners": 7,
+          "dd": 750.92
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "ema_3R",
+          "lookback_pnl": -313.21,
+          "friday": 1173.81,
+          "hit": false,
+          "trades": 8,
+          "winners": 3,
+          "dd": 177.51
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "ema_3R",
+          "lookback_pnl": 152.99,
+          "friday": 1022.16,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 219.29
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "ema_3R",
+          "lookback_pnl": 98.15,
+          "friday": 1403.73,
+          "hit": false,
+          "trades": 8,
+          "winners": 4,
+          "dd": 194.99
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "ema_3R",
+          "lookback_pnl": 477.43,
+          "friday": 1368.46,
+          "hit": false,
+          "trades": 5,
+          "winners": 3,
+          "dd": 161.63
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "macd_3R",
+          "lookback_pnl": 1202.26,
+          "friday": 790.83,
+          "hit": false,
+          "trades": 12,
+          "winners": 2,
+          "dd": 334.67
+        }
+      ]
+    },
+    "USDCAD|5m": {
+      "resolved": "USDCAD",
+      "hits": 1,
+      "min_friday": 357.12,
+      "sum_pnl": 2418.43,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "retest_2R",
+          "lookback_pnl": 319.34,
+          "friday": 1527.71,
+          "hit": false,
+          "trades": 37,
+          "winners": 16,
+          "dd": 266.46
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "retest_2R",
+          "lookback_pnl": 981.72,
+          "friday": 719.67,
+          "hit": false,
+          "trades": 32,
+          "winners": 9,
+          "dd": 442.06
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "rsi_ema_1.5R",
+          "lookback_pnl": 536.88,
+          "friday": 855.97,
+          "hit": false,
+          "trades": 62,
+          "winners": 25,
+          "dd": 546.03
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "st_3R",
+          "lookback_pnl": 16.87,
+          "friday": 1856.97,
+          "hit": false,
+          "trades": 14,
+          "winners": 7,
+          "dd": 200.96
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "retest_2R",
+          "lookback_pnl": 1467.38,
+          "friday": 1031.85,
+          "hit": false,
+          "trades": 31,
+          "winners": 12,
+          "dd": 488.33
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_3R",
+          "lookback_pnl": 1347.33,
+          "friday": 357.12,
+          "hit": false,
+          "trades": 23,
+          "winners": 1,
+          "dd": 858.9
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "retest_2R",
+          "lookback_pnl": 1772.79,
+          "friday": 2367.29,
+          "hit": true,
+          "trades": 36,
+          "winners": 17,
+          "dd": 536.92
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "retest_2R",
+          "lookback_pnl": 3348.88,
+          "friday": 1701.85,
+          "hit": false,
+          "trades": 38,
+          "winners": 17,
+          "dd": 453.02
+        }
+      ]
+    },
+    "EURCAD|5m": {
+      "resolved": "EURCAD",
+      "hits": 0,
+      "min_friday": 659.92,
+      "sum_pnl": -691.02,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_3R",
+          "lookback_pnl": 49.71,
+          "friday": 953.2,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 196.48
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "ema_3R",
+          "lookback_pnl": -73.13,
+          "friday": 794.91,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 275.96
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "ema_3R",
+          "lookback_pnl": -42.11,
+          "friday": 924.17,
+          "hit": false,
+          "trades": 9,
+          "winners": 2,
+          "dd": 277.19
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "st_3R",
+          "lookback_pnl": 104.87,
+          "friday": 711.01,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 317.85
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_3R",
+          "lookback_pnl": -226.13,
+          "friday": 1402.23,
+          "hit": false,
+          "trades": 12,
+          "winners": 5,
+          "dd": 416.79
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_3R",
+          "lookback_pnl": 381.01,
+          "friday": 1104.13,
+          "hit": false,
+          "trades": 15,
+          "winners": 5,
+          "dd": 322.22
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "don_3R",
+          "lookback_pnl": 1108.64,
+          "friday": 759.41,
+          "hit": false,
+          "trades": 42,
+          "winners": 10,
+          "dd": 534.93
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "retest_2R",
+          "lookback_pnl": 654.03,
+          "friday": 659.92,
+          "hit": false,
+          "trades": 36,
+          "winners": 10,
+          "dd": 583.86
+        }
+      ]
+    },
+    "GBPCAD|5m": {
+      "resolved": "GBPCAD",
+      "hits": 0,
+      "min_friday": 619.27,
+      "sum_pnl": -728.05,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "macd_2R",
+          "lookback_pnl": -12.41,
+          "friday": 948.78,
+          "hit": false,
+          "trades": 21,
+          "winners": 7,
+          "dd": 359.47
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "ema_3R",
+          "lookback_pnl": -121.48,
+          "friday": 1092.58,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 77.1
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "ema_3R",
+          "lookback_pnl": -14.67,
+          "friday": 1236.81,
+          "hit": false,
+          "trades": 7,
+          "winners": 3,
+          "dd": 175.87
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "st_3R",
+          "lookback_pnl": 329.07,
+          "friday": 948.09,
+          "hit": false,
+          "trades": 16,
+          "winners": 3,
+          "dd": 434.97
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_3R",
+          "lookback_pnl": 614.15,
+          "friday": 619.27,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 380.73
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "ema_3R",
+          "lookback_pnl": 545.71,
+          "friday": 986.62,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 197.25
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_2R",
+          "lookback_pnl": 856.36,
+          "friday": 793.37,
+          "hit": false,
+          "trades": 15,
+          "winners": 4,
+          "dd": 402.81
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "st_2R",
+          "lookback_pnl": 219.36,
+          "friday": 646.43,
+          "hit": false,
+          "trades": 22,
+          "winners": 5,
+          "dd": 517.32
+        }
+      ]
+    },
+    "EURNZD|5m": {
+      "resolved": "EURNZD",
+      "hits": 0,
+      "min_friday": 655.12,
+      "sum_pnl": -851.41,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_2R",
+          "lookback_pnl": 360.8,
+          "friday": 834.77,
+          "hit": false,
+          "trades": 9,
+          "winners": 2,
+          "dd": 312.52
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "macd_3R",
+          "lookback_pnl": 358.1,
+          "friday": 1056.6,
+          "hit": false,
+          "trades": 10,
+          "winners": 3,
+          "dd": 336.73
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "macd_3R",
+          "lookback_pnl": 814.77,
+          "friday": 858.76,
+          "hit": false,
+          "trades": 13,
+          "winners": 3,
+          "dd": 340.9
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "macd_3R",
+          "lookback_pnl": 935.42,
+          "friday": 685.93,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 317.18
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_2R",
+          "lookback_pnl": 652.56,
+          "friday": 849.61,
+          "hit": false,
+          "trades": 17,
+          "winners": 5,
+          "dd": 318.23
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_2R",
+          "lookback_pnl": 449.28,
+          "friday": 839.77,
+          "hit": false,
+          "trades": 12,
+          "winners": 3,
+          "dd": 215.23
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_3R",
+          "lookback_pnl": 148.06,
+          "friday": 655.12,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 402.68
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "st_2R",
+          "lookback_pnl": -199.19,
+          "friday": 1368.03,
+          "hit": false,
+          "trades": 11,
+          "winners": 6,
+          "dd": 131.14
+        }
+      ]
+    },
+    "GBPNZD|5m": {
+      "resolved": "GBPNZD",
+      "hits": 0,
+      "min_friday": 588.78,
+      "sum_pnl": -1795.65,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "retest_2R",
+          "lookback_pnl": 1270.8,
+          "friday": 767.94,
+          "hit": false,
+          "trades": 28,
+          "winners": 8,
+          "dd": 399.32
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "retest_2R",
+          "lookback_pnl": 858.84,
+          "friday": 736.88,
+          "hit": false,
+          "trades": 26,
+          "winners": 7,
+          "dd": 378.74
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "macd_2R",
+          "lookback_pnl": 700.15,
+          "friday": 588.78,
+          "hit": false,
+          "trades": 18,
+          "winners": 3,
+          "dd": 464.46
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "st_3R",
+          "lookback_pnl": 2022.1,
+          "friday": 817.64,
+          "hit": false,
+          "trades": 15,
+          "winners": 3,
+          "dd": 316.15
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_3R",
+          "lookback_pnl": 1828.61,
+          "friday": 656.63,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 344.46
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_3R",
+          "lookback_pnl": 1437.02,
+          "friday": 1212.0,
+          "hit": false,
+          "trades": 11,
+          "winners": 4,
+          "dd": 348.12
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_3R",
+          "lookback_pnl": 1260.88,
+          "friday": 655.48,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 399.77
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "rsi2_3R",
+          "lookback_pnl": 489.51,
+          "friday": 769.0,
+          "hit": false,
+          "trades": 15,
+          "winners": 3,
+          "dd": 534.65
+        }
+      ]
+    },
+    "NZDUSD|5m": {
+      "resolved": "NZDUSD",
+      "hits": 0,
+      "min_friday": 383.07,
+      "sum_pnl": -1413.94,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "rule": "ema_3R",
+          "lookback_pnl": 593.61,
+          "friday": 1303.17,
+          "hit": false,
+          "trades": 6,
+          "winners": 3,
+          "dd": 221.48
+        },
+        {
+          "week": "2026-09-07",
+          "rule": "ema_3R",
+          "lookback_pnl": 613.5,
+          "friday": 1023.32,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 147.45
+        },
+        {
+          "week": "2026-09-14",
+          "rule": "don_3R",
+          "lookback_pnl": 1052.36,
+          "friday": 764.81,
+          "hit": false,
+          "trades": 54,
+          "winners": 14,
+          "dd": 1500.42
+        },
+        {
+          "week": "2026-09-21",
+          "rule": "st_3R",
+          "lookback_pnl": 1130.44,
+          "friday": 687.4,
+          "hit": false,
+          "trades": 24,
+          "winners": 5,
+          "dd": 535.51
+        },
+        {
+          "week": "2026-09-28",
+          "rule": "st_3R",
+          "lookback_pnl": 746.1,
+          "friday": 1112.12,
+          "hit": false,
+          "trades": 15,
+          "winners": 5,
+          "dd": 262.16
+        },
+        {
+          "week": "2026-10-05",
+          "rule": "st_3R",
+          "lookback_pnl": 868.05,
+          "friday": 425.11,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 639.83
+        },
+        {
+          "week": "2026-10-12",
+          "rule": "st_3R",
+          "lookback_pnl": -422.18,
+          "friday": 383.07,
+          "hit": false,
+          "trades": 14,
+          "winners": 3,
+          "dd": 737.19
+        },
+        {
+          "week": "2026-10-19",
+          "rule": "retest_2R",
+          "lookback_pnl": -335.95,
+          "friday": 887.06,
+          "hit": false,
+          "trades": 25,
+          "winners": 8,
+          "dd": 328.65
+        }
+      ]
+    }
+  },
+  "passed_all_8": []
+}

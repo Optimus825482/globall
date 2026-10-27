@@ -1,0 +1,313 @@
+{
+  "train": [
+    "2026-06-22",
+    "2026-06-29",
+    "2026-07-06",
+    "2026-07-13",
+    "2026-07-20",
+    "2026-07-27",
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17",
+    "2026-08-24"
+  ],
+  "test": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD|15m": {
+      "resolved": "XAUUSD",
+      "chosen": "uzak",
+      "train_hits": 1,
+      "train_min": 605.12,
+      "test_hits": 0,
+      "test_min": 628.52,
+      "test_pnl": -329.32,
+      "test_trades": 196,
+      "test_winners": 51
+    },
+    "BTCUSD|15m": {
+      "resolved": "BTCUSD",
+      "chosen": "uzak",
+      "train_hits": 1,
+      "train_min": 551.17,
+      "test_hits": 1,
+      "test_min": 743.91,
+      "test_pnl": 2205.44,
+      "test_trades": 165,
+      "test_winners": 54
+    },
+    "EURUSD|15m": {
+      "resolved": "EURUSD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 1000.0,
+      "test_hits": 0,
+      "test_min": 950.47,
+      "test_pnl": -49.53,
+      "test_trades": 1,
+      "test_winners": 0
+    },
+    "GBPUSD|15m": {
+      "resolved": "GBPUSD",
+      "chosen": "dokunus",
+      "train_hits": 0,
+      "train_min": 950.1,
+      "test_hits": 0,
+      "test_min": 883.84,
+      "test_pnl": -314.42,
+      "test_trades": 5,
+      "test_winners": 0
+    },
+    "USDJPY|15m": {
+      "resolved": "USDJPY",
+      "chosen": "dokunus",
+      "train_hits": 0,
+      "train_min": 950.61,
+      "test_hits": 0,
+      "test_min": 903.37,
+      "test_pnl": 142.76,
+      "test_trades": 5,
+      "test_winners": 2
+    },
+    "EURJPY|15m": {
+      "resolved": "EURJPY",
+      "chosen": "uzak",
+      "train_hits": 1,
+      "train_min": 413.3,
+      "test_hits": 0,
+      "test_min": 544.88,
+      "test_pnl": -88.9,
+      "test_trades": 207,
+      "test_winners": 55
+    },
+    "GBPJPY|15m": {
+      "resolved": "GBPJPY",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 951.02,
+      "test_hits": 0,
+      "test_min": 1000.0,
+      "test_pnl": 0.0,
+      "test_trades": 0,
+      "test_winners": 0
+    },
+    "USDCAD|15m": {
+      "resolved": "USDCAD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 1000.0,
+      "test_hits": 0,
+      "test_min": 950.01,
+      "test_pnl": -99.95,
+      "test_trades": 2,
+      "test_winners": 0
+    },
+    "EURCAD|15m": {
+      "resolved": "EURCAD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 1000.0,
+      "test_hits": 0,
+      "test_min": 1000.0,
+      "test_pnl": 0.0,
+      "test_trades": 0,
+      "test_winners": 0
+    },
+    "GBPCAD|15m": {
+      "resolved": "GBPCAD",
+      "chosen": "uzak",
+      "train_hits": 1,
+      "train_min": 472.25,
+      "test_hits": 0,
+      "test_min": 638.83,
+      "test_pnl": 374.87,
+      "test_trades": 194,
+      "test_winners": 53
+    },
+    "EURNZD|15m": {
+      "resolved": "EURNZD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 950.63,
+      "test_hits": 0,
+      "test_min": 903.31,
+      "test_pnl": -199.96,
+      "test_trades": 4,
+      "test_winners": 0
+    },
+    "GBPNZD|15m": {
+      "resolved": "GBPNZD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 904.17,
+      "test_hits": 0,
+      "test_min": 950.22,
+      "test_pnl": -56.22,
+      "test_trades": 5,
+      "test_winners": 1
+    },
+    "NZDUSD|15m": {
+      "resolved": "NZDUSD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 950.27,
+      "test_hits": 0,
+      "test_min": 1000.0,
+      "test_pnl": 0.0,
+      "test_trades": 0,
+      "test_winners": 0
+    },
+    "XAUUSD|5m": {
+      "resolved": "XAUUSD",
+      "chosen": "uzak",
+      "train_hits": 1,
+      "train_min": 483.31,
+      "test_hits": 0,
+      "test_min": 358.29,
+      "test_pnl": -1516.42,
+      "test_trades": 585,
+      "test_winners": 147
+    },
+    "BTCUSD|5m": {
+      "resolved": "BTCUSD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 951.03,
+      "test_hits": 0,
+      "test_min": 950.77,
+      "test_pnl": -97.27,
+      "test_trades": 2,
+      "test_winners": 0
+    },
+    "EURUSD|5m": {
+      "resolved": "EURUSD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 950.09,
+      "test_hits": 0,
+      "test_min": 902.6,
+      "test_pnl": 52.45,
+      "test_trades": 7,
+      "test_winners": 2
+    },
+    "GBPUSD|5m": {
+      "resolved": "GBPUSD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 903.0,
+      "test_hits": 0,
+      "test_min": 950.09,
+      "test_pnl": -99.68,
+      "test_trades": 2,
+      "test_winners": 0
+    },
+    "USDJPY|5m": {
+      "resolved": "USDJPY",
+      "chosen": "uzak",
+      "train_hits": 1,
+      "train_min": 132.34,
+      "test_hits": 0,
+      "test_min": 377.55,
+      "test_pnl": -669.07,
+      "test_trades": 654,
+      "test_winners": 177
+    },
+    "EURJPY|5m": {
+      "resolved": "EURJPY",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 950.04,
+      "test_hits": 0,
+      "test_min": 903.07,
+      "test_pnl": -146.41,
+      "test_trades": 3,
+      "test_winners": 0
+    },
+    "GBPJPY|5m": {
+      "resolved": "GBPJPY",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 902.91,
+      "test_hits": 0,
+      "test_min": 903.63,
+      "test_pnl": -96.52,
+      "test_trades": 6,
+      "test_winners": 1
+    },
+    "USDCAD|5m": {
+      "resolved": "USDCAD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 950.01,
+      "test_hits": 0,
+      "test_min": 885.7,
+      "test_pnl": 58.11,
+      "test_trades": 7,
+      "test_winners": 2
+    },
+    "EURCAD|5m": {
+      "resolved": "EURCAD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 950.01,
+      "test_hits": 0,
+      "test_min": 950.21,
+      "test_pnl": -49.79,
+      "test_trades": 1,
+      "test_winners": 0
+    },
+    "GBPCAD|5m": {
+      "resolved": "GBPCAD",
+      "chosen": "dokunus",
+      "train_hits": 0,
+      "train_min": 902.75,
+      "test_hits": 0,
+      "test_min": 788.14,
+      "test_pnl": -214.58,
+      "test_trades": 12,
+      "test_winners": 2
+    },
+    "EURNZD|5m": {
+      "resolved": "EURNZD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 844.12,
+      "test_hits": 0,
+      "test_min": 903.24,
+      "test_pnl": 23.52,
+      "test_trades": 8,
+      "test_winners": 2
+    },
+    "GBPNZD|5m": {
+      "resolved": "GBPNZD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 902.76,
+      "test_hits": 0,
+      "test_min": 950.31,
+      "test_pnl": 330.75,
+      "test_trades": 9,
+      "test_winners": 4
+    },
+    "NZDUSD|5m": {
+      "resolved": "NZDUSD",
+      "chosen": "yakin",
+      "train_hits": 0,
+      "train_min": 902.84,
+      "test_hits": 0,
+      "test_min": 902.73,
+      "test_pnl": -105.18,
+      "test_trades": 6,
+      "test_winners": 1
+    }
+  },
+  "passed_all_8": []
+}

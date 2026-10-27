@@ -1,0 +1,162 @@
+{
+  "rule": "60g ve son 20g birlikte: net>0, PF>=1.15, kazanc/gun>=15, dusus<=2500",
+  "symbols": {
+    "XAUUSD": {
+      "spread": 0.09000000000014552,
+      "first_utc": "2026-07-17 13:48",
+      "last_utc": "2026-10-27 13:15",
+      "strategies": {
+        "rejim": {
+          "d60": {
+            "trades": 533,
+            "winners": 204,
+            "net": 8480.18,
+            "pf": 1.184,
+            "dd": 4224.86,
+            "avg_winners_per_weekday": 4.74,
+            "weekdays_with_15": 0,
+            "weekdays": 43
+          },
+          "d20": {
+            "trades": 204,
+            "winners": 71,
+            "net": 103.1,
+            "pf": 1.009,
+            "dd": 2179.37,
+            "avg_winners_per_weekday": 4.73,
+            "weekdays_with_15": 0,
+            "weekdays": 15
+          },
+          "pass": false
+        },
+        "supurme": {
+          "d60": {
+            "trades": 642,
+            "winners": 213,
+            "net": -5648.81,
+            "pf": 0.802,
+            "dd": 5966.34,
+            "avg_winners_per_weekday": 4.95,
+            "weekdays_with_15": 0,
+            "weekdays": 43
+          },
+          "d20": {
+            "trades": 245,
+            "winners": 78,
+            "net": -3794.45,
+            "pf": 0.701,
+            "dd": 3909.01,
+            "avg_winners_per_weekday": 5.2,
+            "weekdays_with_15": 0,
+            "weekdays": 15
+          },
+          "pass": false
+        },
+        "trend_basabas": {
+          "d60": {
+            "trades": 1336,
+            "winners": 314,
+            "net": -6604.95,
+            "pf": 0.873,
+            "dd": 7023.87,
+            "avg_winners_per_weekday": 7.3,
+            "weekdays_with_15": 0,
+            "weekdays": 43
+          },
+          "d20": {
+            "trades": 451,
+            "winners": 99,
+            "net": -5037.61,
+            "pf": 0.743,
+            "dd": 5224.04,
+            "avg_winners_per_weekday": 6.6,
+            "weekdays_with_15": 0,
+            "weekdays": 15
+          },
+          "pass": false
+        }
+      }
+    },
+    "BTCUSD": {
+      "spread": 5.0,
+      "first_utc": "2026-08-19 06:10",
+      "last_utc": "2026-10-27 13:15",
+      "strategies": {
+        "rejim": {
+          "d60": {
+            "trades": 1359,
+            "winners": 433,
+            "net": -7095.09,
+            "pf": 0.804,
+            "dd": 8705.03,
+            "avg_winners_per_weekday": 8.49,
+            "weekdays_with_15": 7,
+            "weekdays": 43
+          },
+          "d20": {
+            "trades": 454,
+            "winners": 167,
+            "net": 1328.46,
+            "pf": 1.05,
+            "dd": 2270.01,
+            "avg_winners_per_weekday": 9.73,
+            "weekdays_with_15": 4,
+            "weekdays": 15
+          },
+          "pass": false
+        },
+        "supurme": {
+          "d60": {
+            "trades": 1483,
+            "winners": 519,
+            "net": -8782.87,
+            "pf": 0.783,
+            "dd": 10099.84,
+            "avg_winners_per_weekday": 9.02,
+            "weekdays_with_15": 6,
+            "weekdays": 43
+          },
+          "d20": {
+            "trades": 515,
+            "winners": 180,
+            "net": -4976.2,
+            "pf": 0.784,
+            "dd": 5519.39,
+            "avg_winners_per_weekday": 9.07,
+            "weekdays_with_15": 3,
+            "weekdays": 15
+          },
+          "pass": false
+        },
+        "trend_basabas": {
+          "d60": {
+            "trades": 3392,
+            "winners": 794,
+            "net": -9776.43,
+            "pf": 0.774,
+            "dd": 11252.4,
+            "avg_winners_per_weekday": 13.37,
+            "weekdays_with_15": 19,
+            "weekdays": 43
+          },
+          "d20": {
+            "trades": 1116,
+            "winners": 277,
+            "net": -5967.7,
+            "pf": 0.846,
+            "dd": 7110.29,
+            "avg_winners_per_weekday": 13.53,
+            "weekdays_with_15": 7,
+            "weekdays": 15
+          },
+          "pass": false
+        }
+      }
+    }
+  },
+  "adopted": {
+    "XAUUSD": [],
+    "BTCUSD": []
+  },
+  "result": "hedef_tutmadi"
+}

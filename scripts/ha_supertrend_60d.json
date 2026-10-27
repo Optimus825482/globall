@@ -1,0 +1,196 @@
+{
+  "offset_h": 3.0,
+  "requested_calendar_days": 60,
+  "symbols": {
+    "BTCUSD": {
+      "filter": "full20",
+      "session_utc": null,
+      "spread": 5.0,
+      "spread_source": "tick_ask_bid",
+      "history_reaches_window": true,
+      "window_start_utc": "2026-08-28 12:00",
+      "first_bar_utc": "2026-08-28 12:00",
+      "last_utc": "2026-10-27 12:00",
+      "calendar_days": 60.0,
+      "weekdays_with_bars": 43,
+      "buy_hold_pct": 0.31,
+      "all": {
+        "trades": 45,
+        "net": 386.08,
+        "pf": 1.243,
+        "dd": 674.99,
+        "expectancy": 8.58,
+        "win_rate": 0.378,
+        "buys": 17,
+        "sells": 28,
+        "stress_2x": 359.35
+      },
+      "before_selection_week": {
+        "trades": 41,
+        "net": 66.26,
+        "pf": 1.043,
+        "buys": 17,
+        "sells": 24
+      },
+      "selection_7d": {
+        "trades": 4,
+        "net": 319.82,
+        "pf": 6.451,
+        "buys": 0,
+        "sells": 4
+      }
+    },
+    "XAUUSD": {
+      "filter": "full20",
+      "session_utc": "07-21",
+      "spread": 0.07999999999992724,
+      "spread_source": "tick_ask_bid",
+      "history_reaches_window": true,
+      "window_start_utc": "2026-08-28 12:00",
+      "first_bar_utc": "2026-08-28 12:00",
+      "last_utc": "2026-10-27 12:00",
+      "calendar_days": 60.0,
+      "weekdays_with_bars": 43,
+      "buy_hold_pct": -12.65,
+      "all": {
+        "trades": 16,
+        "net": -165.31,
+        "pf": 0.789,
+        "dd": 477.07,
+        "expectancy": -10.33,
+        "win_rate": 0.25,
+        "buys": 7,
+        "sells": 9,
+        "stress_2x": -140.0
+      },
+      "before_selection_week": {
+        "trades": 14,
+        "net": -323.63,
+        "pf": 0.53,
+        "buys": 7,
+        "sells": 7
+      },
+      "selection_7d": {
+        "trades": 2,
+        "net": 158.32,
+        "pf": 2.689,
+        "buys": 0,
+        "sells": 2
+      }
+    },
+    "EURUSD": {
+      "filter": "full20",
+      "session_utc": null,
+      "spread": 9.999999999843467e-06,
+      "spread_source": "tick_ask_bid",
+      "history_reaches_window": true,
+      "window_start_utc": "2026-08-28 12:00",
+      "first_bar_utc": "2026-08-28 12:00",
+      "last_utc": "2026-10-27 12:00",
+      "calendar_days": 60.0,
+      "weekdays_with_bars": 43,
+      "buy_hold_pct": -4.22,
+      "all": {
+        "trades": 37,
+        "net": 1450.29,
+        "pf": 2.73,
+        "dd": 515.35,
+        "expectancy": 39.2,
+        "win_rate": 0.486,
+        "buys": 19,
+        "sells": 18,
+        "stress_2x": 1425.68
+      },
+      "before_selection_week": {
+        "trades": 34,
+        "net": 1152.86,
+        "pf": 2.48,
+        "buys": 17,
+        "sells": 17
+      },
+      "selection_7d": {
+        "trades": 3,
+        "net": 297.41,
+        "pf": 6.035,
+        "buys": 2,
+        "sells": 1
+      }
+    },
+    "GBPUSD": {
+      "filter": "full20",
+      "session_utc": null,
+      "spread": 9.999999999843467e-06,
+      "spread_source": "tick_ask_bid",
+      "history_reaches_window": true,
+      "window_start_utc": "2026-08-28 12:00",
+      "first_bar_utc": "2026-08-28 12:00",
+      "last_utc": "2026-10-27 12:00",
+      "calendar_days": 60.0,
+      "weekdays_with_bars": 43,
+      "buy_hold_pct": -1.85,
+      "all": {
+        "trades": 27,
+        "net": 812.28,
+        "pf": 1.902,
+        "dd": 623.65,
+        "expectancy": 30.08,
+        "win_rate": 0.296,
+        "buys": 15,
+        "sells": 12,
+        "stress_2x": 801.25
+      },
+      "before_selection_week": {
+        "trades": 25,
+        "net": 653.91,
+        "pf": 1.731,
+        "buys": 14,
+        "sells": 11
+      },
+      "selection_7d": {
+        "trades": 2,
+        "net": 158.37,
+        "pf": 25.515,
+        "buys": 1,
+        "sells": 1
+      }
+    },
+    "USDJPY": {
+      "filter": "adx20",
+      "session_utc": "00-16",
+      "spread": 0.0010000000000047748,
+      "spread_source": "tick_ask_bid",
+      "history_reaches_window": true,
+      "window_start_utc": "2026-08-28 12:00",
+      "first_bar_utc": "2026-08-28 12:00",
+      "last_utc": "2026-10-27 12:00",
+      "calendar_days": 60.0,
+      "weekdays_with_bars": 43,
+      "buy_hold_pct": -1.21,
+      "all": {
+        "trades": 26,
+        "net": -386.76,
+        "pf": 0.579,
+        "dd": 751.44,
+        "expectancy": -14.88,
+        "win_rate": 0.308,
+        "buys": 11,
+        "sells": 15,
+        "stress_2x": -393.77
+      },
+      "before_selection_week": {
+        "trades": 22,
+        "net": -463.58,
+        "pf": 0.445,
+        "buys": 9,
+        "sells": 13
+      },
+      "selection_7d": {
+        "trades": 4,
+        "net": 76.81,
+        "pf": 1.922,
+        "buys": 2,
+        "sells": 2
+      }
+    }
+  }
+}

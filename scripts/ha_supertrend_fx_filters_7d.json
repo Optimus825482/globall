@@ -1,0 +1,946 @@
+{
+  "offset_h": 3.0,
+  "selection_rule": "trades>=4, net>0, PF>=1.2, maxDD<=1500, sonra en yuksek net",
+  "symbols": {
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "spread": 5.0,
+      "unit_per_lot_per_price": 1.0,
+      "bars": {
+        "bars": 2771,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 1.0,
+        "missing_slots_incl_weekends": 12
+      },
+      "buy_hold_pct": -1.99,
+      "picked": "full20_24s",
+      "filters": {
+        "full20_lnny": {
+          "trades": 0,
+          "net": 0,
+          "pf": null,
+          "dd": 0.0,
+          "expectancy": null,
+          "win_rate": null,
+          "buys": 0,
+          "sells": 0,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 4,
+          "net": 319.83,
+          "pf": 6.451,
+          "dd": 281.98,
+          "expectancy": 79.96,
+          "win_rate": 0.5,
+          "buys": 0,
+          "sells": 4,
+          "eligible": true
+        },
+        "adx20_lnny": {
+          "trades": 0,
+          "net": 0,
+          "pf": null,
+          "dd": 0.0,
+          "expectancy": null,
+          "win_rate": null,
+          "buys": 0,
+          "sells": 0,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 4,
+          "net": -208.29,
+          "pf": 0.161,
+          "dd": 273.82,
+          "expectancy": -52.07,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 4,
+          "net": -208.29,
+          "pf": 0.161,
+          "dd": 273.82,
+          "expectancy": -52.07,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 0,
+          "net": 0,
+          "pf": null,
+          "dd": 0.0,
+          "expectancy": null,
+          "win_rate": null,
+          "buys": 0,
+          "sells": 0,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 1,
+          "net": -27.91,
+          "pf": 0.0,
+          "dd": 118.08,
+          "expectancy": -27.91,
+          "win_rate": 0.0,
+          "buys": 0,
+          "sells": 1,
+          "eligible": false
+        }
+      }
+    },
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "spread": 0.04999999999972715,
+      "unit_per_lot_per_price": 100.0,
+      "bars": {
+        "bars": 1931,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 21,
+        "longest_gap_hours": 49.25,
+        "missing_slots_incl_weekends": 852
+      },
+      "buy_hold_pct": -2.71,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 2,
+          "net": 158.5,
+          "pf": 2.693,
+          "dd": 217.01,
+          "expectancy": 79.25,
+          "win_rate": 0.5,
+          "buys": 0,
+          "sells": 2,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 3,
+          "net": 122.35,
+          "pf": 1.943,
+          "dd": 253.16,
+          "expectancy": 40.78,
+          "win_rate": 0.333,
+          "buys": 1,
+          "sells": 2,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 2,
+          "net": 158.5,
+          "pf": 2.693,
+          "dd": 217.01,
+          "expectancy": 79.25,
+          "win_rate": 0.5,
+          "buys": 0,
+          "sells": 2,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 5,
+          "net": -44.42,
+          "pf": 0.85,
+          "dd": 289.32,
+          "expectancy": -8.88,
+          "win_rate": 0.2,
+          "buys": 3,
+          "sells": 2,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 5,
+          "net": -44.42,
+          "pf": 0.85,
+          "dd": 289.32,
+          "expectancy": -8.88,
+          "win_rate": 0.2,
+          "buys": 3,
+          "sells": 2,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 1,
+          "net": -93.63,
+          "pf": 0.0,
+          "dd": 93.63,
+          "expectancy": -93.63,
+          "win_rate": 0.0,
+          "buys": 0,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 2,
+          "net": -129.78,
+          "pf": 0.0,
+          "dd": 145.17,
+          "expectancy": -64.89,
+          "win_rate": 0.0,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        }
+      }
+    },
+    "EURUSD": {
+      "resolved": "EURUSD",
+      "spread": 9.999999999843467e-06,
+      "unit_per_lot_per_price": 100000.0,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.59,
+      "picked": "rsi_lnny",
+      "filters": {
+        "full20_lnny": {
+          "trades": 3,
+          "net": 313.28,
+          "pf": 6.944,
+          "dd": 173.81,
+          "expectancy": 104.43,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 3,
+          "net": 313.28,
+          "pf": 6.944,
+          "dd": 173.81,
+          "expectancy": 104.43,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 3,
+          "net": 313.28,
+          "pf": 6.944,
+          "dd": 173.81,
+          "expectancy": 104.43,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 5,
+          "net": 265.33,
+          "pf": 2.995,
+          "dd": 214.78,
+          "expectancy": 53.07,
+          "win_rate": 0.4,
+          "buys": 3,
+          "sells": 2,
+          "eligible": true
+        },
+        "st_lnny": {
+          "trades": 5,
+          "net": 265.33,
+          "pf": 2.995,
+          "dd": 214.78,
+          "expectancy": 53.07,
+          "win_rate": 0.4,
+          "buys": 3,
+          "sells": 2,
+          "eligible": true
+        },
+        "full25_lnny": {
+          "trades": 1,
+          "net": -17.6,
+          "pf": 0.0,
+          "dd": 46.8,
+          "expectancy": -17.6,
+          "win_rate": 0.0,
+          "buys": 1,
+          "sells": 0,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 2,
+          "net": 330.88,
+          "pf": 10.426,
+          "dd": 156.21,
+          "expectancy": 165.44,
+          "win_rate": 0.5,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        }
+      }
+    },
+    "GBPUSD": {
+      "resolved": "GBPUSD",
+      "spread": 2.0000000000131024e-05,
+      "unit_per_lot_per_price": 100000.0,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.18,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 2,
+          "net": 209.16,
+          "pf": 33.457,
+          "dd": 133.77,
+          "expectancy": 104.58,
+          "win_rate": 0.5,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 2,
+          "net": 209.16,
+          "pf": 33.457,
+          "dd": 133.77,
+          "expectancy": 104.58,
+          "win_rate": 0.5,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 2,
+          "net": 209.16,
+          "pf": 33.457,
+          "dd": 133.77,
+          "expectancy": 104.58,
+          "win_rate": 0.5,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 3,
+          "net": 191.13,
+          "pf": 8.812,
+          "dd": 133.77,
+          "expectancy": 63.71,
+          "win_rate": 0.333,
+          "buys": 1,
+          "sells": 2,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 3,
+          "net": 191.13,
+          "pf": 8.812,
+          "dd": 133.77,
+          "expectancy": 63.71,
+          "win_rate": 0.333,
+          "buys": 1,
+          "sells": 2,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 1,
+          "net": -6.44,
+          "pf": 0.0,
+          "dd": 48.0,
+          "expectancy": -6.44,
+          "win_rate": 0.0,
+          "buys": 1,
+          "sells": 0,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 1,
+          "net": 215.6,
+          "pf": "inf",
+          "dd": 133.77,
+          "expectancy": 215.6,
+          "win_rate": 1.0,
+          "buys": 0,
+          "sells": 1,
+          "eligible": false
+        }
+      }
+    },
+    "USDCAD": {
+      "resolved": "USDCAD",
+      "spread": 2.0000000000131024e-05,
+      "unit_per_lot_per_price": 41633.53,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.25,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 8,
+          "net": -311.71,
+          "pf": 0.172,
+          "dd": 379.75,
+          "expectancy": -38.96,
+          "win_rate": 0.25,
+          "buys": 5,
+          "sells": 3,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 9,
+          "net": -385.59,
+          "pf": 0.144,
+          "dd": 453.63,
+          "expectancy": -42.84,
+          "win_rate": 0.222,
+          "buys": 6,
+          "sells": 3,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 8,
+          "net": -311.71,
+          "pf": 0.172,
+          "dd": 379.75,
+          "expectancy": -38.96,
+          "win_rate": 0.25,
+          "buys": 5,
+          "sells": 3,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 9,
+          "net": -314.5,
+          "pf": 0.171,
+          "dd": 382.53,
+          "expectancy": -34.94,
+          "win_rate": 0.222,
+          "buys": 5,
+          "sells": 4,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 9,
+          "net": -314.5,
+          "pf": 0.171,
+          "dd": 382.53,
+          "expectancy": -34.94,
+          "win_rate": 0.222,
+          "buys": 5,
+          "sells": 4,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 4,
+          "net": -260.68,
+          "pf": 0.0,
+          "dd": 267.09,
+          "expectancy": -65.17,
+          "win_rate": 0.0,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 5,
+          "net": -369.06,
+          "pf": 0.0,
+          "dd": 374.91,
+          "expectancy": -73.81,
+          "win_rate": 0.0,
+          "buys": 5,
+          "sells": 0,
+          "eligible": false
+        }
+      }
+    },
+    "EURCAD": {
+      "resolved": "EURCAD",
+      "spread": 3.999999999981796e-05,
+      "unit_per_lot_per_price": 71331.26,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.84,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 4,
+          "net": -77.03,
+          "pf": 0.619,
+          "dd": 268.22,
+          "expectancy": -19.26,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 4,
+          "net": -77.03,
+          "pf": 0.619,
+          "dd": 268.22,
+          "expectancy": -19.26,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 4,
+          "net": -77.03,
+          "pf": 0.619,
+          "dd": 268.22,
+          "expectancy": -19.26,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 7,
+          "net": -226.3,
+          "pf": 0.349,
+          "dd": 413.36,
+          "expectancy": -32.33,
+          "win_rate": 0.143,
+          "buys": 4,
+          "sells": 3,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 7,
+          "net": -226.3,
+          "pf": 0.349,
+          "dd": 413.36,
+          "expectancy": -32.33,
+          "win_rate": 0.143,
+          "buys": 4,
+          "sells": 3,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 4,
+          "net": -77.03,
+          "pf": 0.619,
+          "dd": 268.22,
+          "expectancy": -19.26,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 2,
+          "net": -118.76,
+          "pf": 0.0,
+          "dd": 169.29,
+          "expectancy": -59.38,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 0,
+          "eligible": false
+        }
+      }
+    },
+    "GBPCAD": {
+      "resolved": "GBPCAD",
+      "spread": 7.00000000000145e-05,
+      "unit_per_lot_per_price": 71331.26,
+      "bars": {
+        "bars": 1631,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-21 11:45",
+        "gap_count": 3,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 576
+      },
+      "buy_hold_pct": -0.24,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 2,
+          "net": 99.71,
+          "pf": "inf",
+          "dd": 138.63,
+          "expectancy": 49.86,
+          "win_rate": 1.0,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 3,
+          "net": 110.05,
+          "pf": "inf",
+          "dd": 138.63,
+          "expectancy": 36.68,
+          "win_rate": 1.0,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 2,
+          "net": 99.71,
+          "pf": "inf",
+          "dd": 138.63,
+          "expectancy": 49.86,
+          "win_rate": 1.0,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 5,
+          "net": 20.81,
+          "pf": 1.146,
+          "dd": 188.11,
+          "expectancy": 4.16,
+          "win_rate": 0.6,
+          "buys": 1,
+          "sells": 4,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 5,
+          "net": 20.81,
+          "pf": 1.146,
+          "dd": 188.11,
+          "expectancy": 4.16,
+          "win_rate": 0.6,
+          "buys": 1,
+          "sells": 4,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 2,
+          "net": 99.71,
+          "pf": "inf",
+          "dd": 138.63,
+          "expectancy": 49.86,
+          "win_rate": 1.0,
+          "buys": 1,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 1,
+          "net": 18.37,
+          "pf": "inf",
+          "dd": 88.45,
+          "expectancy": 18.37,
+          "win_rate": 1.0,
+          "buys": 1,
+          "sells": 0,
+          "eligible": false
+        }
+      }
+    },
+    "EURJPY": {
+      "resolved": "EURJPY",
+      "spread": 0.009000000000014552,
+      "unit_per_lot_per_price": 634.08,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.83,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 3,
+          "net": -156.8,
+          "pf": 0.0,
+          "dd": 182.95,
+          "expectancy": -52.27,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 5,
+          "net": -286.41,
+          "pf": 0.0,
+          "dd": 312.55,
+          "expectancy": -57.28,
+          "win_rate": 0.0,
+          "buys": 3,
+          "sells": 2,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 3,
+          "net": -156.8,
+          "pf": 0.0,
+          "dd": 182.95,
+          "expectancy": -52.27,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 5,
+          "net": -230.27,
+          "pf": 0.0,
+          "dd": 256.42,
+          "expectancy": -46.05,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 3,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 5,
+          "net": -230.27,
+          "pf": 0.0,
+          "dd": 256.42,
+          "expectancy": -46.05,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 3,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 2,
+          "net": -122.25,
+          "pf": 0.0,
+          "dd": 148.39,
+          "expectancy": -61.12,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 0,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 3,
+          "net": -117.07,
+          "pf": 0.0,
+          "dd": 143.21,
+          "expectancy": -39.02,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        }
+      }
+    },
+    "USDJPY": {
+      "resolved": "USDJPY",
+      "spread": 0.0,
+      "unit_per_lot_per_price": 630.09,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.24,
+      "picked": "adx20_tokyo",
+      "filters": {
+        "full20_lnny": {
+          "trades": 3,
+          "net": 71.56,
+          "pf": 1.663,
+          "dd": 155.33,
+          "expectancy": 23.85,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 5,
+          "net": 45.86,
+          "pf": 1.343,
+          "dd": 236.36,
+          "expectancy": 9.17,
+          "win_rate": 0.2,
+          "buys": 3,
+          "sells": 2,
+          "eligible": true
+        },
+        "adx20_lnny": {
+          "trades": 3,
+          "net": 71.56,
+          "pf": 1.663,
+          "dd": 155.33,
+          "expectancy": 23.85,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 4,
+          "net": 19.43,
+          "pf": 1.121,
+          "dd": 207.46,
+          "expectancy": 4.86,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 4,
+          "net": 19.43,
+          "pf": 1.121,
+          "dd": 207.46,
+          "expectancy": 4.86,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 1,
+          "net": -62.84,
+          "pf": 0.0,
+          "dd": 105.35,
+          "expectancy": -62.84,
+          "win_rate": 0.0,
+          "buys": 0,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 4,
+          "net": 93.2,
+          "pf": 2.08,
+          "dd": 189.03,
+          "expectancy": 23.3,
+          "win_rate": 0.25,
+          "buys": 2,
+          "sells": 2,
+          "eligible": true
+        }
+      }
+    },
+    "GBPJPY": {
+      "resolved": "GBPJPY",
+      "spread": 0.009000000000014552,
+      "unit_per_lot_per_price": 634.08,
+      "bars": {
+        "bars": 2015,
+        "first_utc": "2026-09-28 12:15",
+        "last_utc": "2026-10-27 11:45",
+        "gap_count": 4,
+        "longest_gap_hours": 48.25,
+        "missing_slots_incl_weekends": 768
+      },
+      "buy_hold_pct": -0.42,
+      "picked": null,
+      "filters": {
+        "full20_lnny": {
+          "trades": 3,
+          "net": -99.48,
+          "pf": 0.054,
+          "dd": 198.2,
+          "expectancy": -33.16,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "full20_24s": {
+          "trades": 4,
+          "net": -143.63,
+          "pf": 0.038,
+          "dd": 242.35,
+          "expectancy": -35.91,
+          "win_rate": 0.25,
+          "buys": 3,
+          "sells": 1,
+          "eligible": false
+        },
+        "adx20_lnny": {
+          "trades": 3,
+          "net": -99.48,
+          "pf": 0.054,
+          "dd": 198.2,
+          "expectancy": -33.16,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "rsi_lnny": {
+          "trades": 3,
+          "net": -99.48,
+          "pf": 0.054,
+          "dd": 198.2,
+          "expectancy": -33.16,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "st_lnny": {
+          "trades": 3,
+          "net": -99.48,
+          "pf": 0.054,
+          "dd": 198.2,
+          "expectancy": -33.16,
+          "win_rate": 0.333,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        },
+        "full25_lnny": {
+          "trades": 0,
+          "net": 0,
+          "pf": null,
+          "dd": 0.0,
+          "expectancy": null,
+          "win_rate": null,
+          "buys": 0,
+          "sells": 0,
+          "eligible": false
+        },
+        "adx20_tokyo": {
+          "trades": 3,
+          "net": -149.27,
+          "pf": 0.0,
+          "dd": 188.77,
+          "expectancy": -49.76,
+          "win_rate": 0.0,
+          "buys": 2,
+          "sells": 1,
+          "eligible": false
+        }
+      }
+    }
+  }
+}

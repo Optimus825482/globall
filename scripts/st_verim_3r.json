@@ -1,0 +1,170 @@
+{
+  "train": [
+    "2026-06-22",
+    "2026-06-29",
+    "2026-07-06",
+    "2026-07-13",
+    "2026-07-20",
+    "2026-07-27",
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17",
+    "2026-08-24"
+  ],
+  "test": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 706.48,
+      "test_hits": 0,
+      "test_min": 738.37,
+      "test_pnl": 417.87,
+      "test_trades": 70,
+      "test_winners": 21
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "threshold": 0.5,
+      "train_hits": 1,
+      "train_min": 691.62,
+      "test_hits": 0,
+      "test_min": 830.23,
+      "test_pnl": 1232.68,
+      "test_trades": 114,
+      "test_winners": 37
+    },
+    "EURUSD": {
+      "resolved": "EURUSD",
+      "threshold": 0.5,
+      "train_hits": 0,
+      "train_min": 637.31,
+      "test_hits": 0,
+      "test_min": 809.19,
+      "test_pnl": -264.19,
+      "test_trades": 123,
+      "test_winners": 32
+    },
+    "GBPUSD": {
+      "resolved": "GBPUSD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 637.68,
+      "test_hits": 0,
+      "test_min": 666.62,
+      "test_pnl": 162.16,
+      "test_trades": 66,
+      "test_winners": 19
+    },
+    "USDJPY": {
+      "resolved": "USDJPY",
+      "threshold": 0.5,
+      "train_hits": 0,
+      "train_min": 549.75,
+      "test_hits": 0,
+      "test_min": 535.12,
+      "test_pnl": 1095.76,
+      "test_trades": 122,
+      "test_winners": 37
+    },
+    "EURJPY": {
+      "resolved": "EURJPY",
+      "threshold": 0.65,
+      "train_hits": 1,
+      "train_min": 768.01,
+      "test_hits": 0,
+      "test_min": 625.2,
+      "test_pnl": -188.16,
+      "test_trades": 90,
+      "test_winners": 23
+    },
+    "GBPJPY": {
+      "resolved": "GBPJPY",
+      "threshold": 0.5,
+      "train_hits": 1,
+      "train_min": 526.39,
+      "test_hits": 1,
+      "test_min": 751.95,
+      "test_pnl": 1779.28,
+      "test_trades": 113,
+      "test_winners": 39
+    },
+    "USDCAD": {
+      "resolved": "USDCAD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 689.09,
+      "test_hits": 0,
+      "test_min": 568.61,
+      "test_pnl": -260.18,
+      "test_trades": 84,
+      "test_winners": 21
+    },
+    "EURCAD": {
+      "resolved": "EURCAD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 714.9,
+      "test_hits": 0,
+      "test_min": 655.29,
+      "test_pnl": -1045.14,
+      "test_trades": 86,
+      "test_winners": 17
+    },
+    "GBPCAD": {
+      "resolved": "GBPCAD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 700.4,
+      "test_hits": 0,
+      "test_min": 724.04,
+      "test_pnl": -970.39,
+      "test_trades": 72,
+      "test_winners": 13
+    },
+    "EURNZD": {
+      "resolved": "EURNZD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 553.69,
+      "test_hits": 0,
+      "test_min": 591.1,
+      "test_pnl": -1750.9,
+      "test_trades": 64,
+      "test_winners": 7
+    },
+    "GBPNZD": {
+      "resolved": "GBPNZD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 616.98,
+      "test_hits": 0,
+      "test_min": 620.93,
+      "test_pnl": -1943.21,
+      "test_trades": 70,
+      "test_winners": 9
+    },
+    "NZDUSD": {
+      "resolved": "NZDUSD",
+      "threshold": 0.65,
+      "train_hits": 0,
+      "train_min": 584.06,
+      "test_hits": 0,
+      "test_min": 607.51,
+      "test_pnl": -1624.66,
+      "test_trades": 70,
+      "test_winners": 10
+    }
+  },
+  "passed_all_8": []
+}

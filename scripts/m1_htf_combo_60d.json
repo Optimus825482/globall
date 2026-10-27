@@ -1,0 +1,133 @@
+{
+  "target": "her sembolde hafta ici >=15 kazanc ve net arti",
+  "symbols": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "spread": 0.0500000000001819,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-08-28 12:40",
+      "last_utc": "2026-10-27 12:40",
+      "calendar_days": 60.0,
+      "strategies": {
+        "15dk_geri_cekilme": {
+          "trades": 699,
+          "winners": 276,
+          "win_rate": 0.395,
+          "net": -959.08,
+          "pf": 0.975,
+          "dd": 2901.97,
+          "expectancy": -1.37,
+          "avg_winners_per_weekday": 6.42,
+          "max_winners_in_one_weekday": 9,
+          "weekdays": 43,
+          "weekdays_with_15_winners": 0,
+          "reasons": {
+            "tp": 265,
+            "stop": 422,
+            "time": 12
+          }
+        },
+        "15dk_momentum": {
+          "trades": 1693,
+          "winners": 660,
+          "win_rate": 0.39,
+          "net": -3165.07,
+          "pf": 0.967,
+          "dd": 5183.65,
+          "expectancy": -1.87,
+          "avg_winners_per_weekday": 15.35,
+          "max_winners_in_one_weekday": 20,
+          "weekdays": 43,
+          "weekdays_with_15_winners": 28,
+          "reasons": {
+            "tp": 637,
+            "stop": 1021,
+            "time": 34
+          }
+        },
+        "15dk_bant": {
+          "trades": 971,
+          "winners": 387,
+          "win_rate": 0.399,
+          "net": -3554.64,
+          "pf": 0.934,
+          "dd": 6622.48,
+          "expectancy": -3.66,
+          "avg_winners_per_weekday": 9.0,
+          "max_winners_in_one_weekday": 18,
+          "weekdays": 43,
+          "weekdays_with_15_winners": 2,
+          "reasons": {
+            "tp": 380,
+            "stop": 579,
+            "time": 12
+          }
+        }
+      }
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "spread": 5.0,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-08-28 12:40",
+      "last_utc": "2026-10-27 12:40",
+      "calendar_days": 60.0,
+      "strategies": {
+        "15dk_geri_cekilme": {
+          "trades": 2122,
+          "winners": 802,
+          "win_rate": 0.378,
+          "net": -8854.9,
+          "pf": 0.825,
+          "dd": 9423.01,
+          "expectancy": -4.17,
+          "avg_winners_per_weekday": 13.58,
+          "max_winners_in_one_weekday": 23,
+          "weekdays": 43,
+          "weekdays_with_15_winners": 18,
+          "reasons": {
+            "tp": 772,
+            "stop": 1299,
+            "time": 51
+          }
+        },
+        "15dk_momentum": {
+          "trades": 4153,
+          "winners": 1538,
+          "win_rate": 0.37,
+          "net": -9924.02,
+          "pf": 0.79,
+          "dd": 11292.9,
+          "expectancy": -2.39,
+          "avg_winners_per_weekday": 25.72,
+          "max_winners_in_one_weekday": 38,
+          "weekdays": 43,
+          "weekdays_with_15_winners": 42,
+          "reasons": {
+            "tp": 1426,
+            "stop": 2541,
+            "time": 186
+          }
+        },
+        "15dk_bant": {
+          "trades": 2541,
+          "winners": 1010,
+          "win_rate": 0.397,
+          "net": -9316.58,
+          "pf": 0.809,
+          "dd": 9864.4,
+          "expectancy": -3.67,
+          "avg_winners_per_weekday": 16.63,
+          "max_winners_in_one_weekday": 25,
+          "weekdays": 43,
+          "weekdays_with_15_winners": 31,
+          "reasons": {
+            "tp": 981,
+            "stop": 1508,
+            "time": 52
+          }
+        }
+      }
+    }
+  }
+}

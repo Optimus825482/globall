@@ -1,0 +1,230 @@
+[
+  {
+    "symbol": "XAUUSD",
+    "tf": "15m",
+    "spread": 0.09,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:00",
+    "trades": 32,
+    "winners": 11,
+    "buys": 12,
+    "sells": 20,
+    "net": 235.32,
+    "pf": 1.165,
+    "dd": 1001.66,
+    "win_rate": 0.344,
+    "avg_win": 150.67,
+    "avg_loss": -67.72,
+    "avg_trades_per_weekday": 0.74,
+    "avg_winners_per_weekday": 0.26,
+    "reasons": {
+      "st_flip": 19,
+      "stop": 13
+    },
+    "blocked": {
+      "st": 111,
+      "adx": 61
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "XAUUSD",
+    "tf": "5m",
+    "spread": 0.09,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:20",
+    "trades": 96,
+    "winners": 26,
+    "buys": 44,
+    "sells": 52,
+    "net": -443.91,
+    "pf": 0.912,
+    "dd": 1414.86,
+    "win_rate": 0.271,
+    "avg_win": 177.8,
+    "avg_loss": -72.38,
+    "avg_trades_per_weekday": 2.19,
+    "avg_winners_per_weekday": 0.58,
+    "reasons": {
+      "st_flip": 53,
+      "stop": 42,
+      "end": 1
+    },
+    "blocked": {
+      "st": 413,
+      "adx": 188
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "XAUUSD",
+    "tf": "3m",
+    "spread": 0.09,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:24",
+    "trades": 161,
+    "winners": 49,
+    "buys": 87,
+    "sells": 74,
+    "net": -563.57,
+    "pf": 0.93,
+    "dd": 2071.24,
+    "win_rate": 0.304,
+    "avg_win": 153.56,
+    "avg_loss": -72.22,
+    "avg_trades_per_weekday": 3.65,
+    "avg_winners_per_weekday": 1.07,
+    "reasons": {
+      "st_flip": 95,
+      "stop": 65,
+      "end": 1
+    },
+    "blocked": {
+      "st": 669,
+      "adx": 282
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "XAUUSD",
+    "tf": "1m",
+    "spread": 0.09,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:27",
+    "trades": 496,
+    "winners": 134,
+    "buys": 251,
+    "sells": 245,
+    "net": -5815.52,
+    "pf": 0.74,
+    "dd": 6981.82,
+    "win_rate": 0.27,
+    "avg_win": 123.65,
+    "avg_loss": -61.84,
+    "avg_trades_per_weekday": 11.37,
+    "avg_winners_per_weekday": 3.07,
+    "reasons": {
+      "st_flip": 242,
+      "stop": 253,
+      "end": 1
+    },
+    "blocked": {
+      "st": 2226,
+      "adx": 918
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "BTCUSD",
+    "tf": "15m",
+    "spread": 5.0,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:00",
+    "trades": 44,
+    "winners": 17,
+    "buys": 19,
+    "sells": 25,
+    "net": 1203.19,
+    "pf": 1.531,
+    "dd": 1143.86,
+    "win_rate": 0.386,
+    "avg_win": 204.01,
+    "avg_loss": -83.89,
+    "avg_trades_per_weekday": 0.58,
+    "avg_winners_per_weekday": 0.23,
+    "reasons": {
+      "st_flip": 28,
+      "stop": 16
+    },
+    "blocked": {
+      "st": 166,
+      "adx": 90
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "BTCUSD",
+    "tf": "5m",
+    "spread": 5.0,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:20",
+    "trades": 146,
+    "winners": 35,
+    "buys": 74,
+    "sells": 72,
+    "net": -2276.31,
+    "pf": 0.676,
+    "dd": 2905.33,
+    "win_rate": 0.24,
+    "avg_win": 135.79,
+    "avg_loss": -63.32,
+    "avg_trades_per_weekday": 2.37,
+    "avg_winners_per_weekday": 0.51,
+    "reasons": {
+      "st_flip": 79,
+      "stop": 67
+    },
+    "blocked": {
+      "st": 507,
+      "adx": 249
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "BTCUSD",
+    "tf": "3m",
+    "spread": 5.0,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:24",
+    "trades": 227,
+    "winners": 66,
+    "buys": 112,
+    "sells": 115,
+    "net": -1956.21,
+    "pf": 0.839,
+    "dd": 3354.58,
+    "win_rate": 0.291,
+    "avg_win": 154.9,
+    "avg_loss": -75.65,
+    "avg_trades_per_weekday": 3.86,
+    "avg_winners_per_weekday": 1.16,
+    "reasons": {
+      "stop": 101,
+      "st_flip": 125,
+      "end": 1
+    },
+    "blocked": {
+      "st": 862,
+      "adx": 454
+    },
+    "weekdays": 43
+  },
+  {
+    "symbol": "BTCUSD",
+    "tf": "1m",
+    "spread": 5.0,
+    "from": "2026-08-28",
+    "to": "2026-10-27 13:27",
+    "trades": 697,
+    "winners": 187,
+    "buys": 354,
+    "sells": 343,
+    "net": -6770.61,
+    "pf": 0.733,
+    "dd": 7008.19,
+    "win_rate": 0.268,
+    "avg_win": 99.55,
+    "avg_loss": -49.78,
+    "avg_trades_per_weekday": 11.3,
+    "avg_winners_per_weekday": 3.3,
+    "reasons": {
+      "stop": 337,
+      "st_flip": 360
+    },
+    "blocked": {
+      "st": 2674,
+      "adx": 1350
+    },
+    "weekdays": 43
+  }
+]

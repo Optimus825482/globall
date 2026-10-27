@@ -1,0 +1,1028 @@
+{
+  "train": [
+    "2026-06-22",
+    "2026-06-29",
+    "2026-07-06",
+    "2026-07-13",
+    "2026-07-20",
+    "2026-07-27",
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17",
+    "2026-08-24"
+  ],
+  "test": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "threshold": 4,
+      "train_hits": 2,
+      "train_min": 364.12,
+      "test_hits": 0,
+      "test_min": 638.61,
+      "test_pnl": -81.89,
+      "test_trades": 199,
+      "test_winners": 52,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1858.59,
+          "hit": false,
+          "trades": 31,
+          "winners": 12,
+          "dd": 628.04
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 939.22,
+          "hit": false,
+          "trades": 24,
+          "winners": 6,
+          "dd": 249.95
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 695.37,
+          "hit": false,
+          "trades": 27,
+          "winners": 5,
+          "dd": 478.9
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 935.24,
+          "hit": false,
+          "trades": 21,
+          "winners": 5,
+          "dd": 287.76
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1009.97,
+          "hit": false,
+          "trades": 23,
+          "winners": 7,
+          "dd": 984.21
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 827.43,
+          "hit": false,
+          "trades": 31,
+          "winners": 7,
+          "dd": 396.17
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 638.61,
+          "hit": false,
+          "trades": 18,
+          "winners": 2,
+          "dd": 510.08
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1013.68,
+          "hit": false,
+          "trades": 24,
+          "winners": 8,
+          "dd": 352.93
+        }
+      ]
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "threshold": 5,
+      "train_hits": 1,
+      "train_min": 645.22,
+      "test_hits": 0,
+      "test_min": 618.66,
+      "test_pnl": 697.62,
+      "test_trades": 122,
+      "test_winners": 37,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1040.05,
+          "hit": false,
+          "trades": 15,
+          "winners": 5,
+          "dd": 287.66
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 618.66,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 435.33
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1431.06,
+          "hit": false,
+          "trades": 18,
+          "winners": 7,
+          "dd": 332.61
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 905.98,
+          "hit": false,
+          "trades": 13,
+          "winners": 3,
+          "dd": 457.57
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 837.36,
+          "hit": false,
+          "trades": 20,
+          "winners": 5,
+          "dd": 353.39
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 949.63,
+          "hit": false,
+          "trades": 16,
+          "winners": 4,
+          "dd": 324.36
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1088.34,
+          "hit": false,
+          "trades": 13,
+          "winners": 5,
+          "dd": 393.37
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1826.54,
+          "hit": false,
+          "trades": 14,
+          "winners": 7,
+          "dd": 245.46
+        }
+      ]
+    },
+    "EURUSD": {
+      "resolved": "EURUSD",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 825.07,
+      "test_hits": 0,
+      "test_min": 857.91,
+      "test_pnl": -503.53,
+      "test_trades": 24,
+      "test_winners": 4,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 950.05,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 59.87
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 950.24,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 49.76
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 964.77,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 184.53
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 857.91,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 167.74
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 950.13,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 49.87
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1029.37,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 238.36
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 890.63,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 174.29
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 903.37,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 107.69
+        }
+      ]
+    },
+    "GBPUSD": {
+      "resolved": "GBPUSD",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 858.5,
+      "test_hits": 0,
+      "test_min": 688.98,
+      "test_pnl": -901.62,
+      "test_trades": 26,
+      "test_winners": 2,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 903.59,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 96.41
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 688.98,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 311.02
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1064.32,
+          "hit": false,
+          "trades": 5,
+          "winners": 2,
+          "dd": 127.84
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 897.88,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 102.12
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 776.23,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 261.48
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 816.52,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 223.63
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 950.86,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 121.3
+        }
+      ]
+    },
+    "USDJPY": {
+      "resolved": "USDJPY",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 810.2,
+      "test_hits": 0,
+      "test_min": 787.89,
+      "test_pnl": 89.02,
+      "test_trades": 21,
+      "test_winners": 6,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1148.91,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 85.57
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 950.94,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 88.54
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 857.72,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 235.36
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 921.91,
+          "hit": false,
+          "trades": 7,
+          "winners": 2,
+          "dd": 204.15
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 787.89,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 251.08
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 902.67,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 97.33
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1518.98,
+          "hit": false,
+          "trades": 3,
+          "winners": 3,
+          "dd": 90.02
+        }
+      ]
+    },
+    "EURJPY": {
+      "resolved": "EURJPY",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 809.73,
+      "test_hits": 0,
+      "test_min": 857.9,
+      "test_pnl": 213.17,
+      "test_trades": 19,
+      "test_winners": 7,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1063.95,
+          "hit": false,
+          "trades": 4,
+          "winners": 2,
+          "dd": 215.81
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1218.09,
+          "hit": false,
+          "trades": 2,
+          "winners": 2,
+          "dd": 60.29
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 950.13,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 49.87
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1095.59,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 127.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 984.86,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 104.85
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 857.9,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 142.1
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 950.3,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 49.7
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1092.35,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 64.85
+        }
+      ]
+    },
+    "GBPJPY": {
+      "resolved": "GBPJPY",
+      "threshold": 5,
+      "train_hits": 1,
+      "train_min": 614.82,
+      "test_hits": 1,
+      "test_min": 675.66,
+      "test_pnl": 2002.15,
+      "test_trades": 129,
+      "test_winners": 43,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 2124.41,
+          "hit": true,
+          "trades": 20,
+          "winners": 10,
+          "dd": 930.05
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1429.45,
+          "hit": false,
+          "trades": 19,
+          "winners": 7,
+          "dd": 506.34
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 675.66,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 455.15
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1323.62,
+          "hit": false,
+          "trades": 16,
+          "winners": 6,
+          "dd": 181.14
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 680.95,
+          "hit": false,
+          "trades": 15,
+          "winners": 2,
+          "dd": 363.92
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1045.21,
+          "hit": false,
+          "trades": 16,
+          "winners": 5,
+          "dd": 225.69
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1244.33,
+          "hit": false,
+          "trades": 17,
+          "winners": 6,
+          "dd": 214.36
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1478.52,
+          "hit": false,
+          "trades": 14,
+          "winners": 6,
+          "dd": 345.53
+        }
+      ]
+    },
+    "USDCAD": {
+      "resolved": "USDCAD",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 736.28,
+      "test_hits": 0,
+      "test_min": 769.46,
+      "test_pnl": -453.82,
+      "test_trades": 29,
+      "test_winners": 5,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 972.96,
+          "hit": false,
+          "trades": 8,
+          "winners": 2,
+          "dd": 232.52
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 857.78,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 186.6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1321.96,
+          "hit": false,
+          "trades": 2,
+          "winners": 2,
+          "dd": 94.23
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 902.69,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 97.31
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 943.23,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 56.77
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 769.46,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 285.41
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 985.85,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 163.45
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 792.25,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 215.91
+        }
+      ]
+    },
+    "EURCAD": {
+      "resolved": "EURCAD",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 816.57,
+      "test_hits": 0,
+      "test_min": 816.49,
+      "test_pnl": -635.64,
+      "test_trades": 24,
+      "test_winners": 3,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 816.49,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 183.51
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 871.96,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 176.5
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 855.34,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 145.97
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 857.81,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 223.26
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1067.43,
+          "hit": false,
+          "trades": 6,
+          "winners": 2,
+          "dd": 133.95
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1037.67,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 153.55
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 857.66,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 178.99
+        }
+      ]
+    },
+    "GBPCAD": {
+      "resolved": "GBPCAD",
+      "threshold": 4,
+      "train_hits": 1,
+      "train_min": 411.69,
+      "test_hits": 0,
+      "test_min": 435.81,
+      "test_pnl": 212.67,
+      "test_trades": 186,
+      "test_winners": 49,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1786.97,
+          "hit": false,
+          "trades": 24,
+          "winners": 10,
+          "dd": 517.39
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 562.31,
+          "hit": false,
+          "trades": 26,
+          "winners": 5,
+          "dd": 593.26
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 435.81,
+          "hit": false,
+          "trades": 27,
+          "winners": 3,
+          "dd": 641.21
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 642.7,
+          "hit": false,
+          "trades": 27,
+          "winners": 5,
+          "dd": 505.68
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1178.62,
+          "hit": false,
+          "trades": 24,
+          "winners": 8,
+          "dd": 493.45
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1192.56,
+          "hit": false,
+          "trades": 22,
+          "winners": 7,
+          "dd": 271.22
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1161.77,
+          "hit": false,
+          "trades": 18,
+          "winners": 5,
+          "dd": 331.26
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1251.93,
+          "hit": false,
+          "trades": 18,
+          "winners": 6,
+          "dd": 310.04
+        }
+      ]
+    },
+    "EURNZD": {
+      "resolved": "EURNZD",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 898.01,
+      "test_hits": 0,
+      "test_min": 737.55,
+      "test_pnl": 91.87,
+      "test_trades": 12,
+      "test_winners": 3,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1149.76,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 87.58
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 737.55,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 296.77
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 859.22,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 247.9
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1149.28,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 15.5
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1196.06,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 38.67
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "GBPNZD": {
+      "resolved": "GBPNZD",
+      "threshold": 7,
+      "train_hits": 0,
+      "train_min": 816.16,
+      "test_hits": 0,
+      "test_min": 735.99,
+      "test_pnl": -807.33,
+      "test_trades": 23,
+      "test_winners": 2,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 1090.13,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 77.13
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 735.99,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 282.05
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 816.3,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 183.7
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 860.0,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 171.73
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 950.09,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 74.75
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 903.17,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 96.83
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 903.75,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 96.25
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 933.24,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 143.32
+        }
+      ]
+    },
+    "NZDUSD": {
+      "resolved": "NZDUSD",
+      "threshold": 4,
+      "train_hits": 1,
+      "train_min": 610.92,
+      "test_hits": 0,
+      "test_min": 390.92,
+      "test_pnl": -1812.42,
+      "test_trades": 206,
+      "test_winners": 42,
+      "test": [
+        {
+          "week": "2026-08-31",
+          "friday": 390.92,
+          "hit": false,
+          "trades": 25,
+          "winners": 2,
+          "dd": 609.08
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 508.55,
+          "hit": false,
+          "trades": 33,
+          "winners": 6,
+          "dd": 589.63
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 599.28,
+          "hit": false,
+          "trades": 27,
+          "winners": 5,
+          "dd": 709.96
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 931.31,
+          "hit": false,
+          "trades": 21,
+          "winners": 6,
+          "dd": 321.34
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 440.15,
+          "hit": false,
+          "trades": 27,
+          "winners": 3,
+          "dd": 585.77
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 746.16,
+          "hit": false,
+          "trades": 24,
+          "winners": 5,
+          "dd": 446.35
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1685.76,
+          "hit": false,
+          "trades": 28,
+          "winners": 10,
+          "dd": 439.75
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 885.45,
+          "hit": false,
+          "trades": 21,
+          "winners": 5,
+          "dd": 352.33
+        }
+      ]
+    }
+  },
+  "passed_all_8": []
+}

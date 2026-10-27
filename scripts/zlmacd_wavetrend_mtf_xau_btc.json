@@ -1,0 +1,4559 @@
+{
+  "source": "MetaTrader 5 copy_rates, bid mum",
+  "retrieved_utc": "2026-10-27 19:14:16",
+  "server_offset_s": 10800,
+  "anchor": "EURUSD",
+  "entry_tf": "15m",
+  "higher_tf": [
+    "1h",
+    "4h"
+  ],
+  "risk": 0.02,
+  "rr": 2.0,
+  "stop_atr": 1.2,
+  "start_cash": 1000.0,
+  "currency_note": "Her hafta 1000, terminal kar para birimi. Scalper 10000 TL kasasi degil.",
+  "commission": null,
+  "slippage_beyond_spread": null,
+  "train_weeks": [
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17",
+    "2026-08-24",
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21"
+  ],
+  "test_weeks": [
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "selection": "Sembol basina en az 4 egitim islemi. Skor = iki sembolun egitim pnl minimumu. Skor pozitif degilse kural yok.",
+  "picked": {
+    "rule": "zl15_h1",
+    "train_min_pnl": -51.27,
+    "eligible": false
+  },
+  "recommendation": "reject",
+  "coverage": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "spread_price": 0.09999999999990905,
+      "spread_source": "tick_ask_bid",
+      "unit": 100.0,
+      "currency_profit": "USD",
+      "bars_15m": 9149,
+      "first_utc": "2026-06-09 19:15",
+      "last_utc": "2026-10-27 18:45",
+      "gaps": {
+        "bars": 9149,
+        "first_utc": "2026-06-09 19:15",
+        "last_utc": "2026-10-27 18:45",
+        "gap_count": 102,
+        "longest_gap_hours": 53.25,
+        "missing_slots_incl_weekends": 4290
+      },
+      "signal_counts": {
+        "baseline_macd15": 701,
+        "zl15": 923,
+        "wt10_15": 119,
+        "wt7_15": 871,
+        "zl15_wt10": 769,
+        "zl15_h1": 265,
+        "mtf_ikisi": 100,
+        "oncu_erken": 7
+      }
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "spread_price": 5.0,
+      "spread_source": "tick_ask_bid",
+      "unit": 1.0,
+      "currency_profit": "USD",
+      "bars_15m": 13312,
+      "first_utc": "2026-06-09 19:15",
+      "last_utc": "2026-10-27 18:45",
+      "gaps": {
+        "bars": 13312,
+        "first_utc": "2026-06-09 19:15",
+        "last_utc": "2026-10-27 18:45",
+        "gap_count": 25,
+        "longest_gap_hours": 5.25,
+        "missing_slots_incl_weekends": 127
+      },
+      "signal_counts": {
+        "baseline_macd15": 1068,
+        "zl15": 1290,
+        "wt10_15": 132,
+        "wt7_15": 1243,
+        "zl15_wt10": 1059,
+        "zl15_h1": 353,
+        "mtf_ikisi": 124,
+        "oncu_erken": 8
+      }
+    }
+  },
+  "train": {
+    "XAUUSD": {
+      "baseline_macd15": {
+        "weeks": 8,
+        "sum_pnl": -281.61,
+        "min_friday": 866.78,
+        "hits": 0,
+        "trades": 132,
+        "winners": 27,
+        "win_rate": 0.205,
+        "max_week_dd": 124.85,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 965.18,
+            "pnl": -34.82,
+            "hit": false,
+            "trades": 19,
+            "winners": 3,
+            "dd": 77.02,
+            "pf": 0.727,
+            "expectancy": -1.8325,
+            "reasons": {
+              "hedef": 3,
+              "stop": 8,
+              "basabas": 8
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1005.92,
+            "pnl": 5.92,
+            "hit": false,
+            "trades": 15,
+            "winners": 4,
+            "dd": 100.38,
+            "pf": 1.053,
+            "expectancy": 0.3948,
+            "reasons": {
+              "hedef": 4,
+              "stop": 8,
+              "basabas": 3
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 975.54,
+            "pnl": -24.46,
+            "hit": false,
+            "trades": 15,
+            "winners": 3,
+            "dd": 64.09,
+            "pf": 0.773,
+            "expectancy": -1.6309,
+            "reasons": {
+              "stop": 7,
+              "basabas": 5,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 928.51,
+            "pnl": -71.49,
+            "hit": false,
+            "trades": 18,
+            "winners": 2,
+            "dd": 66.17,
+            "pf": 0.402,
+            "expectancy": -3.9715,
+            "reasons": {
+              "stop": 7,
+              "basabas": 8,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 1007.32,
+            "pnl": 7.32,
+            "hit": false,
+            "trades": 16,
+            "winners": 4,
+            "dd": 57.08,
+            "pf": 1.071,
+            "expectancy": 0.4576,
+            "reasons": {
+              "hedef": 4,
+              "stop": 7,
+              "basabas": 5
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1016.55,
+            "pnl": 16.55,
+            "hit": false,
+            "trades": 17,
+            "winners": 6,
+            "dd": 121.13,
+            "pf": 1.12,
+            "expectancy": 0.9733,
+            "reasons": {
+              "hedef": 5,
+              "basabas": 3,
+              "stop": 8,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 952.59,
+            "pnl": -47.41,
+            "hit": false,
+            "trades": 15,
+            "winners": 3,
+            "dd": 84.0,
+            "pf": 0.561,
+            "expectancy": -3.1607,
+            "reasons": {
+              "hedef": 2,
+              "stop": 8,
+              "basabas": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 866.78,
+            "pnl": -133.22,
+            "hit": false,
+            "trades": 17,
+            "winners": 2,
+            "dd": 124.85,
+            "pf": 0.262,
+            "expectancy": -7.8362,
+            "reasons": {
+              "stop": 11,
+              "hedef": 2,
+              "basabas": 3,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15": {
+        "weeks": 8,
+        "sum_pnl": 194.17,
+        "min_friday": 813.08,
+        "hits": 0,
+        "trades": 174,
+        "winners": 47,
+        "win_rate": 0.27,
+        "max_week_dd": 207.0,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 984.47,
+            "pnl": -15.53,
+            "hit": false,
+            "trades": 21,
+            "winners": 3,
+            "dd": 139.3,
+            "pf": 0.88,
+            "expectancy": -0.7397,
+            "reasons": {
+              "hedef": 3,
+              "basabas": 8,
+              "stop": 9,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1058.34,
+            "pnl": 58.34,
+            "hit": false,
+            "trades": 24,
+            "winners": 8,
+            "dd": 112.42,
+            "pf": 1.296,
+            "expectancy": 2.4309,
+            "reasons": {
+              "hedef": 7,
+              "stop": 12,
+              "basabas": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 813.08,
+            "pnl": -186.92,
+            "hit": false,
+            "trades": 24,
+            "winners": 3,
+            "dd": 207.0,
+            "pf": 0.223,
+            "expectancy": -7.7884,
+            "reasons": {
+              "stop": 16,
+              "basabas": 5,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 924.83,
+            "pnl": -75.17,
+            "hit": false,
+            "trades": 23,
+            "winners": 3,
+            "dd": 130.18,
+            "pf": 0.519,
+            "expectancy": -3.2681,
+            "reasons": {
+              "stop": 11,
+              "basabas": 9,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 999.32,
+            "pnl": -0.68,
+            "hit": false,
+            "trades": 21,
+            "winners": 5,
+            "dd": 114.82,
+            "pf": 0.996,
+            "expectancy": -0.0322,
+            "reasons": {
+              "stop": 10,
+              "basabas": 5,
+              "hedef": 5,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1153.91,
+            "pnl": 153.91,
+            "hit": false,
+            "trades": 20,
+            "winners": 9,
+            "dd": 61.68,
+            "pf": 2.15,
+            "expectancy": 7.6955,
+            "reasons": {
+              "hedef": 8,
+              "basabas": 3,
+              "stop": 8,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1133.6,
+            "pnl": 133.6,
+            "hit": false,
+            "trades": 20,
+            "winners": 8,
+            "dd": 87.37,
+            "pf": 2.538,
+            "expectancy": 6.6799,
+            "reasons": {
+              "hedef": 7,
+              "stop": 6,
+              "basabas": 6,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1126.62,
+            "pnl": 126.62,
+            "hit": false,
+            "trades": 21,
+            "winners": 8,
+            "dd": 86.03,
+            "pf": 1.992,
+            "expectancy": 6.0294,
+            "reasons": {
+              "stop": 8,
+              "hedef": 7,
+              "basabas": 5,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "wt10_15": {
+        "weeks": 8,
+        "sum_pnl": 81.33,
+        "min_friday": 963.25,
+        "hits": 0,
+        "trades": 40,
+        "winners": 10,
+        "win_rate": 0.25,
+        "max_week_dd": 64.11,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 990.16,
+            "pnl": -9.84,
+            "hit": false,
+            "trades": 8,
+            "winners": 1,
+            "dd": 64.11,
+            "pf": 0.799,
+            "expectancy": -1.2299,
+            "reasons": {
+              "hedef": 1,
+              "basabas": 3,
+              "stop": 4
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 963.25,
+            "pnl": -36.75,
+            "hit": false,
+            "trades": 3,
+            "winners": 0,
+            "dd": 39.23,
+            "pf": 0.0,
+            "expectancy": -12.249,
+            "reasons": {
+              "stop": 2,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 973.68,
+            "pnl": -26.32,
+            "hit": false,
+            "trades": 5,
+            "winners": 1,
+            "dd": 42.52,
+            "pf": 0.331,
+            "expectancy": -5.2638,
+            "reasons": {
+              "stop": 3,
+              "basabas": 1,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 1032.16,
+            "pnl": 32.16,
+            "hit": false,
+            "trades": 2,
+            "winners": 1,
+            "dd": 16.12,
+            "pf": null,
+            "expectancy": 16.0816,
+            "reasons": {
+              "hedef": 1,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 1000.57,
+            "pnl": 0.57,
+            "hit": false,
+            "trades": 5,
+            "winners": 1,
+            "dd": 43.86,
+            "pf": 1.019,
+            "expectancy": 0.1137,
+            "reasons": {
+              "basabas": 2,
+              "stop": 2,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1009.14,
+            "pnl": 9.14,
+            "hit": false,
+            "trades": 4,
+            "winners": 1,
+            "dd": 12.94,
+            "pf": 1.389,
+            "expectancy": 2.2853,
+            "reasons": {
+              "stop": 2,
+              "hedef": 1,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1088.3,
+            "pnl": 88.3,
+            "hit": false,
+            "trades": 7,
+            "winners": 3,
+            "dd": 18.96,
+            "pf": 8.741,
+            "expectancy": 12.615,
+            "reasons": {
+              "stop": 1,
+              "hedef": 3,
+              "basabas": 3
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1024.07,
+            "pnl": 24.07,
+            "hit": false,
+            "trades": 6,
+            "winners": 2,
+            "dd": 33.21,
+            "pf": 1.729,
+            "expectancy": 4.0111,
+            "reasons": {
+              "stop": 3,
+              "basabas": 1,
+              "hedef": 2
+            }
+          }
+        ]
+      },
+      "wt7_15": {
+        "weeks": 8,
+        "sum_pnl": -237.28,
+        "min_friday": 819.55,
+        "hits": 0,
+        "trades": 165,
+        "winners": 35,
+        "win_rate": 0.212,
+        "max_week_dd": 197.17,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 1103.02,
+            "pnl": 103.02,
+            "hit": false,
+            "trades": 20,
+            "winners": 8,
+            "dd": 41.02,
+            "pf": 2.021,
+            "expectancy": 5.1509,
+            "reasons": {
+              "stop": 6,
+              "basabas": 6,
+              "hedef": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 819.55,
+            "pnl": -180.45,
+            "hit": false,
+            "trades": 23,
+            "winners": 3,
+            "dd": 197.17,
+            "pf": 0.23,
+            "expectancy": -7.8458,
+            "reasons": {
+              "stop": 16,
+              "basabas": 4,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 965.71,
+            "pnl": -34.29,
+            "hit": false,
+            "trades": 22,
+            "winners": 4,
+            "dd": 117.69,
+            "pf": 0.752,
+            "expectancy": -1.5588,
+            "reasons": {
+              "stop": 9,
+              "basabas": 9,
+              "hedef": 3,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 926.55,
+            "pnl": -73.45,
+            "hit": false,
+            "trades": 16,
+            "winners": 2,
+            "dd": 93.78,
+            "pf": 0.448,
+            "expectancy": -4.5908,
+            "reasons": {
+              "stop": 10,
+              "hedef": 2,
+              "basabas": 4
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 1065.17,
+            "pnl": 65.17,
+            "hit": false,
+            "trades": 23,
+            "winners": 5,
+            "dd": 58.32,
+            "pf": 1.657,
+            "expectancy": 2.8336,
+            "reasons": {
+              "stop": 8,
+              "hedef": 5,
+              "basabas": 9,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 972.85,
+            "pnl": -27.15,
+            "hit": false,
+            "trades": 19,
+            "winners": 5,
+            "dd": 86.31,
+            "pf": 0.847,
+            "expectancy": -1.4289,
+            "reasons": {
+              "hedef": 5,
+              "stop": 10,
+              "basabas": 3,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 971.78,
+            "pnl": -28.22,
+            "hit": false,
+            "trades": 21,
+            "winners": 5,
+            "dd": 67.51,
+            "pf": 0.809,
+            "expectancy": -1.344,
+            "reasons": {
+              "stop": 10,
+              "hedef": 5,
+              "basabas": 6
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 938.09,
+            "pnl": -61.91,
+            "hit": false,
+            "trades": 21,
+            "winners": 3,
+            "dd": 128.2,
+            "pf": 0.529,
+            "expectancy": -2.9483,
+            "reasons": {
+              "basabas": 8,
+              "hedef": 2,
+              "stop": 10,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15_wt10": {
+        "weeks": 8,
+        "sum_pnl": 244.7,
+        "min_friday": 875.46,
+        "hits": 0,
+        "trades": 158,
+        "winners": 43,
+        "win_rate": 0.272,
+        "max_week_dd": 170.42,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 980.01,
+            "pnl": -19.99,
+            "hit": false,
+            "trades": 21,
+            "winners": 3,
+            "dd": 143.75,
+            "pf": 0.851,
+            "expectancy": -0.9517,
+            "reasons": {
+              "hedef": 3,
+              "basabas": 8,
+              "stop": 9,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1065.7,
+            "pnl": 65.7,
+            "hit": false,
+            "trades": 19,
+            "winners": 6,
+            "dd": 91.92,
+            "pf": 1.442,
+            "expectancy": 3.4581,
+            "reasons": {
+              "hedef": 6,
+              "stop": 9,
+              "basabas": 4
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 875.46,
+            "pnl": -124.54,
+            "hit": false,
+            "trades": 23,
+            "winners": 4,
+            "dd": 170.42,
+            "pf": 0.403,
+            "expectancy": -5.4148,
+            "reasons": {
+              "stop": 14,
+              "basabas": 5,
+              "hedef": 3,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 924.83,
+            "pnl": -75.17,
+            "hit": false,
+            "trades": 22,
+            "winners": 3,
+            "dd": 130.18,
+            "pf": 0.519,
+            "expectancy": -3.4167,
+            "reasons": {
+              "stop": 11,
+              "basabas": 8,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 964.21,
+            "pnl": -35.79,
+            "hit": false,
+            "trades": 16,
+            "winners": 3,
+            "dd": 114.82,
+            "pf": 0.74,
+            "expectancy": -2.2368,
+            "reasons": {
+              "basabas": 4,
+              "hedef": 3,
+              "stop": 9
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1153.01,
+            "pnl": 153.01,
+            "hit": false,
+            "trades": 17,
+            "winners": 8,
+            "dd": 92.24,
+            "pf": 2.503,
+            "expectancy": 9.0008,
+            "reasons": {
+              "hedef": 7,
+              "basabas": 2,
+              "stop": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1133.6,
+            "pnl": 133.6,
+            "hit": false,
+            "trades": 20,
+            "winners": 8,
+            "dd": 87.37,
+            "pf": 2.538,
+            "expectancy": 6.6799,
+            "reasons": {
+              "hedef": 7,
+              "stop": 6,
+              "basabas": 6,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1147.88,
+            "pnl": 147.88,
+            "hit": false,
+            "trades": 20,
+            "winners": 8,
+            "dd": 64.77,
+            "pf": 2.389,
+            "expectancy": 7.3938,
+            "reasons": {
+              "stop": 7,
+              "hedef": 7,
+              "basabas": 5,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15_h1": {
+        "weeks": 8,
+        "sum_pnl": 71.53,
+        "min_friday": 973.78,
+        "hits": 0,
+        "trades": 60,
+        "winners": 14,
+        "win_rate": 0.233,
+        "max_week_dd": 65.25,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 973.78,
+            "pnl": -26.22,
+            "hit": false,
+            "trades": 6,
+            "winners": 0,
+            "dd": 26.22,
+            "pf": 0.0,
+            "expectancy": -4.3695,
+            "reasons": {
+              "basabas": 4,
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1020.63,
+            "pnl": 20.63,
+            "hit": false,
+            "trades": 8,
+            "winners": 2,
+            "dd": 40.25,
+            "pf": 1.388,
+            "expectancy": 2.5781,
+            "reasons": {
+              "stop": 3,
+              "hedef": 2,
+              "basabas": 3
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 987.89,
+            "pnl": -12.11,
+            "hit": false,
+            "trades": 11,
+            "winners": 2,
+            "dd": 52.26,
+            "pf": 0.834,
+            "expectancy": -1.1005,
+            "reasons": {
+              "basabas": 4,
+              "stop": 5,
+              "hedef": 2
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 1016.73,
+            "pnl": 16.73,
+            "hit": false,
+            "trades": 9,
+            "winners": 2,
+            "dd": 32.86,
+            "pf": 1.373,
+            "expectancy": 1.8589,
+            "reasons": {
+              "stop": 3,
+              "hedef": 2,
+              "basabas": 4
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 973.81,
+            "pnl": -26.19,
+            "hit": false,
+            "trades": 7,
+            "winners": 1,
+            "dd": 65.25,
+            "pf": 0.599,
+            "expectancy": -3.7408,
+            "reasons": {
+              "basabas": 2,
+              "hedef": 1,
+              "stop": 4
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1052.37,
+            "pnl": 52.37,
+            "hit": false,
+            "trades": 7,
+            "winners": 3,
+            "dd": 29.23,
+            "pf": 2.861,
+            "expectancy": 7.4816,
+            "reasons": {
+              "stop": 2,
+              "basabas": 2,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1000.68,
+            "pnl": 0.68,
+            "hit": false,
+            "trades": 6,
+            "winners": 1,
+            "dd": 43.08,
+            "pf": 1.034,
+            "expectancy": 0.1141,
+            "reasons": {
+              "hedef": 1,
+              "basabas": 4,
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1045.64,
+            "pnl": 45.64,
+            "hit": false,
+            "trades": 6,
+            "winners": 3,
+            "dd": 19.8,
+            "pf": 2.406,
+            "expectancy": 7.606,
+            "reasons": {
+              "stop": 2,
+              "hedef": 3,
+              "basabas": 1
+            }
+          }
+        ]
+      },
+      "mtf_ikisi": {
+        "weeks": 8,
+        "sum_pnl": -59.37,
+        "min_friday": 970.18,
+        "hits": 0,
+        "trades": 29,
+        "winners": 4,
+        "win_rate": 0.138,
+        "max_week_dd": 48.51,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 989.16,
+            "pnl": -10.84,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 10.84,
+            "pf": 0.0,
+            "expectancy": -5.4207,
+            "reasons": {
+              "basabas": 1,
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 981.07,
+            "pnl": -18.93,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 24.97,
+            "pf": 0.0,
+            "expectancy": -9.4636,
+            "reasons": {
+              "stop": 1,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 987.43,
+            "pnl": -12.57,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 32.19,
+            "pf": 0.0,
+            "expectancy": -6.2842,
+            "reasons": {
+              "basabas": 1,
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 1009.89,
+            "pnl": 9.89,
+            "hit": false,
+            "trades": 7,
+            "winners": 1,
+            "dd": 28.77,
+            "pf": 1.344,
+            "expectancy": 1.4132,
+            "reasons": {
+              "stop": 2,
+              "basabas": 4,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 970.18,
+            "pnl": -29.82,
+            "hit": false,
+            "trades": 3,
+            "winners": 0,
+            "dd": 29.82,
+            "pf": 0.0,
+            "expectancy": -9.9391,
+            "reasons": {
+              "stop": 2,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1014.87,
+            "pnl": 14.87,
+            "hit": false,
+            "trades": 3,
+            "winners": 1,
+            "dd": 14.01,
+            "pf": 2.151,
+            "expectancy": 4.9562,
+            "reasons": {
+              "stop": 1,
+              "basabas": 1,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 991.81,
+            "pnl": -8.19,
+            "hit": false,
+            "trades": 6,
+            "winners": 1,
+            "dd": 48.51,
+            "pf": 0.719,
+            "expectancy": -1.3651,
+            "reasons": {
+              "hedef": 1,
+              "basabas": 3,
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 996.22,
+            "pnl": -3.78,
+            "hit": false,
+            "trades": 4,
+            "winners": 1,
+            "dd": 17.52,
+            "pf": 0.883,
+            "expectancy": -0.9459,
+            "reasons": {
+              "stop": 2,
+              "hedef": 1,
+              "basabas": 1
+            }
+          }
+        ]
+      },
+      "oncu_erken": {
+        "weeks": 8,
+        "sum_pnl": 32.16,
+        "min_friday": 1000.0,
+        "hits": 0,
+        "trades": 1,
+        "winners": 1,
+        "win_rate": 1.0,
+        "max_week_dd": 11.28,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 1032.16,
+            "pnl": 32.16,
+            "hit": false,
+            "trades": 1,
+            "winners": 1,
+            "dd": 11.28,
+            "pf": null,
+            "expectancy": 32.1631,
+            "reasons": {
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          }
+        ]
+      }
+    },
+    "BTCUSD": {
+      "baseline_macd15": {
+        "weeks": 8,
+        "sum_pnl": -576.94,
+        "min_friday": 797.85,
+        "hits": 0,
+        "trades": 208,
+        "winners": 38,
+        "win_rate": 0.183,
+        "max_week_dd": 233.42,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 959.99,
+            "pnl": -40.01,
+            "hit": false,
+            "trades": 24,
+            "winners": 6,
+            "dd": 191.82,
+            "pf": 0.826,
+            "expectancy": -1.6673,
+            "reasons": {
+              "basabas": 6,
+              "hedef": 5,
+              "stop": 12,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1056.03,
+            "pnl": 56.03,
+            "hit": false,
+            "trades": 22,
+            "winners": 7,
+            "dd": 110.1,
+            "pf": 1.3,
+            "expectancy": 2.547,
+            "reasons": {
+              "stop": 9,
+              "basabas": 6,
+              "hedef": 6,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 1004.57,
+            "pnl": 4.57,
+            "hit": false,
+            "trades": 23,
+            "winners": 7,
+            "dd": 183.82,
+            "pf": 1.02,
+            "expectancy": 0.1989,
+            "reasons": {
+              "basabas": 3,
+              "hedef": 6,
+              "stop": 13,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 797.85,
+            "pnl": -202.15,
+            "hit": false,
+            "trades": 24,
+            "winners": 1,
+            "dd": 233.42,
+            "pf": 0.127,
+            "expectancy": -8.4227,
+            "reasons": {
+              "basabas": 8,
+              "stop": 14,
+              "hedef": 1,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 913.6,
+            "pnl": -86.4,
+            "hit": false,
+            "trades": 25,
+            "winners": 3,
+            "dd": 89.79,
+            "pf": 0.547,
+            "expectancy": -3.4559,
+            "reasons": {
+              "stop": 11,
+              "basabas": 11,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 959.25,
+            "pnl": -40.75,
+            "hit": false,
+            "trades": 29,
+            "winners": 5,
+            "dd": 109.07,
+            "pf": 0.794,
+            "expectancy": -1.4052,
+            "reasons": {
+              "stop": 11,
+              "basabas": 13,
+              "hedef": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 815.87,
+            "pnl": -184.13,
+            "hit": false,
+            "trades": 34,
+            "winners": 4,
+            "dd": 203.5,
+            "pf": 0.412,
+            "expectancy": -5.4157,
+            "reasons": {
+              "basabas": 11,
+              "stop": 19,
+              "hedef": 4
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 915.9,
+            "pnl": -84.1,
+            "hit": false,
+            "trades": 27,
+            "winners": 5,
+            "dd": 118.37,
+            "pf": 0.667,
+            "expectancy": -3.1146,
+            "reasons": {
+              "stop": 14,
+              "hedef": 5,
+              "basabas": 7,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15": {
+        "weeks": 8,
+        "sum_pnl": -875.37,
+        "min_friday": 753.65,
+        "hits": 0,
+        "trades": 246,
+        "winners": 42,
+        "win_rate": 0.171,
+        "max_week_dd": 274.52,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 805.26,
+            "pnl": -194.74,
+            "hit": false,
+            "trades": 31,
+            "winners": 5,
+            "dd": 274.52,
+            "pf": 0.431,
+            "expectancy": -6.2818,
+            "reasons": {
+              "stop": 20,
+              "hedef": 4,
+              "basabas": 6,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 977.25,
+            "pnl": -22.75,
+            "hit": false,
+            "trades": 28,
+            "winners": 6,
+            "dd": 128.86,
+            "pf": 0.907,
+            "expectancy": -0.8124,
+            "reasons": {
+              "hedef": 6,
+              "stop": 13,
+              "basabas": 9
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 909.57,
+            "pnl": -90.43,
+            "hit": false,
+            "trades": 28,
+            "winners": 5,
+            "dd": 143.31,
+            "pf": 0.653,
+            "expectancy": -3.2295,
+            "reasons": {
+              "stop": 15,
+              "basabas": 8,
+              "hedef": 5
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 891.6,
+            "pnl": -108.4,
+            "hit": false,
+            "trades": 32,
+            "winners": 6,
+            "dd": 157.39,
+            "pf": 0.644,
+            "expectancy": -3.3876,
+            "reasons": {
+              "stop": 18,
+              "basabas": 8,
+              "hedef": 6
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 979.26,
+            "pnl": -20.74,
+            "hit": false,
+            "trades": 28,
+            "winners": 7,
+            "dd": 87.27,
+            "pf": 0.915,
+            "expectancy": -0.7407,
+            "reasons": {
+              "stop": 13,
+              "hedef": 6,
+              "basabas": 8,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1034.34,
+            "pnl": 34.34,
+            "hit": false,
+            "trades": 35,
+            "winners": 8,
+            "dd": 144.39,
+            "pf": 1.13,
+            "expectancy": 0.981,
+            "reasons": {
+              "basabas": 13,
+              "stop": 13,
+              "hedef": 8,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 753.65,
+            "pnl": -246.35,
+            "hit": false,
+            "trades": 30,
+            "winners": 2,
+            "dd": 263.55,
+            "pf": 0.181,
+            "expectancy": -8.2117,
+            "reasons": {
+              "stop": 18,
+              "basabas": 9,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 773.7,
+            "pnl": -226.3,
+            "hit": false,
+            "trades": 34,
+            "winners": 3,
+            "dd": 232.52,
+            "pf": 0.219,
+            "expectancy": -6.656,
+            "reasons": {
+              "stop": 18,
+              "basabas": 13,
+              "hedef": 2,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "wt10_15": {
+        "weeks": 8,
+        "sum_pnl": -292.36,
+        "min_friday": 910.52,
+        "hits": 0,
+        "trades": 39,
+        "winners": 3,
+        "win_rate": 0.077,
+        "max_week_dd": 109.12,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 926.74,
+            "pnl": -73.26,
+            "hit": false,
+            "trades": 7,
+            "winners": 0,
+            "dd": 95.6,
+            "pf": 0.0,
+            "expectancy": -10.4656,
+            "reasons": {
+              "stop": 4,
+              "basabas": 3
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 961.86,
+            "pnl": -38.14,
+            "hit": false,
+            "trades": 4,
+            "winners": 0,
+            "dd": 59.82,
+            "pf": 0.0,
+            "expectancy": -9.5359,
+            "reasons": {
+              "basabas": 2,
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 910.52,
+            "pnl": -89.48,
+            "hit": false,
+            "trades": 8,
+            "winners": 0,
+            "dd": 109.12,
+            "pf": 0.0,
+            "expectancy": -11.1854,
+            "reasons": {
+              "stop": 5,
+              "basabas": 3
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 999.48,
+            "pnl": -0.52,
+            "hit": false,
+            "trades": 6,
+            "winners": 1,
+            "dd": 31.24,
+            "pf": 0.986,
+            "expectancy": -0.0867,
+            "reasons": {
+              "stop": 2,
+              "basabas": 3,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 964.49,
+            "pnl": -35.51,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 40.32,
+            "pf": 0.0,
+            "expectancy": -17.7553,
+            "reasons": {
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 980.1,
+            "pnl": -19.9,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 33.62,
+            "pf": 0.0,
+            "expectancy": -19.8963,
+            "reasons": {
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1000.39,
+            "pnl": 0.39,
+            "hit": false,
+            "trades": 6,
+            "winners": 1,
+            "dd": 41.65,
+            "pf": 1.01,
+            "expectancy": 0.0651,
+            "reasons": {
+              "basabas": 3,
+              "stop": 2,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 964.06,
+            "pnl": -35.94,
+            "hit": false,
+            "trades": 5,
+            "winners": 1,
+            "dd": 51.14,
+            "pf": 0.493,
+            "expectancy": -7.1889,
+            "reasons": {
+              "stop": 4,
+              "hedef": 1
+            }
+          }
+        ]
+      },
+      "wt7_15": {
+        "weeks": 8,
+        "sum_pnl": -966.64,
+        "min_friday": 788.69,
+        "hits": 0,
+        "trades": 254,
+        "winners": 46,
+        "win_rate": 0.181,
+        "max_week_dd": 269.35,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 789.0,
+            "pnl": -211.0,
+            "hit": false,
+            "trades": 33,
+            "winners": 5,
+            "dd": 243.53,
+            "pf": 0.419,
+            "expectancy": -6.394,
+            "reasons": {
+              "stop": 22,
+              "hedef": 4,
+              "basabas": 6,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 878.84,
+            "pnl": -121.16,
+            "hit": false,
+            "trades": 29,
+            "winners": 4,
+            "dd": 141.77,
+            "pf": 0.521,
+            "expectancy": -4.1778,
+            "reasons": {
+              "stop": 14,
+              "basabas": 10,
+              "hedef": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 946.86,
+            "pnl": -53.14,
+            "hit": false,
+            "trades": 31,
+            "winners": 7,
+            "dd": 269.35,
+            "pf": 0.842,
+            "expectancy": -1.7143,
+            "reasons": {
+              "stop": 16,
+              "hedef": 7,
+              "basabas": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 839.17,
+            "pnl": -160.83,
+            "hit": false,
+            "trades": 29,
+            "winners": 4,
+            "dd": 197.53,
+            "pf": 0.459,
+            "expectancy": -5.5458,
+            "reasons": {
+              "stop": 17,
+              "hedef": 4,
+              "basabas": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 975.76,
+            "pnl": -24.24,
+            "hit": false,
+            "trades": 31,
+            "winners": 8,
+            "dd": 94.74,
+            "pf": 0.911,
+            "expectancy": -0.782,
+            "reasons": {
+              "stop": 15,
+              "basabas": 8,
+              "hedef": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 835.45,
+            "pnl": -164.55,
+            "hit": false,
+            "trades": 37,
+            "winners": 4,
+            "dd": 234.49,
+            "pf": 0.456,
+            "expectancy": -4.4472,
+            "reasons": {
+              "hedef": 4,
+              "basabas": 15,
+              "stop": 17,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 788.69,
+            "pnl": -211.31,
+            "hit": false,
+            "trades": 31,
+            "winners": 5,
+            "dd": 212.13,
+            "pf": 0.37,
+            "expectancy": -6.8163,
+            "reasons": {
+              "stop": 21,
+              "basabas": 5,
+              "hedef": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 979.59,
+            "pnl": -20.41,
+            "hit": false,
+            "trades": 33,
+            "winners": 9,
+            "dd": 156.29,
+            "pf": 0.928,
+            "expectancy": -0.6186,
+            "reasons": {
+              "stop": 17,
+              "basabas": 7,
+              "hedef": 8,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15_wt10": {
+        "weeks": 8,
+        "sum_pnl": -801.42,
+        "min_friday": 774.69,
+        "hits": 0,
+        "trades": 218,
+        "winners": 37,
+        "win_rate": 0.17,
+        "max_week_dd": 264.55,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 794.58,
+            "pnl": -205.42,
+            "hit": false,
+            "trades": 25,
+            "winners": 3,
+            "dd": 264.55,
+            "pf": 0.29,
+            "expectancy": -8.2168,
+            "reasons": {
+              "hedef": 2,
+              "stop": 17,
+              "basabas": 5,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 958.83,
+            "pnl": -41.17,
+            "hit": false,
+            "trades": 24,
+            "winners": 5,
+            "dd": 110.39,
+            "pf": 0.815,
+            "expectancy": -1.7154,
+            "reasons": {
+              "stop": 12,
+              "basabas": 7,
+              "hedef": 5
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 912.46,
+            "pnl": -87.54,
+            "hit": false,
+            "trades": 27,
+            "winners": 5,
+            "dd": 140.42,
+            "pf": 0.66,
+            "expectancy": -3.2424,
+            "reasons": {
+              "stop": 15,
+              "basabas": 7,
+              "hedef": 5
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 961.4,
+            "pnl": -38.6,
+            "hit": false,
+            "trades": 27,
+            "winners": 6,
+            "dd": 124.49,
+            "pf": 0.84,
+            "expectancy": -1.4296,
+            "reasons": {
+              "stop": 14,
+              "basabas": 7,
+              "hedef": 6
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 968.52,
+            "pnl": -31.48,
+            "hit": false,
+            "trades": 25,
+            "winners": 6,
+            "dd": 115.94,
+            "pf": 0.857,
+            "expectancy": -1.2591,
+            "reasons": {
+              "stop": 12,
+              "hedef": 5,
+              "basabas": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1034.34,
+            "pnl": 34.34,
+            "hit": false,
+            "trades": 34,
+            "winners": 8,
+            "dd": 144.39,
+            "pf": 1.13,
+            "expectancy": 1.0099,
+            "reasons": {
+              "basabas": 12,
+              "stop": 13,
+              "hedef": 8,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 793.76,
+            "pnl": -206.24,
+            "hit": false,
+            "trades": 28,
+            "winners": 2,
+            "dd": 223.43,
+            "pf": 0.209,
+            "expectancy": -7.3658,
+            "reasons": {
+              "stop": 15,
+              "basabas": 10,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 774.69,
+            "pnl": -225.31,
+            "hit": false,
+            "trades": 28,
+            "winners": 2,
+            "dd": 225.31,
+            "pf": 0.214,
+            "expectancy": -8.0469,
+            "reasons": {
+              "stop": 18,
+              "basabas": 8,
+              "hedef": 2
+            }
+          }
+        ]
+      },
+      "zl15_h1": {
+        "weeks": 8,
+        "sum_pnl": -51.27,
+        "min_friday": 904.31,
+        "hits": 0,
+        "trades": 81,
+        "winners": 16,
+        "win_rate": 0.198,
+        "max_week_dd": 132.41,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 904.31,
+            "pnl": -95.69,
+            "hit": false,
+            "trades": 12,
+            "winners": 1,
+            "dd": 132.41,
+            "pf": 0.276,
+            "expectancy": -7.9741,
+            "reasons": {
+              "hedef": 1,
+              "stop": 7,
+              "basabas": 4
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1037.9,
+            "pnl": 37.9,
+            "hit": false,
+            "trades": 11,
+            "winners": 3,
+            "dd": 43.26,
+            "pf": 1.485,
+            "expectancy": 3.4453,
+            "reasons": {
+              "stop": 4,
+              "basabas": 4,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 1032.43,
+            "pnl": 32.43,
+            "hit": false,
+            "trades": 11,
+            "winners": 3,
+            "dd": 40.25,
+            "pf": 1.402,
+            "expectancy": 2.948,
+            "reasons": {
+              "basabas": 4,
+              "hedef": 3,
+              "stop": 4
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 994.4,
+            "pnl": -5.6,
+            "hit": false,
+            "trades": 11,
+            "winners": 2,
+            "dd": 57.04,
+            "pf": 0.923,
+            "expectancy": -0.5092,
+            "reasons": {
+              "basabas": 5,
+              "stop": 4,
+              "hedef": 2
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 980.31,
+            "pnl": -19.69,
+            "hit": false,
+            "trades": 7,
+            "winners": 1,
+            "dd": 47.21,
+            "pf": 0.637,
+            "expectancy": -2.813,
+            "reasons": {
+              "basabas": 3,
+              "stop": 3,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1057.18,
+            "pnl": 57.18,
+            "hit": false,
+            "trades": 9,
+            "winners": 3,
+            "dd": 64.98,
+            "pf": 1.938,
+            "expectancy": 6.3533,
+            "reasons": {
+              "hedef": 3,
+              "basabas": 3,
+              "stop": 3
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 909.64,
+            "pnl": -90.36,
+            "hit": false,
+            "trades": 10,
+            "winners": 0,
+            "dd": 90.36,
+            "pf": 0.0,
+            "expectancy": -9.0356,
+            "reasons": {
+              "stop": 5,
+              "basabas": 5
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1032.56,
+            "pnl": 32.56,
+            "hit": false,
+            "trades": 10,
+            "winners": 3,
+            "dd": 57.06,
+            "pf": 1.422,
+            "expectancy": 3.2559,
+            "reasons": {
+              "basabas": 3,
+              "hedef": 3,
+              "stop": 4
+            }
+          }
+        ]
+      },
+      "mtf_ikisi": {
+        "weeks": 8,
+        "sum_pnl": -13.16,
+        "min_friday": 943.72,
+        "hits": 0,
+        "trades": 29,
+        "winners": 6,
+        "win_rate": 0.207,
+        "max_week_dd": 56.28,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 962.7,
+            "pnl": -37.3,
+            "hit": false,
+            "trades": 3,
+            "winners": 0,
+            "dd": 38.75,
+            "pf": 0.0,
+            "expectancy": -12.4339,
+            "reasons": {
+              "stop": 2,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1000.53,
+            "pnl": 0.53,
+            "hit": false,
+            "trades": 4,
+            "winners": 1,
+            "dd": 28.18,
+            "pf": 1.014,
+            "expectancy": 0.1326,
+            "reasons": {
+              "stop": 2,
+              "basabas": 1,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 1015.35,
+            "pnl": 15.35,
+            "hit": false,
+            "trades": 5,
+            "winners": 1,
+            "dd": 34.2,
+            "pf": 1.768,
+            "expectancy": 3.0701,
+            "reasons": {
+              "basabas": 3,
+              "stop": 1,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 1002.58,
+            "pnl": 2.58,
+            "hit": false,
+            "trades": 4,
+            "winners": 1,
+            "dd": 37.28,
+            "pf": 1.069,
+            "expectancy": 0.6457,
+            "reasons": {
+              "basabas": 1,
+              "hedef": 1,
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 0.28,
+            "pf": null,
+            "expectancy": 0.0,
+            "reasons": {
+              "basabas": 2
+            }
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1097.65,
+            "pnl": 97.65,
+            "hit": false,
+            "trades": 4,
+            "winners": 3,
+            "dd": 22.65,
+            "pf": 5.761,
+            "expectancy": 24.4122,
+            "reasons": {
+              "hedef": 3,
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 943.72,
+            "pnl": -56.28,
+            "hit": false,
+            "trades": 5,
+            "winners": 0,
+            "dd": 56.28,
+            "pf": 0.0,
+            "expectancy": -11.2553,
+            "reasons": {
+              "stop": 3,
+              "basabas": 2
+            }
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 964.31,
+            "pnl": -35.69,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 35.69,
+            "pf": 0.0,
+            "expectancy": -17.8445,
+            "reasons": {
+              "stop": 2
+            }
+          }
+        ]
+      },
+      "oncu_erken": {
+        "weeks": 8,
+        "sum_pnl": 53.42,
+        "min_friday": 982.64,
+        "hits": 0,
+        "trades": 3,
+        "winners": 2,
+        "win_rate": 0.667,
+        "max_week_dd": 24.7,
+        "weeks_detail": [
+          {
+            "week": "2026-08-03",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-08-10",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-08-17",
+            "friday": 982.64,
+            "pnl": -17.36,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 24.7,
+            "pf": 0.0,
+            "expectancy": -17.3603,
+            "reasons": {
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-08-24",
+            "friday": 1035.78,
+            "pnl": 35.78,
+            "hit": false,
+            "trades": 1,
+            "winners": 1,
+            "dd": 6.01,
+            "pf": null,
+            "expectancy": 35.7777,
+            "reasons": {
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-08-31",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-09-07",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-09-14",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-09-21",
+            "friday": 1035.0,
+            "pnl": 35.0,
+            "hit": false,
+            "trades": 1,
+            "winners": 1,
+            "dd": 8.81,
+            "pf": null,
+            "expectancy": 35.0025,
+            "reasons": {
+              "hedef": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "test_weekly": {
+    "XAUUSD": {
+      "baseline_macd15": {
+        "weeks": 4,
+        "sum_pnl": -204.83,
+        "min_friday": 853.81,
+        "hits": 0,
+        "trades": 67,
+        "winners": 13,
+        "win_rate": 0.194,
+        "max_week_dd": 154.44,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 1006.55,
+            "pnl": 6.55,
+            "hit": false,
+            "trades": 21,
+            "winners": 5,
+            "dd": 110.38,
+            "pf": 1.05,
+            "expectancy": 0.3121,
+            "reasons": {
+              "hedef": 5,
+              "stop": 9,
+              "basabas": 6,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 970.35,
+            "pnl": -29.65,
+            "hit": false,
+            "trades": 17,
+            "winners": 4,
+            "dd": 93.63,
+            "pf": 0.753,
+            "expectancy": -1.7441,
+            "reasons": {
+              "stop": 7,
+              "basabas": 6,
+              "hedef": 3,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 964.46,
+            "pnl": -35.54,
+            "hit": false,
+            "trades": 13,
+            "winners": 3,
+            "dd": 81.04,
+            "pf": 0.657,
+            "expectancy": -2.7335,
+            "reasons": {
+              "stop": 7,
+              "basabas": 3,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 853.81,
+            "pnl": -146.19,
+            "hit": false,
+            "trades": 16,
+            "winners": 1,
+            "dd": 154.44,
+            "pf": 0.152,
+            "expectancy": -9.1371,
+            "reasons": {
+              "stop": 11,
+              "basabas": 3,
+              "hedef": 1,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15": {
+        "weeks": 4,
+        "sum_pnl": -425.27,
+        "min_friday": 832.08,
+        "hits": 0,
+        "trades": 82,
+        "winners": 12,
+        "win_rate": 0.146,
+        "max_week_dd": 176.38,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 970.3,
+            "pnl": -29.7,
+            "hit": false,
+            "trades": 21,
+            "winners": 5,
+            "dd": 116.76,
+            "pf": 0.772,
+            "expectancy": -1.4142,
+            "reasons": {
+              "basabas": 7,
+              "stop": 9,
+              "hedef": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 906.74,
+            "pnl": -93.26,
+            "hit": false,
+            "trades": 18,
+            "winners": 3,
+            "dd": 104.68,
+            "pf": 0.377,
+            "expectancy": -5.1811,
+            "reasons": {
+              "stop": 10,
+              "basabas": 5,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 832.08,
+            "pnl": -167.92,
+            "hit": false,
+            "trades": 20,
+            "winners": 2,
+            "dd": 176.38,
+            "pf": 0.196,
+            "expectancy": -8.396,
+            "reasons": {
+              "stop": 14,
+              "basabas": 4,
+              "hedef": 1,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 865.61,
+            "pnl": -134.39,
+            "hit": false,
+            "trades": 23,
+            "winners": 2,
+            "dd": 140.27,
+            "pf": 0.243,
+            "expectancy": -5.8428,
+            "reasons": {
+              "stop": 13,
+              "basabas": 8,
+              "hedef": 2
+            }
+          }
+        ]
+      },
+      "wt10_15": {
+        "weeks": 4,
+        "sum_pnl": -67.19,
+        "min_friday": 964.27,
+        "hits": 0,
+        "trades": 12,
+        "winners": 1,
+        "win_rate": 0.083,
+        "max_week_dd": 39.39,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 974.54,
+            "pnl": -25.46,
+            "hit": false,
+            "trades": 4,
+            "winners": 0,
+            "dd": 25.46,
+            "pf": 0.0,
+            "expectancy": -6.3644,
+            "reasons": {
+              "stop": 2,
+              "basabas": 2
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1024.01,
+            "pnl": 24.01,
+            "hit": false,
+            "trades": 3,
+            "winners": 1,
+            "dd": 10.28,
+            "pf": null,
+            "expectancy": 8.0048,
+            "reasons": {
+              "basabas": 2,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 969.99,
+            "pnl": -30.01,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 30.23,
+            "pf": 0.0,
+            "expectancy": -15.004,
+            "reasons": {
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 964.27,
+            "pnl": -35.73,
+            "hit": false,
+            "trades": 3,
+            "winners": 0,
+            "dd": 39.39,
+            "pf": 0.0,
+            "expectancy": -11.911,
+            "reasons": {
+              "stop": 2,
+              "basabas": 1
+            }
+          }
+        ]
+      },
+      "wt7_15": {
+        "weeks": 4,
+        "sum_pnl": -287.11,
+        "min_friday": 852.85,
+        "hits": 0,
+        "trades": 81,
+        "winners": 13,
+        "win_rate": 0.16,
+        "max_week_dd": 163.55,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 1057.14,
+            "pnl": 57.14,
+            "hit": false,
+            "trades": 22,
+            "winners": 7,
+            "dd": 95.76,
+            "pf": 1.37,
+            "expectancy": 2.5974,
+            "reasons": {
+              "stop": 10,
+              "hedef": 6,
+              "basabas": 5,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 852.85,
+            "pnl": -147.15,
+            "hit": false,
+            "trades": 20,
+            "winners": 3,
+            "dd": 163.55,
+            "pf": 0.243,
+            "expectancy": -7.3573,
+            "reasons": {
+              "stop": 13,
+              "basabas": 4,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 913.99,
+            "pnl": -86.01,
+            "hit": false,
+            "trades": 16,
+            "winners": 2,
+            "dd": 113.17,
+            "pf": 0.365,
+            "expectancy": -5.3756,
+            "reasons": {
+              "stop": 8,
+              "basabas": 5,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 888.91,
+            "pnl": -111.09,
+            "hit": false,
+            "trades": 23,
+            "winners": 1,
+            "dd": 119.02,
+            "pf": 0.201,
+            "expectancy": -4.8302,
+            "reasons": {
+              "basabas": 11,
+              "stop": 10,
+              "hedef": 1,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15_wt10": {
+        "weeks": 4,
+        "sum_pnl": -400.43,
+        "min_friday": 846.29,
+        "hits": 0,
+        "trades": 76,
+        "winners": 12,
+        "win_rate": 0.158,
+        "max_week_dd": 162.17,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 945.51,
+            "pnl": -54.49,
+            "hit": false,
+            "trades": 19,
+            "winners": 4,
+            "dd": 116.76,
+            "pf": 0.542,
+            "expectancy": -2.868,
+            "reasons": {
+              "basabas": 7,
+              "stop": 8,
+              "hedef": 3,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 906.83,
+            "pnl": -93.17,
+            "hit": false,
+            "trades": 18,
+            "winners": 3,
+            "dd": 104.59,
+            "pf": 0.377,
+            "expectancy": -5.1762,
+            "reasons": {
+              "stop": 10,
+              "basabas": 5,
+              "hedef": 2,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 846.29,
+            "pnl": -153.71,
+            "hit": false,
+            "trades": 19,
+            "winners": 2,
+            "dd": 162.17,
+            "pf": 0.21,
+            "expectancy": -8.09,
+            "reasons": {
+              "stop": 13,
+              "basabas": 4,
+              "hedef": 1,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 900.94,
+            "pnl": -99.06,
+            "hit": false,
+            "trades": 20,
+            "winners": 3,
+            "dd": 104.94,
+            "pf": 0.4,
+            "expectancy": -4.9532,
+            "reasons": {
+              "stop": 11,
+              "basabas": 6,
+              "hedef": 3
+            }
+          }
+        ]
+      },
+      "zl15_h1": {
+        "weeks": 4,
+        "sum_pnl": -110.08,
+        "min_friday": 945.14,
+        "hits": 0,
+        "trades": 33,
+        "winners": 5,
+        "win_rate": 0.152,
+        "max_week_dd": 72.53,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 969.43,
+            "pnl": -30.57,
+            "hit": false,
+            "trades": 4,
+            "winners": 0,
+            "dd": 47.19,
+            "pf": 0.0,
+            "expectancy": -7.6435,
+            "reasons": {
+              "basabas": 2,
+              "stop": 2
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1018.07,
+            "pnl": 18.07,
+            "hit": false,
+            "trades": 6,
+            "winners": 2,
+            "dd": 44.92,
+            "pf": 1.421,
+            "expectancy": 3.0115,
+            "reasons": {
+              "stop": 3,
+              "hedef": 2,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 945.14,
+            "pnl": -54.86,
+            "hit": false,
+            "trades": 10,
+            "winners": 1,
+            "dd": 66.3,
+            "pf": 0.372,
+            "expectancy": -5.4855,
+            "reasons": {
+              "basabas": 3,
+              "stop": 6,
+              "hedef": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 957.28,
+            "pnl": -42.72,
+            "hit": false,
+            "trades": 13,
+            "winners": 2,
+            "dd": 72.53,
+            "pf": 0.498,
+            "expectancy": -3.2859,
+            "reasons": {
+              "stop": 5,
+              "basabas": 6,
+              "hedef": 2
+            }
+          }
+        ]
+      },
+      "mtf_ikisi": {
+        "weeks": 4,
+        "sum_pnl": -93.42,
+        "min_friday": 931.7,
+        "hits": 0,
+        "trades": 20,
+        "winners": 3,
+        "win_rate": 0.15,
+        "max_week_dd": 73.88,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 981.62,
+            "pnl": -18.38,
+            "hit": false,
+            "trades": 2,
+            "winners": 0,
+            "dd": 35.0,
+            "pf": 0.0,
+            "expectancy": -9.192,
+            "reasons": {
+              "basabas": 1,
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1000.58,
+            "pnl": 0.58,
+            "hit": false,
+            "trades": 4,
+            "winners": 1,
+            "dd": 29.96,
+            "pf": 1.021,
+            "expectancy": 0.1452,
+            "reasons": {
+              "stop": 2,
+              "hedef": 1,
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 931.7,
+            "pnl": -68.3,
+            "hit": false,
+            "trades": 5,
+            "winners": 0,
+            "dd": 73.88,
+            "pf": 0.0,
+            "expectancy": -13.6595,
+            "reasons": {
+              "stop": 5
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 992.68,
+            "pnl": -7.32,
+            "hit": false,
+            "trades": 9,
+            "winners": 2,
+            "dd": 55.52,
+            "pf": 0.853,
+            "expectancy": -0.813,
+            "reasons": {
+              "stop": 3,
+              "basabas": 4,
+              "hedef": 2
+            }
+          }
+        ]
+      },
+      "oncu_erken": {
+        "weeks": 4,
+        "sum_pnl": 0.0,
+        "min_friday": 1000.0,
+        "hits": 0,
+        "trades": 1,
+        "winners": 0,
+        "win_rate": 0.0,
+        "max_week_dd": 6.85,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 6.85,
+            "pf": null,
+            "expectancy": 0.0,
+            "reasons": {
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          }
+        ]
+      }
+    },
+    "BTCUSD": {
+      "baseline_macd15": {
+        "weeks": 4,
+        "sum_pnl": -720.09,
+        "min_friday": 800.16,
+        "hits": 0,
+        "trades": 122,
+        "winners": 17,
+        "win_rate": 0.139,
+        "max_week_dd": 246.32,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 800.16,
+            "pnl": -199.84,
+            "hit": false,
+            "trades": 35,
+            "winners": 6,
+            "dd": 246.32,
+            "pf": 0.467,
+            "expectancy": -5.7098,
+            "reasons": {
+              "stop": 22,
+              "hedef": 5,
+              "basabas": 7,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 813.57,
+            "pnl": -186.43,
+            "hit": false,
+            "trades": 32,
+            "winners": 5,
+            "dd": 233.69,
+            "pf": 0.478,
+            "expectancy": -5.826,
+            "reasons": {
+              "hedef": 5,
+              "stop": 21,
+              "basabas": 6
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 852.7,
+            "pnl": -147.3,
+            "hit": false,
+            "trades": 34,
+            "winners": 5,
+            "dd": 172.26,
+            "pf": 0.492,
+            "expectancy": -4.3323,
+            "reasons": {
+              "stop": 17,
+              "hedef": 4,
+              "basabas": 12,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 813.48,
+            "pnl": -186.52,
+            "hit": false,
+            "trades": 21,
+            "winners": 1,
+            "dd": 190.8,
+            "pf": 0.159,
+            "expectancy": -8.8818,
+            "reasons": {
+              "stop": 13,
+              "basabas": 7,
+              "hedef": 1
+            }
+          }
+        ]
+      },
+      "zl15": {
+        "weeks": 4,
+        "sum_pnl": -593.59,
+        "min_friday": 706.84,
+        "hits": 0,
+        "trades": 133,
+        "winners": 21,
+        "win_rate": 0.158,
+        "max_week_dd": 292.69,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 919.28,
+            "pnl": -80.72,
+            "hit": false,
+            "trades": 29,
+            "winners": 6,
+            "dd": 166.13,
+            "pf": 0.711,
+            "expectancy": -2.7835,
+            "reasons": {
+              "hedef": 6,
+              "stop": 16,
+              "basabas": 7
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1012.55,
+            "pnl": 12.55,
+            "hit": false,
+            "trades": 30,
+            "winners": 9,
+            "dd": 95.61,
+            "pf": 1.046,
+            "expectancy": 0.4185,
+            "reasons": {
+              "stop": 15,
+              "basabas": 6,
+              "hedef": 8,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 767.74,
+            "pnl": -232.26,
+            "hit": false,
+            "trades": 38,
+            "winners": 3,
+            "dd": 240.95,
+            "pf": 0.27,
+            "expectancy": -6.1121,
+            "reasons": {
+              "stop": 20,
+              "basabas": 15,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 706.84,
+            "pnl": -293.16,
+            "hit": false,
+            "trades": 36,
+            "winners": 3,
+            "dd": 292.69,
+            "pf": 0.261,
+            "expectancy": -8.1434,
+            "reasons": {
+              "stop": 24,
+              "basabas": 8,
+              "hedef": 3,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "wt10_15": {
+        "weeks": 4,
+        "sum_pnl": -10.57,
+        "min_friday": 963.23,
+        "hits": 0,
+        "trades": 15,
+        "winners": 3,
+        "win_rate": 0.2,
+        "max_week_dd": 44.24,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 991.86,
+            "pnl": -8.14,
+            "hit": false,
+            "trades": 5,
+            "winners": 1,
+            "dd": 26.65,
+            "pf": 0.788,
+            "expectancy": -1.6281,
+            "reasons": {
+              "stop": 2,
+              "hedef": 1,
+              "basabas": 2
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1054.12,
+            "pnl": 54.12,
+            "hit": false,
+            "trades": 5,
+            "winners": 2,
+            "dd": 43.16,
+            "pf": 3.593,
+            "expectancy": 10.825,
+            "reasons": {
+              "hedef": 2,
+              "basabas": 2,
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 980.22,
+            "pnl": -19.78,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 19.78,
+            "pf": 0.0,
+            "expectancy": -19.7816,
+            "reasons": {
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 963.23,
+            "pnl": -36.77,
+            "hit": false,
+            "trades": 4,
+            "winners": 0,
+            "dd": 44.24,
+            "pf": 0.0,
+            "expectancy": -9.1929,
+            "reasons": {
+              "stop": 2,
+              "basabas": 2
+            }
+          }
+        ]
+      },
+      "wt7_15": {
+        "weeks": 4,
+        "sum_pnl": -183.05,
+        "min_friday": 839.28,
+        "hits": 0,
+        "trades": 121,
+        "winners": 24,
+        "win_rate": 0.198,
+        "max_week_dd": 200.45,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 955.44,
+            "pnl": -44.56,
+            "hit": false,
+            "trades": 31,
+            "winners": 7,
+            "dd": 144.64,
+            "pf": 0.852,
+            "expectancy": -1.4374,
+            "reasons": {
+              "stop": 16,
+              "hedef": 7,
+              "basabas": 8
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 839.28,
+            "pnl": -160.72,
+            "hit": false,
+            "trades": 33,
+            "winners": 5,
+            "dd": 200.45,
+            "pf": 0.468,
+            "expectancy": -4.8704,
+            "reasons": {
+              "basabas": 10,
+              "stop": 18,
+              "hedef": 4,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 1148.54,
+            "pnl": 148.54,
+            "hit": false,
+            "trades": 31,
+            "winners": 9,
+            "dd": 78.08,
+            "pf": 1.707,
+            "expectancy": 4.7917,
+            "reasons": {
+              "basabas": 11,
+              "hedef": 9,
+              "stop": 10,
+              "pencere": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 873.69,
+            "pnl": -126.31,
+            "hit": false,
+            "trades": 26,
+            "winners": 3,
+            "dd": 145.94,
+            "pf": 0.462,
+            "expectancy": -4.8582,
+            "reasons": {
+              "stop": 13,
+              "basabas": 9,
+              "hedef": 3,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15_wt10": {
+        "weeks": 4,
+        "sum_pnl": -472.57,
+        "min_friday": 763.74,
+        "hits": 0,
+        "trades": 114,
+        "winners": 20,
+        "win_rate": 0.175,
+        "max_week_dd": 247.73,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 982.64,
+            "pnl": -17.36,
+            "hit": false,
+            "trades": 26,
+            "winners": 7,
+            "dd": 133.57,
+            "pf": 0.931,
+            "expectancy": -0.6678,
+            "reasons": {
+              "hedef": 7,
+              "stop": 14,
+              "basabas": 5
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 993.26,
+            "pnl": -6.74,
+            "hit": false,
+            "trades": 27,
+            "winners": 7,
+            "dd": 86.81,
+            "pf": 0.973,
+            "expectancy": -0.2496,
+            "reasons": {
+              "stop": 14,
+              "basabas": 6,
+              "hedef": 7
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 787.79,
+            "pnl": -212.21,
+            "hit": false,
+            "trades": 33,
+            "winners": 3,
+            "dd": 214.21,
+            "pf": 0.303,
+            "expectancy": -6.4305,
+            "reasons": {
+              "stop": 19,
+              "basabas": 11,
+              "hedef": 3
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 763.74,
+            "pnl": -236.26,
+            "hit": false,
+            "trades": 28,
+            "winners": 3,
+            "dd": 247.73,
+            "pf": 0.244,
+            "expectancy": -8.4379,
+            "reasons": {
+              "stop": 19,
+              "hedef": 2,
+              "basabas": 6,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "zl15_h1": {
+        "weeks": 4,
+        "sum_pnl": -111.65,
+        "min_friday": 895.21,
+        "hits": 0,
+        "trades": 48,
+        "winners": 11,
+        "win_rate": 0.229,
+        "max_week_dd": 134.77,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 987.32,
+            "pnl": -12.68,
+            "hit": false,
+            "trades": 12,
+            "winners": 4,
+            "dd": 125.4,
+            "pf": 0.914,
+            "expectancy": -1.0569,
+            "reasons": {
+              "hedef": 4,
+              "stop": 8
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1051.75,
+            "pnl": 51.75,
+            "hit": false,
+            "trades": 9,
+            "winners": 4,
+            "dd": 46.38,
+            "pf": 1.556,
+            "expectancy": 5.7498,
+            "reasons": {
+              "stop": 5,
+              "hedef": 4
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 895.21,
+            "pnl": -104.79,
+            "hit": false,
+            "trades": 11,
+            "winners": 0,
+            "dd": 104.79,
+            "pf": 0.0,
+            "expectancy": -9.5262,
+            "reasons": {
+              "stop": 6,
+              "basabas": 5
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 954.07,
+            "pnl": -45.93,
+            "hit": false,
+            "trades": 16,
+            "winners": 3,
+            "dd": 134.77,
+            "pf": 0.646,
+            "expectancy": -2.8709,
+            "reasons": {
+              "stop": 7,
+              "basabas": 6,
+              "hedef": 2,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "mtf_ikisi": {
+        "weeks": 4,
+        "sum_pnl": -2.66,
+        "min_friday": 940.13,
+        "hits": 0,
+        "trades": 16,
+        "winners": 5,
+        "win_rate": 0.312,
+        "max_week_dd": 77.12,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 1016.01,
+            "pnl": 16.01,
+            "hit": false,
+            "trades": 5,
+            "winners": 2,
+            "dd": 46.98,
+            "pf": 1.303,
+            "expectancy": 3.2029,
+            "reasons": {
+              "stop": 3,
+              "hedef": 2
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1058.82,
+            "pnl": 58.82,
+            "hit": false,
+            "trades": 3,
+            "winners": 2,
+            "dd": 21.96,
+            "pf": 4.221,
+            "expectancy": 19.6072,
+            "reasons": {
+              "stop": 1,
+              "hedef": 2
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 982.38,
+            "pnl": -17.62,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 25.83,
+            "pf": 0.0,
+            "expectancy": -17.6246,
+            "reasons": {
+              "stop": 1
+            }
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 940.13,
+            "pnl": -59.87,
+            "hit": false,
+            "trades": 7,
+            "winners": 1,
+            "dd": 77.12,
+            "pf": 0.169,
+            "expectancy": -8.5527,
+            "reasons": {
+              "stop": 4,
+              "basabas": 2,
+              "pencere": 1
+            }
+          }
+        ]
+      },
+      "oncu_erken": {
+        "weeks": 4,
+        "sum_pnl": 0.0,
+        "min_friday": 1000.0,
+        "hits": 0,
+        "trades": 3,
+        "winners": 0,
+        "win_rate": 0.0,
+        "max_week_dd": 22.28,
+        "weeks_detail": [
+          {
+            "week": "2026-09-28",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 10.05,
+            "pf": null,
+            "expectancy": 0.0,
+            "reasons": {
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-10-05",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 22.28,
+            "pf": null,
+            "expectancy": 0.0,
+            "reasons": {
+              "basabas": 1
+            }
+          },
+          {
+            "week": "2026-10-12",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 0,
+            "winners": 0,
+            "dd": 0.0,
+            "pf": null,
+            "expectancy": null,
+            "reasons": {}
+          },
+          {
+            "week": "2026-10-19",
+            "friday": 1000.0,
+            "pnl": 0.0,
+            "hit": false,
+            "trades": 1,
+            "winners": 0,
+            "dd": 20.32,
+            "pf": null,
+            "expectancy": 0.0,
+            "reasons": {
+              "basabas": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "test_continuous": {
+    "XAUUSD": {
+      "friday": 899.12,
+      "pnl": -100.88,
+      "trades": 33,
+      "winners": 5,
+      "dd": 150.63,
+      "pf": 0.574,
+      "expectancy": -3.057,
+      "reasons": {
+        "basabas": 12,
+        "stop": 16,
+        "hedef": 5
+      },
+      "win_rate": 0.152,
+      "regimes": {
+        "trend": {
+          "trades": 16,
+          "pnl": -15.67,
+          "winners": 3
+        },
+        "testere": {
+          "trades": 10,
+          "pnl": -40.44,
+          "winners": 1
+        },
+        "ara": {
+          "trades": 7,
+          "pnl": -44.77,
+          "winners": 1
+        }
+      },
+      "trades_detail": [
+        {
+          "side": "sat",
+          "entry_t": 1790579700,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 76.95,
+          "regime": "trend",
+          "cash_before": 1000.0
+        },
+        {
+          "side": "al",
+          "entry_t": 1790604000,
+          "pnl": -12.19,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 43.41,
+          "regime": "trend",
+          "cash_before": 1000.0
+        },
+        {
+          "side": "al",
+          "entry_t": 1790676900,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 14.61,
+          "regime": "testere",
+          "cash_before": 987.81
+        },
+        {
+          "side": "al",
+          "entry_t": 1790691300,
+          "pnl": -18.3839,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 25.08,
+          "regime": "trend",
+          "cash_before": 987.81
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791216900,
+          "pnl": -10.4567,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 26.35,
+          "regime": "trend",
+          "cash_before": 969.43
+        },
+        {
+          "side": "al",
+          "entry_t": 1791287100,
+          "pnl": -14.9656,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 30.64,
+          "regime": "trend",
+          "cash_before": 958.97
+        },
+        {
+          "side": "al",
+          "entry_t": 1791301500,
+          "pnl": -17.4902,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 23.01,
+          "regime": "ara",
+          "cash_before": 944.0
+        },
+        {
+          "side": "al",
+          "entry_t": 1791307800,
+          "pnl": 32.4536,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 15.86,
+          "regime": "testere",
+          "cash_before": 926.51
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791364500,
+          "pnl": 28.5279,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 41.4,
+          "regime": "trend",
+          "cash_before": 958.97
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791376200,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 48.23,
+          "regime": "trend",
+          "cash_before": 987.5
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791808200,
+          "pnl": -0.0,
+          "reason": "basabas",
+          "r": -0.0,
+          "adx": 30.87,
+          "regime": "trend",
+          "cash_before": 987.5
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791817200,
+          "pnl": -14.6574,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 31.43,
+          "regime": "trend",
+          "cash_before": 987.5
+        },
+        {
+          "side": "al",
+          "entry_t": 1791837000,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 25.39,
+          "regime": "trend",
+          "cash_before": 972.84
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791897300,
+          "pnl": -14.1103,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 13.31,
+          "regime": "testere",
+          "cash_before": 972.84
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791899100,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 12.38,
+          "regime": "testere",
+          "cash_before": 958.73
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791910800,
+          "pnl": -15.0529,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 23.45,
+          "regime": "ara",
+          "cash_before": 958.73
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791967500,
+          "pnl": -16.8989,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 18.16,
+          "regime": "testere",
+          "cash_before": 943.67
+        },
+        {
+          "side": "al",
+          "entry_t": 1792050300,
+          "pnl": 32.4838,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 23.84,
+          "regime": "ara",
+          "cash_before": 926.78
+        },
+        {
+          "side": "al",
+          "entry_t": 1792071000,
+          "pnl": -10.7526,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 21.88,
+          "regime": "ara",
+          "cash_before": 959.26
+        },
+        {
+          "side": "al",
+          "entry_t": 1792142100,
+          "pnl": -15.867,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 28.39,
+          "regime": "trend",
+          "cash_before": 948.51
+        },
+        {
+          "side": "al",
+          "entry_t": 1792394100,
+          "pnl": -17.3448,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 11.44,
+          "regime": "testere",
+          "cash_before": 932.64
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792414800,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 22.62,
+          "regime": "ara",
+          "cash_before": 915.29
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792417500,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 27.04,
+          "regime": "trend",
+          "cash_before": 915.29
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792441800,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 37.0,
+          "regime": "trend",
+          "cash_before": 915.29
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792490400,
+          "pnl": -16.9525,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 24.06,
+          "regime": "ara",
+          "cash_before": 915.29
+        },
+        {
+          "side": "al",
+          "entry_t": 1792579500,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 15.95,
+          "regime": "testere",
+          "cash_before": 898.34
+        },
+        {
+          "side": "al",
+          "entry_t": 1792604700,
+          "pnl": -15.3463,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 16.7,
+          "regime": "testere",
+          "cash_before": 898.34
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792609200,
+          "pnl": -17.0109,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 21.44,
+          "regime": "ara",
+          "cash_before": 883.0
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792666800,
+          "pnl": 19.3563,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 37.59,
+          "regime": "trend",
+          "cash_before": 865.99
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792676700,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 31.46,
+          "regime": "trend",
+          "cash_before": 885.34
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792687500,
+          "pnl": 22.9704,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 31.94,
+          "regime": "trend",
+          "cash_before": 885.34
+        },
+        {
+          "side": "al",
+          "entry_t": 1792741500,
+          "pnl": -9.1943,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 17.64,
+          "regime": "testere",
+          "cash_before": 908.31
+        },
+        {
+          "side": "al",
+          "entry_t": 1792745100,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 15.26,
+          "regime": "testere",
+          "cash_before": 899.12
+        }
+      ]
+    },
+    "BTCUSD": {
+      "friday": 869.63,
+      "pnl": -130.37,
+      "trades": 57,
+      "winners": 12,
+      "dd": 176.3,
+      "pf": 0.748,
+      "expectancy": -2.2872,
+      "reasons": {
+        "hedef": 11,
+        "stop": 29,
+        "basabas": 16,
+        "pencere": 1
+      },
+      "win_rate": 0.211,
+      "regimes": {
+        "testere": {
+          "trades": 29,
+          "pnl": -9.64,
+          "winners": 7
+        },
+        "trend": {
+          "trades": 20,
+          "pnl": -62.65,
+          "winners": 4
+        },
+        "ara": {
+          "trades": 8,
+          "pnl": -58.05,
+          "winners": 1
+        }
+      },
+      "trades_detail": [
+        {
+          "side": "sat",
+          "entry_t": 1790557200,
+          "pnl": 33.7868,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 18.02,
+          "regime": "testere",
+          "cash_before": 1000.0
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790589600,
+          "pnl": -20.4223,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 51.41,
+          "regime": "trend",
+          "cash_before": 1033.79
+        },
+        {
+          "side": "al",
+          "entry_t": 1790613000,
+          "pnl": -17.2868,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 24.91,
+          "regime": "ara",
+          "cash_before": 1013.36
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790744400,
+          "pnl": -18.222,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 11.31,
+          "regime": "testere",
+          "cash_before": 996.08
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790749800,
+          "pnl": -19.1889,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 13.77,
+          "regime": "testere",
+          "cash_before": 977.86
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790757900,
+          "pnl": -18.7199,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 14.7,
+          "regime": "testere",
+          "cash_before": 958.67
+        },
+        {
+          "side": "al",
+          "entry_t": 1790772300,
+          "pnl": 33.8039,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 28.77,
+          "regime": "trend",
+          "cash_before": 939.95
+        },
+        {
+          "side": "al",
+          "entry_t": 1790786700,
+          "pnl": -18.3404,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 19.35,
+          "regime": "testere",
+          "cash_before": 973.75
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790814600,
+          "pnl": -18.3834,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 21.72,
+          "regime": "ara",
+          "cash_before": 955.41
+        },
+        {
+          "side": "al",
+          "entry_t": 1790865000,
+          "pnl": -17.0032,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 15.84,
+          "regime": "testere",
+          "cash_before": 937.03
+        },
+        {
+          "side": "al",
+          "entry_t": 1790907300,
+          "pnl": 35.0592,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 19.29,
+          "regime": "testere",
+          "cash_before": 920.02
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790950500,
+          "pnl": 32.2338,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 38.71,
+          "regime": "trend",
+          "cash_before": 955.08
+        },
+        {
+          "side": "sat",
+          "entry_t": 1790993700,
+          "pnl": -19.0822,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 25.02,
+          "regime": "trend",
+          "cash_before": 987.32
+        },
+        {
+          "side": "al",
+          "entry_t": 1791049500,
+          "pnl": -18.6476,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 21.62,
+          "regime": "ara",
+          "cash_before": 968.23
+        },
+        {
+          "side": "al",
+          "entry_t": 1791091800,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 13.63,
+          "regime": "testere",
+          "cash_before": 949.59
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791192600,
+          "pnl": -18.544,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 26.06,
+          "regime": "trend",
+          "cash_before": 949.59
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791204300,
+          "pnl": -18.461,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 14.19,
+          "regime": "testere",
+          "cash_before": 931.04
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791211500,
+          "pnl": 31.6302,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 15.03,
+          "regime": "testere",
+          "cash_before": 912.58
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791267300,
+          "pnl": -18.2595,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 13.4,
+          "regime": "testere",
+          "cash_before": 944.21
+        },
+        {
+          "side": "al",
+          "entry_t": 1791299700,
+          "pnl": -15.8719,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 22.68,
+          "regime": "ara",
+          "cash_before": 925.95
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791336600,
+          "pnl": 32.9802,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 35.48,
+          "regime": "trend",
+          "cash_before": 910.08
+        },
+        {
+          "side": "al",
+          "entry_t": 1791397800,
+          "pnl": -18.7434,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 43.36,
+          "regime": "trend",
+          "cash_before": 943.06
+        },
+        {
+          "side": "al",
+          "entry_t": 1791514800,
+          "pnl": 36.0911,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 14.18,
+          "regime": "testere",
+          "cash_before": 924.32
+        },
+        {
+          "side": "al",
+          "entry_t": 1791546300,
+          "pnl": 35.9433,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 26.13,
+          "regime": "trend",
+          "cash_before": 960.41
+        },
+        {
+          "side": "al",
+          "entry_t": 1791654300,
+          "pnl": -19.4136,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 35.19,
+          "regime": "trend",
+          "cash_before": 996.35
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791675900,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 21.92,
+          "regime": "ara",
+          "cash_before": 976.94
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791689400,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 25.23,
+          "regime": "trend",
+          "cash_before": 976.94
+        },
+        {
+          "side": "al",
+          "entry_t": 1791733500,
+          "pnl": 37.4399,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 14.19,
+          "regime": "testere",
+          "cash_before": 976.94
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791770400,
+          "pnl": -19.4184,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 19.12,
+          "regime": "testere",
+          "cash_before": 1014.38
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791774900,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 16.62,
+          "regime": "testere",
+          "cash_before": 994.96
+        },
+        {
+          "side": "al",
+          "entry_t": 1791788400,
+          "pnl": -17.6246,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 17.28,
+          "regime": "testere",
+          "cash_before": 994.96
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791809100,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 27.12,
+          "regime": "trend",
+          "cash_before": 977.34
+        },
+        {
+          "side": "sat",
+          "entry_t": 1791981900,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 14.47,
+          "regime": "testere",
+          "cash_before": 977.34
+        },
+        {
+          "side": "al",
+          "entry_t": 1792023300,
+          "pnl": -17.6136,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 29.51,
+          "regime": "trend",
+          "cash_before": 977.34
+        },
+        {
+          "side": "al",
+          "entry_t": 1792026900,
+          "pnl": -16.4794,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 26.8,
+          "regime": "trend",
+          "cash_before": 959.72
+        },
+        {
+          "side": "al",
+          "entry_t": 1792104300,
+          "pnl": -16.7926,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 16.78,
+          "regime": "testere",
+          "cash_before": 943.24
+        },
+        {
+          "side": "al",
+          "entry_t": 1792111500,
+          "pnl": -16.8596,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 12.65,
+          "regime": "testere",
+          "cash_before": 926.45
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792121400,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 10.83,
+          "regime": "testere",
+          "cash_before": 909.59
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792162800,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 14.43,
+          "regime": "testere",
+          "cash_before": 909.59
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792252800,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 15.35,
+          "regime": "testere",
+          "cash_before": 909.59
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792353600,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 37.74,
+          "regime": "trend",
+          "cash_before": 909.59
+        },
+        {
+          "side": "al",
+          "entry_t": 1792402200,
+          "pnl": -15.9507,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 40.53,
+          "regime": "trend",
+          "cash_before": 909.59
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792418400,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 21.64,
+          "regime": "ara",
+          "cash_before": 893.64
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792425600,
+          "pnl": 33.9602,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 19.0,
+          "regime": "testere",
+          "cash_before": 893.64
+        },
+        {
+          "side": "al",
+          "entry_t": 1792503900,
+          "pnl": 32.2478,
+          "reason": "hedef",
+          "r": 2.0,
+          "adx": 13.51,
+          "regime": "testere",
+          "cash_before": 927.6
+        },
+        {
+          "side": "al",
+          "entry_t": 1792530000,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 20.91,
+          "regime": "ara",
+          "cash_before": 959.85
+        },
+        {
+          "side": "al",
+          "entry_t": 1792589400,
+          "pnl": -16.8443,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 41.95,
+          "regime": "trend",
+          "cash_before": 959.85
+        },
+        {
+          "side": "al",
+          "entry_t": 1792591200,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 37.36,
+          "regime": "trend",
+          "cash_before": 943.0
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792633500,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 26.15,
+          "regime": "trend",
+          "cash_before": 943.0
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792659600,
+          "pnl": -17.4704,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 65.71,
+          "regime": "trend",
+          "cash_before": 943.0
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792674900,
+          "pnl": -17.0595,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 53.48,
+          "regime": "trend",
+          "cash_before": 925.53
+        },
+        {
+          "side": "al",
+          "entry_t": 1792717200,
+          "pnl": -16.2951,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 17.34,
+          "regime": "testere",
+          "cash_before": 908.47
+        },
+        {
+          "side": "al",
+          "entry_t": 1792722600,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 14.93,
+          "regime": "testere",
+          "cash_before": 892.18
+        },
+        {
+          "side": "al",
+          "entry_t": 1792756800,
+          "pnl": -17.6645,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 8.24,
+          "regime": "testere",
+          "cash_before": 892.18
+        },
+        {
+          "side": "al",
+          "entry_t": 1792759500,
+          "pnl": 0.0,
+          "reason": "basabas",
+          "r": 0.0,
+          "adx": 9.02,
+          "regime": "testere",
+          "cash_before": 874.51
+        },
+        {
+          "side": "al",
+          "entry_t": 1792767600,
+          "pnl": -17.0231,
+          "reason": "stop",
+          "r": -1.0,
+          "adx": 13.9,
+          "regime": "testere",
+          "cash_before": 874.51
+        },
+        {
+          "side": "sat",
+          "entry_t": 1792780200,
+          "pnl": 12.141,
+          "reason": "pencere",
+          "r": 0.724,
+          "adx": 20.92,
+          "regime": "ara",
+          "cash_before": 857.49
+        }
+      ]
+    }
+  },
+  "stress_double_spread": {
+    "XAUUSD": {
+      "friday": 902.51,
+      "pnl": -97.49,
+      "trades": 33,
+      "winners": 5,
+      "dd": 147.45,
+      "pf": 0.593,
+      "expectancy": -2.9544,
+      "reasons": {
+        "basabas": 12,
+        "stop": 16,
+        "hedef": 5
+      },
+      "win_rate": 0.152,
+      "regimes": {
+        "trend": {
+          "trades": 16,
+          "pnl": -44.8,
+          "winners": 2
+        },
+        "testere": {
+          "trades": 10,
+          "pnl": -7.42,
+          "winners": 2
+        },
+        "ara": {
+          "trades": 7,
+          "pnl": -45.27,
+          "winners": 1
+        }
+      }
+    },
+    "BTCUSD": {
+      "friday": 858.71,
+      "pnl": -141.29,
+      "trades": 57,
+      "winners": 12,
+      "dd": 193.69,
+      "pf": 0.739,
+      "expectancy": -2.4788,
+      "reasons": {
+        "hedef": 11,
+        "stop": 30,
+        "basabas": 15,
+        "pencere": 1
+      },
+      "win_rate": 0.211,
+      "regimes": {
+        "testere": {
+          "trades": 29,
+          "pnl": 1.85,
+          "winners": 7
+        },
+        "trend": {
+          "trades": 20,
+          "pnl": -62.9,
+          "winners": 4
+        },
+        "ara": {
+          "trades": 8,
+          "pnl": -80.22,
+          "winners": 1
+        }
+      }
+    }
+  },
+  "limits": [
+    "Komisyon alani yok, sifir kabul edilmedi.",
+    "Spread anlik snapshot; gecmis spread bilinmiyor.",
+    "Yuksek etkili haber filtresi uygulanmadi.",
+    "Emir defteri ve gercek kayma yok.",
+    "Ayni mumda stop ve hedef birlikteyse stop.",
+    "1R ve basabas ayni mumda birlikteyse basabas."
+  ]
+}

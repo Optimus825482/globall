@@ -1,0 +1,67 @@
+{
+  "symbol": "XAUUSD",
+  "timeframe": "1m",
+  "session_utc": "07-20",
+  "spread": 0.09999999999990905,
+  "spread_source": "tick_ask_bid",
+  "window_start_utc": "2026-08-28 12:29",
+  "last_utc": "2026-10-27 12:29",
+  "calendar_days": 60.0,
+  "target": "hafta ici gunde en az 15 karli kapanis",
+  "strategies": {
+    "burst": {
+      "trades": 2691,
+      "winners": 1204,
+      "win_rate": 0.447,
+      "net": -7768.31,
+      "pf": 0.908,
+      "dd": 8045.29,
+      "expectancy": -2.89,
+      "avg_winners_per_weekday": 28.0,
+      "max_winners_in_one_weekday": 38,
+      "weekdays": 43,
+      "weekdays_with_15_winners": 41,
+      "reasons": {
+        "tp": 1190,
+        "stop": 1480,
+        "time": 21
+      }
+    },
+    "burst_hizli": {
+      "trades": 4386,
+      "winners": 1872,
+      "win_rate": 0.427,
+      "net": -9947.34,
+      "pf": 0.781,
+      "dd": 10809.43,
+      "expectancy": -2.27,
+      "avg_winners_per_weekday": 43.53,
+      "max_winners_in_one_weekday": 87,
+      "weekdays": 43,
+      "weekdays_with_15_winners": 28,
+      "reasons": {
+        "tp": 1872,
+        "stop": 2509,
+        "time": 5
+      }
+    },
+    "bant_donus": {
+      "trades": 1889,
+      "winners": 894,
+      "win_rate": 0.473,
+      "net": -6166.28,
+      "pf": 0.894,
+      "dd": 6243.3,
+      "expectancy": -3.26,
+      "avg_winners_per_weekday": 20.79,
+      "max_winners_in_one_weekday": 30,
+      "weekdays": 43,
+      "weekdays_with_15_winners": 38,
+      "reasons": {
+        "tp": 891,
+        "stop": 993,
+        "time": 5
+      }
+    }
+  }
+}

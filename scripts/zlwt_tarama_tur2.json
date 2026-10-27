@@ -1,0 +1,3243 @@
+{
+  "source": "MetaTrader 5 copy_rates, bid mum",
+  "retrieved_utc": "2026-10-27 19:33:53",
+  "server_offset_s": 10800,
+  "formulas": {
+    "zl_macd": "TV Zero Lag MACD Enhanced 1.2: ZLEMA(12)-ZLEMA(26), sinyal ZLEMA(9) (2*EMA-EMA(EMA)), useEma=true, useOldAlgo=false",
+    "wavetrend": "TV WaveTrend [LazyBear]: hlc3, esa EMA10, d EMA10, ci/(0.015d), wt1 EMA21, wt2 SMA4, bant 60/53",
+    "sources": [
+      "https://www.tradingview.com/script/kfFN7M7u/",
+      "https://www.tradingview.com/script/2KE8wTuF-Indicator-WaveTrend-Oscillator-WT/"
+    ]
+  },
+  "entry_tfs": [
+    "15m",
+    "30m",
+    "1h"
+  ],
+  "htf_of": {
+    "5m": [
+      "30m",
+      "4h"
+    ],
+    "15m": [
+      "1h",
+      "4h"
+    ],
+    "30m": [
+      "4h",
+      "1d"
+    ],
+    "1h": [
+      "4h",
+      "1d"
+    ]
+  },
+  "rules": [
+    "ust1_zl_wt53",
+    "ust1_zl_wt_geri",
+    "ust12_wt_geri"
+  ],
+  "exits": [
+    "2r",
+    "wt_ters"
+  ],
+  "risk": 0.02,
+  "stop_atr": 2.0,
+  "rr_fixed": 1.5,
+  "rr_cap": 3.0,
+  "start_cash": 1000.0,
+  "train_weeks": [
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17",
+    "2026-08-24",
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21"
+  ],
+  "test_weeks": [
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "selection": "Sembol basina: egitim >= 12 islem, en yuksek egitim pnl. Ortak: iki sembol egitim pnl minimumu. Pozitif degilse secim yok.",
+  "config_count_per_symbol": 18,
+  "coverage": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "spread_price": 0.0500000000001819,
+      "spread_source": "tick_ask_bid",
+      "unit": 100.0,
+      "currency_profit": "USD",
+      "bars": {
+        "15m": 9149,
+        "30m": 6502,
+        "1h": 3918,
+        "4h": 1695,
+        "1d": 423
+      },
+      "first_utc": {
+        "15m": "2026-06-09 19:45",
+        "30m": "2026-04-10 20:00",
+        "1h": "2026-03-01 22:00",
+        "4h": "2025-09-22 21:00",
+        "1d": "2025-03-06 21:00"
+      },
+      "gaps_15m": {
+        "bars": 9149,
+        "first_utc": "2026-06-09 19:45",
+        "last_utc": "2026-10-27 19:15",
+        "gap_count": 102,
+        "longest_gap_hours": 53.25,
+        "missing_slots_incl_weekends": 4290
+      },
+      "signal_counts": {
+        "15m": {
+          "ust1_zl_wt53": 43,
+          "ust1_zl_wt_geri": 268,
+          "ust12_wt_geri": 49
+        },
+        "30m": {
+          "ust1_zl_wt53": 24,
+          "ust1_zl_wt_geri": 201,
+          "ust12_wt_geri": 75
+        },
+        "1h": {
+          "ust1_zl_wt53": 19,
+          "ust1_zl_wt_geri": 107,
+          "ust12_wt_geri": 33
+        }
+      }
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "spread_price": 5.0,
+      "spread_source": "tick_ask_bid",
+      "unit": 1.0,
+      "currency_profit": "USD",
+      "bars": {
+        "15m": 13312,
+        "30m": 9537,
+        "1h": 5742,
+        "4h": 2398,
+        "1d": 599
+      },
+      "first_utc": {
+        "15m": "2026-06-09 19:45",
+        "30m": "2026-04-10 20:00",
+        "1h": "2026-03-01 20:00",
+        "4h": "2025-09-22 21:00",
+        "1d": "2025-03-06 21:00"
+      },
+      "gaps_15m": {
+        "bars": 13312,
+        "first_utc": "2026-06-09 19:45",
+        "last_utc": "2026-10-27 19:15",
+        "gap_count": 25,
+        "longest_gap_hours": 5.25,
+        "missing_slots_incl_weekends": 127
+      },
+      "signal_counts": {
+        "15m": {
+          "ust1_zl_wt53": 46,
+          "ust1_zl_wt_geri": 381,
+          "ust12_wt_geri": 71
+        },
+        "30m": {
+          "ust1_zl_wt53": 39,
+          "ust1_zl_wt_geri": 314,
+          "ust12_wt_geri": 144
+        },
+        "1h": {
+          "ust1_zl_wt53": 31,
+          "ust1_zl_wt_geri": 165,
+          "ust12_wt_geri": 66
+        }
+      }
+    }
+  },
+  "now_scan": {
+    "XAUUSD": {
+      "15m": {
+        "bar_open_utc": "2026-10-27 19:15",
+        "close": 4061.06,
+        "zl": -3.03349,
+        "zl_sig": -3.59843,
+        "zl_yon": "yukari",
+        "zl_kesim_bu_bar": null,
+        "wt1": 34.0,
+        "wt2": 32.19,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": "al"
+      },
+      "30m": {
+        "bar_open_utc": "2026-10-27 19:00",
+        "close": 4061.06,
+        "zl": 9.35296,
+        "zl_sig": 13.10163,
+        "zl_yon": "asagi",
+        "zl_kesim_bu_bar": null,
+        "wt1": 47.04,
+        "wt2": 49.13,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "1h": {
+        "bar_open_utc": "2026-10-27 18:00",
+        "close": 4056.64,
+        "zl": 17.6813,
+        "zl_sig": 16.74463,
+        "zl_yon": "yukari",
+        "zl_kesim_bu_bar": null,
+        "wt1": 41.55,
+        "wt2": 36.35,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "4h": {
+        "bar_open_utc": "2026-10-27 13:00",
+        "close": 4059.14,
+        "zl": 12.38067,
+        "zl_sig": 6.46649,
+        "zl_yon": "yukari",
+        "zl_kesim_bu_bar": null,
+        "wt1": -26.28,
+        "wt2": -40.37,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "1d": {
+        "bar_open_utc": "2026-10-25 21:00",
+        "close": 4016.91,
+        "zl": -32.83839,
+        "zl_sig": -18.39256,
+        "zl_yon": "asagi",
+        "zl_kesim_bu_bar": null,
+        "wt1": -64.51,
+        "wt2": -54.32,
+        "wt_bolge": "asiri_satim",
+        "wt_kesim_bu_bar": null
+      }
+    },
+    "BTCUSD": {
+      "15m": {
+        "bar_open_utc": "2026-10-27 19:15",
+        "close": 80544.35,
+        "zl": -9.22353,
+        "zl_sig": -1.04998,
+        "zl_yon": "asagi",
+        "zl_kesim_bu_bar": null,
+        "wt1": 47.23,
+        "wt2": 48.15,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "30m": {
+        "bar_open_utc": "2026-10-27 19:00",
+        "close": 80544.35,
+        "zl": 173.63699,
+        "zl_sig": 222.1511,
+        "zl_yon": "asagi",
+        "zl_kesim_bu_bar": null,
+        "wt1": 51.81,
+        "wt2": 52.3,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "1h": {
+        "bar_open_utc": "2026-10-27 18:00",
+        "close": 80514.82,
+        "zl": 277.28964,
+        "zl_sig": 257.25506,
+        "zl_yon": "yukari",
+        "zl_kesim_bu_bar": null,
+        "wt1": 36.4,
+        "wt2": 28.25,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "4h": {
+        "bar_open_utc": "2026-10-27 13:00",
+        "close": 80542.77,
+        "zl": 99.50313,
+        "zl_sig": 17.28095,
+        "zl_yon": "yukari",
+        "zl_kesim_bu_bar": null,
+        "wt1": -36.47,
+        "wt2": -45.32,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      },
+      "1d": {
+        "bar_open_utc": "2026-10-25 21:00",
+        "close": 79736.82,
+        "zl": -1527.45306,
+        "zl_sig": -1434.95375,
+        "zl_yon": "asagi",
+        "zl_kesim_bu_bar": null,
+        "wt1": -37.04,
+        "wt2": -28.14,
+        "wt_bolge": "orta",
+        "wt_kesim_bu_bar": null
+      }
+    }
+  },
+  "leaderboard": {
+    "XAUUSD": [
+      {
+        "config": "15m|ust1_zl_wt_geri|2r",
+        "train_pnl": 8.54,
+        "train_trades": 32,
+        "train_win": 0.344,
+        "test_pnl": -113.06,
+        "test_trades": 28,
+        "test_win": 0.214
+      },
+      {
+        "config": "15m|ust1_zl_wt_geri|wt_ters",
+        "train_pnl": -165.63,
+        "train_trades": 36,
+        "train_win": 0.167,
+        "test_pnl": -120.34,
+        "test_trades": 35,
+        "test_win": 0.2
+      }
+    ],
+    "XAUUSD_ozet": {
+      "egitim_pozitif_config": 1,
+      "toplam_config": 2,
+      "ilk10_testte_pozitif": 0
+    },
+    "BTCUSD": [
+      {
+        "config": "15m|ust1_zl_wt_geri|wt_ters",
+        "train_pnl": 108.87,
+        "train_trades": 89,
+        "train_win": 0.326,
+        "test_pnl": -64.67,
+        "test_trades": 58,
+        "test_win": 0.362
+      },
+      {
+        "config": "30m|ust12_wt_geri|2r",
+        "train_pnl": 78.58,
+        "train_trades": 17,
+        "train_win": 0.412,
+        "test_pnl": -105.67,
+        "test_trades": 17,
+        "test_win": 0.235
+      },
+      {
+        "config": "30m|ust12_wt_geri|wt_ters",
+        "train_pnl": 70.87,
+        "train_trades": 21,
+        "train_win": 0.333,
+        "test_pnl": -40.06,
+        "test_trades": 20,
+        "test_win": 0.25
+      },
+      {
+        "config": "15m|ust1_zl_wt_geri|2r",
+        "train_pnl": 55.58,
+        "train_trades": 64,
+        "train_win": 0.344,
+        "test_pnl": -132.72,
+        "test_trades": 41,
+        "test_win": 0.268
+      },
+      {
+        "config": "15m|ust12_wt_geri|wt_ters",
+        "train_pnl": 6.72,
+        "train_trades": 17,
+        "train_win": 0.235,
+        "test_pnl": -42.23,
+        "test_trades": 7,
+        "test_win": 0.429
+      },
+      {
+        "config": "15m|ust12_wt_geri|2r",
+        "train_pnl": -30.91,
+        "train_trades": 14,
+        "train_win": 0.286,
+        "test_pnl": -13.75,
+        "test_trades": 7,
+        "test_win": 0.286
+      },
+      {
+        "config": "1h|ust1_zl_wt_geri|wt_ters",
+        "train_pnl": -40.06,
+        "train_trades": 19,
+        "train_win": 0.316,
+        "test_pnl": -3.07,
+        "test_trades": 9,
+        "test_win": 0.222
+      },
+      {
+        "config": "1h|ust1_zl_wt_geri|2r",
+        "train_pnl": -61.38,
+        "train_trades": 16,
+        "train_win": 0.25,
+        "test_pnl": 39.75,
+        "test_trades": 8,
+        "test_win": 0.5
+      },
+      {
+        "config": "30m|ust1_zl_wt_geri|2r",
+        "train_pnl": -81.42,
+        "train_trades": 38,
+        "train_win": 0.263,
+        "test_pnl": -159.68,
+        "test_trades": 21,
+        "test_win": 0.238
+      },
+      {
+        "config": "30m|ust1_zl_wt_geri|wt_ters",
+        "train_pnl": -91.08,
+        "train_trades": 56,
+        "train_win": 0.286,
+        "test_pnl": -99.14,
+        "test_trades": 30,
+        "test_win": 0.2
+      }
+    ],
+    "BTCUSD_ozet": {
+      "egitim_pozitif_config": 5,
+      "toplam_config": 10,
+      "ilk10_testte_pozitif": 1
+    }
+  },
+  "per_symbol": {
+    "XAUUSD": {
+      "picked": {
+        "name": "15m|ust1_zl_wt_geri|2r",
+        "train_pnl": 8.54
+      },
+      "config": {
+        "tf": "15m",
+        "rule": "ust1_zl_wt_geri",
+        "exit": "2r"
+      },
+      "train": {
+        "weeks": 8,
+        "sum_pnl": 8.54,
+        "min_friday": 949.07,
+        "hits": 0,
+        "trades": 32,
+        "winners": 11,
+        "win_rate": 0.344,
+        "max_week_dd": 53.44
+      },
+      "test_weekly": {
+        "weeks": 4,
+        "sum_pnl": -113.06,
+        "min_friday": 955.97,
+        "hits": 0,
+        "trades": 28,
+        "winners": 6,
+        "win_rate": 0.214,
+        "max_week_dd": 72.17
+      },
+      "test_continuous": {
+        "friday": 886.94,
+        "pnl": -113.06,
+        "trades": 28,
+        "winners": 6,
+        "dd": 113.06,
+        "pf": 0.526,
+        "expectancy": -4.038,
+        "reasons": {
+          "stop": 16,
+          "basabas": 6,
+          "hedef": 6
+        },
+        "win_rate": 0.214,
+        "trades_detail": [
+          {
+            "side": "al",
+            "entry_t": 1790597700,
+            "pnl": -17.5824,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1000.0
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790668800,
+            "pnl": -13.81,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 982.42
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790683200,
+            "pnl": -12.6386,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 968.61
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790694900,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790758800,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791206100,
+            "pnl": 21.8626,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791305100,
+            "pnl": -13.333,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 977.83
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791315900,
+            "pnl": 18.4217,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 964.5
+          },
+          {
+            "side": "al",
+            "entry_t": 1791370800,
+            "pnl": -11.261,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 982.92
+          },
+          {
+            "side": "al",
+            "entry_t": 1791405000,
+            "pnl": 21.8212,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 971.66
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791464400,
+            "pnl": -15.096,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 993.48
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791472500,
+            "pnl": -17.858,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 978.38
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791484200,
+            "pnl": -17.8911,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 960.53
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791535500,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 942.64
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791558000,
+            "pnl": -14.1105,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 942.64
+          },
+          {
+            "side": "al",
+            "entry_t": 1791819000,
+            "pnl": -12.2541,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 928.52
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791882000,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 916.27
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792060200,
+            "pnl": 18.1942,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 916.27
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792073700,
+            "pnl": -18.5088,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 934.47
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792396800,
+            "pnl": 22.5235,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 915.96
+          },
+          {
+            "side": "al",
+            "entry_t": 1792479600,
+            "pnl": -13.1242,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 938.48
+          },
+          {
+            "side": "al",
+            "entry_t": 1792500300,
+            "pnl": 22.3959,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 925.36
+          },
+          {
+            "side": "al",
+            "entry_t": 1792579500,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.75
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792599300,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.75
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792609200,
+            "pnl": -14.0524,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.75
+          },
+          {
+            "side": "al",
+            "entry_t": 1792664100,
+            "pnl": -16.1556,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 933.7
+          },
+          {
+            "side": "al",
+            "entry_t": 1792700100,
+            "pnl": -15.3928,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 917.54
+          },
+          {
+            "side": "al",
+            "entry_t": 1792741500,
+            "pnl": -15.2138,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 902.15
+          }
+        ]
+      },
+      "stress_double_spread": {
+        "friday": 886.59,
+        "pnl": -113.41,
+        "trades": 28,
+        "winners": 6,
+        "dd": 113.41,
+        "pf": 0.526,
+        "expectancy": -4.0505,
+        "reasons": {
+          "stop": 16,
+          "basabas": 6,
+          "hedef": 6
+        },
+        "win_rate": 0.214
+      },
+      "verdict": "reject"
+    },
+    "BTCUSD": {
+      "picked": {
+        "name": "15m|ust1_zl_wt_geri|wt_ters",
+        "train_pnl": 108.87
+      },
+      "config": {
+        "tf": "15m",
+        "rule": "ust1_zl_wt_geri",
+        "exit": "wt_ters"
+      },
+      "train": {
+        "weeks": 8,
+        "sum_pnl": 108.87,
+        "min_friday": 934.89,
+        "hits": 0,
+        "trades": 89,
+        "winners": 29,
+        "win_rate": 0.326,
+        "max_week_dd": 85.69
+      },
+      "test_weekly": {
+        "weeks": 4,
+        "sum_pnl": -64.67,
+        "min_friday": 932.84,
+        "hits": 0,
+        "trades": 58,
+        "winners": 21,
+        "win_rate": 0.362,
+        "max_week_dd": 109.63
+      },
+      "test_continuous": {
+        "friday": 904.52,
+        "pnl": -95.48,
+        "trades": 74,
+        "winners": 24,
+        "dd": 259.45,
+        "pf": 0.787,
+        "expectancy": -1.2902,
+        "reasons": {
+          "ters_wt": 57,
+          "hedef": 2,
+          "stop": 10,
+          "basabas": 5
+        },
+        "win_rate": 0.324,
+        "trades_detail": [
+          {
+            "side": "al",
+            "entry_t": 1790583300,
+            "pnl": -6.294,
+            "reason": "ters_wt",
+            "r": -0.333,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1000.0
+          },
+          {
+            "side": "al",
+            "entry_t": 1790591400,
+            "pnl": 16.5924,
+            "reason": "ters_wt",
+            "r": 0.891,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 993.71
+          },
+          {
+            "side": "al",
+            "entry_t": 1790611200,
+            "pnl": 18.2853,
+            "reason": "ters_wt",
+            "r": 0.934,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1010.3
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790643600,
+            "pnl": 7.9296,
+            "reason": "ters_wt",
+            "r": 0.455,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1028.58
+          },
+          {
+            "side": "al",
+            "entry_t": 1790734500,
+            "pnl": -16.2576,
+            "reason": "ters_wt",
+            "r": -0.785,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1036.51
+          },
+          {
+            "side": "al",
+            "entry_t": 1790759700,
+            "pnl": 60.2437,
+            "reason": "hedef",
+            "r": 3.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1020.26
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790789400,
+            "pnl": 13.5507,
+            "reason": "ters_wt",
+            "r": 0.64,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1080.5
+          },
+          {
+            "side": "al",
+            "entry_t": 1790863200,
+            "pnl": -1.8444,
+            "reason": "ters_wt",
+            "r": -0.092,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1094.05
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790902800,
+            "pnl": -17.649,
+            "reason": "ters_wt",
+            "r": -0.812,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1092.21
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790932500,
+            "pnl": -6.242,
+            "reason": "ters_wt",
+            "r": -0.303,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1074.56
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790938800,
+            "pnl": -12.9212,
+            "reason": "ters_wt",
+            "r": -0.703,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1068.31
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790949600,
+            "pnl": 57.0537,
+            "reason": "hedef",
+            "r": 3.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1055.39
+          },
+          {
+            "side": "al",
+            "entry_t": 1791018000,
+            "pnl": -3.5136,
+            "reason": "ters_wt",
+            "r": -0.171,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1112.45
+          },
+          {
+            "side": "al",
+            "entry_t": 1791025200,
+            "pnl": 29.484,
+            "reason": "ters_wt",
+            "r": 1.368,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1108.93
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791077400,
+            "pnl": -8.2056,
+            "reason": "ters_wt",
+            "r": -0.371,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1138.42
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791082800,
+            "pnl": -10.3852,
+            "reason": "ters_wt",
+            "r": -0.469,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1130.21
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791088200,
+            "pnl": -7.416,
+            "reason": "ters_wt",
+            "r": -0.332,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1119.83
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791123300,
+            "pnl": -15.497,
+            "reason": "ters_wt",
+            "r": -0.722,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1112.41
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791130500,
+            "pnl": -3.7936,
+            "reason": "ters_wt",
+            "r": -0.185,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1096.91
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791137700,
+            "pnl": -5.7429,
+            "reason": "ters_wt",
+            "r": -0.27,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1093.12
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791190800,
+            "pnl": 7.476,
+            "reason": "ters_wt",
+            "r": 0.366,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1087.38
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791204300,
+            "pnl": -11.164,
+            "reason": "ters_wt",
+            "r": -0.513,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1094.85
+          },
+          {
+            "side": "al",
+            "entry_t": 1791369000,
+            "pnl": -12.712,
+            "reason": "ters_wt",
+            "r": -0.643,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1083.69
+          },
+          {
+            "side": "al",
+            "entry_t": 1791375300,
+            "pnl": -20.6388,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1070.98
+          },
+          {
+            "side": "al",
+            "entry_t": 1791384300,
+            "pnl": 3.3612,
+            "reason": "ters_wt",
+            "r": 0.212,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1050.34
+          },
+          {
+            "side": "al",
+            "entry_t": 1791397800,
+            "pnl": 2.4668,
+            "reason": "ters_wt",
+            "r": 0.119,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1053.7
+          },
+          {
+            "side": "al",
+            "entry_t": 1791415800,
+            "pnl": -6.732,
+            "reason": "ters_wt",
+            "r": -0.326,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1056.17
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791449100,
+            "pnl": -7.058,
+            "reason": "ters_wt",
+            "r": -0.354,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1049.43
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791542700,
+            "pnl": -19.0572,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1042.38
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791550800,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1023.32
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791558900,
+            "pnl": 13.6851,
+            "reason": "ters_wt",
+            "r": 0.827,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1023.32
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791593100,
+            "pnl": -10.7264,
+            "reason": "ters_wt",
+            "r": -0.528,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1037.0
+          },
+          {
+            "side": "al",
+            "entry_t": 1791605700,
+            "pnl": -4.63,
+            "reason": "ters_wt",
+            "r": -0.23,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1026.28
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791670500,
+            "pnl": -2.905,
+            "reason": "ters_wt",
+            "r": -0.151,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1021.65
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791675900,
+            "pnl": -1.1772,
+            "reason": "ters_wt",
+            "r": -0.062,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1018.74
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791689400,
+            "pnl": -8.0388,
+            "reason": "ters_wt",
+            "r": -0.4,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1017.57
+          },
+          {
+            "side": "al",
+            "entry_t": 1791718200,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1009.53
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791769500,
+            "pnl": -18.4056,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1009.53
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791774900,
+            "pnl": -16.9844,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 991.12
+          },
+          {
+            "side": "al",
+            "entry_t": 1791833400,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 974.14
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791906300,
+            "pnl": -5.4384,
+            "reason": "ters_wt",
+            "r": -0.317,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 974.14
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791910800,
+            "pnl": 5.7381,
+            "reason": "ters_wt",
+            "r": 0.379,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 968.7
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791941400,
+            "pnl": -18.442,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 974.44
+          },
+          {
+            "side": "al",
+            "entry_t": 1791946800,
+            "pnl": 2.974,
+            "reason": "ters_wt",
+            "r": 0.191,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.99
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791968400,
+            "pnl": 0.994,
+            "reason": "ters_wt",
+            "r": 0.053,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 958.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791981900,
+            "pnl": 32.5476,
+            "reason": "ters_wt",
+            "r": 1.861,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 959.96
+          },
+          {
+            "side": "al",
+            "entry_t": 1792014300,
+            "pnl": -4.5788,
+            "reason": "ters_wt",
+            "r": -0.27,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 992.51
+          },
+          {
+            "side": "al",
+            "entry_t": 1792022400,
+            "pnl": -0.4064,
+            "reason": "ters_wt",
+            "r": -0.024,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 987.93
+          },
+          {
+            "side": "al",
+            "entry_t": 1792026900,
+            "pnl": -11.2796,
+            "reason": "ters_wt",
+            "r": -0.62,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 987.53
+          },
+          {
+            "side": "al",
+            "entry_t": 1792038600,
+            "pnl": -7.3434,
+            "reason": "ters_wt",
+            "r": -0.487,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 976.25
+          },
+          {
+            "side": "al",
+            "entry_t": 1792064700,
+            "pnl": -15.0686,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 968.9
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792106100,
+            "pnl": -7.8256,
+            "reason": "ters_wt",
+            "r": -0.432,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 953.83
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792114200,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 946.01
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792143000,
+            "pnl": -2.8355,
+            "reason": "ters_wt",
+            "r": -0.165,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 946.01
+          },
+          {
+            "side": "al",
+            "entry_t": 1792203300,
+            "pnl": 4.4364,
+            "reason": "ters_wt",
+            "r": 0.245,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 943.17
+          },
+          {
+            "side": "al",
+            "entry_t": 1792281600,
+            "pnl": 20.734,
+            "reason": "ters_wt",
+            "r": 1.238,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.61
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792396800,
+            "pnl": -5.5355,
+            "reason": "ters_wt",
+            "r": -0.313,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 968.34
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792401300,
+            "pnl": 14.3795,
+            "reason": "ters_wt",
+            "r": 0.771,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 962.81
+          },
+          {
+            "side": "al",
+            "entry_t": 1792461600,
+            "pnl": 7.3564,
+            "reason": "ters_wt",
+            "r": 0.417,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 977.19
+          },
+          {
+            "side": "al",
+            "entry_t": 1792500300,
+            "pnl": -11.9008,
+            "reason": "ters_wt",
+            "r": -0.747,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 984.54
+          },
+          {
+            "side": "al",
+            "entry_t": 1792504800,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 972.64
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792538100,
+            "pnl": -9.9465,
+            "reason": "ters_wt",
+            "r": -0.526,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 972.64
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792545300,
+            "pnl": -18.3674,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 962.7
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792621800,
+            "pnl": 10.6852,
+            "reason": "ters_wt",
+            "r": 0.702,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 944.33
+          },
+          {
+            "side": "al",
+            "entry_t": 1792675800,
+            "pnl": -18.6644,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.01
+          },
+          {
+            "side": "al",
+            "entry_t": 1792680300,
+            "pnl": -14.8148,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 936.35
+          },
+          {
+            "side": "al",
+            "entry_t": 1792685700,
+            "pnl": -6.2874,
+            "reason": "ters_wt",
+            "r": -0.395,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 921.53
+          },
+          {
+            "side": "al",
+            "entry_t": 1792692000,
+            "pnl": 2.5218,
+            "reason": "ters_wt",
+            "r": 0.162,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 915.25
+          },
+          {
+            "side": "al",
+            "entry_t": 1792704600,
+            "pnl": -9.0076,
+            "reason": "ters_wt",
+            "r": -0.564,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 917.77
+          },
+          {
+            "side": "al",
+            "entry_t": 1792713600,
+            "pnl": -15.1773,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 908.76
+          },
+          {
+            "side": "al",
+            "entry_t": 1792717200,
+            "pnl": 12.691,
+            "reason": "ters_wt",
+            "r": 0.755,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 893.58
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792746900,
+            "pnl": 2.8705,
+            "reason": "ters_wt",
+            "r": 0.163,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 906.28
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792765800,
+            "pnl": -9.6528,
+            "reason": "ters_wt",
+            "r": -0.607,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 909.15
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792777500,
+            "pnl": 5.031,
+            "reason": "ters_wt",
+            "r": 0.332,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 899.49
+          }
+        ]
+      },
+      "stress_double_spread": {
+        "friday": 894.95,
+        "pnl": -105.05,
+        "trades": 74,
+        "winners": 24,
+        "dd": 269.52,
+        "pf": 0.768,
+        "expectancy": -1.4196,
+        "reasons": {
+          "ters_wt": 58,
+          "hedef": 2,
+          "stop": 10,
+          "basabas": 4
+        },
+        "win_rate": 0.324
+      },
+      "verdict": "reject"
+    }
+  },
+  "joint": {
+    "picked": {
+      "name": "15m|ust1_zl_wt_geri|2r",
+      "train_min_pnl": 8.54
+    },
+    "config": {
+      "tf": "15m",
+      "rule": "ust1_zl_wt_geri",
+      "exit": "2r"
+    },
+    "train": {
+      "XAUUSD": {
+        "weeks": 8,
+        "sum_pnl": 8.54,
+        "min_friday": 949.07,
+        "hits": 0,
+        "trades": 32,
+        "winners": 11,
+        "win_rate": 0.344,
+        "max_week_dd": 53.44
+      },
+      "BTCUSD": {
+        "weeks": 8,
+        "sum_pnl": 55.58,
+        "min_friday": 923.98,
+        "hits": 0,
+        "trades": 64,
+        "winners": 22,
+        "win_rate": 0.344,
+        "max_week_dd": 99.74
+      }
+    },
+    "test_continuous": {
+      "XAUUSD": {
+        "friday": 886.94,
+        "pnl": -113.06,
+        "trades": 28,
+        "winners": 6,
+        "dd": 113.06,
+        "pf": 0.526,
+        "expectancy": -4.038,
+        "reasons": {
+          "stop": 16,
+          "basabas": 6,
+          "hedef": 6
+        },
+        "win_rate": 0.214,
+        "trades_detail": [
+          {
+            "side": "al",
+            "entry_t": 1790597700,
+            "pnl": -17.5824,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1000.0
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790668800,
+            "pnl": -13.81,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 982.42
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790683200,
+            "pnl": -12.6386,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 968.61
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790694900,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790758800,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791206100,
+            "pnl": 21.8626,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 955.97
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791305100,
+            "pnl": -13.333,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 977.83
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791315900,
+            "pnl": 18.4217,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 964.5
+          },
+          {
+            "side": "al",
+            "entry_t": 1791370800,
+            "pnl": -11.261,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 982.92
+          },
+          {
+            "side": "al",
+            "entry_t": 1791405000,
+            "pnl": 21.8212,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 971.66
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791464400,
+            "pnl": -15.096,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 993.48
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791472500,
+            "pnl": -17.858,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 978.38
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791484200,
+            "pnl": -17.8911,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 960.53
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791535500,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 942.64
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791558000,
+            "pnl": -14.1105,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 942.64
+          },
+          {
+            "side": "al",
+            "entry_t": 1791819000,
+            "pnl": -12.2541,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 928.52
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791882000,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 916.27
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792060200,
+            "pnl": 18.1942,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 916.27
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792073700,
+            "pnl": -18.5088,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 934.47
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792396800,
+            "pnl": 22.5235,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 915.96
+          },
+          {
+            "side": "al",
+            "entry_t": 1792479600,
+            "pnl": -13.1242,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 938.48
+          },
+          {
+            "side": "al",
+            "entry_t": 1792500300,
+            "pnl": 22.3959,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 925.36
+          },
+          {
+            "side": "al",
+            "entry_t": 1792579500,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.75
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792599300,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.75
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792609200,
+            "pnl": -14.0524,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 947.75
+          },
+          {
+            "side": "al",
+            "entry_t": 1792664100,
+            "pnl": -16.1556,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 933.7
+          },
+          {
+            "side": "al",
+            "entry_t": 1792700100,
+            "pnl": -15.3928,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 917.54
+          },
+          {
+            "side": "al",
+            "entry_t": 1792741500,
+            "pnl": -15.2138,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 902.15
+          }
+        ]
+      },
+      "BTCUSD": {
+        "friday": 863.6,
+        "pnl": -136.4,
+        "trades": 49,
+        "winners": 13,
+        "dd": 256.42,
+        "pf": 0.695,
+        "expectancy": -2.7837,
+        "reasons": {
+          "basabas": 10,
+          "hedef": 12,
+          "stop": 26,
+          "pencere": 1
+        },
+        "win_rate": 0.265,
+        "trades_detail": [
+          {
+            "side": "al",
+            "entry_t": 1790583300,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1000.0
+          },
+          {
+            "side": "al",
+            "entry_t": 1790611200,
+            "pnl": 29.3737,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1000.0
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790643600,
+            "pnl": -17.4381,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1029.37
+          },
+          {
+            "side": "al",
+            "entry_t": 1790734500,
+            "pnl": -17.2511,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1011.94
+          },
+          {
+            "side": "al",
+            "entry_t": 1790759700,
+            "pnl": 24.0975,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 994.68
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790789400,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1018.78
+          },
+          {
+            "side": "al",
+            "entry_t": 1790863200,
+            "pnl": 29.9346,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1018.78
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790902800,
+            "pnl": -18.1084,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1048.72
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790932500,
+            "pnl": -20.6043,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1030.61
+          },
+          {
+            "side": "sat",
+            "entry_t": 1790949600,
+            "pnl": 28.5268,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1010.0
+          },
+          {
+            "side": "al",
+            "entry_t": 1791018000,
+            "pnl": 30.9032,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1038.53
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791077400,
+            "pnl": -20.4411,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1069.43
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791123300,
+            "pnl": -19.3236,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1048.99
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791130500,
+            "pnl": -20.5608,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1029.67
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791190800,
+            "pnl": -15.3097,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1009.11
+          },
+          {
+            "side": "al",
+            "entry_t": 1791369000,
+            "pnl": -19.7584,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 993.8
+          },
+          {
+            "side": "al",
+            "entry_t": 1791384300,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 974.04
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791449100,
+            "pnl": 22.4359,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 974.04
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791542700,
+            "pnl": -19.0572,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 996.48
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791550800,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 977.42
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791558900,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 977.42
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791670500,
+            "pnl": 28.8975,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 977.42
+          },
+          {
+            "side": "al",
+            "entry_t": 1791718200,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1006.32
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791769500,
+            "pnl": -18.4056,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 1006.32
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791774900,
+            "pnl": -16.9844,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 987.91
+          },
+          {
+            "side": "al",
+            "entry_t": 1791833400,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 970.93
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791906300,
+            "pnl": -17.1699,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 970.93
+          },
+          {
+            "side": "sat",
+            "entry_t": 1791968400,
+            "pnl": -18.5846,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 953.76
+          },
+          {
+            "side": "al",
+            "entry_t": 1792014300,
+            "pnl": -16.9666,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 935.17
+          },
+          {
+            "side": "al",
+            "entry_t": 1792026900,
+            "pnl": -18.1841,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 918.21
+          },
+          {
+            "side": "al",
+            "entry_t": 1792038600,
+            "pnl": -15.0819,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 900.02
+          },
+          {
+            "side": "al",
+            "entry_t": 1792064700,
+            "pnl": -15.0686,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 884.94
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792106100,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 869.87
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792143000,
+            "pnl": -17.2181,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 869.87
+          },
+          {
+            "side": "al",
+            "entry_t": 1792203300,
+            "pnl": -15.117,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 852.65
+          },
+          {
+            "side": "al",
+            "entry_t": 1792281600,
+            "pnl": 25.1137,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 837.54
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792396800,
+            "pnl": -14.1568,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 862.65
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792404900,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 848.49
+          },
+          {
+            "side": "al",
+            "entry_t": 1792461600,
+            "pnl": 0.0,
+            "reason": "basabas",
+            "r": 0.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 848.49
+          },
+          {
+            "side": "al",
+            "entry_t": 1792500300,
+            "pnl": -15.9272,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 848.49
+          },
+          {
+            "side": "al",
+            "entry_t": 1792504800,
+            "pnl": 22.1559,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 832.57
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792538100,
+            "pnl": -15.1366,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 854.72
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792621800,
+            "pnl": 22.8207,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 839.58
+          },
+          {
+            "side": "al",
+            "entry_t": 1792675800,
+            "pnl": -14.9315,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 862.41
+          },
+          {
+            "side": "al",
+            "entry_t": 1792680300,
+            "pnl": -14.8148,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 847.47
+          },
+          {
+            "side": "al",
+            "entry_t": 1792685700,
+            "pnl": -15.9144,
+            "reason": "stop",
+            "r": -1.0,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 832.66
+          },
+          {
+            "side": "al",
+            "entry_t": 1792692000,
+            "pnl": 23.3102,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 816.74
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792746900,
+            "pnl": 21.1348,
+            "reason": "hedef",
+            "r": 1.5,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 840.05
+          },
+          {
+            "side": "sat",
+            "entry_t": 1792765800,
+            "pnl": 2.4084,
+            "reason": "pencere",
+            "r": 0.151,
+            "adx": null,
+            "regime": "bilinmiyor",
+            "cash_before": 861.19
+          }
+        ]
+      }
+    },
+    "stress_double_spread": {
+      "XAUUSD": {
+        "friday": 886.59,
+        "pnl": -113.41,
+        "trades": 28,
+        "winners": 6,
+        "dd": 113.41,
+        "pf": 0.526,
+        "expectancy": -4.0505,
+        "reasons": {
+          "stop": 16,
+          "basabas": 6,
+          "hedef": 6
+        },
+        "win_rate": 0.214
+      },
+      "BTCUSD": {
+        "friday": 878.16,
+        "pnl": -121.84,
+        "trades": 50,
+        "winners": 14,
+        "dd": 245.99,
+        "pf": 0.735,
+        "expectancy": -2.4368,
+        "reasons": {
+          "basabas": 9,
+          "hedef": 13,
+          "stop": 27,
+          "pencere": 1
+        },
+        "win_rate": 0.28
+      }
+    },
+    "verdict": "reject"
+  },
+  "all_configs": {
+    "XAUUSD": {
+      "15m|ust1_zl_wt53|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -11.56,
+          "min_friday": 981.74,
+          "hits": 0,
+          "trades": 3,
+          "winners": 1,
+          "win_rate": 0.333,
+          "max_week_dd": 32.88
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -39.29,
+          "min_friday": 984.61,
+          "hits": 0,
+          "trades": 6,
+          "winners": 0,
+          "win_rate": 0.0,
+          "max_week_dd": 23.46
+        }
+      },
+      "15m|ust1_zl_wt53|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -7.19,
+          "min_friday": 981.74,
+          "hits": 0,
+          "trades": 3,
+          "winners": 1,
+          "win_rate": 0.333,
+          "max_week_dd": 18.26
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -4.74,
+          "min_friday": 996.92,
+          "hits": 0,
+          "trades": 6,
+          "winners": 2,
+          "win_rate": 0.333,
+          "max_week_dd": 18.13
+        }
+      },
+      "15m|ust1_zl_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 8.54,
+          "min_friday": 949.07,
+          "hits": 0,
+          "trades": 32,
+          "winners": 11,
+          "win_rate": 0.344,
+          "max_week_dd": 53.44
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -113.06,
+          "min_friday": 955.97,
+          "hits": 0,
+          "trades": 28,
+          "winners": 6,
+          "win_rate": 0.214,
+          "max_week_dd": 72.17
+        }
+      },
+      "15m|ust1_zl_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -165.63,
+          "min_friday": 951.98,
+          "hits": 0,
+          "trades": 36,
+          "winners": 6,
+          "win_rate": 0.167,
+          "max_week_dd": 53.91
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -120.34,
+          "min_friday": 945.83,
+          "hits": 0,
+          "trades": 35,
+          "winners": 7,
+          "win_rate": 0.2,
+          "max_week_dd": 65.36
+        }
+      },
+      "15m|ust12_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -30.44,
+          "min_friday": 974.61,
+          "hits": 0,
+          "trades": 9,
+          "winners": 2,
+          "win_rate": 0.222,
+          "max_week_dd": 25.39
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 44.38,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 4,
+          "winners": 2,
+          "win_rate": 0.5,
+          "max_week_dd": 11.36
+        }
+      },
+      "15m|ust12_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -29.03,
+          "min_friday": 974.61,
+          "hits": 0,
+          "trades": 9,
+          "winners": 2,
+          "win_rate": 0.222,
+          "max_week_dd": 34.68
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 5.66,
+          "min_friday": 997.78,
+          "hits": 0,
+          "trades": 4,
+          "winners": 2,
+          "win_rate": 0.5,
+          "max_week_dd": 11.48
+        }
+      },
+      "30m|ust1_zl_wt53|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "30m|ust1_zl_wt53|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "30m|ust1_zl_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -18.73,
+          "min_friday": 981.27,
+          "hits": 0,
+          "trades": 1,
+          "winners": 0,
+          "win_rate": 0.0,
+          "max_week_dd": 22.88
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 16.26,
+          "min_friday": 981.94,
+          "hits": 0,
+          "trades": 4,
+          "winners": 2,
+          "win_rate": 0.5,
+          "max_week_dd": 33.91
+        }
+      },
+      "30m|ust1_zl_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -9.58,
+          "min_friday": 990.42,
+          "hits": 0,
+          "trades": 1,
+          "winners": 0,
+          "win_rate": 0.0,
+          "max_week_dd": 13.73
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 24.56,
+          "min_friday": 997.16,
+          "hits": 0,
+          "trades": 5,
+          "winners": 3,
+          "win_rate": 0.6,
+          "max_week_dd": 14.38
+        }
+      },
+      "30m|ust12_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -18.06,
+          "min_friday": 981.94,
+          "hits": 0,
+          "trades": 1,
+          "winners": 0,
+          "win_rate": 0.0,
+          "max_week_dd": 33.91
+        }
+      },
+      "30m|ust12_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 2.78,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 2,
+          "winners": 1,
+          "win_rate": 0.5,
+          "max_week_dd": 10.7
+        }
+      },
+      "1h|ust1_zl_wt53|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "1h|ust1_zl_wt53|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "1h|ust1_zl_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "1h|ust1_zl_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "1h|ust12_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      },
+      "1h|ust12_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.0,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 0,
+          "winners": 0,
+          "win_rate": null,
+          "max_week_dd": 0.0
+        }
+      }
+    },
+    "BTCUSD": {
+      "15m|ust1_zl_wt53|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 118.5,
+          "min_friday": 982.45,
+          "hits": 0,
+          "trades": 10,
+          "winners": 6,
+          "win_rate": 0.6,
+          "max_week_dd": 24.18
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -57.34,
+          "min_friday": 961.18,
+          "hits": 0,
+          "trades": 13,
+          "winners": 2,
+          "win_rate": 0.154,
+          "max_week_dd": 60.05
+        }
+      },
+      "15m|ust1_zl_wt53|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 85.57,
+          "min_friday": 994.64,
+          "hits": 0,
+          "trades": 10,
+          "winners": 5,
+          "win_rate": 0.5,
+          "max_week_dd": 18.4
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -9.18,
+          "min_friday": 955.08,
+          "hits": 0,
+          "trades": 15,
+          "winners": 5,
+          "win_rate": 0.333,
+          "max_week_dd": 45.93
+        }
+      },
+      "15m|ust1_zl_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 55.58,
+          "min_friday": 923.98,
+          "hits": 0,
+          "trades": 64,
+          "winners": 22,
+          "win_rate": 0.344,
+          "max_week_dd": 99.74
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -132.72,
+          "min_friday": 846.34,
+          "hits": 0,
+          "trades": 41,
+          "winners": 11,
+          "win_rate": 0.268,
+          "max_week_dd": 153.77
+        }
+      },
+      "15m|ust1_zl_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 108.87,
+          "min_friday": 934.89,
+          "hits": 0,
+          "trades": 89,
+          "winners": 29,
+          "win_rate": 0.326,
+          "max_week_dd": 85.69
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -64.67,
+          "min_friday": 932.84,
+          "hits": 0,
+          "trades": 58,
+          "winners": 21,
+          "win_rate": 0.362,
+          "max_week_dd": 109.63
+        }
+      },
+      "15m|ust12_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -30.91,
+          "min_friday": 965.04,
+          "hits": 0,
+          "trades": 14,
+          "winners": 4,
+          "win_rate": 0.286,
+          "max_week_dd": 34.96
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -13.75,
+          "min_friday": 964.61,
+          "hits": 0,
+          "trades": 7,
+          "winners": 2,
+          "win_rate": 0.286,
+          "max_week_dd": 48.44
+        }
+      },
+      "15m|ust12_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 6.72,
+          "min_friday": 969.71,
+          "hits": 0,
+          "trades": 17,
+          "winners": 4,
+          "win_rate": 0.235,
+          "max_week_dd": 30.29
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -42.23,
+          "min_friday": 967.58,
+          "hits": 0,
+          "trades": 7,
+          "winners": 3,
+          "win_rate": 0.429,
+          "max_week_dd": 35.5
+        }
+      },
+      "30m|ust1_zl_wt53|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -3.21,
+          "min_friday": 988.73,
+          "hits": 0,
+          "trades": 4,
+          "winners": 1,
+          "win_rate": 0.25,
+          "max_week_dd": 17.62
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -33.19,
+          "min_friday": 983.25,
+          "hits": 0,
+          "trades": 2,
+          "winners": 0,
+          "win_rate": 0.0,
+          "max_week_dd": 17.92
+        }
+      },
+      "30m|ust1_zl_wt53|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -10.5,
+          "min_friday": 988.73,
+          "hits": 0,
+          "trades": 4,
+          "winners": 1,
+          "win_rate": 0.25,
+          "max_week_dd": 12.07
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -19.27,
+          "min_friday": 983.56,
+          "hits": 0,
+          "trades": 2,
+          "winners": 0,
+          "win_rate": 0.0,
+          "max_week_dd": 16.44
+        }
+      },
+      "30m|ust1_zl_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -81.42,
+          "min_friday": 967.26,
+          "hits": 0,
+          "trades": 38,
+          "winners": 10,
+          "win_rate": 0.263,
+          "max_week_dd": 46.77
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -159.68,
+          "min_friday": 916.97,
+          "hits": 0,
+          "trades": 21,
+          "winners": 5,
+          "win_rate": 0.238,
+          "max_week_dd": 83.03
+        }
+      },
+      "30m|ust1_zl_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -91.08,
+          "min_friday": 963.12,
+          "hits": 0,
+          "trades": 56,
+          "winners": 16,
+          "win_rate": 0.286,
+          "max_week_dd": 38.79
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -99.14,
+          "min_friday": 926.02,
+          "hits": 0,
+          "trades": 30,
+          "winners": 6,
+          "win_rate": 0.2,
+          "max_week_dd": 74.4
+        }
+      },
+      "30m|ust12_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 78.58,
+          "min_friday": 981.34,
+          "hits": 0,
+          "trades": 17,
+          "winners": 7,
+          "win_rate": 0.412,
+          "max_week_dd": 27.69
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -105.67,
+          "min_friday": 912.19,
+          "hits": 0,
+          "trades": 17,
+          "winners": 4,
+          "win_rate": 0.235,
+          "max_week_dd": 87.81
+        }
+      },
+      "30m|ust12_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 70.87,
+          "min_friday": 991.16,
+          "hits": 0,
+          "trades": 21,
+          "winners": 7,
+          "win_rate": 0.333,
+          "max_week_dd": 18.67
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -40.06,
+          "min_friday": 946.34,
+          "hits": 0,
+          "trades": 20,
+          "winners": 5,
+          "win_rate": 0.25,
+          "max_week_dd": 58.82
+        }
+      },
+      "1h|ust1_zl_wt53|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -19.94,
+          "min_friday": 981.2,
+          "hits": 0,
+          "trades": 3,
+          "winners": 1,
+          "win_rate": 0.333,
+          "max_week_dd": 32.76
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 5.28,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 2,
+          "winners": 1,
+          "win_rate": 0.5,
+          "max_week_dd": 19.78
+        }
+      },
+      "1h|ust1_zl_wt53|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": 20.71,
+          "min_friday": 991.82,
+          "hits": 0,
+          "trades": 3,
+          "winners": 2,
+          "win_rate": 0.667,
+          "max_week_dd": 11.5
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -5.24,
+          "min_friday": 994.76,
+          "hits": 0,
+          "trades": 2,
+          "winners": 1,
+          "win_rate": 0.5,
+          "max_week_dd": 17.03
+        }
+      },
+      "1h|ust1_zl_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -61.38,
+          "min_friday": 964.21,
+          "hits": 0,
+          "trades": 16,
+          "winners": 4,
+          "win_rate": 0.25,
+          "max_week_dd": 35.79
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 39.75,
+          "min_friday": 1000.0,
+          "hits": 0,
+          "trades": 8,
+          "winners": 4,
+          "win_rate": 0.5,
+          "max_week_dd": 22.88
+        }
+      },
+      "1h|ust1_zl_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -40.06,
+          "min_friday": 987.13,
+          "hits": 0,
+          "trades": 19,
+          "winners": 6,
+          "win_rate": 0.316,
+          "max_week_dd": 23.87
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": -3.07,
+          "min_friday": 988.61,
+          "hits": 0,
+          "trades": 9,
+          "winners": 2,
+          "win_rate": 0.222,
+          "max_week_dd": 21.93
+        }
+      },
+      "1h|ust12_wt_geri|2r": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -25.52,
+          "min_friday": 978.07,
+          "hits": 0,
+          "trades": 5,
+          "winners": 1,
+          "win_rate": 0.2,
+          "max_week_dd": 24.87
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 12.54,
+          "min_friday": 981.13,
+          "hits": 0,
+          "trades": 7,
+          "winners": 3,
+          "win_rate": 0.429,
+          "max_week_dd": 22.88
+        }
+      },
+      "1h|ust12_wt_geri|wt_ters": {
+        "train": {
+          "weeks": 8,
+          "sum_pnl": -32.41,
+          "min_friday": 979.49,
+          "hits": 0,
+          "trades": 5,
+          "winners": 1,
+          "win_rate": 0.2,
+          "max_week_dd": 22.98
+        },
+        "test": {
+          "weeks": 4,
+          "sum_pnl": 0.65,
+          "min_friday": 988.61,
+          "hits": 0,
+          "trades": 8,
+          "winners": 2,
+          "win_rate": 0.25,
+          "max_week_dd": 21.93
+        }
+      }
+    }
+  },
+  "limits": [
+    "96 konfigurasyon tarandi; egitim en iyisi secim yanliligi tasir, test bu yuzden ayri.",
+    "Komisyon alani yok, sifir kabul edilmedi. Spread anlik snapshot.",
+    "Haber filtresi yok. Emir defteri ve gercek kayma yok.",
+    "Ayni mumda stop ve hedef birlikteyse stop.",
+    "1d barlari broker gunu; align yalnizca kapanmis bar kullanir."
+  ]
+}

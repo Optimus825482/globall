@@ -1,0 +1,175 @@
+{
+  "offset_h": 3.0,
+  "symbols": {
+    "BTCUSD": {
+      "filter": "full20",
+      "session_utc": null,
+      "spread": 15.0,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-10-08 00:00",
+      "last_utc": "2026-10-27 12:00",
+      "weekdays_with_bars": 14,
+      "buy_hold_pct": -4.12,
+      "all": {
+        "trades": 14,
+        "net": 120.52,
+        "pf": 1.306,
+        "dd": 310.6,
+        "expectancy": 8.61,
+        "buys": 5,
+        "sells": 9,
+        "stress_2x": 92.04
+      },
+      "earlier_weekdays": {
+        "trades": 10,
+        "net": -171.42,
+        "pf": 0.487,
+        "buys": 5,
+        "sells": 5
+      },
+      "selection_7d": {
+        "trades": 4,
+        "net": 291.94,
+        "pf": 5.876,
+        "buys": 0,
+        "sells": 4
+      }
+    },
+    "XAUUSD": {
+      "filter": "full20",
+      "session_utc": "07-21",
+      "spread": 0.06000000000040018,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-10-08 00:00",
+      "last_utc": "2026-10-27 12:00",
+      "weekdays_with_bars": 14,
+      "buy_hold_pct": -2.36,
+      "all": {
+        "trades": 5,
+        "net": 86.21,
+        "pf": 1.362,
+        "dd": 217.04,
+        "expectancy": 17.24,
+        "buys": 1,
+        "sells": 4,
+        "stress_2x": 85.07
+      },
+      "earlier_weekdays": {
+        "trades": 3,
+        "net": -72.23,
+        "pf": 0.5,
+        "buys": 1,
+        "sells": 2
+      },
+      "selection_7d": {
+        "trades": 2,
+        "net": 158.44,
+        "pf": 2.692,
+        "buys": 0,
+        "sells": 2
+      }
+    },
+    "EURUSD": {
+      "filter": "full20",
+      "session_utc": null,
+      "spread": 1.0000000000065512e-05,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-10-08 00:00",
+      "last_utc": "2026-10-27 12:00",
+      "weekdays_with_bars": 14,
+      "buy_hold_pct": -0.42,
+      "all": {
+        "trades": 11,
+        "net": 1045.59,
+        "pf": 8.888,
+        "dd": 316.04,
+        "expectancy": 95.05,
+        "buys": 5,
+        "sells": 6,
+        "stress_2x": 1036.71
+      },
+      "earlier_weekdays": {
+        "trades": 8,
+        "net": 756.72,
+        "pf": 10.946,
+        "buys": 3,
+        "sells": 5
+      },
+      "selection_7d": {
+        "trades": 3,
+        "net": 288.87,
+        "pf": 6.115,
+        "buys": 2,
+        "sells": 1
+      }
+    },
+    "GBPUSD": {
+      "filter": "full20",
+      "session_utc": null,
+      "spread": 1.0000000000065512e-05,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-10-08 00:00",
+      "last_utc": "2026-10-27 12:00",
+      "weekdays_with_bars": 14,
+      "buy_hold_pct": 0.91,
+      "all": {
+        "trades": 6,
+        "net": 690.53,
+        "pf": 13.279,
+        "dd": 276.51,
+        "expectancy": 115.09,
+        "buys": 4,
+        "sells": 2,
+        "stress_2x": 683.03
+      },
+      "earlier_weekdays": {
+        "trades": 4,
+        "net": 535.27,
+        "pf": 11.753,
+        "buys": 3,
+        "sells": 1
+      },
+      "selection_7d": {
+        "trades": 2,
+        "net": 155.26,
+        "pf": 25.034,
+        "buys": 1,
+        "sells": 1
+      }
+    },
+    "USDJPY": {
+      "filter": "adx20",
+      "session_utc": "00-16",
+      "spread": 0.0010000000000047748,
+      "spread_source": "tick_ask_bid",
+      "window_start_utc": "2026-10-08 00:00",
+      "last_utc": "2026-10-27 12:00",
+      "weekdays_with_bars": 14,
+      "buy_hold_pct": -0.12,
+      "all": {
+        "trades": 11,
+        "net": -77.73,
+        "pf": 0.804,
+        "dd": 319.05,
+        "expectancy": -7.07,
+        "buys": 6,
+        "sells": 5,
+        "stress_2x": -82.81
+      },
+      "earlier_weekdays": {
+        "trades": 7,
+        "net": -159.53,
+        "pf": 0.487,
+        "buys": 4,
+        "sells": 3
+      },
+      "selection_7d": {
+        "trades": 4,
+        "net": 81.8,
+        "pf": 1.954,
+        "buys": 2,
+        "sells": 2
+      }
+    }
+  }
+}

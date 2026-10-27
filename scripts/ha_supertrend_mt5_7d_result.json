@@ -1,0 +1,4213 @@
+{
+  "retrieved_at": "2026-10-27 11:47:34 UTC",
+  "attach": "running-terminal",
+  "terminal_path": "C:\\Program Files\\MetaTrader 5",
+  "server_utc_offset_sec": 10800,
+  "account": {
+    "login": 53077151,
+    "server": "ICMarketsSC-Demo",
+    "currency": "USD",
+    "leverage": 5000,
+    "trade_mode": 0
+  },
+  "paper_balance": 10000.0,
+  "risk_pct": 0.01,
+  "window_days": 7,
+  "core_variant": "ha_st_rsi_adx",
+  "orders_sent": false,
+  "commission": "unknown",
+  "symbols": {
+    "BTCUSD": {
+      "timeframes": {
+        "15m": {
+          "provenance": {
+            "bars": 2771,
+            "first_utc": "2026-09-28 12:00",
+            "last_utc": "2026-10-27 11:30",
+            "gap_count": 4,
+            "longest_gap_hours": 1.0,
+            "missing_slots_incl_weekends": 12
+          },
+          "window_start_utc": "2026-10-20 11:30",
+          "buy_hold": {
+            "first_close": 81469.16,
+            "last_close": 79733.07,
+            "return_pct": -2.130978151732499,
+            "bars": 670
+          },
+          "variants": {
+            "baseline_st_10_3": {
+              "variant": "baseline_st_10_3",
+              "trades": 14,
+              "wins": 5,
+              "losses": 9,
+              "flats": 0,
+              "win_rate": 0.35714285714285715,
+              "gross_pnl": 257.293769877899,
+              "net_pnl": 246.2437698778991,
+              "ending_equity": 10246.243769877896,
+              "profit_factor": 1.3827336854121202,
+              "expectancy": 17.58884070556422,
+              "avg_r": 0.18466303416889376,
+              "max_drawdown": 594.1113701321228,
+              "max_losing_streak": 7,
+              "exposure_bars": 557,
+              "window_bars": 670,
+              "exposure_pct": 0.8313432835820895,
+              "exit_reasons": {
+                "stop": 14
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 7,
+              "sell_count": 7,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 14:00",
+                  "exit_utc": "2026-10-21 05:30",
+                  "net": 49.93,
+                  "gross": 50.38,
+                  "r": 0.499,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 06:00",
+                  "exit_utc": "2026-10-21 07:30",
+                  "net": -89.7,
+                  "gross": -88.75,
+                  "r": -0.893,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:45",
+                  "exit_utc": "2026-10-21 23:00",
+                  "net": 200.28,
+                  "gross": 201.13,
+                  "r": 2.011,
+                  "reason": "stop",
+                  "volume": 0.17
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 23:30",
+                  "exit_utc": "2026-10-23 01:45",
+                  "net": 455.24,
+                  "gross": 456.09,
+                  "r": 4.48,
+                  "reason": "stop",
+                  "volume": 0.17
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 02:45",
+                  "exit_utc": "2026-10-23 14:15",
+                  "net": -65.42,
+                  "gross": -64.77,
+                  "r": -0.616,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 19:15",
+                  "exit_utc": "2026-10-24 18:00",
+                  "net": 145.51,
+                  "gross": 146.26,
+                  "r": 1.379,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 18:15",
+                  "exit_utc": "2026-10-25 05:30",
+                  "net": 38.67,
+                  "gross": 39.32,
+                  "r": 0.362,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 05:45",
+                  "exit_utc": "2026-10-25 11:45",
+                  "net": -13.07,
+                  "gross": -11.87,
+                  "r": -0.122,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 15:00",
+                  "exit_utc": "2026-10-25 21:15",
+                  "net": -56.39,
+                  "gross": -55.34,
+                  "r": -0.526,
+                  "reason": "stop",
+                  "volume": 0.21
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 22:00",
+                  "exit_utc": "2026-10-25 22:00",
+                  "net": -106.24,
+                  "gross": -105.04,
+                  "r": -0.996,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 09:30",
+                  "exit_utc": "2026-10-26 13:15",
+                  "net": -73.45,
+                  "gross": -72.9,
+                  "r": -0.696,
+                  "reason": "stop",
+                  "volume": 0.11
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:45",
+                  "exit_utc": "2026-10-26 15:00",
+                  "net": -99.39,
+                  "gross": -98.74,
+                  "r": -0.948,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 15:30",
+                  "exit_utc": "2026-10-27 02:45",
+                  "net": -76.31,
+                  "gross": -75.81,
+                  "r": -0.735,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 03:15",
+                  "exit_utc": "2026-10-27 10:45",
+                  "net": -63.41,
+                  "gross": -62.66,
+                  "r": -0.615,
+                  "reason": "stop",
+                  "volume": 0.15
+                }
+              ],
+              "stress_2x_spread_net": 244.44146824447222,
+              "stress_2x_trades": 14
+            },
+            "ha_st_10_3": {
+              "variant": "ha_st_10_3",
+              "trades": 10,
+              "wins": 3,
+              "losses": 7,
+              "flats": 0,
+              "win_rate": 0.3,
+              "gross_pnl": 3.9242785133241007,
+              "net_pnl": -3.0757214866758815,
+              "ending_equity": 9996.924278513325,
+              "profit_factor": 0.9927014649331041,
+              "expectancy": -0.30757214866758814,
+              "avg_r": 0.0033758462997853177,
+              "max_drawdown": 553.1132710594411,
+              "max_losing_streak": 6,
+              "exposure_bars": 517,
+              "window_bars": 670,
+              "exposure_pct": 0.7716417910447761,
+              "exit_reasons": {
+                "stop": 10
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 5,
+              "sell_count": 5,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 14:15",
+                  "exit_utc": "2026-10-21 23:45",
+                  "net": 39.84,
+                  "gross": 40.04,
+                  "r": 0.398,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 00:00",
+                  "exit_utc": "2026-10-23 01:45",
+                  "net": 311.73,
+                  "gross": 312.38,
+                  "r": 3.105,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 02:45",
+                  "exit_utc": "2026-10-23 14:15",
+                  "net": -62.03,
+                  "gross": -61.48,
+                  "r": -0.599,
+                  "reason": "stop",
+                  "volume": 0.11
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 22:45",
+                  "exit_utc": "2026-10-24 22:30",
+                  "net": 66.76,
+                  "gross": 67.51,
+                  "r": 0.649,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 23:45",
+                  "exit_utc": "2026-10-25 05:30",
+                  "net": -42.66,
+                  "gross": -41.81,
+                  "r": -0.412,
+                  "reason": "stop",
+                  "volume": 0.17
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 06:00",
+                  "exit_utc": "2026-10-25 15:00",
+                  "net": -29.24,
+                  "gross": -28.14,
+                  "r": -0.283,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 17:15",
+                  "exit_utc": "2026-10-25 21:45",
+                  "net": -83.55,
+                  "gross": -82.65,
+                  "r": -0.812,
+                  "reason": "stop",
+                  "volume": 0.18
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 22:00",
+                  "exit_utc": "2026-10-26 08:30",
+                  "net": -29.43,
+                  "gross": -28.43,
+                  "r": -0.289,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 09:45",
+                  "exit_utc": "2026-10-26 13:30",
+                  "net": -75.29,
+                  "gross": -74.79,
+                  "r": -0.74,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 14:00",
+                  "exit_utc": "2026-10-26 15:15",
+                  "net": -99.21,
+                  "gross": -98.71,
+                  "r": -0.983,
+                  "reason": "stop",
+                  "volume": 0.1
+                }
+              ],
+              "stress_2x_spread_net": -7.516235825818605,
+              "stress_2x_trades": 10
+            },
+            "ha_st_rsi_adx_24s": {
+              "variant": "ha_st_rsi_adx_24s",
+              "trades": 4,
+              "wins": 2,
+              "losses": 2,
+              "flats": 0,
+              "win_rate": 0.5,
+              "gross_pnl": 323.32695920704833,
+              "net_pnl": 319.8269592070484,
+              "ending_equity": 10319.82695920705,
+              "profit_factor": 6.451292780913223,
+              "expectancy": 79.9567398017621,
+              "avg_r": 0.7996703501311166,
+              "max_drawdown": 281.9762077167925,
+              "max_losing_streak": 2,
+              "exposure_bars": 276,
+              "window_bars": 670,
+              "exposure_pct": 0.41194029850746267,
+              "exit_reasons": {
+                "stop": 4
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 6,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 0,
+              "sell_count": 4,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 00:00",
+                  "exit_utc": "2026-10-23 01:45",
+                  "net": 311.73,
+                  "gross": 312.38,
+                  "r": 3.117,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 22:45",
+                  "exit_utc": "2026-10-24 22:30",
+                  "net": 66.76,
+                  "gross": 67.51,
+                  "r": 0.647,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 06:00",
+                  "exit_utc": "2026-10-25 15:00",
+                  "net": -29.24,
+                  "gross": -28.14,
+                  "r": -0.282,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 22:00",
+                  "exit_utc": "2026-10-26 08:30",
+                  "net": -29.43,
+                  "gross": -28.43,
+                  "r": -0.284,
+                  "reason": "stop",
+                  "volume": 0.2
+                }
+              ],
+              "stress_2x_spread_net": 316.32695920704833,
+              "stress_2x_trades": 4
+            },
+            "ha_st_rsi_adx": {
+              "variant": "ha_st_rsi_adx",
+              "trades": 4,
+              "wins": 2,
+              "losses": 2,
+              "flats": 0,
+              "win_rate": 0.5,
+              "gross_pnl": 323.32695920704833,
+              "net_pnl": 319.8269592070484,
+              "ending_equity": 10319.82695920705,
+              "profit_factor": 6.451292780913223,
+              "expectancy": 79.9567398017621,
+              "avg_r": 0.7996703501311166,
+              "max_drawdown": 281.9762077167925,
+              "max_losing_streak": 2,
+              "exposure_bars": 276,
+              "window_bars": 670,
+              "exposure_pct": 0.41194029850746267,
+              "exit_reasons": {
+                "stop": 4
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 6,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 0,
+              "sell_count": 4,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 00:00",
+                  "exit_utc": "2026-10-23 01:45",
+                  "net": 311.73,
+                  "gross": 312.38,
+                  "r": 3.117,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 22:45",
+                  "exit_utc": "2026-10-24 22:30",
+                  "net": 66.76,
+                  "gross": 67.51,
+                  "r": 0.647,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 06:00",
+                  "exit_utc": "2026-10-25 15:00",
+                  "net": -29.24,
+                  "gross": -28.14,
+                  "r": -0.282,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 22:00",
+                  "exit_utc": "2026-10-26 08:30",
+                  "net": -29.43,
+                  "gross": -28.43,
+                  "r": -0.284,
+                  "reason": "stop",
+                  "volume": 0.2
+                }
+              ],
+              "stress_2x_spread_net": 316.32695920704833,
+              "stress_2x_trades": 4
+            },
+            "ha_dual_7_2_10_3": {
+              "variant": "ha_dual_7_2_10_3",
+              "trades": 3,
+              "wins": 1,
+              "losses": 2,
+              "flats": 0,
+              "win_rate": 0.3333333333333333,
+              "gross_pnl": -49.11663585176357,
+              "net_pnl": -51.71663585176357,
+              "ending_equity": 9948.283364148236,
+              "profit_factor": 0.3450913768663741,
+              "expectancy": -17.238878617254525,
+              "avg_r": -0.17217305891737414,
+              "max_drawdown": 176.38133585176183,
+              "max_losing_streak": 2,
+              "exposure_bars": 91,
+              "window_bars": 670,
+              "exposure_pct": 0.13582089552238805,
+              "exit_reasons": {
+                "stop": 3
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 2,
+              "sell_count": 1,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:45",
+                  "exit_utc": "2026-10-21 13:30",
+                  "net": 27.25,
+                  "gross": 28.2,
+                  "r": 0.273,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 02:45",
+                  "exit_utc": "2026-10-23 12:00",
+                  "net": -47.16,
+                  "gross": -46.46,
+                  "r": -0.47,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 03:00",
+                  "exit_utc": "2026-10-27 10:45",
+                  "net": -31.81,
+                  "gross": -30.86,
+                  "r": -0.319,
+                  "reason": "stop",
+                  "volume": 0.19
+                }
+              ],
+              "stress_2x_spread_net": -54.31663585176357,
+              "stress_2x_trades": 3
+            }
+          }
+        },
+        "5m": {
+          "provenance": {
+            "bars": 8306,
+            "first_utc": "2026-09-28 11:50",
+            "last_utc": "2026-10-27 11:40",
+            "gap_count": 6,
+            "longest_gap_hours": 1.0,
+            "missing_slots_incl_weekends": 45
+          },
+          "window_start_utc": "2026-10-20 11:40",
+          "buy_hold": {
+            "first_close": 81469.16,
+            "last_close": 79733.07,
+            "return_pct": -2.130978151732499,
+            "bars": 2005
+          },
+          "variants": {
+            "baseline_st_10_3": {
+              "variant": "baseline_st_10_3",
+              "trades": 59,
+              "wins": 10,
+              "losses": 49,
+              "flats": 0,
+              "win_rate": 0.1694915254237288,
+              "gross_pnl": -1745.7253044954896,
+              "net_pnl": -1821.3253044954897,
+              "ending_equity": 8178.67469550451,
+              "profit_factor": 0.3732013893338642,
+              "expectancy": -30.86992041517779,
+              "avg_r": -0.33449685003161256,
+              "max_drawdown": 2283.6748217930317,
+              "max_losing_streak": 14,
+              "exposure_bars": 1631,
+              "window_bars": 2005,
+              "exposure_pct": 0.8134663341645886,
+              "exit_reasons": {
+                "stop": 58,
+                "window_end": 1
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 30,
+              "sell_count": 29,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 12:45",
+                  "exit_utc": "2026-10-20 13:30",
+                  "net": -98.22,
+                  "gross": -96.97,
+                  "r": -0.982,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 15:15",
+                  "exit_utc": "2026-10-20 20:30",
+                  "net": -25.92,
+                  "gross": -25.47,
+                  "r": -0.262,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 20:35",
+                  "exit_utc": "2026-10-21 01:00",
+                  "net": 54.7,
+                  "gross": 56.3,
+                  "r": 0.554,
+                  "reason": "stop",
+                  "volume": 0.32
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:10",
+                  "exit_utc": "2026-10-21 01:45",
+                  "net": -82.51,
+                  "gross": -81.16,
+                  "r": -0.831,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 01:50",
+                  "exit_utc": "2026-10-21 02:10",
+                  "net": -81.9,
+                  "gross": -80.9,
+                  "r": -0.832,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 02:25",
+                  "exit_utc": "2026-10-21 07:25",
+                  "net": -41.99,
+                  "gross": -40.89,
+                  "r": -0.43,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:30",
+                  "exit_utc": "2026-10-21 13:30",
+                  "net": 58.66,
+                  "gross": 59.71,
+                  "r": 0.603,
+                  "reason": "stop",
+                  "volume": 0.21
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:00",
+                  "exit_utc": "2026-10-21 20:35",
+                  "net": -59.47,
+                  "gross": -58.42,
+                  "r": -0.608,
+                  "reason": "stop",
+                  "volume": 0.21
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 20:50",
+                  "exit_utc": "2026-10-21 22:15",
+                  "net": -42.94,
+                  "gross": -41.39,
+                  "r": -0.442,
+                  "reason": "stop",
+                  "volume": 0.31
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 22:45",
+                  "exit_utc": "2026-10-22 10:35",
+                  "net": 675.39,
+                  "gross": 676.79,
+                  "r": 6.977,
+                  "reason": "stop",
+                  "volume": 0.28
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 13:35",
+                  "exit_utc": "2026-10-22 13:40",
+                  "net": -99.59,
+                  "gross": -98.64,
+                  "r": -0.962,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 15:15",
+                  "exit_utc": "2026-10-22 19:30",
+                  "net": -7.86,
+                  "gross": -7.06,
+                  "r": -0.077,
+                  "reason": "stop",
+                  "volume": 0.16
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 19:55",
+                  "exit_utc": "2026-10-22 20:45",
+                  "net": -101.99,
+                  "gross": -100.49,
+                  "r": -0.995,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 20:50",
+                  "exit_utc": "2026-10-22 21:15",
+                  "net": -92.38,
+                  "gross": -90.83,
+                  "r": -0.91,
+                  "reason": "stop",
+                  "volume": 0.31
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 21:20",
+                  "exit_utc": "2026-10-22 23:35",
+                  "net": -80.93,
+                  "gross": -79.43,
+                  "r": -0.805,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 00:15",
+                  "exit_utc": "2026-10-23 00:40",
+                  "net": -97.45,
+                  "gross": -95.2,
+                  "r": -0.977,
+                  "reason": "stop",
+                  "volume": 0.45
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 00:45",
+                  "exit_utc": "2026-10-23 04:25",
+                  "net": 35.77,
+                  "gross": 36.97,
+                  "r": 0.362,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 04:35",
+                  "exit_utc": "2026-10-23 05:50",
+                  "net": -62.49,
+                  "gross": -61.14,
+                  "r": -0.63,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 05:55",
+                  "exit_utc": "2026-10-23 07:45",
+                  "net": -66.58,
+                  "gross": -65.18,
+                  "r": -0.676,
+                  "reason": "stop",
+                  "volume": 0.28
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 07:50",
+                  "exit_utc": "2026-10-23 08:15",
+                  "net": -72.66,
+                  "gross": -71.06,
+                  "r": -0.743,
+                  "reason": "stop",
+                  "volume": 0.32
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 08:35",
+                  "exit_utc": "2026-10-23 09:30",
+                  "net": -90.67,
+                  "gross": -89.22,
+                  "r": -0.934,
+                  "reason": "stop",
+                  "volume": 0.29
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 09:40",
+                  "exit_utc": "2026-10-23 13:20",
+                  "net": -84.33,
+                  "gross": -82.98,
+                  "r": -0.877,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 13:25",
+                  "exit_utc": "2026-10-23 14:15",
+                  "net": -82.35,
+                  "gross": -81.4,
+                  "r": -0.864,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:20",
+                  "exit_utc": "2026-10-23 23:45",
+                  "net": -0.14,
+                  "gross": 0.36,
+                  "r": -0.001,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 23:50",
+                  "exit_utc": "2026-10-24 00:20",
+                  "net": -67.81,
+                  "gross": -67.01,
+                  "r": -0.717,
+                  "reason": "stop",
+                  "volume": 0.16
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 00:25",
+                  "exit_utc": "2026-10-24 03:00",
+                  "net": -61.21,
+                  "gross": -60.26,
+                  "r": -0.652,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 04:05",
+                  "exit_utc": "2026-10-24 05:20",
+                  "net": -91.12,
+                  "gross": -89.37,
+                  "r": -0.977,
+                  "reason": "stop",
+                  "volume": 0.35
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 05:25",
+                  "exit_utc": "2026-10-24 07:00",
+                  "net": -66.48,
+                  "gross": -64.53,
+                  "r": -0.72,
+                  "reason": "stop",
+                  "volume": 0.39
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 07:05",
+                  "exit_utc": "2026-10-24 08:35",
+                  "net": -90.92,
+                  "gross": -89.22,
+                  "r": -0.992,
+                  "reason": "stop",
+                  "volume": 0.34
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 08:45",
+                  "exit_utc": "2026-10-24 12:20",
+                  "net": -40.92,
+                  "gross": -39.32,
+                  "r": -0.451,
+                  "reason": "stop",
+                  "volume": 0.32
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 12:30",
+                  "exit_utc": "2026-10-24 14:10",
+                  "net": -72.42,
+                  "gross": -70.27,
+                  "r": -0.802,
+                  "reason": "stop",
+                  "volume": 0.43
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 14:15",
+                  "exit_utc": "2026-10-24 16:50",
+                  "net": 99.88,
+                  "gross": 101.18,
+                  "r": 1.115,
+                  "reason": "stop",
+                  "volume": 0.26
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 16:55",
+                  "exit_utc": "2026-10-24 21:05",
+                  "net": 28.3,
+                  "gross": 29.05,
+                  "r": 0.312,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 21:10",
+                  "exit_utc": "2026-10-24 22:35",
+                  "net": -68.88,
+                  "gross": -67.28,
+                  "r": -0.758,
+                  "reason": "stop",
+                  "volume": 0.32
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 22:40",
+                  "exit_utc": "2026-10-25 04:00",
+                  "net": 79.21,
+                  "gross": 81.11,
+                  "r": 0.878,
+                  "reason": "stop",
+                  "volume": 0.38
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 05:35",
+                  "exit_utc": "2026-10-25 07:40",
+                  "net": -8.4,
+                  "gross": -6.35,
+                  "r": -0.092,
+                  "reason": "stop",
+                  "volume": 0.41
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 11:45",
+                  "exit_utc": "2026-10-25 12:25",
+                  "net": -57.35,
+                  "gross": -55.85,
+                  "r": -0.631,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 12:30",
+                  "exit_utc": "2026-10-25 14:50",
+                  "net": -58.68,
+                  "gross": -56.93,
+                  "r": -0.65,
+                  "reason": "stop",
+                  "volume": 0.35
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 14:55",
+                  "exit_utc": "2026-10-25 19:05",
+                  "net": 23.16,
+                  "gross": 24.76,
+                  "r": 0.258,
+                  "reason": "stop",
+                  "volume": 0.32
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 19:10",
+                  "exit_utc": "2026-10-25 22:00",
+                  "net": -7.46,
+                  "gross": -5.76,
+                  "r": -0.083,
+                  "reason": "stop",
+                  "volume": 0.34
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:05",
+                  "exit_utc": "2026-10-25 23:25",
+                  "net": -86.04,
+                  "gross": -85.19,
+                  "r": -0.957,
+                  "reason": "stop",
+                  "volume": 0.17
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 23:30",
+                  "exit_utc": "2026-10-26 04:10",
+                  "net": 29.22,
+                  "gross": 30.17,
+                  "r": 0.328,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 04:20",
+                  "exit_utc": "2026-10-26 08:00",
+                  "net": -13.11,
+                  "gross": -12.16,
+                  "r": -0.147,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 08:05",
+                  "exit_utc": "2026-10-26 08:25",
+                  "net": -52.25,
+                  "gross": -51.3,
+                  "r": -0.586,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 08:30",
+                  "exit_utc": "2026-10-26 13:00",
+                  "net": 0.13,
+                  "gross": 0.83,
+                  "r": 0.001,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:05",
+                  "exit_utc": "2026-10-26 14:20",
+                  "net": -13.46,
+                  "gross": -12.46,
+                  "r": -0.152,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 14:50",
+                  "exit_utc": "2026-10-26 16:25",
+                  "net": -13.95,
+                  "gross": -13.5,
+                  "r": -0.158,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 16:30",
+                  "exit_utc": "2026-10-26 17:05",
+                  "net": -57.52,
+                  "gross": -56.87,
+                  "r": -0.651,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 17:15",
+                  "exit_utc": "2026-10-26 18:50",
+                  "net": -74.57,
+                  "gross": -73.77,
+                  "r": -0.849,
+                  "reason": "stop",
+                  "volume": 0.16
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 19:00",
+                  "exit_utc": "2026-10-26 21:30",
+                  "net": -20.78,
+                  "gross": -19.58,
+                  "r": -0.239,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 21:35",
+                  "exit_utc": "2026-10-26 22:30",
+                  "net": -50.43,
+                  "gross": -48.83,
+                  "r": -0.58,
+                  "reason": "stop",
+                  "volume": 0.32
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 22:35",
+                  "exit_utc": "2026-10-26 23:30",
+                  "net": -55.3,
+                  "gross": -53.5,
+                  "r": -0.64,
+                  "reason": "stop",
+                  "volume": 0.36
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 23:35",
+                  "exit_utc": "2026-10-27 01:20",
+                  "net": -22.42,
+                  "gross": -21.17,
+                  "r": -0.261,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 01:25",
+                  "exit_utc": "2026-10-27 01:40",
+                  "net": -85.44,
+                  "gross": -84.19,
+                  "r": -0.998,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 05:45",
+                  "exit_utc": "2026-10-27 06:45",
+                  "net": -56.69,
+                  "gross": -55.29,
+                  "r": -0.669,
+                  "reason": "stop",
+                  "volume": 0.28
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 06:50",
+                  "exit_utc": "2026-10-27 07:50",
+                  "net": -66.12,
+                  "gross": -64.82,
+                  "r": -0.785,
+                  "reason": "stop",
+                  "volume": 0.26
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 08:05",
+                  "exit_utc": "2026-10-27 10:10",
+                  "net": -82.56,
+                  "gross": -81.41,
+                  "r": -0.988,
+                  "reason": "stop",
+                  "volume": 0.23
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 10:15",
+                  "exit_utc": "2026-10-27 10:35",
+                  "net": -80.3,
+                  "gross": -79.15,
+                  "r": -0.971,
+                  "reason": "stop",
+                  "volume": 0.23
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 10:45",
+                  "exit_utc": "2026-10-27 11:40",
+                  "net": -10.8,
+                  "gross": -9.8,
+                  "r": -0.132,
+                  "reason": "window_end",
+                  "volume": 0.2
+                }
+              ],
+              "stress_2x_spread_net": -1874.5380413313587,
+              "stress_2x_trades": 59
+            },
+            "ha_st_10_3": {
+              "variant": "ha_st_10_3",
+              "trades": 39,
+              "wins": 8,
+              "losses": 31,
+              "flats": 0,
+              "win_rate": 0.20512820512820512,
+              "gross_pnl": -991.3756911820229,
+              "net_pnl": -1035.925691182023,
+              "ending_equity": 8964.074308817977,
+              "profit_factor": 0.4247362443455374,
+              "expectancy": -26.56219720979546,
+              "avg_r": -0.274464644882276,
+              "max_drawdown": 1502.1469988984318,
+              "max_losing_streak": 19,
+              "exposure_bars": 1409,
+              "window_bars": 2005,
+              "exposure_pct": 0.7027431421446384,
+              "exit_reasons": {
+                "stop": 38,
+                "window_end": 1
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 20,
+              "sell_count": 19,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 13:50",
+                  "exit_utc": "2026-10-20 15:10",
+                  "net": 44.8,
+                  "gross": 45.5,
+                  "r": 0.448,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 19:30",
+                  "exit_utc": "2026-10-20 20:35",
+                  "net": -99.94,
+                  "gross": -98.44,
+                  "r": -0.995,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 20:50",
+                  "exit_utc": "2026-10-21 01:05",
+                  "net": 14.09,
+                  "gross": 15.49,
+                  "r": 0.142,
+                  "reason": "stop",
+                  "volume": 0.28
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:15",
+                  "exit_utc": "2026-10-21 07:25",
+                  "net": -30.51,
+                  "gross": -29.41,
+                  "r": -0.306,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:35",
+                  "exit_utc": "2026-10-21 13:35",
+                  "net": 37.71,
+                  "gross": 38.71,
+                  "r": 0.38,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:05",
+                  "exit_utc": "2026-10-21 20:40",
+                  "net": -83.55,
+                  "gross": -82.8,
+                  "r": -0.838,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 21:35",
+                  "exit_utc": "2026-10-21 22:40",
+                  "net": -71.75,
+                  "gross": -70.4,
+                  "r": -0.726,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 22:50",
+                  "exit_utc": "2026-10-22 10:40",
+                  "net": 554.98,
+                  "gross": 556.18,
+                  "r": 5.657,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 21:25",
+                  "exit_utc": "2026-10-23 00:10",
+                  "net": -85.6,
+                  "gross": -84.4,
+                  "r": -0.826,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 00:25",
+                  "exit_utc": "2026-10-23 00:45",
+                  "net": -94.63,
+                  "gross": -93.23,
+                  "r": -0.92,
+                  "reason": "stop",
+                  "volume": 0.28
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 00:50",
+                  "exit_utc": "2026-10-23 04:55",
+                  "net": 3.54,
+                  "gross": 4.59,
+                  "r": 0.035,
+                  "reason": "stop",
+                  "volume": 0.21
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 08:00",
+                  "exit_utc": "2026-10-23 08:15",
+                  "net": -95.27,
+                  "gross": -93.82,
+                  "r": -0.935,
+                  "reason": "stop",
+                  "volume": 0.29
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 13:50",
+                  "exit_utc": "2026-10-23 14:10",
+                  "net": -96.08,
+                  "gross": -95.13,
+                  "r": -0.952,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:20",
+                  "exit_utc": "2026-10-24 07:00",
+                  "net": 20.91,
+                  "gross": 21.36,
+                  "r": 0.209,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 12:35",
+                  "exit_utc": "2026-10-24 14:10",
+                  "net": -76.83,
+                  "gross": -74.98,
+                  "r": -0.767,
+                  "reason": "stop",
+                  "volume": 0.37
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 14:20",
+                  "exit_utc": "2026-10-24 16:50",
+                  "net": -2.4,
+                  "gross": -1.5,
+                  "r": -0.024,
+                  "reason": "stop",
+                  "volume": 0.18
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 17:55",
+                  "exit_utc": "2026-10-24 21:05",
+                  "net": 15.82,
+                  "gross": 16.82,
+                  "r": 0.159,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 21:15",
+                  "exit_utc": "2026-10-24 22:35",
+                  "net": -91.71,
+                  "gross": -90.21,
+                  "r": -0.921,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 23:35",
+                  "exit_utc": "2026-10-25 05:30",
+                  "net": -19.9,
+                  "gross": -18.7,
+                  "r": -0.202,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 05:35",
+                  "exit_utc": "2026-10-25 11:40",
+                  "net": 73.0,
+                  "gross": 74.85,
+                  "r": 0.742,
+                  "reason": "stop",
+                  "volume": 0.37
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 11:50",
+                  "exit_utc": "2026-10-25 13:25",
+                  "net": -82.12,
+                  "gross": -80.67,
+                  "r": -0.828,
+                  "reason": "stop",
+                  "volume": 0.29
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 13:35",
+                  "exit_utc": "2026-10-25 14:50",
+                  "net": -96.85,
+                  "gross": -95.15,
+                  "r": -0.985,
+                  "reason": "stop",
+                  "volume": 0.34
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 15:00",
+                  "exit_utc": "2026-10-25 19:05",
+                  "net": -19.51,
+                  "gross": -18.31,
+                  "r": -0.2,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 19:30",
+                  "exit_utc": "2026-10-25 22:00",
+                  "net": -19.6,
+                  "gross": -17.65,
+                  "r": -0.202,
+                  "reason": "stop",
+                  "volume": 0.39
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:10",
+                  "exit_utc": "2026-10-25 23:25",
+                  "net": -87.91,
+                  "gross": -86.96,
+                  "r": -0.906,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 23:50",
+                  "exit_utc": "2026-10-26 04:15",
+                  "net": -16.41,
+                  "gross": -15.76,
+                  "r": -0.171,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 04:40",
+                  "exit_utc": "2026-10-26 08:00",
+                  "net": -20.63,
+                  "gross": -19.78,
+                  "r": -0.215,
+                  "reason": "stop",
+                  "volume": 0.17
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 08:10",
+                  "exit_utc": "2026-10-26 08:35",
+                  "net": -81.07,
+                  "gross": -80.12,
+                  "r": -0.847,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 08:45",
+                  "exit_utc": "2026-10-26 13:00",
+                  "net": -18.42,
+                  "gross": -17.72,
+                  "r": -0.194,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:15",
+                  "exit_utc": "2026-10-26 14:50",
+                  "net": -39.79,
+                  "gross": -38.69,
+                  "r": -0.42,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 15:05",
+                  "exit_utc": "2026-10-26 16:25",
+                  "net": -39.95,
+                  "gross": -39.5,
+                  "r": -0.423,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 16:35",
+                  "exit_utc": "2026-10-26 21:35",
+                  "net": -24.12,
+                  "gross": -23.57,
+                  "r": -0.257,
+                  "reason": "stop",
+                  "volume": 0.11
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 21:45",
+                  "exit_utc": "2026-10-26 23:00",
+                  "net": -77.98,
+                  "gross": -76.43,
+                  "r": -0.832,
+                  "reason": "stop",
+                  "volume": 0.31
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 23:05",
+                  "exit_utc": "2026-10-26 23:30",
+                  "net": -90.08,
+                  "gross": -88.98,
+                  "r": -0.969,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 00:05",
+                  "exit_utc": "2026-10-27 01:25",
+                  "net": -49.41,
+                  "gross": -48.06,
+                  "r": -0.537,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 02:30",
+                  "exit_utc": "2026-10-27 05:45",
+                  "net": -1.25,
+                  "gross": -0.3,
+                  "r": -0.014,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 05:50",
+                  "exit_utc": "2026-10-27 06:45",
+                  "net": -80.02,
+                  "gross": -78.87,
+                  "r": -0.874,
+                  "reason": "stop",
+                  "volume": 0.23
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 06:55",
+                  "exit_utc": "2026-10-27 07:50",
+                  "net": -80.55,
+                  "gross": -79.25,
+                  "r": -0.888,
+                  "reason": "stop",
+                  "volume": 0.26
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 10:50",
+                  "exit_utc": "2026-10-27 11:40",
+                  "net": -26.94,
+                  "gross": -26.09,
+                  "r": -0.3,
+                  "reason": "window_end",
+                  "volume": 0.17
+                }
+              ],
+              "stress_2x_spread_net": -1057.41554644735,
+              "stress_2x_trades": 39
+            },
+            "ha_st_rsi_adx_24s": {
+              "variant": "ha_st_rsi_adx_24s",
+              "trades": 23,
+              "wins": 4,
+              "losses": 19,
+              "flats": 0,
+              "win_rate": 0.17391304347826086,
+              "gross_pnl": -342.3291660071026,
+              "net_pnl": -366.97916600710266,
+              "ending_equity": 9633.020833992894,
+              "profit_factor": 0.6319885693073383,
+              "expectancy": -15.95561591335229,
+              "avg_r": -0.15424893199520162,
+              "max_drawdown": 875.1838503961135,
+              "max_losing_streak": 14,
+              "exposure_bars": 982,
+              "window_bars": 2005,
+              "exposure_pct": 0.48977556109725684,
+              "exit_reasons": {
+                "stop": 22,
+                "window_end": 1
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 16,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 12,
+              "sell_count": 11,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:15",
+                  "exit_utc": "2026-10-21 07:25",
+                  "net": -30.51,
+                  "gross": -29.41,
+                  "r": -0.305,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:35",
+                  "exit_utc": "2026-10-21 13:35",
+                  "net": 37.71,
+                  "gross": 38.71,
+                  "r": 0.378,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:05",
+                  "exit_utc": "2026-10-21 20:40",
+                  "net": -83.55,
+                  "gross": -82.8,
+                  "r": -0.835,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 21:35",
+                  "exit_utc": "2026-10-21 22:40",
+                  "net": -71.75,
+                  "gross": -70.4,
+                  "r": -0.723,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 22:50",
+                  "exit_utc": "2026-10-22 10:40",
+                  "net": 554.98,
+                  "gross": 556.18,
+                  "r": 5.633,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 13:50",
+                  "exit_utc": "2026-10-23 14:10",
+                  "net": -101.13,
+                  "gross": -100.13,
+                  "r": -0.972,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:20",
+                  "exit_utc": "2026-10-24 07:00",
+                  "net": 20.91,
+                  "gross": 21.36,
+                  "r": 0.203,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 14:20",
+                  "exit_utc": "2026-10-24 16:50",
+                  "net": -2.53,
+                  "gross": -1.58,
+                  "r": -0.025,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 17:55",
+                  "exit_utc": "2026-10-24 21:05",
+                  "net": 16.61,
+                  "gross": 17.66,
+                  "r": 0.161,
+                  "reason": "stop",
+                  "volume": 0.21
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 21:15",
+                  "exit_utc": "2026-10-24 22:35",
+                  "net": -94.76,
+                  "gross": -93.21,
+                  "r": -0.916,
+                  "reason": "stop",
+                  "volume": 0.31
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 23:35",
+                  "exit_utc": "2026-10-25 05:30",
+                  "net": -20.73,
+                  "gross": -19.48,
+                  "r": -0.202,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 11:50",
+                  "exit_utc": "2026-10-25 13:25",
+                  "net": -84.95,
+                  "gross": -83.45,
+                  "r": -0.831,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 19:30",
+                  "exit_utc": "2026-10-25 22:00",
+                  "net": -20.61,
+                  "gross": -18.56,
+                  "r": -0.203,
+                  "reason": "stop",
+                  "volume": 0.41
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:10",
+                  "exit_utc": "2026-10-25 23:25",
+                  "net": -92.54,
+                  "gross": -91.54,
+                  "r": -0.914,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 23:50",
+                  "exit_utc": "2026-10-26 04:15",
+                  "net": -16.41,
+                  "gross": -15.76,
+                  "r": -0.164,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 04:40",
+                  "exit_utc": "2026-10-26 08:00",
+                  "net": -21.84,
+                  "gross": -20.94,
+                  "r": -0.218,
+                  "reason": "stop",
+                  "volume": 0.18
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 08:10",
+                  "exit_utc": "2026-10-26 08:35",
+                  "net": -85.33,
+                  "gross": -84.33,
+                  "r": -0.854,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 15:05",
+                  "exit_utc": "2026-10-26 16:25",
+                  "net": -44.39,
+                  "gross": -43.89,
+                  "r": -0.448,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 16:35",
+                  "exit_utc": "2026-10-26 21:35",
+                  "net": -26.32,
+                  "gross": -25.72,
+                  "r": -0.267,
+                  "reason": "stop",
+                  "volume": 0.12
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 21:45",
+                  "exit_utc": "2026-10-26 23:00",
+                  "net": -83.01,
+                  "gross": -81.36,
+                  "r": -0.844,
+                  "reason": "stop",
+                  "volume": 0.33
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 02:30",
+                  "exit_utc": "2026-10-27 05:45",
+                  "net": -1.31,
+                  "gross": -0.31,
+                  "r": -0.013,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 05:50",
+                  "exit_utc": "2026-10-27 06:45",
+                  "net": -86.98,
+                  "gross": -85.73,
+                  "r": -0.892,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 10:50",
+                  "exit_utc": "2026-10-27 11:40",
+                  "net": -28.53,
+                  "gross": -27.63,
+                  "r": -0.295,
+                  "reason": "window_end",
+                  "volume": 0.18
+                }
+              ],
+              "stress_2x_spread_net": -375.4566305527308,
+              "stress_2x_trades": 23
+            },
+            "ha_st_rsi_adx": {
+              "variant": "ha_st_rsi_adx",
+              "trades": 23,
+              "wins": 4,
+              "losses": 19,
+              "flats": 0,
+              "win_rate": 0.17391304347826086,
+              "gross_pnl": -342.3291660071026,
+              "net_pnl": -366.97916600710266,
+              "ending_equity": 9633.020833992894,
+              "profit_factor": 0.6319885693073383,
+              "expectancy": -15.95561591335229,
+              "avg_r": -0.15424893199520162,
+              "max_drawdown": 875.1838503961135,
+              "max_losing_streak": 14,
+              "exposure_bars": 982,
+              "window_bars": 2005,
+              "exposure_pct": 0.48977556109725684,
+              "exit_reasons": {
+                "stop": 22,
+                "window_end": 1
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 16,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 12,
+              "sell_count": 11,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:15",
+                  "exit_utc": "2026-10-21 07:25",
+                  "net": -30.51,
+                  "gross": -29.41,
+                  "r": -0.305,
+                  "reason": "stop",
+                  "volume": 0.22
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:35",
+                  "exit_utc": "2026-10-21 13:35",
+                  "net": 37.71,
+                  "gross": 38.71,
+                  "r": 0.378,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:05",
+                  "exit_utc": "2026-10-21 20:40",
+                  "net": -83.55,
+                  "gross": -82.8,
+                  "r": -0.835,
+                  "reason": "stop",
+                  "volume": 0.15
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 21:35",
+                  "exit_utc": "2026-10-21 22:40",
+                  "net": -71.75,
+                  "gross": -70.4,
+                  "r": -0.723,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 22:50",
+                  "exit_utc": "2026-10-22 10:40",
+                  "net": 554.98,
+                  "gross": 556.18,
+                  "r": 5.633,
+                  "reason": "stop",
+                  "volume": 0.24
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 13:50",
+                  "exit_utc": "2026-10-23 14:10",
+                  "net": -101.13,
+                  "gross": -100.13,
+                  "r": -0.972,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:20",
+                  "exit_utc": "2026-10-24 07:00",
+                  "net": 20.91,
+                  "gross": 21.36,
+                  "r": 0.203,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 14:20",
+                  "exit_utc": "2026-10-24 16:50",
+                  "net": -2.53,
+                  "gross": -1.58,
+                  "r": -0.025,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 17:55",
+                  "exit_utc": "2026-10-24 21:05",
+                  "net": 16.61,
+                  "gross": 17.66,
+                  "r": 0.161,
+                  "reason": "stop",
+                  "volume": 0.21
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 21:15",
+                  "exit_utc": "2026-10-24 22:35",
+                  "net": -94.76,
+                  "gross": -93.21,
+                  "r": -0.916,
+                  "reason": "stop",
+                  "volume": 0.31
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-24 23:35",
+                  "exit_utc": "2026-10-25 05:30",
+                  "net": -20.73,
+                  "gross": -19.48,
+                  "r": -0.202,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 11:50",
+                  "exit_utc": "2026-10-25 13:25",
+                  "net": -84.95,
+                  "gross": -83.45,
+                  "r": -0.831,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 19:30",
+                  "exit_utc": "2026-10-25 22:00",
+                  "net": -20.61,
+                  "gross": -18.56,
+                  "r": -0.203,
+                  "reason": "stop",
+                  "volume": 0.41
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:10",
+                  "exit_utc": "2026-10-25 23:25",
+                  "net": -92.54,
+                  "gross": -91.54,
+                  "r": -0.914,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 23:50",
+                  "exit_utc": "2026-10-26 04:15",
+                  "net": -16.41,
+                  "gross": -15.76,
+                  "r": -0.164,
+                  "reason": "stop",
+                  "volume": 0.13
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 04:40",
+                  "exit_utc": "2026-10-26 08:00",
+                  "net": -21.84,
+                  "gross": -20.94,
+                  "r": -0.218,
+                  "reason": "stop",
+                  "volume": 0.18
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 08:10",
+                  "exit_utc": "2026-10-26 08:35",
+                  "net": -85.33,
+                  "gross": -84.33,
+                  "r": -0.854,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 15:05",
+                  "exit_utc": "2026-10-26 16:25",
+                  "net": -44.39,
+                  "gross": -43.89,
+                  "r": -0.448,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 16:35",
+                  "exit_utc": "2026-10-26 21:35",
+                  "net": -26.32,
+                  "gross": -25.72,
+                  "r": -0.267,
+                  "reason": "stop",
+                  "volume": 0.12
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 21:45",
+                  "exit_utc": "2026-10-26 23:00",
+                  "net": -83.01,
+                  "gross": -81.36,
+                  "r": -0.844,
+                  "reason": "stop",
+                  "volume": 0.33
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 02:30",
+                  "exit_utc": "2026-10-27 05:45",
+                  "net": -1.31,
+                  "gross": -0.31,
+                  "r": -0.013,
+                  "reason": "stop",
+                  "volume": 0.2
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 05:50",
+                  "exit_utc": "2026-10-27 06:45",
+                  "net": -86.98,
+                  "gross": -85.73,
+                  "r": -0.892,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 10:50",
+                  "exit_utc": "2026-10-27 11:40",
+                  "net": -28.53,
+                  "gross": -27.63,
+                  "r": -0.295,
+                  "reason": "window_end",
+                  "volume": 0.18
+                }
+              ],
+              "stress_2x_spread_net": -375.4566305527308,
+              "stress_2x_trades": 23
+            },
+            "ha_dual_7_2_10_3": {
+              "variant": "ha_dual_7_2_10_3",
+              "trades": 19,
+              "wins": 4,
+              "losses": 15,
+              "flats": 0,
+              "win_rate": 0.21052631578947367,
+              "gross_pnl": -776.1237617248012,
+              "net_pnl": -806.2237617248012,
+              "ending_equity": 9193.776238275199,
+              "profit_factor": 0.10920966460531868,
+              "expectancy": -42.43282956446322,
+              "avg_r": -0.44033232423150276,
+              "max_drawdown": 806.2237617248011,
+              "max_losing_streak": 4,
+              "exposure_bars": 359,
+              "window_bars": 2005,
+              "exposure_pct": 0.17905236907730673,
+              "exit_reasons": {
+                "stop": 19
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 4,
+              "sell_count": 15,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 12:15",
+                  "exit_utc": "2026-10-20 12:20",
+                  "net": -98.91,
+                  "gross": -97.16,
+                  "r": -0.989,
+                  "reason": "stop",
+                  "volume": 0.35
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 00:20",
+                  "exit_utc": "2026-10-21 01:00",
+                  "net": -67.14,
+                  "gross": -65.34,
+                  "r": -0.678,
+                  "reason": "stop",
+                  "volume": 0.36
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 02:25",
+                  "exit_utc": "2026-10-21 05:00",
+                  "net": -40.66,
+                  "gross": -39.36,
+                  "r": -0.413,
+                  "reason": "stop",
+                  "volume": 0.26
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 05:55",
+                  "exit_utc": "2026-10-21 06:30",
+                  "net": -72.91,
+                  "gross": -71.26,
+                  "r": -0.745,
+                  "reason": "stop",
+                  "volume": 0.33
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 11:30",
+                  "exit_utc": "2026-10-22 13:25",
+                  "net": 8.18,
+                  "gross": 10.28,
+                  "r": 0.084,
+                  "reason": "stop",
+                  "volume": 0.42
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 13:55",
+                  "exit_utc": "2026-10-22 19:20",
+                  "net": 52.84,
+                  "gross": 54.09,
+                  "r": 0.543,
+                  "reason": "stop",
+                  "volume": 0.25
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 20:50",
+                  "exit_utc": "2026-10-22 21:05",
+                  "net": -89.48,
+                  "gross": -87.58,
+                  "r": -0.915,
+                  "reason": "stop",
+                  "volume": 0.38
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 05:15",
+                  "exit_utc": "2026-10-23 07:15",
+                  "net": -35.44,
+                  "gross": -33.94,
+                  "r": -0.366,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 09:40",
+                  "exit_utc": "2026-10-23 10:20",
+                  "net": -95.2,
+                  "gross": -93.55,
+                  "r": -0.986,
+                  "reason": "stop",
+                  "volume": 0.33
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:20",
+                  "exit_utc": "2026-10-23 16:45",
+                  "net": -75.84,
+                  "gross": -75.29,
+                  "r": -0.793,
+                  "reason": "stop",
+                  "volume": 0.11
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 22:35",
+                  "exit_utc": "2026-10-23 23:45",
+                  "net": 3.24,
+                  "gross": 5.04,
+                  "r": 0.034,
+                  "reason": "stop",
+                  "volume": 0.36
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 00:25",
+                  "exit_utc": "2026-10-24 01:50",
+                  "net": -43.74,
+                  "gross": -42.84,
+                  "r": -0.461,
+                  "reason": "stop",
+                  "volume": 0.18
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 04:35",
+                  "exit_utc": "2026-10-24 07:00",
+                  "net": -1.57,
+                  "gross": 0.88,
+                  "r": -0.017,
+                  "reason": "stop",
+                  "volume": 0.49
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-24 08:45",
+                  "exit_utc": "2026-10-24 10:30",
+                  "net": -29.89,
+                  "gross": -28.09,
+                  "r": -0.317,
+                  "reason": "stop",
+                  "volume": 0.36
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-25 08:25",
+                  "exit_utc": "2026-10-25 11:00",
+                  "net": 34.58,
+                  "gross": 36.83,
+                  "r": 0.367,
+                  "reason": "stop",
+                  "volume": 0.45
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:10",
+                  "exit_utc": "2026-10-25 23:15",
+                  "net": -73.25,
+                  "gross": -72.1,
+                  "r": -0.775,
+                  "reason": "stop",
+                  "volume": 0.23
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 12:35",
+                  "exit_utc": "2026-10-26 13:00",
+                  "net": -92.36,
+                  "gross": -90.86,
+                  "r": -0.985,
+                  "reason": "stop",
+                  "volume": 0.3
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 19:00",
+                  "exit_utc": "2026-10-26 21:15",
+                  "net": -5.62,
+                  "gross": -4.27,
+                  "r": -0.061,
+                  "reason": "stop",
+                  "volume": 0.27
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 10:15",
+                  "exit_utc": "2026-10-27 10:35",
+                  "net": -83.05,
+                  "gross": -81.6,
+                  "r": -0.895,
+                  "reason": "stop",
+                  "volume": 0.29
+                }
+              ],
+              "stress_2x_spread_net": -810.5760850670507,
+              "stress_2x_trades": 19
+            }
+          }
+        }
+      },
+      "resolved": "BTCUSD",
+      "costs": {
+        "resolved": "BTCUSD",
+        "digits": 2,
+        "point": 0.01,
+        "spread_price": 5.0,
+        "spread_source": "tick_ask_bid",
+        "symbol_spread_points": 500,
+        "tick_spread": 5.0,
+        "contract_size": 1.0,
+        "volume_min": 0.01,
+        "volume_max": 10.0,
+        "volume_step": 0.01,
+        "unit_per_lot_per_price": 1.0,
+        "unit_source": "order_calc_profit",
+        "currency_profit": "USD",
+        "bid": 79772.62,
+        "ask": 79777.62,
+        "description": "Bitcoin (USD)"
+      }
+    },
+    "XAUUSD": {
+      "timeframes": {
+        "15m": {
+          "provenance": {
+            "bars": 1931,
+            "first_utc": "2026-09-28 12:00",
+            "last_utc": "2026-10-27 11:30",
+            "gap_count": 21,
+            "longest_gap_hours": 49.25,
+            "missing_slots_incl_weekends": 852
+          },
+          "window_start_utc": "2026-10-20 11:30",
+          "buy_hold": {
+            "first_close": 4121.38,
+            "last_close": 4009.86,
+            "return_pct": -2.705889774784176,
+            "bars": 461
+          },
+          "variants": {
+            "baseline_st_10_3": {
+              "variant": "baseline_st_10_3",
+              "trades": 14,
+              "wins": 1,
+              "losses": 13,
+              "flats": 0,
+              "win_rate": 0.07142857142857142,
+              "gross_pnl": -582.533655633024,
+              "net_pnl": -587.0136556330199,
+              "ending_equity": 9412.98634436698,
+              "profit_factor": 0.1509096093156016,
+              "expectancy": -41.92954683092999,
+              "avg_r": -0.429985280048582,
+              "max_drawdown": 587.0136556330199,
+              "max_losing_streak": 8,
+              "exposure_bars": 289,
+              "window_bars": 461,
+              "exposure_pct": 0.6268980477223427,
+              "exit_reasons": {
+                "stop": 14
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 7,
+              "sell_count": 7,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 14:30",
+                  "exit_utc": "2026-10-20 17:00",
+                  "net": -73.38,
+                  "gross": -73.22,
+                  "r": -0.734,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 23:30",
+                  "exit_utc": "2026-10-21 05:15",
+                  "net": -76.13,
+                  "gross": -75.57,
+                  "r": -0.767,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 05:30",
+                  "exit_utc": "2026-10-21 18:45",
+                  "net": -16.28,
+                  "gross": -15.96,
+                  "r": -0.165,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:00",
+                  "exit_utc": "2026-10-21 20:30",
+                  "net": -46.47,
+                  "gross": -46.31,
+                  "r": -0.472,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 20:45",
+                  "exit_utc": "2026-10-22 00:15",
+                  "net": -73.07,
+                  "gross": -72.75,
+                  "r": -0.747,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 00:30",
+                  "exit_utc": "2026-10-22 06:15",
+                  "net": 104.33,
+                  "gross": 104.81,
+                  "r": 1.074,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 09:30",
+                  "exit_utc": "2026-10-23 14:00",
+                  "net": -68.47,
+                  "gross": -68.15,
+                  "r": -0.697,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:15",
+                  "exit_utc": "2026-10-26 03:00",
+                  "net": -8.67,
+                  "gross": -8.43,
+                  "r": -0.089,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 03:15",
+                  "exit_utc": "2026-10-26 13:30",
+                  "net": -20.4,
+                  "gross": -20.16,
+                  "r": -0.209,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:45",
+                  "exit_utc": "2026-10-26 14:30",
+                  "net": -62.94,
+                  "gross": -62.62,
+                  "r": -0.647,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 14:45",
+                  "exit_utc": "2026-10-26 23:45",
+                  "net": -31.49,
+                  "gross": -31.33,
+                  "r": -0.326,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 00:00",
+                  "exit_utc": "2026-10-27 00:00",
+                  "net": -91.63,
+                  "gross": -91.07,
+                  "r": -0.952,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 03:45",
+                  "exit_utc": "2026-10-27 05:30",
+                  "net": -74.18,
+                  "gross": -73.86,
+                  "r": -0.778,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 06:45",
+                  "exit_utc": "2026-10-27 10:45",
+                  "net": -48.22,
+                  "gross": -47.9,
+                  "r": -0.51,
+                  "reason": "stop",
+                  "volume": 0.04
+                }
+              ],
+              "stress_2x_spread_net": -591.4936556330158,
+              "stress_2x_trades": 14
+            },
+            "ha_st_10_3": {
+              "variant": "ha_st_10_3",
+              "trades": 8,
+              "wins": 1,
+              "losses": 7,
+              "flats": 0,
+              "win_rate": 0.125,
+              "gross_pnl": -224.98889679669855,
+              "net_pnl": -226.98889679669674,
+              "ending_equity": 9773.011103203306,
+              "profit_factor": 0.5261495054202129,
+              "expectancy": -28.373612099587092,
+              "avg_r": -0.28068159431169926,
+              "max_drawdown": 386.33759205447313,
+              "max_losing_streak": 4,
+              "exposure_bars": 359,
+              "window_bars": 461,
+              "exposure_pct": 0.7787418655097614,
+              "exit_reasons": {
+                "stop": 8
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 4,
+              "sell_count": 4,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 14:30",
+                  "exit_utc": "2026-10-21 00:00",
+                  "net": -81.19,
+                  "gross": -81.03,
+                  "r": -0.812,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:15",
+                  "exit_utc": "2026-10-21 11:00",
+                  "net": -85.32,
+                  "gross": -85.0,
+                  "r": -0.86,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 11:45",
+                  "exit_utc": "2026-10-21 18:45",
+                  "net": -49.57,
+                  "gross": -49.33,
+                  "r": -0.504,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:15",
+                  "exit_utc": "2026-10-23 13:15",
+                  "net": 252.04,
+                  "gross": 252.28,
+                  "r": 2.576,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 05:00",
+                  "exit_utc": "2026-10-26 13:30",
+                  "net": -36.24,
+                  "gross": -36.0,
+                  "r": -0.361,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 14:00",
+                  "exit_utc": "2026-10-26 14:45",
+                  "net": -93.72,
+                  "gross": -93.48,
+                  "r": -0.937,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 17:15",
+                  "exit_utc": "2026-10-27 05:30",
+                  "net": -72.4,
+                  "gross": -72.16,
+                  "r": -0.731,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 06:45",
+                  "exit_utc": "2026-10-27 10:45",
+                  "net": -60.59,
+                  "gross": -60.27,
+                  "r": -0.616,
+                  "reason": "stop",
+                  "volume": 0.04
+                }
+              ],
+              "stress_2x_spread_net": -228.98889679669492,
+              "stress_2x_trades": 8
+            },
+            "ha_st_rsi_adx_24s": {
+              "variant": "ha_st_rsi_adx_24s",
+              "trades": 3,
+              "wins": 1,
+              "losses": 2,
+              "flats": 0,
+              "win_rate": 0.3333333333333333,
+              "gross_pnl": 122.79837062941988,
+              "net_pnl": 122.07837062942053,
+              "ending_equity": 10122.078370629422,
+              "profit_factor": 1.9393291804225319,
+              "expectancy": 40.692790209806844,
+              "avg_r": 0.41649719977987293,
+              "max_drawdown": 253.34162937057772,
+              "max_losing_streak": 2,
+              "exposure_bars": 197,
+              "window_bars": 461,
+              "exposure_pct": 0.42733188720173537,
+              "exit_reasons": {
+                "stop": 3
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 5,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 1,
+              "sell_count": 2,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:15",
+                  "exit_utc": "2026-10-23 13:15",
+                  "net": 252.04,
+                  "gross": 252.28,
+                  "r": 2.52,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 05:00",
+                  "exit_utc": "2026-10-26 13:30",
+                  "net": -36.24,
+                  "gross": -36.0,
+                  "r": -0.353,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 14:00",
+                  "exit_utc": "2026-10-26 14:45",
+                  "net": -93.72,
+                  "gross": -93.48,
+                  "r": -0.917,
+                  "reason": "stop",
+                  "volume": 0.03
+                }
+              ],
+              "stress_2x_spread_net": 121.35837062942119,
+              "stress_2x_trades": 3
+            },
+            "ha_st_rsi_adx": {
+              "variant": "ha_st_rsi_adx",
+              "trades": 2,
+              "wins": 1,
+              "losses": 1,
+              "flats": 0,
+              "win_rate": 0.5,
+              "gross_pnl": 158.79750782542442,
+              "net_pnl": 158.31750782542485,
+              "ending_equity": 10158.317507825426,
+              "profit_factor": 2.6891846475418117,
+              "expectancy": 79.15875391271243,
+              "avg_r": 0.8031083726429056,
+              "max_drawdown": 217.10249217457385,
+              "max_losing_streak": 1,
+              "exposure_bars": 163,
+              "window_bars": 461,
+              "exposure_pct": 0.35357917570498915,
+              "exit_reasons": {
+                "stop": 2
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 3,
+                "session": 3,
+                "no_unit": 0
+              },
+              "buy_count": 0,
+              "sell_count": 2,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 19:15",
+                  "exit_utc": "2026-10-23 13:15",
+                  "net": 252.04,
+                  "gross": 252.28,
+                  "r": 2.52,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 14:00",
+                  "exit_utc": "2026-10-26 14:45",
+                  "net": -93.72,
+                  "gross": -93.48,
+                  "r": -0.914,
+                  "reason": "stop",
+                  "volume": 0.03
+                }
+              ],
+              "stress_2x_spread_net": 157.8375078254253,
+              "stress_2x_trades": 2
+            },
+            "ha_dual_7_2_10_3": {
+              "variant": "ha_dual_7_2_10_3",
+              "trades": 3,
+              "wins": 0,
+              "losses": 3,
+              "flats": 0,
+              "win_rate": 0.0,
+              "gross_pnl": -193.34979473915428,
+              "net_pnl": -194.14979473915355,
+              "ending_equity": 9805.850205260846,
+              "profit_factor": 0.0,
+              "expectancy": -64.71659824638452,
+              "avg_r": -0.6513756676664847,
+              "max_drawdown": 194.14979473915446,
+              "max_losing_streak": 3,
+              "exposure_bars": 81,
+              "window_bars": 461,
+              "exposure_pct": 0.175704989154013,
+              "exit_reasons": {
+                "stop": 3
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 2,
+              "sell_count": 1,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 14:30",
+                  "exit_utc": "2026-10-20 23:00",
+                  "net": -69.48,
+                  "gross": -69.32,
+                  "r": -0.695,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:30",
+                  "exit_utc": "2026-10-26 03:00",
+                  "net": -54.94,
+                  "gross": -54.78,
+                  "r": -0.553,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 04:00",
+                  "exit_utc": "2026-10-27 05:15",
+                  "net": -69.73,
+                  "gross": -69.25,
+                  "r": -0.706,
+                  "reason": "stop",
+                  "volume": 0.06
+                }
+              ],
+              "stress_2x_spread_net": -194.94979473915282,
+              "stress_2x_trades": 3
+            }
+          }
+        },
+        "5m": {
+          "provenance": {
+            "bars": 5795,
+            "first_utc": "2026-09-28 11:50",
+            "last_utc": "2026-10-27 11:40",
+            "gap_count": 21,
+            "longest_gap_hours": 49.083333333333336,
+            "missing_slots_incl_weekends": 2556
+          },
+          "window_start_utc": "2026-10-20 11:40",
+          "buy_hold": {
+            "first_close": 4121.38,
+            "last_close": 4009.86,
+            "return_pct": -2.705889774784176,
+            "bars": 1381
+          },
+          "variants": {
+            "baseline_st_10_3": {
+              "variant": "baseline_st_10_3",
+              "trades": 46,
+              "wins": 16,
+              "losses": 30,
+              "flats": 0,
+              "win_rate": 0.34782608695652173,
+              "gross_pnl": -1107.1159763770866,
+              "net_pnl": -1132.4759763770635,
+              "ending_equity": 8867.52402362294,
+              "profit_factor": 0.3006015081368446,
+              "expectancy": -24.619042964718773,
+              "avg_r": -0.2597018154063962,
+              "max_drawdown": 1237.4822190979303,
+              "max_losing_streak": 6,
+              "exposure_bars": 1094,
+              "window_bars": 1381,
+              "exposure_pct": 0.7921795800144823,
+              "exit_reasons": {
+                "stop": 45,
+                "window_end": 1
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 23,
+              "sell_count": 23,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 12:10",
+                  "exit_utc": "2026-10-20 12:25",
+                  "net": -74.73,
+                  "gross": -74.25,
+                  "r": -0.747,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 13:40",
+                  "exit_utc": "2026-10-20 16:00",
+                  "net": 10.3,
+                  "gross": 10.62,
+                  "r": 0.104,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 16:05",
+                  "exit_utc": "2026-10-20 22:00",
+                  "net": 4.15,
+                  "gross": 4.55,
+                  "r": 0.042,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 22:05",
+                  "exit_utc": "2026-10-20 22:35",
+                  "net": -48.34,
+                  "gross": -46.98,
+                  "r": -0.486,
+                  "reason": "stop",
+                  "volume": 0.17
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 22:45",
+                  "exit_utc": "2026-10-21 00:30",
+                  "net": 24.05,
+                  "gross": 24.93,
+                  "r": 0.243,
+                  "reason": "stop",
+                  "volume": 0.11
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 00:50",
+                  "exit_utc": "2026-10-21 01:00",
+                  "net": -91.24,
+                  "gross": -90.28,
+                  "r": -0.92,
+                  "reason": "stop",
+                  "volume": 0.12
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:10",
+                  "exit_utc": "2026-10-21 01:30",
+                  "net": -95.12,
+                  "gross": -94.56,
+                  "r": -0.968,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 01:35",
+                  "exit_utc": "2026-10-21 05:40",
+                  "net": -31.72,
+                  "gross": -31.32,
+                  "r": -0.326,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 06:10",
+                  "exit_utc": "2026-10-21 07:20",
+                  "net": -37.22,
+                  "gross": -36.74,
+                  "r": -0.384,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 07:25",
+                  "exit_utc": "2026-10-21 10:10",
+                  "net": -48.17,
+                  "gross": -47.61,
+                  "r": -0.499,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 10:15",
+                  "exit_utc": "2026-10-21 10:35",
+                  "net": -76.95,
+                  "gross": -76.23,
+                  "r": -0.801,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 10:40",
+                  "exit_utc": "2026-10-21 12:30",
+                  "net": 39.88,
+                  "gross": 40.52,
+                  "r": 0.418,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 12:35",
+                  "exit_utc": "2026-10-21 13:05",
+                  "net": -61.16,
+                  "gross": -60.68,
+                  "r": -0.639,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 13:20",
+                  "exit_utc": "2026-10-21 14:00",
+                  "net": -77.67,
+                  "gross": -77.11,
+                  "r": -0.816,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 14:05",
+                  "exit_utc": "2026-10-21 15:25",
+                  "net": -71.65,
+                  "gross": -71.17,
+                  "r": -0.759,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 15:30",
+                  "exit_utc": "2026-10-21 18:45",
+                  "net": -34.46,
+                  "gross": -33.98,
+                  "r": -0.368,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 18:50",
+                  "exit_utc": "2026-10-21 19:25",
+                  "net": 19.82,
+                  "gross": 20.38,
+                  "r": 0.212,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 19:30",
+                  "exit_utc": "2026-10-21 22:50",
+                  "net": 15.28,
+                  "gross": 15.6,
+                  "r": 0.163,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 23:05",
+                  "exit_utc": "2026-10-22 02:30",
+                  "net": 38.56,
+                  "gross": 39.28,
+                  "r": 0.412,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 06:00",
+                  "exit_utc": "2026-10-22 09:00",
+                  "net": -24.43,
+                  "gross": -24.19,
+                  "r": -0.26,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 09:10",
+                  "exit_utc": "2026-10-22 12:10",
+                  "net": 30.59,
+                  "gross": 31.07,
+                  "r": 0.326,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 12:40",
+                  "exit_utc": "2026-10-22 13:35",
+                  "net": -47.37,
+                  "gross": -47.05,
+                  "r": -0.503,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 13:45",
+                  "exit_utc": "2026-10-22 22:20",
+                  "net": 87.0,
+                  "gross": 87.24,
+                  "r": 0.929,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 22:40",
+                  "exit_utc": "2026-10-22 23:05",
+                  "net": -70.69,
+                  "gross": -69.89,
+                  "r": -0.748,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 23:50",
+                  "exit_utc": "2026-10-23 00:50",
+                  "net": -60.9,
+                  "gross": -60.26,
+                  "r": -0.649,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 01:00",
+                  "exit_utc": "2026-10-23 01:05",
+                  "net": -81.35,
+                  "gross": -80.87,
+                  "r": -0.873,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 01:10",
+                  "exit_utc": "2026-10-23 02:10",
+                  "net": 16.62,
+                  "gross": 17.02,
+                  "r": 0.18,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 02:15",
+                  "exit_utc": "2026-10-23 04:45",
+                  "net": -28.92,
+                  "gross": -28.68,
+                  "r": -0.313,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 04:50",
+                  "exit_utc": "2026-10-23 05:10",
+                  "net": -87.64,
+                  "gross": -87.0,
+                  "r": -0.95,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 05:15",
+                  "exit_utc": "2026-10-23 08:05",
+                  "net": -36.03,
+                  "gross": -35.47,
+                  "r": -0.394,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:10",
+                  "exit_utc": "2026-10-25 22:00",
+                  "net": 55.77,
+                  "gross": 56.09,
+                  "r": 0.613,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:20",
+                  "exit_utc": "2026-10-25 23:45",
+                  "net": -83.53,
+                  "gross": -82.89,
+                  "r": -0.912,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 00:05",
+                  "exit_utc": "2026-10-26 01:15",
+                  "net": -58.35,
+                  "gross": -57.95,
+                  "r": -0.643,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 02:55",
+                  "exit_utc": "2026-10-26 06:10",
+                  "net": 28.96,
+                  "gross": 29.28,
+                  "r": 0.321,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 06:15",
+                  "exit_utc": "2026-10-26 08:00",
+                  "net": -34.02,
+                  "gross": -33.54,
+                  "r": -0.376,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 08:05",
+                  "exit_utc": "2026-10-26 10:45",
+                  "net": -23.85,
+                  "gross": -23.21,
+                  "r": -0.265,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:15",
+                  "exit_utc": "2026-10-26 14:10",
+                  "net": 30.04,
+                  "gross": 30.52,
+                  "r": 0.334,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 14:20",
+                  "exit_utc": "2026-10-26 17:45",
+                  "net": 14.01,
+                  "gross": 14.33,
+                  "r": 0.155,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 18:35",
+                  "exit_utc": "2026-10-26 20:50",
+                  "net": -8.2,
+                  "gross": -7.48,
+                  "r": -0.091,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 20:55",
+                  "exit_utc": "2026-10-26 23:00",
+                  "net": -74.6,
+                  "gross": -73.48,
+                  "r": -0.827,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 23:10",
+                  "exit_utc": "2026-10-27 00:05",
+                  "net": -5.37,
+                  "gross": -4.25,
+                  "r": -0.06,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 00:10",
+                  "exit_utc": "2026-10-27 00:30",
+                  "net": -52.74,
+                  "gross": -52.26,
+                  "r": -0.59,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 01:20",
+                  "exit_utc": "2026-10-27 03:35",
+                  "net": -67.19,
+                  "gross": -66.71,
+                  "r": -0.756,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 03:40",
+                  "exit_utc": "2026-10-27 04:40",
+                  "net": -25.59,
+                  "gross": -25.11,
+                  "r": -0.29,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 04:55",
+                  "exit_utc": "2026-10-27 10:40",
+                  "net": 60.75,
+                  "gross": 61.31,
+                  "r": 0.691,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 10:45",
+                  "exit_utc": "2026-10-27 11:40",
+                  "net": 10.95,
+                  "gross": 11.35,
+                  "r": 0.124,
+                  "reason": "window_end",
+                  "volume": 0.05
+                }
+              ],
+              "stress_2x_spread_net": -1150.152400682773,
+              "stress_2x_trades": 46
+            },
+            "ha_st_10_3": {
+              "variant": "ha_st_10_3",
+              "trades": 27,
+              "wins": 7,
+              "losses": 20,
+              "flats": 0,
+              "win_rate": 0.25925925925925924,
+              "gross_pnl": -881.3735330276586,
+              "net_pnl": -893.5335330276475,
+              "ending_equity": 9106.466466972352,
+              "profit_factor": 0.14387166402987578,
+              "expectancy": -33.09383455657954,
+              "avg_r": -0.34518302309102183,
+              "max_drawdown": 1048.1057652758864,
+              "max_losing_streak": 7,
+              "exposure_bars": 1042,
+              "window_bars": 1381,
+              "exposure_pct": 0.7545257060101376,
+              "exit_reasons": {
+                "stop": 26,
+                "window_end": 1
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 14,
+              "sell_count": 13,
+              "trade_list": [
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 13:45",
+                  "exit_utc": "2026-10-20 17:00",
+                  "net": -38.37,
+                  "gross": -38.05,
+                  "r": -0.384,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 17:05",
+                  "exit_utc": "2026-10-20 22:00",
+                  "net": -57.71,
+                  "gross": -57.23,
+                  "r": -0.579,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 22:20",
+                  "exit_utc": "2026-10-20 22:40",
+                  "net": -79.01,
+                  "gross": -78.05,
+                  "r": -0.798,
+                  "reason": "stop",
+                  "volume": 0.12
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 22:50",
+                  "exit_utc": "2026-10-21 01:30",
+                  "net": 6.34,
+                  "gross": 7.06,
+                  "r": 0.064,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 03:35",
+                  "exit_utc": "2026-10-21 06:20",
+                  "net": -64.89,
+                  "gross": -64.41,
+                  "r": -0.66,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 06:55",
+                  "exit_utc": "2026-10-21 07:25",
+                  "net": -84.34,
+                  "gross": -83.78,
+                  "r": -0.864,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 08:05",
+                  "exit_utc": "2026-10-21 10:15",
+                  "net": -89.36,
+                  "gross": -88.72,
+                  "r": -0.923,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 12:40",
+                  "exit_utc": "2026-10-21 15:25",
+                  "net": -65.27,
+                  "gross": -64.87,
+                  "r": -0.68,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 20:45",
+                  "exit_utc": "2026-10-21 23:00",
+                  "net": -62.16,
+                  "gross": -61.68,
+                  "r": -0.652,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 23:10",
+                  "exit_utc": "2026-10-22 02:30",
+                  "net": 21.69,
+                  "gross": 22.33,
+                  "r": 0.229,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 06:15",
+                  "exit_utc": "2026-10-22 11:00",
+                  "net": -57.01,
+                  "gross": -56.77,
+                  "r": -0.601,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 11:05",
+                  "exit_utc": "2026-10-22 12:40",
+                  "net": -24.39,
+                  "gross": -23.99,
+                  "r": -0.259,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 12:50",
+                  "exit_utc": "2026-10-22 13:40",
+                  "net": -79.25,
+                  "gross": -79.01,
+                  "r": -0.843,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 13:55",
+                  "exit_utc": "2026-10-22 22:40",
+                  "net": 45.43,
+                  "gross": 45.59,
+                  "r": 0.487,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 05:35",
+                  "exit_utc": "2026-10-23 13:45",
+                  "net": -11.53,
+                  "gross": -11.21,
+                  "r": -0.123,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 14:10",
+                  "exit_utc": "2026-10-25 22:15",
+                  "net": 49.27,
+                  "gross": 49.59,
+                  "r": 0.526,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:45",
+                  "exit_utc": "2026-10-25 23:45",
+                  "net": -86.65,
+                  "gross": -86.01,
+                  "r": -0.921,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 00:10",
+                  "exit_utc": "2026-10-26 02:55",
+                  "net": -57.67,
+                  "gross": -57.35,
+                  "r": -0.619,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 03:05",
+                  "exit_utc": "2026-10-26 06:15",
+                  "net": -8.93,
+                  "gross": -8.69,
+                  "r": -0.096,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 06:25",
+                  "exit_utc": "2026-10-26 08:05",
+                  "net": -60.22,
+                  "gross": -59.74,
+                  "r": -0.651,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 08:25",
+                  "exit_utc": "2026-10-26 13:15",
+                  "net": -44.18,
+                  "gross": -43.62,
+                  "r": -0.48,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:25",
+                  "exit_utc": "2026-10-26 14:15",
+                  "net": -25.62,
+                  "gross": -25.22,
+                  "r": -0.28,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 14:40",
+                  "exit_utc": "2026-10-26 18:35",
+                  "net": -6.55,
+                  "gross": -6.31,
+                  "r": -0.072,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 18:40",
+                  "exit_utc": "2026-10-27 00:05",
+                  "net": 1.7,
+                  "gross": 2.34,
+                  "r": 0.019,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 00:15",
+                  "exit_utc": "2026-10-27 05:00",
+                  "net": -40.58,
+                  "gross": -40.1,
+                  "r": -0.445,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-27 05:10",
+                  "exit_utc": "2026-10-27 10:40",
+                  "net": 16.13,
+                  "gross": 16.53,
+                  "r": 0.178,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 10:50",
+                  "exit_utc": "2026-10-27 11:40",
+                  "net": 9.6,
+                  "gross": 10.0,
+                  "r": 0.106,
+                  "reason": "window_end",
+                  "volume": 0.05
+                }
+              ],
+              "stress_2x_spread_net": -906.4505237139556,
+              "stress_2x_trades": 27
+            },
+            "ha_st_rsi_adx_24s": {
+              "variant": "ha_st_rsi_adx_24s",
+              "trades": 12,
+              "wins": 1,
+              "losses": 11,
+              "flats": 0,
+              "win_rate": 0.08333333333333333,
+              "gross_pnl": -574.9771587153282,
+              "net_pnl": -580.0171587153236,
+              "ending_equity": 9419.982841284676,
+              "profit_factor": 0.07263248677630081,
+              "expectancy": -48.33476322627697,
+              "avg_r": -0.4959767642954293,
+              "max_drawdown": 613.4215878315226,
+              "max_losing_streak": 6,
+              "exposure_bars": 470,
+              "window_bars": 1381,
+              "exposure_pct": 0.3403330919623461,
+              "exit_reasons": {
+                "stop": 12
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 15,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 7,
+              "sell_count": 5,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 17:05",
+                  "exit_utc": "2026-10-20 22:00",
+                  "net": -57.71,
+                  "gross": -57.23,
+                  "r": -0.577,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 08:05",
+                  "exit_utc": "2026-10-21 10:15",
+                  "net": -89.36,
+                  "gross": -88.72,
+                  "r": -0.899,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 12:40",
+                  "exit_utc": "2026-10-21 15:25",
+                  "net": -78.33,
+                  "gross": -77.85,
+                  "r": -0.795,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 06:15",
+                  "exit_utc": "2026-10-22 11:00",
+                  "net": -57.01,
+                  "gross": -56.77,
+                  "r": -0.583,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 12:50",
+                  "exit_utc": "2026-10-22 13:40",
+                  "net": -79.25,
+                  "gross": -79.01,
+                  "r": -0.815,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 13:55",
+                  "exit_utc": "2026-10-22 22:40",
+                  "net": 45.43,
+                  "gross": 45.59,
+                  "r": 0.471,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-25 22:45",
+                  "exit_utc": "2026-10-25 23:45",
+                  "net": -86.65,
+                  "gross": -86.01,
+                  "r": -0.895,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 06:25",
+                  "exit_utc": "2026-10-26 08:05",
+                  "net": -60.22,
+                  "gross": -59.74,
+                  "r": -0.628,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 08:25",
+                  "exit_utc": "2026-10-26 13:15",
+                  "net": -44.18,
+                  "gross": -43.62,
+                  "r": -0.463,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:25",
+                  "exit_utc": "2026-10-26 14:15",
+                  "net": -25.62,
+                  "gross": -25.22,
+                  "r": -0.27,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 14:40",
+                  "exit_utc": "2026-10-26 18:35",
+                  "net": -6.55,
+                  "gross": -6.31,
+                  "r": -0.069,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-27 00:15",
+                  "exit_utc": "2026-10-27 05:00",
+                  "net": -40.58,
+                  "gross": -40.1,
+                  "r": -0.429,
+                  "reason": "stop",
+                  "volume": 0.06
+                }
+              ],
+              "stress_2x_spread_net": -585.057158715319,
+              "stress_2x_trades": 12
+            },
+            "ha_st_rsi_adx": {
+              "variant": "ha_st_rsi_adx",
+              "trades": 8,
+              "wins": 1,
+              "losses": 7,
+              "flats": 0,
+              "win_rate": 0.125,
+              "gross_pnl": -332.36038201097335,
+              "net_pnl": -335.56038201097044,
+              "ending_equity": 9664.439617989028,
+              "profit_factor": 0.1192363273941299,
+              "expectancy": -41.945047751371305,
+              "avg_r": -0.42481023398551354,
+              "max_drawdown": 335.5603820109718,
+              "max_losing_streak": 4,
+              "exposure_bars": 324,
+              "window_bars": 1381,
+              "exposure_pct": 0.2346125995655322,
+              "exit_reasons": {
+                "stop": 8
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 6,
+                "session": 13,
+                "no_unit": 0
+              },
+              "buy_count": 4,
+              "sell_count": 4,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 17:05",
+                  "exit_utc": "2026-10-20 22:00",
+                  "net": -57.71,
+                  "gross": -57.23,
+                  "r": -0.577,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 08:05",
+                  "exit_utc": "2026-10-21 10:15",
+                  "net": -89.36,
+                  "gross": -88.72,
+                  "r": -0.899,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 12:40",
+                  "exit_utc": "2026-10-21 15:25",
+                  "net": -78.33,
+                  "gross": -77.85,
+                  "r": -0.795,
+                  "reason": "stop",
+                  "volume": 0.06
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-22 12:50",
+                  "exit_utc": "2026-10-22 13:40",
+                  "net": -79.25,
+                  "gross": -79.01,
+                  "r": -0.811,
+                  "reason": "stop",
+                  "volume": 0.03
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 13:55",
+                  "exit_utc": "2026-10-22 22:40",
+                  "net": 45.43,
+                  "gross": 45.59,
+                  "r": 0.469,
+                  "reason": "stop",
+                  "volume": 0.02
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 08:25",
+                  "exit_utc": "2026-10-26 13:15",
+                  "net": -44.18,
+                  "gross": -43.62,
+                  "r": -0.454,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 13:25",
+                  "exit_utc": "2026-10-26 14:15",
+                  "net": -25.62,
+                  "gross": -25.22,
+                  "r": -0.264,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 14:40",
+                  "exit_utc": "2026-10-26 18:35",
+                  "net": -6.55,
+                  "gross": -6.31,
+                  "r": -0.068,
+                  "reason": "stop",
+                  "volume": 0.03
+                }
+              ],
+              "stress_2x_spread_net": -338.76038201096753,
+              "stress_2x_trades": 8
+            },
+            "ha_dual_7_2_10_3": {
+              "variant": "ha_dual_7_2_10_3",
+              "trades": 15,
+              "wins": 3,
+              "losses": 12,
+              "flats": 0,
+              "win_rate": 0.2,
+              "gross_pnl": -310.5684643987634,
+              "net_pnl": -322.8884643987522,
+              "ending_equity": 9677.111535601243,
+              "profit_factor": 0.4084141339233373,
+              "expectancy": -21.52589762658348,
+              "avg_r": -0.2166618197768996,
+              "max_drawdown": 367.03776199934146,
+              "max_losing_streak": 6,
+              "exposure_bars": 237,
+              "window_bars": 1381,
+              "exposure_pct": 0.1716147719044171,
+              "exit_reasons": {
+                "stop": 15
+              },
+              "skipped": {
+                "min_lot": 0,
+                "gap": 0,
+                "filter": 0,
+                "session": 0,
+                "no_unit": 0
+              },
+              "buy_count": 5,
+              "sell_count": 10,
+              "trade_list": [
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-20 12:10",
+                  "exit_utc": "2026-10-20 12:25",
+                  "net": -89.78,
+                  "gross": -89.22,
+                  "r": -0.898,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-20 13:45",
+                  "exit_utc": "2026-10-20 16:00",
+                  "net": -6.01,
+                  "gross": -5.61,
+                  "r": -0.061,
+                  "reason": "stop",
+                  "volume": 0.05
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 01:10",
+                  "exit_utc": "2026-10-21 01:30",
+                  "net": -83.47,
+                  "gross": -82.91,
+                  "r": -0.843,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 05:25",
+                  "exit_utc": "2026-10-21 05:40",
+                  "net": -70.01,
+                  "gross": -69.29,
+                  "r": -0.713,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-21 10:40",
+                  "exit_utc": "2026-10-21 12:25",
+                  "net": 62.23,
+                  "gross": 62.95,
+                  "r": 0.638,
+                  "reason": "stop",
+                  "volume": 0.09
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 14:05",
+                  "exit_utc": "2026-10-21 15:25",
+                  "net": -63.11,
+                  "gross": -62.55,
+                  "r": -0.643,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-21 18:50",
+                  "exit_utc": "2026-10-21 19:35",
+                  "net": -17.4,
+                  "gross": -16.84,
+                  "r": -0.179,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 03:20",
+                  "exit_utc": "2026-10-22 05:55",
+                  "net": 151.99,
+                  "gross": 152.63,
+                  "r": 1.562,
+                  "reason": "stop",
+                  "volume": 0.08
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-22 23:10",
+                  "exit_utc": "2026-10-23 00:45",
+                  "net": -21.59,
+                  "gross": -20.47,
+                  "r": -0.218,
+                  "reason": "stop",
+                  "volume": 0.14
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 01:15",
+                  "exit_utc": "2026-10-23 02:15",
+                  "net": -11.35,
+                  "gross": -11.03,
+                  "r": -0.115,
+                  "reason": "stop",
+                  "volume": 0.04
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 04:30",
+                  "exit_utc": "2026-10-23 05:05",
+                  "net": -45.65,
+                  "gross": -44.85,
+                  "r": -0.463,
+                  "reason": "stop",
+                  "volume": 0.1
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-23 08:50",
+                  "exit_utc": "2026-10-23 13:30",
+                  "net": -12.86,
+                  "gross": -12.3,
+                  "r": -0.131,
+                  "reason": "stop",
+                  "volume": 0.07
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-23 20:40",
+                  "exit_utc": "2026-10-23 20:55",
+                  "net": -72.63,
+                  "gross": -71.11,
+                  "r": -0.742,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "BUY",
+                  "entry_utc": "2026-10-26 11:55",
+                  "exit_utc": "2026-10-26 13:05",
+                  "net": -51.93,
+                  "gross": -50.41,
+                  "r": -0.534,
+                  "reason": "stop",
+                  "volume": 0.19
+                },
+                {
+                  "side": "SELL",
+                  "entry_utc": "2026-10-26 23:05",
+                  "exit_utc": "2026-10-27 00:05",
+                  "net": 8.69,
+                  "gross": 10.45,
+                  "r": 0.09,
+                  "reason": "stop",
+                  "volume": 0.22
+                }
+              ],
+              "stress_2x_spread_net": -345.0320585508435,
+              "stress_2x_trades": 15
+            }
+          }
+        }
+      },
+      "resolved": "XAUUSD",
+      "costs": {
+        "resolved": "XAUUSD",
+        "digits": 2,
+        "point": 0.01,
+        "spread_price": 0.07999999999992724,
+        "spread_source": "tick_ask_bid",
+        "symbol_spread_points": 8,
+        "tick_spread": 0.07999999999992724,
+        "contract_size": 100.0,
+        "volume_min": 0.01,
+        "volume_max": 100.0,
+        "volume_step": 0.01,
+        "unit_per_lot_per_price": 100.0,
+        "unit_source": "order_calc_profit",
+        "currency_profit": "USD",
+        "bid": 4009.8,
+        "ask": 4009.88,
+        "description": "Gold vs US Dollar"
+      }
+    }
+  },
+  "recommendation": "continue-testing",
+  "recommendation_basis": "7 gun tek penceredir; paper-candidate icin yetmez. Cekirdek 15m sonucunun isareti ve 2x spread stresi kullanildi."
+}

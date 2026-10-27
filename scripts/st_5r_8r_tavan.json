@@ -1,0 +1,1443 @@
+{
+  "note": "tavan, strateji degil",
+  "symbols": {
+    "XAUUSD|5R": {
+      "hits": 8,
+      "min_friday": 2441.41,
+      "min_trades": 4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        }
+      ]
+    },
+    "BTCUSD|5R": {
+      "hits": 7,
+      "min_friday": 1953.12,
+      "min_trades": 3,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        }
+      ]
+    },
+    "EURUSD|5R": {
+      "hits": 8,
+      "min_friday": 2441.41,
+      "min_trades": 4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        }
+      ]
+    },
+    "GBPUSD|5R": {
+      "hits": 7,
+      "min_friday": 1953.12,
+      "min_trades": 3,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 7450.58,
+          "hit": true,
+          "trades": 9
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        }
+      ]
+    },
+    "USDJPY|5R": {
+      "hits": 8,
+      "min_friday": 2441.41,
+      "min_trades": 4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 5960.46,
+          "hit": true,
+          "trades": 8
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        }
+      ]
+    },
+    "EURJPY|5R": {
+      "hits": 7,
+      "min_friday": 1953.12,
+      "min_trades": 3,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        }
+      ]
+    },
+    "GBPJPY|5R": {
+      "hits": 8,
+      "min_friday": 2441.41,
+      "min_trades": 4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 5960.46,
+          "hit": true,
+          "trades": 8
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        }
+      ]
+    },
+    "USDCAD|5R": {
+      "hits": 8,
+      "min_friday": 3051.76,
+      "min_trades": 5,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 9313.23,
+          "hit": true,
+          "trades": 10
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 5960.46,
+          "hit": true,
+          "trades": 8
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        }
+      ]
+    },
+    "EURCAD|5R": {
+      "hits": 8,
+      "min_friday": 2441.41,
+      "min_trades": 4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        }
+      ]
+    },
+    "GBPCAD|5R": {
+      "hits": 7,
+      "min_friday": 1562.5,
+      "min_trades": 2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1562.5,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        }
+      ]
+    },
+    "EURNZD|5R": {
+      "hits": 4,
+      "min_friday": 1562.5,
+      "min_trades": 2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1562.5,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        }
+      ]
+    },
+    "GBPNZD|5R": {
+      "hits": 5,
+      "min_friday": 1250.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 4768.37,
+          "hit": true,
+          "trades": 7
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1250.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1562.5,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        }
+      ]
+    },
+    "NZDUSD|5R": {
+      "hits": 5,
+      "min_friday": 1953.12,
+      "min_trades": 3,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 3051.76,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 3814.7,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1953.12,
+          "hit": false,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 7450.58,
+          "hit": true,
+          "trades": 9
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2441.41,
+          "hit": true,
+          "trades": 4
+        }
+      ]
+    },
+    "XAUUSD|8R": {
+      "hits": 2,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "BTCUSD|8R": {
+      "hits": 2,
+      "min_friday": 1960.0,
+      "min_trades": 2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "EURUSD|8R": {
+      "hits": 5,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 3841.6,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        }
+      ]
+    },
+    "GBPUSD|8R": {
+      "hits": 5,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 3841.6,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        }
+      ]
+    },
+    "USDJPY|8R": {
+      "hits": 4,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 3841.6,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "EURJPY|8R": {
+      "hits": 5,
+      "min_friday": 1960.0,
+      "min_trades": 2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 3841.6,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 5378.24,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "GBPJPY|8R": {
+      "hits": 5,
+      "min_friday": 1960.0,
+      "min_trades": 2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        }
+      ]
+    },
+    "USDCAD|8R": {
+      "hits": 5,
+      "min_friday": 1960.0,
+      "min_trades": 2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 7529.54,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 3841.6,
+          "hit": true,
+          "trades": 4
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "EURCAD|8R": {
+      "hits": 4,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "GBPCAD|8R": {
+      "hits": 4,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 7529.54,
+          "hit": true,
+          "trades": 6
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 5378.24,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        }
+      ]
+    },
+    "EURNZD|8R": {
+      "hits": 1,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 2744.0,
+          "hit": true,
+          "trades": 3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        }
+      ]
+    },
+    "GBPNZD|8R": {
+      "hits": 0,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        }
+      ]
+    },
+    "NZDUSD|8R": {
+      "hits": 1,
+      "min_friday": 1400.0,
+      "min_trades": 1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1960.0,
+          "hit": false,
+          "trades": 2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 5378.24,
+          "hit": true,
+          "trades": 5
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1400.0,
+          "hit": false,
+          "trades": 1
+        }
+      ]
+    }
+  },
+  "passed_all_8": [
+    "XAUUSD|5R",
+    "EURUSD|5R",
+    "USDJPY|5R",
+    "GBPJPY|5R",
+    "USDCAD|5R",
+    "EURCAD|5R"
+  ]
+}

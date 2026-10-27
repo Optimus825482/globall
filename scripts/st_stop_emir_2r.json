@@ -1,0 +1,119 @@
+{
+  "weeks": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "hits": 0,
+      "min_friday": 590.68,
+      "sum_pnl": 456.83,
+      "trades": 203,
+      "winners": 72
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "hits": 0,
+      "min_friday": 536.57,
+      "sum_pnl": -584.17,
+      "trades": 207,
+      "winners": 66
+    },
+    "EURUSD": {
+      "resolved": "EURUSD",
+      "hits": 0,
+      "min_friday": 577.16,
+      "sum_pnl": 67.1,
+      "trades": 224,
+      "winners": 76
+    },
+    "GBPUSD": {
+      "resolved": "GBPUSD",
+      "hits": 0,
+      "min_friday": 491.26,
+      "sum_pnl": -1099.75,
+      "trades": 206,
+      "winners": 64
+    },
+    "USDJPY": {
+      "resolved": "USDJPY",
+      "hits": 0,
+      "min_friday": 499.97,
+      "sum_pnl": -523.55,
+      "trades": 195,
+      "winners": 63
+    },
+    "EURJPY": {
+      "resolved": "EURJPY",
+      "hits": 0,
+      "min_friday": 513.55,
+      "sum_pnl": -1171.72,
+      "trades": 206,
+      "winners": 64
+    },
+    "GBPJPY": {
+      "resolved": "GBPJPY",
+      "hits": 0,
+      "min_friday": 521.12,
+      "sum_pnl": 455.69,
+      "trades": 203,
+      "winners": 70
+    },
+    "USDCAD": {
+      "resolved": "USDCAD",
+      "hits": 0,
+      "min_friday": 637.33,
+      "sum_pnl": 1554.7,
+      "trades": 203,
+      "winners": 78
+    },
+    "EURCAD": {
+      "resolved": "EURCAD",
+      "hits": 0,
+      "min_friday": 429.23,
+      "sum_pnl": -1288.15,
+      "trades": 209,
+      "winners": 63
+    },
+    "GBPCAD": {
+      "resolved": "GBPCAD",
+      "hits": 0,
+      "min_friday": 732.25,
+      "sum_pnl": -38.83,
+      "trades": 201,
+      "winners": 73
+    },
+    "EURNZD": {
+      "resolved": "EURNZD",
+      "hits": 0,
+      "min_friday": 468.12,
+      "sum_pnl": -3311.53,
+      "trades": 157,
+      "winners": 32
+    },
+    "GBPNZD": {
+      "resolved": "GBPNZD",
+      "hits": 0,
+      "min_friday": 372.93,
+      "sum_pnl": -2825.73,
+      "trades": 178,
+      "winners": 46
+    },
+    "NZDUSD": {
+      "resolved": "NZDUSD",
+      "hits": 0,
+      "min_friday": 482.54,
+      "sum_pnl": -1843.05,
+      "trades": 182,
+      "winners": 52
+    }
+  },
+  "passed_all_8": []
+}

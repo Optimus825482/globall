@@ -1,0 +1,5203 @@
+{
+  "symbol": "XAUUSD",
+  "weeks": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "start_cash": 1000.0,
+  "target": 2000.0,
+  "spread": 0.07999999999992724,
+  "cells": {
+    "1m|stoch10_90_hast|risk2": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 430.81,
+      "max_friday": 2188.66,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 777.17,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 598.37
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 496.27,
+          "hit": false,
+          "trades": 41,
+          "winners": 1,
+          "dd": 2518.41
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 430.81,
+          "hit": false,
+          "trades": 48,
+          "winners": 0,
+          "dd": 633.29
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 711.18,
+          "hit": false,
+          "trades": 41,
+          "winners": 1,
+          "dd": 548.14
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1097.16,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 112.82
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 826.71,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 428.8
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1817.82,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 2615.13
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2188.66,
+          "hit": true,
+          "trades": 5,
+          "winners": 1,
+          "dd": 312.13
+        }
+      ]
+    },
+    "1m|stoch10_90_hast|risk5": {
+      "hits": 2,
+      "weeks": 8,
+      "min_friday": 148.69,
+      "max_friday": 3512.46,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 359.26,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 1136.85
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 148.69,
+          "hit": false,
+          "trades": 41,
+          "winners": 1,
+          "dd": 4524.99
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 218.22,
+          "hit": false,
+          "trades": 49,
+          "winners": 1,
+          "dd": 1055.4
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 326.07,
+          "hit": false,
+          "trades": 41,
+          "winners": 1,
+          "dd": 912.73
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1291.48,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 338.46
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 498.63,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 834.37
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2771.51,
+          "hit": true,
+          "trades": 5,
+          "winners": 1,
+          "dd": 5728.38
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3512.46,
+          "hit": true,
+          "trades": 5,
+          "winners": 1,
+          "dd": 668.85
+        }
+      ]
+    },
+    "1m|ema9_21_hast|risk2": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 412.06,
+      "max_friday": 2674.83,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 741.96,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 1705.07
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 412.06,
+          "hit": false,
+          "trades": 48,
+          "winners": 0,
+          "dd": 995.9
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1115.42,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 733.65
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1104.86,
+          "hit": false,
+          "trades": 21,
+          "winners": 1,
+          "dd": 562.56
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 693.78,
+          "hit": false,
+          "trades": 19,
+          "winners": 0,
+          "dd": 1215.22
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 867.29,
+          "hit": false,
+          "trades": 44,
+          "winners": 1,
+          "dd": 811.49
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 978.08,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 607.25
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2674.83,
+          "hit": true,
+          "trades": 8,
+          "winners": 1,
+          "dd": 445.9
+        }
+      ]
+    },
+    "1m|ema9_21_hast|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 102.72,
+      "max_friday": 4478.65,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 454.0,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 3120.32
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 102.72,
+          "hit": false,
+          "trades": 48,
+          "winners": 0,
+          "dd": 1715.42
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 786.44,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 1503.45
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.82,
+          "hit": false,
+          "trades": 21,
+          "winners": 1,
+          "dd": 1066.5
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 387.05,
+          "hit": false,
+          "trades": 19,
+          "winners": 0,
+          "dd": 2834.95
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 437.52,
+          "hit": false,
+          "trades": 44,
+          "winners": 1,
+          "dd": 1523.64
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 644.03,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 1205.48
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 4478.65,
+          "hit": true,
+          "trades": 8,
+          "winners": 1,
+          "dd": 936.39
+        }
+      ]
+    },
+    "1m|bb_yatay|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 187.3,
+      "max_friday": 1089.46,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1089.46,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 1466.74
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 187.3,
+          "hit": false,
+          "trades": 89,
+          "winners": 0,
+          "dd": 949.59
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 351.11,
+          "hit": false,
+          "trades": 66,
+          "winners": 1,
+          "dd": 825.67
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 947.26,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 625.32
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 313.22,
+          "hit": false,
+          "trades": 59,
+          "winners": 1,
+          "dd": 1549.01
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 992.82,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 938.85
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 410.68,
+          "hit": false,
+          "trades": 48,
+          "winners": 1,
+          "dd": 790.65
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 733.56,
+          "hit": false,
+          "trades": 56,
+          "winners": 1,
+          "dd": 677.37
+        }
+      ]
+    },
+    "1m|bb_yatay|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 25.57,
+      "max_friday": 916.61,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 916.61,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 2016.06
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 25.57,
+          "hit": false,
+          "trades": 79,
+          "winners": 0,
+          "dd": 1116.78
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 66.95,
+          "hit": false,
+          "trades": 66,
+          "winners": 1,
+          "dd": 1212.32
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 613.33,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 1205.86
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 60.5,
+          "hit": false,
+          "trades": 59,
+          "winners": 1,
+          "dd": 3240.72
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 560.04,
+          "hit": false,
+          "trades": 31,
+          "winners": 1,
+          "dd": 1942.21
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 99.59,
+          "hit": false,
+          "trades": 48,
+          "winners": 1,
+          "dd": 958.86
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 262.92,
+          "hit": false,
+          "trades": 56,
+          "winners": 1,
+          "dd": 975.01
+        }
+      ]
+    },
+    "1m|donchian_adx|risk2": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 442.47,
+      "max_friday": 2186.05,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 493.28,
+          "hit": false,
+          "trades": 40,
+          "winners": 0,
+          "dd": 558.33
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 442.47,
+          "hit": false,
+          "trades": 56,
+          "winners": 1,
+          "dd": 713.89
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 812.05,
+          "hit": false,
+          "trades": 27,
+          "winners": 1,
+          "dd": 752.56
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1207.0,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 351.6
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1686.82,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 676.92
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 709.62,
+          "hit": false,
+          "trades": 47,
+          "winners": 1,
+          "dd": 707.08
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 716.41,
+          "hit": false,
+          "trades": 25,
+          "winners": 1,
+          "dd": 606.86
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2186.05,
+          "hit": true,
+          "trades": 8,
+          "winners": 1,
+          "dd": 312.13
+        }
+      ]
+    },
+    "1m|donchian_adx|risk5": {
+      "hits": 2,
+      "weeks": 8,
+      "min_friday": 125.13,
+      "max_friday": 3330.37,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 152.09,
+          "hit": false,
+          "trades": 40,
+          "winners": 0,
+          "dd": 847.91
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 125.13,
+          "hit": false,
+          "trades": 52,
+          "winners": 1,
+          "dd": 1122.55
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 472.06,
+          "hit": false,
+          "trades": 27,
+          "winners": 1,
+          "dd": 1484.06
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1204.32,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 742.84
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2717.05,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 1692.3
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 278.92,
+          "hit": false,
+          "trades": 47,
+          "winners": 1,
+          "dd": 1245.45
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 408.18,
+          "hit": false,
+          "trades": 25,
+          "winners": 1,
+          "dd": 1138.9
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 3330.37,
+          "hit": true,
+          "trades": 8,
+          "winners": 1,
+          "dd": 624.26
+        }
+      ]
+    },
+    "1m|atr_kirilim|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 356.65,
+      "max_friday": 1713.4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 827.01,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 727.93
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 426.64,
+          "hit": false,
+          "trades": 37,
+          "winners": 0,
+          "dd": 540.6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 747.74,
+          "hit": false,
+          "trades": 39,
+          "winners": 1,
+          "dd": 496.93
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 442.35,
+          "hit": false,
+          "trades": 47,
+          "winners": 0,
+          "dd": 631.82
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1713.4,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 676.92
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 817.81,
+          "hit": false,
+          "trades": 35,
+          "winners": 1,
+          "dd": 602.59
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 356.65,
+          "hit": false,
+          "trades": 58,
+          "winners": 0,
+          "dd": 740.67
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1443.0,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 214.96
+        }
+      ]
+    },
+    "1m|atr_kirilim|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 75.95,
+      "max_friday": 2902.4,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 606.26,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 1632.07
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 98.3,
+          "hit": false,
+          "trades": 37,
+          "winners": 0,
+          "dd": 980.8
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 323.9,
+          "hit": false,
+          "trades": 39,
+          "winners": 1,
+          "dd": 842.77
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 123.75,
+          "hit": false,
+          "trades": 47,
+          "winners": 0,
+          "dd": 943.6
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2902.4,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 1805.12
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 476.29,
+          "hit": false,
+          "trades": 35,
+          "winners": 1,
+          "dd": 1165.36
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 75.95,
+          "hit": false,
+          "trades": 58,
+          "winners": 0,
+          "dd": 1140.39
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1677.53,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 473.9
+        }
+      ]
+    },
+    "1m|adx_geri_cekilme|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 217.51,
+      "max_friday": 1931.84,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 548.87,
+          "hit": false,
+          "trades": 27,
+          "winners": 0,
+          "dd": 979.74
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 803.98,
+          "hit": false,
+          "trades": 40,
+          "winners": 1,
+          "dd": 895.22
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 332.15,
+          "hit": false,
+          "trades": 55,
+          "winners": 0,
+          "dd": 916.77
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 217.51,
+          "hit": false,
+          "trades": 85,
+          "winners": 0,
+          "dd": 793.53
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1931.84,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 902.56
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 377.19,
+          "hit": false,
+          "trades": 46,
+          "winners": 0,
+          "dd": 759.41
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1461.86,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 1743.42
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 586.91,
+          "hit": false,
+          "trades": 55,
+          "winners": 1,
+          "dd": 654.83
+        }
+      ]
+    },
+    "1m|adx_geri_cekilme|risk5": {
+      "hits": 2,
+      "weeks": 8,
+      "min_friday": 32.86,
+      "max_friday": 3446.08,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 203.08,
+          "hit": false,
+          "trades": 27,
+          "winners": 0,
+          "dd": 1606.79
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 336.16,
+          "hit": false,
+          "trades": 40,
+          "winners": 1,
+          "dd": 1135.58
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 63.6,
+          "hit": false,
+          "trades": 55,
+          "winners": 0,
+          "dd": 989.7
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 32.86,
+          "hit": false,
+          "trades": 77,
+          "winners": 0,
+          "dd": 998.42
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3446.08,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 2369.22
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 85.47,
+          "hit": false,
+          "trades": 46,
+          "winners": 0,
+          "dd": 1256.03
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 2119.81,
+          "hit": true,
+          "trades": 3,
+          "winners": 1,
+          "dd": 4234.02
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 188.54,
+          "hit": false,
+          "trades": 55,
+          "winners": 1,
+          "dd": 967.05
+        }
+      ]
+    },
+    "1m|rsi_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 967.6,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 967.6,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 32.64
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "1m|rsi_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 919.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 919.0,
+          "hit": false,
+          "trades": 1,
+          "winners": 0,
+          "dd": 81.6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "1m|macd_hast|risk2": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 345.77,
+      "max_friday": 2285.89,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 493.17,
+          "hit": false,
+          "trades": 37,
+          "winners": 0,
+          "dd": 729.45
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 345.77,
+          "hit": false,
+          "trades": 57,
+          "winners": 1,
+          "dd": 747.14
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1243.53,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 606.09
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 832.89,
+          "hit": false,
+          "trades": 33,
+          "winners": 1,
+          "dd": 586.64
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1810.67,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 789.74
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 665.96,
+          "hit": false,
+          "trades": 42,
+          "winners": 1,
+          "dd": 645.82
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1199.96,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 871.71
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2285.89,
+          "hit": true,
+          "trades": 17,
+          "winners": 1,
+          "dd": 401.31
+        }
+      ]
+    },
+    "1m|macd_hast|risk5": {
+      "hits": 2,
+      "weeks": 8,
+      "min_friday": 77.84,
+      "max_friday": 3200.39,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 151.94,
+          "hit": false,
+          "trades": 37,
+          "winners": 0,
+          "dd": 1191.51
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 77.84,
+          "hit": false,
+          "trades": 54,
+          "winners": 1,
+          "dd": 1033.07
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1149.71,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 1203.89
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 493.93,
+          "hit": false,
+          "trades": 33,
+          "winners": 1,
+          "dd": 1053.79
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 3200.39,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 2143.58
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 276.76,
+          "hit": false,
+          "trades": 42,
+          "winners": 1,
+          "dd": 1087.73
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1399.64,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 1867.95
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2682.42,
+          "hit": true,
+          "trades": 17,
+          "winners": 1,
+          "dd": 581.07
+        }
+      ]
+    },
+    "1m|keltner_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 553.7,
+      "max_friday": 1594.5,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 553.7,
+          "hit": false,
+          "trades": 33,
+          "winners": 0,
+          "dd": 572.77
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 916.86,
+          "hit": false,
+          "trades": 20,
+          "winners": 1,
+          "dd": 621.21
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 879.01,
+          "hit": false,
+          "trades": 23,
+          "winners": 1,
+          "dd": 475.84
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1334.85,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 562.56
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1594.5,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 564.1
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 770.96,
+          "hit": false,
+          "trades": 20,
+          "winners": 1,
+          "dd": 488.63
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 971.26,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 635.16
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1407.86,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 211.26
+        }
+      ]
+    },
+    "1m|keltner_adx|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 199.48,
+      "max_friday": 2545.7,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 199.48,
+          "hit": false,
+          "trades": 34,
+          "winners": 0,
+          "dd": 941.07
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 810.84,
+          "hit": false,
+          "trades": 20,
+          "winners": 1,
+          "dd": 1151.03
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 549.55,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 789.15
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1327.49,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 843.84
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2545.7,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 1466.66
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 478.1,
+          "hit": false,
+          "trades": 20,
+          "winners": 1,
+          "dd": 869.56
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 891.31,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 1277.13
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1945.62,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 525.9
+        }
+      ]
+    },
+    "3m|stoch10_90_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 745.31,
+      "max_friday": 1244.47,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 853.57,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 410.45
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 850.44,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 597.26
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 745.31,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 322.66
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1071.6,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 265.37
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1076.6,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 112.39
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 829.56,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 207.31
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 829.46,
+          "hit": false,
+          "trades": 11,
+          "winners": 0,
+          "dd": 1329.29
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1244.47,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 94.69
+        }
+      ]
+    },
+    "3m|stoch10_90_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 420.65,
+      "max_friday": 1607.2,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 610.89,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 978.21
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 635.21,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 1323.27
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 420.65,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 647.32
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1154.09,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 676.02
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1229.8,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 337.17
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 588.49,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 510.18
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 601.18,
+          "hit": false,
+          "trades": 11,
+          "winners": 0,
+          "dd": 2787.26
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1607.2,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 240.7
+        }
+      ]
+    },
+    "3m|ema9_21_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 602.24,
+      "max_friday": 1248.01,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 608.41,
+          "hit": false,
+          "trades": 28,
+          "winners": 0,
+          "dd": 391.59
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1002.69,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 297.3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1248.01,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 306.89
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 602.24,
+          "hit": false,
+          "trades": 27,
+          "winners": 0,
+          "dd": 475.77
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 637.68,
+          "hit": false,
+          "trades": 25,
+          "winners": 0,
+          "dd": 672.98
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 826.0,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 794.24
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 711.63,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 401.59
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 751.48,
+          "hit": false,
+          "trades": 27,
+          "winners": 1,
+          "dd": 408.45
+        }
+      ]
+    },
+    "3m|ema9_21_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 265.6,
+      "max_friday": 1336.67,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 266.29,
+          "hit": false,
+          "trades": 28,
+          "winners": 0,
+          "dd": 733.71
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 982.14,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 594.6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1336.67,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 613.23
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 265.6,
+          "hit": false,
+          "trades": 27,
+          "winners": 0,
+          "dd": 836.31
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 302.27,
+          "hit": false,
+          "trades": 25,
+          "winners": 0,
+          "dd": 1345.77
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 586.09,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 1683.62
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 404.65,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 897.27
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 457.8,
+          "hit": false,
+          "trades": 27,
+          "winners": 1,
+          "dd": 777.17
+        }
+      ]
+    },
+    "3m|bb_yatay|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 545.1,
+      "max_friday": 1188.11,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 675.13,
+          "hit": false,
+          "trades": 25,
+          "winners": 1,
+          "dd": 712.2
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 592.07,
+          "hit": false,
+          "trades": 24,
+          "winners": 0,
+          "dd": 369.74
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 620.53,
+          "hit": false,
+          "trades": 22,
+          "winners": 0,
+          "dd": 701.7
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 545.1,
+          "hit": false,
+          "trades": 40,
+          "winners": 1,
+          "dd": 626.06
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 782.99,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 684.4
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 865.63,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 735.49
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 940.01,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 976.75
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1188.11,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 282.13
+        }
+      ]
+    },
+    "3m|bb_yatay|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 190.44,
+      "max_friday": 1236.64,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 332.5,
+          "hit": false,
+          "trades": 25,
+          "winners": 1,
+          "dd": 1429.81
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 239.15,
+          "hit": false,
+          "trades": 24,
+          "winners": 0,
+          "dd": 750.12
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 280.45,
+          "hit": false,
+          "trades": 22,
+          "winners": 0,
+          "dd": 1402.54
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 190.44,
+          "hit": false,
+          "trades": 40,
+          "winners": 1,
+          "dd": 1037.27
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 522.61,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 1434.25
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 522.11,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 1635.57
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 848.41,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 2318.68
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1236.64,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 638.99
+        }
+      ]
+    },
+    "3m|donchian_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 738.79,
+      "max_friday": 1468.88,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 750.29,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 305.66
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 773.65,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 347.14
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 828.93,
+          "hit": false,
+          "trades": 23,
+          "winners": 1,
+          "dd": 380.84
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1053.7,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 277.48
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1468.88,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 449.56
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 738.79,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 382.6
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 921.6,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 630.24
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1353.42,
+          "hit": false,
+          "trades": 22,
+          "winners": 1,
+          "dd": 308.13
+        }
+      ]
+    },
+    "3m|donchian_adx|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 438.09,
+      "max_friday": 2289.42,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 502.04,
+          "hit": false,
+          "trades": 15,
+          "winners": 0,
+          "dd": 565.75
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 478.02,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 665.65
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 545.54,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 807.65
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 992.82,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 585.78
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2289.42,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 1236.29
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 438.09,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 763.54
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 801.42,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 1392.52
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1151.89,
+          "hit": false,
+          "trades": 22,
+          "winners": 1,
+          "dd": 641.97
+        }
+      ]
+    },
+    "3m|atr_kirilim|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 732.02,
+      "max_friday": 1402.67,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 810.23,
+          "hit": false,
+          "trades": 13,
+          "winners": 0,
+          "dd": 317.27
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 757.1,
+          "hit": false,
+          "trades": 14,
+          "winners": 0,
+          "dd": 318.4
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 732.02,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 324.55
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1069.39,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 216.3
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1202.04,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 224.78
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 890.42,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 296.18
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 888.35,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 249.1
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1402.67,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 128.25
+        }
+      ]
+    },
+    "3m|atr_kirilim|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 413.74,
+      "max_friday": 1920.67,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 558.44,
+          "hit": false,
+          "trades": 13,
+          "winners": 0,
+          "dd": 750.44
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 438.21,
+          "hit": false,
+          "trades": 14,
+          "winners": 0,
+          "dd": 758.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 413.74,
+          "hit": false,
+          "trades": 20,
+          "winners": 0,
+          "dd": 806.32
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 986.36,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 493.88
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1606.12,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 674.34
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 652.03,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 690.49
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 716.84,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 727.96
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1920.67,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 299.25
+        }
+      ]
+    },
+    "3m|adx_geri_cekilme|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 643.82,
+      "max_friday": 1885.56,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 742.99,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 379.15
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 643.82,
+          "hit": false,
+          "trades": 24,
+          "winners": 0,
+          "dd": 473.27
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1118.91,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 453.96
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1201.04,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 416.22
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 749.53,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 680.82
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1040.75,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 307.46
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 858.7,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 910.41
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1885.56,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 342.0
+        }
+      ]
+    },
+    "3m|adx_geri_cekilme|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 303.39,
+      "max_friday": 2587.04,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 462.19,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 832.81
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 303.39,
+          "hit": false,
+          "trades": 24,
+          "winners": 0,
+          "dd": 876.4
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1172.68,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 1219.85
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1209.85,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 693.7
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 456.43,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 1662.48
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 944.66,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 673.1
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 673.33,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 2188.81
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2587.04,
+          "hit": true,
+          "trades": 10,
+          "winners": 1,
+          "dd": 721.23
+        }
+      ]
+    },
+    "3m|rsi_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 1000.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "3m|rsi_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 1000.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "3m|macd_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 688.69,
+      "max_friday": 1590.75,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 718.43,
+          "hit": false,
+          "trades": 19,
+          "winners": 0,
+          "dd": 681.47
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 824.83,
+          "hit": false,
+          "trades": 26,
+          "winners": 1,
+          "dd": 449.35
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 688.69,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 453.99
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1171.67,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 346.85
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1590.75,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 561.95
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 993.13,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 411.03
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 790.89,
+          "hit": false,
+          "trades": 13,
+          "winners": 0,
+          "dd": 405.47
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1540.45,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 171.0
+        }
+      ]
+    },
+    "3m|macd_hast|risk5": {
+      "hits": 2,
+      "weeks": 8,
+      "min_friday": 362.76,
+      "max_friday": 2654.1,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 408.87,
+          "hit": false,
+          "trades": 19,
+          "winners": 0,
+          "dd": 1187.24
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 563.02,
+          "hit": false,
+          "trades": 26,
+          "winners": 1,
+          "dd": 944.69
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 362.76,
+          "hit": false,
+          "trades": 24,
+          "winners": 1,
+          "dd": 908.99
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1292.02,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 693.7
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2654.1,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 1573.46
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 885.82,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 822.06
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 530.6,
+          "hit": false,
+          "trades": 13,
+          "winners": 0,
+          "dd": 917.87
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2028.64,
+          "hit": true,
+          "trades": 7,
+          "winners": 1,
+          "dd": 342.0
+        }
+      ]
+    },
+    "3m|keltner_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 788.84,
+      "max_friday": 1506.35,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 842.65,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 209.17
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 927.66,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 222.93
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 939.64,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 186.03
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 832.73,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 237.72
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1351.66,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 337.17
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 849.82,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 278.38
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 788.84,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 373.49
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1506.35,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 128.25
+        }
+      ]
+    },
+    "3m|keltner_adx|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 487.11,
+      "max_friday": 2353.32,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 540.62,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 818.36
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 705.25,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 536.37
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 938.72,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 438.29
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 614.1,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 527.23
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1820.54,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 786.73
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 659.21,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 556.76
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 487.11,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 944.35
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2353.32,
+          "hit": true,
+          "trades": 3,
+          "winners": 1,
+          "dd": 342.0
+        }
+      ]
+    },
+    "5m|stoch10_90_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 767.99,
+      "max_friday": 1173.98,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 952.46,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 320.51
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 908.11,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 296.97
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 767.99,
+          "hit": false,
+          "trades": 16,
+          "winners": 0,
+          "dd": 264.52
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 875.09,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 379.86
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1076.84,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 110.07
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 908.25,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 219.83
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 925.35,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 498.46
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1173.98,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 325.33
+        }
+      ]
+    },
+    "5m|stoch10_90_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 462.79,
+      "max_friday": 1309.41,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 833.76,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 655.58
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 687.83,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 684.77
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 462.79,
+          "hit": false,
+          "trades": 17,
+          "winners": 0,
+          "dd": 634.74
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 661.1,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 877.7
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1153.68,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 220.14
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 753.91,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 461.21
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 783.07,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 1260.8
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1309.41,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 623.7
+        }
+      ]
+    },
+    "5m|ema9_21_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 661.84,
+      "max_friday": 1206.37,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 686.06,
+          "hit": false,
+          "trades": 21,
+          "winners": 0,
+          "dd": 451.21
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 732.83,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 476.37
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 661.84,
+          "hit": false,
+          "trades": 17,
+          "winners": 0,
+          "dd": 508.98
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 680.8,
+          "hit": false,
+          "trades": 21,
+          "winners": 0,
+          "dd": 338.98
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 755.74,
+          "hit": false,
+          "trades": 18,
+          "winners": 1,
+          "dd": 359.99
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1155.75,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 288.51
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 871.45,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 603.83
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1206.37,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 196.45
+        }
+      ]
+    },
+    "5m|ema9_21_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 309.18,
+      "max_friday": 1468.93,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 354.85,
+          "hit": false,
+          "trades": 21,
+          "winners": 0,
+          "dd": 933.87
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 417.24,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 1099.99
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 309.18,
+          "hit": false,
+          "trades": 17,
+          "winners": 0,
+          "dd": 1149.65
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 356.22,
+          "hit": false,
+          "trades": 21,
+          "winners": 0,
+          "dd": 687.67
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 461.29,
+          "hit": false,
+          "trades": 18,
+          "winners": 1,
+          "dd": 837.67
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1386.83,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 778.64
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 700.39,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 1207.66
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1468.93,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 451.57
+        }
+      ]
+    },
+    "5m|bb_yatay|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 677.65,
+      "max_friday": 886.76,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 853.12,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 712.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 728.68,
+          "hit": false,
+          "trades": 17,
+          "winners": 0,
+          "dd": 437.51
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 685.33,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 313.18
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 885.82,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 355.11
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 886.76,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 487.83
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 747.19,
+          "hit": false,
+          "trades": 20,
+          "winners": 1,
+          "dd": 337.2
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 885.19,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 723.65
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 677.65,
+          "hit": false,
+          "trades": 23,
+          "winners": 1,
+          "dd": 390.27
+        }
+      ]
+    },
+    "5m|bb_yatay|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 325.37,
+      "max_friday": 725.21,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 687.97,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 1827.31
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 430.78,
+          "hit": false,
+          "trades": 17,
+          "winners": 0,
+          "dd": 731.98
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 325.37,
+          "hit": false,
+          "trades": 18,
+          "winners": 0,
+          "dd": 677.57
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 657.37,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 744.87
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 723.33,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 1167.47
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 474.24,
+          "hit": false,
+          "trades": 20,
+          "winners": 1,
+          "dd": 691.66
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 725.21,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 1567.91
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 355.81,
+          "hit": false,
+          "trades": 23,
+          "winners": 1,
+          "dd": 801.72
+        }
+      ]
+    },
+    "5m|donchian_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 812.03,
+      "max_friday": 1334.02,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 891.53,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 285.03
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 812.03,
+          "hit": false,
+          "trades": 13,
+          "winners": 0,
+          "dd": 269.47
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 956.74,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 200.33
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 958.13,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 250.05
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1334.02,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 330.21
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1136.43,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 299.84
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1015.8,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 157.82
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1118.62,
+          "hit": false,
+          "trades": 18,
+          "winners": 1,
+          "dd": 260.07
+        }
+      ]
+    },
+    "5m|donchian_adx|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 542.11,
+      "max_friday": 1890.72,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 720.06,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 570.05
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 542.11,
+          "hit": false,
+          "trades": 14,
+          "winners": 0,
+          "dd": 681.68
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 821.86,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 573.04
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 786.82,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 584.28
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1890.72,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 880.56
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1139.98,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 752.49
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 962.13,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 383.09
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 946.94,
+          "hit": false,
+          "trades": 18,
+          "winners": 1,
+          "dd": 555.42
+        }
+      ]
+    },
+    "5m|atr_kirilim|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 823.24,
+      "max_friday": 1296.08,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 836.07,
+          "hit": false,
+          "trades": 11,
+          "winners": 0,
+          "dd": 327.15
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 823.24,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 242.76
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 907.31,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 189.91
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1106.97,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 205.71
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1195.04,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 220.14
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 871.55,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 213.09
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 833.48,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 266.37
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1296.08,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 84.12
+        }
+      ]
+    },
+    "5m|atr_kirilim|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 573.97,
+      "max_friday": 2051.48,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 613.02,
+          "hit": false,
+          "trades": 11,
+          "winners": 0,
+          "dd": 647.59
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 573.97,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 567.54
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 655.02,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 488.73
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1034.68,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 417.52
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1585.12,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 660.42
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 675.96,
+          "hit": false,
+          "trades": 16,
+          "winners": 1,
+          "dd": 493.32
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 625.64,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 633.31
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2051.48,
+          "hit": true,
+          "trades": 2,
+          "winners": 1,
+          "dd": 294.42
+        }
+      ]
+    },
+    "5m|adx_geri_cekilme|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 755.89,
+      "max_friday": 1167.92,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1039.71,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 262.1
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 833.49,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 298.48
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 755.89,
+          "hit": false,
+          "trades": 15,
+          "winners": 0,
+          "dd": 296.48
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1167.92,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 342.85
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 857.17,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 478.43
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1096.84,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 389.94
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 808.67,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 308.06
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1019.78,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 242.19
+        }
+      ]
+    },
+    "5m|adx_geri_cekilme|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 456.37,
+      "max_friday": 1223.05,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1112.76,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 655.25
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 595.35,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 521.15
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 456.37,
+          "hit": false,
+          "trades": 15,
+          "winners": 0,
+          "dd": 680.16
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1223.05,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 617.13
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 645.85,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 1360.95
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1088.14,
+          "hit": false,
+          "trades": 10,
+          "winners": 1,
+          "dd": 779.36
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 562.4,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 754.55
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1064.2,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 584.85
+        }
+      ]
+    },
+    "5m|rsi_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 1000.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "5m|rsi_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 1000.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "5m|macd_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 693.73,
+      "max_friday": 1459.32,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 803.63,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 605.3
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 693.73,
+          "hit": false,
+          "trades": 22,
+          "winners": 0,
+          "dd": 362.1
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 768.62,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 415.35
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 937.8,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 245.02
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1459.32,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 440.28
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1006.58,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 409.21
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 893.07,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 490.43
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 932.89,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 324.97
+        }
+      ]
+    },
+    "5m|macd_hast|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 360.28,
+      "max_friday": 2148.3,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 540.73,
+          "hit": false,
+          "trades": 15,
+          "winners": 1,
+          "dd": 1219.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 360.28,
+          "hit": false,
+          "trades": 22,
+          "winners": 0,
+          "dd": 788.6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 485.67,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 920.18
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 757.46,
+          "hit": false,
+          "trades": 17,
+          "winners": 1,
+          "dd": 550.84
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 2148.3,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 1100.7
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 934.16,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 899.32
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 750.8,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 1098.92
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 742.8,
+          "hit": false,
+          "trades": 19,
+          "winners": 1,
+          "dd": 684.66
+        }
+      ]
+    },
+    "5m|keltner_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 866.05,
+      "max_friday": 1360.48,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 886.26,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 152.25
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 916.06,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 165.3
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 967.79,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 138.53
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1026.95,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 208.37
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1360.48,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 330.21
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 949.03,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 113.3
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 866.05,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 208.7
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1054.25,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 104.1
+        }
+      ]
+    },
+    "5m|keltner_adx|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 632.43,
+      "max_friday": 1961.28,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 668.46,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 398.81
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 772.93,
+          "hit": false,
+          "trades": 12,
+          "winners": 1,
+          "dd": 385.99
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 730.53,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 515.94
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 923.24,
+          "hit": false,
+          "trades": 14,
+          "winners": 1,
+          "dd": 497.92
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1961.28,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 880.56
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 865.37,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 321.01
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 632.43,
+          "hit": false,
+          "trades": 11,
+          "winners": 1,
+          "dd": 573.31
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1209.01,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 266.04
+        }
+      ]
+    },
+    "15m|stoch10_90_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 844.8,
+      "max_friday": 1131.56,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 956.8,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 137.97
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 844.8,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 234.6
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 953.87,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 109.55
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 963.52,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 177.28
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 949.33,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 1037.45
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 925.67,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 91.6
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 955.05,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 206.23
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1131.56,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 41.25
+        }
+      ]
+    },
+    "15m|stoch10_90_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 764.8,
+      "max_friday": 1550.14,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 957.35,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 203.78
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 764.8,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 476.67
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 835.21,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 291.63
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 909.29,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 472.74
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 980.86,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 110.46
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 820.42,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 191.89
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 871.86,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 515.56
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1550.14,
+          "hit": false,
+          "trades": 2,
+          "winners": 1,
+          "dd": 165.0
+        }
+      ]
+    },
+    "15m|ema9_21_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 832.01,
+      "max_friday": 1327.51,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 896.39,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 133.93
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 915.36,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 105.84
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 931.76,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 89.9
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 881.25,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 144.73
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 870.45,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 208.54
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 832.01,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 167.99
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 904.0,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 118.38
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1327.51,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 121.89
+        }
+      ]
+    },
+    "15m|ema9_21_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 614.33,
+      "max_friday": 1749.78,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 753.44,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 322.36
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 766.08,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 297.52
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 825.54,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 224.74
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 667.75,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 436.19
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 692.05,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 502.34
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 614.33,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 385.67
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 743.06,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 316.62
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1749.78,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 284.41
+        }
+      ]
+    },
+    "15m|bb_yatay|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 787.42,
+      "max_friday": 1152.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1152.0,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 148.68
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 879.49,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 148.25
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 816.12,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 248.09
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 914.84,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 176.77
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 900.74,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 139.94
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 816.21,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 315.11
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 787.42,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 361.1
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 879.14,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 176.49
+        }
+      ]
+    },
+    "15m|bb_yatay|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 462.71,
+      "max_friday": 1349.04,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1349.04,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 346.92
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 683.3,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 350.11
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 555.83,
+          "hit": false,
+          "trades": 12,
+          "winners": 0,
+          "dd": 588.1
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 789.3,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 412.47
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 752.78,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 368.16
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 572.37,
+          "hit": false,
+          "trades": 10,
+          "winners": 0,
+          "dd": 525.18
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 462.71,
+          "hit": false,
+          "trades": 13,
+          "winners": 1,
+          "dd": 853.81
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 713.09,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 422.01
+        }
+      ]
+    },
+    "15m|donchian_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 888.89,
+      "max_friday": 1157.16,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 973.71,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 143.16
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 948.01,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 73.28
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 888.89,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 135.59
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1057.32,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 66.9
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1118.04,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 104.23
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1051.06,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 148.03
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 892.59,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 148.01
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1157.16,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 41.25
+        }
+      ]
+    },
+    "15m|donchian_adx|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 714.12,
+      "max_friday": 1628.64,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 875.9,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 429.48
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 833.23,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 219.85
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 714.12,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 361.97
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1255.1,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 267.6
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1472.16,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 416.92
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1104.06,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 442.48
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 714.13,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 387.37
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1628.64,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 165.0
+        }
+      ]
+    },
+    "15m|atr_kirilim|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 897.17,
+      "max_friday": 1082.66,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 959.08,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 143.16
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 924.77,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 77.75
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 897.17,
+          "hit": false,
+          "trades": 7,
+          "winners": 0,
+          "dd": 108.39
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 971.15,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 75.27
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1082.66,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 104.23
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 934.38,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 139.12
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 916.69,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 127.15
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1073.07,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 40.63
+        }
+      ]
+    },
+    "15m|atr_kirilim|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 701.8,
+      "max_friday": 1322.97,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 838.19,
+          "hit": false,
+          "trades": 4,
+          "winners": 0,
+          "dd": 468.53
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 769.29,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 211.71
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 701.8,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 314.89
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 913.45,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 225.81
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1247.98,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 312.69
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 786.95,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 291.16
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 762.0,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 367.84
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1322.97,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 162.52
+        }
+      ]
+    },
+    "15m|adx_geri_cekilme|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 907.94,
+      "max_friday": 1314.32,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 970.26,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 206.41
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 952.45,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 75.54
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 958.49,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 178.51
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1054.85,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 133.8
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 907.94,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 143.88
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 955.44,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 212.4
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 917.73,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 130.99
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1314.32,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 82.5
+        }
+      ]
+    },
+    "15m|adx_geri_cekilme|risk5": {
+      "hits": 1,
+      "weeks": 8,
+      "min_friday": 753.81,
+      "max_friday": 2100.12,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 927.31,
+          "hit": false,
+          "trades": 2,
+          "winners": 0,
+          "dd": 602.7
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 863.22,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 226.62
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 873.39,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 469.11
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1177.17,
+          "hit": false,
+          "trades": 3,
+          "winners": 1,
+          "dd": 401.4
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 753.81,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 359.69
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 864.82,
+          "hit": false,
+          "trades": 3,
+          "winners": 0,
+          "dd": 566.4
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 796.58,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 333.34
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 2100.12,
+          "hit": true,
+          "trades": 1,
+          "winners": 1,
+          "dd": 288.75
+        }
+      ]
+    },
+    "15m|rsi_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 1000.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "15m|rsi_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 1000.0,
+      "max_friday": 1000.0,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1000.0,
+          "hit": false,
+          "trades": 0,
+          "winners": 0,
+          "dd": 0.0
+        }
+      ]
+    },
+    "15m|macd_hast|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 852.73,
+      "max_friday": 1155.74,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 914.59,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 317.86
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 861.91,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 217.57
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 993.57,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 95.61
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 947.64,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 95.16
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 863.56,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 248.94
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 918.04,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 151.47
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 852.73,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 181.54
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1155.74,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 128.2
+        }
+      ]
+    },
+    "15m|macd_hast|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 649.41,
+      "max_friday": 1392.26,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 774.99,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 655.46
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 677.83,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 520.87
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 1039.78,
+          "hit": false,
+          "trades": 4,
+          "winners": 1,
+          "dd": 345.88
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 824.28,
+          "hit": false,
+          "trades": 7,
+          "winners": 1,
+          "dd": 262.45
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 657.34,
+          "hit": false,
+          "trades": 9,
+          "winners": 0,
+          "dd": 623.91
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 793.86,
+          "hit": false,
+          "trades": 5,
+          "winners": 0,
+          "dd": 428.86
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 649.41,
+          "hit": false,
+          "trades": 9,
+          "winners": 1,
+          "dd": 439.15
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1392.26,
+          "hit": false,
+          "trades": 8,
+          "winners": 1,
+          "dd": 317.59
+        }
+      ]
+    },
+    "15m|keltner_adx|risk2": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 910.76,
+      "max_friday": 1157.16,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 972.81,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 113.43
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 913.5,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 105.44
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 910.76,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 128.2
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1018.31,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 66.9
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1118.04,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 104.23
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 989.83,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 79.39
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 956.74,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 91.83
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1157.16,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 41.25
+        }
+      ]
+    },
+    "15m|keltner_adx|risk5": {
+      "hits": 0,
+      "weeks": 8,
+      "min_friday": 753.18,
+      "max_friday": 1471.48,
+      "detail": [
+        {
+          "week": "2026-08-31",
+          "friday": 753.18,
+          "hit": false,
+          "trades": 8,
+          "winners": 0,
+          "dd": 268.03
+        },
+        {
+          "week": "2026-09-07",
+          "friday": 791.89,
+          "hit": false,
+          "trades": 6,
+          "winners": 0,
+          "dd": 208.11
+        },
+        {
+          "week": "2026-09-14",
+          "friday": 875.46,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 282.38
+        },
+        {
+          "week": "2026-09-21",
+          "friday": 1070.88,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 200.7
+        },
+        {
+          "week": "2026-09-28",
+          "friday": 1354.12,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 312.69
+        },
+        {
+          "week": "2026-10-05",
+          "friday": 1021.7,
+          "hit": false,
+          "trades": 5,
+          "winners": 1,
+          "dd": 241.32
+        },
+        {
+          "week": "2026-10-12",
+          "friday": 823.32,
+          "hit": false,
+          "trades": 6,
+          "winners": 1,
+          "dd": 276.29
+        },
+        {
+          "week": "2026-10-19",
+          "friday": 1471.48,
+          "hit": false,
+          "trades": 1,
+          "winners": 1,
+          "dd": 123.75
+        }
+      ]
+    }
+  },
+  "passed_all_8": []
+}

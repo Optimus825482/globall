@@ -1,0 +1,603 @@
+{
+  "rule": "5dk histogram sifir kesimi. 15 ve 30 ayni renkteyse islem.",
+  "symbols": {
+    "XAUUSD": {
+      "resolved": "XAUUSD",
+      "spread": 0.06999999999970896,
+      "cells": {
+        "7": {
+          "trades": 25,
+          "winners": 2,
+          "buys": 15,
+          "sells": 10,
+          "net": -635.46,
+          "pf": 0.723,
+          "dd": 1817.67,
+          "win_rate": 0.08
+        },
+        "14": {
+          "trades": 49,
+          "winners": 4,
+          "buys": 27,
+          "sells": 22,
+          "net": -1110.67,
+          "pf": 0.754,
+          "dd": 2097.79,
+          "win_rate": 0.082
+        },
+        "30": {
+          "trades": 94,
+          "winners": 11,
+          "buys": 47,
+          "sells": 47,
+          "net": 1.58,
+          "pf": 1.0,
+          "dd": 3255.64,
+          "win_rate": 0.117
+        },
+        "60": {
+          "trades": 164,
+          "winners": 19,
+          "buys": 79,
+          "sells": 85,
+          "net": -1785.44,
+          "pf": 0.861,
+          "dd": 2680.97,
+          "win_rate": 0.116
+        }
+      }
+    },
+    "BTCUSD": {
+      "resolved": "BTCUSD",
+      "spread": 5.0,
+      "cells": {
+        "7": {
+          "trades": 35,
+          "winners": 6,
+          "buys": 23,
+          "sells": 12,
+          "net": 136.61,
+          "pf": 1.041,
+          "dd": 2667.38,
+          "win_rate": 0.171
+        },
+        "14": {
+          "trades": 61,
+          "winners": 11,
+          "buys": 37,
+          "sells": 24,
+          "net": -768.98,
+          "pf": 0.843,
+          "dd": 2429.85,
+          "win_rate": 0.18
+        },
+        "30": {
+          "trades": 131,
+          "winners": 14,
+          "buys": 71,
+          "sells": 60,
+          "net": -4581.35,
+          "pf": 0.439,
+          "dd": 5775.11,
+          "win_rate": 0.107
+        },
+        "60": {
+          "trades": 273,
+          "winners": 24,
+          "buys": 155,
+          "sells": 118,
+          "net": -7224.95,
+          "pf": 0.441,
+          "dd": 7674.4,
+          "win_rate": 0.088
+        }
+      }
+    },
+    "EURUSD": {
+      "resolved": "EURUSD",
+      "spread": 0.0,
+      "cells": {
+        "7": {
+          "trades": 21,
+          "winners": 4,
+          "buys": 12,
+          "sells": 9,
+          "net": 790.87,
+          "pf": 1.454,
+          "dd": 1171.28,
+          "win_rate": 0.19
+        },
+        "14": {
+          "trades": 47,
+          "winners": 7,
+          "buys": 24,
+          "sells": 23,
+          "net": 2488.13,
+          "pf": 1.523,
+          "dd": 4006.08,
+          "win_rate": 0.149
+        },
+        "30": {
+          "trades": 86,
+          "winners": 12,
+          "buys": 42,
+          "sells": 44,
+          "net": 8160.75,
+          "pf": 1.778,
+          "dd": 5827.01,
+          "win_rate": 0.14
+        },
+        "60": {
+          "trades": 163,
+          "winners": 21,
+          "buys": 88,
+          "sells": 75,
+          "net": 8244.6,
+          "pf": 1.46,
+          "dd": 5853.97,
+          "win_rate": 0.129
+        }
+      }
+    },
+    "GBPUSD": {
+      "resolved": "GBPUSD",
+      "spread": 2.0000000000131024e-05,
+      "cells": {
+        "7": {
+          "trades": 18,
+          "winners": 2,
+          "buys": 10,
+          "sells": 8,
+          "net": -503.01,
+          "pf": 0.689,
+          "dd": 1382.54,
+          "win_rate": 0.111
+        },
+        "14": {
+          "trades": 37,
+          "winners": 6,
+          "buys": 16,
+          "sells": 21,
+          "net": 1109.45,
+          "pf": 1.324,
+          "dd": 2355.74,
+          "win_rate": 0.162
+        },
+        "30": {
+          "trades": 73,
+          "winners": 14,
+          "buys": 34,
+          "sells": 39,
+          "net": 5335.33,
+          "pf": 1.693,
+          "dd": 3251.67,
+          "win_rate": 0.192
+        },
+        "60": {
+          "trades": 149,
+          "winners": 23,
+          "buys": 70,
+          "sells": 79,
+          "net": 289.69,
+          "pf": 1.026,
+          "dd": 4779.77,
+          "win_rate": 0.154
+        }
+      }
+    },
+    "USDJPY": {
+      "resolved": "USDJPY",
+      "spread": 0.0010000000000047748,
+      "cells": {
+        "7": {
+          "trades": 19,
+          "winners": 3,
+          "buys": 13,
+          "sells": 6,
+          "net": -557.88,
+          "pf": 0.645,
+          "dd": 1590.4,
+          "win_rate": 0.158
+        },
+        "14": {
+          "trades": 36,
+          "winners": 5,
+          "buys": 19,
+          "sells": 17,
+          "net": -1326.58,
+          "pf": 0.576,
+          "dd": 1531.1,
+          "win_rate": 0.139
+        },
+        "30": {
+          "trades": 76,
+          "winners": 12,
+          "buys": 41,
+          "sells": 35,
+          "net": -1895.26,
+          "pf": 0.696,
+          "dd": 3563.67,
+          "win_rate": 0.158
+        },
+        "60": {
+          "trades": 144,
+          "winners": 26,
+          "buys": 74,
+          "sells": 70,
+          "net": 8725.89,
+          "pf": 1.385,
+          "dd": 7614.5,
+          "win_rate": 0.181
+        }
+      }
+    },
+    "EURJPY": {
+      "resolved": "EURJPY",
+      "spread": 0.01099999999999568,
+      "cells": {
+        "7": {
+          "trades": 14,
+          "winners": 2,
+          "buys": 8,
+          "sells": 6,
+          "net": 121.55,
+          "pf": 1.062,
+          "dd": 1740.31,
+          "win_rate": 0.143
+        },
+        "14": {
+          "trades": 35,
+          "winners": 3,
+          "buys": 18,
+          "sells": 17,
+          "net": -1615.26,
+          "pf": 0.536,
+          "dd": 2324.76,
+          "win_rate": 0.086
+        },
+        "30": {
+          "trades": 75,
+          "winners": 10,
+          "buys": 43,
+          "sells": 32,
+          "net": -1437.96,
+          "pf": 0.788,
+          "dd": 3090.38,
+          "win_rate": 0.133
+        },
+        "60": {
+          "trades": 149,
+          "winners": 25,
+          "buys": 88,
+          "sells": 61,
+          "net": 1479.82,
+          "pf": 1.085,
+          "dd": 4158.06,
+          "win_rate": 0.168
+        }
+      }
+    },
+    "GBPJPY": {
+      "resolved": "GBPJPY",
+      "spread": 0.0069999999999765805,
+      "cells": {
+        "7": {
+          "trades": 19,
+          "winners": 1,
+          "buys": 10,
+          "sells": 9,
+          "net": -575.72,
+          "pf": 0.68,
+          "dd": 2189.57,
+          "win_rate": 0.053
+        },
+        "14": {
+          "trades": 44,
+          "winners": 1,
+          "buys": 21,
+          "sells": 23,
+          "net": -2622.36,
+          "pf": 0.267,
+          "dd": 2714.91,
+          "win_rate": 0.023
+        },
+        "30": {
+          "trades": 83,
+          "winners": 8,
+          "buys": 42,
+          "sells": 41,
+          "net": -1224.51,
+          "pf": 0.833,
+          "dd": 3270.09,
+          "win_rate": 0.096
+        },
+        "60": {
+          "trades": 155,
+          "winners": 19,
+          "buys": 81,
+          "sells": 74,
+          "net": 2035.67,
+          "pf": 1.116,
+          "dd": 4489.62,
+          "win_rate": 0.123
+        }
+      }
+    },
+    "USDCAD": {
+      "resolved": "USDCAD",
+      "spread": 1.999999999990898e-05,
+      "cells": {
+        "7": {
+          "trades": 19,
+          "winners": 1,
+          "buys": 11,
+          "sells": 8,
+          "net": -1662.54,
+          "pf": 0.11,
+          "dd": 2132.04,
+          "win_rate": 0.053
+        },
+        "14": {
+          "trades": 37,
+          "winners": 5,
+          "buys": 20,
+          "sells": 17,
+          "net": -823.11,
+          "pf": 0.755,
+          "dd": 2437.23,
+          "win_rate": 0.135
+        },
+        "30": {
+          "trades": 73,
+          "winners": 11,
+          "buys": 35,
+          "sells": 38,
+          "net": 4633.22,
+          "pf": 1.533,
+          "dd": 3886.88,
+          "win_rate": 0.151
+        },
+        "60": {
+          "trades": 163,
+          "winners": 18,
+          "buys": 74,
+          "sells": 89,
+          "net": -562.91,
+          "pf": 0.957,
+          "dd": 6025.78,
+          "win_rate": 0.11
+        }
+      }
+    },
+    "EURCAD": {
+      "resolved": "EURCAD",
+      "spread": 4.0000000000040004e-05,
+      "cells": {
+        "7": {
+          "trades": 19,
+          "winners": 6,
+          "buys": 10,
+          "sells": 9,
+          "net": 1184.04,
+          "pf": 1.834,
+          "dd": 1434.93,
+          "win_rate": 0.316
+        },
+        "14": {
+          "trades": 39,
+          "winners": 10,
+          "buys": 24,
+          "sells": 15,
+          "net": 732.66,
+          "pf": 1.251,
+          "dd": 1676.58,
+          "win_rate": 0.256
+        },
+        "30": {
+          "trades": 72,
+          "winners": 17,
+          "buys": 40,
+          "sells": 32,
+          "net": 6287.12,
+          "pf": 1.793,
+          "dd": 2541.44,
+          "win_rate": 0.236
+        },
+        "60": {
+          "trades": 158,
+          "winners": 25,
+          "buys": 81,
+          "sells": 77,
+          "net": 1702.24,
+          "pf": 1.142,
+          "dd": 3444.11,
+          "win_rate": 0.158
+        }
+      }
+    },
+    "GBPCAD": {
+      "resolved": "GBPCAD",
+      "spread": 4.0000000000040004e-05,
+      "cells": {
+        "7": {
+          "trades": 21,
+          "winners": 4,
+          "buys": 10,
+          "sells": 11,
+          "net": 566.45,
+          "pf": 1.322,
+          "dd": 1176.85,
+          "win_rate": 0.19
+        },
+        "14": {
+          "trades": 41,
+          "winners": 7,
+          "buys": 24,
+          "sells": 17,
+          "net": -342.41,
+          "pf": 0.896,
+          "dd": 2212.63,
+          "win_rate": 0.171
+        },
+        "30": {
+          "trades": 85,
+          "winners": 13,
+          "buys": 47,
+          "sells": 38,
+          "net": 1540.3,
+          "pf": 1.173,
+          "dd": 4943.29,
+          "win_rate": 0.153
+        },
+        "60": {
+          "trades": 175,
+          "winners": 22,
+          "buys": 103,
+          "sells": 72,
+          "net": -2188.77,
+          "pf": 0.829,
+          "dd": 4569.92,
+          "win_rate": 0.126
+        }
+      }
+    },
+    "EURNZD": {
+      "resolved": "EURNZD",
+      "spread": 2.9999999999752447e-05,
+      "cells": {
+        "7": {
+          "trades": 20,
+          "winners": 2,
+          "buys": 8,
+          "sells": 12,
+          "net": -1033.12,
+          "pf": 0.382,
+          "dd": 1343.66,
+          "win_rate": 0.1
+        },
+        "14": {
+          "trades": 38,
+          "winners": 4,
+          "buys": 21,
+          "sells": 17,
+          "net": -1106.43,
+          "pf": 0.675,
+          "dd": 2395.91,
+          "win_rate": 0.105
+        },
+        "30": {
+          "trades": 90,
+          "winners": 8,
+          "buys": 51,
+          "sells": 39,
+          "net": -4484.13,
+          "pf": 0.307,
+          "dd": 4861.65,
+          "win_rate": 0.089
+        },
+        "60": {
+          "trades": 164,
+          "winners": 16,
+          "buys": 89,
+          "sells": 75,
+          "net": -5991.07,
+          "pf": 0.445,
+          "dd": 7612.07,
+          "win_rate": 0.098
+        }
+      }
+    },
+    "GBPNZD": {
+      "resolved": "GBPNZD",
+      "spread": 4.000000000026205e-05,
+      "cells": {
+        "7": {
+          "trades": 16,
+          "winners": 3,
+          "buys": 6,
+          "sells": 10,
+          "net": -275.79,
+          "pf": 0.777,
+          "dd": 1914.73,
+          "win_rate": 0.188
+        },
+        "14": {
+          "trades": 34,
+          "winners": 6,
+          "buys": 17,
+          "sells": 17,
+          "net": -80.58,
+          "pf": 0.972,
+          "dd": 2246.16,
+          "win_rate": 0.176
+        },
+        "30": {
+          "trades": 77,
+          "winners": 12,
+          "buys": 30,
+          "sells": 47,
+          "net": -2210.58,
+          "pf": 0.604,
+          "dd": 2954.62,
+          "win_rate": 0.156
+        },
+        "60": {
+          "trades": 146,
+          "winners": 18,
+          "buys": 61,
+          "sells": 85,
+          "net": -4082.6,
+          "pf": 0.599,
+          "dd": 5862.94,
+          "win_rate": 0.123
+        }
+      }
+    },
+    "NZDUSD": {
+      "resolved": "NZDUSD",
+      "spread": 0.0,
+      "cells": {
+        "7": {
+          "trades": 21,
+          "winners": 3,
+          "buys": 8,
+          "sells": 13,
+          "net": -1838.44,
+          "pf": 0.165,
+          "dd": 2201.98,
+          "win_rate": 0.143
+        },
+        "14": {
+          "trades": 43,
+          "winners": 7,
+          "buys": 16,
+          "sells": 27,
+          "net": -137.21,
+          "pf": 0.97,
+          "dd": 2959.52,
+          "win_rate": 0.163
+        },
+        "30": {
+          "trades": 95,
+          "winners": 12,
+          "buys": 46,
+          "sells": 49,
+          "net": -2355.02,
+          "pf": 0.687,
+          "dd": 3185.96,
+          "win_rate": 0.126
+        },
+        "60": {
+          "trades": 164,
+          "winners": 17,
+          "buys": 82,
+          "sells": 82,
+          "net": -4766.85,
+          "pf": 0.585,
+          "dd": 5453.56,
+          "win_rate": 0.104
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,419 @@
+{
+  "rule": "Egitimde haftada >=8 islem ve isabet >=0.60 ise teste alinir",
+  "train": [
+    "2026-06-22",
+    "2026-06-29",
+    "2026-07-06",
+    "2026-07-13",
+    "2026-07-20",
+    "2026-07-27",
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17",
+    "2026-08-24"
+  ],
+  "test": [
+    "2026-08-31",
+    "2026-09-07",
+    "2026-09-14",
+    "2026-09-21",
+    "2026-09-28",
+    "2026-10-05",
+    "2026-10-12",
+    "2026-10-19"
+  ],
+  "symbols": {
+    "XAUUSD|15m": {
+      "resolved": "XAUUSD",
+      "best_train_slice": "st_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 66,
+        "wins": 28,
+        "per_week": 6.6,
+        "rate": 0.424,
+        "hits": 0,
+        "min": 829.66
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "BTCUSD|15m": {
+      "resolved": "BTCUSD",
+      "best_train_slice": "st_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 78,
+        "wins": 34,
+        "per_week": 7.8,
+        "rate": 0.436,
+        "hits": 1,
+        "min": 743.22
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURUSD|15m": {
+      "resolved": "EURUSD",
+      "best_train_slice": "guclu_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 40,
+        "wins": 13,
+        "per_week": 4.0,
+        "rate": 0.325,
+        "hits": 0,
+        "min": 790.0
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPUSD|15m": {
+      "resolved": "GBPUSD",
+      "best_train_slice": "st_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 56,
+        "wins": 20,
+        "per_week": 5.6,
+        "rate": 0.357,
+        "hits": 0,
+        "min": 771.5
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "USDJPY|15m": {
+      "resolved": "USDJPY",
+      "best_train_slice": "st_adx20_tum",
+      "best_train": {
+        "weeks": 10,
+        "trades": 338,
+        "wins": 109,
+        "per_week": 33.8,
+        "rate": 0.322,
+        "hits": 0,
+        "min": 572.47
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURJPY|15m": {
+      "resolved": "EURJPY",
+      "best_train_slice": "st_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 119,
+        "wins": 38,
+        "per_week": 11.9,
+        "rate": 0.319,
+        "hits": 0,
+        "min": 631.76
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPJPY|15m": {
+      "resolved": "GBPJPY",
+      "best_train_slice": "st_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 52,
+        "wins": 27,
+        "per_week": 5.2,
+        "rate": 0.519,
+        "hits": 0,
+        "min": 899.17
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "USDCAD|15m": {
+      "resolved": "USDCAD",
+      "best_train_slice": "squeeze_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 5,
+        "wins": 2,
+        "per_week": 0.5,
+        "rate": 0.4,
+        "hits": 0,
+        "min": 950.12
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURCAD|15m": {
+      "resolved": "EURCAD",
+      "best_train_slice": "squeeze_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 2,
+        "wins": 1,
+        "per_week": 0.2,
+        "rate": 0.5,
+        "hits": 0,
+        "min": 999.44
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPCAD|15m": {
+      "resolved": "GBPCAD",
+      "best_train_slice": "guclu_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 36,
+        "wins": 17,
+        "per_week": 3.6,
+        "rate": 0.472,
+        "hits": 0,
+        "min": 857.5
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURNZD|15m": {
+      "resolved": "EURNZD",
+      "best_train_slice": "st_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 136,
+        "wins": 43,
+        "per_week": 13.6,
+        "rate": 0.316,
+        "hits": 0,
+        "min": 665.97
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPNZD|15m": {
+      "resolved": "GBPNZD",
+      "best_train_slice": "st_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 141,
+        "wins": 49,
+        "per_week": 14.1,
+        "rate": 0.348,
+        "hits": 0,
+        "min": 725.7
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "NZDUSD|15m": {
+      "resolved": "NZDUSD",
+      "best_train_slice": "squeeze_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 6,
+        "wins": 3,
+        "per_week": 0.6,
+        "rate": 0.5,
+        "hits": 0,
+        "min": 950.02
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "XAUUSD|5m": {
+      "resolved": "XAUUSD",
+      "best_train_slice": "st_adx20_tum",
+      "best_train": {
+        "weeks": 10,
+        "trades": 990,
+        "wins": 339,
+        "per_week": 99.0,
+        "rate": 0.342,
+        "hits": 0,
+        "min": 531.27
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "BTCUSD|5m": {
+      "resolved": "BTCUSD",
+      "best_train_slice": "squeeze_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 2,
+        "wins": 2,
+        "per_week": 0.2,
+        "rate": 1.0,
+        "hits": 0,
+        "min": 1000.0
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURUSD|5m": {
+      "resolved": "EURUSD",
+      "best_train_slice": "squeeze_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 5,
+        "wins": 2,
+        "per_week": 0.5,
+        "rate": 0.4,
+        "hits": 0,
+        "min": 950.35
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPUSD|5m": {
+      "resolved": "GBPUSD",
+      "best_train_slice": "squeeze_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 4,
+        "wins": 3,
+        "per_week": 0.4,
+        "rate": 0.75,
+        "hits": 0,
+        "min": 1000.0
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "USDJPY|5m": {
+      "resolved": "USDJPY",
+      "best_train_slice": "guclu_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 75,
+        "wins": 25,
+        "per_week": 7.5,
+        "rate": 0.333,
+        "hits": 0,
+        "min": 771.71
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURJPY|5m": {
+      "resolved": "EURJPY",
+      "best_train_slice": "st_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 88,
+        "wins": 28,
+        "per_week": 8.8,
+        "rate": 0.318,
+        "hits": 0,
+        "min": 765.86
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPJPY|5m": {
+      "resolved": "GBPJPY",
+      "best_train_slice": "guclu_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 80,
+        "wins": 27,
+        "per_week": 8.0,
+        "rate": 0.338,
+        "hits": 0,
+        "min": 665.22
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "USDCAD|5m": {
+      "resolved": "USDCAD",
+      "best_train_slice": "st_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 110,
+        "wins": 36,
+        "per_week": 11.0,
+        "rate": 0.327,
+        "hits": 0,
+        "min": 780.21
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURCAD|5m": {
+      "resolved": "EURCAD",
+      "best_train_slice": "squeeze_adx25_lnny",
+      "best_train": {
+        "weeks": 10,
+        "trades": 19,
+        "wins": 8,
+        "per_week": 1.9,
+        "rate": 0.421,
+        "hits": 0,
+        "min": 902.64
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPCAD|5m": {
+      "resolved": "GBPCAD",
+      "best_train_slice": "squeeze_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 3,
+        "wins": 2,
+        "per_week": 0.3,
+        "rate": 0.667,
+        "hits": 0,
+        "min": 950.58
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "EURNZD|5m": {
+      "resolved": "EURNZD",
+      "best_train_slice": "st_adx20_tum",
+      "best_train": {
+        "weeks": 10,
+        "trades": 835,
+        "wins": 246,
+        "per_week": 83.5,
+        "rate": 0.295,
+        "hits": 0,
+        "min": 137.85
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "GBPNZD|5m": {
+      "resolved": "GBPNZD",
+      "best_train_slice": "squeeze_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 6,
+        "wins": 3,
+        "per_week": 0.6,
+        "rate": 0.5,
+        "hits": 0,
+        "min": 903.83
+      },
+      "qualified": [],
+      "tested": null
+    },
+    "NZDUSD|5m": {
+      "resolved": "NZDUSD",
+      "best_train_slice": "guclu_adx30_ov",
+      "best_train": {
+        "weeks": 10,
+        "trades": 81,
+        "wins": 26,
+        "per_week": 8.1,
+        "rate": 0.321,
+        "hits": 0,
+        "min": 758.69
+      },
+      "qualified": [],
+      "tested": null
+    }
+  },
+  "passed_all_8": [],
+  "qualified": []
+}

@@ -1,0 +1,2254 @@
+{
+  "rule": "5-15-30 arti ADX 25 / DI / ADR %80",
+  "symbols": {
+    "XAUUSD": {
+      "spread": 0.05999999999994543,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 8,
+            "winners": 2,
+            "buys": 4,
+            "sells": 4,
+            "net": 252.54,
+            "pf": 1.432,
+            "dd": 775.65,
+            "win_rate": 0.25
+          },
+          "14": {
+            "trades": 18,
+            "winners": 2,
+            "buys": 8,
+            "sells": 10,
+            "net": -819.14,
+            "pf": 0.477,
+            "dd": 1351.91,
+            "win_rate": 0.111
+          },
+          "30": {
+            "trades": 41,
+            "winners": 4,
+            "buys": 20,
+            "sells": 21,
+            "net": -818.12,
+            "pf": 0.782,
+            "dd": 4436.07,
+            "win_rate": 0.098
+          },
+          "60": {
+            "trades": 69,
+            "winners": 6,
+            "buys": 31,
+            "sells": 38,
+            "net": -757.2,
+            "pf": 0.882,
+            "dd": 4479.07,
+            "win_rate": 0.087
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 8,
+            "winners": 2,
+            "buys": 4,
+            "sells": 4,
+            "net": 252.54,
+            "pf": 1.432,
+            "dd": 775.65,
+            "win_rate": 0.25
+          },
+          "14": {
+            "trades": 18,
+            "winners": 2,
+            "buys": 8,
+            "sells": 10,
+            "net": -819.14,
+            "pf": 0.477,
+            "dd": 1351.91,
+            "win_rate": 0.111
+          },
+          "30": {
+            "trades": 40,
+            "winners": 4,
+            "buys": 20,
+            "sells": 20,
+            "net": -721.24,
+            "pf": 0.804,
+            "dd": 4335.09,
+            "win_rate": 0.1
+          },
+          "60": {
+            "trades": 68,
+            "winners": 6,
+            "buys": 31,
+            "sells": 37,
+            "net": -639.33,
+            "pf": 0.899,
+            "dd": 4361.2,
+            "win_rate": 0.088
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 18,
+            "winners": 1,
+            "buys": 11,
+            "sells": 7,
+            "net": -440.34,
+            "pf": 0.744,
+            "dd": 1312.95,
+            "win_rate": 0.056
+          },
+          "14": {
+            "trades": 34,
+            "winners": 2,
+            "buys": 21,
+            "sells": 13,
+            "net": -860.23,
+            "pf": 0.726,
+            "dd": 1326.33,
+            "win_rate": 0.059
+          },
+          "30": {
+            "trades": 61,
+            "winners": 8,
+            "buys": 31,
+            "sells": 30,
+            "net": 3393.24,
+            "pf": 1.451,
+            "dd": 3252.51,
+            "win_rate": 0.131
+          },
+          "60": {
+            "trades": 116,
+            "winners": 13,
+            "buys": 54,
+            "sells": 62,
+            "net": 1016.71,
+            "pf": 1.096,
+            "dd": 2644.13,
+            "win_rate": 0.112
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 4,
+            "winners": 0,
+            "buys": 2,
+            "sells": 2,
+            "net": -385.66,
+            "pf": 0.0,
+            "dd": 385.66,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 11,
+            "winners": 0,
+            "buys": 6,
+            "sells": 5,
+            "net": -1130.71,
+            "pf": 0.0,
+            "dd": 1130.71,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 27,
+            "winners": 2,
+            "buys": 13,
+            "sells": 14,
+            "net": -940.24,
+            "pf": 0.642,
+            "dd": 4033.66,
+            "win_rate": 0.074
+          },
+          "60": {
+            "trades": 47,
+            "winners": 4,
+            "buys": 21,
+            "sells": 26,
+            "net": -997.45,
+            "pf": 0.769,
+            "dd": 3887.02,
+            "win_rate": 0.085
+          }
+        }
+      }
+    },
+    "BTCUSD": {
+      "spread": 5.0,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 13,
+            "winners": 1,
+            "buys": 4,
+            "sells": 9,
+            "net": 1626.31,
+            "pf": 2.126,
+            "dd": 2493.0,
+            "win_rate": 0.077
+          },
+          "14": {
+            "trades": 22,
+            "winners": 2,
+            "buys": 8,
+            "sells": 14,
+            "net": 985.49,
+            "pf": 1.462,
+            "dd": 2360.97,
+            "win_rate": 0.091
+          },
+          "30": {
+            "trades": 50,
+            "winners": 3,
+            "buys": 24,
+            "sells": 26,
+            "net": -1515.31,
+            "pf": 0.624,
+            "dd": 4139.85,
+            "win_rate": 0.06
+          },
+          "60": {
+            "trades": 98,
+            "winners": 6,
+            "buys": 48,
+            "sells": 50,
+            "net": -3417.1,
+            "pf": 0.512,
+            "dd": 4589.71,
+            "win_rate": 0.061
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 13,
+            "winners": 1,
+            "buys": 4,
+            "sells": 9,
+            "net": 380.13,
+            "pf": 1.288,
+            "dd": 1985.9,
+            "win_rate": 0.077
+          },
+          "14": {
+            "trades": 20,
+            "winners": 1,
+            "buys": 7,
+            "sells": 13,
+            "net": -322.8,
+            "pf": 0.83,
+            "dd": 1849.77,
+            "win_rate": 0.05
+          },
+          "30": {
+            "trades": 46,
+            "winners": 2,
+            "buys": 22,
+            "sells": 24,
+            "net": -2368.25,
+            "pf": 0.364,
+            "dd": 4154.48,
+            "win_rate": 0.043
+          },
+          "60": {
+            "trades": 93,
+            "winners": 5,
+            "buys": 46,
+            "sells": 47,
+            "net": -4031.4,
+            "pf": 0.4,
+            "dd": 4459.82,
+            "win_rate": 0.054
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 29,
+            "winners": 4,
+            "buys": 17,
+            "sells": 12,
+            "net": -611.41,
+            "pf": 0.763,
+            "dd": 2024.86,
+            "win_rate": 0.138
+          },
+          "14": {
+            "trades": 46,
+            "winners": 8,
+            "buys": 25,
+            "sells": 21,
+            "net": -764.4,
+            "pf": 0.796,
+            "dd": 1987.76,
+            "win_rate": 0.174
+          },
+          "30": {
+            "trades": 94,
+            "winners": 10,
+            "buys": 49,
+            "sells": 45,
+            "net": -3373.65,
+            "pf": 0.496,
+            "dd": 4950.89,
+            "win_rate": 0.106
+          },
+          "60": {
+            "trades": 212,
+            "winners": 19,
+            "buys": 119,
+            "sells": 93,
+            "net": -5651.39,
+            "pf": 0.544,
+            "dd": 6223.65,
+            "win_rate": 0.09
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 13,
+            "winners": 1,
+            "buys": 4,
+            "sells": 9,
+            "net": 380.13,
+            "pf": 1.288,
+            "dd": 1985.9,
+            "win_rate": 0.077
+          },
+          "14": {
+            "trades": 18,
+            "winners": 2,
+            "buys": 6,
+            "sells": 12,
+            "net": 187.9,
+            "pf": 1.111,
+            "dd": 1950.29,
+            "win_rate": 0.111
+          },
+          "30": {
+            "trades": 34,
+            "winners": 3,
+            "buys": 17,
+            "sells": 17,
+            "net": -1132.65,
+            "pf": 0.606,
+            "dd": 3345.13,
+            "win_rate": 0.088
+          },
+          "60": {
+            "trades": 74,
+            "winners": 5,
+            "buys": 37,
+            "sells": 37,
+            "net": -2864.26,
+            "pf": 0.497,
+            "dd": 3349.92,
+            "win_rate": 0.068
+          }
+        }
+      }
+    },
+    "EURUSD": {
+      "spread": 9.999999999843467e-06,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 5,
+            "winners": 1,
+            "buys": 2,
+            "sells": 3,
+            "net": 2531.86,
+            "pf": 7.436,
+            "dd": 785.78,
+            "win_rate": 0.2
+          },
+          "14": {
+            "trades": 14,
+            "winners": 2,
+            "buys": 9,
+            "sells": 5,
+            "net": 3371.12,
+            "pf": 3.6,
+            "dd": 2387.78,
+            "win_rate": 0.143
+          },
+          "30": {
+            "trades": 41,
+            "winners": 2,
+            "buys": 19,
+            "sells": 22,
+            "net": 130.99,
+            "pf": 1.039,
+            "dd": 2740.96,
+            "win_rate": 0.049
+          },
+          "60": {
+            "trades": 64,
+            "winners": 6,
+            "buys": 33,
+            "sells": 31,
+            "net": 4942.59,
+            "pf": 1.645,
+            "dd": 5099.01,
+            "win_rate": 0.094
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 5,
+            "winners": 1,
+            "buys": 2,
+            "sells": 3,
+            "net": 2531.86,
+            "pf": 7.436,
+            "dd": 785.78,
+            "win_rate": 0.2
+          },
+          "14": {
+            "trades": 14,
+            "winners": 2,
+            "buys": 9,
+            "sells": 5,
+            "net": 3371.12,
+            "pf": 3.6,
+            "dd": 2387.78,
+            "win_rate": 0.143
+          },
+          "30": {
+            "trades": 39,
+            "winners": 2,
+            "buys": 18,
+            "sells": 21,
+            "net": 345.69,
+            "pf": 1.106,
+            "dd": 2434.77,
+            "win_rate": 0.051
+          },
+          "60": {
+            "trades": 61,
+            "winners": 6,
+            "buys": 31,
+            "sells": 30,
+            "net": 4859.18,
+            "pf": 1.678,
+            "dd": 4753.48,
+            "win_rate": 0.098
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 18,
+            "winners": 4,
+            "buys": 9,
+            "sells": 9,
+            "net": 1358.84,
+            "pf": 1.963,
+            "dd": 1157.51,
+            "win_rate": 0.222
+          },
+          "14": {
+            "trades": 38,
+            "winners": 5,
+            "buys": 22,
+            "sells": 16,
+            "net": -575.76,
+            "pf": 0.805,
+            "dd": 4836.27,
+            "win_rate": 0.132
+          },
+          "30": {
+            "trades": 52,
+            "winners": 7,
+            "buys": 24,
+            "sells": 28,
+            "net": 833.96,
+            "pf": 1.186,
+            "dd": 5561.92,
+            "win_rate": 0.135
+          },
+          "60": {
+            "trades": 108,
+            "winners": 13,
+            "buys": 57,
+            "sells": 51,
+            "net": 1598.89,
+            "pf": 1.149,
+            "dd": 5959.79,
+            "win_rate": 0.12
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 4,
+            "winners": 1,
+            "buys": 2,
+            "sells": 2,
+            "net": 2658.95,
+            "pf": 9.971,
+            "dd": 793.86,
+            "win_rate": 0.25
+          },
+          "14": {
+            "trades": 13,
+            "winners": 1,
+            "buys": 10,
+            "sells": 3,
+            "net": 1508.85,
+            "pf": 2.283,
+            "dd": 1391.78,
+            "win_rate": 0.077
+          },
+          "30": {
+            "trades": 29,
+            "winners": 1,
+            "buys": 16,
+            "sells": 13,
+            "net": -196.87,
+            "pf": 0.921,
+            "dd": 2775.97,
+            "win_rate": 0.034
+          },
+          "60": {
+            "trades": 48,
+            "winners": 5,
+            "buys": 27,
+            "sells": 21,
+            "net": 4524.35,
+            "pf": 1.784,
+            "dd": 5069.44,
+            "win_rate": 0.104
+          }
+        }
+      }
+    },
+    "GBPUSD": {
+      "spread": 9.999999999843467e-06,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 3,
+            "winners": 1,
+            "buys": 0,
+            "sells": 3,
+            "net": 1372.05,
+            "pf": 7.912,
+            "dd": 898.79,
+            "win_rate": 0.333
+          },
+          "14": {
+            "trades": 10,
+            "winners": 1,
+            "buys": 4,
+            "sells": 6,
+            "net": 602.61,
+            "pf": 1.699,
+            "dd": 1038.07,
+            "win_rate": 0.1
+          },
+          "30": {
+            "trades": 23,
+            "winners": 3,
+            "buys": 9,
+            "sells": 14,
+            "net": 197.18,
+            "pf": 1.105,
+            "dd": 3463.2,
+            "win_rate": 0.13
+          },
+          "60": {
+            "trades": 53,
+            "winners": 4,
+            "buys": 23,
+            "sells": 30,
+            "net": -2582.15,
+            "pf": 0.382,
+            "dd": 3687.7,
+            "win_rate": 0.075
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 3,
+            "winners": 1,
+            "buys": 0,
+            "sells": 3,
+            "net": 1372.05,
+            "pf": 7.912,
+            "dd": 898.79,
+            "win_rate": 0.333
+          },
+          "14": {
+            "trades": 10,
+            "winners": 1,
+            "buys": 4,
+            "sells": 6,
+            "net": 602.61,
+            "pf": 1.699,
+            "dd": 1038.07,
+            "win_rate": 0.1
+          },
+          "30": {
+            "trades": 23,
+            "winners": 3,
+            "buys": 9,
+            "sells": 14,
+            "net": 197.18,
+            "pf": 1.105,
+            "dd": 3463.2,
+            "win_rate": 0.13
+          },
+          "60": {
+            "trades": 53,
+            "winners": 4,
+            "buys": 23,
+            "sells": 30,
+            "net": -2582.15,
+            "pf": 0.382,
+            "dd": 3687.7,
+            "win_rate": 0.075
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 16,
+            "winners": 2,
+            "buys": 9,
+            "sells": 7,
+            "net": 220.56,
+            "pf": 1.162,
+            "dd": 958.26,
+            "win_rate": 0.125
+          },
+          "14": {
+            "trades": 27,
+            "winners": 5,
+            "buys": 15,
+            "sells": 12,
+            "net": 3539.04,
+            "pf": 2.37,
+            "dd": 3151.1,
+            "win_rate": 0.185
+          },
+          "30": {
+            "trades": 43,
+            "winners": 10,
+            "buys": 20,
+            "sells": 23,
+            "net": 10517.39,
+            "pf": 3.122,
+            "dd": 4776.38,
+            "win_rate": 0.233
+          },
+          "60": {
+            "trades": 93,
+            "winners": 13,
+            "buys": 46,
+            "sells": 47,
+            "net": 5035.55,
+            "pf": 1.621,
+            "dd": 4432.31,
+            "win_rate": 0.14
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 2,
+            "winners": 1,
+            "buys": 0,
+            "sells": 2,
+            "net": 1485.86,
+            "pf": 15.882,
+            "dd": 907.46,
+            "win_rate": 0.5
+          },
+          "14": {
+            "trades": 6,
+            "winners": 1,
+            "buys": 3,
+            "sells": 3,
+            "net": 1036.07,
+            "pf": 3.119,
+            "dd": 872.78,
+            "win_rate": 0.167
+          },
+          "30": {
+            "trades": 16,
+            "winners": 3,
+            "buys": 7,
+            "sells": 9,
+            "net": 1136.4,
+            "pf": 1.896,
+            "dd": 3112.97,
+            "win_rate": 0.188
+          },
+          "60": {
+            "trades": 33,
+            "winners": 3,
+            "buys": 18,
+            "sells": 15,
+            "net": -775.16,
+            "pf": 0.72,
+            "dd": 2574.12,
+            "win_rate": 0.091
+          }
+        }
+      }
+    },
+    "USDJPY": {
+      "spread": 0.0010000000000047748,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 4,
+            "winners": 0,
+            "buys": 2,
+            "sells": 2,
+            "net": -393.58,
+            "pf": 0.0,
+            "dd": 2676.02,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 10,
+            "winners": 0,
+            "buys": 3,
+            "sells": 7,
+            "net": -1078.48,
+            "pf": 0.0,
+            "dd": 2482.31,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 24,
+            "winners": 0,
+            "buys": 7,
+            "sells": 17,
+            "net": -2260.55,
+            "pf": 0.0,
+            "dd": 3063.44,
+            "win_rate": 0.0
+          },
+          "60": {
+            "trades": 54,
+            "winners": 4,
+            "buys": 23,
+            "sells": 31,
+            "net": -917.63,
+            "pf": 0.848,
+            "dd": 5790.89,
+            "win_rate": 0.074
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 4,
+            "winners": 0,
+            "buys": 2,
+            "sells": 2,
+            "net": -393.58,
+            "pf": 0.0,
+            "dd": 2676.02,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 10,
+            "winners": 0,
+            "buys": 3,
+            "sells": 7,
+            "net": -1078.48,
+            "pf": 0.0,
+            "dd": 2482.31,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 24,
+            "winners": 0,
+            "buys": 7,
+            "sells": 17,
+            "net": -2260.55,
+            "pf": 0.0,
+            "dd": 3063.44,
+            "win_rate": 0.0
+          },
+          "60": {
+            "trades": 48,
+            "winners": 2,
+            "buys": 21,
+            "sells": 27,
+            "net": 659.77,
+            "pf": 1.103,
+            "dd": 7657.88,
+            "win_rate": 0.042
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 5,
+            "winners": 1,
+            "buys": 3,
+            "sells": 2,
+            "net": 380.22,
+            "pf": 1.948,
+            "dd": 1127.22,
+            "win_rate": 0.2
+          },
+          "14": {
+            "trades": 17,
+            "winners": 2,
+            "buys": 7,
+            "sells": 10,
+            "net": -482.89,
+            "pf": 0.692,
+            "dd": 1329.72,
+            "win_rate": 0.118
+          },
+          "30": {
+            "trades": 45,
+            "winners": 5,
+            "buys": 21,
+            "sells": 24,
+            "net": -1810.47,
+            "pf": 0.509,
+            "dd": 3607.27,
+            "win_rate": 0.111
+          },
+          "60": {
+            "trades": 88,
+            "winners": 15,
+            "buys": 42,
+            "sells": 46,
+            "net": 7059.03,
+            "pf": 1.568,
+            "dd": 7533.14,
+            "win_rate": 0.17
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 1,
+            "winners": 0,
+            "buys": 1,
+            "sells": 0,
+            "net": -99.87,
+            "pf": 0.0,
+            "dd": 202.25,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 5,
+            "winners": 0,
+            "buys": 1,
+            "sells": 4,
+            "net": -619.35,
+            "pf": 0.0,
+            "dd": 720.03,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 16,
+            "winners": 0,
+            "buys": 5,
+            "sells": 11,
+            "net": -1614.87,
+            "pf": 0.0,
+            "dd": 2636.76,
+            "win_rate": 0.0
+          },
+          "60": {
+            "trades": 30,
+            "winners": 2,
+            "buys": 13,
+            "sells": 17,
+            "net": -574.91,
+            "pf": 0.822,
+            "dd": 3866.85,
+            "win_rate": 0.067
+          }
+        }
+      }
+    },
+    "EURJPY": {
+      "spread": 0.01099999999999568,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 7,
+            "winners": 1,
+            "buys": 3,
+            "sells": 4,
+            "net": 1502.13,
+            "pf": 3.037,
+            "dd": 896.55,
+            "win_rate": 0.143
+          },
+          "14": {
+            "trades": 18,
+            "winners": 1,
+            "buys": 9,
+            "sells": 9,
+            "net": 298.59,
+            "pf": 1.175,
+            "dd": 1419.2,
+            "win_rate": 0.056
+          },
+          "30": {
+            "trades": 27,
+            "winners": 3,
+            "buys": 12,
+            "sells": 15,
+            "net": 475.4,
+            "pf": 1.196,
+            "dd": 2543.4,
+            "win_rate": 0.111
+          },
+          "60": {
+            "trades": 53,
+            "winners": 7,
+            "buys": 24,
+            "sells": 29,
+            "net": 1243.06,
+            "pf": 1.249,
+            "dd": 2753.61,
+            "win_rate": 0.132
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 5,
+            "winners": 1,
+            "buys": 2,
+            "sells": 3,
+            "net": 1870.42,
+            "pf": 5.752,
+            "dd": 1871.57,
+            "win_rate": 0.2
+          },
+          "14": {
+            "trades": 16,
+            "winners": 1,
+            "buys": 8,
+            "sells": 8,
+            "net": 628.0,
+            "pf": 1.45,
+            "dd": 1673.69,
+            "win_rate": 0.062
+          },
+          "30": {
+            "trades": 25,
+            "winners": 3,
+            "buys": 11,
+            "sells": 14,
+            "net": 810.61,
+            "pf": 1.384,
+            "dd": 2543.4,
+            "win_rate": 0.12
+          },
+          "60": {
+            "trades": 38,
+            "winners": 7,
+            "buys": 19,
+            "sells": 19,
+            "net": 9426.04,
+            "pf": 3.053,
+            "dd": 4577.07,
+            "win_rate": 0.184
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 6,
+            "winners": 2,
+            "buys": 3,
+            "sells": 3,
+            "net": 1683.54,
+            "pf": 4.821,
+            "dd": 1954.01,
+            "win_rate": 0.333
+          },
+          "14": {
+            "trades": 21,
+            "winners": 3,
+            "buys": 10,
+            "sells": 11,
+            "net": 302.29,
+            "pf": 1.176,
+            "dd": 1723.16,
+            "win_rate": 0.143
+          },
+          "30": {
+            "trades": 39,
+            "winners": 9,
+            "buys": 18,
+            "sells": 21,
+            "net": 2188.11,
+            "pf": 1.66,
+            "dd": 2049.46,
+            "win_rate": 0.231
+          },
+          "60": {
+            "trades": 74,
+            "winners": 16,
+            "buys": 37,
+            "sells": 37,
+            "net": 17502.25,
+            "pf": 2.448,
+            "dd": 4623.68,
+            "win_rate": 0.216
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 4,
+            "winners": 1,
+            "buys": 1,
+            "sells": 3,
+            "net": 1987.51,
+            "pf": 7.705,
+            "dd": 1888.06,
+            "win_rate": 0.25
+          },
+          "14": {
+            "trades": 12,
+            "winners": 1,
+            "buys": 6,
+            "sells": 6,
+            "net": 1069.58,
+            "pf": 2.024,
+            "dd": 1747.89,
+            "win_rate": 0.083
+          },
+          "30": {
+            "trades": 17,
+            "winners": 2,
+            "buys": 7,
+            "sells": 10,
+            "net": 839.15,
+            "pf": 1.592,
+            "dd": 2106.53,
+            "win_rate": 0.118
+          },
+          "60": {
+            "trades": 25,
+            "winners": 3,
+            "buys": 12,
+            "sells": 13,
+            "net": 4903.28,
+            "pf": 2.96,
+            "dd": 3104.97,
+            "win_rate": 0.12
+          }
+        }
+      }
+    },
+    "GBPJPY": {
+      "spread": 0.006000000000000227,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 3,
+            "winners": 1,
+            "buys": 1,
+            "sells": 2,
+            "net": 781.89,
+            "pf": 4.757,
+            "dd": 1873.93,
+            "win_rate": 0.333
+          },
+          "14": {
+            "trades": 10,
+            "winners": 1,
+            "buys": 5,
+            "sells": 5,
+            "net": 48.19,
+            "pf": 1.055,
+            "dd": 1742.33,
+            "win_rate": 0.1
+          },
+          "30": {
+            "trades": 24,
+            "winners": 2,
+            "buys": 13,
+            "sells": 11,
+            "net": -1107.86,
+            "pf": 0.444,
+            "dd": 1934.77,
+            "win_rate": 0.083
+          },
+          "60": {
+            "trades": 52,
+            "winners": 5,
+            "buys": 23,
+            "sells": 29,
+            "net": -469.46,
+            "pf": 0.903,
+            "dd": 3456.75,
+            "win_rate": 0.096
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 3,
+            "winners": 1,
+            "buys": 1,
+            "sells": 2,
+            "net": 781.89,
+            "pf": 4.757,
+            "dd": 1873.93,
+            "win_rate": 0.333
+          },
+          "14": {
+            "trades": 10,
+            "winners": 1,
+            "buys": 5,
+            "sells": 5,
+            "net": 48.19,
+            "pf": 1.055,
+            "dd": 1742.33,
+            "win_rate": 0.1
+          },
+          "30": {
+            "trades": 23,
+            "winners": 2,
+            "buys": 13,
+            "sells": 10,
+            "net": -1023.15,
+            "pf": 0.466,
+            "dd": 1823.77,
+            "win_rate": 0.087
+          },
+          "60": {
+            "trades": 48,
+            "winners": 5,
+            "buys": 22,
+            "sells": 26,
+            "net": 381.94,
+            "pf": 1.081,
+            "dd": 3885.38,
+            "win_rate": 0.104
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 15,
+            "winners": 0,
+            "buys": 8,
+            "sells": 7,
+            "net": -1395.61,
+            "pf": 0.0,
+            "dd": 1689.18,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 33,
+            "winners": 0,
+            "buys": 17,
+            "sells": 16,
+            "net": -2815.43,
+            "pf": 0.0,
+            "dd": 2846.33,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 58,
+            "winners": 6,
+            "buys": 31,
+            "sells": 27,
+            "net": -397.18,
+            "pf": 0.931,
+            "dd": 4199.29,
+            "win_rate": 0.103
+          },
+          "60": {
+            "trades": 101,
+            "winners": 11,
+            "buys": 53,
+            "sells": 48,
+            "net": 4016.38,
+            "pf": 1.324,
+            "dd": 6134.81,
+            "win_rate": 0.109
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 2,
+            "winners": 0,
+            "buys": 1,
+            "sells": 1,
+            "net": -198.63,
+            "pf": 0.0,
+            "dd": 198.63,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 8,
+            "winners": 0,
+            "buys": 5,
+            "sells": 3,
+            "net": -770.72,
+            "pf": 0.0,
+            "dd": 1145.08,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 17,
+            "winners": 1,
+            "buys": 10,
+            "sells": 7,
+            "net": -1418.58,
+            "pf": 0.047,
+            "dd": 1824.24,
+            "win_rate": 0.059
+          },
+          "60": {
+            "trades": 34,
+            "winners": 3,
+            "buys": 16,
+            "sells": 18,
+            "net": -327.29,
+            "pf": 0.9,
+            "dd": 3155.25,
+            "win_rate": 0.088
+          }
+        }
+      }
+    },
+    "USDCAD": {
+      "spread": 1.999999999990898e-05,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 8,
+            "winners": 1,
+            "buys": 5,
+            "sells": 3,
+            "net": -793.74,
+            "pf": 0.136,
+            "dd": 1569.45,
+            "win_rate": 0.125
+          },
+          "14": {
+            "trades": 13,
+            "winners": 2,
+            "buys": 6,
+            "sells": 7,
+            "net": 2272.22,
+            "pf": 2.404,
+            "dd": 2091.91,
+            "win_rate": 0.154
+          },
+          "30": {
+            "trades": 29,
+            "winners": 3,
+            "buys": 12,
+            "sells": 17,
+            "net": 448.39,
+            "pf": 1.144,
+            "dd": 2032.26,
+            "win_rate": 0.103
+          },
+          "60": {
+            "trades": 65,
+            "winners": 4,
+            "buys": 35,
+            "sells": 30,
+            "net": -1492.77,
+            "pf": 0.745,
+            "dd": 5280.82,
+            "win_rate": 0.062
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 7,
+            "winners": 1,
+            "buys": 4,
+            "sells": 3,
+            "net": -691.05,
+            "pf": 0.154,
+            "dd": 1586.68,
+            "win_rate": 0.143
+          },
+          "14": {
+            "trades": 11,
+            "winners": 2,
+            "buys": 4,
+            "sells": 7,
+            "net": 2532.3,
+            "pf": 2.813,
+            "dd": 2136.39,
+            "win_rate": 0.182
+          },
+          "30": {
+            "trades": 26,
+            "winners": 2,
+            "buys": 10,
+            "sells": 16,
+            "net": 349.83,
+            "pf": 1.121,
+            "dd": 2198.49,
+            "win_rate": 0.077
+          },
+          "60": {
+            "trades": 49,
+            "winners": 4,
+            "buys": 24,
+            "sells": 25,
+            "net": 4919.28,
+            "pf": 1.775,
+            "dd": 3917.98,
+            "win_rate": 0.082
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 15,
+            "winners": 1,
+            "buys": 8,
+            "sells": 7,
+            "net": -1101.42,
+            "pf": 0.166,
+            "dd": 1793.79,
+            "win_rate": 0.067
+          },
+          "14": {
+            "trades": 22,
+            "winners": 2,
+            "buys": 14,
+            "sells": 8,
+            "net": 43.11,
+            "pf": 1.022,
+            "dd": 1868.01,
+            "win_rate": 0.091
+          },
+          "30": {
+            "trades": 48,
+            "winners": 7,
+            "buys": 26,
+            "sells": 22,
+            "net": 6313.43,
+            "pf": 2.226,
+            "dd": 3093.61,
+            "win_rate": 0.146
+          },
+          "60": {
+            "trades": 116,
+            "winners": 13,
+            "buys": 53,
+            "sells": 63,
+            "net": 1593.83,
+            "pf": 1.174,
+            "dd": 4565.41,
+            "win_rate": 0.112
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 6,
+            "winners": 1,
+            "buys": 4,
+            "sells": 2,
+            "net": -369.39,
+            "pf": 0.261,
+            "dd": 1259.05,
+            "win_rate": 0.167
+          },
+          "14": {
+            "trades": 10,
+            "winners": 2,
+            "buys": 4,
+            "sells": 6,
+            "net": 2461.65,
+            "pf": 3.701,
+            "dd": 1687.8,
+            "win_rate": 0.2
+          },
+          "30": {
+            "trades": 16,
+            "winners": 2,
+            "buys": 8,
+            "sells": 8,
+            "net": 1727.47,
+            "pf": 2.195,
+            "dd": 1587.96,
+            "win_rate": 0.125
+          },
+          "60": {
+            "trades": 36,
+            "winners": 2,
+            "buys": 20,
+            "sells": 16,
+            "net": -454.1,
+            "pf": 0.85,
+            "dd": 3795.28,
+            "win_rate": 0.056
+          }
+        }
+      }
+    },
+    "EURCAD": {
+      "spread": 2.999999999997449e-05,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 7,
+            "winners": 1,
+            "buys": 5,
+            "sells": 2,
+            "net": 637.23,
+            "pf": 2.025,
+            "dd": 2434.91,
+            "win_rate": 0.143
+          },
+          "14": {
+            "trades": 14,
+            "winners": 1,
+            "buys": 9,
+            "sells": 5,
+            "net": -200.56,
+            "pf": 0.853,
+            "dd": 2237.82,
+            "win_rate": 0.071
+          },
+          "30": {
+            "trades": 29,
+            "winners": 5,
+            "buys": 17,
+            "sells": 12,
+            "net": 913.53,
+            "pf": 1.35,
+            "dd": 2492.03,
+            "win_rate": 0.172
+          },
+          "60": {
+            "trades": 57,
+            "winners": 8,
+            "buys": 30,
+            "sells": 27,
+            "net": -685.55,
+            "pf": 0.853,
+            "dd": 3091.87,
+            "win_rate": 0.14
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 4,
+            "winners": 0,
+            "buys": 2,
+            "sells": 2,
+            "net": -421.17,
+            "pf": 0.0,
+            "dd": 1749.38,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 8,
+            "winners": 0,
+            "buys": 3,
+            "sells": 5,
+            "net": -797.86,
+            "pf": 0.0,
+            "dd": 1676.49,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 20,
+            "winners": 3,
+            "buys": 9,
+            "sells": 11,
+            "net": 496.28,
+            "pf": 1.276,
+            "dd": 2024.67,
+            "win_rate": 0.15
+          },
+          "60": {
+            "trades": 47,
+            "winners": 6,
+            "buys": 21,
+            "sells": 26,
+            "net": -947.28,
+            "pf": 0.756,
+            "dd": 2965.18,
+            "win_rate": 0.128
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 17,
+            "winners": 3,
+            "buys": 8,
+            "sells": 9,
+            "net": -144.65,
+            "pf": 0.898,
+            "dd": 1362.85,
+            "win_rate": 0.176
+          },
+          "14": {
+            "trades": 25,
+            "winners": 4,
+            "buys": 14,
+            "sells": 11,
+            "net": -7.48,
+            "pf": 0.997,
+            "dd": 2039.24,
+            "win_rate": 0.16
+          },
+          "30": {
+            "trades": 47,
+            "winners": 8,
+            "buys": 22,
+            "sells": 25,
+            "net": 2228.42,
+            "pf": 1.446,
+            "dd": 3698.41,
+            "win_rate": 0.17
+          },
+          "60": {
+            "trades": 97,
+            "winners": 11,
+            "buys": 48,
+            "sells": 49,
+            "net": 488.24,
+            "pf": 1.058,
+            "dd": 3169.59,
+            "win_rate": 0.113
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 6,
+            "winners": 0,
+            "buys": 4,
+            "sells": 2,
+            "net": -611.63,
+            "pf": 0.0,
+            "dd": 1939.84,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 8,
+            "winners": 0,
+            "buys": 5,
+            "sells": 3,
+            "net": -797.9,
+            "pf": 0.0,
+            "dd": 1899.57,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 15,
+            "winners": 1,
+            "buys": 8,
+            "sells": 7,
+            "net": -459.42,
+            "pf": 0.675,
+            "dd": 2099.24,
+            "win_rate": 0.067
+          },
+          "60": {
+            "trades": 30,
+            "winners": 2,
+            "buys": 18,
+            "sells": 12,
+            "net": -1364.42,
+            "pf": 0.484,
+            "dd": 3187.29,
+            "win_rate": 0.067
+          }
+        }
+      }
+    },
+    "GBPCAD": {
+      "spread": 2.0000000000131024e-05,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 5,
+            "winners": 0,
+            "buys": 1,
+            "sells": 4,
+            "net": -749.49,
+            "pf": 0.0,
+            "dd": 789.1,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 17,
+            "winners": 2,
+            "buys": 8,
+            "sells": 9,
+            "net": 23.83,
+            "pf": 1.013,
+            "dd": 1785.18,
+            "win_rate": 0.118
+          },
+          "30": {
+            "trades": 36,
+            "winners": 3,
+            "buys": 20,
+            "sells": 16,
+            "net": -719.52,
+            "pf": 0.807,
+            "dd": 2736.25,
+            "win_rate": 0.083
+          },
+          "60": {
+            "trades": 72,
+            "winners": 4,
+            "buys": 38,
+            "sells": 34,
+            "net": -3120.42,
+            "pf": 0.47,
+            "dd": 4535.0,
+            "win_rate": 0.056
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 4,
+            "winners": 0,
+            "buys": 0,
+            "sells": 4,
+            "net": -656.2,
+            "pf": 0.0,
+            "dd": 695.81,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 8,
+            "winners": 2,
+            "buys": 5,
+            "sells": 3,
+            "net": 2803.12,
+            "pf": 5.743,
+            "dd": 2464.62,
+            "win_rate": 0.25
+          },
+          "30": {
+            "trades": 27,
+            "winners": 3,
+            "buys": 17,
+            "sells": 10,
+            "net": 1852.94,
+            "pf": 1.717,
+            "dd": 2648.39,
+            "win_rate": 0.111
+          },
+          "60": {
+            "trades": 61,
+            "winners": 4,
+            "buys": 33,
+            "sells": 28,
+            "net": -1030.39,
+            "pf": 0.791,
+            "dd": 4335.19,
+            "win_rate": 0.066
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 18,
+            "winners": 2,
+            "buys": 8,
+            "sells": 10,
+            "net": -38.72,
+            "pf": 0.976,
+            "dd": 2157.68,
+            "win_rate": 0.111
+          },
+          "14": {
+            "trades": 31,
+            "winners": 3,
+            "buys": 18,
+            "sells": 13,
+            "net": -1142.37,
+            "pf": 0.577,
+            "dd": 2817.25,
+            "win_rate": 0.097
+          },
+          "30": {
+            "trades": 65,
+            "winners": 8,
+            "buys": 36,
+            "sells": 29,
+            "net": 1636.31,
+            "pf": 1.204,
+            "dd": 6474.2,
+            "win_rate": 0.123
+          },
+          "60": {
+            "trades": 123,
+            "winners": 13,
+            "buys": 73,
+            "sells": 50,
+            "net": -234.29,
+            "pf": 0.979,
+            "dd": 5433.74,
+            "win_rate": 0.106
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 1,
+            "winners": 0,
+            "buys": 1,
+            "sells": 0,
+            "net": -99.91,
+            "pf": 0.0,
+            "dd": 99.91,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 7,
+            "winners": 1,
+            "buys": 5,
+            "sells": 2,
+            "net": -450.01,
+            "pf": 0.24,
+            "dd": 1046.84,
+            "win_rate": 0.143
+          },
+          "30": {
+            "trades": 19,
+            "winners": 2,
+            "buys": 13,
+            "sells": 6,
+            "net": -324.3,
+            "pf": 0.818,
+            "dd": 1885.48,
+            "win_rate": 0.105
+          },
+          "60": {
+            "trades": 42,
+            "winners": 2,
+            "buys": 22,
+            "sells": 20,
+            "net": -2337.19,
+            "pf": 0.33,
+            "dd": 2824.38,
+            "win_rate": 0.048
+          }
+        }
+      }
+    },
+    "EURNZD": {
+      "spread": 1.9999999999686935e-05,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 6,
+            "winners": 0,
+            "buys": 0,
+            "sells": 6,
+            "net": -583.84,
+            "pf": 0.0,
+            "dd": 633.85,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 2,
+            "winners": 1,
+            "buys": 0,
+            "sells": 2,
+            "net": 6995.26,
+            "pf": 70.992,
+            "dd": 2288.9,
+            "win_rate": 0.5
+          },
+          "30": {
+            "trades": 16,
+            "winners": 1,
+            "buys": 6,
+            "sells": 10,
+            "net": 4766.63,
+            "pf": 4.413,
+            "dd": 1988.27,
+            "win_rate": 0.062
+          },
+          "60": {
+            "trades": 42,
+            "winners": 1,
+            "buys": 20,
+            "sells": 22,
+            "net": 1172.56,
+            "pf": 1.336,
+            "dd": 4021.93,
+            "win_rate": 0.024
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 6,
+            "winners": 0,
+            "buys": 0,
+            "sells": 6,
+            "net": -583.84,
+            "pf": 0.0,
+            "dd": 633.85,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 2,
+            "winners": 1,
+            "buys": 0,
+            "sells": 2,
+            "net": 6995.26,
+            "pf": 70.992,
+            "dd": 2288.9,
+            "win_rate": 0.5
+          },
+          "30": {
+            "trades": 16,
+            "winners": 1,
+            "buys": 6,
+            "sells": 10,
+            "net": 4766.63,
+            "pf": 4.413,
+            "dd": 1988.27,
+            "win_rate": 0.062
+          },
+          "60": {
+            "trades": 42,
+            "winners": 1,
+            "buys": 20,
+            "sells": 22,
+            "net": 1172.56,
+            "pf": 1.336,
+            "dd": 4021.93,
+            "win_rate": 0.024
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 11,
+            "winners": 1,
+            "buys": 5,
+            "sells": 6,
+            "net": -611.61,
+            "pf": 0.371,
+            "dd": 673.14,
+            "win_rate": 0.091
+          },
+          "14": {
+            "trades": 22,
+            "winners": 2,
+            "buys": 12,
+            "sells": 10,
+            "net": -911.76,
+            "pf": 0.504,
+            "dd": 1817.22,
+            "win_rate": 0.091
+          },
+          "30": {
+            "trades": 59,
+            "winners": 6,
+            "buys": 34,
+            "sells": 25,
+            "net": -2943.23,
+            "pf": 0.326,
+            "dd": 3136.27,
+            "win_rate": 0.102
+          },
+          "60": {
+            "trades": 108,
+            "winners": 9,
+            "buys": 61,
+            "sells": 47,
+            "net": -4943.77,
+            "pf": 0.318,
+            "dd": 5759.48,
+            "win_rate": 0.083
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 5,
+            "winners": 0,
+            "buys": 0,
+            "sells": 5,
+            "net": -488.82,
+            "pf": 0.0,
+            "dd": 538.82,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 2,
+            "winners": 1,
+            "buys": 0,
+            "sells": 2,
+            "net": 3649.44,
+            "pf": 37.515,
+            "dd": 1428.0,
+            "win_rate": 0.5
+          },
+          "30": {
+            "trades": 12,
+            "winners": 1,
+            "buys": 4,
+            "sells": 8,
+            "net": 2346.28,
+            "pf": 3.247,
+            "dd": 1291.35,
+            "win_rate": 0.083
+          },
+          "60": {
+            "trades": 28,
+            "winners": 1,
+            "buys": 13,
+            "sells": 15,
+            "net": 456.11,
+            "pf": 1.189,
+            "dd": 2945.76,
+            "win_rate": 0.036
+          }
+        }
+      }
+    },
+    "GBPNZD": {
+      "spread": 1.9999999999686935e-05,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 8,
+            "winners": 0,
+            "buys": 1,
+            "sells": 7,
+            "net": -770.28,
+            "pf": 0.0,
+            "dd": 1000.6,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 16,
+            "winners": 0,
+            "buys": 6,
+            "sells": 10,
+            "net": -1507.5,
+            "pf": 0.0,
+            "dd": 1705.49,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 34,
+            "winners": 0,
+            "buys": 12,
+            "sells": 22,
+            "net": -3174.98,
+            "pf": 0.0,
+            "dd": 3199.87,
+            "win_rate": 0.0
+          },
+          "60": {
+            "trades": 61,
+            "winners": 2,
+            "buys": 26,
+            "sells": 35,
+            "net": -4625.76,
+            "pf": 0.037,
+            "dd": 5429.26,
+            "win_rate": 0.033
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 8,
+            "winners": 0,
+            "buys": 1,
+            "sells": 7,
+            "net": -770.28,
+            "pf": 0.0,
+            "dd": 1000.6,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 16,
+            "winners": 0,
+            "buys": 6,
+            "sells": 10,
+            "net": -1507.5,
+            "pf": 0.0,
+            "dd": 1705.49,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 34,
+            "winners": 0,
+            "buys": 12,
+            "sells": 22,
+            "net": -3174.98,
+            "pf": 0.0,
+            "dd": 3199.87,
+            "win_rate": 0.0
+          },
+          "60": {
+            "trades": 60,
+            "winners": 2,
+            "buys": 25,
+            "sells": 35,
+            "net": -4572.04,
+            "pf": 0.038,
+            "dd": 5375.53,
+            "win_rate": 0.033
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 8,
+            "winners": 1,
+            "buys": 4,
+            "sells": 4,
+            "net": -40.76,
+            "pf": 0.94,
+            "dd": 1493.3,
+            "win_rate": 0.125
+          },
+          "14": {
+            "trades": 16,
+            "winners": 3,
+            "buys": 7,
+            "sells": 9,
+            "net": 239.1,
+            "pf": 1.181,
+            "dd": 1534.03,
+            "win_rate": 0.188
+          },
+          "30": {
+            "trades": 48,
+            "winners": 9,
+            "buys": 16,
+            "sells": 32,
+            "net": -1300.17,
+            "pf": 0.656,
+            "dd": 1999.24,
+            "win_rate": 0.188
+          },
+          "60": {
+            "trades": 97,
+            "winners": 11,
+            "buys": 41,
+            "sells": 56,
+            "net": -4185.08,
+            "pf": 0.36,
+            "dd": 4958.45,
+            "win_rate": 0.113
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 4,
+            "winners": 0,
+            "buys": 1,
+            "sells": 3,
+            "net": -393.02,
+            "pf": 0.0,
+            "dd": 684.1,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 7,
+            "winners": 0,
+            "buys": 2,
+            "sells": 5,
+            "net": -704.83,
+            "pf": 0.0,
+            "dd": 1261.78,
+            "win_rate": 0.0
+          },
+          "30": {
+            "trades": 20,
+            "winners": 0,
+            "buys": 7,
+            "sells": 13,
+            "net": -2150.88,
+            "pf": 0.0,
+            "dd": 2175.77,
+            "win_rate": 0.0
+          },
+          "60": {
+            "trades": 35,
+            "winners": 0,
+            "buys": 16,
+            "sells": 19,
+            "net": -3245.69,
+            "pf": 0.0,
+            "dd": 4568.46,
+            "win_rate": 0.0
+          }
+        }
+      }
+    },
+    "NZDUSD": {
+      "spread": 0.0,
+      "filters": {
+        "adx25": {
+          "7": {
+            "trades": 9,
+            "winners": 0,
+            "buys": 4,
+            "sells": 5,
+            "net": -1370.46,
+            "pf": 0.0,
+            "dd": 1585.75,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 22,
+            "winners": 1,
+            "buys": 11,
+            "sells": 11,
+            "net": -1525.17,
+            "pf": 0.392,
+            "dd": 2252.81,
+            "win_rate": 0.045
+          },
+          "30": {
+            "trades": 48,
+            "winners": 1,
+            "buys": 25,
+            "sells": 23,
+            "net": -3486.18,
+            "pf": 0.178,
+            "dd": 3673.86,
+            "win_rate": 0.021
+          },
+          "60": {
+            "trades": 72,
+            "winners": 4,
+            "buys": 33,
+            "sells": 39,
+            "net": -3722.0,
+            "pf": 0.397,
+            "dd": 4810.15,
+            "win_rate": 0.056
+          }
+        },
+        "adx25_di": {
+          "7": {
+            "trades": 9,
+            "winners": 0,
+            "buys": 4,
+            "sells": 5,
+            "net": -1370.46,
+            "pf": 0.0,
+            "dd": 1585.75,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 19,
+            "winners": 1,
+            "buys": 9,
+            "sells": 10,
+            "net": -821.37,
+            "pf": 0.646,
+            "dd": 2132.23,
+            "win_rate": 0.053
+          },
+          "30": {
+            "trades": 44,
+            "winners": 1,
+            "buys": 22,
+            "sells": 22,
+            "net": -2872.32,
+            "pf": 0.288,
+            "dd": 3092.57,
+            "win_rate": 0.023
+          },
+          "60": {
+            "trades": 68,
+            "winners": 4,
+            "buys": 30,
+            "sells": 38,
+            "net": -3135.83,
+            "pf": 0.476,
+            "dd": 4254.29,
+            "win_rate": 0.059
+          }
+        },
+        "adr80": {
+          "7": {
+            "trades": 17,
+            "winners": 1,
+            "buys": 7,
+            "sells": 10,
+            "net": -1368.6,
+            "pf": 0.108,
+            "dd": 1851.98,
+            "win_rate": 0.059
+          },
+          "14": {
+            "trades": 29,
+            "winners": 3,
+            "buys": 13,
+            "sells": 16,
+            "net": -800.01,
+            "pf": 0.698,
+            "dd": 2109.81,
+            "win_rate": 0.103
+          },
+          "30": {
+            "trades": 55,
+            "winners": 8,
+            "buys": 25,
+            "sells": 30,
+            "net": -537.82,
+            "pf": 0.885,
+            "dd": 2169.93,
+            "win_rate": 0.145
+          },
+          "60": {
+            "trades": 109,
+            "winners": 12,
+            "buys": 57,
+            "sells": 52,
+            "net": -3407.13,
+            "pf": 0.592,
+            "dd": 4190.38,
+            "win_rate": 0.11
+          }
+        },
+        "adx25_adr80": {
+          "7": {
+            "trades": 6,
+            "winners": 0,
+            "buys": 3,
+            "sells": 3,
+            "net": -584.59,
+            "pf": 0.0,
+            "dd": 972.03,
+            "win_rate": 0.0
+          },
+          "14": {
+            "trades": 12,
+            "winners": 1,
+            "buys": 8,
+            "sells": 4,
+            "net": 411.13,
+            "pf": 1.362,
+            "dd": 1362.07,
+            "win_rate": 0.083
+          },
+          "30": {
+            "trades": 24,
+            "winners": 1,
+            "buys": 12,
+            "sells": 12,
+            "net": -773.7,
+            "pf": 0.639,
+            "dd": 1758.12,
+            "win_rate": 0.042
+          },
+          "60": {
+            "trades": 44,
+            "winners": 2,
+            "buys": 21,
+            "sells": 23,
+            "net": -1575.01,
+            "pf": 0.583,
+            "dd": 2602.34,
+            "win_rate": 0.045
+          }
+        }
+      }
+    }
+  }
+}
