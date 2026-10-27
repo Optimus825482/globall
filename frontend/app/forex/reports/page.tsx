@@ -98,6 +98,10 @@ const STRATEGY_LABELS: Record<string, string> = {
   S3_5M: "S3 SuperTrend+RSI (M5)",
   S3_15M: "S3 SuperTrend+RSI (M15)",
   DONCHIAN_ADX: "Donchian ADX Kırılımı",
+  LONDON_BREAKOUT: "London Breakout (M5)",
+  LONDON_SIGN: "NY Sign Momentum",
+  SQUEEZE_KC_M15: "Keltner Squeeze (M15)",
+  COMBO3_M5: "Combo3 UTBot+Vortex (M5)",
   M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
   MANUAL: "Manuel Giriş",
   IC_MARKETS_MT5: "IC Markets MT5",
@@ -700,6 +704,8 @@ export default function ForexReportsPage() {
               <option value="EMA_ADX_PULLBACK_M5">EMA+ADX Pullback (M5)</option>
               <option value="S3_SUPERTREND_RSI">S3 SuperTrend+RSI</option>
               <option value="DONCHIAN_ADX">Donchian ADX Kırılımı</option>
+              <option value="SQUEEZE_KC_M15">Keltner Squeeze (M15)</option>
+              <option value="COMBO3_M5">Combo3 UTBot+Vortex (M5)</option>
               <option value="M1_M5_RADAR_SCALPER">M1/M5 Çoklu Radar</option>
               <option value="IC_MARKETS_MT5">IC Markets MT5</option>
               <option value="MANUAL">Manuel Giriş</option>
@@ -865,6 +871,8 @@ export default function ForexReportsPage() {
                             ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
                             : tr.strategy === "DONCHIAN_ADX"
                             ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                            : tr.strategy === "COMBO3_M5"
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
                             : tr.strategy === "M1_M5_RADAR_SCALPER"
                             ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
                             : tr.strategy === "MANUAL"

@@ -59,6 +59,12 @@ export interface AutoSettings {
   squeeze_kc_bb_mult?: number;
   squeeze_kc_mult?: number;
   squeeze_kc_mom_min?: number;
+  combo3_enabled?: boolean;
+  combo3_symbols?: string[];
+  combo3_risk_pct?: number;
+  combo3_sl_atr?: number;
+  combo3_tp_r?: number;
+  combo3_max_per_day?: number;
   fvg_pullback_enabled?: boolean;
   fvg_symbols?: string[];
   fvg_tp_r?: number;
@@ -255,7 +261,7 @@ interface AutoSettingsPanelProps {
   accent?: "amber" | "blue";
 }
 
-type TabKey = "risk" | "radar" | "fvg" | "donchian" | "ema_adx" | "london_box" | "s3" | "squeeze";
+type TabKey = "risk" | "radar" | "fvg" | "donchian" | "ema_adx" | "london_box" | "s3" | "squeeze" | "combo3";
 
 export default function AutoSettingsPanel({
   show,
@@ -359,6 +365,13 @@ export default function AutoSettingsPanel({
         fvg_pullback_enabled: Boolean(form.fvg_pullback_enabled),
         fvg_symbols: form.fvg_symbols || ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
         fvg_tp_r: num(form.fvg_tp_r, 1.8),
+        // Combo3 (M5) paper-ölçüm kolu — 2026-10-28
+        combo3_enabled: form.combo3_enabled ?? true,
+        combo3_symbols: form.combo3_symbols || ["XAUUSD"],
+        combo3_risk_pct: num(form.combo3_risk_pct, 1.0),
+        combo3_sl_atr: num(form.combo3_sl_atr, 1.5),
+        combo3_tp_r: num(form.combo3_tp_r, 2.0),
+        combo3_max_per_day: Math.max(0, Math.round(num(form.combo3_max_per_day, 0))),
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {
@@ -428,6 +441,7 @@ export default function AutoSettingsPanel({
           { id: "london_box", label: `🇬🇧 London Breakout (${form.lb_symbols?.length || 0})` },
           { id: "s3", label: `🚀 SuperTrend RSI (${(form.s3_symbols_5m?.length || 0) + (form.s3_symbols_15m?.length || 0)})` },
           { id: "squeeze", label: `⚡ Keltner Squeeze (${form.squeeze_kc_symbols?.length || 0})` },
+          { id: "combo3", label: `🧩 Combo3 M5 (${form.combo3_symbols?.length || 0})${form.combo3_enabled === false ? " · kapalı" : ""}` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1063,6 +1077,78 @@ export default function AutoSettingsPanel({
             onChange={(syms) => setField("squeeze_kc_symbols", syms)}
             accentClass="text-fuchsia-400"
             chipActiveClass="bg-fuchsia-600/30 text-fuchsia-300 border-fuchsia-400/50"
+          />
+        </div>
+      )}
+
+      {/* TAB 8: COMBO3 (M5) — UT Bot ∪ Donchian+Vortex ∪ Vortex, paper-ölçüm kolu (2026-10-28) */}
+      {activeTab === "combo3" && (
+        <div className="space-y-3 animate-in fade-in duration-150">
+          <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
+            <span className="text-xs font-bold text-rose-300 block">Combo3 — UT Bot ∪ Donchian+Vortex ∪ Vortex Kesişimi (M5)</span>
+            <span className="text-[10px] text-bunker-muted">
+              Replay: yalnız XAUUSD, risk %20&apos;de 14 haftada 83 günün 33&apos;ü ≥ +%50; ancak 2 pip kaymada PF 1.81→1.09.
+              Bu yüzden düşük riskle koşar ve gerçek kayma ölçülür (GET /api/forex/slippage?tag=CMB3).
+            </span>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.combo3_enabled ?? true}
+              onChange={(e) => setField("combo3_enabled", e.target.checked)}
+              className="accent-rose-500"
+            />
+            <span className="font-bold text-rose-300">Combo3 kolu aktif</span>
+            <span className="text-[10px] text-bunker-muted">(kapatınca yalnız bu kol durur; kayma defteri diğer emirler için çalışmaya devam eder)</span>
+          </label>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">Risk (% bakiye, yalnız bu kol):</label>
+              <input
+                type="number" min="0.1" max="25" step="0.1"
+                value={form.combo3_risk_pct ?? 1.0}
+                onChange={(e) => setNumField("combo3_risk_pct", e.target.value)}
+                className={`${inputCls} text-rose-300`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">SL = ATR(14) × :</label>
+              <input
+                type="number" min="0.5" max="5" step="0.1"
+                value={form.combo3_sl_atr ?? 1.5}
+                onChange={(e) => setNumField("combo3_sl_atr", e.target.value)}
+                className={`${inputCls} text-rose-300`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">TP = SL × R Katı (0 = TP yok):</label>
+              <input
+                type="number" min="0" max="6" step="0.1"
+                value={form.combo3_tp_r ?? 2.0}
+                onChange={(e) => setNumField("combo3_tp_r", e.target.value)}
+                className={`${inputCls} text-emerald-400`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">Günlük azami giriş / yön (0 = sınırsız):</label>
+              <input
+                type="number" min="0" max="50"
+                value={form.combo3_max_per_day ?? 0}
+                onChange={(e) => setIntField("combo3_max_per_day", e.target.value)}
+                className={`${inputCls} text-rose-300`}
+              />
+            </div>
+          </div>
+
+          <SymbolMultiSelector
+            title="Combo3 M5 Aktif Semboller (combo3_symbols) — kanıt yalnız XAUUSD; BTCUSD replay'de her hücrede negatif"
+            badgeLabel="Combo3 M5"
+            selected={form.combo3_symbols || []}
+            onChange={(syms) => setField("combo3_symbols", syms)}
+            accentClass="text-rose-400"
+            chipActiveClass="bg-rose-600/30 text-rose-300 border-rose-400/50"
           />
         </div>
       )}

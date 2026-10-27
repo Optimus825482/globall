@@ -744,7 +744,11 @@ def execute_market_order(cmd: dict) -> dict:
         "type_filling": filling,
     }
 
+    # 2026-10-28 kayma ölçümü: gönderim anı spread'i (pip) ve gecikme
+    _slip_spread_pips = round((float(tick.ask) - float(tick.bid)) / pip_size, 2) if pip_size > 0 else None
+    _slip_t0 = time.time()
     res = mt5.order_send(req)
+    _slip_latency_ms = round((time.time() - _slip_t0) * 1000.0, 1)
     # 10016: Invalid stops kurtarma (Broker piyasa emrinde anlık stop kabul etmezse stopsız açıp hemen SL/TP ekler)
     if (not res or res.retcode == 10016) and (sl > 0 or tp > 0):
         print(f"  ⚠️ [INVALID STOPS DÜZELTME]: Broker doğrudan stop kabul etmedi ({res.comment if res else 'None'}). Stopsız açılıp hemen SL/TP atanıyor...")
@@ -805,7 +809,14 @@ def execute_market_order(cmd: dict) -> dict:
                     }
                     print(f"  🎯 [ÇIKIŞ PLANI]: Bilet #{p.ticket} BE {cmd_be:.1f}p / Trail {cmd_trail:.1f}p (motor cmd)")
                     break
-        return {"success": True, "ticket": res.order, "price": price}
+        return {"success": True, "ticket": res.order, "price": price,
+                # kayma ölçümü: gerçek fill (res.price) vs istek fiyatı (tick)
+                "fill_price": float(getattr(res, "price", 0.0) or 0.0) or None,
+                "req_price": float(price),
+                "spread_pips_exec": _slip_spread_pips,
+                "latency_ms": _slip_latency_ms,
+                "exec_ts": time.time(),
+                "retcode": getattr(res, "retcode", None)}
     else:
         comment_err = res.comment if res else str(mt5.last_error())
         print(f"  ❌ [İŞLEM BAŞARISIZ]: {comment_err} (Kod: {res.retcode if res else 'None'})")
@@ -1369,6 +1380,19 @@ def record_command_result(cmd: dict, res: "dict | None", error: "str | None" = N
             "error": error or ((res or {}).get("error") if isinstance(res, dict) else None),
             "ts": time.time(),
         }
+        # 2026-10-28 kayma ölçümü: OPEN_ORDER'da istek/fill fiyatı, icra spread'i ve
+        # gecikme köprüden; sinyal alanları motorun komutundan aynen yankılanır
+        # (backend `_record_slippage` → GET /api/forex/slippage).
+        if isinstance(res, dict):
+            for k in ("fill_price", "req_price", "spread_pips_exec", "latency_ms", "exec_ts", "price"):
+                if res.get(k) is not None:
+                    entry[k] = res.get(k)
+            if entry.get("ticket") is None and res.get("ticket") is not None:
+                entry["ticket"] = res.get("ticket")
+        for k in ("direction", "lots", "entry_source", "strategy_tag", "signal_price",
+                  "signal_bar_time", "spread_pips_signal", "created_ts"):
+            if cmd.get(k) is not None:
+                entry[k] = cmd.get(k)
     except Exception as e:  # pragma: no cover - savunmacı
         entry = {
             "id": cmd.get("id") if isinstance(cmd, dict) else None,
