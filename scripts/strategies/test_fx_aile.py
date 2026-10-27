@@ -342,6 +342,63 @@ class LookAheadTest(unittest.TestCase):
         # gunluk EMA(50) icin >50 kapanmis gun gerekir: 5800 bar ~ 60 gun, uzatma 1400 bar
         self.assertGreater(self._check("fx_donchian_gunluk", 5800, 1400, seeds=(7,)), 0)
 
+    def _mid_day_cuts(self, name, long_b, days, slots=(30, 33, 40), alt_seed=None):
+        """Kesim gun ICINDE (varsayilan 07:30, 08:15, 10:00 UTC; Londra penceresi 07-12): kisa seri (kismi son gun)
+        ile uzun seri, kesimden onceki TUM barlarda ayni karar ve ayni etkin atr vermeli."""
+        sd = STRATS[name]["side"]
+        s_long = series_of(name, long_b)
+        compared = signals = 0
+        for day in days:
+            for slot in slots:
+                cut = day * 96 + slot
+                short_b = long_b[:cut]
+                s_short = series_of(name, short_b)
+                futures = [(long_b, s_long)]
+                if alt_seed is not None:
+                    alt = random_walk(len(long_b) - cut, alt_seed + cut)
+                    alt = [eng.Bar(short_b[-1].t + (k + 1) * TF, x.open, x.high, x.low, x.close) for k, x in enumerate(alt)]
+                    alt_b = short_b + alt
+                    futures.append((alt_b, series_of(name, alt_b)))
+                for longer, s_l in futures:
+                    for i in range(cut):
+                        a, c = sd(s_short, short_b, i), sd(s_l, longer, i)
+                        self.assertEqual(a, c, f"{name} day {day} slot {slot} i={i}")
+                        self.assertEqual(s_short["atr"][i], s_l["atr"][i], f"{name} atr day {day} slot {slot} i={i}")
+                        signals += abs(a)
+                        compared += 1
+        self.assertGreater(compared, 0)
+        return signals
+
+    def test_londra_mid_day_cut(self):
+        # Belirgin kesimler: 07:30 (aralik olusurken), 08:15 (ilk aday bar sonrasi), 10:00 (pencere ortasi)
+        long_b = random_walk(96 * 26, 21)
+        self.assertGreater(self._mid_day_cuts("fx_londra_aralik", long_b, range(2, 25), alt_seed=900), 0)
+        # Yogun tarama: 07:00-12:45 arasi her 15 dk'lik kesim (ilk aday bar ve ardindaki tum durumlar)
+        self._mid_day_cuts("fx_londra_aralik", random_walk(96 * 26, 25), range(2, 25), slots=range(28, 52))
+
+    def test_londra_cut_exact_state_cases(self):
+        """Kesim araligin ortasinda iken ayni gunun sonraki barlari, kisa seride aralik kararini degistirmemeli."""
+        long_b = random_walk(96 * 8, 33)
+        # 07:30 kesiminde (aralik bitmemis) kisa seri hicbir 07:30 oncesi bar icin sinyal uretmemeli
+        sd = STRATS["fx_londra_aralik"]["side"]
+        for day in range(1, 7):
+            cut = day * 96 + 30
+            s_short = series_of("fx_londra_aralik", long_b[:cut])
+            for i in range(day * 96, cut):
+                self.assertEqual(sd(s_short, long_b[:cut], i), 0)
+
+    def test_rsi_geri_mid_day_cut(self):
+        long_b = random_walk(96 * 26, 22)
+        self.assertGreater(self._mid_day_cuts("fx_ema200_rsi_geri", long_b, range(5, 25, 2), alt_seed=800), 0)
+
+    def test_bb_donus_mid_day_cut(self):
+        long_b = random_walk(96 * 26, 23)
+        self._mid_day_cuts("fx_bb_donus_m30", long_b, range(3, 25, 2), alt_seed=700)
+
+    def test_donchian_mid_day_cut(self):
+        long_b = random_walk(96 * 66, 24)
+        self._mid_day_cuts("fx_donchian_gunluk", long_b, (58, 60, 62), alt_seed=600)
+
     def test_donchian_partial_last_day_cut(self):
         """Kesim gun ortasinda olsa da (kismi son gun) onceki barlarin karari degismez."""
         long_b = random_walk(6000, 5)
