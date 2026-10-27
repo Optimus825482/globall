@@ -21,6 +21,7 @@ Kullanim:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import os
@@ -40,7 +41,7 @@ import xau_week_double_8w as wk  # noqa: E402
 import zlmacd_wavetrend_mtf_xau_btc as base  # noqa: E402
 import gunluk_tavan_tarama_xau_btc as gt  # noqa: E402
 
-STRATEGIES = (
+BUILTIN_STRATEGIES = (
     "hma_ao", "vortex_adx", "kama_cci", "stoch_kijun", "tsi_ema50", "fisher_st",
     "cmo_bb", "wpr_ema_trend", "psar_macd", "donch_vortex", "ut_bot", "coral_trend",
     "combo3",   # ut_bot | donch_vortex | vortex_adx (birlesim; ilk ateslenen yon)
@@ -48,6 +49,10 @@ STRATEGIES = (
 )
 SL_ATR = 1.5
 TP_R = 2.0
+PLUGIN_DIR = os.path.join(ROOT, "scripts", "strategies")
+SPREAD_DB = os.path.join(ROOT, "outputs", "fx_spread_db_1m.json")
+SPREAD_DEFAULT_PIPS = 1.5   # ne tech["spread_pips"] ne de profil varsa
+PLUGINS: dict = {}          # ad -> normalize edilmis eklenti tanimi (load_plugins doldurur)
 TARGET_USD = 500.0
 RUIN_USD = -700.0
 WIN_7W = "2026-09-08"
@@ -227,12 +232,82 @@ def coral(values: list, n: int = 21, cd: float = 0.4) -> list:
     return out
 
 
+# ------------------------------------------------------------------ eklentiler
+_PLUGIN_DEFAULTS = {"sl_atr": None, "tp_r": None, "symbols": None, "spread_min_mult": None}
+
+
+def load_plugins(plugin_dir: str | None = None) -> dict:
+    """scripts/strategies/*.py (test_ ile baslayanlar haric) -> PLUGINS.
+
+    Her dosya modul duzeyinde `STRATEGIES = {ad: {series, side, sl_atr, tp_r,
+    symbols, spread_min_mult}}` tanimlar. Yerlesik ya da baska eklenti ile ad
+    cakismasinda SystemExit. PLUGINS her cagrida bastan kurulur (idempotent)."""
+    pdir = PLUGIN_DIR if plugin_dir is None else plugin_dir
+    found: dict = {}
+    owner: dict = {}
+    if os.path.isdir(pdir):
+        for fn in sorted(os.listdir(pdir)):
+            if not fn.endswith(".py") or fn.startswith("test_"):
+                continue
+            path = os.path.join(pdir, fn)
+            spec = importlib.util.spec_from_file_location("_strat_plugin_" + fn[:-3], path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            defs = getattr(mod, "STRATEGIES", None)
+            if not isinstance(defs, dict):
+                raise SystemExit(f"eklenti gecersiz (STRATEGIES dict yok): {fn}")
+            for name, d in defs.items():
+                if name in BUILTIN_STRATEGIES or name in found:
+                    other = "yerlesik" if name in BUILTIN_STRATEGIES else owner[name]
+                    raise SystemExit(f"eklenti ad cakismasi: {name} ({fn} <-> {other})")
+                if not callable(d.get("series")) or not callable(d.get("side")):
+                    raise SystemExit(f"eklenti gecersiz (series/side callable degil): {name} ({fn})")
+                found[name] = {**_PLUGIN_DEFAULTS, **d}
+                owner[name] = fn
+    PLUGINS.clear()
+    PLUGINS.update(found)
+    return PLUGINS
+
+
+def _load_spread_profile() -> dict:
+    """outputs/fx_spread_db_1m.json -> {SYM: avg_pips}; yoksa/bozuksa bos."""
+    try:
+        with open(SPREAD_DB, encoding="utf-8") as fh:
+            raw = json.load(fh).get("symbols", {})
+        return {k: float(v["avg_pips"]) for k, v in raw.items() if v.get("avg_pips") is not None}
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return {}
+
+
+_SPREAD_PROFILE: dict = _load_spread_profile()
+
+
+def spread_pips_for(sym: str, tech) -> float:
+    """tech["spread_pips"] (> 0) -> _SPREAD_PROFILE[sym] -> 1.5."""
+    v = (tech or {}).get("spread_pips")
+    if v is not None and v > 0:
+        return float(v)
+    return _SPREAD_PROFILE.get(sym, SPREAD_DEFAULT_PIPS)
+
+
+load_plugins()
+STRATEGIES = BUILTIN_STRATEGIES + tuple(PLUGINS)
+
+
 def series_for(sym: str, strat: str, bars: list) -> dict:
     cur = _SERIES.get(sym)
     if cur is not None and cur["_n"] == len(bars) and cur["_strat"] == strat:
         return cur
     b = bars_of(sym, bars)
     closes = [x.close for x in b]
+    plug = PLUGINS.get(strat)
+    if plug is not None:
+        s = plug["series"](b, closes)
+        if "atr" not in s:
+            s["atr"] = wk.atr(b, 14)
+        s["_n"], s["_strat"] = len(bars), strat
+        _SERIES[sym] = s
+        return s
     s: dict = {"atr": wk.atr(b, 14)}
     if strat == "hma_ao":
         s["hma"], s["ao"] = hma(closes, 21), awesome(b)
@@ -280,6 +355,9 @@ def series_for(sym: str, strat: str, bars: list) -> dict:
 
 # ------------------------------------------------------------------ stratejiler
 def side_for(strat: str, s: dict, b: list, i: int) -> int:
+    plug = PLUGINS.get(strat)
+    if plug is not None:
+        return plug["side"](s, b, i)
     c = b[i].close
     if strat == "hma_ao":
         h, ao = s["hma"], s["ao"]
@@ -403,6 +481,9 @@ def candidate(sym, ts, bars, ci, tech, pip_size):
     """rp._entry_mode_candidate yerine: kapanmis bar ci-1 sinyali, motor sonraki barda acar."""
     if ci < 60 or pip_size <= 0:
         return None
+    plug = PLUGINS.get(ACTIVE["strategy"])
+    if plug is not None and plug["symbols"] is not None and sym not in plug["symbols"]:
+        return None
     s = series_for(sym, ACTIVE["strategy"], bars)
     b = bars_of(sym, bars)
     i = ci - 1
@@ -413,6 +494,9 @@ def candidate(sym, ts, bars, ci, tech, pip_size):
     if atr is None or atr <= 0:
         return None
     sl = ACTIVE["sl_atr"] * atr / pip_size
+    if plug is not None and plug["spread_min_mult"] is not None:
+        if round(sl, 1) < plug["spread_min_mult"] * spread_pips_for(sym, tech):
+            return None
     return {"action": "BUY" if side == 1 else "SELL", "entry_source": ACTIVE["strategy"],
             "exits": {"sl_pips": round(sl, 1), "tp_pips": round(sl * ACTIVE["tp_r"], 1)}}
 
@@ -456,9 +540,12 @@ def daily_eval(report_path: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--strategy", required=True, choices=STRATEGIES)
-    ap.add_argument("--tf", required=True, choices=("m3", "m5", "m15"))
-    ap.add_argument("--sl-atr", type=float, default=SL_ATR)
-    ap.add_argument("--tp-r", type=float, default=TP_R)
+    ap.add_argument("--tf", required=True, choices=("m1", "m3", "m5", "m15", "m30"))
+    ap.add_argument("--symbols", default="XAUUSD,BTCUSD", help="Virgullu sembol listesi (motor --symbols)")
+    ap.add_argument("--cache", default="", help="Onbellek dosyasi (bos = outputs/replay_cache_xaubtc_<tf>.json)")
+    ap.add_argument("--source", default="cache", choices=("cache", "db"), help="db = PostgreSQL historical_candles (MT5 koprusu/ingest)")
+    ap.add_argument("--sl-atr", type=float, default=None, help="bos = eklenti varsayilani, o da yoksa 1.5")
+    ap.add_argument("--tp-r", type=float, default=None, help="bos = eklenti varsayilani, o da yoksa 2.0")
     ap.add_argument("--risk-gold", type=float, default=0.0, help="0 = sistem ayari (canli %10)")
     ap.add_argument("--risk-btc", type=float, default=0.0, help="0 = sistem ayari (canli %2)")
     ap.add_argument("--start", default=WIN_14W)
@@ -467,6 +554,9 @@ def main() -> None:
     ap.add_argument("--extra", default="", help="Motora aynen gecirilecek ek argumanlar (bosluklu)")
     args = ap.parse_args()
 
+    plug = PLUGINS.get(args.strategy) or {}
+    args.sl_atr = args.sl_atr if args.sl_atr is not None else (plug.get("sl_atr") or SL_ATR)
+    args.tp_r = args.tp_r if args.tp_r is not None else (plug.get("tp_r") or TP_R)
     ACTIVE.update({"strategy": args.strategy, "sl_atr": args.sl_atr, "tp_r": args.tp_r})
     rp._entry_mode_candidate = candidate
     if args.risk_gold > 0:
@@ -477,10 +567,11 @@ def main() -> None:
     out_dir = os.path.join(ROOT, "outputs", "replay_strateji")
     os.makedirs(out_dir, exist_ok=True)
     report_path = os.path.join(out_dir, f"rep_{tag}.json")
-    cache = os.path.join(ROOT, "outputs", f"replay_cache_xaubtc_{args.tf}.json")
-    argv = ["forex_replay_backtest.py", "--cache", cache, "--source", "cache", "--days", "130",
-            "--symbols", "XAUUSD,BTCUSD", "--balance", "1000", "--entry-mode", "pullback", "--skip-old",
-            "--interval", {"m3": "3m", "m5": "5m", "m15": "15m"}[args.tf],
+    cache = args.cache or os.path.join(ROOT, "outputs", f"replay_cache_xaubtc_{args.tf}.json")
+    src_args = ["--source", "db"] if args.source == "db" else ["--cache", cache, "--source", "cache"]
+    argv = ["forex_replay_backtest.py"] + src_args + ["--days", "130",
+            "--symbols", args.symbols, "--balance", "1000", "--entry-mode", "pullback", "--skip-old",
+            "--interval", {"m1": "1m", "m3": "3m", "m5": "5m", "m15": "15m", "m30": "30m"}[args.tf],
             "--start", args.start, "--end", args.end, "--out", report_path, "--tag", tag]
     if args.extra:
         argv += args.extra.split()
