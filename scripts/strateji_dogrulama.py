@@ -38,6 +38,7 @@ OUT_DIR = os.path.join(ROOT, "outputs", "replay_strateji")
 
 D0, D_MID, D1 = "2026-07-21", "2026-09-08", "2026-10-28"   # [D0, D_MID) ilk 7h, [D_MID, D1) son 7h
 PF_MIN, MIN_TRADES, SLIP_PF_MIN = 1.30, 60, 1.10
+SLIP_MIN_FRAC = 0.5   # kayma kosumunda taban islem sayisinin en az bu orani olmali
 RUIN_USD, MAX_RUIN_DAYS, TARGET_USD = -700.0, 2, 500.0
 BASE_RISK = {"FX": 5.0, "BTC": 2.0}
 SLIP_PIPS = {"FX": 1, "BTC": 10}
@@ -46,10 +47,17 @@ BTC_STRATS = {"btc_seans_kirilim", "btc_rsi2_bb_donus", "btc_donchian55_trend", 
 
 
 def pf_val(x):
-    """JSON'daki pf: sayi, None ya da 'n/a' (zarar yok) -> float (zarar yoksa inf)."""
-    if x is None or isinstance(x, str) or float(x) >= 999.0:   # surucu "PF 999" = hic zarar yok
-        return math.inf
-    return float(x)
+    """JSON'daki pf -> float; surucunun "PF 999" degeri (hic zarar yok) -> inf.
+    None / sayiya cevrilemeyen deger -> None = DEGERLENDIRILEMEDI (asla inf degil: fail-closed)."""
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(v):
+        return None
+    return math.inf if v >= 999.0 else v
 
 
 def window_stats(daily: dict[str, float]) -> dict:
@@ -64,9 +72,9 @@ def window_stats(daily: dict[str, float]) -> dict:
     }
 
 
-def criteria(trades: int, pf: float, net14: float, net_ilk7: float, net_son7: float, iflas: int) -> dict:
+def criteria(trades: int, pf: "float | None", net14: float, net_ilk7: float, net_son7: float, iflas: int) -> dict:
     """Olcut 1, 2, 4 (olcut 3 kayma kosumundan gelir). pf: zarar yoksa math.inf."""
-    c1 = pf >= PF_MIN and net14 > 0 and trades >= MIN_TRADES
+    c1 = pf is not None and trades > 0 and pf >= PF_MIN and net14 > 0 and trades >= MIN_TRADES
     c2 = net_ilk7 > 0 and net_son7 > 0
     c4 = iflas <= MAX_RUIN_DAYS
     return {"c1": c1, "c2": c2, "c4": c4, "aday": c1 and c2 and c4}
@@ -102,12 +110,25 @@ def load_cells() -> list[dict]:
             g = json.load(open(os.path.join(OUT_DIR, f"gun_{row['tag']}.json"), encoding="utf-8"))
             ws = window_stats(g["daily"])
             pf = pf_val(row.get("pf"))
+            if row["trades"] == 0 and pf is None:
+                pf = 0.0   # islemsiz hucre: PF tanimsiz, olcut 1'de acikca basarisiz (criteria trades > 0 ister)
             cell = {"strateji": strat, "tf": tf, "sembol": sym, "grup": "BTC" if strat in BTC_STRATS else "FX",
                     "tag": row["tag"], "islem": row["trades"], "pf": pf, "net_ozet": row["net"], **ws}
             cell.update(criteria(cell["islem"], pf, ws["net14"], ws["net_ilk7"], ws["net_son7"], ws["iflas"]))
             cell["daily"] = g["daily"]
             cells.append(cell)
     return cells
+
+
+def slip_ok(slip_pf, slip_trades: int, base_trades: int) -> tuple[bool, str]:
+    """Olcut 3, fail-closed: PF yok/None, islem yok ya da islem sayisi tabanin %50'sinin altindaysa gecmez."""
+    if slip_pf is None:
+        return False, "PF yok (degerlendirilemedi)"
+    if slip_trades <= 0:
+        return False, "kayma kosumunda islem yok"
+    if slip_trades < SLIP_MIN_FRAC * base_trades:
+        return False, f"islem sayisi {slip_trades} < taban {base_trades} x {SLIP_MIN_FRAC:.0%}"
+    return slip_pf >= SLIP_PF_MIN, ""
 
 
 def merge_slip(cells: list[dict], paths: list[str]) -> int:
@@ -117,21 +138,24 @@ def merge_slip(cells: list[dict], paths: list[str]) -> int:
         oz = json.load(open(p, encoding="utf-8"))
         for row in oz["rows"]:
             if row.get("rc") != 0 or "pf" not in row:
+                print(f"  [UYARI] kayma satiri atlandi (rc={row.get('rc')}, pf yok): {row.get('tag')} -> olcut 3 degerlendirilmedi")
                 continue
             strat, tf, sym = parse_tag(row["tag"], oz["tur"])
             c = idx.get((strat, tf, sym))
             if c is None:
                 continue
             c["slip_pf"] = pf_val(row["pf"])
-            c["slip_net"] = row["net"]
-            c["slip_islem"] = row["trades"]
-            c["c3"] = c["slip_pf"] >= SLIP_PF_MIN
+            c["slip_net"] = row.get("net")
+            c["slip_islem"] = row.get("trades") or 0
+            c["c3"], note = slip_ok(c["slip_pf"], c["slip_islem"], c["islem"])
+            if note:
+                print(f"  [UYARI] kayma {strat} {tf} {sym}: {note} -> olcut 3 basarisiz")
             n += 1
     return n
 
 
 def fmt_pf(x) -> str:
-    return "inf" if x == math.inf else f"{x:.2f}"
+    return "n/a" if x is None else ("inf" if x == math.inf else f"{x:.2f}")
 
 
 def main() -> int:
@@ -226,6 +250,25 @@ def selftest() -> int:
     rt = risk_table({"2026-07-21": -200.0}, 5.0)
     assert rt["20"]["iflas_gun"] == 1 and rt["10"]["iflas_gun"] == 0, rt
     assert parse_tag("tbtc1_btc_keltner_geri_htf_m5_BTCUSD", "btc1") == ("btc_keltner_geri_htf", "m5", "BTCUSD")
+    # fail-open durumlari: PF yok / islem yok
+    assert pf_val(None) is None and pf_val("n/a") is None and pf_val(999.0) == inf and pf_val(1.2) == 1.2
+    assert criteria(0, 0.0, 0.0, 0.0, 0.0, 0)["c1"] is False            # 0 islem
+    assert criteria(0, inf, 5.0, 5.0, 5.0, 0)["c1"] is False            # 0 islem, PF=inf bile gecmez
+    assert criteria(80, None, 50.0, 25.0, 25.0, 0)["c1"] is False       # PF yok
+    assert slip_ok(None, 70, 70)[0] is False                            # slip PF null
+    assert slip_ok(inf, 0, 70)[0] is False                              # slip 0 islem (PF 999/inf olsa bile)
+    assert slip_ok(1.5, 20, 70)[0] is False                             # taban islemin %50'sinin altinda
+    assert slip_ok(1.05, 70, 70)[0] is False and slip_ok(1.10, 70, 70)[0] is True and slip_ok(1.5, 35, 70)[0] is True
+    # merge_slip uctan uca: pf null ve 0 islemli satir c3'u True yapmamali
+    import tempfile
+    cells = [{"strateji": "s", "tf": "m15", "sembol": "X", "islem": 70}, {"strateji": "s", "tf": "m15", "sembol": "Y", "islem": 70}]
+    oz = {"tur": "t", "rows": [{"tag": "tt_s_m15_X", "rc": 0, "pf": None, "net": 0, "trades": 70},
+                               {"tag": "tt_s_m15_Y", "rc": 0, "pf": 999, "net": 0, "trades": 0}]}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
+        json.dump(oz, fh)
+    merge_slip(cells, [fh.name])
+    os.unlink(fh.name)
+    assert cells[0]["c3"] is False and cells[1]["c3"] is False, cells
     print("selftest OK")
     return 0
 
