@@ -232,6 +232,92 @@ def cmd_ingest(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- ingest-rates (2026-10-28)
+
+def fetch_rates_chunked(symbol: str, tf_name: str, start: dt.datetime, end: dt.datetime,
+                        offset: int, chunk_days: int = 20) -> list:
+    """copy_rates_range'i gun dilimleriyle ceker (terminal maxbars ~100k siniri).
+
+    Dondurur: [[ts_utc_sn, o, h, l, c, tick_volume, spread_points], ...] (sirali, tekil).
+    """
+    tf_attr = {"1m": "TIMEFRAME_M1", "3m": "TIMEFRAME_M3", "5m": "TIMEFRAME_M5", "15m": "TIMEFRAME_M15",
+               "30m": "TIMEFRAME_M30", "1h": "TIMEFRAME_H1"}[tf_name]
+    tf = getattr(mt5, tf_attr)
+    seen: dict = {}
+    cur = start
+    while cur < end:
+        nxt = min(cur + dt.timedelta(days=chunk_days), end)
+        rates = mt5.copy_rates_range(symbol, tf, cur + dt.timedelta(seconds=offset), nxt + dt.timedelta(seconds=offset))
+        if rates is not None:
+            for r in rates:
+                t = int(r["time"]) - offset
+                seen[t] = [float(t), float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"]),
+                           float(r["tick_volume"]), float(r["spread"])]
+        cur = nxt
+    return [seen[k] for k in sorted(seen)]
+
+
+def cmd_ingest_rates(args) -> int:
+    """MT5 MUM (copy_rates) -> historical_candles; spread profili barin acilis spread'inden.
+
+    Tick modu (ingest) 100 gun x 21 parite icin saatler surer; mum modu dakikalar.
+    Spread: MT5 mum kaydindaki `spread` (nokta) alani -> pip; ortalama/p50/p95.
+    """
+    from app import database as db
+    from collections import Counter
+
+    if not mt5.initialize():
+        print("[HATA] MT5 initialize basarisiz:", mt5.last_error())
+        return 1
+    off = server_offset_s()
+    start = dt.datetime.strptime(args.start, "%Y-%m-%d")
+    end = dt.datetime.strptime(args.end, "%Y-%m-%d")
+    tf_sec = TF_SEC[args.tf]
+    total_bars = total_spreads = 0
+    for sym in [s.strip() for s in args.symbols.split(",") if s.strip()]:
+        mt5.symbol_select(sym, True)
+        t0 = time.time()
+        info = mt5.symbol_info(sym)
+        point = float(getattr(info, "point", 0.0) or 0.0)
+        pip = pip_size_of(sym)
+        bars = fetch_rates_chunked(sym, args.tf, start, end, off)
+        if not bars:
+            print(f"  {sym:8s} MUM YOK (err={mt5.last_error()})")
+            continue
+        canon = MT5_TO_CANON.get(sym.upper(), sym.upper())
+        now_ms = int(time.time() * 1000)
+        rows = []
+        hist = Counter()
+        for b in bars:
+            o_ms = int(b[0] * 1000)
+            rows.append({
+                "symbol": canon, "timeframe": args.tf,
+                "open_time": o_ms, "close_time": o_ms + tf_sec * 1000 - 1,
+                "open": b[1], "high": b[2], "low": b[3], "close": b[4],
+                "volume": b[5], "quote_volume": None, "trade_count": int(b[5]),
+                "source": "mt5_icmarkets_rates", "fetched_at": now_ms,
+            })
+            if point > 0 and pip > 0 and b[6] > 0:
+                hist[round(b[6] * point / pip, 2)] += 1
+        written = 0
+        for i in range(0, len(rows), args.batch):
+            written += asyncio.run(db.upsert_market_candles(rows[i:i + args.batch]))
+        total_bars += written
+        sp = spread_from_hist(hist, pip)
+        if sp:
+            sp.update({"symbol": canon, "timeframe": args.tf,
+                       "measured_from": float(bars[0][0] * 1000), "measured_to": float(bars[-1][0] * 1000),
+                       "source": "mt5_icmarkets_rates"})
+            total_spreads += asyncio.run(db.upsert_mt5_spread_profiles([sp]))
+        f = dt.datetime.fromtimestamp(bars[0][0], dt.timezone.utc)
+        g = dt.datetime.fromtimestamp(bars[-1][0], dt.timezone.utc)
+        print(f"  {sym:8s} -> {canon:8s} {written:>7,} {args.tf} bar DB | {f:%m-%d %H:%M} -> {g:%m-%d %H:%M} | "
+              f"spread avg={sp.get('avg_pips')}p p95={sp.get('p95_pips')}p | {time.time()-t0:.0f}s", flush=True)
+    mt5.shutdown()
+    print(f"[OK] DB yazildi: {total_bars:,} bar (historical_candles, mt5_icmarkets_rates) + {total_spreads} spread profili")
+    return 0
+
+
 # ---------------------------------------------------------------- export
 
 def cmd_export(args) -> int:
@@ -335,6 +421,14 @@ def main():
                       help="Virgulle ayrilmis MT5 adlari (NAS100 icin USTEC)")
     p_in.add_argument("--batch", type=int, default=2000, help="Upsert parti boyutu")
     p_in.set_defaults(func=cmd_ingest)
+
+    p_ir = sub.add_parser("ingest-rates", help="MT5 MUMLARINI (copy_rates) DB'ye yaz — tick moduna gore dakikalar")
+    p_ir.add_argument("--start", required=True, help="UTC baslangic YYYY-MM-DD")
+    p_ir.add_argument("--end", required=True, help="UTC bitis YYYY-MM-DD (dahil degil)")
+    p_ir.add_argument("--tf", default="5m", choices=["1m", "3m", "5m", "15m", "30m", "1h"])
+    p_ir.add_argument("--symbols", required=True, help="Virgulle ayrilmis MT5 adlari")
+    p_ir.add_argument("--batch", type=int, default=5000)
+    p_ir.set_defaults(func=cmd_ingest_rates)
 
     p_dv = sub.add_parser("derive", help="DB'deki 5m barlardan M15/M30/H1 turet")
     p_dv.add_argument("--tf", default="15m", choices=sorted(TF_SEC))

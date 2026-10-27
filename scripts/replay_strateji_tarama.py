@@ -25,11 +25,13 @@ from replay_strateji_gunluk import STRATEGIES  # noqa: E402
 OUT_DIR = os.path.join(ROOT, "outputs", "replay_strateji")
 
 
-def run_cell(strategy: str, tf: str, tur: str, extra_args: list[str]) -> tuple[str, int, float]:
-    tag = f"t{tur}_{strategy}_{tf}"
+def run_cell(strategy: str, tf: str, tur: str, extra_args: list[str], symbol: str = "") -> tuple[str, int, float]:
+    tag = f"t{tur}_{strategy}_{tf}" + (f"_{symbol}" if symbol else "")
     log = os.path.join(OUT_DIR, f"log_{tag}.txt")
     cmd = [sys.executable, "-u", os.path.join(ROOT, "scripts", "replay_strateji_gunluk.py"),
            "--strategy", strategy, "--tf", tf, "--tag", tag] + extra_args
+    if symbol:
+        cmd += ["--symbols", symbol]
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     t0 = time.time()
     with open(log, "w", encoding="utf-8") as fh:
@@ -48,6 +50,9 @@ def main() -> None:
     ap.add_argument("--sl-atr", type=float, default=0.0)
     ap.add_argument("--tp-r", type=float, default=0.0)
     ap.add_argument("--extra", default="")
+    ap.add_argument("--symbols", default="", help="Virgullu: her sembol AYRI hucre (izole defter)")
+    ap.add_argument("--cache-pattern", default="", help="Ornek: outputs/replay_cache_fx21_{tf}.json")
+    ap.add_argument("--db", action="store_true", help="Veri kaynagi PostgreSQL historical_candles (--source db)")
     args = ap.parse_args()
     os.makedirs(OUT_DIR, exist_ok=True)
     strategies = list(STRATEGIES) if args.strategies == "all" else [s for s in args.strategies.split(",") if s]
@@ -62,12 +67,21 @@ def main() -> None:
     if args.tp_r > 0:
         extra += ["--tp-r", str(args.tp_r)]
     if args.extra:
-        extra += ["--extra", args.extra]
-    cells = [(s, tf) for tf in tfs for s in strategies]
+        extra += [f"--extra={args.extra}"]  # '=' sart: deger '--' ile baslayabilir
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()] or [""]
+    cells = [(s, tf, sym) for tf in tfs for s in strategies for sym in symbols]
     print(f"[TARAMA] tur {args.tur}: {len(cells)} hucre, {args.jobs} paralel, ek {extra}", flush=True)
     results = []
+
+    def _extra_for(tf: str) -> list[str]:
+        if args.db:
+            return extra + ["--source", "db"]
+        if not args.cache_pattern:
+            return extra
+        return extra + ["--cache", args.cache_pattern.format(tf=tf)]
+
     with ThreadPoolExecutor(max_workers=args.jobs) as ex:
-        futs = {ex.submit(run_cell, s, tf, args.tur, extra): (s, tf) for s, tf in cells}
+        futs = {ex.submit(run_cell, s, tf, args.tur, _extra_for(tf), sym): (s, tf, sym) for s, tf, sym in cells}
         for fut in as_completed(futs):
             tag, rc, secs = fut.result()
             gun = os.path.join(OUT_DIR, f"gun_{tag}.json")

@@ -1839,11 +1839,13 @@ def _db_url() -> str:
     return ""
 
 
-def fetch_candles_from_db(interval: str = "5m") -> Dict[str, List[Tuple]]:
+def fetch_candles_from_db(interval: str = "5m", symbols: Optional[set] = None) -> Dict[str, List[Tuple]]:
     """`historical_candles`'tan mumları okur; JSON önbelleğiyle AYNI biçim döner.
 
     Dönüş: {symbol: [(ts_sn, o, h, l, c), ...]} — ts SANİYE (JSON önbelleğiyle aynı),
     DB'de open_time MİLİSANİYE olduğu için 1000'e bölünür.
+    `symbols` verilirse yalnız o semboller okunur (2026-10-28: 1m tabloda 42M kripto
+    satırı var; tüm tabloyu yüklemek sembol başına test için imkânsız).
     """
     url = _db_url()
     if not url:
@@ -1856,10 +1858,15 @@ def fetch_candles_from_db(interval: str = "5m") -> Dict[str, List[Tuple]]:
         return {}
     q = ("SELECT symbol, open_time, open, high, low, close FROM historical_candles "
          "WHERE timeframe = %s ORDER BY symbol, open_time")
+    params: tuple = (interval,)
+    if symbols:
+        q = ("SELECT symbol, open_time, open, high, low, close FROM historical_candles "
+             "WHERE timeframe = %s AND symbol = ANY(%s) ORDER BY symbol, open_time")
+        params = (interval, sorted({str(s).upper() for s in symbols}))
     out: Dict[str, List[Tuple]] = {}
     try:
         with psycopg.connect(url, connect_timeout=10) as conn:
-            for sym, ot, o, h, l, c in conn.execute(q, (interval,)).fetchall():
+            for sym, ot, o, h, l, c in conn.execute(q, params).fetchall():
                 if None in (o, h, l, c):
                     continue
                 out.setdefault(sym, []).append(
@@ -4762,7 +4769,10 @@ def main():
         _want = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
         if not _want:
             _want = set(ALL_SYMBOL_CODES) if args.all_symbols else set(SYMBOLS.keys())
-        _db = fetch_candles_from_db(args.interval)
+        # Kros pip_val override'ı quote-USD kurlarına bakar (_compute_pip_val_overrides);
+        # tek sembollü DB koşusunda bunlar da yüklenir ama işlem filtresine girmez.
+        _ref = {"USDJPY", "USDCAD", "USDCHF", "NZDUSD", "AUDUSD", "EURUSD", "GBPUSD"}
+        _db = fetch_candles_from_db(args.interval, (_want | _ref) if _want else None)
         if _want:
             _missing = sorted(s for s in _want if s not in _db)
             if _missing:

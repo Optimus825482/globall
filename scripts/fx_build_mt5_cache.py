@@ -53,6 +53,7 @@ _TF = {
     "m3": "TIMEFRAME_M3",
     "m5": "TIMEFRAME_M5",
     "m15": "TIMEFRAME_M15",
+    "m30": "TIMEFRAME_M30",
 }
 
 
@@ -105,7 +106,7 @@ def main():
     ap.add_argument("--start", required=True, help="UTC baslangic (YYYY-MM-DD)")
     ap.add_argument("--end", required=True, help="UTC bitis, dahil degil (YYYY-MM-DD)")
     ap.add_argument("--symbols", required=True, help="Virgullu MT5 sembolleri (XAUUSD,BTCUSD,...)")
-    ap.add_argument("--tf", default="m5", choices=["m1", "m3", "m5", "m15"],
+    ap.add_argument("--tf", default="m5", choices=["m1", "m3", "m5", "m15", "m30"],
                     help="MT5 mum periyodu (varsayilan m5)")
     ap.add_argument("--dst", required=True, help="Cikis onbellek yolu")
     ap.add_argument("--dst-m15", default="", help="Cikis 15m onbellek yolu (bos = uretilmez)")
