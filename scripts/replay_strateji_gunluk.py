@@ -555,8 +555,8 @@ def main() -> None:
     args = ap.parse_args()
 
     plug = PLUGINS.get(args.strategy) or {}
-    args.sl_atr = args.sl_atr if args.sl_atr is not None else (plug.get("sl_atr") or SL_ATR)
-    args.tp_r = args.tp_r if args.tp_r is not None else (plug.get("tp_r") or TP_R)
+    args.sl_atr = args.sl_atr if args.sl_atr is not None else (SL_ATR if plug.get("sl_atr") is None else plug["sl_atr"])
+    args.tp_r = args.tp_r if args.tp_r is not None else (TP_R if plug.get("tp_r") is None else plug["tp_r"])
     ACTIVE.update({"strategy": args.strategy, "sl_atr": args.sl_atr, "tp_r": args.tp_r})
     rp._entry_mode_candidate = candidate
     if args.risk_gold > 0:
