@@ -1915,7 +1915,7 @@ SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
 # 3,597 işlem, WR %69.2, Net +$23,140.63. 13 kanıtlanan sembolde aktif.
 FVG_PULLBACK_STRATEGY = "FVG_PULLBACK"
 FVG_PULLBACK_LABEL = "FVG Imbalance Pullback"
-CANLI_FVG_ENABLED = True
+CANLI_FVG_ENABLED = False
 CANLI_WEEKEND_CRYPTO_SYMBOLS = (
     "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
     "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD",
@@ -5181,7 +5181,7 @@ class ForexAutoPaperSettings(BaseModel):
     max_spread_pips: float = Field(30.0, ge=0.5, le=50.0, description="Maksimum izin verilen spread (pip) — 2026-10-07 kullanıcı kararı: 3.0→10.0 (raw hesapta gerçek spreadler 0.1-2.1 pip; kısıt artık filtre değil sigorta)")
     max_forex_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı")
     max_gold_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı")
-    max_index_lot: float = Field(2.0, ge=0.10, le=HARD_MAX_INDEX_LOT, description="Maksimum Endeks (US30/NAS100) lot tavanı — 2026-10-14 kullanıcı kararı: US30'da diğer sembollere göre aşırı lot açılıyordu (50.0 hard tavan), 2.0'a çekildi. IC Markets endeks kontratlarında 1 lot = 1 kontrat; pip değeri yüksek olduğundan risk hızlı büyür.")
+    max_index_lot: float = Field(2.0, ge=0.10, le=HARD_MAX_INDEX_LOT, description="Maksimum Endeks (US30/NAS100) lot tavanı")
     gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
     btc_cooldown_sec: float = Field(60.0, ge=0.0, le=900.0, description="BTCUSD kapanış sonrası soğuma süresi (sn). 2026-10-10 denetim P1-6: flip'te bu sayaç sıfırlanır; panelden ayarlanabilir hale getirildi (0 = kapalı)")
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
@@ -5277,7 +5277,7 @@ class ForexAutoPaperSettings(BaseModel):
     s3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="S3: SL (× ATR(14)) — replay spec")
     s3_tp_atr_15m: float = Field(2.0, ge=0.0, le=6.0, description="S3 15m kol: TP (× ATR(14)); 5m kolu TP'sizdir (ST-flip + BE/trailing)")
     s3_max_per_day: int = Field(0, ge=0, le=20, description="S3: sembol+TF+yön başına günde azami giriş (0 = sınırsız)")
-    fvg_pullback_enabled: bool = Field(True, description="FVG Imbalance Pullback motoru (3-bar FVG + 8 bar mitigation + Akıllı Kalite Kalkanı; 31-sembol testinde WR %69.2, +$23,140 net kâr)")
+    fvg_pullback_enabled: bool = Field(False, description="FVG Imbalance Pullback motoru (Canli raporda -954 USD zarar urettigi icin kapatildi)")
     fvg_symbols: List[str] = Field(
         default_factory=lambda: list(CANLI_FVG_SYMBOLS),
         description="FVG Imbalance Pullback aktif sembolleri (31-sembol evreninde kanıtlanan 13 pozitif sembol)",
@@ -8601,7 +8601,9 @@ async def _forex_auto_paper_loop():
                     tp_pips = 0.0
 
                 if is_index:
-                    lot_ceiling = min(HARD_MAX_INDEX_LOT, _AUTO_SETTINGS.max_index_lot)
+                    # Bakiye korumalı endeks tavanı (1,000$ hesapta max 0.30 lot)
+                    bal_idx_cap = max(0.10, round(active_bal * 0.0003, 1))
+                    lot_ceiling = min(HARD_MAX_INDEX_LOT, _AUTO_SETTINGS.max_index_lot, bal_idx_cap)
                     mt5_lots = max(0.10, min(round(raw_calc_lots * 10) / 10, lot_ceiling))
                 elif is_oil:
                     # Petrol: replay'de doğrulanan muhafazakâr profil (0.50–1.0 lot; 2026-10-06).
@@ -8609,7 +8611,9 @@ async def _forex_auto_paper_loop():
                     lot_ceiling = 1.0
                     mt5_lots = max(0.50, min(raw_calc_lots, lot_ceiling))
                 elif is_gold:
-                    lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot)
+                    # Bakiye korumalı altın tavanı (1,000$ hesapta max 0.06 lot)
+                    bal_gold_cap = max(0.01, round(active_bal * 0.00006, 2))
+                    lot_ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, bal_gold_cap)
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 elif is_crypto:
                     if any(k in sym for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
@@ -8622,9 +8626,10 @@ async def _forex_auto_paper_loop():
                         lot_ceiling = 10.0
                         mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 else:
-                    # Cross FX (CAD/CHF/NZD/JPY) paritelerinde aşırı lot birikimini engelleyen 0.75 lot güvenlik tavanı
+                    # Bakiye korumalı majör/çapraz FX tavanı (1,000$ hesapta max 0.25 lot — 1.92 lot ve komisyon faciasını önler)
+                    bal_fx_cap = max(0.01, round(active_bal * 0.00025, 2))
                     is_cross_fx = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
-                    lot_ceiling = min(0.75 if is_cross_fx else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot)
+                    lot_ceiling = min(0.75 if is_cross_fx else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot, bal_fx_cap)
                     mt5_lots = max(0.01, min(raw_calc_lots, lot_ceiling))
                 mt5_lots = round(mt5_lots, 2)
 
