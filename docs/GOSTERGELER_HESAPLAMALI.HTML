@@ -1,0 +1,2108 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradingView Gösterge Rehberi — Temel, SMC/ICT, Topluluk, Gelişmiş, Piyasa İçi</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #131722;
+            color: #d1d4dc;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: #1e222d;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            padding: 25px;
+            border: 1px solid #2a2e39;
+        }
+        h1 {
+            text-align: center;
+            color: #2962ff;
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 26px;
+        }
+        p.subtitle {
+            text-align: center;
+            color: #787b86;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+        /* Sekme (Tab) Stilleri */
+        .tabs {
+            display: flex;
+            flex-wrap: wrap;
+            border-bottom: 2px solid #2a2e39;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        .tab-btn {
+            background-color: #2a2e39;
+            color: #787b86;
+            border: none;
+            padding: 12px 18px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 6px 6px 0 0;
+            transition: all 0.3s ease;
+        }
+        .tab-btn.active {
+            background-color: #2962ff;
+            color: #ffffff;
+        }
+        .tab-btn:hover:not(.active) {
+            background-color: #363a45;
+            color: #d1d4dc;
+        }
+        .tab-btn .count {
+            display: inline-block;
+            margin-left: 8px;
+            background-color: #131722;
+            color: #787b86;
+            font-size: 11px;
+            padding: 2px 7px;
+            border-radius: 10px;
+            font-weight: normal;
+        }
+        .tab-btn.active .count { color: #d1d4dc; }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        td.calc { font-family: Consolas, 'Courier New', monospace; font-size: 12px; color: #c9cdd6; line-height: 1.5; }
+        .src { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-right: 4px; font-family: 'Segoe UI', sans-serif; }
+        .src-TV-yardim { background: #1b5e20; color: #c8e6c9; }
+        .src-TV-yardimx { background: #4e5b2a; color: #e6eecf; }
+        .src-TV-kod { background: #0d47a1; color: #bbdefb; }
+        .src-genel { background: #4a4e59; color: #d1d4dc; }
+        .calc-note { background-color: #232730; border-left: 3px solid #26a69a; color: #a9adb7; font-size: 13px; line-height: 1.6; padding: 12px 15px; margin: 0 0 18px 0; border-radius: 4px; }
+        .tab-note {
+            background-color: #232730;
+            border-left: 3px solid #2962ff;
+            color: #a9adb7;
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 12px 15px;
+            margin: 0 0 18px 0;
+            border-radius: 4px;
+        }
+        .badge {
+            background-color: #ff4757;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+            vertical-align: middle;
+            font-weight: bold;
+        }
+        /* Arama ve Tablo Stilleri */
+        .search-box {
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            background-color: #2a2e39;
+            border: 1px solid #363a45;
+            border-radius: 4px;
+            color: #d1d4dc;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        .search-box:focus {
+            border-color: #2962ff;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #2a2e39;
+        }
+        th {
+            background-color: #363a45;
+            color: #ffffff;
+            cursor: pointer;
+            user-select: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        th:hover {
+            background-color: #4a4e59;
+        }
+        tr:nth-child(even) { background-color: #1e222d; }
+        tr:nth-child(odd) { background-color: #232730; }
+        tr:hover { background-color: #2a2e39; }
+
+        /* Grup başlığı satırı */
+        tr.group-row td {
+            background-color: #1b3a6b;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 14px;
+            letter-spacing: 0.3px;
+            border-top: 2px solid #2962ff;
+            border-bottom: 1px solid #2962ff;
+        }
+        tr.group-row:hover td { background-color: #1b3a6b; }
+        .gcount { color: #9bc0ff; font-weight: normal; font-size: 12px; }
+
+        .indicator-name { font-weight: bold; white-space: nowrap; }
+        .name-basic { color: #2962ff; }
+        .name-premium { color: #ff9800; } /* Özel göstergeler turuncu */
+        .name-community { color: #26c6da; } /* Topluluk scriptleri */
+        .name-advanced { color: #ab47bc; } /* Gelişmiş / nadir */
+        .name-data { color: #81c784; } /* Piyasa içi / veri */
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #787b86;
+            font-size: 18px;
+            display: none;
+        }
+        @media (max-width: 768px) {
+            table, thead, tbody, th, td, tr { display: block; }
+            th { position: static; }
+            td { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2e39; padding: 10px; }
+            td::before { content: attr(data-label); font-weight: bold; color: #787b86; margin-right: 15px; flex-shrink: 0; }
+            tr { margin-bottom: 5px; border: 1px solid #2a2e39; border-radius: 4px; }
+            tr.group-row td { justify-content: flex-start; }
+            tr.group-row td::before { content: ''; margin: 0; }
+            .indicator-name { white-space: normal; }
+            .tabs { flex-direction: column; }
+            .tab-btn { border-radius: 4px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📈 TradingView Gösterge Rehberi</h1>
+    <p class="subtitle">Temel Yerleşik Göstergeler • SMC/ICT &amp; Formasyon • Popüler Topluluk Scriptleri • Gelişmiş &amp; Nadir • Piyasa İçi &amp; Duyarlılık</p>
+
+    <!-- Sekme Butonları -->
+    <p class="calc-note"><b>Hesaplama sütunu (eklendi: 2026-10-27)</b> — <span class="src src-TV-yardim">TV-yardim</span> TradingView Yardım Merkezi makalesinin hesaplama bölümünden; <span class="src src-TV-yardimx">TV-yardim*</span> makale var ama formül vermiyor, genel tanım yazıldı; <span class="src src-TV-kod">TV-kod</span> TradingView açık kaynak Pine kodundan birebir; <span class="src src-genel">genel</span> TradingView sayfası okunmadı, yaygın bilinen tanım. Topluluk/SMC scriptlerinin kodları yazara göre değişir; oradaki formüller temsili. Yumuşatma kısaltmaları: SMA basit, EMA üstel, RMA Wilder (ta.rma), WMA doğrusal ağırlıklı.</p>
+<div class="tabs" id="tabs"></div>
+
+    <!-- Sekme Panelleri -->
+    <div id="panels"></div>
+</div>
+
+<script>
+/* ============================================================
+   VERİ MODELİ
+   Her sekme: { id, label, badge, color, note, groups[] }
+   Her grup:  { name, items: [ ["Gösterge Adı", "Teknik Fayda"], ... ] }
+   Adının sonunda ★ olanlar son araştırmayla eklenen göstergelerdir.
+   ============================================================ */
+const DATA = [
+  {
+    "id": "temel",
+    "label": "Temel Göstergeler",
+    "badge": "YERLEŞİK",
+    "color": "name-basic",
+    "note": "TradingView yerleşik (built-in) göstergeleri; işlevlerine göre 11 gruba ayrılmıştır. Adının sonunda ★ olanlar son araştırmayla eklenen yerleşik göstergelerdir (Bull Bear Power, Chandelier Exit, AAVP/PVP, RCI, Woodies CCI, Auto araçları vb.).",
+    "groups": [
+      {
+        "name": "Hareketli Ortalamalar & Trend Takibi",
+        "items": [
+          [
+            "Arnaud Legoux Hareketli Ortalama",
+            "Geleneksel hareketli ortalamalardan daha yüksek hassasiyetle ve gecikmeyi (lag) azaltarak fiyatın gerçek trendini daha net gösterir.",
+            "ALMA = Sum(w_i * kaynak_i) / Sum(w_i); w_i Gauss ağırlığı, tepe noktası offset ile, genişlik sigma ile belirlenir. Sayfa açık formül vermez; standart: m=offset*(win-1), s=win/sigma, w_i=exp(-(i-m)^2/(2*s^2)). Sayfa soldan-sağa ve sağdan-sola uygulayıp 'combo' çizgi anlatır | Varsayilan: pencere (window) 9, offset 0.85, sigma 6",
+            "TV-yardim"
+          ],
+          [
+            "Ağırlıklı Hareketli Ortalama",
+            "En son fiyatlara daha fazla önem vererek, yakın zamanda yaşanan fiyat değişimlerine daha hızlı tepki verir.",
+            "Sayfada formül yalnızca görsel; erişilemedi. Genel tanım: WMA = (n*P0 + (n-1)*P1 + ... + 1*P(n-1)) / (n(n+1)/2) (doğrusal azalan ağırlık). | Varsayilan: sayfada varsayılan yok (TV: uzunluk 9, kaynak close)",
+            "TV-yardim*"
+          ],
+          [
+            "Aşırı Hareketli Ortalama (Hamming)",
+            "Gürültüyü (fiyattaki anlık sahte hareketleri) süzer, daha yumuşak ve güvenilir bir orta/uzun vadeli trend çizgisi sunar.",
+            "Hamming penceresi agirlikli ortalama: w_i = 0.54 - 0.46*cos(2*pi*i/(N-1)); HMA_hamming = Sum(w_i*src_i)/Sum(w_i). TV 'Hamming Moving Average' (yerlesik, uzunluk 20).",
+            "genel"
+          ],
+          [
+            "DEMA",
+            "Üstel hareketli ortalamadan daha hızlı tepki verir, gecikmeyi neredeyse sıfıra indirerek trend dönüşlerine çok hızlı cevap vermenizi sağlar.",
+            "DEMA = 2*EMA(x,N) - EMA(EMA(x,N),N) | Varsayilan: N: sayfada varsayılan yok (örnekler 5, 15, 100; TV varsayılanı 9)",
+            "TV-yardim"
+          ],
+          [
+            "En Küçük Kareler H.O.",
+            "Doğrusal regresyon ile aynı mantıkta çalışır, fiyatı en iyi temsil eden hareketli ortalamayı sunarak gecikmeyi minimumda tutar.",
+            "LSMA = ta.linreg(src, length, offset) (en küçük kareler regresyon doğrusunun son bar değeri) | Varsayilan: uzunluk 25, offset 0, kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Guppy Çoklu Hareketli Ortalama",
+            "Farklı periyotlardaki hareketli ortalamaları gruplar; uzun vadeli yatırımcıların ve kısa vadeli tüccarların eğilimlerini karşılaştırarak trendin gücünü doğrular.",
+            "GMMA: kisa grup EMA 3,5,8,10,12,15; uzun grup EMA 30,35,40,45,50,60 (close). Gruplarin ayrismasi trend gucu, kesismesi donus.",
+            "genel"
+          ],
+          [
+            "Hareketli Ortalama (SMA)",
+            "Fiyat gürültüsünü ortadan kaldırarak basit ve güvenilir bir şekilde ana trend yönünü belirler (destek/direnç olarak da kullanılır).",
+            "SMA = son X değerin toplamı / X; yumuşatma yok, ağırlıksız. | Varsayilan: uzunluk 9, kaynak close, offset 0",
+            "TV-yardim"
+          ],
+          [
+            "Hareketli Ortalama Kanalı",
+            "Hareketli ortalamanın etrafında sabit bir yüzdelik bant oluşturarak, fiyatın trendinden ne kadar uzaklaştığını ve potansiyel dönüşlerini gösterir.",
+            "Ust = SMA(high, N), Alt = SMA(low, N) (TV 'Moving Average Channel', varsayilan N=20).",
+            "genel"
+          ],
+          [
+            "HO Şeridi (Moving Average Ribbon) ★",
+            "Dört farklı periyotta hareketli ortalamayı şerit halinde çizerek trend yönünü ve ortalamaların dizilim dönüşlerini tek bakışta gösterir.",
+            "Sayfada formül yok; birden çok MA (SMA, EMA, SMMA, WMA, VWMA seçilebilir) farklı uzunluklarla çizilir | Varsayilan: her MA için aç/kapa, tip, kaynak, uzunluk, renk; varsayılanlar metinde yok | TV varsayilani: 4 MA, uzunluklar 20/50/100/200, tip SMA, kaynak close.",
+            "TV-yardim*"
+          ],
+          [
+            "Hull Hareketli Ortalaması",
+            "Piyasadaki en az gecikmeli (lag) ve en yumuşak hareketli ortalamadır; hızlı trend dönüşlerini yakalamak için mükemmeldir.",
+            "HMA = WMA(2*WMA(src, n/2) - WMA(src, n), sqrt(n)); WMA = doğrusal ağırlıklı | Varsayilan: girdi bölümü yok; genel uzunluk 9, kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Ichimoku Bulutu",
+            "Tek bir gösterge ile trend yönü, momentum, destek/direnç ve potansiyel sinyalleri aynı anda sunan kapsamlı bir Japon sistemidir.",
+            "Sayfa formülü görsel olarak veriyor (metinde yok): PH=periyot yüksek, PL=periyot düşük; Conversion=(PH+PL)/2 (9), Base=(PH+PL)/2 (26), SpanA=(Conv+Base)/2 26 bar ileri, SpanB=(PH+PL)/2 (52) 26 bar ileri, Lagging=close 26 bar geri. Bu satır genel tanımdır | Varsayilan: genel: 9, 26, 52, 26 (sayfada metin olarak yok)",
+            "TV-yardim*"
+          ],
+          [
+            "İkili Hareketli Ortalama",
+            "Birbirine yakın iki farklı periyotlu ortalamanın arasındaki mesafeyi ölçerek, mevcut trendin ne kadar güçlü olduğunu gösterir.",
+            "Iki MA (TV 'Moving Average Double', varsayilan SMA 9 ve 26?) — belge: MA1 = SMA(src,N1), MA2 = SMA(src,N2); fark/kesisim okunur.",
+            "genel"
+          ],
+          [
+            "McGinley Dinamik",
+            "Piyasa yanlış sinyaller verdiğinde (sahte kırılımlar) otomatik olarak kendi hızını ayarlayan, sürekli fiyata çekilen güvenilir bir trend çizgisidir.",
+            "Sayfada formül görsel; değişkenler MD[1]=önceki değer, Price=güncel fiyat, N=periyot. Genel formül: MD = MD[1] + (Price - MD[1]) / (N * (Price/MD[1])^4); otomatik yumuşatma faktörü içerir | Varsayilan: N sayfada varsayılan verilmemiş (genel: 14)",
+            "TV-yardim*"
+          ],
+          [
+            "Çoklu Hareketli Ortalama",
+            "Kullanıcının belirlediği birden fazla farklı periyottaki hareketli ortalamayı aynı anda grafiğe ekleyerek, dinamik destek/direnç bölgeleri oluşturur.",
+            "TV 'Moving Average Multiple': 6 SMA; uzunluklar 20/50/100/150/200/250? belgede yok; her biri SMA(close, N_i).",
+            "genel"
+          ],
+          [
+            "Uyarlamalı Hareketli Ortalama (AMA)",
+            "Piyasa yatayken yavaşlar (gürültüyü engeller), trend başladığında hızlanır (gecikmeyi azaltır); çift yönlü fayda sağlayan akıllı bir ortalamadır.",
+            "ER = |Price - Price[N]| / toplam(|Price - Price[1]|, N); fastSC=2/(fast+1); slowSC=2/(slow+1); SC=(ER*(fastSC-slowSC)+slowSC)^2; KAMA = SC*Price + (1-SC)*KAMA[1] | Varsayilan: sayfada varsayılan verilmemiş; genel: ER uzunluğu 10, fast 2, slow 30, kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Üçlü Hareketli Ortalama",
+            "Üç farklı hareketli ortalamayı birleştirerek, fiyatın orta vadeli ana trendinden ne kadar uzaklaştığını gösterir.",
+            "Uc SMA: SMA(src,N1), SMA(src,N2), SMA(src,N3) (TV 'Moving Average Triple'); fiyatin uc ortalamaya gore konumu okunur.",
+            "genel"
+          ],
+          [
+            "Üçlü ÜHO (TEMA)",
+            "Üçlü üssel ortalama algoritması ile gecikmeyi (lag) inanılmaz derecede düşürür; fiyat neredeyse çizgiyle aynı anda hareket ederek çok erken sinyal verir.",
+            "TEMA = 3*EMA1 - 3*EMA2 + EMA3; EMA1 = EMA(fiyat, n); EMA2 = EMA(EMA1, n); EMA3 = EMA(EMA2, n) (aynı periyot). | Varsayilan: periyot sayfada belirtilmemiş (TV: 9), kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Üstel Hareketli Ortalama (EMA)",
+            "En son fiyatlara daha fazla ağırlık vererek normal hareketli ortalamadan çok daha hızlı tepki verir; kısa vadeli analizlerin olmazsa olmazıdır.",
+            "k = 2/(N+1); EMA = Close*k + EMA[1]*(1-k); ilk değer önceki SMA ile tohumlanır | Varsayilan: uzunluk 9, kaynak close, offset 0",
+            "TV-yardim"
+          ],
+          [
+            "Williams Gator (Alligator)",
+            "3 farklı periyotlu dengelenmiş hareketli ortalamayı (Çeneye, Dişe, Dudaklara) dönüştürerek; uyku (yatay), açlık (trend başlangıcı) ve doyma (trend sonu) aşamalarını görselleştirir.",
+            "Üç SMMA (Wilder/RMA benzeri): ilk değer SMA(close, n), sonra SMMA(i) = (PREVSUM - SMMA[1] + CLOSE(i)) / n. Çene (Jaw) = 13 periyot, Diş (Teeth) = 8, Dudak (Lips) = 5; yumuşatma ofsetleri 8/5/3 bar ileri (sayfada çene 8, diş 5, dudak 3 olarak 'smoothed by'). | Varsayilan: SMMA 13/8/5, ileri kaydırma 8/5/3; kaynak close (standart: median price hl2)",
+            "TV-yardim"
+          ],
+          [
+            "Yuvarlatılmış Hareketli Ortalama",
+            "Üstel hareketli ortalama ile normal ortalamanın karışımıdır; uzun vadeli grafiklerde çok yumuşak ve güvenilir bir trend çizgisi sunar.",
+            "Özyinelemeli: SMMA = SMMA[1] + (Fiyat - SMMA[1]) (sayfa adımlarıyla); sayfa Period = 2*n-1 eşdeğerliğini belirtir. Standart: SMMA = (SMMA[1]*(n-1) + src)/n = RMA(n). | Varsayilan: periyot 9, kaynak close",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Momentum & Osilatörler",
+        "items": [
+          [
+            "Chande Momentum Osilatörü",
+            "RSI'ya alternatif olarak, aşırı alım/satım koşullarını ve trendin momentumunu daha düzgün bir çizgiyle gösterir.",
+            "CMO = 100*(Su - Sd)/(Su + Sd); Su = n periyot toplam yukarı kapanış değişimi, Sd = n periyot toplam aşağı kapanış değişimi; yumuşatma yok | Varsayilan: periyot n (sayfada varsayılan yok; sayfada 'genelde 20', TV varsayılanı 9)",
+            "TV-yardim"
+          ],
+          [
+            "Connors RSI",
+            "Kısa vadeli (günlük) aşırı alım/satım durumlarını tespit etmek için özel olarak tasarlanmıştır; ortalamaya dönüş (mean-reversion) stratejilerinde avantaj sağlar.",
+            "CRSI(3,2,100) = [RSI(close,3) + RSI(UpDownStreak,2) + PercentRank(ROC(1),100)] / 3; streak: ardışık yukarı kapanış +, aşağı -, değişmeyen 0'a sıfırlar; Wilder RSI | Varsayilan: RSI Length 3, UpDown Length 2, ROC Length 100",
+            "TV-yardim"
+          ],
+          [
+            "Coppock Eğrisi",
+            "Aylık grafiklerde kullanılarak uzun vadeli dip noktalarını (alım fırsatlarını) tespit etmede çok yüksek bir başarı oranına sahiptir.",
+            "Sayfa formül vermez: iki ROC periyodu (11 ve 14) ve 10 periyotluk ağırlıklı hareketli ortalama. Genel: Coppock = WMA(ROC(close,14) + ROC(close,11), 10) | Varsayilan: sayfada yok (TV: WMA Length 10, Long ROC 14, Short ROC 11)",
+            "TV-yardim*"
+          ],
+          [
+            "Değişim Oranı (ROC)",
+            "Mevcut fiyatın belirli bir dönem öncesine göre yüzdesel değişimini göstererek, trendin hızını (momentum) ve ivmesini anlamayı sağlar.",
+            "ROC = (Close - Close[n]) / Close[n] * 100; yumuşatma yok. | Varsayilan: uzunluk 9, kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Emtia Kanal Endeksi (CCI)",
+            "İstatistiksel ortalama sapmayı ölçer; fiyatın normal koşulların çok dışına çıktığını tespit ederek aşırı alım/satım ve dönüş sinyalleri verir.",
+            "TP = (H+L+C)/3; CCI = (TP - SMA(TP,N)) / (0.015 * MD); MD = ortalama mutlak sapma = Sum(|TP - SMA(TP,N)|)/N | Varsayilan: Length 20, Source close (TV'de hlc3), sabit 0.015",
+            "TV-yardim"
+          ],
+          [
+            "Fisher Dönüşümü",
+            "Fiyat hareketlerini normal bir dağılıma (bell eğrisi) çevirerek, net ve keskin Al/Sat dönüş sinyalleri verir.",
+            "X = son N barlık fiyat penceresinin -1..+1 aralığına ölçeklenmişi; Fisher = 0.5 * ln((1+X)/(1-X)); her bar önceki Fisher değerine eklenerek yumuşatılır (yumuşatma sabiti sayfada verilmemiş) | Varsayilan: pencere örnek olarak 9 bar (sayfada girdi bölümü yok) | Pine: v = 0.66*((hl2 - LL9)/(HH9 - LL9) - 0.5) + 0.67*v[1], |v| <= 0.999; fish = 0.5*ln((1+v)/(1-v)) + 0.5*fish[1]; tetik = fish[1].",
+            "TV-yardim"
+          ],
+          [
+            "Fiyat Momentum Osilatörü (PMO) ★",
+            "Bar-bar değişim oranını iki kez yumuşatıp gürültüsüz momentum ve sinyal çizgisi geçişleri üretir.",
+            "ROC1 = tek barlık yüzde değişim; S1 = özel EMA(ROC1, Uzunluk1), alfa = 2/Uzunluk (standart 2/(N+1) değil); PMO = özel EMA(10*S1, Uzunluk2); Sinyal = standart EMA(PMO, Sinyal uzunluğu) | Varsayilan: varsayılan metinde yok (genel: 35, 20, 10, close)",
+            "TV-yardim"
+          ],
+          [
+            "Fiyat Osilatörü",
+            "İki hareketli ortalama arasındaki farkı yüzde olarak gösterir; trendin momentumunu ve sıfır çizgisine göre yön değişimlerini kolayca okumanızı sağlar.",
+            "PPO = (Hızlı MA - Yavaş MA) / Yavaş MA * 100; Sinyal = PPO'nun MA'sı; Histogram = PPO - Sinyal; MA tipi EMA veya SMA | Varsayilan: sayfada varsayılan metinde yok (genel: 12, 26, 9, EMA, close)",
+            "TV-yardim"
+          ],
+          [
+            "Göreceli Güç Endeksi (RSI)",
+            "En popüler osilatördür; fiyatın hızlı yükseldiğini/düştüğünü göstererek aşırı alım/satım bölgesi ve diverjans (uyumsuzluk) tespiti avantajı sağlar.",
+            "RSI = 100 - 100/(1+RS); RS = RMA(max(change,0), n) / RMA(max(-change,0), n); change = close - close[1]. Yumuşatma: RMA (Wilder), Pine rsi() ile eşdeğer. | Varsayilan: uzunluk 14, kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Hızlanma Osilatörü (AC) ★",
+            "Müthiş Osilatör'ün momentum değişimini ölçerek trend dönüşlerini daha erken yakalatır (Bill Williams); MT5'in standart göstergesidir.",
+            "AO = SMA(hl2,5) - SMA(hl2,34); AC = AO - SMA(AO,5) (Bill Williams).",
+            "genel"
+          ],
+          [
+            "Know Sure Thing (KST)",
+            "Farklı periyotlardaki ROC (değişim oranı) göstergelerini birleştirir; uzun vadeli trend dönüşlerini (dip ve tepe) çok erken yakalar.",
+            "ROCMA1=SMA(ROC(10),10); ROCMA2=SMA(ROC(15),10); ROCMA3=SMA(ROC(20),10); ROCMA4=SMA(ROC(30),15); KST = 1*ROCMA1 + 2*ROCMA2 + 3*ROCMA3 + 4*ROCMA4; sinyal = SMA(KST, 9) | Varsayilan: ROC uzunlukları 10,15,20,30; SMA uzunlukları 10,10,10,15; sinyal 9; yumuşatma SMA",
+            "TV-yardim"
+          ],
+          [
+            "Kütle Endeksi",
+            "Yüksek-düşük aralığının genişlemesini analiz ederek, trendin tükenip tükenmediğini (reversal) tespit eder; tükeniş sinyalleri verir.",
+            "Aralık=H-L; EMA1=EMA(Aralık,9); EMA2=EMA(EMA1,9); Oran=EMA1/EMA2; Mass Index = toplam(Oran, 25) | Varsayilan: EMA 9, toplam periyodu 25 (sayfada girdi bölümü yok)",
+            "TV-yardim"
+          ],
+          [
+            "MACD",
+            "Trendin yönü ile momentumu bir arada gösterir; sıfır çizgisi geçişleri ile yönü, sinyal çizgisi kesişimleri ile al/sat noktalarını verir.",
+            "MACD = Hızlı MA - Yavaş MA; Sinyal = MACD'nin hareketli ortalaması; Histogram = MACD - Sinyal; MA tipi EMA veya SMA seçilebilir | Varsayilan: sayfada varsayılan metinde yok (genel: 12, 26, 9, EMA, kaynak close) | TV varsayilani: EMA(close,12) - EMA(close,26); sinyal EMA(MACD,9); histogram = MACD - sinyal.",
+            "TV-yardim"
+          ],
+          [
+            "Momentum",
+            "Fiyatın belirli bir süre önceki ile olan farkını gösterir; yükseliş/düşüş hızını ölçerek trendin güçlenip güçlenmediğini kanıtlar.",
+            "Sayfada formül yok; genel tanım: MOM = src - src[length] | Varsayilan: sayfada belirtilmemiş (genel: uzunluk 10, kaynak close)",
+            "TV-yardim*"
+          ],
+          [
+            "Müthiş Osilatör (Awesome)",
+            "5 periyotluk ve 34 periyotluk orta fiyatların farkını alarak piyasadaki itici gücü (momentum) histogram şeklinde net bir şekilde gösterir.",
+            "AO = SMA((H+L)/2, 5) - SMA((H+L)/2, 34) | Varsayilan: 5 ve 34 (hl2 üzerinde SMA)",
+            "TV-yardim"
+          ],
+          [
+            "Nihai Osilatör (UO)",
+            "3 farklı zaman dilimindeki fiyatları birleştirir; tek periyotluk osilatörlerin verdiği hatalı/yanıltıcı aşırı alım/satım sinyallerini engeller.",
+            "BP = Close - min(Low, Close[1]); TR = max(High, Close[1]) - min(Low, Close[1]); AvgN = Sum(BP, N)/Sum(TR, N); UO = 100*(4*Avg7 + 2*Avg14 + Avg28)/7. Yumuşatma yok (toplam oranı). | Varsayilan: 7, 14, 28",
+            "TV-yardim"
+          ],
+          [
+            "Pring Special K ★",
+            "Birden fazla periyodun değişim oranı ortalamasını tek bir trend-momentum göstergesinde birleştirerek uzun vadeli yön değişimini yakalatır.",
+            "Ağırlıklı toplam: 1*SMA(ROC(10),10) + 2*SMA(ROC(15),10) + 3*SMA(ROC(20),10) + 4*SMA(ROC(30),15) + 1*SMA(ROC(40),50) + 2*SMA(ROC(65),65) + 3*SMA(ROC(75),75) + 4*SMA(ROC(100),100) + 1*SMA(ROC(195),130) + 2*SMA(ROC(265),130) + 3*SMA(ROC(390),130) + 4*SMA(ROC(530),195); sinyal = SMA(SMA(SK,100),100); en az 725 bar gerekir | Varsayilan: sinyal uzunluk 1 = 100, sinyal uzunluk 2 = 100; yumuşatma SMA",
+            "TV-yardim"
+          ],
+          [
+            "SMI Ergodik Gösterge/Osilatörü",
+            "Stokastik osilatörün daha gelişmiş ve yumuşatılmış halidir; aşırı alım/satım bölgelerinde çok daha az hatalı sinyal üretir.",
+            "chg = price - price[1]; absChg = |chg|; SMI = MA(MA(chg, hızlı), yavaş) / MA(MA(absChg, hızlı), yavaş); sinyal = MA(SMI, sinyal periyodu). Sayfa, SMI sinyal-çizgisi kesişimi + üst/alt kılavuz koşullu al/sat kuralları da verir. | Varsayilan: fiyat close, MA yöntemi EMA; hızlı/yavaş/sinyal periyodu ve kılavuzlar sayfada belirtilmemiş (TV: 5/20/5) | Osilator = SMI - sinyal (histogram). TV varsayilani: hizli 5, yavas 20, sinyal 5.",
+            "TV-yardim"
+          ],
+          [
+            "Stokastik",
+            "Kapanış fiyatının belirli bir periyottaki fiyat aralığında nerede konumlandığını gösterir; yatay piyasalarda dönüm noktalarını (dip/tepe) bulmada çok başarılıdır.",
+            "%K = SMA(100*(Close - LowestLow(periodK)) / (HighestHigh(periodK) - LowestLow(periodK)), smoothK); %D = SMA(%K, periodD). Yumuşatma: SMA. | Varsayilan: K 14, D 3, Smooth 3; seviyeler 20/80",
+            "TV-yardim"
+          ],
+          [
+            "Stokastik Momentum Endeksi (SMI) ★",
+            "Klasik stokastiğin ortaya göre normalize edilmiş halidir; SMI Ergodik'in temel formu olarak daha az yanlış sinyal üretir.",
+            "hhll = HH(%K len) - LL(%K len); rel = close - (HH+LL)/2; SMI = 200 * emaEma(rel, lenD) / emaEma(hhll, lenD); emaEma = EMA(EMA(x, len), len). Sinyal: SMI'nin EMA'sı. | Varsayilan: %K uzunluğu 10, %D uzunluğu 3, EMA uzunluğu sayfada belirtilmemiş (TV: 3), orta çizgi 70",
+            "TV-yardim"
+          ],
+          [
+            "Stokastik RSI",
+            "RSI değerini kendi içinde stokastik formüle sokarak normal RSI'dan çok daha hassas ve sık Al/Sat sinyalleri üretir (özellikle scalping için).",
+            "StochRSI = (RSI - LL(RSI)) / (HH(RSI) - LL(RSI)) (sayfada 14 periyot örneği, 0..1); TV göstergesinde K = SMA(StochRSI*100, K), D = SMA(K, D) (yumuşatma SMA; sayfada açıkça yazılmamış). | Varsayilan: K 3, D 3, kaynak close; RSI/Stochastic uzunluğu sayfada belirtilmemiş (TV: 14/14)",
+            "TV-yardim"
+          ],
+          [
+            "Trend Azaltma Fiyat Osilatörü (DPO)",
+            "Fiyattan hareketli ortalamayı çıkararak uzun vadeli döngüleri (siklusları) ve piyasanın aşırı uçlarını tespit etmeyi sağlar.",
+            "DPO = Fiyat[N/2 + 1 bar önce] - SMA(N); N = kullanıcı tanımlı periyot | Varsayilan: Period (sayfada varsayılan yok; TV 21), Centered; ortalama SMA",
+            "TV-yardim"
+          ],
+          [
+            "TRIX",
+            "Üçlü üssel hareketli ortalamanın yüzde değişimidir; piyasadaki küçük sahte hareketleri (gürültüyü) tamamen yok ederek çok güvenilir momentum sinyalleri verir.",
+            "EMA1 = EMA(close, 18); EMA2 = EMA(EMA1, 18); EMA3 = EMA(EMA2, 18); TRIX = 1 periyotluk yüzde değişim(EMA3) = (EMA3 - EMA3[1]) / EMA3[1] * 100 (sinyal: TRIX'in EMA'sı, periyot belirtilmemiş). | Varsayilan: 3 ardışık EMA 18 periyot; TV girişi uzunluk 18, kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "True Strength Index",
+            "İki kez düzleştirilmiş momentum hesaplar; sıfır çizgisi etrafındaki hareketlerle çok net ve güvenilir trend ve diverjans sinyalleri sağlar.",
+            "Sayfa formülü görsel; metin: fiyat değişimi ve mutlak değişimi 25 periyot EMA ile (çift yumuşatılmış) kullanılır. Standart: m = close - close[1]; TSI = 100 * EMA(EMA(m, uzun), kısa) / EMA(EMA(|m|, uzun), kısa); sinyal = EMA(TSI, 7-12 aralığı). Çift yumuşatma ayrıntısı görselden tamamlandı. | Varsayilan: uzun 25; kısa ve sinyal sayfada belirtilmemiş (TV: kısa 13, sinyal 13)",
+            "TV-yardim"
+          ],
+          [
+            "Williams %R",
+            "Stokastik ile ters mantıkta çalışır (-100 ile 0 arası); sıfıra yaklaştığında aşırı alım, -100'e yaklaştığında aşırı satım olduğunu göstererek kısa vadeli dönüşler sağlar.",
+            "%R = (HighestHigh - Close) / (HighestHigh - LowestLow) * -100 (HH/LL: lookback boyunca); yumuşatma yok. | Varsayilan: uzunluk 14, kaynak close; bantlar -20 / -80",
+            "TV-yardim"
+          ],
+          [
+            "Woodies CCI ★",
+            "CCI'ın Woodie modifikasyonunu (trend ve osilatör çizgileri, renkli barlar) kullanarak kısa vadeli giriş-çıkış zamanlaması verir.",
+            "price = H+L+C (sayfa kodunda /3 yok; oranda sadeleşir); linDev = ortalama mutlak sapma(price, len); CCI = (price - SMA(price, len)) / linDev / 0.015, linDev = 0 ise 0. İki parametre: CCI Period (yavaş), TCCI Period (hızlı). Yumuşatma yok. | Varsayilan: sayfada varsayılan yok (Woodies standardı: CCI 14, TCCI 6)",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Trend Yönü, Gücü & Yapı",
+        "items": [
+          [
+            "Aroon",
+            "Bir trendin başlangıcını, sonunu ve piyasanın yatay (dalgalı) olup olmadığını tespit ederek trend takibi avantajı sağlar.",
+            "Aroon-Up = ((N - son N-bar yükseğinden bu yana geçen bar)/N)*100; Aroon-Down = ((N - son N-bar düşüğünden bu yana geçen bar)/N)*100 (yumuşatma yok) | Varsayilan: Length kullanıcı tanımlı; sayfadaki örnek 14 (varsayılan metinde yazmıyor; TV varsayılanı 14)",
+            "TV-yardim"
+          ],
+          [
+            "Aroon Osilatörü ★",
+            "Aroon Up ve Aroon Down farkını tek çizgide vererek trend gücünü ve dönüşünü sadeleştirir.",
+            "Aroon Osc = Aroon Up - Aroon Down (-100..+100; yumuşatma yok). Aroon Up/Down: periyodun en yüksek/en düşük değerine ulaşılan bardan itibaren azalan 0-100 ölçü; high/low Length'ten bir bar fazla geriye bakar | Varsayilan: Length (sayfada varsayılan belirtilmemiş); seviyeler -90, 0, +90; Timeframe seçeneği",
+            "TV-yardim"
+          ],
+          [
+            "Biriktirici Sallanma Endeksi",
+            "Fiyat açılış, kapanış, yüksek ve düşük değerlerinin tümünü birleştirerek, piyasanın gerçek yönünü ve gücünü verir.",
+            "Wilder ASI: SI = 50 * (C-C1 + 0.5*(C-O) + 0.25*(C1-O1)) / R * K/T; R, mum iliskisine gore secilen aralik; K = max(|H-C1|,|L-C1|); T = limit hareket; ASI = ASI[1] + SI.",
+            "genel"
+          ],
+          [
+            "Boğa-Ayı Gücü (Bull Bear Power) ★",
+            "Yüksek/düşük fiyatlar ile EMA arasındaki ilişkiyi histogram olarak ölçüp alıcı-satıcı baskınlığını gösterir (Elder-Ray).",
+            "Bull Power = High - EMA(close, Length); Bear Power = Low - EMA(close, Length); BBP = Bull Power + Bear Power | Varsayilan: Length 13 (EMA)",
+            "TV-yardim"
+          ],
+          [
+            "Dalgalılık Endeksi (Choppiness)",
+            "Piyasanın trend mi yoksa yatay (range) mı olduğunu belirler; yatay piyasalarda osilatörlerle işlem yapma, trendlerde trend takibi avantajı sunar.",
+            "CHOP = 100 * log10( Sum(ATR(1), n) / (HH(n) - LL(n)) ) / log10(n); n=14; esikler 61.8 (yatay) / 38.2 (trend).",
+            "TV-yardim"
+          ],
+          [
+            "Göreceli Vigor Endeksi",
+            "Kapanış fiyatının açılışa göre konumunu, hacmin kapanışa göre konumuyla ölçer; bull/bear (alıcı/satıcı) gücünün hangisinde olduğunu gösterir.",
+            "Sayfada formül görsel; değişkenler: a=C-O, b=a[1], c=a[2], d=a[3], e=H-L ve gecikmeleri f,g,h. Pay = SMA((a+2b+2c+d)/6, N), payda = SMA((e+2f+2g+h)/6, N); RVI = pay/payda; sinyal = (RVI+2*RVI[1]+2*RVI[2]+RVI[3])/6 (standart tanım; ağırlıklar görselden tamamlandı). | Varsayilan: N sayfada varsayılan verilmemiş (TV: 10)",
+            "TV-yardim"
+          ],
+          [
+            "Güç Dengesi",
+            "Alıcıların ve satıcıların gücünü net olarak ölçer; sıfır çizgisi üzerindeki hareketler alıcıların hakimiyetini göstererek yön teyidi sağlar.",
+            "BOP = (Close - Open)/(High - Low); yumuşatma formülde yok (sayfa SMA ile birlikte kullanmayı öneriyor) | Varsayilan: girdi yok",
+            "TV-yardim"
+          ],
+          [
+            "Kaşe Alanı (Chop Zone)",
+            "Fiyatın nerede kapandığına göre grafiği renklendirir; trendin yukarı mı aşağı mı döndüğünü hiç çizgi bakmadan hızlıca okumanızı sağlar.",
+            "Sayfa formül vermez: -100..+100 arası; renkler kapanış ile EMA arasındaki farka göre. Genel bilinen: EMA(34) eğiminin açısına göre renklendirme | Varsayilan: girdi bölümü yok",
+            "TV-yardim*"
+          ],
+          [
+            "Ortalama Yönsel Endeks (ADX)",
+            "Sadece piyasanın trend yapıp yapmadığını (0-100 arası) ölçer; ADX 25 üstüyse piyasada güçlü bir trend vardır, osilatörler kullanılmamalıdır.",
+            "+DM = H-H1 (sadece > -DM ve >0), -DM = L1-L (sadece > +DM); TR = max(H-L,|H-C1|,|L-C1|); Wilder yumuşatma: S = S1 - S1/14 + x; +DI = 100*S(+DM)/S(TR), -DI = 100*S(-DM)/S(TR); DX = 100*|+DI - -DI|/(+DI + -DI); ADX = (ADX1*13 + DX)/14 (ilk ADX = ilk 14 DX ortalaması) | Varsayilan: periyot 14 (Wilder)",
+            "TV-yardim"
+          ],
+          [
+            "Trend Gücü Endeksi",
+            "Fiyat değişimi ve hacim değişimini birleştirerek mevcut trendin ne kadar sağlıklı ve güçlü olduğunu ölçer.",
+            "Sayfada hesaplama bölümü yok; kavramsal olarak kapanış fiyatlarıyla bar indeksi arasındaki Pearson korelasyonu (Length bar üzerinde): TSI = corr(close, bar_index, length). | Varsayilan: uzunluk sayfada belirtilmemiş (TV: 14)",
+            "TV-yardim*"
+          ],
+          [
+            "Vortex Göstergesi",
+            "Pozitif ve negatif yönsel hareketleri ölçen iki çizgi verir; +VI çizgisi -VI'nin üzerine çıktığında net bir yükseliş trendi başladığını gösterir.",
+            "TR = max(H-L, |H-C1|, |L-C1|); VM+ = |H - L[1]|; VM- = |L - H[1]|; VI+ = Sum(VM+, n)/Sum(TR, n); VI- = Sum(VM-, n)/Sum(TR, n). Yumuşatma yok (kayan toplam). | Varsayilan: n sayfada varsayılan verilmemiş (yaygın 14-30; TV: 14)",
+            "TV-yardim"
+          ],
+          [
+            "Williams Fraktalı",
+            "Fiyatın yerel tepe ve dip noktalarını ok işaretleriyle işaretler; bu noktalar kırıldığında trendin devam ettiğini doğrulayan yapısal sinyaller verir.",
+            "Sayfada formül yok: tipik olarak 5 mumlu kural; ortadaki (3.) mumun yüksek/düşüğü sol ve sağdaki 2'şer mumdan yüksek/düşük ise fraktal. Mum sayısı ayarlanabilir. | Varsayilan: periyot 2 (5 mum)",
+            "TV-yardim*"
+          ],
+          [
+            "Yönsel Hareket (DMI)",
+            "+DI ve -DI çizgileri ile alıcı ve satıcı gücünü karşılaştırır; ADX ile birleştiğinde trendin yönünü ve gücünü birlikte okuma imkanı tanır.",
+            "UpMove = H-H1; DownMove = L1-L; +DM = UpMove (UpMove>DownMove ve >0 ise, değilse 0); -DM = DownMove (DownMove>UpMove ve >0 ise); +DI = 100*MA(+DM)/ATR; -DI = 100*MA(-DM)/ATR; ADX = 100*MA(|+DI - -DI|/(+DI + -DI)); sayfa MA'yı 'EMA' yazar, Wilder sabitini belirtmez (TV uygulaması RMA) | Varsayilan: ADX Smoothing 14, DI Length 14 | Pine ta.dmi: yumusatma RMA (Wilder).",
+            "TV-yardim"
+          ],
+          [
+            "Zig Zag",
+            "Belirli bir yüzdeyi aşmayan tüm küçük hareketleri yok sayarak grafiği sadece net yükseliş ve düşüşlere indirger; dalga sayma ve chart pattern (formasyon) tespitini kolaylaştırır.",
+            "Formül yok, kural tabanlı: pivot high = barın yükseği, solundaki bar sayısından kesin yüksek ve sağındakilerden >= ; pivot bacağı = toplam/2 (aşağı yuvarlanır) sol ve sağ bar. Pivot yalnızca ters yöndeki hareket sapma eşiğini (%) aşıyorsa yeni çizgi olur; aynı yönde daha ekstrem pivot son noktayı değiştirir. Yumuşatma yok. | Varsayilan: price deviation %, pivot legs: sayfada varsayılan verilmemiş (TV: 5, 10)",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Hacim & Para Akışı",
+        "items": [
+          [
+            "Birikim/Dağıtım",
+            "Fiyata bakılmaksızın sadece işlem hacmine odaklanarak, büyük paranın (akıllı paranın) bir varlığı topladığını mı dağıttığını gösterir.",
+            "MFM = ((C-L)-(H-C))/(H-L); MFV = MFM*Hacim; ADL = ADL[1] + MFV (kümülatif toplam, yumuşatma yok) | Varsayilan: girdi yok (sadece stil)",
+            "TV-yardim"
+          ],
+          [
+            "Chaikin Para Akışı",
+            "Belirli bir periyotta piyasaya giren paranın gücünü ölçer; genellikle +0.25 üstü aşırı alım, -0.25 altı aşırı satım olarak yorumlanır.",
+            "MFM = ((C-L)-(H-C))/(H-L); MFV = MFM*Hacim; CMF = Toplam(MFV, N)/Toplam(Hacim, N) (yumuşatma yok, düz toplam oranı) | Varsayilan: Length: sayfada varsayılan yok, örnek 21 (yaygın 20 veya 21)",
+            "TV-yardim"
+          ],
+          [
+            "Chaikin Osilatörü",
+            "Birikim/Dağıtım göstergesinin momentumunu ölçer; hacim ve fiyat arasındaki uyumsuzlukları yakalayarak trend dönüşlerini önceden haber verir.",
+            "MFM = ((C-L)-(H-C))/(H-L); MFV = MFM*Hacim; ADL = ADL1 + MFV; Chaikin Osc = EMA(ADL,3) - EMA(ADL,10) | Varsayilan: Fast 3, Slow 10 (sayfada örnek; varsayılan açık yazmıyor), yumuşatma EMA",
+            "TV-yardim"
+          ],
+          [
+            "Denge İşlem Hacmi (OBV)",
+            "Fiyat düşerken hacmin artması gibi durumları tespit ederek, piyasa yönündeki değişimleri fiyattan önce gösterir.",
+            "Close > Close[1]: OBV = OBV[1] + Hacim; Close < Close[1]: OBV = OBV[1] - Hacim; eşitse OBV = OBV[1] | Varsayilan: yumuşatma girdileri ayrı makalede; varsayılan metinde yok",
+            "TV-yardim"
+          ],
+          [
+            "Elder Güç Endeksi",
+            "Fiyatın tek başına hareket edip etmediğini veya hacimle desteklenip desteklenmediğini ölçerek, sağlıklı bir hareket olup olmadığını kanıtlar.",
+            "EFI = (Close - Close[1]) * Volume; EFI(13) = EMA(EFI, 13) | Varsayilan: uzunluk 13 (EMA); hassasiyet (precision) ayarı",
+            "TV-yardim"
+          ],
+          [
+            "Fiyat Hacmi Trendi",
+            "Her bir mumdaki yüzdesel fiyat değişimini hacimle çarparak, trendin arkasındaki nakit akışının gücünü gösterir.",
+            "PVT = ((Close - Close[1]) / Close[1]) * Hacim + PVT[1] | Varsayilan: girdi bölümü yok; çizgi stili Line",
+            "TV-yardim"
+          ],
+          [
+            "Hacim Deltası (Volume Delta) ★",
+            "Bar içi fiyat-hacim dağılımından alım/satım baskısı farkını tahmin edip order flow dengesizliğini gösterir; kümülatif versiyonu için CVD'ye bakınız.",
+            "Alt zaman dilimi (intrabar) barlarının hacmi close > open ise +, close < open ise - sayılır; open = close ise önceki intrabar close ile karşılaştırılır (eşitse önceki işaret). Kümülatif delta bar boyunca toplanır; mum: open 0, close son delta, high = maksimum, low = minimum. Yumuşatma yok. | Varsayilan: alt zaman dilimi otomatik (1S/1/5/60 kuralı), özel zaman dilimi kapalı",
+            "TV-yardim"
+          ],
+          [
+            "Hareket Kolaylığı",
+            "Fiyatın hacimle desteklenerek ne kadar kolay yukarı veya aşağı hareket ettiğini ölçer; sıfırın üstü yukarı hareketin kolay olduğunu gösterir.",
+            "Dist = (H+L)/2 - (H1+L1)/2; BoxRatio = (Hacim/Bölen)/(H-L); EOM1 = Dist/BoxRatio; EOM = SMA(EOM1, 14) | Varsayilan: Length 14, Divisor (sayfada yok; TV 10000, sayfa örneği 100,000,000), yumuşatma SMA",
+            "TV-yardim"
+          ],
+          [
+            "İşlem Hacmi",
+            "Grafik altına eklenen temel çubuklardır; fiyat hareketlerinin arkasında yeterli talep/arz olup olmadığını (hareketin sahte olup olmadığını) doğrular.",
+            "Sayfada hesaplama yok. Genel tanım: bar başına işlem gören hacim toplamı (ham veri). | Varsayilan: sayfada varsayılan yok",
+            "TV-yardim*"
+          ],
+          [
+            "İşlem Hacmi Osilatörü",
+            "Kısa ve uzun vadeli hacim ortalamaları arasındaki farkı göstererek, hacimdeki ani artışları ve bu artışların piyasa üzerindeki etkisini vurgular.",
+            "PVO = (Hızlı Hacim MA - Yavaş Hacim MA) / Yavaş Hacim MA * 100; Sinyal = PVO'nun MA'sı; Histogram = PVO - Sinyal; MA tipi EMA veya SMA | Varsayilan: sayfada varsayılan metinde yok (genel: 12, 26, 9, EMA) | TV 'Volume Oscillator': (EMA(vol,5) - EMA(vol,10)) / EMA(vol,10) * 100.",
+            "TV-yardim"
+          ],
+          [
+            "Klinger Osilatörü",
+            "Kısa vadeli ve uzun vadeli hacim akışlarını karşılaştırarak, büyük fonların piyasaya giriş/çıkışlarını tespit etmede üstün bir hassasiyet sunar.",
+            "T=+1 eğer (H+L+C) > önceki (H+L+C) yoksa -1; dm=H-L; cm = trend aynıysa cm[1]+dm, değişmişse dm[1]+dm; VF = V*(2*((dm/cm)-1))*T*100; KO = EMA(VF,34) - EMA(VF,55); sinyal = 13 periyot EMA(KO) | Varsayilan: EMA 34 ve 55, sinyal 13",
+            "TV-yardim"
+          ],
+          [
+            "Kümülatif Hacim Endeksi (CVI) ★",
+            "Yükselenlerin hacmi ile düşenlerin hacmi farkının kümülatif toplamıyla piyasa içi para akışını ölçer.",
+            "CVI = CVI[1] + (Yükselen hisselerin hacmi - Düşen hisselerin hacmi) (kümülatif, yumuşatma yok) | Varsayilan: girdi yok",
+            "TV-yardim"
+          ],
+          [
+            "Negatif Hacim Endeksi (NVI) ★",
+            "Hacmin düştüğü günlerdeki fiyat değişimini biriktirip akıllı para hareketini izler.",
+            "Başlangıç 1000; hacim < önceki hacim ise NVI = NVI[1] + yüzde kapanış değişimi (NVI[1]*(Close/Close[1]-1)); aksi halde NVI = NVI[1]; EMA ile karşılaştırılır | Varsayilan: EMA uzunluğu 255",
+            "TV-yardim"
+          ],
+          [
+            "Net İşlem Hacmi",
+            "Alış ve satış hacimleri arasındaki farkı göstererek, gün içinde net olarak alıcıların mı yoksa satıcıların mı ağır bastığını ortaya koyar.",
+            "Sayfada formül yok; genel: Net Hacim = uptick hacmi - downtick hacmi (seçilen periyotta) | Varsayilan: girdi yok",
+            "TV-yardim*"
+          ],
+          [
+            "Para Akışı Endeksi (MFI)",
+            "RSI'ya çok benzer ancak içine Hacim faktörünü de katarak; hem fiyatın hem de hacmin aşırı olduğu bölgeleri tespit eder.",
+            "TP=(H+L+C)/3; Ham akış=TP*Hacim; Oran = 14 bar toplam pozitif akış / 14 bar toplam negatif akış (TP önceki TP'den yüksek/düşük); MFI = 100 - 100/(1+Oran) | Varsayilan: uzunluk 14; yumuşatma yok",
+            "TV-yardim"
+          ],
+          [
+            "Pozitif Hacim Endeksi (PVI) ★",
+            "Hacmin arttığı günlerdeki fiyat değişimini biriktirip kalabalık (yeni yatırımcı) davranışını izler.",
+            "Başlangıç 1000; hacim > önceki hacim ise PVI = PVI[1] + yüzde kapanış değişimi; aksi halde PVI = PVI[1]; EMA ile karşılaştırılır | Varsayilan: EMA uzunluğu 255",
+            "TV-yardim"
+          ],
+          [
+            "Zamana Göre Göreli Hacim (RVOL) ★",
+            "Aynı saat dilimindeki hacmi tarihsel ortalamayla kıyaslayarak anormal hacim patlamalarını yakalatır.",
+            "Güncel barın anchor periyodu başlangıcına olan zaman ofseti bulunur; geçmiş Length periyodun aynı ofsetindeki barların hacmi ortalanır; RVOL = mevcut hacim / bu ortalama. Cumulative modda anchor başlangıcından kümülatif hacim, Regular modda tek barın hacmi; ofsette bar yoksa önceki son bar kullanılır. Ek yumuşatma yok. | Varsayilan: Calculation Mode: Cumulative; Anchor Timeframe ve Length sayfada belirtilmemiş (TV: 1D, 5)",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Volatilite, Bantlar & Kanallar",
+        "items": [
+          [
+            "Bollinger Bantları",
+            "Volatiliteyi ölçer; bantlar daraldığında büyük bir hareketin habercisi olur, fiyat bantlara temas ettiğinde potansiyel dönüş noktaları verir.",
+            "Orta = SMA(kaynak,20); Üst = Orta + 2*StdDev; Alt = Orta - 2*StdDev | Varsayilan: Length 20, Source close, StdDev 2, Offset 0, Basis MA Type SMA",
+            "TV-yardim"
+          ],
+          [
+            "Bollinger Bantları %B",
+            "Fiyatın Bollinger bantları içinde nerede konumlandığını yüzde olarak gösterir; aşırı alım/satım bölgelerini netleştirir.",
+            "%b = (Fiyat - Alt Bant)/(Üst Bant - Alt Bant); bantlar SMA(20) +/- 2 StdDev | Varsayilan: Length 20, Source close, StdDev 2",
+            "TV-yardim"
+          ],
+          [
+            "Bollinger Bantları Genişliği",
+            "Bantların daralma ve genişlemesini ölçerek piyasadaki dalgalanmanın (volatilite) artıp artmayacağını önceden tahmin etmeyi sağlar.",
+            "BBW = (Üst Bant - Alt Bant)/Orta Bant * 100; orta = SMA(20), bantlar +/-2 StdDev | Varsayilan: Length 20, Source close, StdDev 2; Highest Expansion/Lowest Contraction Length (varsayılan yok)",
+            "TV-yardim"
+          ],
+          [
+            "Bollinger Trend (BBTrend) ★",
+            "Bollinger üst/alt bant farkını ATR'ye oranlayarak bantların yön ve genişlik trendini ölçer.",
+            "BBTrend = (|shortLower - longLower| - |shortUpper - longUpper|) / shortMiddle * 100; short/long Bollinger Bantları (SMA tabanlı) | Varsayilan: Short BB Length, Long BB Length, StdDev; sayfada varsayılan yok (Pine standardı 20, 50, 2)",
+            "TV-yardim"
+          ],
+          [
+            "Chaikin Volatilitesi",
+            "Yüksek-düşük aralığındaki değişimleri ölçerek piyasadaki korku ve belirsizlik durumunu (volatiliteyi) anlamayı sağlar.",
+            "CV = (EMA(H-L, 10) - EMA(H-L, 10)[10]) / EMA(H-L, 10)[10] * 100 (TV: uzunluk 10, ROC 10).",
+            "genel"
+          ],
+          [
+            "Donchian Kanalları",
+            "Belirli bir periyottaki en yüksek ve en düşük fiyatı bağlayarak kanal oluşturur; kanal kırılımları ile breakout (yönlü hareket) stratejileri sunar.",
+            "Üst = Highest(High, 20); Alt = Lowest(Low, 20); Orta = (Üst + Alt)/2 (yumuşatma yok) | Varsayilan: Length 20, Offset 0",
+            "TV-yardim"
+          ],
+          [
+            "Fiyat Kanalı",
+            "Belirli periyottaki en yüksek/düşük fiyatı saran kanallar sunarak, mevcut fiyatın nispi konumunu ve potansiyel kırılma seviyelerini gösterir.",
+            "Ust = HH(high, N), Alt = LL(low, N) (TV 'Price Channel', N=20); Donchian ile ayni mantik, orta cizgi yok.",
+            "genel"
+          ],
+          [
+            "Göreceli Volatilite Endeksi",
+            "RSI mantığını volatiliteye uygular; piyasadaki dalgalanmanın artma veya azalma eğilimini önceden tahmin etmeyi sağlar.",
+            "Sayfa formül vermiyor: RSI gibi hesaplanır ama fiyat değişimi yerine yüksek/düşük fiyat standart sapması kullanılır. Genel tanım: std = stdev(src, 10); up = (src>src[1]) ? std : 0, down = (src<src[1]) ? std : 0; U = EMA(up, len), D = EMA(down, len); RVI = 100*U/(U+D). | Varsayilan: uzunluk 10, offset 0",
+            "TV-yardim*"
+          ],
+          [
+            "Keltner Kanalları",
+            "Üstel hareketli ortalama ve ATR (Gerçek Aralık) kullanarak, Bollinger bantlarına göre daha az sinyal üreten daha güvenilir trend kanalları çizer.",
+            "Basis = EMA(src, 20); Üst = Basis + 2*ATR; Alt = Basis - 2*ATR (Bands Style ile ATR veya High-Low aralığı; Use Exponential MA ile SMA/EMA seçimi) | Varsayilan: uzunluk 20, kaynak close; çarpan örnekte 2, ATR uzunluğu sayfada belirtilmemiş | TV varsayilani: uzunluk 20, carpan 2, ATR uzunlugu 10, EMA.",
+            "TV-yardim"
+          ],
+          [
+            "Medyan Kanalı (Median) ★",
+            "ATR sapmasına dayalı medyan fiyat kanalı çizerek piyasa yönünü ve volatilitesini tek araçta ölçer (Medyan Fiyat göstergesinden farklıdır).",
+            "Sayfada formül yok; genel: Median = son N kaynak değerinin medyanı; bantlar = Median ± ATRMult*ATR(ATR uzunluğu) | Varsayilan: girdiler: Median Source, Median Length, ATR Length, ATR Multiplier; varsayılanlar metinde yok",
+            "TV-yardim*"
+          ],
+          [
+            "Ortalama Gerçek Aralık (ATR)",
+            "Piyasanın dalgalanma genişliğini pip/point olarak ölçer; en güvenilir Stop-Loss mesafesini belirleme ve volatiliteye göre pozisyon boyutlandırma avantajı sunar.",
+            "TR = max(H-L, |H-C1|, |L-C1|); ATR = RMA(TR, Length) (varsayılan RMA; SMA/EMA/WMA seçilebilir) | Varsayilan: Length 14, Smoothing RMA",
+            "TV-yardim"
+          ],
+          [
+            "Ortalama Günlük Aralık (ADR) ★",
+            "Günlük yüksek-düşük aralığının ortalamasıyla beklenen günlük volatiliteyi ve gün içi hedef aralığını verir.",
+            "ADR = SMA(High, Length) - SMA(Low, Length) (günlük zaman diliminde; Length gün ortalaması) | Varsayilan: Length (örnek 7), Timeframe; varsayılan sayfada yok (TV varsayılanı 14)",
+            "TV-yardim"
+          ],
+          [
+            "Standart Hata",
+            "Doğrusal regresyon çizgisinin fiyattan ne kadar saptığını gösterir; sapma artıyorsa fiyatın trendden uzaklaştığını ve dönüşe hazır olduğunu işaret eder.",
+            "SE = sqrt( Sum((y - regresyon)^2, N) / (N-2) ); y = kaynak, regresyon = N barlik en kucuk kareler dogrusu (TV uzunluk 14).",
+            "genel"
+          ],
+          [
+            "Standart Hata Bandı",
+            "Doğrusal regresyon etrafına bir bant çizer; fiyatlardaki dalgalanmaların normal sınırlar içinde olup olmadığını istatistiksel olarak gösterir.",
+            "Orta = linreg(src, N); Ust/Alt = Orta +- k * SE; SE standart hata (TV: uzunluk 21, k=2, yumusatma SMA 3).",
+            "genel"
+          ],
+          [
+            "Standart Sapma",
+            "Fiyatların ortalama değerden ne kadar uzaklaştığını ölçer; volatilite arttıkça standart sapma artar, Bollinger bantlarının temel yapı taşıdır.",
+            "StdDev = sqrt( Sum((src - SMA(src,N))^2, N) / N ) (populasyon; TV uzunluk 5).",
+            "genel"
+          ],
+          [
+            "Tarihi Volatilite",
+            "Geçmiş fiyat hareketlerine dayanarak piyasanın oynaklığını yıllıklandırılmış yüzde olarak verir; opsiyon fiyatlama ve risk yönetimi için şarttır.",
+            "Sayfada formül yok; genel tanım: HV = 100 * stdev(ln(Close/Close[1]), N) * sqrt(yıllık periyot sayısı) (TV'de genelde standart sapma ile hesaplanır) | Varsayilan: sayfada belirtilmemiş (genel: uzunluk 10)",
+            "TV-yardim*"
+          ],
+          [
+            "Volatilite Endeksi",
+            "Fiyatların standart sapmasının oranını alarak piyasadaki oynaklık seviyesini gösterir; bant genişliği stratejilerinde kullanılır.",
+            "TV 'Volatility Index': stdev(close, N) / SMA(close, N) * 100 benzeri oran (TV sayfasi yok; genel).",
+            "genel"
+          ],
+          [
+            "Volatilite Kapanıştan-Kapanışa",
+            "Sadece kapanış fiyatları arasındaki değişimi ölçerek daha gerçekçi ve takip edilebilir bir dalgalanma (volatilite) çizer.",
+            "HV_cc = sqrt( 252 * Sum( ln(C/C1)^2, N ) / N ) (TV 'Volatility Close-to-Close', N=10, yillik 252).",
+            "genel"
+          ],
+          [
+            "Volatilite O-H-L-C",
+            "Açılış, kapanış, yüksek ve düşük fiyatların hepsini kullanarak piyasadaki gerçek ve tam volatiliteyi ölçer.",
+            "Garman-Klass / Yang-Zhang tipi: sigma^2 = 0.5*ln(H/L)^2 - (2ln2-1)*ln(C/O)^2, N bar ortalamasi, yillik sqrt(252) (TV 'Volatility O-H-L-C', N=10).",
+            "genel"
+          ],
+          [
+            "Volatilite Sıfır Trendi K.-K.",
+            "Kapanış-kapanış volatilitesinden trend etkisini çıkarır; sadece piyasanın oynaklığındaki saf değişimi gösterir.",
+            "Sifir-trend K-K: sqrt( 252/N * Sum(ln(C/C1)^2) ) (ortalama cikarilmadan; TV 'Volatility Zero Trend Close-to-Close', N=10).",
+            "genel"
+          ],
+          [
+            "Zarflar (Envelope)",
+            "Hareketli ortalamanın belirli bir yüzde üstüne ve altına çizgiler çizer; basit bir şekilde fiyatın aşırı uzaklaştığı (döneceği) bölgeleri tespit eder.",
+            "Basis = SMA(src, 20); Üst = Basis + Basis*0.10; Alt = Basis - Basis*0.10 (Exponential seçilirse basis EMA) | Varsayilan: uzunluk 20, kaynak close, yüzde: sayfada belirtilmemiş (örnekte %10), Exponential: belirtilmemiş",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Referans Fiyat & Pivot Seviyeleri",
+        "items": [
+          [
+            "52 Haftalık Yüksek/Düşük ★",
+            "Fiyatın son bir yıllık tepe ve dip seviyelerine göre konumunu otomatik çizerek uzun vadeli direnç/destek verir.",
+            "Ust = HH(high, 52 hafta), Alt = LL(low, 52 hafta); gunluk/haftalik barlarda 1 yillik pencere (TV '52 Week High/Low').",
+            "genel"
+          ],
+          [
+            "Görünür Ortalama Fiyat ★",
+            "Yalnızca ekranda görünen barların ortalama fiyatını hesaplayarak görünür aralık maliyet seviyesini verir.",
+            "Sayfada hesaplama yok; grafikte görünen barlar üzerinden ortalama fiyat gösterir. Genel tanım: görünür barların kaynağının ortalaması (kaynak seçilebilir). | Varsayilan: kaynak sayfada belirtilmemiş",
+            "TV-yardim*"
+          ],
+          [
+            "Hacim Ağırlıklı H.O. (HAHO/VWMA)",
+            "Normal hareketli ortalamaya göre, yüksek hacimli işlemlerin yapıldığı fiyat seviyelerine daha fazla önem vererek daha gerçekçi bir ortalama sunar.",
+            "Sayfada formül görsel; değişkenler C=kapanış, V=hacim. Standart: VWMA = Sum(C*V, n) / Sum(V, n). | Varsayilan: periyot sayfada belirtilmemiş (TV: 20), kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Hacim Ağırlıklı Ortalama Fiyat (HAOF/VWAP)",
+            "Kurumsal işlemlerin referans noktasıdır; gün içindeki en adil fiyatı gösterdiği için özellikle gün içi (intraday) traderlara büyük avantaj sağlar.",
+            "TP = (H+L+C)/3 (kaynak hlc3); VWAP = Kümülatif(TP * Hacim) / Kümülatif(Hacim); anchor periyodunda sıfırlanır. Yumuşatma yok. | Varsayilan: kaynak hlc3, offset 0, anchor Session (seçenekler: Session, Week, Month, Quarter, Year, Decade, Century, Earnings, Dividends, Splits); sapma bantları çarpan 1-3",
+            "TV-yardim"
+          ],
+          [
+            "Medyan Fiyat",
+            "En yüksek ve en düşük fiyatın ortalamasını alarak tek bir mumdaki gerçek fiyat noktasını bulur; diğer göstergelere veri girişi olarak idealdir.",
+            "Medyan Fiyat = (H + L) / 2 (hl2).",
+            "genel"
+          ],
+          [
+            "Ortalama Fiyat",
+            "Açılış, kapanış, yüksek ve düşük fiyatların aritmetik ortalamasını alarak mumun ağırlıklı merkezi noktasını bulur.",
+            "Ortalama Fiyat = (O + H + L + C) / 4 (ohlc4).",
+            "genel"
+          ],
+          [
+            "Pivot Noktalar Standardı",
+            "Bir önceki günün yüksek, düşük ve kapanış değerlerinden gün içi önemli destek ve direnç seviyelerini otomatik hesaplayıp çizer.",
+            "Önceki periyot H,L,C (Woodie'de güncel O) ile: Traditional P=(H+L+C)/3, R1=2P-L, S1=2P-H, R2=P+(H-L), S2=P-(H-L); Fibonacci P aynı, R/S = P ± 0.382/0.618/1.0*(H-L); Woodie P=(H+L+2*O)/4; Classic P aynı, R/S = P ± 1x..3x(H-L); DM: X önceki mumun yönüne göre, P=X/4; Camarilla R/S = C ± (H-L)*1.1/12, /6, /4, /2 (sayfa özeti + standart formüller) | Varsayilan: Tip: sayfada varsayılan yok (6 seçenek); Number of Pivots Back 15; Use Daily-based Values açık; Auto TF: <=15dk->1G, <1G->1H, >=1G->1A",
+            "TV-yardim"
+          ],
+          [
+            "Pivot Seviyeleri Yüksek/Düşük ★",
+            "Belirli bar sayısındaki yerel tepe ve dipleri pivot olarak işaretleyip potansiyel dönüş noktalarını belirler.",
+            "Pivot High: sol ve sağındaki N barın high'ı daha düşük olan bar; Pivot Low: sol ve sağındaki N barın low'u daha yüksek olan bar | Varsayilan: sayfada belirtilmemiş (genel: sol 10, sağ 10)",
+            "TV-yardim"
+          ],
+          [
+            "Tipik Fiyat",
+            "Yüksek, düşük ve kapanış fiyatlarının ortalamasını alır; ağırlıklı ortalama mantığıyla çalışarak mumun denge noktasını bulur.",
+            "Tipik Fiyat = (H + L + C) / 3 (hlc3).",
+            "genel"
+          ],
+          [
+            "Zaman Ağırlıklı Ortalama Fiyat (TWAP) ★",
+            "Fiyatları eşit zaman ağırlığıyla ortalamalayıp pozisyon yönetimi için referans ortalama seviye sunar.",
+            "Sayfada hesaplama bölümü yok. Genel tanım: TWAP = anchor periyodu içinde bar kaynaklarının hacimsiz aritmetik ortalaması (anchor başında sıfırlanır). | Varsayilan: kaynak ohlc4, offset 0; anchor periyodu sayfada belirtilmemiş",
+            "TV-yardim*"
+          ]
+        ]
+      },
+      {
+        "name": "İstatistik, Korelasyon & Regresyon",
+        "items": [
+          [
+            "Doğrusal Regresyon Eğrisi",
+            "Fiyatı istatistiksel olarak en iyi temsil eden düz çizgiyi çizer; sahte hareketlerden arındırılmış net trend yönü gösterir.",
+            "Sayfada formül yok; genel: N barlık en küçük kareler regresyon doğrusu (orta çizgi) ± sapma*standart sapma kanalları | Varsayilan: girdiler: üst/alt sapma, say (count), kaynak; varsayılanlar metinde yok (genel: 2.0 / -2.0, 100, close) | Pine ta.linreg(src, N, 0): y = a + b*x, b = (N*Sum(xy) - Sum(x)Sum(y)) / (N*Sum(x^2) - Sum(x)^2); egri = her barin kendi N-bar regresyonunun son degeri.",
+            "TV-yardim*"
+          ],
+          [
+            "Doğrusal Regresyon Eğimi (Slope)",
+            "Doğrusal regresyonun eğimini ölçer; trendin yukarı mı aşağı mı döndüğünü veya gücünü kaybettiğini sayısal olarak ifade eder.",
+            "Slope b = (N*Sum(x*y) - Sum(x)*Sum(y)) / (N*Sum(x^2) - Sum(x)^2), x = bar indeksi, y = kaynak, N barlik pencere (TV uzunluk 14).",
+            "genel"
+          ],
+          [
+            "Doğrusal Regresyon Kanalı ★",
+            "Seçilen bar aralığının regresyon trendini ve sapma kanallarını çizerek trend eğimini ve kanal sınırlarını birlikte verir.",
+            "Sayfada formül yok; genel: N barlık en küçük kareler regresyon doğrusu (orta çizgi) ± sapma*standart sapma kanalları | Varsayilan: girdiler: üst/alt sapma, say (count), kaynak; varsayılanlar metinde yok (genel: 2.0 / -2.0, 100, close)",
+            "TV-yardim*"
+          ],
+          [
+            "Fark (Spread)",
+            "İki farklı fiyat, gösterge veya varlık arasındaki mesafeyi görselleştirir; arbitraj, parite veya yayılma (spread) stratejilerinde kullanılır.",
+            "Spread = Sembol1 - Sembol2 (veya iki serinin farki); TV 'Spread' yerlesigi.",
+            "genel"
+          ],
+          [
+            "Korelasyon - Log",
+            "İki varlık arasındaki ilişkiyi logaritmik ölçekte gösterir; portföy dağılımı yaparken birbirini ters etkileyen varlıkları bulma avantajı sağlar.",
+            "r = corr( ln(close1), ln(close2), N ) Pearson korelasyonu (TV 'Correlation - Log', N=20).",
+            "genel"
+          ],
+          [
+            "Korelasyon Katsayısı",
+            "İki varlığın hareketlerinin birbirine ne kadar benzediğini -1 ile +1 arasında sayısal olarak verir; hedge (korunma) veya eşleştirme stratejileri için şarttır.",
+            "Var = ort(x^2) - ort(x)^2; Cov = ort(x*y) - ort(x)*ort(y); CC = Cov / sqrt(Var1 * Var2) (yumuşatma yok, N periyot penceresi) | Varsayilan: Length 20, Source close, Symbol (2. enstrüman; varsayılan yok)",
+            "TV-yardim"
+          ],
+          [
+            "Ratio",
+            "Bir varlığın fiyatını diğerine böler; örneğin altın/gümüş oranı gibi, iki varlığın birbirine göre değerinin ne kadar ucuz/pahalı olduğunu gösterir.",
+            "Ratio = Sembol1 / Sembol2 (TV 'Ratio').",
+            "genel"
+          ],
+          [
+            "RCI Şeridi (RCI Ribbon) ★",
+            "Üç farklı periyodun sıra korelasyon endeksini bant halinde çizerek trend yönünün çoklu periyotta uyumunu gösterir.",
+            "3 RCI (kısa/orta/uzun uzunluk): fiyat rankı ile bar indeksi arasındaki korelasyon * 100 (rank 0..N-1, eşitlerde ortalama); -100..+100; yumuşatma yok. | Varsayilan: kaynak close; kısa/orta/uzun uzunluk sayfada belirtilmemiş (TV: 9/26/52)",
+            "TV-yardim"
+          ],
+          [
+            "Sıra Korelasyon Endeksi (RCI) ★",
+            "Fiyatın zaman sıralaması ile büyüklük sıralaması arasındaki korelasyonu osilatör olarak verip trend tutarlılığını ölçer.",
+            "Fiyatlar artan sıralanır (en düşük rank 0, en yüksek N-1; eşitlerde ortalama konum); RCI = 100 * korelasyon(fiyat rankı, bar indeksi) (Spearman tipi), aralık -100..+100. Opsiyonel yumuşatma: None/SMA/SMA+BB/EMA/SMMA(RMA)/WMA/VWMA. | Varsayilan: kaynak close; RCI uzunluğu sayfada belirtilmemiş (TV varsayılanı 9); yumuşatma tipi ve uzunluk sayfada yok | RCI = (1 - 6*Sum(d^2) / (N*(N^2-1))) * 100; d = zaman sirasi - fiyat sirasi farki (Spearman).",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Hacim Profili & Piyasa Profili",
+        "items": [
+          [
+            "Birim Profili Sabit Aralığı (VbP Fixed Range)",
+            "Belirli bir zaman aralığında hangi fiyat seviyelerinde en çok işlem yapıldığını göstererek güçlü destek/direnç bölgelerini tespit eder.",
+            "Secilen bar araligi fiyat eksenine 'Row size' satira bolunur; her satira dusen (alt zaman dilimi) hacim toplanir; POC = en yuksek hacimli satir; Value Area = toplam hacmin %70'ini kapsayan satirlar (TV: Row Size 24, VA %70).",
+            "genel"
+          ],
+          [
+            "Hacim Profili Görünür Aralık (VPVR)",
+            "Ekranınızda gördüğünüz zaman diliminde en çok hangi fiyatlarda işlem yapıldığını yatay bir histogramla gösterir; görünmez ama çok güçlü destek/direnç duvarlarını ortaya çıkarır.",
+            "Ekranda gorunen barlar icin ayni hesap: fiyat satirlari x hacim; POC, VAH/VAL (%70) (TV 'Visible Range Volume Profile', Row Size 24).",
+            "genel"
+          ],
+          [
+            "Otomatik Sabitlenmiş Hacim Profili (AAVP) ★",
+            "Önemli fiyat/hacim noktalarını otomatik bulup hacim profilini ilgili aralığa sabitleyerek elle ayar yapma ihtiyacını kaldırır.",
+            "Anchor otomatik secilir (pivot/swing/oturum); anchor'dan itibaren fiyat satiri x hacim, POC ve %70 deger alani (TV 'Auto Anchored Volume Profile').",
+            "genel"
+          ],
+          [
+            "Periyodik Hacim Profili (PVP) ★",
+            "Hacmi belirli periyotlara bölüp her periyot için ayrı hacim profili (POC ve değer alanı) üretir.",
+            "Her periyot (gun/hafta/ay) icin ayri profil: satir hacimleri, POC, VAH/VAL (%70) (TV 'Periodic Volume Profile').",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "Sinyal, Stop & Risk Araçları",
+        "items": [
+          [
+            "Avize Çıkışı (Chandelier Exit) ★",
+            "ATR tabanlı, tepe/dip seviyesinden sarkan trailing stop ile kârı koruyup çıkış noktalarını belirler (Pine/topluluk sürümü de yaygındır).",
+            "Long Exit = HH(22) - ATR(22)*3; Short Exit = LL(22) + ATR(22)*3 (TV yardim; TV kodu stoplari trend surerken geri cekmez: long stop = max(ls, ls[1]) eger C1 > ls[1]).",
+            "TV-yardim"
+          ],
+          [
+            "Chande Kroll Durdurması",
+            "Trend piyasalarında yanlış sinyalleri minimize ederek, pozisyonunuz için en ideal ve güvenli Stop-Loss (zarar kes) seviyelerini belirler.",
+            "Sayfa formül vermez: stop, son n barın high/low değerine ATR ile orantılı fark uygulanarak hesaplanır. Genel (Pine): FirstHighStop = Highest(High,p) - x*ATR(p); FirstLowStop = Lowest(Low,p) + x*ATR(p); StopShort = Highest(FirstHighStop,q); StopLong = Lowest(FirstLowStop,q) | Varsayilan: sayfada yok (TV standardı: ATR Length p=10, ATR Mult x=1, Stop Length q=9)",
+            "TV-yardim*"
+          ],
+          [
+            "Çoğunluk Kuralı",
+            "Çeşitli osilatörlerin (RSI, Stokastik, CCI vb.) sinyallerini birleştirir; göstergelerin çoğunluğu Al diyorsa al, Sat diyorsa sat sinyali vererek hata payını düşürür.",
+            "Majority Rule: son N barda yukari kapanis (C > C1) sayisi yuzdesi; %50 ustu alici cogunlugu (TV 'Majority Rule', N=20).",
+            "genel"
+          ],
+          [
+            "HO Cross",
+            "İki farklı periyotlu hareketli ortalamanın kesişimini gösterir; altın kesişim (al) ve ölü kesişim (sat) sinyallerini görsel olarak kolaylaştırır.",
+            "Sayfada formül yok; iki hareketli ortalama (MA9 ve MA21) çizilir ve kesişim noktaları işaretlenir | Varsayilan: MA9 ve MA21 (kısa/uzun uzunluk)",
+            "TV-yardim*"
+          ],
+          [
+            "HO ve ÜHO Kesişmesi",
+            "Farklı tepki sürelerine sahip iki ortalamanın kesişimi ile, trendin başlangıcını ve sonunu daha az gecikmeli yakalamanızı sağlar.",
+            "TV 'MovingAvg2Line Cross': SMA(close, 9) ile EMA(close, 21?) kesisimi; sayfa varsayilani: iki cizgi, kisa 9 / uzun 21 (yardim sayfasinda formul yok).",
+            "TV-yardim*"
+          ],
+          [
+            "Parabolik SAR",
+            "Noktalarla trend yönünü gösterir ve noktalar fiyatın üstüne/altına geçtiğinde trailing stop (kayıt izleme) seviyesini adım adım çekerek avantaj sağlar.",
+            "SAR = SAR[1] + AF[1]*(EP[1] - SAR[1]); EP: uzun için dönem en yüksek, kısa için en düşük; yeni ekstremde AF += Increment (Max'a kadar); uptrendde SAR önceki iki dipten yüksek olamaz, downtrendde önceki iki tepeden düşük olamaz; fiyat SAR'ı delerse trend döner ve SAR = önceki EP | Varsayilan: Start 0.02, Increment 0.02, Max 0.20",
+            "TV-yardim"
+          ],
+          [
+            "RSI Uyumsuzluğu ★",
+            "Fiyat ile RSI arasındaki boğa/ayı uyumsuzluklarını otomatik tespit ederek dönüş sinyali üretir.",
+            "Sayfada hesaplama yok, sadece kavramsal: pozitif uyumsuzluk = fiyat düşerken RSI yükselir, negatif uyumsuzluk = fiyat yükselirken RSI düşer. Genel tanım: RSI(14, RMA) ve fiyat pivotları karşılaştırılır. | Varsayilan: sayfada verilmemiş (RSI uzunluk 14, kaynak close)",
+            "TV-yardim*"
+          ],
+          [
+            "SuperTrend",
+            "ATR tabanlı çalışır; fiyatın üstünde ise kırmızı, altında ise yeşil çizgi çizerek trend yönünü ve trailing stop seviyesini net gösterir.",
+            "hl2 +- carpan*ATR(n): ust/alt temel bant; ust = ust < ust[1] veya C1 > ust[1] ? ust : ust[1]; alt = alt > alt[1] veya C1 < alt[1] ? alt : alt[1]; yon: C > ust ise yukari, C < alt ise asagi; Supertrend = yukari ise alt, asagi ise ust (TV yardim; varsayilan ATR 10, carpan 3).",
+            "TV-yardim"
+          ],
+          [
+            "Teknik Derecelendirme ★",
+            "Çok sayıda popüler göstergeden gelen sinyalleri tek normalize skora (al/sat/tut) indirgeyerek karar süresini kısaltır.",
+            "Her bileşen -1 (sat), 0 (nötr), +1 (al) puan alır. MA derecesi = 15 MA ortalaması (SMA ve EMA 10/20/30/50/100/200, HullMA 9, VWMA 20, Ichimoku 9/26/52); Osilatör derecesi = 11 osilatör ortalaması (RSI 14, Stoch 14/3/3, CCI 20, ADX 14/14, AO, Momentum 10, MACD 12/26/9, StochRSI 3/3/14/14, W%R 14, Bull Bear Power 13, UO 7/14/28); Genel = (MA + Osilatör)/2. Eşikler: <-0.5 Strong Sell, -0.5..-0.1 Sell, -0.1..0.1 Nötr, 0.1..0.5 Buy, >0.5 Strong Buy. | Varsayilan: bileşen parametreleri yukarıdaki gibi; MA kuralı: MA < fiyat al, MA > fiyat sat; RSI < 30 ve yükseliyorsa al, > 70 ve düşüyorsa sat",
+            "TV-yardim"
+          ],
+          [
+            "ÜHO Kesişme (EMA Cross)",
+            "Üstel hareketli ortalamaların kesişimini gösterir; normal kesişmelere göre daha hızlı tepki verdiği için trend değişimlerini daha erken yakalamanızı sağlar.",
+            "EMA(close, N1) ile EMA(close, N2) kesisimi (TV 'EMA Cross', 9/26?); kesisim noktalari isaretlenir.",
+            "genel"
+          ],
+          [
+            "Ülser Endeksi ★",
+            "Sadece aşağı yönlü düşüş derinliğini ve süresini ölçerek drawdown riskini değerlendirir.",
+            "HP = highest(price, n); DD = (price - HP)/HP * 100; MeanSqDD = sum(DD*DD, n)/n; Ulcer Index = sqrt(MeanSqDD). Yumuşatma yok (düz ortalama). | Varsayilan: uzunluk sayfada belirtilmemiş (TV: 14), kaynak close",
+            "TV-yardim"
+          ],
+          [
+            "Volatilite Stopu (Volatility Stop) ★",
+            "ATR tabanlı dinamik stop çizgisiyle trend yönünde etkin zarar-kes noktası üretir.",
+            "Uzun stop = fiyat çıpası - (standart sapma * güvenlik çarpanı); sayfa açık denklem vermez, kısa tarafı tarif etmez (kısa için tersi: çıpa + ...). Çıpa: kapanış/yüksek/düşük/MA; örnek: std 7 * çarpan 3 = 21. | Varsayilan: çarpan örneği 3; sayfada varsayılan yok (TV: ATR(20) tabanlı, çarpan 2)",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Piyasa Genişliği & Karşılaştırma",
+        "items": [
+          [
+            "İşlem Seansları (Trading Sessions) ★",
+            "Seçilen seansları renkli kutular (yüksek/düşük/açılış) olarak işaretleyip seans içi volatiliteyi ve seviyeleri görselleştirir.",
+            "Sayfada hesaplama yok; seans zaman aralıklarını (varsayılan Tokyo, Londra, New York) çizen bir gösterge. Seans açılış/kapanış çizgileri, tick aralığı ve seans ortalama fiyatı opsiyonel gösterilir. | Varsayilan: 3 seans (Asya/Avrupa/Kuzey Amerika); sayfada seans saatleri verilmemiş",
+            "TV-yardim*"
+          ],
+          [
+            "Mevsimsellik (Seasonality) ★",
+            "Sembolün belirli dönemlerdeki (ay/hafta/gün) tarihsel performans eğilimini grafiksel olarak gösterir.",
+            "Her yil icin ay/hafta/gun getirileri tablolanir; ortalama/medyan getiri ve pozitif yil yuzdesi (TV 'Seasonality'; hesap sayfada yok).",
+            "TV-yardim*"
+          ],
+          [
+            "Performans (Performance) ★",
+            "Tek veya çoklu sembolün seçilen dönemlerdeki yüzde değişimini ısı haritası biçiminde karşılaştırır.",
+            "Secili donemlerde (1H, 1G, 1A, 3A, 6A, YTD, 1Y...) yuzde getiri: (C_simdi / C_donem_basi - 1) * 100 (TV 'Performance').",
+            "TV-yardim*"
+          ],
+          [
+            "Sembol Karşılaştırma (Compare) ★",
+            "Grafiğe ek semboller bindirip göreli performansı tek panelde kıyaslamayı sağlar.",
+            "Ikinci sembol ayni grafige eklenir; yuzde modunda her iki seri ortak baslangic noktasina gore % normalize edilir.",
+            "genel"
+          ],
+          [
+            "Yükselen/Düşen Oranı (A/D Ratio) ★",
+            "Yükselişle kapanan barların düşüşle kapananlara oranını hesaplayarak piyasa genişliğini ölçer.",
+            "AD Ratio = yükselen hisse sayısı / düşen hisse sayısı (yumuşatma yok) | Varsayilan: girdi yok",
+            "TV-yardim"
+          ],
+          [
+            "Yükseliş/Düşüş",
+            "Piyasadaki toplam yükselen ve düşen varlık sayısını karşılaştırarak; genel piyasa duygusunu (sentiment) ölçer.",
+            "Net = yükselen hisse sayısı - düşen hisse sayısı; AD Line = AD Line[1] + Net (günlük kümülatif toplam, yumuşatma yok) | Varsayilan: girdi yok",
+            "TV-yardim"
+          ]
+        ]
+      },
+      {
+        "name": "Otomatik Çizim & Seviye Araçları",
+        "items": [
+          [
+            "Otomatik Ana Seviyeler (Auto Key Levels) ★",
+            "Piyasanın en anlamlı fiyat seviyelerini (hacim/fiyat etkileşimine göre) otomatik hesaplayıp grafiğe yerleştirir.",
+            "Formül yok. Sayfa: Periodic Volume Profile aracı ile aynı algoritma (varsayılan parametreler), hesap otomatik seçilen alt zaman diliminde yapılır; Gün/Hafta/Ay ve önceki dönemler için POC, VAL, VAH ve OHLC seviyeleri | Varsayilan: Dönem seçimi (Current: Day/Week/Month, Previous, Custom anchor), seviye onay kutuları POC/VAL/VAH/OHLC; sayısal varsayılan yok",
+            "TV-yardim*"
+          ],
+          [
+            "Otomatik Çatal (Auto Pitchfork) ★",
+            "Pivot noktalarından otomatik çatal çizerek olası destek/direnç ve gelecek fiyat kanalını projeksiyonlar.",
+            "Formül yok. Geçmiş fiyat hareketine göre pivotlardan otomatik Pitchfork çizer; Type (Original, Schiff, Modified Schiff, Inside) medyan çizgi eğimini değiştirir | Varsayilan: Depth (min. bar sayısı), Type, Background Transparency, Extend Left, Fib seviyeleri; varsayılanlar sayfada yok",
+            "TV-yardim*"
+          ],
+          [
+            "Otomatik Fibonacci Düzeltmesi ★",
+            "Son dalga hareketini otomatik saptayıp Fibonacci düzeltme seviyelerini grafiğe uygular (Pine/Kıvanç sürümü de yaygındır).",
+            "Sayfada hesap bölümü yok. Genel: zigzag pivotlarından (Depth/Deviation ile belirlenen) son swing high-low arasına Fibonacci oranları (0.236, 0.382, 0.5, 0.618, 0.786) çizilir | Varsayilan: Deviation, Depth (varsayılan sayfada yok), Extend lines, Reverse, Prices, Levels, Levels format",
+            "TV-yardim*"
+          ],
+          [
+            "Otomatik Fibonacci Uzantısı ★",
+            "Düzeltme sonrası hedef fiyat seviyelerini (uzantı/extension) otomatik hesaplayıp potansiyel dönüş bölgelerini gösterir.",
+            "Zigzag pivotlarindan son uc nokta (A-B-C) alinir; uzanti seviyeleri = C + k*(B-A), k = 0.618, 1, 1.618, 2.618... (TV 'Auto Fib Extension'; sayfada hesap yok).",
+            "TV-yardim*"
+          ],
+          [
+            "Otomatik Trend Çizgileri ★",
+            "Son binlerce barı tarayıp majör/minör destek-direnç trend çizgilerini kendiliğinden çizer.",
+            "Formül yok. Zigzag pivotları üzerine çizgi kurar; Line Size (Small/Large/Both) hangi zigzaglar üzerinde çizileceğini belirler; çizgi kırılımı için 'Bars to Breakout' bar gerekir | Varsayilan: Bars to Breakout 3; Line Size (Small/Large/Both); Show Pivots",
+            "TV-yardim*"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "smc",
+    "label": "SMC & ICT",
+    "badge": "PRO",
+    "color": "name-premium",
+    "note": "Akıllı Para (SMC) ve ICT konseptleri, order flow araçları ile formasyon/dalga tanıma göstergeleri. Adının sonunda ★ olanlar son araştırmayla eklenenlerdir. Not: Bu sekmedeki araçların tamamı TradingView yerleşiği değil, topluluk/Pine scriptleridir (istisna: TD Sequential ve yakın dönem yerleşikleri).",
+    "groups": [
+      {
+        "name": "SMC — Yapı, Bölgeler & Emir Akışı",
+        "items": [
+          [
+            "Balanced Price Range (BPR) ★",
+            "Zıt yönlü iki FVG'nin örtüşmesinden doğan denge bölgesini çizerek yüksek olasılıklı red/dönüş alanı verir.",
+            "Zit yonlu iki FVG'nin ortusen bolgesi: BPR = [max(alt FVG tabanlari), min(ust FVG tavanlari)]; ortusme yoksa BPR yok.",
+            "genel"
+          ],
+          [
+            "Breaker Block ★",
+            "Başarısız bir order block'un kırılıp karşı yönde destek/direnç olarak dönmesini işaretleyerek likidite alınmış flip bölgesi verir.",
+            "Yapi kirilimi (BOS) sonrasi gecersiz kalan Order Block: eski OB bolgesi, fiyat icinden gecip kapandiktan sonra ters yonde destek/direnc olarak isaretlenir.",
+            "genel"
+          ],
+          [
+            "CISD (Teslim Durumu Değişimi) ★",
+            "Mum serisinin kapanış bazlı teslim yönünün değiştiği noktayı, BOS/CHoCH'tan bağımsız erken dönüş sinyali olarak bulur.",
+            "Change in State of Delivery: son ardisik ayni renkli mum serisinin acilisi; fiyat bu acilisin ustunde/altinda kapanirsa teslim durumu degisti sayilir.",
+            "genel"
+          ],
+          [
+            "CRT / Turtle Soup ★",
+            "Önceki mum aralığının likiditesini süpüren sahte kırılımı tuzak olarak tespit edip dönüş yakalatır.",
+            "Ust zaman dilimi mumunun high/low'u gecilip (sweep) geri icine kapanis: Turtle Soup = 20 bar dusugu/yuksegi kirilip ayni bar/sonraki bar icinde geri donus; giris geri donus mumu.",
+            "genel"
+          ],
+          [
+            "Dealing Range + IRL/ERL ★",
+            "Menzil sınırları ile iç/dış likiditenin (IRL/ERL) nerede aranacağını haritalayarak hedef seviye önceliği verir.",
+            "Dealing range = son swing high - swing low; ERL (dis likidite) = araligin uclari; IRL (ic likidite) = aralik icindeki FVG/OB; premium = ust %50, discount = alt %50.",
+            "genel"
+          ],
+          [
+            "Displacement (Yer Değiştirme - ICT)",
+            "Teknik olarak göstergeden ziyade görsel bir filtreleme ayarıdır. Fiyatın aniden yön değiştirip dümdüz gittiği (karışık olmayan) sert hareketleri kutu içine alır. Bu kutuların bittiği yer FVG veya Order Block aramak için ana hedef haline gelir.",
+            "Govde buyuklugu > k * ATR(14) (yaygin k=1.5-2) ve ardinda FVG birakan mum; displacement = |C - O| / ATR >= esik.",
+            "genel"
+          ],
+          [
+            "Equal Highs / Equal Lows",
+            "Fiyatın aynı seviyeye iki kez gelip gelemediği noktaları çizer. Bu bölgeler üst üste binen stop-loss'ları tetiklemek için kurulmuş tuzaklardır. Üstesinden gelinen eşit zirveler çok güçlü bir yükseliş sinyalidir.",
+            "Iki pivot high (veya low) farki <= tolerans (tipik 0.1*ATR veya tick carpani) ise EQH/EQL; likidite havuzu olarak cizilir.",
+            "genel"
+          ],
+          [
+            "Fair Value Gap (FVG)",
+            "Fiyatın çok hızlı hareket etmesi nedeniyle grafikte oluşan 3 mumluk boşluklardır. Piyasa doğası gereği bu boşlukları daha sonra doldurmaya meyillidir. İçeride kalan yüksek ihtimalli alım/satım bölgelerini gösterir.",
+            "Uc mum: yukari FVG = low[0] > high[2] (bolge: high[2]..low[0]); asagi FVG = high[0] < low[2]; fiyat bolgeyi doldurunca (mitigation) silinir.",
+            "genel"
+          ],
+          [
+            "Hacimli Yapı Kırılımı (BOS + Hacim)",
+            "Sadece fiyatın yeni bir yüksek/düşük yapmasını değil, bunun yapılırken hacmin de önceki yapıyı aşmasını şart koşar. Hacimsiz yapılan kırılımların büyük kısmının sahte olduğunu gösterir.",
+            "BOS: kapanis son swing high ustunde / swing low altinda; filtre: kirilim mumu hacmi > SMA(hacim, 20) * k (k ~1.5).",
+            "genel"
+          ],
+          [
+            "Inversion FVG (Ters FVG) ★",
+            "FVG'nin kapanışla kırılıp geçersiz olmasını yeni bir dönüş bölgesine (ters FVG) dönüştürerek normal FVG'den farklı sinyal üretir.",
+            "Dolan (mitigated) FVG'nin ters yonde destek/direnc olarak kullanimi: yukari FVG asagi kapanisla gecilirse artik direnc (iFVG).",
+            "genel"
+          ],
+          [
+            "Inversion Order Block (iOB) ★",
+            "Kırılan bir order block ile pencere içinde oluşan karşıt order block'u eşleştirerek ikili flip bölgesi kurar.",
+            "Fiyat icinden gecen (basarisiz) Order Block'un ters rol almasi; OB bolgesinin ters yonde yeniden test edilmesi.",
+            "genel"
+          ],
+          [
+            "IPDA Veri Aralıkları ★",
+            "20/40/60 günlük geriye bakış pencerelerini ve bunların prim/denge/iskonto dilimlerini çizerek kurumsal referans seviye üretir.",
+            "Son 20 / 40 / 60 islem gununun high-low araliklari (ICT IPDA look-back); bu araliklarin uclari ve FVG/OB'leri referans seviye.",
+            "genel"
+          ],
+          [
+            "Liquidation Level (Likidite Seviyesi)",
+            "Pivot noktalarının veya Swing High/Low'ların hemen ötesindeki küçük bölgeleri işaretler. Buralar yatırımcıların stop-loss'larının toplandığı yerlerdir. Fiyat bu seviyelere süpürme (Liquidity Sweep) yapmadan büyük bir trend genellikle başlamaz.",
+            "Kaldirac seviyeleri icin tasfiye fiyati: long = giris * (1 - 1/kaldirac + bakim marji); short = giris * (1 + 1/kaldirac - bakim marji); hacim agirlikli kumeler isi haritasi.",
+            "genel"
+          ],
+          [
+            "Liquidity Void ★",
+            "Konsolidasyondan tek yönlü kopuşta oluşan büyük gövdeli boşluğu tespit ederek FVG'den büyük ölçekli hedef seviye sağlar.",
+            "Tek yonlu hizli hareketle olusan, az islem gormus fiyat bolgesi: ardisik mumlarin govdeleri ortusmez ve hacim profili bos; FVG'nin buyuk olcekli hali.",
+            "genel"
+          ],
+          [
+            "Market Maker Modeli (MMXM) ★",
+            "Akıllı paranın alım-satım modelini (SMR, likidite, hedefler) aşama aşama işaretleyerek tam kurulum şablonu verir.",
+            "Buy/Sell model: birikim (konsolidasyon) -> manipulasyon (likidite alimi) -> dagitim; yapi: orijinal konsolidasyon, smart money reversal, dusuk/yuksek riskli alim/satim bolgeleri.",
+            "genel"
+          ],
+          [
+            "Market Structure (BOS/CHoCH)",
+            "Fiyatın yaptığı en son yüksek/düşük noktaları kırıp kırmadığını görsel olarak renklendirir. Higher High veya Lower Low yapısını kodlamadan anlayarak trendin gerçekten bittiği mi yoksa devam ettiği mi noktasında şüpheye yer bırakmaz.",
+            "Swing high/low (pivot N sol/sag); BOS = trend yonunde son swing kirilimi; CHoCH = trende ters ilk swing kirilimi (kapanis esasli veya fitil esasli).",
+            "genel"
+          ],
+          [
+            "Mitigation Block",
+            "Order Block'a çok benzer ancak daha günceldir. Fiyat bir order block'u test ettikten sonra hızla kaçamazsa, orada hala sorun olduğunu ve o bölgenin tekrar test edilmesi gerektiğini gösterir. Son dönem ICT stratejilerinin kalbidir.",
+            "Swing'i alamayan (daha dusuk tepe / daha yuksek dip yapan) ve ardindan yapi kiran mumun govdesi; fiyat geri donerken bolge destek/direnc.",
+            "genel"
+          ],
+          [
+            "Order Block (Sipariş Bloğu)",
+            "Akıllı para kurumsal alım/satım yapmadan önce fiyatı ters yönde kandırıp sonra yön değiştirdiği son mumu işaretler. Bu mumun altı/üstü artık kurumsal stop-loss seviyesi olduğu için fiyat oraya değdiğinde sert tepki verir.",
+            "Yukari OB: guclu yukari hareketten (BOS/displacement) onceki son asagi mum (O-C veya H-L bolgesi); asagi OB simetrik; mitigation'da gecersiz.",
+            "genel"
+          ],
+          [
+            "OTE (Optimal Giriş Bölgesi) ★",
+            "Geri çekilmenin 0.62-0.79 Fibonacci dilimini ve istatistiksel giriş derinliğini çıkararak giriş optimizasyonu sağlar.",
+            "Son itki bacaginin Fibonacci 0.62-0.79 geri cekilme bolgesi (0.705 'sweet spot').",
+            "genel"
+          ],
+          [
+            "Premium / Discount Array ★",
+            "Fiyat menzilini prim/denge/iskonto dilimlerine ayırarak yön bazlı alım-satım tarafını nesnel hale getirir.",
+            "Dealing range'in %50 (equilibrium) ustu premium (satis araylari: OB, FVG, breaker), alti discount (alim araylari).",
+            "genel"
+          ],
+          [
+            "Propulsion Block ★",
+            "Fiyatın önceki order block'a geri dönüp oradan itildiği mumu işaretleyerek, devam/tepki bölgesini ayrı bir blok olarak verir.",
+            "Order Block'un icine geri cekilip yeniden ileri atan mum; bu mumun govdesi ikinci giris bolgesi.",
+            "genel"
+          ],
+          [
+            "Rejection Block ★",
+            "Uzun fitille likiditeyi süpürüp reddeden swing bölgesini 25/50/75 ve consequent encroachment seviyeleriyle işaretleyerek giriş bölgesi verir.",
+            "Swing high/low'daki uzun fitil (fitil > govde * k); govde ustu/alti ile fitil ucu arasi bolge.",
+            "genel"
+          ],
+          [
+            "Vacuum Block ★",
+            "Haber veya açılış kaynaklı ani yeniden fiyatlamanın (sudden repricing) bıraktığı boşluğu işaretler.",
+            "Acilis bosluklari (gap) ve ardisik mum araliklarindaki islem gormemis bolge; doldurulana kadar ceken bolge.",
+            "genel"
+          ],
+          [
+            "Volume Imbalance (VI) ★",
+            "Gövdeleri temas etmeyip fitilleri örtüşen ardışık mumların ince dengesizliğini bulup yeniden dengelenme hedefi verir.",
+            "Iki ardisik mumun govdeleri arasinda bosluk (C1 ile O arasi), fitiller ortusse bile; bolge: min(C1,O)..max(C1,O).",
+            "genel"
+          ],
+          [
+            "Wick Rejection / Z-Score",
+            "Uzun fitillerin (wick) istatistiksel olarak normalden ne kadar sapma gösterdiğini hesaplar. Sadece istatistiksel olarak anlamsız uzun fitilleri işaretleyerek, kurumsal red (rejection) yaptığı yerlerde yüksek ihtimalli işlem girişi sağlar.",
+            "Fitil orani = ust/alt fitil / toplam aralik; Z = (close - SMA(close,N)) / stdev(close,N); |Z| > 2 ve fitil > %60 reddetme.",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "ICT — Zaman, Likidite & Seans",
+        "items": [
+          [
+            "Hafta/Gün Açılış Boşluğu (NWOG/NDOG) ★",
+            "Cuma kapanışı-Pazar açılışı ve 17:00-18:00 NY aralığı gibi işlemsiz bantları likidite boşluğu olarak işaretleyip üst zaman dilimi hedefi verir.",
+            "NDOG = gun kapanisi (16:59 NY) ile sonraki acilis (18:00 NY) arasi; NWOG = Cuma kapanisi ile Pazar acilisi arasi; bosluk ve orta noktasi (CE) cizilir.",
+            "genel"
+          ],
+          [
+            "ICT Makro Zamanları ★",
+            "Gün içindeki 20-40 dakikalık algoritmik makro pencerelerini işaretleyerek intraday zamanlama hassasiyeti kazandırır.",
+            "Saat araliklari (NY): 09:50-10:10, 10:50-11:10, 11:50-12:10, 13:10-13:40, 15:15-15:45; bu pencerelerde likidite avi beklenir.",
+            "genel"
+          ],
+          [
+            "İlk Denge Kırılımı (Initial Balance) ★",
+            "İlk saat aralığının dışına taşan kırılımları sinyal ve hedefle birlikte gösterir.",
+            "IB = seans ilk 60 dk (tipik 09:30-10:30 NY) high-low; IB high/low kirilimi ve IB x 1, 1.5, 2 uzantilari.",
+            "genel"
+          ],
+          [
+            "Judas Salınımı (Judas Swing) ★",
+            "Oturum açılışındaki sahte/manipülasyon bacağını tespit ederek gerçek yön öncesi tuzak uyarısı verir.",
+            "Seans acilisindan sonra gunluk acilisin ters tarafina sahte hareket (likidite alimi) ardindan gercek yon; acilis fiyati referans.",
+            "genel"
+          ],
+          [
+            "Killzones (Zaman Dilimleri) ★",
+            "Asya/Londra/New York yüksek-manipülasyon saat pencerelerini ve seviyelerini çizerek zaman bazlı işlem filtresi sağlar.",
+            "Asya 20:00-00:00, Londra 02:00-05:00, NY AM 07:00-10:00, NY PM 13:30-16:00 (NY saati); her kutu high/low'u cizilir.",
+            "genel"
+          ],
+          [
+            "Likidite Isı Haritası ★",
+            "Fiyat seviyelerindeki likidite yoğunluğunu ısı haritası olarak gösterip manyetik bölgeleri işaretler.",
+            "Pivot high/low seviyeleri etrafinda tahmini stop/tasfiye yogunlugu (hacim ve kaldirac agirlikli); yogunluk renk skalasi.",
+            "genel"
+          ],
+          [
+            "Liquidity Sweeps (Likidite Süpürmeleri) ★",
+            "Swing yüksek/düşüklerin süpürülmesini tespit ederek stop-avı sonrası dönüş noktalarını işaretler.",
+            "Fitil swing high/low'u gecer ama kapanis gecmez: high > pivotHigh ve close < pivotHigh (sweep); mum sonrasi ters yon beklenir.",
+            "genel"
+          ],
+          [
+            "Opening Range Gap (ORG) ★",
+            "Önceki settlement kapanışı ile günün açılışı arasındaki işlemsiz boşluğu çizip yeniden dengelenme hedefi üretir.",
+            "Onceki seans kapanisi ile yeni seans acilisi arasindaki bosluk; bosluk %25/%50/%75 seviyeleri (CE) cizilir.",
+            "genel"
+          ],
+          [
+            "Opening Range Kırılımları (ORB) ★",
+            "Seans açılış aralığını çizip kırılım, retest ve otomatik hedef seviyeleri üretir.",
+            "Acilistan sonraki ilk N dk (5/15/30) high-low; kirilim: close > OR high (long) / close < OR low (short); hedef OR yuksekligi carpani.",
+            "genel"
+          ],
+          [
+            "Önceki Gün/Hafta Yüksek-Düşük Seviyeleri ★",
+            "Önceki seans, gün ve haftanın yüksek-düşük seviyelerini ve ayırıcılarını otomatik çizer.",
+            "PDH/PDL = onceki gun high/low; PWH/PWL = onceki hafta; ayrica onceki kapanis; ust zaman dilimi security() ile alinir.",
+            "genel"
+          ],
+          [
+            "Power of Three (AMD) ★",
+            "Günü toplama-manipülasyon-dağıtım döngüsü olarak oturumlar arası işaretleyip günlük bias ve faz konumu verir.",
+            "Accumulation-Manipulation-Distribution: mum acilisi (A), acilisin ters tarafina fitil (M), gercek yonde govde (D); gunluk/haftalik mum uzerinde okunur.",
+            "genel"
+          ],
+          [
+            "Silver Bullet (Gümüş Kurşun) ★",
+            "NY 10-11, NY 14-15 ve LDN 03-04 pencerelerinde FVG tabanlı yüksek olasılıklı kurulumları zaman ve seviye birleştirerek yakalatır.",
+            "NY 10:00-11:00 (ayrica 03:00-04:00, 14:00-15:00) penceresinde olusan FVG'ye giris; hedef yakin likidite.",
+            "genel"
+          ],
+          [
+            "SMT Uyumsuzluğu ★",
+            "Korelasyonlu iki enstrümandan birinin yeni tepe/dip yapıp diğerinin yapmaması durumunu dönüş sinyali olarak gösterir.",
+            "Iliskili iki sembolde (orn. ES/NQ, EURUSD/DXY) biri yeni high/low yaparken digeri yapmazsa SMT; pivotlar karsilastirilir.",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "Güncel Veri & Order Flow Araçları",
+        "items": [
+          [
+            "Anchored VWAP (Zamanlanmış HAOF)",
+            "Normal HAOF gün başına sıfırlanır. Bu gösterge ise önemli bir dip/tepe noktasına veya haber saatine göre çizilmeye başlar. O andan itibaren piyasanın adil değeri nerede görsel olarak takip etmeye yarar.",
+            "AVWAP = Sum(hlc3*hacim, anchor'dan itibaren) / Sum(hacim); anchor kullanici secimli bar/tarih; bantlar +-k*stdev.",
+            "genel"
+          ],
+          [
+            "ATR Trailing Stop (Geri İzlemeli Durak)",
+            "Normal Parabolik SAR'dan daha akıllıdır. Dalgalanma (volatilite) arttıkça stop-loss'unuzun mesafesini otomatik olarak genişletir, daraldıkça sıkıştırır. Trend piyasalarında karı koşturmak için mükemmeldir.",
+            "Long stop = max(stop[1], close - k*ATR(n)); short stop = min(stop[1], close + k*ATR(n)); yon kapanis stop'u gecince degisir (k tipik 3, n 10-14).",
+            "genel"
+          ],
+          [
+            "CVD (Kümülatif Hacim Delta)",
+            "Sadece Hacim yetmez; alım yapanların hacmi mi yoksa satış yapanların hacmi mi ağır basıyor onu gösterir. Fiyat yükselirken CVD düşüyorsa tuzak bir yükseliş (trap) olduğunu önceden fark etmenizi sağlar. Sierra Chart'ta Cumulative Delta Bars olarak bilinir.",
+            "Alt zaman dilimi (intrabar) mumları: close>open ise hacim +, close<open ise -; open=close ise işaret önceki intrabar close'a göre (o da eşitse önceki işaret); delta toplamı her yeni anchor periyodunda 0'a sıfırlanır. Otomatik intrabar TF: saniye->1S, dakika/saat->1, günlük->5, diğer->60 | Varsayilan: Anchor period (sayısal varsayılan sayfada yok), Use custom timeframe kapalı, Timeframe",
+            "TV-yardim"
+          ],
+          [
+            "Donchian + Inside Bar Filter",
+            "Normal Donchian kanallarına İçeride Kalan Mum (Inside Bar) filtresi ekler. Sadece fiyat dar bir konsolidasyon yaşadıktan sonra kanalı kırarsa sinyal verir. Bu sayede sahte breakout'lar engellenmiş olur.",
+            "Donchian(20) ust/alt; inside bar = high < high[1] ve low > low[1]; sinyal: inside bar sonrasi kanal kirilimi.",
+            "genel"
+          ],
+          [
+            "Footprint Chart (Ayak İzi Grafiği)",
+            "Her bir mumun içindeki Açılış, Kapanış, Yüksek, Düşük seviyelerinde ayrı ayrı ne kadar alış ve ne kadar satış yapıldığını gösterir. Manipülasyonları ve asıl çıkış noktalarını mumun içine kadar inerek tespit etme avantajı sağlar.",
+            "Her fiyat seviyesinde bid x ask hacmi (alt zaman dilimi tick/1s verisi); delta = ask hacmi - bid hacmi; imbalance = oran >= 3:1.",
+            "genel"
+          ],
+          [
+            "Lorentzian Sınıflandırma (Makine Öğrenmesi) ★",
+            "Lorentzian mesafe ve kNN yöntemiyle fiyat uzayında makine öğrenmesi tabanlı al/sat sınıflandırması yapar; ML FSM ile aynı ailedendir.",
+            "jdehorty: ozellikler RSI(14), WT(10,11), CCI(20), ADX(20), RSI(9); k-NN (k=8) Lorentz mesafesi d = Sum(ln(1+|x_i - y_i|)); gecmis 2000 bar etiketi (4 bar sonra yukari/asagi); cogunluk oyu sinyal.",
+            "genel"
+          ],
+          [
+            "Machine Learning FSM (Makine Öğrenmesi Durum Modeli)",
+            "Sadece geçmiş verilere değil, verinin içindeki gizli kalıplara göre piyasanın şu an Trend, Dalgalı veya Volatil durumda olduğunu sınıflandırır. Klasik göstergelerin kaçırdığı sahte formasyonları engeller.",
+            "Sonlu durum makinesi: durumlar (trend yukari/asagi/yatay) gecisleri gosterge esikleriyle (orn. ADX, RSI) tetiklenir; gecis olasiliklari gecmis frekanstan.",
+            "genel"
+          ],
+          [
+            "Orderflow Imbalance (Sipariş Akışı Dengesizliği)",
+            "Bir mumun kapanışında alıcıların mı yoksa satıcıların mı piyasa üzerinde mutlak hakimiyet kurduğunu (örneğin %70 alış %30 satış) renkli noktalarla gösterir. Girilen işlemin anlık olarak kurumsal tarafta desteklenip desteklenmediğini doğrular.",
+            "Seviye bazinda ask hacmi / bid hacmi (diagonal) >= 3; ardisik 3 seviye dengesizlik = yigilmis imbalance.",
+            "genel"
+          ],
+          [
+            "Session Volume Profile (Seans Hacim Profili)",
+            "Sadece Asya, Londra veya New York seanslarında oluşan hacimleri gösterir. Örneğin; Londra açılışında nerede hacim toplandıysa, NY seansında fiyatın o bölgeye geri dönme ihtimalini gösterir.",
+            "Her seans icin fiyat satiri x hacim; POC, VAH/VAL (%70), gelisen (developing) POC.",
+            "genel"
+          ],
+          [
+            "Supertrend Clustering (Kümelenme)",
+            "Birden fazla Supertrend çizgisini farklı periyotlarla aynı grafiğe koyarak bir bulut oluşturur. Sadece tüm bulut aynı renge döndüğünde trendin başladığını işaret ederek sahte sinyalleri sıfıra indirir.",
+            "LuxAlgo: carpan araligi (1..5 adim) icin Supertrend performanslari k-means (3 kume: iyi/orta/kotu) ile kumelenir; secilen kumenin ortalama carpaniyla Supertrend cizilir.",
+            "genel"
+          ],
+          [
+            "TD Sequential (Tom DeMark)",
+            "Matematiksel olarak mumları 1'den 9'a kadar sayar. Genellikle 9'a ulaştığında (Complete Count) piyasanın o yönde tükenişe uğradığını ve en az 1-4 mumluk bir geri dönüş (pullback) olacağını gösterir.",
+            "Setup: 9 ardisik kapanis 4 bar oncekinden dusuk (alim)/yuksek (satis); Countdown: 13 kapanis 2 bar onceki low/high'dan dusuk/yuksek; 9 ve 13 tukenis.",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "Formasyon & Dalga Analizi",
+        "items": [
+          [
+            "Çoklu Formasyon Tarayıcı (50+) ★",
+            "Omuz-baş-omuz, çift tepe/dip, üçgen, bayrak, kama ve fincan-kulp dahil 50+ formasyonu güven skoru ve hedef fiyatla çizer.",
+            "Pivot (zigzag) noktalarindan geometrik kurallar: tepe/dip esitligi toleransi, egim oranlari, boyun cizgisi; her formasyon icin kural seti.",
+            "genel"
+          ],
+          [
+            "Elliott Dalga Analizi ★",
+            "İmpuls/düzeltme dalga sayımını algoritmik olarak etiketleyip trend yapısı ve dalga hedefi sağlar.",
+            "Zigzag pivotlarindan 5-3 dalga sayimi; kurallar: dalga 2 dalga 1 baslangicini gecmez, dalga 3 en kisa olamaz, dalga 4 dalga 1 alanina girmez; Fibonacci oranlari.",
+            "genel"
+          ],
+          [
+            "Fincan-Kulp / V Formasyonu ★",
+            "Fincan-kulp ve V dönüş yapılarını otomatik tanıyarak hedef fiyat ve güven skoru verir.",
+            "Fincan: U seklinde dip (derinlik %12-33), kulp: sag kenarda kucuk geri cekilme (< fincan derinliginin 1/3); kirilim kulp yuksegi. V: keskin dip, simetrik toparlanma.",
+            "genel"
+          ],
+          [
+            "Harmonik Formasyonlar (XABCD) ★",
+            "Gartley, Bat, Butterfly, Crab, Deep Crab, Shark ve Cypher dahil harmonik formasyonları Fibonacci oran toleranslarıyla otomatik çizip D noktası dönüş bölgesi ve alarm üretir.",
+            "Gartley: B = 0.618 XA, D = 0.786 XA; Bat: B 0.382-0.5, D 0.886; Butterfly: B 0.786, D 1.27-1.618; Crab: D 1.618 XA; pivotlardan oran toleransli esleme.",
+            "genel"
+          ],
+          [
+            "İkili / Üçlü Tepe ve Dip ★",
+            "Tekrarlayan tepe/dip yapılarını pivot dizisiyle bulup boyun çizgisi kırılımı ve ölçülü hedef üretir.",
+            "Iki/uc pivot high (low) farki <= tolerans (ATR veya %), aradaki dip (tepe) boyun cizgisi; kirilim boyun cizgisi kapanisi; hedef = formasyon yuksekligi.",
+            "genel"
+          ],
+          [
+            "Kama / Bayrak / Üçgen Kırılımı ★",
+            "Yakınsayan kanal formasyonlarını (kama, bayrak, üçgen) otomatik algılayıp kırılım teyidi üretir.",
+            "Pivot high'lardan ust, pivot low'lardan alt regresyon/trend cizgisi; egim isaretleri ile kama (ayni yon), bayrak (direge ters), ucgen (yakinsayan); kirilim kapanis.",
+            "genel"
+          ],
+          [
+            "Mum Formasyonu Tanıyıcı ★",
+            "1-5 mum uzunluğunda 85 farklı mum formasyonunu repaint etmeden tanıyıp grafik üzerinde etiketler.",
+            "Govde/fitil oranlari: doji |C-O| <= %5 aralik; cekic alt fitil >= 2*govde; yutan govde onceki govdeyi kapsar; yildiz govde kucuk ve bosluk; TV 'All Candlestick Patterns' trend filtresi SMA(50).",
+            "genel"
+          ],
+          [
+            "Mum Formasyonu Tarayıcı ★",
+            "Onlarca sembolde 30+ mum formasyonunu tarayıp teyitli oluşumları tabloda toplar.",
+            "Ayni mum kurallari birden fazla sembol/zaman dilimine uygulanir; TV tarayicisinda formasyon = 1/0 kosulu.",
+            "genel"
+          ],
+          [
+            "Omuz-Baş-Omuz / Ters OBO ★",
+            "Pivot tabanlı omuz-baş-omuz ve ters omuz-baş-omuz formasyonlarını boyun çizgisiyle otomatik tespit edip kırılım sinyali verir.",
+            "Uc pivot high: ortadaki en yuksek, omuzlar birbirine yakin (tolerans); boyun cizgisi iki dipten; kirilim kapanis; hedef = bas - boyun mesafesi.",
+            "genel"
+          ],
+          [
+            "Otomatik Grafik Formasyonları ★",
+            "Dönüş ve devam formasyonlarını (OBO, üçgen, kama, kanal) geometri, yön ve yakınsama açısından otomatik tespit edip çizer.",
+            "TV yerlesik formasyon tanimlayicilari (ucgen, kama, bayrak, OBO, ikili tepe...): zigzag pivot + geometrik kural; yardim sayfasinda formul yok.",
+            "TV-yardim*"
+          ],
+          [
+            "Özel Pivot Formasyon Motoru (BYO) ★",
+            "Kullanıcı tanımlı pivot dizilerini ZigZag üzerinden test ederek kişiselleştirilmiş formasyon taraması yapar.",
+            "Kullanici tanimli pivot sayisi ve oran kurallariyla (orn. P2/P1 = 0.618 +- tol) formasyon esleme motoru.",
+            "genel"
+          ],
+          [
+            "Three Drives / 5-0 ★",
+            "Simetrik üç itiş ve 5-0 yapılarını pivot bazlı tarayarak klasik XABCD dışı harmonik dönüş noktaları verir.",
+            "Three Drives: uc ardisik tepe/dip, her biri bir onceki itkinin 1.27-1.618 uzantisi, geri cekilmeler 0.618-0.786; 5-0: AB=CD, D = BC'nin %50'si.",
+            "genel"
+          ],
+          [
+            "VSA (Hacim Yayılım Analizi) ★",
+            "Kapanış-yayılım-hacim ilişkisiyle profesyonel talep/arz ve emilim barlarını etiketleyerek formasyon teyidi verir.",
+            "Spread = H - L; hacim SMA(20)'ye gore yuksek/dusuk; kapanis konumu (C-L)/(H-L); kurallar: dar spread + yuksek hacim = arz/talep emilimi, upthrust, no demand.",
+            "genel"
+          ],
+          [
+            "Wyckoff Faz Etiketleme ★",
+            "SC/BC/AR/ST/SOS/SOW olaylarını A-E fazlarına atayarak piyasa döngüsündeki konumu otomatik gösterir.",
+            "Birikim/dagitim semasi: PS, SC, AR, ST, Spring/UTAD, SOS/SOW, LPS/LPSY; pivot + hacim kurallariyla etiketleme; faz A-E.",
+            "genel"
+          ],
+          [
+            "Wyckoff Yay ve Sahte Kırılım (UTAD) ★",
+            "Yay (Spring) tip 1/2/3, Upthrust ve UTAD olaylarını işaretleyerek akümülasyon/distribüsyon tuzaklarını yakalatır.",
+            "Spring: aralik dusugu altina fitil + geri icine kapanis (hacim dusuk/orta); UTAD: aralik yuksegi ustune fitil + geri kapanis (hacim yuksek).",
+            "genel"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "topluluk",
+    "label": "Popüler Topluluk",
+    "badge": "PINE",
+    "color": "name-community",
+    "note": "TradingView Community'de en çok kullanılan (boost sayısı yüksek) Pine Script göstergeleri. Boost değerleri TradingView script servisinden alınmıştır. Bu göstergeler yerleşik değildir; grafiğe script olarak eklenir.",
+    "groups": [
+      {
+        "name": "Momentum & Trend İşçileri",
+        "items": [
+          [
+            "Aralık Filtresi (Range Filter) ★",
+            "Fiyatı aralık filtresinden geçirip gürültüyü bastıran, az repaint eden al/sat sinyali üretir (guikroth, ~14.8 bin boost).",
+            "DonovanWall: smrng = EMA(EMA(|src - src[1]|, N), 2N-1) * carpan; filt = src > filt[1] ? max(filt[1], src - smrng) : min(filt[1], src + smrng); yon = filt egimi (N=100, carpan 3).",
+            "genel"
+          ],
+          [
+            "Coral Trend ★",
+            "DFMA tabanlı, az gecikmeli ve renk değiştiren basit bir trend takip çizgisi (LazyBear, ~11.7 bin boost).",
+            "LazyBear: 6 kademeli ustel yumusatma (T3 benzeri) alpha = 2/(N+1), katsayilar c1..c4 (cd=0.4 varsayilan) ile bfr = -cd^3*i6 + c2*i5 + c3*i4 + c4*i3; renk egim (N=21).",
+            "genel"
+          ],
+          [
+            "Gaussian Kanalı ★",
+            "Gaussian filtresiyle gecikmesiz trend kanalı oluşturup renk değişimiyle trend dönüşünü bildirir (DonovanWall, ~9.8 bin boost).",
+            "DonovanWall: N kutuplu Gauss filtresi (beta = (1-cos(2pi/periyot))/(2^(1/N)-1), alpha = -beta + sqrt(beta^2+2beta)); filt = alpha^N*src + ... ; bant = filtre(TR)*carpan (periyot 144, kutup 4, carpan 1.414).",
+            "genel"
+          ],
+          [
+            "Heikin-Ashi RSI Osilatörü ★",
+            "Heikin-Ashi mumlarına RSI uygulayarak daha pürüzsüz ve sinyal gürültüsü düşük bir osilatör üretir (JayRogers, ~11 bin boost).",
+            "JayRogers: RSI(close, N) uzerinden Heikin-Ashi acilis/kapanis: haC = (O+H+L+C)/4 RSI'in; haO = (haO[1]+haC[1])/2; yumusatma EMA; 20/80 bolgeleri.",
+            "genel"
+          ],
+          [
+            "Jurik Hareketli Ortalama (JMA) ★",
+            "Çok düşük gecikme ve minimum aşım sağlayan pürüzsüz uyarlanabilir hareketli ortalama (everget).",
+            "Everget/Jurik: faz ve guc parametreli adaptif filtre: beta = 0.45(N-1)/(0.45(N-1)+2), alpha = beta^power; e0 = (1-alpha)*src + alpha*e0[1]; e1 = (src - e0)(1-beta) + beta*e1[1]; e2 = (e0 + phaseRatio*e1 - jma[1])(1-alpha)^2 + alpha^2*e2[1]; jma = e2 + jma[1] (N=7, phase 50, power 2).",
+            "genel"
+          ],
+          [
+            "Nadaraya-Watson Zarfı ★",
+            "Çekirdek regresyonla fiyatı yumuşatıp dinamik zarf bandı ve kırılım/uyumsuzluk sinyalleri üretir (LuxAlgo, ~35 bin boost).",
+            "LuxAlgo: y_hat = Sum(K(i)*src_i)/Sum(K(i)), K Gauss cekirdegi exp(-i^2/(2h^2)) (h=8, pencere 500 bar); zarf = y_hat +- carpan*MAE (3); yeniden boyama (repaint) uyarisi.",
+            "genel"
+          ],
+          [
+            "QQE MOD ★",
+            "Yumuşatılmış RSI ve ATR bandıyla gürültüsüz trend/momentum kesişim sinyalleri verir (Mihkel00, ~14 bin boost).",
+            "Mihkel00: RSI(14) EMA(5) yumusatma; ATR_RSI = |RSIma - RSIma[1]|, DAR = EMA(EMA(ATR_RSI,27),27)*4.238; izleyen bant (longband/shortband) RSIma'ya gore; ikinci QQE (RSI 6, faktor 1.61) + Bollinger(50, 0.35) histogram renklendirme.",
+            "genel"
+          ],
+          [
+            "Squeeze Momentum ★",
+            "Bollinger/Keltner sıkışmasını ve serbest kalan linreg momentumu renkli histogramla göstererek patlama yönünü zamanlar (LazyBear, ~117 bin boost). thinkorswim'deki TTM Squeeze ile aynı ailedendir.",
+            "LazyBear: BB(20, 2.0) Keltner(20, 1.5*ATR) icindeyse squeeze ON; momentum = linreg(close - avg(avg(HH20, LL20), SMA20), 20, 0); histogram rengi momentum ve degisimi.",
+            "genel"
+          ],
+          [
+            "SSL Hybrid ★",
+            "SSL kanalı ile baz çizgiyi birleştirip renk değiştiren trend takip bandı sunar (Mihkel00, ~17 bin boost).",
+            "Mihkel00: SSL = SMA(high, N) ve SMA(low, N) (varsayilan HMA 60 baseline); Hlv = close > smaHigh ? 1 : close < smaLow ? -1 : Hlv[1]; sslDown/Up secimi; Keltner bantlari baseline etrafinda (0.2 ATR).",
+            "genel"
+          ],
+          [
+            "TDI (Traders Dynamic Index) ★",
+            "RSI, Bollinger ve market baseline birleşimiyle trend ve volatilite yönünü tek göstergede verir (ZyadaCharts).",
+            "RSI(13) -> fiyat cizgisi SMA(RSI,2), sinyal SMA(RSI,7), taban SMA(RSI,34); Bollinger(RSI, 34, 1.6185) volatilite bantlari; seviyeler 32/50/68.",
+            "genel"
+          ],
+          [
+            "Tillson T3 Hareketli Ortalama ★",
+            "Çoklu EMA kaskadıyla çok pürüzsüz ve düşük gecikmeli bir trend ortalaması sağlar (KivancOzbilgic, ~8.6 bin boost).",
+            "T3 = c1*e6 + c2*e5 + c3*e4 + c4*e3; e1..e6 ardisik EMA(N); c1 = -a^3, c2 = 3a^2 + 3a^3, c3 = -6a^2 - 3a - 3a^3, c4 = 1 + 3a + a^3 + 3a^2 (N=5, a=0.7).",
+            "genel"
+          ],
+          [
+            "UT Bot Alarmları ★",
+            "ATR çarpanlı hareketli ortalamaya dayalı, az repaint eden trend dönüş alarmları üretir (QuantNomad, ~60 bin boost).",
+            "QuantNomad: nLoss = a*ATR(c); trailing stop: src > stop[1] ve src[1] > stop[1] ? max(stop[1], src - nLoss) : src < stop[1] ve src[1] < stop[1] ? min(stop[1], src + nLoss) : src > stop[1] ? src - nLoss : src + nLoss; sinyal EMA(src,1) stop kesisimi (a=1, c=10).",
+            "genel"
+          ],
+          [
+            "VuManChu Cipher B ★",
+            "WaveTrend, MFI, RSI ve uyumsuzlukları tek panelde birleştirerek konfluans sinyali ve renkli noktalar verir (vumanchu, ~25 bin boost).",
+            "WaveTrend (10/21 + 3/4 sinyal), ayrica MFI-RSI alani = SMA((close-open)/(high-low)*5, 60)*... , RSI(14) ve Stoch RSI(14); 'yesil nokta' = WT kesisimi asiri satim altinda; diverjans tespiti.",
+            "genel"
+          ],
+          [
+            "Waddah Attar Patlaması ★",
+            "Bollinger bandı genişliği ile MACD'yi birleştirerek volatilite patlaması ve giriş zamanlaması verir (shayankm).",
+            "t1 = (MACD(20,40) - MACD[1]) * 150 (hassasiyet); e1 = BB ust(20,2) - BB alt; trend yukari t1>0 histogram, deadzone = RMA(TR,100)*3.7; sinyal: |t1| > e1 ve > deadzone.",
+            "genel"
+          ],
+          [
+            "WaveTrend Osilatörü (WT) ★",
+            "Aşırı alım/satım bölgeleri ve kesişimlerle kısa vadeli momentum dönüşlerini yakalar (LazyBear, ~61 bin boost).",
+            "LazyBear (TV kaynak kodu, 2026-10-27 okundu): ap = hlc3; esa = EMA(ap,10); d = EMA(|ap-esa|,10); ci = (ap-esa)/(0.015*d); wt1 = EMA(ci,21); wt2 = SMA(wt1,4); bantlar +60/+53, -60/-53.",
+            "TV-kod"
+          ]
+        ]
+      },
+      {
+        "name": "Seviye, Yapı & Karşılaştırma",
+        "items": [
+          [
+            "Arz-Talep Bölgeleri (Visible Range) ★",
+            "Fiyat hareketinden arz/talep zonlarını çıkarıp kırılım ve retest davranışını takip eder (LuxAlgo, ~26 bin boost).",
+            "Gorunur aralik hacim profilinde dusuk hacimli (LVN) ve yuksek hacimli (HVN) bolgeler; LVN bolgesine komsu HVN arz/talep bolgesi; swing pivot + kapanis esikli alternatifler.",
+            "genel"
+          ],
+          [
+            "Çoklu Gösterge Uyumsuzluk Dedektörü ★",
+            "RSI, MACD, Stochastic, OBV, CCI gibi birçok osilatörde fiyat uyumsuzluğunu tek geçişte tarar (LonesomeTheBlue, ~30 bin boost).",
+            "Fiyat pivotlari (sol/sag 5) ile RSI/MACD/Stoch/CCI/MFI/OBV pivotlari karsilastirilir: fiyat HH & gosterge LH = negatif, fiyat LL & gosterge HL = pozitif (LonesomeTheBlue).",
+            "genel"
+          ],
+          [
+            "Destek/Direnç Seviyeleri ve Kırılımlar ★",
+            "Otomatik pivot kümelerinden S/R seviyeleri çizip kırılım ve retest sinyali üretir (LuxAlgo, ~66 bin boost).",
+            "LuxAlgo: pivot high/low (sol/sag N=15) seviyeleri; kirilim = kapanis seviyeyi gecer ve hacim osilatoru (EMA5-EMA10)/EMA10 > %20 (filtreli).",
+            "genel"
+          ],
+          [
+            "Kırılımlı Trend Çizgileri ★",
+            "Pivotlardan trend çizgileri çizip geçerli kırılımları ve breakout etiketlerini otomatik işaretler (LuxAlgo, ~53 bin boost).",
+            "LuxAlgo: pivot high/low (N=14) noktalarindan egim = ATR / SMA / stdev tabanli (carpan 1) trend cizgisi; kirilim = kapanis cizgiyi gecer.",
+            "genel"
+          ],
+          [
+            "Para Birimi Gücü (Currency Strength) ★",
+            "Majör paritelerden USD/EUR/GBP/JPY gücünü ayrıştırıp en güçlü-zayıf para birimi eşleşmesini bulur; forex işlemlerinde parite seçimini kolaylaştırır (LuxAlgo).",
+            "Her para birimi icin ilgili paritelerin % degisimlerinin (RSI veya ROC) ortalamasi; 8 majorun goreli siralamasi; TV 'Currency Strength' topluluk scriptleri.",
+            "genel"
+          ],
+          [
+            "Piyasa Profili (TPO) ★",
+            "Zaman-fiyat TPO dağılımıyla değer alanı (VA), POC ve denge bölgelerini hesaplar (LonesomeTheBlue, ~11 bin boost). Sierra Chart'ta TPO/Market Profile olarak yerleşiktir.",
+            "Her 30 dk (TPO) icin fiyat satirlarina harf; satir TPO sayisi; POC = en cok TPO; Value Area = %70 TPO; IB = ilk 2 TPO.",
+            "genel"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gelismis",
+    "label": "Gelişmiş & Nadir",
+    "color": "name-advanced",
+    "note": "Klasik ve az bilinen teknik analiz göstergeleri ile diğer platformların (MT5, Sierra Chart, thinkorswim) standart setinden gelenler. Bir kısmı TradingView'de yerleşik değildir; Pine sürümüyle veya ilgili platformda kullanılır. Kaynakla doğrulanamayan satırlar (doğrulanamadı) olarak işaretlenmiştir.",
+    "groups": [
+      {
+        "name": "Klasik & Az Bilinen TA",
+        "items": [
+          [
+            "Ağırlık Merkezi Osilatörü ★",
+            "Fiyatın ağırlıklı merkezine göre dönüş noktalarını önceden işaret eden çok düşük gecikmeli osilatör (Ehlers).",
+            "Ehlers COG: COG = -Sum((i+1)*src[i], N) / Sum(src[i], N) (i=0..N-1); Pine ta.cog(src, 10).",
+            "genel"
+          ],
+          [
+            "Dikey-Yatay Filtre (VHF) ★",
+            "Piyasanın trend mi yoksa yatay mı olduğunu tek değerle ayırt ederek strateji seçimini kolaylaştırır.",
+            "VHF = (HH(close,N) - LL(close,N)) / Sum(|C - C1|, N) (N=28); yuksek = trend, dusuk = yatay.",
+            "genel"
+          ],
+          [
+            "Ehlers Anlık Trend Çizgisi ★",
+            "Hilbert dönüşümü tabanlı, gecikmesi çok düşük bir trend takip çizgisi sunar (Pine sürümü yaygındır).",
+            "Pine (everget): a=0.07; it = (a - a^2/4)*src + 0.5a^2*src[1] - (a - 0.75a^2)*src[2] + 2(1-a)*it[1] - (1-a)^2*it[2]; ilk 7 bar (src + 2src[1] + src[2])/4; tetik = 2*it - it[2] (TV kaynak kodu onceki oturumda okundu).",
+            "TV-kod"
+          ],
+          [
+            "Elder İtki Sistemi ★",
+            "EMA eğimi ile MACD histogramını birleştirip renk kodlu al/tut/sat filtresi vererek disiplinli trend takibi sağlar.",
+            "EMA(13) egimi ve MACD(12,26,9) histogram egimi: ikisi yukari = yesil (al), ikisi asagi = kirmizi (sat), ayrisik = mavi (noter).",
+            "genel"
+          ],
+          [
+            "Göreli Momentum Endeksi (RMI) ★",
+            "RSI'ya momentum geri-bakışı ekleyerek daha az yanlış sinyal üretir (doğrulanamadı).",
+            "RMI = 100 - 100/(1+RS); RS = RMA(max(C - C[m],0), N) / RMA(max(C[m] - C,0), N); m = momentum uzunlugu (RSI'de m=1) (N=14, m=5).",
+            "genel"
+          ],
+          [
+            "Kase Gelişmiş Stop ★",
+            "Cynthia Kase'in istatistiksel olarak test edilmiş, volatiliteye uyarlanan stop-loss seviyesi (doğrulanamadı).",
+            "Kase DevStop: aralik = H - L[1] (2 bar); Dev = stdev(aralik, N); stop seviyeleri = HH/LL +- (ort(aralik) + k*Dev), k = 0, 1, 2.2, 3.6.",
+            "genel"
+          ],
+          [
+            "Kaufman Verimlilik Oranı ★",
+            "Kat edilen net mesafenin toplam yola oranıyla trend verimliliğini ölçer; ortalamaların uyarlama katsayısı olarak kullanılır.",
+            "ER = |C - C[N]| / Sum(|C - C1|, N) (0..1; N=10); KAMA'nin cekirdegi.",
+            "genel"
+          ],
+          [
+            "Laguerre RSI ★",
+            "Laguerre filtresiyle yumuşatılmış, 0-1 arasında daha az gürültülü ve gecikmesiz RSI versiyonu.",
+            "Ehlers: gamma=0.5 (veya 0.7); L0 = (1-g)*src + g*L0[1]; L1 = -g*L0 + L0[1] + g*L1[1]; L2 = -g*L1 + L1[1] + g*L2[1]; L3 = -g*L2 + L2[1] + g*L3[1]; CU/CD = L farklari pozitif/negatif toplami; LRSI = CU/(CU+CD).",
+            "genel"
+          ],
+          [
+            "MESA Uyarlamalı Ortalama (MAMA/FAMA) ★",
+            "Baskın döngüye otomatik uyarlanan hızlı/yavaş çift ortalama ile trend değişimini hızla yakalar (Ehlers; Pine sürümü yaygındır).",
+            "Ehlers: Hilbert donusumu ile baskin dongu periyodu ve faz; alpha = fastLimit(0.5)*|deltaPhase| sinirli (min slowLimit 0.05); MAMA = alpha*src + (1-alpha)*MAMA[1]; FAMA = 0.5*alpha*MAMA + (1-0.5alpha)*FAMA[1].",
+            "genel"
+          ],
+          [
+            "Oldukça İyi Osilatör (PGO) ★",
+            "Kapanışın SMA'dan sapmasını ATR'ye bölerek normalize alım-satım sinyali verir (doğrulanamadı).",
+            "PGO = (close - SMA(close, N)) / EMA(TR, N) (N=89; LuxAlgo/Johnson); +3/-3 kirilim, sifir cikis (onceki oturumda kullanildi).",
+            "genel"
+          ],
+          [
+            "Psikolojik Hat ★",
+            "Son N günün yükselen kapanış yüzdesiyle kısa vadeli yatırımcı iyimserliğini ölçer (doğrulanamadı).",
+            "PSY = (son N barda yukari kapanis sayisi / N) * 100 (N=12); 75 ustu asiri iyimser, 25 alti kotumser.",
+            "genel"
+          ],
+          [
+            "QStick ★",
+            "Açılış-kapanış farkının ortalamasıyla alıcı/satıcı baskınlığını ölçer.",
+            "QStick = SMA(close - open, N) (veya EMA) (N=8); sifir ustu alici baskisi.",
+            "genel"
+          ],
+          [
+            "R-Kare (R-squared) ★",
+            "Fiyat ile doğrusal regresyonun uyumunu ölçerek trendin gücünü ve güvenilirliğini verir.",
+            "R^2 = corr(close, bar_index, N)^2; dogrusal regresyonun aciklama gucu (N=20); 0.8 ustu guclu trend.",
+            "genel"
+          ],
+          [
+            "Rastgele Yürüyüş Endeksi ★",
+            "Fiyatın rastgele mi yoksa trend halinde mi olduğunu yüksek/düşük serilerle test eder.",
+            "RWI_high = (H - L[N]) / (ATR(N) * sqrt(N)); RWI_low = (H[N] - L) / (ATR(N) * sqrt(N)); 1 ustu trend (N=14).",
+            "genel"
+          ],
+          [
+            "Schaff Trend Döngüsü ★",
+            "MACD döngüsünü stokastikle hızlandırıp klasik MACD'den daha erken trend dönüşü yakalar (Pine sürümü de yaygındır).",
+            "STC: MACD(23,50) -> stoch(MACD, 10) %K EMA(3) -> tekrar stoch(…,10) EMA(3); 0-100; 25/75 esikleri (faktor 0.5).",
+            "genel"
+          ],
+          [
+            "Siber Döngü (Cyber Cycle) ★",
+            "Baskın döngü analiziyle trend dönüşlerini birkaç bar önceden yakalar (Ehlers).",
+            "Ehlers: smooth = (src + 2src[1] + 2src[2] + src[3])/6; cycle = (1-0.5a)^2*(smooth - 2smooth[1] + smooth[2]) + 2(1-a)*cycle[1] - (1-a)^2*cycle[2] (a=0.07); tetik = cycle[1].",
+            "genel"
+          ],
+          [
+            "STARC Bantları ★",
+            "ATR ile hesaplanan bantlarla kısa vadeli sapmaları ve giriş noktalarını verir.",
+            "Orta = SMA(close, 5 veya 15); Ust = Orta + k*ATR(15), Alt = Orta - k*ATR(15) (k=2 / 1.33).",
+            "genel"
+          ],
+          [
+            "Twiggs Para Akışı ★",
+            "Chaikin Para Akışını true range ve Wilder yumuşatmasıyla geliştirip kırılımları onaylar.",
+            "TRH = max(H, C1), TRL = min(L, C1); AD = ((C-TRL) - (TRH-C))/(TRH-TRL) * hacim; TMF = Wilder-EMA(AD, N) / Wilder-EMA(hacim, N) (N=21).",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "Diğer Platformların Standartları",
+        "items": [
+          [
+            "DeMarker ★",
+            "Yüksek/düşük fiyatların talep baskısını ölçen standart osilatör; MT5 ve thinkorswim'de yerleşiktir.",
+            "DeMax = H > H1 ? H - H1 : 0; DeMin = L < L1 ? L1 - L : 0; DeM = SMA(DeMax,N) / (SMA(DeMax,N) + SMA(DeMin,N)) (N=14); 0.3/0.7.",
+            "genel"
+          ],
+          [
+            "Fraktal Uyarlamalı HO (FrAMA) ★",
+            "Fraktal boyuta göre hızını ayarlayarak trendde hızlı, yatayda yavaş davranır; MT5 standartıdır.",
+            "Ehlers: N1 = (HH-LL ilk yari)/(N/2), N2 ikinci yari, N3 = (HH-LL tum)/N; D = (ln(N1+N2) - ln(N3))/ln2; alpha = exp(-4.6(D-1)) sinirli [0.01,1]; FRAMA = alpha*src + (1-alpha)*FRAMA[1] (N=16).",
+            "genel"
+          ],
+          [
+            "Heikin-Ashi ★",
+            "Mum verisini yumuşatarak trend devamlılığını ve dönüşlerini netleştirir; MT5/Sierra/TradingView'de grafik tipi olarak da kullanılır.",
+            "haClose = (O+H+L+C)/4; haOpen = (haOpen[1] + haClose[1])/2; haHigh = max(H, haOpen, haClose); haLow = min(L, haOpen, haClose).",
+            "genel"
+          ],
+          [
+            "Market Facilitation Index (BW MFI) ★",
+            "Fiyat aralığını hacme bölerek hareketin hacimle desteklenip desteklenmediğini gösterir; MT5 ve Bill Williams setinin standartıdır.",
+            "BW MFI = (H - L) / hacim; renk: MFI ve hacim ikisi artar = yesil, ikisi azalir = solgun, MFI artar hacim azalir = sahte, MFI azalir hacim artar = cekisme.",
+            "genel"
+          ],
+          [
+            "Numbers Bars (Sayı Barları) ★",
+            "Her fiyat seviyesindeki alıcı/satıcı hacmini göstererek order flow analizi sağlar; Sierra Chart'ta yerleşiktir.",
+            "Her mum icinde fiyat seviyesi basina alt zaman dilimi hacim/delta sayilari (footprint benzeri); TV topluluk 'Numbers Bars'.",
+            "genel"
+          ],
+          [
+            "OsMA ★",
+            "MACD ile sinyal çizgisi arasındaki farkı histogram olarak verir; MT5 standartıdır.",
+            "OsMA = MACD(12,26) - Sinyal(9) (MT4/5 'Moving Average of Oscillator'); MACD histogramina esdeger.",
+            "genel"
+          ],
+          [
+            "VIDYA (Değişken Endeks Dinamik Ortalaması) ★",
+            "Volatiliteye göre uyarlanan dinamik ortalama ile trend takibi sağlar (Chande); MT5 standartıdır.",
+            "Chande VIDYA: alpha = 2/(N+1) * |CMO(src, 9)|/100; VIDYA = alpha*src + (1-alpha)*VIDYA[1] (N=9 veya 20).",
+            "genel"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "piyasa",
+    "label": "Piyasa İçi & Duyarlılık",
+    "color": "name-data",
+    "note": "DİKKAT: Bu gruptakiler gösterge değil, çoğunlukla HARİCİ VERİ gerektiren ölçümlerdir (borsa genişliği, opsiyon, pozisyonlanma, zincir üstü). TradingView'de yerleşik study olarak bulunmayabilir; ilgili veri sağlayıcısından beslenmesi gerekir. Forex/CFD işlemlerinde en ilgili olanlar COT ve VIX'tir; zincir üstü (on-chain) metrikler kripto içindir.",
+    "groups": [
+      {
+        "name": "Piyasa Genişliği (Breadth)",
+        "items": [
+          [
+            "HO Üzerindeki Hisse Yüzdesi ★",
+            "Belirli bir hareketli ortalama üzerindeki hisse oranıyla aşırı alım/satım genişliği verir.",
+            "% = (SMA(50/200) ustunde kapanan hisse sayisi / toplam hisse) * 100 (endeks genisligi verisi, orn. $SPXA50R).",
+            "genel"
+          ],
+          [
+            "McClellan Osilatörü ve Toplam Endeksi ★",
+            "Yükselen-düşen hisse farkının EMA'sı ve kümülatifiyle orta vadeli genişlik momentumunu verir.",
+            "Net = yukselen - dusen (opsiyonel oranlanmis); McClellan Osc = EMA(Net,19) - EMA(Net,39); Summation Index = kumulatif toplam(Osc).",
+            "genel"
+          ],
+          [
+            "Pring Yayılım Göstergesi ★",
+            "Yükselen alt-seri yüzdesiyle döngüsel genişlik dönüşlerini önceden gösterir.",
+            "Diffusion: belirli sayida hisse/sektorun 'MA ustunde' olma yuzdesinin yumusatilmis hali (orn. EMA 10); 0-100.",
+            "genel"
+          ],
+          [
+            "Put/Call Oranı ★",
+            "Opsiyon duyarlılığını ters (kontra) gösterge olarak kullanır.",
+            "PCR = put hacmi / call hacmi (CBOE verisi, orn. $CPC); SMA(10) ile yumusatilir; 1 ustu korku.",
+            "genel"
+          ],
+          [
+            "TRIN / Arms Endeksi ★",
+            "Yükselen/düşen hisse ve hacim oranlarıyla piyasa içi alım-satım dengesizliğini ölçer.",
+            "TRIN = (yukselen/dusen hisse) / (yukselen hacim/dusen hacim); 1 ustu satis baskisi; TV sembolu $TRIN.",
+            "genel"
+          ],
+          [
+            "Yüksek-Düşük Endeksi / Net Yeni Zirveler ★",
+            "Yeni 52 hafta zirve-dip farkı ve oranıyla liderliği ve genişlik ivmesini gösterir.",
+            "Record High % = yeni 52h zirve / (zirve + dip) * 100; High-Low Index = SMA(Record High %, 10); Net New Highs = zirve - dip.",
+            "genel"
+          ],
+          [
+            "Yükselen-Düşen Hattı (ADL) ★",
+            "Katılım genişliğini kümülatif izleyerek piyasa trendini onaylar.",
+            "Net = yükselen hisse sayısı - düşen hisse sayısı; AD Line = AD Line[1] + Net (günlük kümülatif toplam, yumuşatma yok) | Varsayilan: girdi yok",
+            "TV-yardim"
+          ],
+          [
+            "Yükseliş Yüzdesi Endeksi (BPI) ★",
+            "Alım sinyali veren hisse yüzdesiyle piyasa risk iştahını ölçer.",
+            "BPI = P&F alim sinyali veren hisse yuzdesi (0-100); 70 ustu asiri alim, 30 alti asiri satim (orn. $BPSPX).",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "Duyarlılık & Risk Endeksleri",
+        "items": [
+          [
+            "COT Raporu (Vadeli Pozisyon) ★",
+            "Ticari/ticari olmayan ve managed money net pozisyonlarıyla akıllı paranın yerleşimini gösterir; forex'te kurumsal pozisyon takibi için en değerli veridir (CFTC).",
+            "CFTC haftalik: ticari / buyuk spekulator / kucuk net pozisyon = long - short; COT Index = (net - min(net,N)) / (max-min) * 100 (N = 26 hafta).",
+            "genel"
+          ],
+          [
+            "VIX / VVIX / SKEW ★",
+            "VIX beklenen volatiliteyi, VVIX volatilitenin volatilitesini, SKEW ise kuyruk riskini ölçer; risk iştahı için temel göstergelerdir (CBOE).",
+            "VIX = S&P 500 opsiyonlarinin 30 gunluk beklenen volatilitesi (CBOE formulu, varyans swap); VVIX = VIX opsiyon volatilitesi; SKEW = kuyruk riski (100 = normal).",
+            "genel"
+          ]
+        ]
+      },
+      {
+        "name": "Kripto Türev & Zincir Üstü (On-Chain)",
+        "items": [
+          [
+            "Açık Pozisyon ve Uzun/Kısa Oranı ★",
+            "Açık sözleşme ve taraf dağılımıyla trend gücünü ve pozisyonlanmayı gösterir (kripto).",
+            "Sayfada formül yok; açık pozisyon = takas edilmemiş toplam açık türev sözleşme sayısı (borsa verisi) | Varsayilan: girdi yok | Long/Short Ratio = long hesap sayisi / short hesap sayisi (TV yardim: Long/Short Ratio Accounts).",
+            "TV-yardim*"
+          ],
+          [
+            "CVDD / RHODL / CDD ★",
+            "Ortalama maliyet ve sahip yaşı temelli metriklerle tepe/dip bölgelerini işaretler (kripto).",
+            "CDD = Sum(harcanan coin * tutulma gunu); CVDD = kumulatif(CDD * fiyat) / (arz * 6e6); RHODL = 1 hafta / 1-2 yil realized value banti orani.",
+            "genel"
+          ],
+          [
+            "Fonlama Oranı (Funding Rate) ★",
+            "Vadeli piyasada long/short dengesizliğini ve aşırı iyimserliği fiyatlar (kripto).",
+            "Funding rate = faiz oranı + prim endeksi (premium index = perpetual fiyatın endeks fiyatına göre göreli primi/iskontosu); borsaya göre ek ayarlama olabilir | Varsayilan: girdi yok (borsa verisi)",
+            "TV-yardim"
+          ],
+          [
+            "MVRV / MVRV Z-Skoru ★",
+            "Gerçekleşen değer temelli döngü aşırı alım/satım metriği (kripto).",
+            "MVRV = piyasa degeri / gerceklesmis deger; Z = (piyasa degeri - gerceklesmis deger) / stdev(piyasa degeri).",
+            "genel"
+          ],
+          [
+            "NUPL ★",
+            "Ağ genelinde kâr/zarar durumuyla döngü fazını gösterir (kripto).",
+            "NUPL = (piyasa degeri - gerceklesmis deger) / piyasa degeri; >0.75 euphoria, <0 kapitulasyon.",
+            "genel"
+          ],
+          [
+            "Puell Çarpanı / Hash Şeritleri ★",
+            "Madenci geliri temelli tepe/dip metrikleri (kripto).",
+            "Puell = gunluk madenci geliri (USD) / SMA(gelir, 365); Hash Ribbons: SMA(hashrate,30) ile SMA(hashrate,60) kesisimi.",
+            "genel"
+          ],
+          [
+            "SOPR ★",
+            "Harcanan çıktıların kârlılığıyla dönüş bölgelerini işaretler (kripto).",
+            "SOPR = harcanan ciktilarin satis fiyati / alis fiyati (gerceklesmis deger orani); 1 ustu kar realizasyonu (TV yardim: Spent Output Profit Ratio).",
+            "TV-yardim*"
+          ],
+          [
+            "Tasfiye (Likidasyon) Verisi ★",
+            "Zorunlu kapanış kümeleriyle aşırı kaldıraç ve stop-avı bölgelerini gösterir (kripto).",
+            "Sayfada hesaplama yok; tasfiye, marjin bakım marjininin altına düşünce borsanın pozisyonu kapatmasıdır | Varsayilan: girdi yok",
+            "TV-yardim*"
+          ]
+        ]
+      }
+    ]
+  }
+];
+
+/* ==================== RENDER MOTORU ==================== */
+var state = {};
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function tabCount(tab) {
+  return tab.groups.reduce(function (sum, g) { return sum + g.items.length; }, 0);
+}
+
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = DATA.map(function (d, i) {
+    return '<button class="tab-btn' + (i === 0 ? ' active' : '') + '" data-tab="' + d.id + '" onclick="switchTab(event, \'' + d.id + '\')">' +
+      esc(d.label) + (d.badge ? ' <span class="badge">' + esc(d.badge) + '</span>' : '') +
+      '<span class="count">' + tabCount(d) + '</span></button>';
+  }).join('');
+}
+
+function renderPanels() {
+  document.getElementById('panels').innerHTML = DATA.map(function (d, i) {
+    return '<div id="' + d.id + '" class="tab-content' + (i === 0 ? ' active' : '') + '">' +
+      (d.note ? '<p class="tab-note">' + esc(d.note) + '</p>' : '') +
+      '<input type="text" class="search-box" placeholder="' + esc(d.label) + ' içinde ara... (örn: momentum, hacim, ICT)" oninput="filterTab(\'' + d.id + '\', this.value)">' +
+      '<table><thead><tr>' +
+        '<th onclick="sortTab(\'' + d.id + '\', 0)">Gösterge Adı ⇅</th>' +
+        '<th onclick="sortTab(\'' + d.id + '\', 1)">Teknik Avantajı ve Sağladığı Fayda ⇅</th>' +
+        '<th onclick="sortTab(\'' + d.id + '\', 2)">Hesaplama (TradingView) ⇅</th>' +
+      '</tr></thead><tbody id="tbody-' + d.id + '"></tbody></table>' +
+      '<div class="no-results" id="nores-' + d.id + '">Aradığınız kriterlere uygun gösterge bulunamadı.</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderBody(id) {
+  var tab = DATA.find(function (d) { return d.id === id; });
+  var st = state[id];
+  var html = '';
+  var visible = 0;
+
+  tab.groups.forEach(function (group) {
+    var items = group.items.slice();
+
+    if (st.term) {
+      var t = st.term.toLocaleLowerCase('tr');
+      items = items.filter(function (it) {
+        return (it[0] + ' ' + it[1] + ' ' + (it[2] || '')).toLocaleLowerCase('tr').indexOf(t) !== -1;
+      });
+    }
+    if (!items.length) return;
+
+    if (st.sortCol !== null) {
+      var col = st.sortCol, dir = st.dir;
+      items.sort(function (a, b) {
+        return dir ? a[col].localeCompare(b[col], 'tr') : b[col].localeCompare(a[col], 'tr');
+      });
+    }
+
+    html += '<tr class="group-row"><td colspan="3">' + esc(group.name) +
+            ' <span class="gcount">(' + items.length + ' gösterge)</span></td></tr>';
+
+    items.forEach(function (it) {
+      visible++;
+      html += '<tr><td class="indicator-name ' + tab.color + '">' + esc(it[0]) + '</td>' +
+              '<td>' + esc(it[1]) + '</td>' +
+              '<td class="calc"><span class="src src-' + esc(it[3] || 'genel').replace('*', 'x') + '">' + esc(it[3] || 'genel') + '</span> ' + esc(it[2] || '') + '</td></tr>';
+    });
+  });
+
+  document.getElementById('tbody-' + id).innerHTML = html;
+  document.getElementById('nores-' + id).style.display = visible ? 'none' : 'block';
+}
+
+function switchTab(evt, tabId) {
+  document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+  document.getElementById(tabId).classList.add('active');
+  evt.currentTarget.classList.add('active');
+}
+
+function filterTab(tabId, value) {
+  state[tabId].term = value;
+  renderBody(tabId);
+}
+
+function sortTab(tabId, colIndex) {
+  var st = state[tabId];
+  if (st.sortCol === colIndex) {
+    st.dir = !st.dir;
+  } else {
+    st.sortCol = colIndex;
+    st.dir = true;
+  }
+  renderBody(tabId);
+}
+
+function init() {
+  DATA.forEach(function (d) { state[d.id] = { term: '', sortCol: null, dir: true }; });
+  renderTabs();
+  renderPanels();
+  DATA.forEach(function (d) { renderBody(d.id); });
+}
+
+window.onload = init;
+</script>
+
+</body>
+</html>
