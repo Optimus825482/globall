@@ -10,6 +10,12 @@ Kurallar (Task 2 kontrolor kararlari):
   stratejilerinden (btc_aile, fx_aile, btc_ozgun, fx_ozgun) kurulu olanlar. Adaylar EGITIM skoruna gore
   siralanir ve en cok max-aday kadari alinir; test verisiyle yeniden siralama yapilmaz.
 - Istatistik: 20x20=400 ust satirdan kacinin testte PF >= 1.2 tuttugu (coklu karsilastirma olcusu).
+
+ONEMLI: `eklenti_adaylari_eski` (eski adiyla `dogrulama_adaylari`) yalniz Task 2'nin ilk kuralinin kaydidir
+(eklenti-bilesenli, taban basina <= 2). Gercek motorda dogrulanan YETKILI liste
+`scripts/strategies/kombo.py` -> `tanimlar_olustur` ile `secim.json["hucreler"]`dan uretilir (taban kapagi yok,
+yerlesik bilesen serbest; Task 3 kontrolor karari) ve `kombo_<n>` adlari YALNIZ o listeye aittir. Bu yuzden
+buradaki satirlar `eklenti_aday_<n>` olarak adlandirilir.
 """
 from __future__ import annotations
 
@@ -99,14 +105,14 @@ def sec(hucreler: dict, max_aday: int = 25, min_pf: float = 1.2, min_islem: int 
     tum_adaylar.sort(key=lambda x: (-x["train"]["skor"], -x["train"]["net"], x["sym"], x["tf"], x["ad_kisa"]))
     secilen = []
     for i, c in enumerate(tum_adaylar[:max_aday], 1):
-        secilen.append({"ad": f"kombo_{i}", "sym": c["sym"], "tf": c["tf"], "tanim": c["tanim"],
+        secilen.append({"ad": f"eklenti_aday_{i}", "sym": c["sym"], "tf": c["tf"], "tanim": c["tanim"],
                         "train": c["train"], "test": c["test"], "ad_kisa": c["ad_kisa"]})
     yerlesik_en_iyi.sort(key=lambda x: -x["train"]["skor"])
     ist["min_pf"] = min_pf
     ist["min_islem_aday"] = min_islem
     ist["max_aday"] = max_aday
     ist["taban_tavan"] = TABAN_TAVAN
-    return {"hucreler": out_h, "dogrulama_adaylari": secilen, "istatistik": ist,
+    return {"hucreler": out_h, "eklenti_adaylari_eski": secilen, "istatistik": ist,
             "yerlesik_bilesenli_iyi_hucreler": yerlesik_en_iyi[:25]}
 
 
@@ -141,13 +147,15 @@ def ozet_md(secim: dict) -> str:
           f"- Tutunanlardan eklenti-bilesenli: {s['eklenti_bilesenli_tutunan']}, yerlesik-bilesenli: {s['yerlesik_bilesenli_tutunan']}.",
           f"- Taban kapagi (<= {s['taban_tavan']}/taban) sonrasi: {s['taban_kapli_satir']} satir, {s['taban_kapli_tutunan']} tutundu.",
           f"- Aday havuzu (taban-kapli, test PF>={s['min_pf']}, n>={s['min_islem_aday']}, yalniz eklenti): {s['aday_havuzu']}; "
-          f"dogrulamaya {len(secim['dogrulama_adaylari'])} (egitim skoruna gore, max {s['max_aday']}).", "",
-          "## Dogrulama adaylari (egitim skoru sirasi)", "",
+          f"eski eklenti listesine {len(secim['eklenti_adaylari_eski'])} (egitim skoruna gore, max {s['max_aday']}).", "",
+          "## Eski eklenti-aday listesi (egitim skoru sirasi; YETKILI DEGIL)", "",
+          "Gercek motorda dogrulanan yetkili liste `scripts/strategies/kombo.py --olustur` (tanimlar_olustur) ile "
+          "uretilir; `kombo_<n>` adlari yalniz ona aittir.", "",
           "| Ad | Hucre | Tanim | Egit n/PF/net | Test n/PF/net |", "|---|---|---|---|---|"]
-    for c in secim["dogrulama_adaylari"]:
+    for c in secim["eklenti_adaylari_eski"]:
         L.append(f"| {c['ad']} | {c['sym']}_{c['tf']} | `{_e(c['ad_kisa'])}` | {c['train']['islem']}/{_f(c['train']['pf'])}/{_f(c['train']['net'], 1)} | "
                  f"{c['test']['islem']}/{_f(c['test']['pf'])}/{_f(c['test']['net'], 1)} |")
-    if not secim["dogrulama_adaylari"]:
+    if not secim["eklenti_adaylari_eski"]:
         L.append("| (yok) | | | | |")
     L += ["", "## Yerlesik bilesenli iyi hucreler (yalniz bilgi, Task 3'e girmez)", "",
           "| Hucre | Tanim | Egit n/PF | Test n/PF/net |", "|---|---|---|---|"]
@@ -190,13 +198,14 @@ def selftest() -> None:
         _satir("fx_seans_devri", "fx_doji_kumesi", pf_t=5.0, skor=2),          # aday; test PF yuksek ama egitim skoru dusuk
     ]}}
     r = sec(h, max_aday=25)
-    assert [c["ad_kisa"] for c in r["dogrulama_adaylari"]] == [
+    assert [c["ad_kisa"] for c in r["eklenti_adaylari_eski"]] == [
         "or(btc_nr7_kirilim,fx_adr_tukenis)", "or(fx_seans_devri,fx_doji_kumesi)"]
-    assert r["dogrulama_adaylari"][0]["ad"] == "kombo_1"
+    assert r["eklenti_adaylari_eski"][0]["ad"] == "eklenti_aday_1"
+    assert "dogrulama_adaylari" not in r and not any(c["ad"].startswith("kombo_") for c in r["eklenti_adaylari_eski"])
     i = r["istatistik"]
     assert i["top_satir"] == 5 and i["testte_tutunan"] == 4 and i["eklenti_bilesenli_tutunan"] == 3
     assert i["yerlesik_bilesenli_tutunan"] == 1 and i["testte_tutunan_min_islem"] == 3
-    assert len(sec(h, max_aday=1)["dogrulama_adaylari"]) == 1
+    assert len(sec(h, max_aday=1)["eklenti_adaylari_eski"]) == 1
     assert ozet_md(r).startswith("# Kombo")
     print("selftest OK")
 
@@ -217,7 +226,7 @@ def main(argv=None) -> None:
     (dizin / "secim.json").write_text(json.dumps(secim, ensure_ascii=False, indent=1), encoding="utf-8")
     (dizin / "TARAMA_OZET.md").write_text(ozet_md(secim), encoding="utf-8")
     print(json.dumps(secim["istatistik"], ensure_ascii=False))
-    print(f"adaylar: {len(secim['dogrulama_adaylari'])} -> {dizin / 'secim.json'}")
+    print(f"eski eklenti adaylari: {len(secim['eklenti_adaylari_eski'])} -> {dizin / 'secim.json'}")
 
 
 if __name__ == "__main__":

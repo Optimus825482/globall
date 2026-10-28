@@ -35,7 +35,7 @@ Bu raporda kombolar **her zaman tam tanım dizesi + sembol/tf** ile anılır. `k
 
 Bu tutunma oranı rastgele beklentiye yakın. Çoklu karşılaştırma uyarısı geçerli.
 
-**Gerçek motor adayları.** 19 tutunan satırın hepsi doğrulamaya alındı; yerleşik bileşenli olanlar da dahil (kontrolör kararı, plan sapması). Yalnız başabaş bayrağında ayrışan iki çift motorda özdeş olduğu için **17 kombo** kaldı.
+**Gerçek motor adayları.** 19 tutunan satırın hepsi doğrulamaya alındı; yerleşik bileşenli olanlar da dahil (kontrolör kararı, plan sapması). Dürüstlük notu: yerleşik bileşenli komboları dahil etme kararı, Task 2'nin test penceresi okunduktan **sonra** alındı (en iyi test hücreleri yerleşik bileşenliydi). Aynı kararla Task 2'deki taban başına en çok 2 varyant kapağı da kaldırıldı: kapakla 14 satır tutunuyordu, kapaksız 19; örneğin BTCUSD m15 `or(combo3_onay,btc_keltner_geri_htf)` tabanı 4 satırla girdi. Yani aday kümesinin kendisi test penceresine bakılarak genişletildi; bu, c5'in bağımsızlığını bir kat daha zayıflatıyor (bkz. bölüm 8). Yalnız başabaş bayrağında ayrışan iki çift motorda özdeş olduğu için **17 kombo** kaldı.
 
 **Ölçütler (v1/v2 ile aynı + test):**
 
@@ -306,6 +306,8 @@ Tek 1000 USD defterde aynı işlem başı riskle koşmak şu sonuçları doğuru
 | Sonra | Geçen hücreler için risk kademeli artırılabilir: %2 → %5. +500/gün hedefi bu sinyal setleriyle gerçekçi değil; hedef ya düşürülmeli ya da sermaye artırılmalı. |
 
 ## 10. Yeniden üretim komutları
+
+Komutlar bash / Git Bash içindir (`$W` değişkeni ve `{a,b}` küme genişletmesi kullanılıyor; PowerShell/cmd'de elle açılmalı).
 
 ```bash
 # 1) Sinyal önbelleği + hızlı tarama (20 hücre)

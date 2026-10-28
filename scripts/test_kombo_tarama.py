@@ -2,6 +2,7 @@
 
 Calistirma (repo kokunden):  python -m unittest scripts.test_kombo_tarama
 """
+import json
 import os
 import sys
 import unittest
@@ -47,6 +48,44 @@ def _sim(doc, sl=1.5, tp=2.0, be=False, risk=2.0, strat="s1"):
     sig = ctx.side[k]
     src = np.full(ctx.m, ctx.atr_id[strat], dtype=np.int16)
     return ctx, kt.islemler(ctx, sig, src, sl, tp, be)
+
+
+class StratejiListesiTest(unittest.TestCase):
+    """sinyal_uret varsayilan evreni kombo_* eklenti stratejilerini bilesen olarak almamali."""
+
+    def test_strateji_listesi(self):
+        self.assertEqual(kt.strateji_listesi(["ut_bot", "kombo_1", "btc_nr7_kirilim", "kombo_17"]),
+                         ["ut_bot", "btc_nr7_kirilim"])
+
+    def test_sinyal_uret_kombo_haric(self):
+        import tempfile
+        import types
+        from unittest import mock
+        n = 80
+        bars = [[1782079200 + 300 * i, 100.0, 101.0, 99.0, 100.5] for i in range(n)]
+        cagrilan = []
+        sahte = types.ModuleType("replay_strateji_gunluk")
+        sahte._BARS, sahte._SERIES = {}, {}
+        sahte.STRATEGIES = {"ut_bot": {}, "kombo_1": {}, "btc_nr7_kirilim": {}, "kombo_2": {}}
+        sahte.bars_of = lambda sym, b: b
+        sahte.wk = types.SimpleNamespace(atr=lambda b, k: [1.0] * len(b))
+
+        def series_for(sym, strat, b):
+            cagrilan.append(strat)
+            return {"atr": [1.0] * len(b)}
+        sahte.series_for = series_for
+        sahte.side_for = lambda strat, s, b, i: 1 if i == 70 else 0
+        with tempfile.TemporaryDirectory() as d,                 mock.patch.dict(sys.modules, {"replay_strateji_gunluk": sahte}),                 mock.patch.object(kt, "cache_yukle", lambda sym, tf: {sym: bars}),                 mock.patch.object(kt, "log", lambda msg: None):
+            path = kt.sinyal_uret("XAUUSD", "m5", out_dir=d)
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        self.assertEqual(cagrilan, ["ut_bot", "btc_nr7_kirilim"])
+        self.assertEqual(sorted(doc["side"]), ["btc_nr7_kirilim", "ut_bot"])
+        # acik istek: kombo adi verilirse uretilir (filtre yalniz varsayilan evrende)
+        cagrilan.clear()
+        with tempfile.TemporaryDirectory() as d,                 mock.patch.dict(sys.modules, {"replay_strateji_gunluk": sahte}),                 mock.patch.object(kt, "cache_yukle", lambda sym, tf: {sym: bars}),                 mock.patch.object(kt, "log", lambda msg: None):
+            kt.sinyal_uret("XAUUSD", "m5", stratejiler=["kombo_1"], out_dir=d)
+        self.assertEqual(cagrilan, ["kombo_1"])
 
 
 class IlkIsabetTest(unittest.TestCase):

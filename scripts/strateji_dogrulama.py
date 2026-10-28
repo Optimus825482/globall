@@ -228,7 +228,7 @@ def main() -> int:
         for c in cells:
             print(f"  TEST {c['strateji']} {c['tf']} {c['sembol']}: test islem {c['test_islem']} PF {fmt_pf(c['test_pf'])} "
                   f"net {c['test_net']} c5={'E' if c['c5'] else 'H'}")
-        print(f"robust + test PF >= {TEST_PF_MIN} (1+2+3+4+5): {sum(1 for c in robust if c['c5'])}")
+        print(f"robust + test PF >= {TEST_PF_MIN} (1+2+3+4+5): {robust_c5_say(robust)}")
     for c in adaylar:
         print(f"  ADAY {c['strateji']} {c['tf']} {c['sembol']}: islem {c['islem']} PF {fmt_pf(c['pf'])} net14 {c['net14']}")
 
@@ -273,10 +273,17 @@ def main() -> int:
            "n_hucre": len(cells), "n_aday": len(adaylar), "n_robust": len(robust),
            "aday_yok": bilgi, "hucreler": out_cells,
            "risk_olcek": {f"{c['strateji']}_{c['tf']}_{c['sembol']}": c["risk_olcek"] for c in sec}}
+    if a.test_penceresi:  # yalniz v3 bayragiyla: v1/v2 ciktisi bayt-bayt ayni kalir
+        out["n_robust_c5"] = robust_c5_say(robust)
     path = a.out if os.path.isabs(a.out) or os.path.dirname(a.out) else os.path.join(OUT_DIR, a.out)
     json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"\nYazildi: {path}")
     return 0
+
+
+def robust_c5_say(robust: list[dict]) -> int:
+    """c1-c4 + kayma (c3) robust hucrelerden test penceresi olcutunu (c5) de gecenlerin sayisi."""
+    return sum(1 for c in robust if c.get("c5"))
 
 
 def selftest() -> int:
@@ -331,6 +338,7 @@ def selftest() -> int:
     merge_slip(cells, [fh.name])
     os.unlink(fh.name)
     assert cells[0]["c3"] is False and cells[1]["c3"] is False, cells
+    assert robust_c5_say([{"c5": True}, {"c5": False}, {}]) == 1 and robust_c5_say([]) == 0
     print("selftest OK")
     return 0
 

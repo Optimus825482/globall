@@ -82,6 +82,16 @@ def tag_for(ad: str, tf: str, sym: str, g14: str, gh: str, pencere: str, kayma: 
 
 
 # ------------------------------------------------------------------ dolum (tek hucre)
+def bosluk_fark(direction: str, acilis: float, stop: float, pip: float, lots: float, pip_val: float) -> tuple:
+    """Adim 2-3: cikis bari stopun otesinde acildiysa (BUY: acilis < stop; SELL: acilis > stop) acilis dolumunun
+    stop dolumuna gore farki (pip, USD; her zaman <= 0), aksi halde (0, 0)."""
+    if direction == "BUY":
+        fark = (acilis - stop) / pip if acilis < stop else 0.0
+    else:
+        fark = (stop - acilis) / pip if acilis > stop else 0.0
+    return round(fark, 2), round(fark * lots * pip_val, 2)
+
+
 def cmd_dolum(a) -> None:
     os.chdir(ROOT)
     for p in (ROOT, os.path.join(ROOT, "backend"), os.path.join(ROOT, "scripts")):
@@ -93,20 +103,20 @@ def cmd_dolum(a) -> None:
     son: dict = {}
     kayit: list = []
 
+    # SimPos'ta kararli bir kimlik alani (ticket vb.) yok -> anahtar id(pos). Deger pozisyonun KENDISINI de
+    # tuttugu icin nesne kayit silinene kadar toplanamaz, dolayisiyla id yeniden kullanilamaz; ayrica
+    # `kayit[0] is pos` ile dogrulanir ve kapanista kayit silinir.
     def manage(pos, bar, *args, **kw):
-        son[id(pos)] = (bar, pos.sl_price)  # adim 1: bar basindaki stop
+        son[id(pos)] = (pos, bar, pos.sl_price)  # adim 1: bar basindaki stop
         return orig_manage(pos, bar, *args, **kw)
 
     def close(book, pos, reason, exit_price, closed_ts=0.0):
-        if book.name == "NEW" and reason in ("SL", "BE") and id(pos) in son:
-            bar, stop = son[id(pos)]
-            o, pip = bar[1], pos.pip_size
-            if pos.direction == "BUY":
-                fark = (o - stop) / pip if o < stop else 0.0
-            else:
-                fark = (stop - o) / pip if o > stop else 0.0
-            kayit.append({"reason": reason, "dir": pos.direction, "fark_pip": round(fark, 2),
-                          "fark_usd": round(fark * pos.lots * pos.pip_val, 2), "ts": bar[0]})
+        k = son.pop(id(pos), None)
+        if book.name == "NEW" and reason in ("SL", "BE") and k is not None and k[0] is pos:
+            _, bar, stop = k
+            fark_pip, fark_usd = bosluk_fark(pos.direction, bar[1], stop, pos.pip_size, pos.lots, pos.pip_val)
+            kayit.append({"reason": reason, "dir": pos.direction, "fark_pip": fark_pip, "fark_usd": fark_usd,
+                          "ts": bar[0]})
         return orig_close(book, pos, reason, exit_price, closed_ts=closed_ts)
 
     rp.manage_position, rp.close_position = manage, close

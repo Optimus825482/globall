@@ -58,7 +58,10 @@ def main() -> None:
     ap.add_argument("--end", default="", help="Sarmalayiciya --end (bos = sarmalayici varsayilani)")
     args = ap.parse_args()
     os.makedirs(OUT_DIR, exist_ok=True)
-    strategies = list(STRATEGIES) if args.strategies == "all" else [s for s in args.strategies.split(",") if s]
+    # "all": kombo eklentisinin (outputs/kombo/kombo_tanimlar.json varken) ekledigi kombo_* haric;
+    # kombolar yalniz adlariyla acikca istenir.
+    strategies = ([x for x in STRATEGIES if not x.startswith("kombo_")] if args.strategies == "all"
+                  else [s for s in args.strategies.split(",") if s])
     tfs = [t for t in args.tfs.split(",") if t]
     extra: list[str] = []
     if args.risk_gold > 0:

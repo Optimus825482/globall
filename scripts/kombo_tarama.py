@@ -13,7 +13,7 @@ Iki alt komut:
 
   tara         Sinyal dosyasini okur, kombinasyon uzayini YALNIZ egitim penceresinde simule eder ve
                siralar (asama A: tum tekler + ciftler sl 1.5 / tp 2.0 / filtresiz; asama B: ilk 200
-               taban x 10 filtre secenegi x 32 cikis varyanti). Egitim ilk 20'si yazildiktan SONRA
+               taban x 10 filtre secenegi x 28 cikis varyanti; tp<=1R iken basabas kopyalari elenir). Egitim ilk 20'si yazildiktan SONRA
                test penceresi bir kez okunur ve ayni dosyaya `test` alanı olarak eklenir. Test
                penceresine bakilarak hicbir siralama/parametre degistirilmez.
 
@@ -190,6 +190,18 @@ def _r(v, nd=10):
     return float(f"{v:.{nd}g}")
 
 
+KOMBO_ONEKI = "kombo_"
+
+
+def strateji_listesi(strategies) -> list:
+    """Varsayilan bilesen evreni: kombo eklentisinin urettigi `kombo_*` stratejileri haric.
+
+    `outputs/kombo/kombo_tanimlar.json` mevcutken `scripts/strategies/kombo.py` import aninda kombo_*'lari
+    sarmalayicinin STRATEGIES'ine ekler; bunlar bilesen olarak taranmamali (kombo icinde kombo, Task 1
+    tekrarlanabilirligi)."""
+    return [s for s in strategies if not str(s).startswith(KOMBO_ONEKI)]
+
+
 def sinyal_uret(sym: str, tf: str, stratejiler=None, out_dir: str = OUT_DIR) -> str:
     if SCRIPTS not in sys.path:
         sys.path.insert(0, SCRIPTS)
@@ -203,7 +215,7 @@ def sinyal_uret(sym: str, tf: str, stratejiler=None, out_dir: str = OUT_DIR) -> 
     rg._SERIES.pop(sym, None)
     b = rg.bars_of(sym, bars)
     atr14 = [_r(v) for v in rg.wk.atr(b, 14)]
-    names = list(stratejiler or rg.STRATEGIES)
+    names = list(stratejiler or strateji_listesi(rg.STRATEGIES))
     sinyaller, atr_eff, hatalar, sureler = {}, {}, {}, {}
     for k, strat in enumerate(names):
         t0 = time.time()
