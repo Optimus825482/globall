@@ -99,6 +99,59 @@ class SimulatorTest(unittest.TestCase):
         self.assertEqual(list(ex), [d["n"] - 1])
         self.assertAlmostEqual(pnl[0], 1.33 * -2, places=6)
 
+    # short ayna: sinyal i=70 -> giris bar 71 acilis 100 -> dolum 98; SL 113; TP 68; 1R 83
+    def test_short_ayni_barda_once_sl(self):
+        d = _doc()
+        d["side"]["s1"][70] = -1
+        _bar(d, 72, h=120, l=60)        # SL ve TP ayni barda -> once SL
+        _c, (i, ex, pnl) = _sim(d)
+        self.assertEqual(list(ex), [72])
+        # cikis 113 + 1 + 1 = 115 -> 98 - 115 = -17 pip
+        self.assertAlmostEqual(pnl[0], 1.33 * -17, places=6)
+
+    def test_short_tp(self):
+        d = _doc()
+        d["side"]["s1"][70] = -1
+        _bar(d, 72, h=105, l=60)
+        _c, (i, ex, pnl) = _sim(d)
+        self.assertEqual(list(ex), [72])
+        # TP 68 + 1 (yarim spread) = 69 -> +29 pip
+        self.assertAlmostEqual(pnl[0], 1.33 * 29, places=6)
+
+    def test_short_sl_bosluk_acilistan(self):
+        d = _doc()
+        d["side"]["s1"][70] = -1
+        _bar(d, 73, o=130, h=140, l=125, c=135)   # SL 113'un ustunde acilis
+        _c, (i, ex, pnl) = _sim(d)
+        self.assertEqual(list(ex), [73])
+        self.assertAlmostEqual(pnl[0], 1.33 * (98 - (130 + 2)), places=6)
+
+    def test_short_basabas(self):
+        d = _doc()
+        d["side"]["s1"][70] = -1
+        _bar(d, 72, h=105, l=80)          # 1R (83) gorulur, TP (68) / SL (113) yok
+        for j in range(73, 80):
+            _bar(d, j, o=90, h=90, l=90, c=90)
+        _bar(d, 76, o=90, h=99, l=88)     # dolum (98) ustu -> basabas
+        _bar(d, 80, o=90, h=95, l=60)     # basabassiz TP burada
+        _c, (i, ex, pnl) = _sim(d, be=True)
+        self.assertEqual(list(ex), [76])
+        self.assertAlmostEqual(pnl[0], 1.33 * (98 - (98 + 2)), places=6)   # -2 pip (maliyet)
+        _c, (i, ex, pnl) = _sim(d, be=False)
+        self.assertEqual(list(ex), [80])
+        self.assertAlmostEqual(pnl[0], 1.33 * 29, places=6)
+
+    def test_short_basabas_bosluk_ve_ayni_bar(self):
+        d = _doc()
+        d["side"]["s1"][70] = -1
+        _bar(d, 72, h=99, l=80)           # 1R ve dolum ustu ayni barda -> henuz etkin degil
+        for j in (73, 74):
+            _bar(d, j, o=95, h=95, l=95, c=95)
+        _bar(d, 75, o=105, h=106, l=104)  # basabas seviyesi (98) ustunde bosluklu acilis
+        _c, (i, ex, pnl) = _sim(d, be=True)
+        self.assertEqual(list(ex), [75])
+        self.assertAlmostEqual(pnl[0], 1.33 * (98 - (105 + 2)), places=6)
+
     def test_sl_bosluk_acilistan(self):
         d = _doc()
         d["side"]["s1"][70] = 1
@@ -301,6 +354,47 @@ class FiltreTest(unittest.TestCase):
         m = kt.filtre_maskeleri(t, one, one, one, one, dn, TF)
         self.assertTrue(m["atr_dusuk"][0][150] and not m["atr_yuksek"][0][150])
 
+    def test_atr_yuzdelik_nedensel(self):
+        rng = np.random.default_rng(5)
+        a = rng.uniform(1, 10, 400)
+        a[:3] = np.nan
+        full = kt.atr_yuzdelik(a)
+        for k in (100, 101, 150, 257, 399):
+            np.testing.assert_array_equal(kt.atr_yuzdelik(a[:k]), full[:k])
+        self.assertGreater(np.nanmax(full), 50)
+        self.assertLess(np.nanmin(full), 50)       # dejenere degil
+
+    def test_adx_nedensel(self):
+        rng = np.random.default_rng(6)
+        c = 100 + np.cumsum(rng.normal(0, 1, 400))
+        h, l = c + rng.uniform(0, 1, 400), c - rng.uniform(0, 1, 400)
+        full = kt.adx_seri(h, l, c)
+        for k in (40, 60, 123, 300, 399):
+            np.testing.assert_array_equal(kt.adx_seri(h[:k], l[:k], c[:k]), full[:k])
+
+    def test_filtre_maskeleri_nedensel(self):
+        rng = np.random.default_rng(7)
+        n = 4 * 260
+        t = T0 + TF * np.arange(n)
+        c = 100 + np.cumsum(rng.normal(0, 0.3, n))
+        o = np.concatenate(([c[0]], c[:-1]))
+        h, l = np.maximum(o, c) + 0.1, np.minimum(o, c) - 0.1
+        atr = rng.uniform(0.2, 1.0, n)
+        full = kt.filtre_maskeleri(t, o, h, l, c, atr, TF)
+        # cok sayida kesim noktasi + buyuk yukari/asagi sicrama: esik (20/25, %50) gecisleri
+        # yakalanir; bar k ve sonrasi degisir, k'dan onceki maske degerleri ayni kalmali
+        for k in range(120, n - 1, 5):
+            jump = 30.0 if (k // 5) % 2 else -30.0
+            h2, l2, c2, atr2 = h.copy(), l.copy(), c.copy(), atr.copy()
+            c2[k:] += jump
+            h2[k:] += jump + 1
+            l2[k:] += jump - 1
+            atr2[k:] *= 9
+            part = kt.filtre_maskeleri(t, o, h2, l2, c2, atr2, TF)
+            for ad, (L, S) in full.items():
+                np.testing.assert_array_equal(part[ad][0][:k], L[:k], err_msg=f"{ad} k={k}")
+                np.testing.assert_array_equal(part[ad][1][:k], S[:k], err_msg=f"{ad} k={k}")
+
     def test_adx(self):
         n = 200
         c = 100.0 + np.arange(n, dtype=float)           # guclu trend
@@ -418,13 +512,16 @@ class WalkForwardTest(unittest.TestCase):
         l = np.minimum(o, c) - rng.uniform(0, 40, n)
         sides = {s: np.where(rng.random(n) < 0.02, rng.choice([-1, 1], n), 0) for s in ("a", "b", "c")}
         t = t0 + TF * np.arange(n)
+        # degisken ATR (atr_yuksek/atr_dusuk maskeleri dejenere olmasin): yavas dalga + gurultu
+        atr_v = 80.0 * (1.0 + 0.6 * np.sin(np.arange(n) / 150.0)) + rng.uniform(0, 20, n)
         if zehir:   # test penceresini tamamen degistir: egitim sonuclari ayni kalmali
             k = int(np.searchsorted(t, kt.ts_of(kt.TEST[0])))
             c[k:] = c[k:] * 3 + rng.normal(0, 500, n - k)
             o[k:], h[k:], l[k:] = c[k:], c[k:] + 300, c[k:] - 300
+            atr_v[k:] = rng.uniform(5, 500, n - k)          # ATR yuzdeligi / ADX de degisir
             for s in sides:
                 sides[s][k:] = rng.choice([-1, 0, 1], n - k)
-        atr = [None] + [80.0] * (n - 1)
+        atr = [None] + atr_v[1:].tolist()
         doc = {"sym": "BTCUSD", "tf": "m15", "tf_sec": TF, "n": n, "t": t.tolist(),
                "o": o.tolist(), "h": h.tolist(), "l": l.tolist(), "c": c.tolist(),
                "pip_size": 1.0, "spread_pips": 5.0, "slip_pips": 10.0, "atr14": atr,
@@ -452,8 +549,8 @@ class WalkForwardTest(unittest.TestCase):
         self.assertTrue(all("test" in r and "train" in r for r in doc["train_top"]))
 
     def test_test_verisi_degisse_de_egitim_siralamasi_ayni(self):
-        d1 = kt.tara_veri(self._sentetik(zehir=False), top_b=3, ilerleme=False)
-        d2 = kt.tara_veri(self._sentetik(zehir=True), top_b=3, ilerleme=False)
+        d1 = kt.tara_veri(self._sentetik(zehir=False), top_b=8, ilerleme=False)
+        d2 = kt.tara_veri(self._sentetik(zehir=True), top_b=8, ilerleme=False)
         self.assertGreater(len(d1["train_top"]), 0)
         self.assertEqual([r["ad"] for r in d1["train_top"]], [r["ad"] for r in d2["train_top"]])
         self.assertEqual([r["train"] for r in d1["train_top"]], [r["train"] for r in d2["train_top"]])
