@@ -7,6 +7,7 @@ outputs/replay_strateji/gun_<tag>.json; ozet outputs/replay_strateji/ozet_<tur>.
 Kullanim:
   python scripts/replay_strateji_tarama.py --tur 1 --tfs m3,m5,m15 --strategies all --jobs 10
   python scripts/replay_strateji_tarama.py --tur 2 --risk-gold 25 --risk-btc 10 ...
+  python scripts/replay_strateji_tarama.py --tur holdout ... --start 2026-06-21 --end 2026-07-21   # pencere
 """
 from __future__ import annotations
 
@@ -53,6 +54,8 @@ def main() -> None:
     ap.add_argument("--symbols", default="", help="Virgullu: her sembol AYRI hucre (izole defter)")
     ap.add_argument("--cache-pattern", default="", help="Ornek: outputs/replay_cache_fx21_{tf}.json")
     ap.add_argument("--db", action="store_true", help="Veri kaynagi PostgreSQL historical_candles (--source db)")
+    ap.add_argument("--start", default="", help="Sarmalayiciya --start (bos = sarmalayici varsayilani, 14h baslangici)")
+    ap.add_argument("--end", default="", help="Sarmalayiciya --end (bos = sarmalayici varsayilani)")
     args = ap.parse_args()
     os.makedirs(OUT_DIR, exist_ok=True)
     strategies = list(STRATEGIES) if args.strategies == "all" else [s for s in args.strategies.split(",") if s]
@@ -66,6 +69,10 @@ def main() -> None:
         extra += ["--sl-atr", str(args.sl_atr)]
     if args.tp_r > 0:
         extra += ["--tp-r", str(args.tp_r)]
+    if args.start:
+        extra += ["--start", args.start]
+    if args.end:
+        extra += ["--end", args.end]
     if args.extra:
         extra += [f"--extra={args.extra}"]  # '=' sart: deger '--' ile baslayabilir
     symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()] or [""]
