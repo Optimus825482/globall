@@ -34,9 +34,11 @@ from pydantic import BaseModel, Field
 try:
     from app.forex_correlation import FXCorrelationMonitor
     from app import combo3_m5 as _c3
+    from app import kombo_m5 as _km
 except ImportError:  # paket dışı bağlam (test/script)
     from ..forex_correlation import FXCorrelationMonitor
     from .. import combo3_m5 as _c3
+    from .. import kombo_m5 as _km
 
 logger = logging.getLogger(__name__)
 
@@ -832,7 +834,7 @@ _PRICE_TS: Dict[str, float] = {}
 _PRICE_SOURCE: Dict[str, str] = {}
 _TICK_MISMATCH: Dict[str, float] = {}
 _PENDING_FLIP: Dict[str, Dict[str, Any]] = {}
-_CLOSED_BAR_ARM_SOURCES = frozenset({"s3_5m", "s3_15m", "squeeze_kc", "london_breakout", "fvg_pullback", "combo3_m5"})
+_CLOSED_BAR_ARM_SOURCES = frozenset({"s3_5m", "s3_15m", "squeeze_kc", "london_breakout", "fvg_pullback", "combo3_m5", "kombo_m5"})
 COMMODITY_MIN_SCORE = 78.0
 _TICK_BAR_CAP = 400
 _MIN_CLOSED_BARS_5M = 30
@@ -1038,9 +1040,9 @@ def supertrend_blocks_entry(
     src = str(entry_source or "")
     if src == "ema_adx_pullback" or src.startswith("s3_") or src == "squeeze_kc" or src == "fvg_pullback":
         return False
-    if src == _c3.COMBO3_ENTRY_SOURCE:
-        # Combo3 replay kanıtı SuperTrend filtresi KAPALIYKEN alındı (st=False); kol
-        # kendi yönünü (UT Bot/Donchian/Vortex) taşır — parite için muaf.
+    if src == _c3.COMBO3_ENTRY_SOURCE or src == _km.KOMBO_ENTRY_SOURCE:
+        # Combo3/Kombo replay kanıtı SuperTrend filtresi KAPALIYKEN alındı (st=False); kol
+        # kendi yönünü (UT Bot/Donchian/Vortex, kombo bileşenleri) taşır — parite için muaf.
         return False
     if int(st_dir or 0) == 0:
         return False
@@ -1149,6 +1151,15 @@ def _commit_arm_quota(cand: Dict[str, Any]) -> None:
         if st is not None and action:
             st["counts"][action] = int(st["counts"].get(action, 0)) + 1
             st["consumed_bar"] = bar_time
+    elif kind == "kombo":
+        # Kombo kolu: sayaç ve "bu bar işlendi" kaydı KOMBO BAŞINA (ad) tutulur —
+        # üç kombo aynı sembolde bağımsız ölçülür.
+        st = _KOMBO_DAY_STATE.get(sym)
+        ad = str(meta.get("ad") or "")
+        if st is not None and action and ad:
+            cnt = st["counts"].setdefault(ad, {})
+            cnt[action] = int(cnt.get(action, 0)) + 1
+            st.setdefault("consumed", {})[ad] = bar_time
     elif kind == "s3":
         st = _S3_DAY_STATE.get(str(meta.get("key") or ""))
         action_key = str(meta.get("action_key") or "")
@@ -1925,6 +1936,10 @@ SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
 # 2026-10-28 Combo3 (M5, yalnız XAUUSD) paper-ölçüm kolu — bkz. app/combo3_m5.py
 COMBO3_STRATEGY = _c3.COMBO3_STRATEGY
 COMBO3_LABEL = _c3.COMBO3_LABEL
+# 2026-10-28 Kombo (M5, yalnız XAUUSD) demo ölçüm kolu — bkz. app/kombo_m5.py ve
+# docs/KOMBINASYON_TARAMASI_2026_10_28.md §9 (üç kombo, risk %2, kayma + sinyal paritesi ölçümü)
+KOMBO_STRATEGY = _km.KOMBO_STRATEGY
+KOMBO_LABEL = _km.KOMBO_LABEL
 # FVG Imbalance Pullback (Fair Value Gap + Mitigation) — 2026-10-16 31-sembol backtest:
 # 3,597 işlem, WR %69.2, Net +$23,140.63. 13 kanıtlanan sembolde aktif.
 FVG_PULLBACK_STRATEGY = "FVG_PULLBACK"
@@ -1971,6 +1986,8 @@ def strategy_name_for(entry_source: Any) -> str:
         return SQUEEZE_KC_STRATEGY
     if src == _c3.COMBO3_ENTRY_SOURCE:
         return COMBO3_STRATEGY
+    if src == _km.KOMBO_ENTRY_SOURCE:
+        return KOMBO_STRATEGY
     return "M1_M5_RADAR_SCALPER"
 
 
@@ -1997,7 +2014,15 @@ def strategy_comment_tag(entry_source: Any) -> str:
         return "SQZKC"
     if src == _c3.COMBO3_ENTRY_SOURCE:
         return _c3.COMBO3_COMMENT_TAG
+    if src == _km.KOMBO_ENTRY_SOURCE:
+        return _km.KOMBO_COMMENT_PREFIX  # kombo başına KMB1/KMB4/KMB9 — bkz. candidate_comment_tag
     return "RADAR"
+
+
+def candidate_comment_tag(cand: Dict[str, Any]) -> str:
+    """Emir yorumu etiketi: adayın kendi etiketi varsa (Kombo: KMB1/KMB4/KMB9) o, yoksa kaynak etiketi."""
+    ov = str(cand.get("strategy_tag_override") or "").strip()
+    return ov if ov else strategy_comment_tag(cand.get("entry_source"))
 
 
 def strategy_display_label(code_or_source: Any) -> str:
@@ -2018,6 +2043,8 @@ def strategy_display_label(code_or_source: Any) -> str:
         return "Keltner Squeeze Kırılımı (M15)"
     if u in ("COMBO3_M5", "CMB3", "COMBO3") or "COMBO3" in u or "CMB3" in u:
         return COMBO3_LABEL
+    if u in ("KOMBO_M5", "KOMBO") or "KOMBO" in u or u.startswith("KMB"):
+        return KOMBO_LABEL
     if u in ("LONDON_SIGN", "LSGN", "LS") or "LONDON_SIGN" in u:
         return "London Sign (NY Açılışı Momentum)"
     if u in ("LONDON_BREAKOUT", "LBRK", "LB") or "LONDON" in u:
@@ -2053,6 +2080,8 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
         return SQUEEZE_KC_STRATEGY
     if "CMB3" in raw_tag or "COMBO3" in raw_tag:
         return COMBO3_STRATEGY
+    if raw_tag.startswith("KMB") or "KOMBO" in raw_tag:
+        return KOMBO_STRATEGY
     if "LSGN" in raw_tag or "LONDON_SIGN" in raw_tag:
         return LONDON_SIGN_STRATEGY
     if "LBRK" in raw_tag or "LONDON" in raw_tag:
@@ -2553,8 +2582,11 @@ def effective_risk_pct(symbol: str, entry_source: Any, settings: Optional[Any] =
     """Kol-özel risk bütçesi: Combo3 kolu `combo3_risk_pct` ile sembol bütçesini EZER
     (ölçüm dönemi düşük risk). Diğer kaynaklar `get_symbol_risk_pct`."""
     s = settings or _AUTO_SETTINGS
-    if str(entry_source or "").strip().lower() == _c3.COMBO3_ENTRY_SOURCE:
+    src = str(entry_source or "").strip().lower()
+    if src == _c3.COMBO3_ENTRY_SOURCE:
         return float(getattr(s, "combo3_risk_pct", 1.0))
+    if src == _km.KOMBO_ENTRY_SOURCE:
+        return float(getattr(s, "kombo_risk_pct", 2.0))
     return get_symbol_risk_pct(symbol, s)
 
 
@@ -4203,6 +4235,100 @@ def _refresh_combo3_state(ticks: Dict[str, Dict[str, Any]]) -> None:
             _COMBO3_STATE[sym] = tech
 
 
+def _kombo_tech_for(sym: str) -> Optional[Dict[str, Any]]:
+    """Kombo (M5) kararları — kapanmış M5 barları (köprü broker mumu; yoksa tik kovası).
+
+    Karar barı son eleman; üç kombo aynı bar dizisinden değerlendirilir.
+    Döner: {"decs": [kombo_entries çıktısı...], "bar_time", "bars", "close"}.
+    """
+    bars = _s3_bars_for(sym, "5m", limit=_KOMBO_BAR_LIMIT)
+    if not bars or len(bars) < _km.MIN_BARS:
+        return None
+    item = next((i for i in FOREX_SYMBOLS if i["symbol"] == sym), None)
+    pip_size = float(item["pip_size"]) if item else 0.0
+    try:
+        decs = _km.kombo_entries(bars, pip_size, list(_AUTO_SETTINGS.kombo_tanimlar or _km.DEFAULT_KOMBOLAR))
+    except ValueError as exc:  # geçersiz tanım (ayar dosyasından) kolu düşürmesin
+        logger.warning("kombo tanımı geçersiz, kol bu tur sessiz: %s", exc)
+        decs = []
+    return {
+        "decs": decs,
+        "bar_time": int(bars[-1].get("time", 0) or 0),
+        "bars": len(bars),
+        "close": float(bars[-1].get("close") or 0.0),
+        "updated_at": float(_PRICE_TS.get(canonical_symbol(sym), 0.0) or 0.0),
+    }
+
+
+def _refresh_kombo_state(ticks: Dict[str, Dict[str, Any]]) -> None:
+    """Kombo sembollerinin karar setini tazeler (sembol başına tek hesap/tur)."""
+    for sym in {s.upper() for s in (_AUTO_SETTINGS.kombo_symbols or [])}:
+        try:
+            tech = _kombo_tech_for(sym)
+        except Exception as exc:  # pragma: no cover - savunmacı
+            logger.warning("kombo tech hesaplanamadı %s: %s", sym, exc)
+            tech = None
+        if tech:
+            _KOMBO_STATE[sym] = tech
+
+
+def _record_kombo_signal(rec: Dict[str, Any]) -> bool:
+    """Kombo sinyal günlüğü: (ad, bar_time) başına bir kayıt; belleğe ve JSONL dosyasına.
+
+    Döner: True = yeni kayıt yazıldı, False = bu bar için zaten vardı.
+    """
+    key = (str(rec.get("ad") or ""), int(rec.get("bar_time") or 0))
+    if key in _KOMBO_SIGNAL_SEEN:
+        return False
+    _KOMBO_SIGNAL_SEEN.add(key)
+    _KOMBO_SIGNAL_LOG.append(rec)
+    if len(_KOMBO_SIGNAL_LOG) > _KOMBO_SIGNAL_LOG_CAP:
+        del _KOMBO_SIGNAL_LOG[:-_KOMBO_SIGNAL_LOG_CAP]
+    try:
+        os.makedirs(os.path.dirname(_KOMBO_SIGNAL_LOG_PATH), exist_ok=True)
+        with open(_KOMBO_SIGNAL_LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as exc:  # pragma: no cover
+        logger.warning("kombo sinyal kaydı diske yazılamadı: %s", exc)
+    return True
+
+
+def _load_kombo_signal_log() -> List[Dict[str, Any]]:
+    """Süreç yeniden başladıysa JSONL dosyasından belleğe yükler (tek sefer)."""
+    if _KOMBO_SIGNAL_LOG:
+        return _KOMBO_SIGNAL_LOG
+    try:
+        with open(_KOMBO_SIGNAL_LOG_PATH, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    rec = json.loads(line)
+                    _KOMBO_SIGNAL_LOG.append(rec)
+                    _KOMBO_SIGNAL_SEEN.add((str(rec.get("ad") or ""), int(rec.get("bar_time") or 0)))
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # pragma: no cover
+        logger.warning("kombo sinyal kaydı okunamadı: %s", exc)
+    return _KOMBO_SIGNAL_LOG
+
+
+def kombo_signal_summary(signals: List[Dict[str, Any]], slippage: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Sinyal günlüğü × kayma defteri birleşimi (saf fonksiyon): kombo başına sinyal sayısı,
+    emre dönüşen sayı (kayma defterinde aynı etiket + aynı sinyal barı), atlanma nedenleri."""
+    fills = {(str(r.get("strategy_tag") or "").upper(), int(r.get("signal_bar_time") or 0)) for r in slippage}
+    out: Dict[str, Any] = {}
+    for s in signals:
+        ad = str(s.get("ad") or "?")
+        row = out.setdefault(ad, {"tag": s.get("tag"), "sinyal": 0, "emir": 0, "BUY": 0, "SELL": 0, "durum": {}})
+        row["sinyal"] += 1
+        row[str(s.get("action") or "BUY")] = row.get(str(s.get("action") or "BUY"), 0) + 1
+        durum = str(s.get("durum") or "aday")
+        row["durum"][durum] = row["durum"].get(durum, 0) + 1
+        if (str(s.get("tag") or "").upper(), int(s.get("bar_time") or 0)) in fills:
+            row["emir"] += 1
+    return out
+
+
 def _record_slippage(cmd: Dict[str, Any], result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Köprü OPEN_ORDER sonucundan kayma kaydı üretir, belleğe ve JSONL dosyasına yazar."""
     sym = str(cmd.get("symbol") or result.get("symbol") or "").upper()
@@ -5421,12 +5547,18 @@ class ForexAutoPaperSettings(BaseModel):
     squeeze_kc_mom_min: float = Field(0.0, ge=0.0, le=100.0, description="Squeeze KC: momentum |.| onay eşiği (0 = kapalı, spec)")
     squeeze_kc_tp_r: float = Field(2.0, ge=0.0, le=6.0, description="Squeeze KC: TP = SL × bu R katı (0 = TP yok, trailing)")
     # ---- 2026-10-28 Combo3 (M5) paper-ölçüm kolu (app/combo3_m5.py) ----
-    combo3_enabled: bool = Field(True, description="Combo3 (UT Bot ∪ Donchian+Vortex ∪ Vortex kesişimi, M5) kolu. Replay: yalnız XAUUSD risk %20'de 14 haftada 83 günün 33'ü ≥ +%50; AMA 2 pip kayma ile PF 1.81→1.09 (docs/REPLAY_STRATEJI_TARAMA_2026_10_27.md). Bu yüzden canlıda DÜŞÜK riskle (%1) ve kayma ölçümüyle (GET /api/forex/slippage) koşar. 2026-10-28 kullanıcı kararı: varsayılan AÇIK.")
+    combo3_enabled: bool = Field(False, description="Combo3 (UT Bot ∪ Donchian+Vortex ∪ Vortex kesişimi, M5) kolu. Replay: yalnız XAUUSD risk %20'de 14 haftada 83 günün 33'ü ≥ +%50; AMA 2 pip kayma ile PF 1.81→1.09 (docs/REPLAY_STRATEJI_TARAMA_2026_10_27.md). 2026-10-28 (akşam) kullanıcı kararı: Kombo kolu (kombo_1/kombo_9 combo3 sinyalini filtreli kapsar) açıldığı için varsayılan KAPALI — ikisi aynı barda aynı XAUUSD pozisyon slotu için yarışmasın.")
     combo3_symbols: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="Combo3 kolu sembolleri. Replay kanıtı yalnız XAUUSD; BTCUSD her hücrede negatif — eklenmemeli.")
     combo3_risk_pct: float = Field(1.0, ge=0.1, le=25.0, description="Combo3 işlemlerinde risk bütçesi (% bakiye). `risk_gold_pct`'yi EZER (yalnız bu kol için). Ölçüm dönemi varsayılanı %1; kayma ≤ 2 pip ve PF ≥ 1.3 ölçülmeden artırılmaz.")
     combo3_sl_atr: float = Field(1.5, ge=0.5, le=5.0, description="Combo3: SL = bu kat × ATR(14, M5) (replay 1.5)")
     combo3_tp_r: float = Field(2.0, ge=0.0, le=6.0, description="Combo3: TP = SL × bu R katı (replay 2.0; 0 = TP yok)")
     combo3_max_per_day: int = Field(0, ge=0, le=50, description="Combo3: sembol+yön başına günde azami giriş (0 = sınırsız, replay)")
+    # ---- 2026-10-28 Kombo (M5, yalnız XAUUSD) demo ölçüm kolu (app/kombo_m5.py) ----
+    kombo_enabled: bool = Field(True, description="Kombo kolu: plan v3 kombinasyon taramasında 5 ölçütü geçip temiz holdout'ta tutunan üç XAUUSD m5 kombosu (docs/KOMBINASYON_TARAMASI_2026_10_28.md §9). Amaç para kazanmak değil, BE/SL dolum kalitesi + sinyal paritesi ölçümü; GET /api/forex/slippage?tag=KMB1|KMB4|KMB9 ve GET /api/forex/kombo/signals. 2026-10-28 kullanıcı kararı: varsayılan AÇIK.")
+    kombo_symbols: List[str] = Field(default_factory=lambda: ["XAUUSD"], description="Kombo kolu sembolleri. Replay/holdout kanıtı yalnız XAUUSD m5.")
+    kombo_risk_pct: float = Field(2.0, ge=0.1, le=25.0, description="Kombo işlemlerinde risk bütçesi (% bakiye; rapor §9: ölçüm dönemi %2). `risk_gold_pct`'yi EZER (yalnız bu kol). Geçme ölçütü (maliyet sonrası PF ≥ 1.3, BE dolum kaybı kötümser senaryonun yarısından az) sağlanmadan artırılmaz.")
+    kombo_max_per_day: int = Field(0, ge=0, le=50, description="Kombo: kombo+yön başına günde azami giriş (0 = sınırsız, replay)")
+    kombo_tanimlar: List[Dict[str, Any]] = Field(default_factory=lambda: [dict(k) for k in _km.DEFAULT_KOMBOLAR], description="Kombo tanımları [{ad, tag, tanim:{tip,a,b,n,filtre,sl_atr,tp_r}}]. Varsayılan: kombo_1 sonra(ut_bot,combo3,12)|seans_00_07|sl3.0_tp3.0; kombo_4 or(hma_ao,tsi_ema50)|seans_13_20|sl1.5_tp2.0; kombo_9 sonra(btc_keltner_geri_htf,combo3,3)|atr_yuksek|sl2.0_tp1.0.")
 
 
 class ClosePositionRequest(BaseModel):
@@ -5656,6 +5788,17 @@ _SQUEEZE_KC_DAY_STATE: Dict[str, Dict[str, Any]] = {}
 # 2026-10-28 Combo3 (M5) kolu durumu: sembol → {"dec", "bar_time", ...}; gün sayaçları
 _COMBO3_STATE: Dict[str, Dict[str, Any]] = {}
 _COMBO3_DAY_STATE: Dict[str, Dict[str, Any]] = {}
+# 2026-10-28 Kombo (M5) kolu durumu: sembol → {"decs": [karar...], "bar_time", "bars", "close"};
+# gün durumu: sembol → {"day", "counts": {ad: {yön: n}}, "consumed": {ad: bar_time}}
+_KOMBO_STATE: Dict[str, Dict[str, Any]] = {}
+_KOMBO_DAY_STATE: Dict[str, Dict[str, Any]] = {}
+_KOMBO_BAR_LIMIT = 600
+# Kombo sinyal günlüğü: her kombo sinyali (işleme dönüşsün ya da dönmesin) bar başına bir kez;
+# replay ile sinyal paritesi ve "kaç sinyal emre dönüştü" buradan ölçülür (GET /api/forex/kombo/signals).
+_KOMBO_SIGNAL_LOG: List[Dict[str, Any]] = []
+_KOMBO_SIGNAL_LOG_CAP = 5000
+_KOMBO_SIGNAL_SEEN: set = set()
+_KOMBO_SIGNAL_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "kombo_signal_log.jsonl")
 # Kayma/spread ölçüm defteri (köprü emir sonuçlarından; GET /api/forex/slippage)
 _SLIPPAGE_LOG: List[Dict[str, Any]] = []
 _SLIPPAGE_LOG_CAP = 2000
@@ -7743,6 +7886,82 @@ async def _forex_auto_paper_loop():
                         strategy_label=COMBO3_LABEL,
                     )
 
+            # Kombo (M5, yalnız XAUUSD) demo ölçüm kolu (2026-10-28 — kullanıcı kararı):
+            # plan v3 taramasında tutunan üç kombo (kombo_1/4/9), her biri kendi KMBx
+            # etiketiyle; risk `kombo_risk_pct` (%2). Her sinyal bar başına bir kez
+            # sinyal günlüğüne yazılır (işleme dönüşsün ya da dönmesin) → replay paritesi.
+            # Sembol başına tek pozisyon kuralı değişmez; aynı barda birden çok kombo
+            # ateşlerse ilk sıradaki emre dönüşür, diğerleri günlükte "aday" kalır.
+            if _AUTO_SETTINGS.kombo_enabled:
+                _refresh_kombo_state(ticks)
+                _kb_day = datetime.datetime.now(datetime.timezone.utc).toordinal()
+                _kb_syms_active = {s.upper() for s in (_AUTO_SETTINGS.kombo_symbols or [])}
+                if weekend_now:
+                    _kb_syms_active = {s for s in _kb_syms_active if s in CANLI_WEEKEND_CRYPTO_SYMBOLS}
+                for _kb_sym in _kb_syms_active:
+                    _kb_tech = _KOMBO_STATE.get(_kb_sym)
+                    _kb_t = ticks.get(_kb_sym)
+                    _kb_item = next((i for i in FOREX_SYMBOLS if i["symbol"] == _kb_sym), None)
+                    if not _kb_tech or not _kb_t or not _kb_item:
+                        continue
+                    _kb_pip = float(_kb_item["pip_size"])
+                    _kb_disp = _kb_t.get("display", _kb_sym)
+                    _kb_st = _KOMBO_DAY_STATE.setdefault(_kb_sym, {"day": _kb_day, "counts": {}, "consumed": {}})
+                    if _kb_st["day"] != _kb_day:
+                        _kb_st["day"] = _kb_day
+                        _kb_st["counts"] = {}
+                    _kb_bar = int(_kb_tech.get("bar_time") or 0)
+                    _kb_cap = int(_AUTO_SETTINGS.kombo_max_per_day or 0)
+                    _kb_tech5 = _TECHNICAL_CACHE.get(_kb_sym) or {}
+                    for _kb_dec in (_kb_tech.get("decs") or []):
+                        _kb_ad = str(_kb_dec.get("ad") or "")
+                        _kb_action = str(_kb_dec["action"])
+                        _kb_durum = "aday"
+                        if _kb_bar and int(_kb_st.get("consumed", {}).get(_kb_ad) or 0) == _kb_bar:
+                            continue  # bu bar bu kombo için zaten işlendi
+                        if _kb_cap > 0 and int(_kb_st["counts"].get(_kb_ad, {}).get(_kb_action, 0)) >= _kb_cap:
+                            _kb_durum = "kota"
+                        _kb_yeni = _record_kombo_signal({
+                            "ts": round(time.time(), 2), "symbol": _kb_sym, "ad": _kb_ad, "tag": _kb_dec.get("tag"),
+                            "action": _kb_action, "bar_time": _kb_bar, "close": float(_kb_dec.get("close") or 0.0),
+                            "sl_pips": float(_kb_dec.get("sl_pips") or 0.0), "tp_pips": float(_kb_dec.get("tp_pips") or 0.0),
+                            "atr": float(_kb_dec.get("atr") or 0.0), "spread_pips": float(_kb_t.get("spread_pips", 0.0) or 0.0),
+                            "durum": _kb_durum,
+                        })
+                        if _kb_durum != "aday":
+                            continue
+                        arm_rows.append({
+                            "symbol": _kb_sym,
+                            "display": _kb_disp,
+                            "action": _kb_action,
+                            "score": float(_kb_tech5.get("score") or _kb_t.get("score") or 0.0),
+                            "spread_pips": float(_kb_t.get("spread_pips", 0.0) or 0.0),
+                            "atr_pips": round(float(_kb_dec.get("atr") or 0.0) / _kb_pip, 1) if _kb_pip > 0 else 15.0,
+                            "adx": float(_kb_tech5.get("adx", 0.0)),
+                            "supertrend_dir": int(_kb_tech5.get("supertrend_dir", 0)),
+                            "entry_source": _km.KOMBO_ENTRY_SOURCE,
+                            "strategy": KOMBO_STRATEGY,
+                            "strategy_label": KOMBO_LABEL,
+                            "strategy_tag_override": str(_kb_dec.get("tag") or _km.KOMBO_COMMENT_PREFIX),
+                            "kombo_ad": _kb_ad,
+                            "sl_pips_override": _kb_dec["sl_pips"],
+                            "tp_pips_override": _kb_dec["tp_pips"],
+                            "signal_price": float(_kb_dec.get("close") or 0.0),
+                            "signal_bar_time": _kb_bar,
+                            "signal_bar_confirmed": True,
+                            "_arm_quota": {"kind": "kombo", "symbol": _kb_sym, "action": _kb_action, "bar_time": _kb_bar, "ad": _kb_ad},
+                        })
+                        if _kb_yeni:
+                            _log_auto_decision(
+                                "SCAN",
+                                f"🧪 [{_kb_disp}] {KOMBO_LABEL}: {_kb_ad} ({_kb_dec.get('tag')}) {_kb_action} adayı — "
+                                f"sinyal kapanışı {float(_kb_dec.get('close') or 0.0):.5g}, SL {_kb_dec['sl_pips']:.1f} pip, "
+                                f"TP {_kb_dec['tp_pips']:.1f} pip, risk %{float(_AUTO_SETTINGS.kombo_risk_pct):.1f} — değerlendiriliyor.",
+                                symbol=_kb_sym,
+                                strategy=KOMBO_STRATEGY,
+                                strategy_label=KOMBO_LABEL,
+                            )
+
             # Keltner Squeeze (M15) akışı (2026-10-14 canlıya alım — kullanıcı kararı):
             # BB(20,2) ⊂ Keltner(20,1.5) sıkışması bırakılınca bant-dışı kapanış +
             # LazyBear momentum teyidi; SL = |kapanış − KC orta|, TP = 2R. Kanonik
@@ -8731,9 +8950,9 @@ async def _forex_auto_paper_loop():
                         sl_pips = float(_fvg_ov)
                         tp_pips = float(cand.get("tp_pips_override") or round(sl_pips * float(_AUTO_SETTINGS.fvg_tp_r), 1))
                         first_target_pips = 0.0
-                if str(cand.get("entry_source", "")) == _c3.COMBO3_ENTRY_SOURCE:
-                    # Combo3 çıkışları (replay ile birebir): SL = combo3_sl_atr × ATR(14, M5),
-                    # TP = combo3_tp_r × SL (0 = TP yok → BE/trailing); kısmi kâr yok.
+                if str(cand.get("entry_source", "")) in (_c3.COMBO3_ENTRY_SOURCE, _km.KOMBO_ENTRY_SOURCE):
+                    # Combo3/Kombo çıkışları (replay ile birebir): SL = sl_atr × etkin ATR(14, M5),
+                    # TP = tp_r × SL (0 = TP yok → BE/trailing); kısmi kâr yok.
                     _c3_ov = cand.get("sl_pips_override")
                     if _c3_ov:
                         sl_pips = float(_c3_ov)
@@ -8907,10 +9126,10 @@ async def _forex_auto_paper_loop():
                         "partial_pips": first_target_pips,
                         # Strateji etiketi MT5 emrine gömülür (kapanan deal `comment`'iyle geri
                         # gelir → işlem kaydında hangi strateji olduğu görünür). 31 kr sınırı.
-                        "comment": f"{strategy_comment_tag(cand.get('entry_source'))} {cand['score']:.0f}",
+                        "comment": f"{candidate_comment_tag(cand)} {cand['score']:.0f}",
                         "strategy": _c_strat,
                         "strategy_label": _c_strat_lbl,
-                        "strategy_tag": strategy_comment_tag(cand.get("entry_source")),
+                        "strategy_tag": candidate_comment_tag(cand),
                         # 2026-10-28 kayma ölçümü: köprü bu alanları emir sonucuyla geri yankılar
                         # (sinyal barı kapanışı vs gerçek fill → GET /api/forex/slippage).
                         "entry_source": str(cand.get("entry_source", "") or ""),
@@ -8980,7 +9199,7 @@ async def _forex_auto_paper_loop():
                         "entry_source": cand.get("entry_source", ""),
                         "strategy": _c_strat,
                         "strategy_label": _c_strat_lbl,
-                        "strategy_tag": strategy_comment_tag(cand.get("entry_source")),
+                        "strategy_tag": candidate_comment_tag(cand),
                         # EoD zaman-stopu (dakika): swap/gece taşımadan kapat (London Sign spec).
                         "hold_minutes": int(cand.get("hold_minutes", 0) or 0),
                     }
@@ -9838,6 +10057,41 @@ def _scan_now_strategy_rows(ticks: Dict[str, Dict[str, Any]], radar: Dict[str, A
                 _row(COMBO3_STRATEGY, sym,
                      f"Kesişim bekleniyor (UT Bot / Donchian+Vortex / Vortex; son M5 kapanış {float(tech.get('close') or 0.0):.5g}, "
                      f"{int(tech.get('bars') or 0)} bar)")
+
+    # --- 9) Kombo (M5, yalnız XAUUSD) — 2026-10-28 demo ölçüm kolu (üç kombo, satır başına bir)
+    if s.kombo_enabled:
+        for sym in sorted({x.upper() for x in (s.kombo_symbols or [])}):
+            t = ticks.get(sym)
+            tech = _KOMBO_STATE.get(sym) or _kombo_tech_for(sym)
+            if not t or not tech:
+                _row(KOMBO_STRATEGY, sym, "Veri yok — M5 mum serisi bekleniyor (≥ 260 kapanmış bar)")
+                continue
+            st_copy = dict(_KOMBO_DAY_STATE.get(sym, {}))
+            if st_copy.get("day") != day:
+                st_copy = {"day": day, "counts": {}, "consumed": {}}
+            counts = dict(st_copy.get("counts", {}))
+            consumed = dict(st_copy.get("consumed", {}))
+            decs = {str(d.get("ad")): d for d in (tech.get("decs") or [])}
+            cap = int(s.kombo_max_per_day or 0)
+            for k in (s.kombo_tanimlar or _km.DEFAULT_KOMBOLAR):
+                ad, tag = str(k.get("ad")), str(k.get("tag") or "")
+                dec = decs.get(ad)
+                if dec:
+                    if cap > 0 and int(counts.get(ad, {}).get(dec["action"], 0)) >= cap:
+                        _row(KOMBO_STRATEGY, sym, f"{ad} ({tag}): {dec['action']} sinyali var ama günlük kota doldu ({cap})")
+                    elif int(consumed.get(ad) or 0) == int(tech.get("bar_time") or 0):
+                        _row(KOMBO_STRATEGY, sym, f"{ad} ({tag}): {dec['action']} sinyali bu barda işlendi (bar başına tek giriş)")
+                    else:
+                        _row(KOMBO_STRATEGY, sym,
+                             f"{ad} ({tag}): {dec['action']} adayı (kapanış {float(dec.get('close') or 0.0):.5g}), "
+                             f"SL {float(dec['sl_pips']):.1f}p, TP {float(dec['tp_pips']):.1f}p, risk %{float(s.kombo_risk_pct):.1f}",
+                             dec["action"])
+                else:
+                    tn = k.get("tanim") or {}
+                    _row(KOMBO_STRATEGY, sym,
+                         f"{ad} ({tag}): sinyal yok — {tn.get('tip')}({tn.get('a')},{tn.get('b')}) "
+                         f"filtre {','.join(tn.get('filtre') or []) or '-'}; son M5 kapanış {float(tech.get('close') or 0.0):.5g}, "
+                         f"{int(tech.get('bars') or 0)} bar")
 
     return rows
 
@@ -10984,6 +11238,20 @@ async def get_slippage(limit: int = Query(500, ge=1, le=5000), tag: str = Query(
     rows = rows[-limit:]
     return {"count": len(rows), "summary": _c3.slippage_summary(rows), "records": rows,
             "log_path": _SLIPPAGE_LOG_PATH}
+
+
+@router.get("/kombo/signals")
+async def get_kombo_signals(limit: int = Query(500, ge=1, le=5000), ad: str = Query("", description="Kombo adı filtresi (örn kombo_1)")):
+    """Kombo kolu sinyal günlüğü (2026-10-28): her kombo sinyali bar başına bir kez, işleme
+    dönüşsün ya da dönmesin. `summary` kayma defteriyle (aynı KMBx etiketi + sinyal barı)
+    birleştirilir: kaç sinyal emre dönüştü. Replay sinyal paritesi bu günlükten ölçülür."""
+    rows = _load_kombo_signal_log()
+    if ad:
+        rows = [r for r in rows if str(r.get("ad") or "") == ad]
+    slip = [r for r in _load_slippage_log() if str(r.get("strategy_tag") or "").upper().startswith(_km.KOMBO_COMMENT_PREFIX)]
+    return {"count": len(rows), "summary": kombo_signal_summary(rows, slip), "records": rows[-limit:],
+            "log_path": _KOMBO_SIGNAL_LOG_PATH, "tanimlar": list(_AUTO_SETTINGS.kombo_tanimlar or _km.DEFAULT_KOMBOLAR),
+            "risk_pct": float(_AUTO_SETTINGS.kombo_risk_pct), "enabled": bool(_AUTO_SETTINGS.kombo_enabled)}
 
 
 @router.get("/mt5/status")

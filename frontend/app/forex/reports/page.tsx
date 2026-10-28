@@ -102,6 +102,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   LONDON_SIGN: "NY Sign Momentum",
   SQUEEZE_KC_M15: "Keltner Squeeze (M15)",
   COMBO3_M5: "Combo3 UTBot+Vortex (M5)",
+  KOMBO_M5: "Kombo XAU (M5) KMB1/4/9",
   M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
   MANUAL: "Manuel Giriş",
   IC_MARKETS_MT5: "IC Markets MT5",
@@ -706,6 +707,7 @@ export default function ForexReportsPage() {
               <option value="DONCHIAN_ADX">Donchian ADX Kırılımı</option>
               <option value="SQUEEZE_KC_M15">Keltner Squeeze (M15)</option>
               <option value="COMBO3_M5">Combo3 UTBot+Vortex (M5)</option>
+              <option value="KOMBO_M5">Kombo XAU (M5) KMB1/4/9</option>
               <option value="M1_M5_RADAR_SCALPER">M1/M5 Çoklu Radar</option>
               <option value="IC_MARKETS_MT5">IC Markets MT5</option>
               <option value="MANUAL">Manuel Giriş</option>
@@ -873,6 +875,8 @@ export default function ForexReportsPage() {
                             ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
                             : tr.strategy === "COMBO3_M5"
                             ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                            : tr.strategy === "KOMBO_M5"
+                            ? "bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30"
                             : tr.strategy === "M1_M5_RADAR_SCALPER"
                             ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
                             : tr.strategy === "MANUAL"

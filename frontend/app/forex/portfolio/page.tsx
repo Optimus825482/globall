@@ -1151,6 +1151,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 { id: "DONCHIAN", label: "Donchian" },
                 { id: "SQUEEZE", label: "Keltner Squeeze" },
                 { id: "COMBO3", label: "Combo3 M5" },
+                { id: "KOMBO", label: "Kombo XAU M5" },
               ].map((st) => (
                 <button
                   key={st.id}

@@ -63,6 +63,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   LONDON_SIGN: "NY Sign Momentum",
   SQUEEZE_KC_M15: "Keltner Squeeze (M15)",
   COMBO3_M5: "Combo3 UTBot+Vortex (M5)",
+  KOMBO_M5: "Kombo XAU (M5) KMB1/4/9",
   RADAR: "M1/M5 Çoklu Radar",
   M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
   MANUAL: "Manuel Giriş",

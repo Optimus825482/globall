@@ -65,6 +65,11 @@ export interface AutoSettings {
   combo3_sl_atr?: number;
   combo3_tp_r?: number;
   combo3_max_per_day?: number;
+  kombo_enabled?: boolean;
+  kombo_symbols?: string[];
+  kombo_risk_pct?: number;
+  kombo_max_per_day?: number;
+  kombo_tanimlar?: { ad: string; tag?: string; tanim?: Record<string, any> }[];
   fvg_pullback_enabled?: boolean;
   fvg_symbols?: string[];
   fvg_tp_r?: number;
@@ -261,7 +266,7 @@ interface AutoSettingsPanelProps {
   accent?: "amber" | "blue";
 }
 
-type TabKey = "risk" | "radar" | "fvg" | "donchian" | "ema_adx" | "london_box" | "s3" | "squeeze" | "combo3";
+type TabKey = "risk" | "radar" | "fvg" | "donchian" | "ema_adx" | "london_box" | "s3" | "squeeze" | "combo3" | "kombo";
 
 export default function AutoSettingsPanel({
   show,
@@ -366,12 +371,17 @@ export default function AutoSettingsPanel({
         fvg_symbols: form.fvg_symbols || ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
         fvg_tp_r: num(form.fvg_tp_r, 1.8),
         // Combo3 (M5) paper-ölçüm kolu — 2026-10-28
-        combo3_enabled: form.combo3_enabled ?? true,
+        combo3_enabled: form.combo3_enabled ?? false,
         combo3_symbols: form.combo3_symbols || ["XAUUSD"],
         combo3_risk_pct: num(form.combo3_risk_pct, 1.0),
         combo3_sl_atr: num(form.combo3_sl_atr, 1.5),
         combo3_tp_r: num(form.combo3_tp_r, 2.0),
         combo3_max_per_day: Math.max(0, Math.round(num(form.combo3_max_per_day, 0))),
+        // Kombo XAU (M5) demo ölçüm kolu — 2026-10-28 (tanımlar sunucu varsayılanı; UI'dan değiştirilmez)
+        kombo_enabled: form.kombo_enabled ?? true,
+        kombo_symbols: form.kombo_symbols || ["XAUUSD"],
+        kombo_risk_pct: num(form.kombo_risk_pct, 2.0),
+        kombo_max_per_day: Math.max(0, Math.round(num(form.kombo_max_per_day, 0))),
       };
 
       const res = await apiFetch("/api/forex/auto-paper/settings", {
@@ -442,6 +452,7 @@ export default function AutoSettingsPanel({
           { id: "s3", label: `🚀 SuperTrend RSI (${(form.s3_symbols_5m?.length || 0) + (form.s3_symbols_15m?.length || 0)})` },
           { id: "squeeze", label: `⚡ Keltner Squeeze (${form.squeeze_kc_symbols?.length || 0})` },
           { id: "combo3", label: `🧩 Combo3 M5 (${form.combo3_symbols?.length || 0})${form.combo3_enabled === false ? " · kapalı" : ""}` },
+          { id: "kombo", label: `🧪 Kombo XAU M5 (${form.kombo_symbols?.length || 0})${form.kombo_enabled === false ? " · kapalı" : ""}` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1149,6 +1160,79 @@ export default function AutoSettingsPanel({
             onChange={(syms) => setField("combo3_symbols", syms)}
             accentClass="text-rose-400"
             chipActiveClass="bg-rose-600/30 text-rose-300 border-rose-400/50"
+          />
+        </div>
+      )}
+
+      {/* TAB 9: KOMBO XAU (M5) — plan v3 kombinasyon taramasından üç kombo, demo ölçüm kolu (2026-10-28) */}
+      {activeTab === "kombo" && (
+        <div className="space-y-3 animate-in fade-in duration-150">
+          <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
+            <span className="text-xs font-bold text-fuchsia-300 block">Kombo XAU — kombo_1 / kombo_4 / kombo_9 (M5, yalnız XAUUSD)</span>
+            <span className="text-[10px] text-bunker-muted">
+              Kombinasyon taramasında 5 ölçütü geçip temiz holdout&apos;ta tutunan üç kombo. Amaç kazanç değil ölçüm:
+              BE/SL dolum kalitesi (GET /api/forex/slippage?tag=KMB1|KMB4|KMB9) ve replay sinyal paritesi
+              (GET /api/forex/kombo/signals). Geçme ölçütü: maliyet sonrası PF ≥ 1.3; durma: 20 işlem sonrası PF &lt; 1.0.
+              Combo3 kolu bu kol açıkken kapalı tutulur (aynı barda aynı altın slotu için yarışmasın).
+            </span>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.kombo_enabled ?? true}
+              onChange={(e) => setField("kombo_enabled", e.target.checked)}
+              className="accent-fuchsia-500"
+            />
+            <span className="font-bold text-fuchsia-300">Kombo kolu aktif</span>
+            <span className="text-[10px] text-bunker-muted">(üç kombo birlikte; her biri kendi KMBx etiketiyle ayrı ölçülür)</span>
+          </label>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">Risk (% bakiye, yalnız bu kol; rapor §9: %2):</label>
+              <input
+                type="number" min="0.1" max="25" step="0.1"
+                value={form.kombo_risk_pct ?? 2.0}
+                onChange={(e) => setNumField("kombo_risk_pct", e.target.value)}
+                className={`${inputCls} text-fuchsia-300`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-bunker-muted block mb-1">Günlük azami giriş / kombo+yön (0 = sınırsız):</label>
+              <input
+                type="number" min="0" max="50"
+                value={form.kombo_max_per_day ?? 0}
+                onChange={(e) => setIntField("kombo_max_per_day", e.target.value)}
+                className={`${inputCls} text-fuchsia-300`}
+              />
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800 text-[10px] text-bunker-muted space-y-1">
+            <div className="text-xs font-bold text-fuchsia-300">Tanımlar (sunucu varsayılanı; SL/TP tanımdan, BE/trailing motorun)</div>
+            {(form.kombo_tanimlar && form.kombo_tanimlar.length
+              ? form.kombo_tanimlar
+              : [
+                  { ad: "kombo_1", tag: "KMB1", tanim: { tip: "sonra", a: "ut_bot", b: "combo3", n: 12, filtre: ["seans_00_07"], sl_atr: 3.0, tp_r: 3.0 } },
+                  { ad: "kombo_4", tag: "KMB4", tanim: { tip: "or", a: "hma_ao", b: "tsi_ema50", filtre: ["seans_13_20"], sl_atr: 1.5, tp_r: 2.0 } },
+                  { ad: "kombo_9", tag: "KMB9", tanim: { tip: "sonra", a: "btc_keltner_geri_htf", b: "combo3", n: 3, filtre: ["atr_yuksek"], sl_atr: 2.0, tp_r: 1.0 } },
+                ]
+            ).map((k) => (
+              <div key={k.ad} className="font-mono">
+                <span className="text-fuchsia-200">{k.ad}</span> ({k.tag}): {k.tanim?.tip}({k.tanim?.a},{k.tanim?.b}
+                {k.tanim?.n ? `,${k.tanim.n}` : ""}) | {(k.tanim?.filtre || []).join(",") || "-"} | SL {k.tanim?.sl_atr}×ATR, TP {k.tanim?.tp_r}R
+              </div>
+            ))}
+          </div>
+
+          <SymbolMultiSelector
+            title="Kombo Aktif Semboller (kombo_symbols) — kanıt yalnız XAUUSD m5"
+            badgeLabel="Kombo XAU M5"
+            selected={form.kombo_symbols || []}
+            onChange={(syms) => setField("kombo_symbols", syms)}
+            accentClass="text-fuchsia-400"
+            chipActiveClass="bg-fuchsia-600/30 text-fuchsia-300 border-fuchsia-400/50"
           />
         </div>
       )}

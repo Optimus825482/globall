@@ -96,7 +96,8 @@ class Combo3LiveWiringTests(unittest.TestCase):
 
     def test_settings_defaults_low_risk_gold_only(self):
         cfg = forex.ForexAutoPaperSettings()
-        self.assertTrue(cfg.combo3_enabled)  # 2026-10-28 kullanıcı kararı: varsayılan açık
+        # 2026-10-28 akşam kararı: Kombo kolu açıldı, combo3 varsayılan KAPALI (aynı XAUUSD slotu için yarışmasın)
+        self.assertFalse(cfg.combo3_enabled)
         self.assertEqual(cfg.combo3_symbols, ["XAUUSD"])
         self.assertEqual(cfg.combo3_risk_pct, 1.0)
         self.assertEqual(cfg.combo3_sl_atr, 1.5)

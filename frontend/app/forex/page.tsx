@@ -263,6 +263,11 @@ const ARM_META: Record<string, { icon: string; label: string; medal: string }> =
     label: "Combo3 UTBot+Vortex · 5m",
     medal: "bg-rose-500/15 text-rose-300 border-rose-500/40",
   },
+  KOMBO_M5: {
+    icon: "🧪",
+    label: "Kombo XAU · 5m (KMB1/4/9)",
+    medal: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
+  },
 };
 
 function armMeta(strategy: string) {
@@ -286,6 +291,7 @@ const ARM_ORDER: string[] = [
   "LONDON_BREAKOUT",
   "SQUEEZE_KC_M15",
   "COMBO3_M5",
+  "KOMBO_M5",
 ];
 
 export default function ForexRadarPage() {
