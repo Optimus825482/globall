@@ -1,17 +1,17 @@
 # Kombinasyon taraması v3 — rapor (2026-10-28)
 
-Plan: `docs/superpowers/plans/2026-10-28-kombinasyon-taramasi-v3.md` · Kod: `scripts/kombo_tarama.py`, `scripts/kombo_secim.py`, `scripts/strategies/kombo.py`, `scripts/strateji_dogrulama.py` (v3 eklentileri), `scripts/replay_strateji_tarama.py` (`--start/--end`).
+Plan: `docs/superpowers/plans/2026-10-28-kombinasyon-taramasi-v3.md` · Kod: `scripts/kombo_tarama.py`, `scripts/kombo_secim.py`, `scripts/strategies/kombo.py`, `scripts/strateji_dogrulama.py` (v3 eklentileri), `scripts/replay_strateji_tarama.py` (`--start/--end`), `scripts/kombo_be_dolum_analizi.py` (bölüm 5–7).
 Bu raporda kombolar **her zaman tam tanım dizesi + sembol/tf** ile anılır. `kombo_<n>` adları yalnız `outputs/kombo/kombo_tanimlar.json` numaralandırmasıdır. `outputs/kombo/secim.json` içindeki `kombo_1..3` **farklı** kombolardır, karıştırılmamalı.
 
 ## 1. Kısa sonuç
 
-- Gerçek motorda 17 kombodan **7 hücre** beş ölçütün hepsini geçti. Bunlar **5 bağımsız sinyal setine** karşılık geliyor; XAUUSD m15 çifti ile EURJPY m15 çifti aynı sinyalin yalnız TP'si farklı varyantları. Hepsi XAUUSD (m5 ve m15) ve EURJPY m15 hücrelerinde; BTC'de hiçbir kombo geçmedi.
+- Gerçek motorda 17 kombodan **7 hücre** beş ölçütün hepsini geçti. Bunlar **5 farklı sinyal setine** karşılık geliyor; XAUUSD m15 çifti ile EURJPY m15 çifti aynı sinyalin yalnız TP'si farklı varyantları. Setler birbirinden bağımsız değil: 3'ü XAUUSD m5'te, 4'ü XAUUSD'de. Hepsi XAUUSD (m5 ve m15) ve EURJPY m15 hücrelerinde; BTC'de hiçbir kombo geçmedi.
 - **+500 USD/gün hedefi tutmuyor.** Sistem riskinde (XAU %10, FX %5) 14 haftada en iyi hücrenin hedef günü 2. Beş setin günlük toplamı da (yalnız gösterge niteliğinde) 76 günün 2'sinde hedefi aşıyor, holdout'ta hiç aşmıyor. %20 risk ile bile 14 haftada yalnız 7 gün.
 - **Temiz holdout sonucu karışık; sonucu kısmen destekliyor.** Seçimde hiç kullanılmamış 21 Haz – 20 Tem 2026 penceresinde:
   - XAUUSD m5'teki üç hücre kaymalı koşumda da pozitif.
   - XAUUSD m15 çifti ile EURJPY m15 çifti negatif.
   - Örneklem küçük: XAU m5 dışındaki hücrelerde 7–21 işlem var.
-- **Kenarın büyük kısmı motorun erken kâr kilidinden ("BE") geliyor.** Bu kilit, 14 haftada işlemlerin %47–93'ünü küçük kârla kapatıyor. Stop dolumu kötümser modellenirse sonuç ciddi biçimde değişiyor. Kilit fiyatını kilitleyen barın kapanışı zaten geçmişse dolum bir sonraki bar açılışından yapılarak bu senaryo ölçüldü (bölüm 5.2): 14 haftada iki XAU m5 hücresi (kombo_1 ve kombo_4) negatife dönüyor.
+- **XAU sonuçları motorun kâr kilidi ("BE") dolum modeline duyarlı.** Bu kilit, 14 haftada işlemlerin %47–93'ünü küçük kârla kapatıyor. Bağımlılık kötümser dolum testiyle ölçüldü (bölüm 5.2): stop çıkışının (SL veya BE) gerçekleştiği bar, o barın başında geçerli olan stop seviyesinin ötesinde açıldıysa (BUY: açılış < stop; SELL: açılış > stop), dolum stop fiyatı yerine o barın açılışından yapılır. Bu test altında 14 haftada iki XAU m5 hücresi (kombo_1 ve kombo_4) negatife dönüyor.
 - **Karar:** Gerçek para yok. Yalnız XAUUSD m5 üçlüsü için düşük riskli (%2) demo ileri testi öneriliyor. Bu testin asıl amacı canlı kâr kilidi dolumlarını ölçmek (bölüm 9).
 
 ## 2. Yöntem
@@ -129,7 +129,7 @@ Kaynak: `rep_tkombo_v3_*.json` kapanan işlemlerinin `reason` ve `trail` alanlar
 
 ### 5.1 Tablo (14 hafta, robust hücreler)
 
-| Ad / hücre / tanım | n | BE n / toplam | BE+trail n / toplam | TP (+trail) n / toplam | SL n / toplam | Diğer | BE payı (işlem) | BE'nin brüt kârdaki payı | BE hariç net | Medyan işlem | BUY n/PF/net | SELL n/PF/net |
+| Ad / hücre / tanım | n | BE n / toplam | BE+trail n / toplam | TP (+trail) n / toplam | SL n / toplam | Diğer | BE payı (işlem) | BE'nin brüt kârdaki payı | BE dışı işlemlerin P&L toplamı (betimsel) | Medyan işlem | BUY n/PF/net | SELL n/PF/net |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | kombo_1 XAUUSD m5 `sonra(ut_bot,combo3,12)\|seans_00_07\|sl3.0_tp3.0_be` | 421 | 352 / +2495 | 39 / +1952 | 5 / +1484 | 25 / −2542 | – | %92,9 | %75,0 | **−1057** | +5,8 | 217/2,13/+1824 | 204/2,69/+1566 |
 | kombo_4 XAUUSD m5 `or(hma_ao,tsi_ema50)\|seans_13_20\|sl1.5_tp2.0` | 72 | 63 / +749 | 1 / +52 | 3 / +584 | 5 / −509 | – | %88,9 | %57,8 | +75 | +8,8 | 36/3,82/+567 | 36/2,00/+309 |
@@ -142,22 +142,26 @@ Kaynak: `rep_tkombo_v3_*.json` kapanan işlemlerinin `reason` ve `trail` alanlar
 Okuma:
 - **XAU hücrelerinin profili "çok sık küçük kâr, seyrek tam kayıp".**
   - Kazanma oranı %93–96. Ortalama BE kârı +7…+12 USD, ortalama SL yaklaşık −100 USD (%10 risk). Bu yüzden PF'ler 2,3–5,2.
-  - XAUUSD m5 `sonra(ut_bot,combo3,12)|seans_00_07|sl3.0_tp3.0_be` için BE çıkışları çıkarıldığında net −1057 USD. XAUUSD m15 `…sl2.0_tp2.0_be` için −9 USD.
-  - Kısacası bu hücrelerin kenarı, sinyalden çok canlı kâr kilidinin başarısına bağlı.
-- **Yön dağılımı:** XAU hücrelerinde hem BUY hem SELL kârlı; salt altın trend betası değil.
+  - "BE dışı işlemlerin P&L toplamı" kolonu yalnız **betimseldir**: BE ile kapanmayan işlemlerin toplamı (XAUUSD m5 `sonra(ut_bot,combo3,12)|seans_00_07|sl3.0_tp3.0_be` için −1057, XAUUSD m15 `…sl2.0_tp2.0_be` için −9). Bu bir "kilitsiz koşum" değildir. Kilit olmasaydı bu işlemler başka yerde kapanırdı ve tek pozisyon zinciri değişirdi. Karşı-olgusal sonuç olarak okunmamalı.
+  - Kâr kilidine bağımlılık iddiası bu çıkarmaya değil, bölüm 5.2'deki kötümser dolum testine dayanıyor.
+- **Yön dağılımı:** XAU hücrelerinde 14 haftada hem BUY hem SELL kârlı. Bu, sonucun salt altın trend betası olmadığını tek başına göstermez: sık küçük kâr kilidi her iki yönü de kârlı gösterebilir. Holdout'ta da XAUUSD m15 `or(fisher_st,donch_vortex)|atr_dusuk|…` SELL tarafı 7 işlemde −136.
 - **EURJPY daha az BE bağımlı (%47–65 BE).** Ama BUY ile SELL arasında asimetri var:
   - Kaymalı koşumda BUY tarafı negatif: EURJPY `…sl1.5_tp1.5_be` BUY 41/0,77/−44; `…sl1.5_tp1.0` BUY 41/0,83/−33.
   - Net kârın büyük kısmı 20 SELL işleminden geliyor.
 
 ### 5.2 Kâr kilidi dolum duyarlılığı (ek kontrol)
 
-**Ne ölçüldü.** Motor, BE kilidini bar t'nin high/low değerinden (MFE) hesaplıyor. Stop ancak bar t+1'de kontrol ediliyor ve dolum **her zaman kilit fiyatından** yapılıyor; bar t+1 kilit seviyesinin ötesinde açılsa bile.
+**Ne ölçüldü.** Motor (`manage_position`) her barda önce SL'yi kontrol ediyor (BUY: low ≤ stop; SELL: high ≥ stop). Vurulursa dolum **her zaman stop fiyatından** (± spread ayarı) yapılıyor; bar stopun ötesinde açılsa bile. SL kontrolünden sonra aynı barın high/low'u (MFE) ile BE kilidi/trailing stopu taşıyor; yeni stop ilk kez sonraki barda kontrol ediliyor.
 
 **Canlıyla karşılaştırma.**
 - Canlı döngü (`_forex_auto_paper_loop`) her 1,5 s'de kilit hesaplıyor ve MT5'e `MODIFY_SLTP` gönderiyor. Tick düzeyinde kesintisiz yönetimde dolum gerçekten kilit fiyatına yakın olur, yani motorun modeli ideal durumu temsil ediyor.
 - Öte yandan canlıda MFE barın en uç değeri değil, 1,5 s'lik örneklerden görülen değer. Bunun üstüne değişiklik gecikmesi ve broker stop seviyesi kısıtları var.
 
-**Kötümser sınır.** Kilit fiyatını kilitleyen barın kapanışı zaten geçmişse, dolumun bar t+1 açılışından yapıldığı varsayıldı. Ölçüm motor değiştirilmeden yapıldı: `manage_position`/`close_position` sarmalandı, yalnız NEW defteri sayıldı. Sarmalanmış koşumun işlem sayısı ve neti tabanla birebir aynı.
+**Kötümser sınır (kodla aynı ölçüt, `scripts/kombo_be_dolum_analizi.py dolum`).** Stop çıkışının (SL veya BE) gerçekleştiği bar, o barın başında geçerli olan stop seviyesinin ötesinde açıldıysa (BUY: açılış < stop; SELL: açılış > stop), dolum stop fiyatı yerine o barın açılışından yapılır.
+- Stop, bir önceki barın high/low'una göre taşındığı ve açılış ≈ önceki kapanış olduğu için BE'de bu pratikte şu anlama geliyor: stopu kuran (ya da son taşıyan) barın kapanışı yeni stopun gerisinde kaldı. İlk SL'deki boşluklar da sayılıyor.
+- Fark = (açılış − stop)/pip × kapanıştaki lot × pip_val (BUY; SELL'de işaret ters, fark her zaman ≤ 0). Spread ayarı iki dolumda aynı olduğu için farka girmiyor, motorda komisyon yok, taban kaymasız koşum.
+- Kötümser net = motor neti + farkların toplamı. Bu **sonradan yapılan toplamsal bir düzeltme, yeniden koşum değil**: sonraki işlemlerin lot/bakiye etkisi ve tek pozisyon zincirindeki değişim modellenmiyor.
+- Motor dosyası değiştirilmedi: `manage_position` ve `close_position` sarmalandı, yalnız NEW defteri (gölge defterler hariç) sayıldı. Sarmalanmış koşumun işlem sayısı ve neti 14 hücre-pencerenin hepsinde tabanla birebir aynı (`esit_taban`).
 
 | Ad / hücre / tanım | Stop çıkışı (SL+BE) | Açılışı stopun ötesinde olan | Fark (USD) | 14h net → kötümser | Holdout net → kötümser |
 |---|---|---|---|---|---|
@@ -170,7 +174,7 @@ Okuma:
 | kombo_16 EURJPY m15 `or(btc_saat_profili,btc_xau_oncu)\|atr_dusuk\|sl1.5_tp1.0` | 36 | 15 (14 BE) | −62 | +326 → +264 | −26 → −26 |
 
 **Sonuç.**
-- XAU BE çıkışlarının yaklaşık yarısında kilit seviyesi yalnız bar içi bir fitilde görülmüş; bar onun gerisinde kapanmış.
+- XAU stop çıkışlarının yaklaşık yarısında çıkış barı stopun ötesinde açılmış. Yani stop, gerisinde kapanılan bir fitile göre kurulmuş.
 - Kötümser dolumda XAUUSD m5'in en büyük örneklemli iki hücresi negatife dönüyor: `sonra(ut_bot,combo3,12)|seans_00_07|sl3.0_tp3.0_be` ve `or(hma_ao,tsi_ema50)|seans_13_20|sl1.5_tp2.0`.
 - XAUUSD m5 `sonra(btc_keltner_geri_htf,combo3,3)|atr_yuksek|sl2.0_tp1.0` iki pencerede de pozitif kalıyor.
 - Gerçek değer ideal ile kötümser arasında. Bunu ancak canlı (demo) dolum verisi belirler.
@@ -207,7 +211,7 @@ Haftalık (kaymasız):
 
 | Hücre grubu | Holdout sonucu | Değerlendirme |
 |---|---|---|
-| XAUUSD m5, 3 hücre | Kaymalı koşumda da pozitif; ama en büyük örneklemli iki hücrenin holdout kârı da kötümser dolum altında siliniyor (bölüm 5.2) | Destekliyor, örneklem gerçekten bağımsız: 80 / 21 / 14 işlem |
+| XAUUSD m5, 3 hücre | Kaymalı koşumda da pozitif; ama en büyük örneklemli iki hücrenin holdout kârı da kötümser dolum altında siliniyor (bölüm 5.2) | Zayıf/koşullu destek: örneklem gerçekten bağımsız (80 / 21 / 14 işlem), ama 3 hücreden 2'si kötümser dolumda holdout'ta da negatif; 21 ve 14 işlem az |
 | XAUUSD m15 çifti | Negatif (13 işlem) | Desteklemiyor |
 | EURJPY m15 çifti | Negatif (7 işlem; BTC için tasarlanmış bileşenler) | Desteklemiyor |
 
@@ -238,7 +242,7 @@ Yöntem:
 **"Hepsi birlikte" (gösterge niteliğinde).**
 
 Hesap şöyle yapıldı:
-- 5 bağımsız sinyal setinin günlük P&L'i toplandı. Setler: XAU m5 üçlüsü, XAU m15'ten `…sl2.0_tp3.0_be`, EURJPY'den `…sl1.5_tp1.5_be`.
+- 5 farklı sinyal setinin günlük P&L'i toplandı (bağımsız değil: 3'ü XAUUSD m5'te). Setler: XAU m5 üçlüsü, XAU m15'ten `…sl2.0_tp3.0_be`, EURJPY'den `…sl1.5_tp1.5_be`.
 - Çiftlerin her birinden 14 haftalık neti yüksek olan varyant seçildi; holdout'ta çift üyeleri özdeş ya da çok yakın.
 - Bu toplam, **5 ayrı izole 1000 USD defterin** (toplam 5000 USD sermaye) toplamıdır; tek bir 1000 USD defter değildir.
 
@@ -333,14 +337,17 @@ python scripts/replay_strateji_tarama.py --tur kombo_v3_holdout_slip_xau_m15 --t
 python scripts/replay_strateji_tarama.py --tur kombo_v3_holdout_slip_fx_m15  --tfs m15 --strategies kombo_14,kombo_16 --symbols EURJPY --jobs 2 --cache-pattern "outputs/replay_cache_fx21_{tf}.json" "--extra=--all-symbols --slip-pips 1 --spread-profile outputs/fx_spread_db_1m.json" $W
 ```
 
-**Bölüm 5–7 hesapları.** Commit edilmiş bir script yok; aşağıdaki tanımlarla yeniden üretilebilir. Kaynak her zaman `outputs/replay_strateji/rep_<tag>.json` → `variants.NEW.closed`. Tag biçimi: `tkombo_v3_<grup>_<tf>_<kombo>_<tf>_<SYM>`, holdout için `tkombo_v3_holdout_[slip_]<xau|fx>_<tf>_…`.
-- **Çıkış nedeni:** `reason` (+ `trail` true ise "+trail").
-- **Yön:** `direction`.
-- **Gün:** `closed_ts` UTC günü.
-- **Eşzamanlılık:** açılış zamanı = önbellekteki `bars[opened_bar][0]`.
-
-Kötümser dolum ölçümü (bölüm 5.2) motor dosyasına dokunmadan yapıldı:
-1. `replay_strateji_gunluk` modül olarak import edildi.
-2. `rp.manage_position` sarıldı; her çağrıda (pozisyon, bar, önceki `sl_price`) kaydedildi.
-3. `rp.close_position` sarıldı; `book.name == "NEW"` ve reason ∈ {SL, BE} ise o barın açılışı stopun ötesindeyse fark hesaplandı: `(açılış − stop)/pip × lot × pip_val`.
-4. Ardından `g.main()` aynı argümanlarla çağrıldı.
+**Bölüm 5–7 hesapları:** `scripts/kombo_be_dolum_analizi.py`. Algoritma, script'in docstring'inde ve bölüm 5.2'de aynı ölçütle tanımlı.
+```bash
+# Kötümser dolum (7 hücre x {14 hafta, holdout}; ayrı süreçler) -> outputs/kombo/be_dolum.json
+python scripts/kombo_be_dolum_analizi.py dolum-hepsi --jobs 7
+# Tek hücre:
+python scripts/kombo_be_dolum_analizi.py dolum --strategy kombo_1 --tf m5 --symbol XAUUSD --start 2026-07-21 --end 2026-10-28 --out x.json
+# Çıkış karışımı, yön, holdout, risk ölçekleme, 5 set toplamı, eşzamanlılık -> outputs/kombo/be_dolum_ozet.json
+python scripts/kombo_be_dolum_analizi.py ozet
+```
+`ozet` için kaynaklar:
+- Kapanan işlemler `outputs/replay_strateji/rep_<tag>.json` → `variants.NEW.closed`. Tag biçimi: `tkombo_v3_<grup>_<tf>_<kombo>_<tf>_<SYM>`, kayma için `tkombo_v3_slip_<xau|fx>_…`, holdout için `tkombo_v3_holdout_[slip_]<xau|fx>_<tf>_…`.
+- Çıkış nedeni = `reason` (+ `trail` true ise "+trail"), yön = `direction`, gün = `closed_ts` UTC günü.
+- Eşzamanlılıkta açılış zamanı = önbellekteki `bars[opened_bar][0]`.
+- "BE dışı işlemlerin P&L toplamı" betimseldir (bkz. 5.1).
