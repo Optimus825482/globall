@@ -31,6 +31,9 @@ sonra ayni komut --slip-ozet ile tekrar calistirilir (kayma ozetleri eski cikti 
 her --tur ayri dosya). Risk olcekleme (2/5/10/20%) adaylar icin (aday yoksa PF'ye gore ilk 3,
 yalniz bilgi) dogrulama.json'da "risk_olcek" altinda; gunluk P&L risk/taban ile lineer olceklenir
 (FX taban %5, BTC taban %2).
+v3 (kombo_* eklentisi): grup sembolden (XAUUSD -> XAU: taban %10, kayma 2 pip; BTCUSD -> BTC; digerleri FX);
+--test-penceresi rep_<tag>.json kapanan islemlerinden test penceresi (son 7h) PF/net/islem ve olcut 5 (test PF >= 1.2) ekler.
+  python scripts/strateji_dogrulama.py --ozet outputs/replay_strateji/ozet_turkombo_v3_*.json          --out outputs/replay_strateji/dogrulama_v3.json --slip-tur-oneki kombo_v3_slip --test-penceresi [--slip-ozet ...]
 """
 from __future__ import annotations
 
@@ -47,17 +50,32 @@ D0, D_MID, D1 = "2026-07-21", "2026-09-08", "2026-10-28"   # [D0, D_MID) ilk 7h,
 PF_MIN, MIN_TRADES, SLIP_PF_MIN = 1.30, 60, 1.10
 SLIP_MIN_FRAC = 0.5   # kayma kosumunda taban islem sayisinin en az bu orani olmali
 RUIN_USD, MAX_RUIN_DAYS, TARGET_USD = -700.0, 2, 500.0
-BASE_RISK = {"FX": 5.0, "BTC": 2.0}
-SLIP_PIPS = {"FX": 1, "BTC": 10}
+BASE_RISK = {"FX": 5.0, "BTC": 2.0, "XAU": 10.0}
+SLIP_PIPS = {"FX": 1, "BTC": 10, "XAU": 2}
+TEST_PF_MIN = 1.2   # v3 (--test-penceresi): son 7 hafta (test penceresi) kapanan islemlerden PF
 RISKS = (2, 5, 10, 20)
 DEFAULT_OZET = ("ozet_turbtc1.json", "ozet_turfx_yeni.json")
 DEFAULT_OUT = "dogrulama.json"
 DEFAULT_SLIP_PREFIX = "dogrulama_slip"
 
 
-def grup_of(strat: str) -> str:
-    """BTC stratejileri 'btc_' onekli (v1 ve v2); digerleri FX."""
+def grup_of(strat: str, sym: str = "") -> str:
+    """BTC stratejileri 'btc_' onekli (v1 ve v2); digerleri FX. v3 kombo_* stratejileri sembole gore
+    (XAUUSD -> XAU, BTCUSD -> BTC, digerleri FX)."""
+    if strat.startswith("kombo_"):
+        return {"XAUUSD": "XAU", "BTCUSD": "BTC"}.get(sym, "FX")
     return "BTC" if strat.startswith("btc_") else "FX"
+
+
+def test_window_stats(closed: list) -> dict:
+    """Kapanan islemlerden (closed_ts) test penceresi [D_MID, D1) PF / net / islem. Zarar yoksa PF inf."""
+    from datetime import datetime, timezone
+    pnl = [t["pnl_usd"] for t in closed if t.get("closed_ts")
+           and D_MID <= datetime.fromtimestamp(t["closed_ts"], timezone.utc).strftime("%Y-%m-%d") < D1]
+    gw = sum(v for v in pnl if v > 0)
+    gl = -sum(v for v in pnl if v < 0)
+    pf = (gw / gl) if gl > 0 else (math.inf if gw > 0 else (None if not pnl else 0.0))
+    return {"test_islem": len(pnl), "test_net": round(sum(pnl), 2), "test_pf": pf}
 
 
 def pf_val(x):
@@ -115,7 +133,7 @@ def parse_tag(tag: str, tur: str) -> tuple[str, str, str]:
     return strat, tf, sym
 
 
-def load_cells(ozets=DEFAULT_OZET) -> list[dict]:
+def load_cells(ozets=DEFAULT_OZET, test_penceresi: bool = False) -> list[dict]:
     cells = []
     for fn in ozets:
         oz = json.load(open(fn if os.path.isabs(fn) or os.path.exists(fn) else os.path.join(OUT_DIR, fn), encoding="utf-8"))
@@ -126,10 +144,14 @@ def load_cells(ozets=DEFAULT_OZET) -> list[dict]:
             pf = pf_val(row.get("pf"))
             if row["trades"] == 0 and pf is None:
                 pf = 0.0   # islemsiz hucre: PF tanimsiz, olcut 1'de acikca basarisiz (criteria trades > 0 ister)
-            cell = {"strateji": strat, "tf": tf, "sembol": sym, "grup": grup_of(strat),
+            cell = {"strateji": strat, "tf": tf, "sembol": sym, "grup": grup_of(strat, sym),
                     "tag": row["tag"], "islem": row["trades"], "pf": pf, "net_ozet": row["net"], **ws}
             cell.update(criteria(cell["islem"], pf, ws["net14"], ws["net_ilk7"], ws["net_son7"], ws["iflas"]))
             cell["daily"] = g["daily"]
+            if test_penceresi:
+                rep = json.load(open(os.path.join(OUT_DIR, f"rep_{row['tag']}.json"), encoding="utf-8"))
+                cell.update(test_window_stats(rep["variants"]["NEW"].get("closed", [])))
+                cell["c5"] = cell["test_pf"] is not None and cell["test_islem"] > 0 and cell["test_pf"] >= TEST_PF_MIN
             cells.append(cell)
     return cells
 
@@ -178,12 +200,14 @@ def main() -> int:
     ap.add_argument("--ozet", nargs="+", default=list(DEFAULT_OZET), help="girdi ozet json'lari")
     ap.add_argument("--out", default=DEFAULT_OUT, help="cikti json (yalniz dosya adi ise outputs/replay_strateji altina; dizin iceren goreli yol CWD'ye gore cozulur)")
     ap.add_argument("--slip-tur-oneki", default=DEFAULT_SLIP_PREFIX, help="kayma komutlarinda --tur oneki")
+    ap.add_argument("--test-penceresi", action="store_true",
+                    help="v3: rep_<tag>.json kapanan islemlerinden test penceresi (son 7h) PF/net; olcut 5 = test PF >= 1.2")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
 
-    cells = load_cells(a.ozet)
+    cells = load_cells(a.ozet, a.test_penceresi)
     n_slip = merge_slip(cells, a.slip_ozet) if a.slip_ozet else 0
     cells.sort(key=lambda c: (c["grup"], c["strateji"], c["tf"], c["sembol"]))
 
@@ -200,6 +224,11 @@ def main() -> int:
     print(f"\nHucre {len(cells)}; olcut1: {sum(c['c1'] for c in cells)}, olcut2: {sum(c['c2'] for c in cells)}, "
           f"olcut4: {sum(c['c4'] for c in cells)}; ADAY (1+2+4): {len(adaylar)}; robust (1+2+3+4): {len(robust)} "
           f"(kayma sonucu birlestirilen hucre: {n_slip})")
+    if a.test_penceresi:
+        for c in cells:
+            print(f"  TEST {c['strateji']} {c['tf']} {c['sembol']}: test islem {c['test_islem']} PF {fmt_pf(c['test_pf'])} "
+                  f"net {c['test_net']} c5={'E' if c['c5'] else 'H'}")
+        print(f"robust + test PF >= {TEST_PF_MIN} (1+2+3+4+5): {sum(1 for c in robust if c['c5'])}")
     for c in adaylar:
         print(f"  ADAY {c['strateji']} {c['tf']} {c['sembol']}: islem {c['islem']} PF {fmt_pf(c['pf'])} net14 {c['net14']}")
 
@@ -225,18 +254,18 @@ def main() -> int:
     print("\nKayma kosumu komutlari (aday/bilgi hucreleri):")
     gruplar: dict[tuple[str, str, str], dict] = {}
     for c in sec:
-        g = gruplar.setdefault((c["grup"], c["tf"], c["sembol"] if c["grup"] == "BTC" else ""), {"s": set(), "y": set()})
+        g = gruplar.setdefault((c["grup"], c["tf"], c["sembol"] if c["grup"] in ("BTC", "XAU") else ""), {"s": set(), "y": set()})
         g["s"].add(c["strateji"]); g["y"].add(c["sembol"])
     for (grup, tf, _), g in sorted(gruplar.items()):
         tur = f"{a.slip_tur_oneki}_{grup.lower()}_{tf}"
-        cache = "outputs/replay_cache_xaubtc_{tf}.json" if grup == "BTC" else "outputs/replay_cache_fx21_{tf}.json"
+        cache = "outputs/replay_cache_xaubtc_{tf}.json" if grup in ("BTC", "XAU") else "outputs/replay_cache_fx21_{tf}.json"
         extra = f"--all-symbols --slip-pips {SLIP_PIPS[grup]}" + (" --spread-profile outputs/fx_spread_db_1m.json" if grup == "FX" else "")
         print(f'  python scripts/replay_strateji_tarama.py --tur {tur} --tfs {tf} --strategies {",".join(sorted(g["s"]))} '
               f'--symbols {",".join(sorted(g["y"]))} --jobs 4 --cache-pattern "{cache}" "--extra={extra}"')
 
     out_cells = []
     for c in cells:
-        d = {k: (("inf" if v == math.inf else v) if k in ("pf", "slip_pf") else v) for k, v in c.items() if k != "daily"}
+        d = {k: (("inf" if v == math.inf else v) if k in ("pf", "slip_pf", "test_pf") else v) for k, v in c.items() if k != "daily"}
         out_cells.append(d)
     out = {"kriterler": {"pf_min": PF_MIN, "min_islem": MIN_TRADES, "slip_pf_min": SLIP_PF_MIN,
                          "iflas_usd": RUIN_USD, "max_iflas_gun": MAX_RUIN_DAYS, "hedef_usd": TARGET_USD,
@@ -270,6 +299,14 @@ def selftest() -> int:
     rt = risk_table({"2026-07-21": -200.0}, 5.0)
     assert rt["20"]["iflas_gun"] == 1 and rt["10"]["iflas_gun"] == 0, rt
     assert grup_of("btc_xau_oncu") == "BTC" and grup_of("fx_para_gucu") == "FX" and grup_of("fx_donchian_gunluk") == "FX"
+    assert grup_of("btc_xau_oncu", "XAUUSD") == "BTC" and grup_of("fx_para_gucu", "BTCUSD") == "FX"   # v1/v2 ada gore
+    assert (grup_of("kombo_1", "XAUUSD"), grup_of("kombo_2", "BTCUSD"), grup_of("kombo_3", "EURJPY")) == ("XAU", "BTC", "FX")
+    ts = lambda d: int(__import__("datetime").datetime.fromisoformat(d + "T12:00:00+00:00").timestamp())
+    tw = test_window_stats([{"closed_ts": ts("2026-09-07"), "pnl_usd": 999.0}, {"closed_ts": ts("2026-09-08"), "pnl_usd": 30.0},
+                            {"closed_ts": ts("2026-10-27"), "pnl_usd": -20.0}, {"closed_ts": ts("2026-10-28"), "pnl_usd": -500.0},
+                            {"closed_ts": None, "pnl_usd": 5.0}])
+    assert tw == {"test_islem": 2, "test_net": 10.0, "test_pf": 1.5}, tw
+    assert test_window_stats([])["test_pf"] is None and test_window_stats([{"closed_ts": ts("2026-09-09"), "pnl_usd": 1.0}])["test_pf"] == inf
     assert parse_tag("tbtc_ozgun_btc_xau_oncu_m15_BTCUSD", "btc_ozgun") == ("btc_xau_oncu", "m15", "BTCUSD")
     assert parse_tag("tfx_ozgun_fx_pdh_pdl_supurme_m30_EURJPY", "fx_ozgun") == ("fx_pdh_pdl_supurme", "m30", "EURJPY")
     ap_t = argparse.ArgumentParser(); ap_t.add_argument("--ozet", nargs="+", default=list(DEFAULT_OZET))
