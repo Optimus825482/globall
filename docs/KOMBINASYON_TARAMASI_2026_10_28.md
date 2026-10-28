@@ -1,7 +1,7 @@
 # Kombinasyon taraması v3 — rapor (2026-10-28)
 
 Plan: `docs/superpowers/plans/2026-10-28-kombinasyon-taramasi-v3.md` · Kod: `scripts/kombo_tarama.py`, `scripts/kombo_secim.py`, `scripts/strategies/kombo.py`, `scripts/strateji_dogrulama.py` (v3 eklentileri), `scripts/replay_strateji_tarama.py` (`--start/--end`), `scripts/kombo_be_dolum_analizi.py` (bölüm 5–7).
-Bu raporda kombolar **her zaman tam tanım dizesi + sembol/tf** ile anılır. `kombo_<n>` adları yalnız `outputs/kombo/kombo_tanimlar.json` numaralandırmasıdır. `outputs/kombo/secim.json` içindeki `kombo_1..3` **farklı** kombolardır, karıştırılmamalı.
+Bu raporda kombolar **her zaman tam tanım dizesi + sembol/tf** ile anılır. `kombo_<n>` adları yalnız `outputs/kombo/kombo_tanimlar.json` numaralandırmasıdır. `outputs/kombo/secim.json` içindeki eski eklenti-aday listesi `eklenti_adaylari_eski` (`eklenti_aday_1..3`) adıyla tutulur, yetkili liste değildir ve `kombo_<n>` adlarıyla karıştırılmamalı.
 
 ## 1. Kısa sonuç
 
@@ -276,7 +276,7 @@ Tek 1000 USD defterde aynı işlem başı riskle koşmak şu sonuçları doğuru
    {"ad": "kombo_14", "sym": "EURJPY", "tf": "m15", "tanim": {"tip": "or", "a": "btc_saat_profili", "b": "btc_xau_oncu", "n": null, "filtre": ["atr_dusuk"], "sl_atr": 1.5, "tp_r": 1.5, "basabas": true}}
    {"ad": "kombo_16", "sym": "EURJPY", "tf": "m15", "tanim": {"tip": "or", "a": "btc_saat_profili", "b": "btc_xau_oncu", "n": null, "filtre": ["atr_dusuk"], "sl_atr": 1.5, "tp_r": 1.0, "basabas": false}}
    ```
-   Motorda `basabas` alanı etkisiz; motor her zaman canlı BE'yi kullanıyor. `kombo_tanimlar.json` mevcutken `kombo_tarama.py sinyal-uret` kombo_*'ları da bileşen olarak üretir. Task 1 taramasını tekrarlarken `KOMBO_TANIM=yok.json` verilmeli.
+   Motorda `basabas` alanı etkisiz; motor her zaman canlı BE'yi kullanıyor. `kombo_tarama.py sinyal-uret` varsayılan listesi ve sürücünün `--strategies all` seçimi `kombo_*` adlarını dışlar (72844d4f); `KOMBO_TANIM=yok.json` artık gerekmez.
 3. **BTC: hiçbir kombo geçmedi.** 6 BTC kombosunun hiçbiri c1'i geçmedi: hızlı simdeki kenar motorda kayboluyor.
 4. **EURJPY kombosu tasarım dışı sembolde.** Bileşenleri BTC için tasarlanmış (`btc_saat_profili`, `btc_xau_oncu`), tesadüf riski yüksek. Holdout'ta 7 işlem ve negatif; kayma altında BUY tarafı negatif.
 5. **Tek rejim.** Tüm veri yaklaşık 4 aylık tek bir dönem (2026-06-21 – 10-27). Başka yıl, volatilite rejimi veya haber yoğunluğu sınanmadı.
@@ -311,7 +311,7 @@ Komutlar bash / Git Bash içindir (`$W` değişkeni ve `{a,b}` küme genişletme
 
 ```bash
 # 1) Sinyal önbelleği + hızlı tarama (20 hücre)
-#    kombo_tanimlar.json mevcutsa: KOMBO_TANIM=yok.json önüne ekleyin
+#    (kombo_* adlari sinyal-uret varsayilan listesinden otomatik dislanir)
 python scripts/kombo_tarama.py sinyal-uret --jobs 6
 python scripts/kombo_tarama.py tara --jobs 6
 python scripts/kombo_secim.py            # outputs/kombo/secim.json + TARAMA_OZET.md
