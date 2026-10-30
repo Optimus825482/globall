@@ -138,7 +138,7 @@ function SettingsPageInner() {
   const handleCleanSlate = async () => {
     if (
       !confirm(
-        "🧹 Temiz Sayfa: kesim öncesindeki TÜM kapalı işlemler arşive alınacak; EV kalkanı ve seri-SL sayaçları sıfırlanacak, rapor/KPI/CSV sıfırdan sayacak. Bakiyeye dokunulmaz. Devam edilsin mi?"
+        "Temiz Sayfa: kesim öncesindeki TÜM kapalı işlemler arşive alınacak; EV kalkanı ve seri-SL sayaçları sıfırlanacak, rapor/KPI/CSV sıfırdan sayacak. Bakiyeye dokunulmaz. Devam edilsin mi?"
       )
     )
       return;
@@ -306,7 +306,7 @@ function SettingsPageInner() {
           ["profile", "Profil", "👤"],
           ["llm", "LLM / Provider", "🤖"],
           ["chat", "Chat Ayarları", "✦"],
-        ] as const).map(([key, label, icon]) => (
+        ] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => selectTab(key)}
@@ -316,7 +316,7 @@ function SettingsPageInner() {
                 : "border-bunker-800 bg-bunker-900/80 text-bunker-muted hover:text-white"
             }`}
           >
-            {icon} {label}
+            {label}
           </button>
         ))}
       </nav>
@@ -324,10 +324,7 @@ function SettingsPageInner() {
       <>
         {/* SEKME 1: FOREX & SCALPER AYARLARI */}
         <div className={`space-y-6 ${activeTab !== "forex" ? "hidden" : ""}`}>
-          <div className="p-4 rounded-xl bg-gradient-to-r from-blue-950/40 via-bunker-900/90 to-cyan-950/30 border border-blue-500/40 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-xl shadow-[0_0_12px_rgba(59,130,246,0.3)]">
-              ⚡
-            </div>
+          <div className="p-4 rounded-xl bg-bunker-900/80 border border-bunker-800 flex items-center gap-3">
             <div>
               <h2 className="text-sm font-bold text-white tracking-tight">Otonom Forex Scalper Motor Ayarları</h2>
               <p className="text-xs text-bunker-muted mt-0.5">
@@ -360,14 +357,14 @@ function SettingsPageInner() {
                     : "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60"
                 }`}
               >
-                {inAppNotif.enabled ? "🔕 Bildirimleri Kapat" : "🔔 Bildirimleri Aç"}
+                {inAppNotif.enabled ? "Bildirimleri Kapat" : "Bildirimleri Aç"}
               </button>
               <button
                 type="button"
                 onClick={() => selectTab("app")}
                 className="px-3 py-1.5 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 font-mono text-[11px]"
               >
-                ⚙️ Ses &amp; Süre
+                Ses &amp; Süre
               </button>
             </div>
           </div>
@@ -397,7 +394,6 @@ function SettingsPageInner() {
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-base">🧹</span>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider">
                     Temiz Sayfa (Sembol Kalkanlarını Sıfırla)
                   </h3>
@@ -413,7 +409,7 @@ function SettingsPageInner() {
                 disabled={isResettingGuards}
                 className="shrink-0 px-4 py-2 rounded-xl bg-bunker-950 border border-bunker-700 text-white hover:border-amber-400 transition-all text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
               >
-                <span>{isResettingGuards ? "⏳ Temizleniyor…" : "🧹 Temiz Sayfa"}</span>
+                <span>{isResettingGuards ? "⏳ Temizleniyor…" : "Temiz Sayfa"}</span>
               </button>
             </div>
 
@@ -585,7 +581,7 @@ function SettingsPageInner() {
                   disabled={!inAppNotif.enabled}
                   className="px-3 py-2 rounded-lg border border-cyan-500/40 text-cyan-300 font-mono text-xs hover:bg-cyan-500/10 disabled:opacity-40 transition-colors"
                 >
-                  🔔 Örnek Bildirimi Gör
+                  Örnek Bildirimi Gör
                 </button>
                 <button
                   type="button"

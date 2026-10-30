@@ -182,7 +182,6 @@ export default function GateSnapshotCard({
             >
               ▶
             </span>
-            <span>🚦</span>
             <h4 className="text-[11px] font-black text-white uppercase tracking-wider">
               Giriş Kapısı Zinciri — Neden İşlem Açmıyor?
             </h4>

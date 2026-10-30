@@ -18,6 +18,7 @@ import { ensurePushSubscription, detectBrowser, isMobileDevice, isStandalonePwa,
 type Step = "browser_warn" | "install" | "notify" | null;
 
 const STORAGE_KEY = "scalper:mobile-onboarding";
+const SNOOZE_KEY = "scalper:push-onboarding-snooze-until";
 const NOTIF_ASKED_KEY = "scalper:notif-asked";
 
 function iOS() {
@@ -47,6 +48,8 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
     // Kullanıcı onboarding'i tamamladıysa veya izni reddettiyse bir daha sorma.
     try {
       if (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(NOTIF_ASKED_KEY)) return;
+      // "KAPAT/HAYIR" 7 gün erteler; aksi halde her sayfa açılışında geri gelir.
+      if (Number(localStorage.getItem(SNOOZE_KEY) || 0) > Date.now()) return;
     } catch { /* yoksay */ }
 
     let cancelled = false;
@@ -81,8 +84,9 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
     setStep(null);
   }, []);
 
-  // Yalnız şimdilik kapat — bir dahaki oturumda tekrar sorulabilir
+  // Yalnız şimdilik kapat — 7 gün sonra tekrar sorulur
   const dismissNow = useCallback(() => {
+    try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + 7 * 24 * 3600 * 1000)); } catch { /* yoksay */ }
     setStep(null);
   }, []);
 

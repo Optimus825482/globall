@@ -93,19 +93,19 @@ interface RadarThresholds {
  */
 const TIER_META: Record<Tier, { label: string; badge: string; dot: string; hint: string }> = {
   STRONG: {
-    label: "⚡ GÜÇLÜ SİNYAL",
+    label: "GÜÇLÜ SİNYAL",
     badge: "bg-emerald-500/20 text-emerald-300 border-emerald-400/50",
     dot: "bg-emerald-400",
     hint: "Tüm giriş kapıları açık — otonom motor bu sinyalle işlem açabilir.",
   },
   ACTIVE: {
-    label: "💼 POZİSYON AÇIK",
+    label: "POZİSYON AÇIK",
     badge: "bg-blue-500/20 text-blue-300 border-blue-400/50",
     dot: "bg-blue-400",
     hint: "Sinyal onaylı fakat bu sembolde zaten açık pozisyon var.",
   },
   WATCH: {
-    label: "👁️ İZLE",
+    label: "İZLE",
     badge: "bg-amber-500/20 text-amber-300 border-amber-400/50",
     dot: "bg-amber-400",
     hint: "Kalite kapıları temiz; yalnızca zamanlama (seans/volatilite) uygun değil.",
@@ -559,7 +559,6 @@ export default function ForexRadarPage() {
         <div className="p-4 rounded-2xl bg-bunker-900/80 border border-emerald-500/30 backdrop-blur-md shadow-lg">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-lg">🔬</span>
               <span className="font-mono text-sm font-bold text-emerald-300">
                 Tüm Tarama Sistemleri — {scanNowResult.candidates_count}/{scanNowResult.total_rows} kol canlı aday üretti
               </span>
@@ -583,7 +582,7 @@ export default function ForexRadarPage() {
                 className="px-2 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
                 title="Kolların sembol listelerini ve eşiklerini ayarlar sayfasından yönet"
               >
-                ⚙️ ayarlar
+                ayarlar
               </Link>
             </div>
           </div>
@@ -619,7 +618,7 @@ export default function ForexRadarPage() {
                   }`}
                   title={`${meta.label} — ${a.total} sembol tarandı, ${a.candidates} canlı aday`}
                 >
-                  {meta.icon} {meta.label} · {a.total}
+                  {meta.label} · {a.total}
                   {a.candidates > 0 && (
                     <span className="ml-1 text-emerald-300">★{a.candidates}</span>
                   )}
@@ -641,7 +640,7 @@ export default function ForexRadarPage() {
                   }`}
                 >
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 border ${meta.medal}`}>
-                    {meta.icon} {meta.label}
+                    {meta.label}
                   </span>
                   <span className="font-bold text-white shrink-0">{r.display}</span>
                   {r.action && (
@@ -697,7 +696,6 @@ export default function ForexRadarPage() {
                   strongSignals.length > 0 ? "border-emerald-400/40" : "border-blue-400/20"
                 }`}
               />
-              <span className="text-base relative">📡</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -766,7 +764,6 @@ export default function ForexRadarPage() {
         <div className="p-4 rounded-2xl bg-bunker-900/90 border border-blue-500/30 shadow-xl font-mono">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-bunker-800">
             <div className="flex items-center gap-2">
-              <span className="text-base">🌐</span>
               <span className="text-xs font-bold text-white uppercase tracking-wider">
                 Para Birimi Güç Matrisi (CSM - Currency Strength Meter)
               </span>
@@ -815,7 +812,6 @@ export default function ForexRadarPage() {
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/10 overflow-hidden shadow-xl">
           <div className="p-4 border-b border-emerald-500/20 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-lg">⚡</span>
               <h2 className="font-mono text-sm font-bold text-emerald-300 uppercase tracking-wider">
                 Algoritmanın Onayladığı Güçlü İşlem Sinyalleri
               </h2>
@@ -847,12 +843,12 @@ export default function ForexRadarPage() {
                         </span>
                         {c.dss_tier === "A+" && (
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.3)]">
-                            👑 A+ KURUMSAL
+                            A+ KURUMSAL
                           </span>
                         )}
                         {c.dss_tier === "B" && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-500/20 border border-blue-400/40 text-blue-300">
-                            ✨ B KURULUM
+                            B KURULUM
                           </span>
                         )}
                       </div>
@@ -879,7 +875,7 @@ export default function ForexRadarPage() {
                       }`}
                     >
                       <div className="flex items-center gap-1.5 truncate">
-                        <span>{c.news_info.alignment === "SUPPORTIVE" ? "🔥" : "⚠️"}</span>
+                        <span>{c.news_info.alignment === "SUPPORTIVE" ? "▲" : "⚠"}</span>
                         <span className="truncate">{c.news_info.badge || c.news_info.event_title}</span>
                       </div>
                       {c.news_info.remaining_min != null && (
@@ -921,7 +917,7 @@ export default function ForexRadarPage() {
                       </span>
                     )}
                     {c.fvg_type && c.fvg_type !== "NONE" && (
-                      <span className="text-purple-300 font-bold">⚡ FVG {c.fvg_type === "BULLISH_FVG" ? "Boğa" : "Ayı"}</span>
+                      <span className="text-purple-300 font-bold">FVG {c.fvg_type === "BULLISH_FVG" ? "Boğa" : "Ayı"}</span>
                     )}
                   </div>
 
@@ -936,7 +932,6 @@ export default function ForexRadarPage() {
                       className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold hover:bg-blue-600/50 hover:text-white transition-all shadow-[0_0_10px_rgba(59,130,246,0.25)] flex items-center gap-1"
                       title="Profesyonel Mum Grafiğini Aç"
                     >
-                      <span>📈</span>
                       <span>Grafik</span>
                     </button>
                   </div>
@@ -951,7 +946,6 @@ export default function ForexRadarPage() {
       <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 backdrop-blur-md overflow-hidden shadow-xl">
         <div className="p-4 border-b border-bunker-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">📡</span>
             <h2 className="font-mono text-sm font-bold text-white uppercase tracking-wider">
               Tüm Tarama — {visible.length}/{candidates.length} Sembol
             </h2>
@@ -961,7 +955,7 @@ export default function ForexRadarPage() {
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <input
               type="text"
-              placeholder="🔍 Sembol ara…"
+              placeholder="Sembol ara…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-white placeholder-bunker-600 outline-none focus:border-blue-400 w-36"
@@ -972,7 +966,7 @@ export default function ForexRadarPage() {
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-white outline-none focus:border-blue-400"
             >
               <option value="ALL">Tüm Kategoriler</option>
-              <option value="crypto">⚡ Kripto (7/24)</option>
+              <option value="crypto">Kripto (7/24)</option>
               <option value="major">Majör Pariteler</option>
               <option value="cross">Kros Pariteler</option>
               <option value="commodity">Emtia (Altın)</option>
@@ -1029,7 +1023,6 @@ export default function ForexRadarPage() {
           </div>
         ) : radarError && candidates.length === 0 ? (
           <div role="alert" className="p-12 text-center space-y-3 font-mono">
-            <div className="text-3xl">⚠️</div>
             <p className="text-sm font-bold text-rose-300">{radarError}</p>
             <p className="text-xs text-bunker-muted">
               Bu bir filtre sonucu değil. Radar isteği başarısız oldu.
@@ -1044,7 +1037,6 @@ export default function ForexRadarPage() {
           </div>
         ) : visible.length === 0 ? (
           <div className="p-12 text-center space-y-2 font-mono">
-            <div className="text-3xl">🔍</div>
             <p className="text-sm font-bold text-white">
               {filtersActive ? "Bu filtreyle eşleşen sembol yok." : "Radar şu an sembol döndürmedi."}
             </p>
@@ -1109,7 +1101,7 @@ export default function ForexRadarPage() {
                               }`}
                               title={c.news_info.badge}
                             >
-                              {c.news_info.alignment === "SUPPORTIVE" ? "🔥" : "⚠️"} {c.news_info.alignment === "SUPPORTIVE" ? "Haber Desteği" : "Zıt Yön Uyarısı"} ({c.news_info.remaining_min?.toFixed(0)}dk)
+                              {c.news_info.alignment === "SUPPORTIVE" ? "▲" : "⚠"} {c.news_info.alignment === "SUPPORTIVE" ? "Haber Desteği" : "Zıt Yön Uyarısı"} ({c.news_info.remaining_min?.toFixed(0)}dk)
                             </span>
                           )}
                         </td>
@@ -1208,7 +1200,6 @@ export default function ForexRadarPage() {
                             className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/25 hover:text-white transition-all font-bold text-[11px] inline-flex items-center gap-1 shadow-sm"
                             title="Profesyonel Mum Grafiğini Aç"
                           >
-                            <span>📈</span>
                             <span>Grafik</span>
                           </button>
                         </td>
@@ -1320,7 +1311,6 @@ export default function ForexRadarPage() {
                         className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 font-bold text-xs hover:bg-blue-600/50 hover:text-white transition-all touch-target inline-flex items-center gap-1 shadow-sm"
                         title="Profesyonel Mum Grafiğini Aç"
                       >
-                        <span>📈</span>
                         <span>Grafik</span>
                       </button>
                     </div>
@@ -1336,7 +1326,6 @@ export default function ForexRadarPage() {
       <div id="lot-calculator" className="p-5 rounded-2xl border border-bunker-800 bg-gradient-to-br from-bunker-900/90 to-bunker-950/90 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-bunker-800 pb-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">🧮</span>
             <h3 className="font-mono text-sm font-bold text-white uppercase tracking-wider">
               Forex Lot ve Risk Boyutlandırma Hesaplayıcısı
             </h3>

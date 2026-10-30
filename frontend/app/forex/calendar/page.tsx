@@ -224,11 +224,8 @@ export default function ForexCalendarPage() {
   return (
     <div className="space-y-6 pb-12">
       {/* ÜST BAŞLIK — ana sayfa ile aynı gradyan kart */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-indigo-950/40 border border-blue-500/20 backdrop-blur-md shadow-lg">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 ">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(59,130,246,0.3)]">
-            📅
-          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold font-mono text-white tracking-tight">

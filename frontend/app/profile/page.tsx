@@ -161,11 +161,11 @@ export function ProfileContent() {
       <section className="card mt-4">
         <p className="eyebrow text-neon-green">HIZLI ERİŞİM</p>
         <div className="mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          <Link href="/forex" className="ui-button ui-button-secondary justify-center text-center touch-target">📡 Forex Radar</Link>
-          <Link href="/forex/portfolio" className="ui-button ui-button-secondary justify-center text-center touch-target">💼 Forex Portföy</Link>
-          <Link href="/forex/charts" className="ui-button ui-button-secondary justify-center text-center touch-target">📈 Forex Grafik</Link>
-          <Link href="/forex/calendar" className="ui-button ui-button-secondary justify-center text-center touch-target">🗓️ Ekonomik Takvim</Link>
-          <Link href="/forex/reports" className="ui-button ui-button-secondary justify-center text-center touch-target">📋 Forex Raporlar</Link>
+          <Link href="/forex" className="ui-button ui-button-secondary justify-center text-center touch-target">Forex Radar</Link>
+          <Link href="/forex/portfolio" className="ui-button ui-button-secondary justify-center text-center touch-target">Forex Portföy</Link>
+          <Link href="/forex/charts" className="ui-button ui-button-secondary justify-center text-center touch-target">Forex Grafik</Link>
+          <Link href="/forex/calendar" className="ui-button ui-button-secondary justify-center text-center touch-target">Ekonomik Takvim</Link>
+          <Link href="/forex/reports" className="ui-button ui-button-secondary justify-center text-center touch-target">Forex Raporlar</Link>
         </div>
       </section>
     </>

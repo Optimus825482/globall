@@ -968,14 +968,14 @@ export default function MetaMobilePage() {
                   href="/forex/reports"
                   className="w-full flex items-center justify-between p-3 rounded-lg bg-bunker-950 border border-bunker-800 text-slate-200 hover:text-white"
                 >
-                  <span>📊 Detaylı K/Z ve İşlem Raporları</span>
+                  <span>Detaylı K/Z ve İşlem Raporları</span>
                   <span>→</span>
                 </Link>
                 <Link
                   href="/forex"
                   className="w-full flex items-center justify-between p-3 rounded-lg bg-bunker-950 border border-bunker-800 text-slate-200 hover:text-white"
                 >
-                  <span>📡 Forex Radar Ekranı</span>
+                  <span>Forex Radar Ekranı</span>
                   <span>→</span>
                 </Link>
               </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ensurePushSubscription } from "../lib/push";
 
 const STORAGE_KEY = "scalper:notification-permission-asked";
+const SNOOZE_KEY = "scalper:notification-permission-snooze-until";
 
 /** Masaüstü tarayıcılar için: Radar bildirimlerini açmak için izin ister.
  *  Mobil cihazlarda PushOnboardingModal yönetir; bu modal yalnız masaüstü.
@@ -21,6 +22,8 @@ export default function NotificationPermissionModal({ active = false }: { active
     if (Notification.permission === "denied") return; // kalıcı red — tekrar sorma
     try {
       if (localStorage.getItem(STORAGE_KEY)) return;
+      // "SONRA" 7 gün erteler; aksi halde her sayfa açılışında geri gelir.
+      if (Number(localStorage.getItem(SNOOZE_KEY) || 0) > Date.now()) return;
     } catch {
       return;
     }
@@ -60,8 +63,9 @@ export default function NotificationPermissionModal({ active = false }: { active
     setVisible(false);
   };
 
-  // "SONRA" — anlık kapat, bir dahaki oturumda tekrar sorulabilir
+  // "SONRA" — 7 gün sonra tekrar sorulur
   const dismissNow = () => {
+    try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + 7 * 24 * 3600 * 1000)); } catch { /* yoksay */ }
     setVisible(false);
   };
 

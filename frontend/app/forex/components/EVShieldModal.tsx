@@ -199,9 +199,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xl shadow-inner">
-              🛡️
-            </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className={`text-lg font-black tracking-tight ${isLight ? "text-slate-900" : "text-white"}`}>
@@ -235,7 +232,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               }`}
               title="Yenile"
             >
-              <span className={loading ? "animate-spin" : ""}>🔄</span>
+              <span className={loading ? "animate-spin" : ""}>↻</span>
               <span>Yenile</span>
             </button>
             <button
@@ -275,7 +272,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Dinlenmede (Bloke)
               </span>
-              <span className="text-base">🛑</span>
             </div>
             <div className="flex items-baseline gap-2 mt-1">
               <span
@@ -311,7 +307,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Muaf Tutulanlar
               </span>
-              <span className="text-base">⚡</span>
             </div>
             <div className="flex items-baseline gap-2 mt-1">
               <span
@@ -341,7 +336,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Toplam Sembol
               </span>
-              <span className="text-base">📈</span>
             </div>
             <div className="flex items-baseline gap-2 mt-1">
               <span className={`text-2xl font-black ${isLight ? "text-slate-900" : "text-white"}`}>
@@ -361,7 +355,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Kural Kriteri
               </span>
-              <span className="text-base">⚙️</span>
             </div>
             <div className="mt-1 space-y-0.5 text-[11px] font-semibold">
               <div className="flex justify-between">
@@ -475,7 +468,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                   : "bg-slate-900 text-slate-100 border-slate-700 focus:border-blue-400 placeholder:text-slate-500"
               }`}
             />
-            <span className="absolute left-2.5 top-2 text-xs text-slate-400">🔍</span>
             {searchQuery && (
               <button
                 type="button"
@@ -496,7 +488,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                 isLight ? "bg-slate-50 border-slate-200 text-slate-600" : "bg-slate-900/30 border-slate-800 text-slate-400"
               }`}
             >
-              <div className="text-3xl mb-2">🎉</div>
               <p className="text-sm font-bold">
                 {filterTab === "blocked"
                   ? "Şu anda EV Kalkanı tarafından dinlenmeye alınan hiçbir sembol bulunmuyor!"
@@ -548,19 +539,19 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                         {item.is_blocked ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 animate-pulse">
                             <span className="w-2 h-2 rounded-full bg-rose-500" />
-                            🛑 DİNLENMEDE (BLOKE)
+                            DİNLENMEDE (BLOKE)
                           </span>
                         ) : item.is_overridden ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/40">
-                            ⚡ BUGÜN MUAF (İZİNLİ)
+                            BUGÜN MUAF (İZİNLİ)
                           </span>
                         ) : item.is_exempt_symbol ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
-                            🌟 KALICI MUAF
+                            KALICI MUAF
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40">
-                            ✅ İŞLEME AÇIK
+                            İŞLEME AÇIK
                           </span>
                         )}
                       </div>
@@ -667,7 +658,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             }`}
                             title="Bugün gece yarısına (23:59 UTC+3) kadar bu sembolden kalkanı kaldır ve işleme izin ver"
                           >
-                            <span>🛡️</span>
                             <span>Bugün İzin Ver</span>
                           </button>
 
@@ -696,7 +686,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                               }`}
                               title="Sembolün geçmiş zarar sicilini sıfırla"
                             >
-                              🔄 Sıfırla
+                              Sıfırla
                             </button>
                           </div>
                         </>
@@ -713,7 +703,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             }`}
                             title="Muafiyeti iptal et ve EV Kalkanını bu sembol için tekrar devreye al"
                           >
-                            <span>🛡️</span>
                             <span>Kalkanı Devreye Al</span>
                           </button>
 
@@ -728,7 +717,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             }`}
                             title="Sembolün geçmiş zarar sicilini sıfırla"
                           >
-                            🔄 Sicili Sıfırla
+                            Sicili Sıfırla
                           </button>
                         </>
                       ) : (
@@ -744,7 +733,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             }`}
                             title="Bugün kuraldan muaf tut"
                           >
-                            ⚡ Muaf Tut
+                            Muaf Tut
                           </button>
                           <button
                             type="button"
@@ -757,7 +746,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             }`}
                             title="Sembolün son 24s sicilini sıfırla"
                           >
-                            🔄 Sıfırla
+                            Sıfırla
                           </button>
                         </div>
                       )}
@@ -791,7 +780,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               }`}
               title="Tüm sembollerin kalkan kayıtlarını ve muafiyetlerini temizler"
             >
-              🔄 Tüm Kalkanları Sıfırla
+              Tüm Kalkanları Sıfırla
             </button>
             <button
               type="button"

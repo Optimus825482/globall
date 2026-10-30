@@ -1101,7 +1101,7 @@ export default function BtcGoldForexPage() {
     if (!confirm(`Açık olan TÜM (${count}) IC Markets MT5 pozisyonunu tek seferde kapatmak istiyor musunuz?`)) return;
     try {
       await apiFetch("/api/forex/mt5/close-all", { method: "POST" });
-      setMt5Message(`🛑 Tüm (${count}) MT5 pozisyonunu kapatma emri köprüye iletildi.`);
+      setMt5Message(`Tüm (${count}) MT5 pozisyonunu kapatma emri köprüye iletildi.`);
       setTimeout(() => setMt5Message(null), 5000);
       fetchAllData();
     } catch (err) {
@@ -1209,11 +1209,8 @@ export default function BtcGoldForexPage() {
       {/* =========================================================================
           1. ÜST KISIM: BAŞLIK, OTONOM/MT5 KONTROL PANELİ VE İŞLEMLER LİSTESİ
       ========================================================================= */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-950/30 via-bunker-900/90 to-blue-950/40 border border-amber-500/40 backdrop-blur-md shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-amber-500/25 to-yellow-600/30 border border-amber-400/50 flex items-center justify-center text-3xl shadow-[0_0_25px_rgba(245,158,11,0.35)]">
-            🥇
-          </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
@@ -1237,8 +1234,8 @@ export default function BtcGoldForexPage() {
                 }`}
               >
                 {mt5.connected
-                  ? `🟢 IC MARKETS DEMO (${mt5.last_ping_seconds_ago !== null ? `${mt5.last_ping_seconds_ago}s` : "Canlı"})`
-                  : "⚪ MT5 KÖPRÜ ÇEVRİMDIŞI"}
+                  ? `IC MARKETS DEMO (${mt5.last_ping_seconds_ago !== null ? `${mt5.last_ping_seconds_ago}s` : "Canlı"})`
+                  : "MT5 KÖPRÜ ÇEVRİMDIŞI"}
               </span>
             </div>
             <p className="text-xs text-bunker-muted mt-1">
@@ -1269,7 +1266,7 @@ export default function BtcGoldForexPage() {
               onClick={closeAllMt5Positions}
               className="px-3.5 py-2 rounded-xl bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm"
             >
-              <span>🛑 Tüm Pozisyonları Kapat ({mt5.open_positions.length})</span>
+              <span>Tüm Pozisyonları Kapat ({mt5.open_positions.length})</span>
             </button>
           )}
 
@@ -1280,7 +1277,7 @@ export default function BtcGoldForexPage() {
             className="px-3 py-2 rounded-xl bg-bunker-900 border border-bunker-800 text-bunker-muted hover:text-white text-xs font-bold flex items-center gap-1 disabled:opacity-40"
             title="CSV Dışa Aktar"
           >
-            <span>📥 CSV</span>
+            <span>CSV</span>
           </button>
         </div>
       </div>
@@ -1429,7 +1426,7 @@ export default function BtcGoldForexPage() {
                 onClick={closeAllMt5Positions}
                 className="px-3 py-1 rounded-lg bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
               >
-                <span>🛑 Tüm MT5 Kapat ({mt5.open_positions.length})</span>
+                <span>Tüm MT5 Kapat ({mt5.open_positions.length})</span>
               </button>
             )}
             <span className="text-xs text-blue-400 font-bold animate-pulse">
@@ -1497,15 +1494,15 @@ export default function BtcGoldForexPage() {
                       <td className="py-3 px-3 font-sans">
                         {isTrailing ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 animate-pulse">
-                            <span>🏃 TRAILING STOP</span>
+                            <span>TRAILING STOP</span>
                           </span>
                         ) : isBE ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
-                            <span>🛡️ BAŞABAŞ (BE)</span>
+                            <span>BAŞABAŞ (BE)</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-bunker-muted bg-bunker-800 border border-bunker-700">
-                            <span>🛑 Sabit SL</span>
+                            <span>Sabit SL</span>
                           </span>
                         )}
                       </td>
@@ -1719,7 +1716,7 @@ export default function BtcGoldForexPage() {
                             : "bg-bunker-800 text-bunker-muted border-bunker-700"
                         }`}
                       >
-                        {action === "BUY" ? "⚡ GÜÇLÜ ALIŞ (BUY)" : action === "SELL" ? "🔻 GÜÇLÜ SATIŞ (SELL)" : "⏸ BEKLEMEDE (HOLD)"}
+                        {action === "BUY" ? "GÜÇLÜ ALIŞ (BUY)" : action === "SELL" ? "GÜÇLÜ SATIŞ (SELL)" : "⏸ BEKLEMEDE (HOLD)"}
                       </span>
                       <div className="flex flex-col items-end gap-1">
                         {gate ? (
@@ -1734,9 +1731,9 @@ export default function BtcGoldForexPage() {
                             }`}
                           >
                             {gateReady
-                              ? "🟢 GİRİŞ HAZIR — EMİR AÇILABİLİR"
+                              ? "GİRİŞ HAZIR — EMİR AÇILABİLİR"
                               : gateHalted
-                              ? `⛔ GİRİŞ ENGELLİ${blockingLabel ? ` — ${blockingLabel}` : ""}`
+                              ? `GİRİŞ ENGELLİ${blockingLabel ? ` — ${blockingLabel}` : ""}`
                               : "⏸ SİNYAL YOK — BEKLEMEDE"}
                           </span>
                         ) : (
@@ -2145,7 +2142,7 @@ export default function BtcGoldForexPage() {
                 href="/forex/reports"
                 className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
               >
-                <span>📜 Kapanan İşlem Raporları</span>
+                <span>Kapanan İşlem Raporları</span>
                 <span>→</span>
               </Link>
               <label className="text-[10px] text-bunker-muted flex items-center gap-1.5 cursor-pointer select-none">
@@ -2202,7 +2199,7 @@ export default function BtcGoldForexPage() {
                       : "bg-bunker-900 text-bunker-muted border-bunker-800 hover:text-white"
                   }`}
                 >
-                  {sym === "ALL" ? "Her İkisi" : sym === "XAUUSD" ? "🥇 Altın" : "₿ BTC"}
+                  {sym === "ALL" ? "Her İkisi" : sym === "XAUUSD" ? "Altın" : "₿ BTC"}
                 </button>
               ))}
             </div>
@@ -2278,7 +2275,7 @@ export default function BtcGoldForexPage() {
                               : "bg-bunker-800 text-white border-bunker-700"
                           }`}
                         >
-                          {isGold ? "🥇 XAUUSD" : isBtc ? "₿ BTCUSD" : log.symbol}
+                          {isGold ? "XAUUSD" : isBtc ? "₿ BTCUSD" : log.symbol}
                         </span>
                       )}
 
@@ -2291,22 +2288,6 @@ export default function BtcGoldForexPage() {
           </div>
         </div>
 
-      </div>
-
-      {/* ALT GEZİNTİ BAĞLANTILARI */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-bunker-muted pt-2 border-t border-bunker-800">
-        <div className="flex items-center gap-4">
-          <Link href="/forex" className="hover:text-amber-400 transition-colors">
-            ← Genel Forex &amp; Emtia Radar
-          </Link>
-          <span className="text-bunker-700">|</span>
-          <Link href="/forex/portfolio" className="hover:text-amber-400 transition-colors">
-            Tüm Pariteler Portföy Konsolu
-          </Link>
-        </div>
-        <Link href="/forex/charts" className="hover:text-amber-400 transition-colors">
-          Grafik Ekranı (1 / 2 / 4) →
-        </Link>
       </div>
     </div>
   );

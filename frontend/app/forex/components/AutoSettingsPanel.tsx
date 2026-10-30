@@ -668,7 +668,6 @@ export default function AutoSettingsPanel({
           <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800 space-y-2.5">
             <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
               <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                <span>🔥</span>
                 <span>Ekonomik Takvim Yön Desteği (30 Dk Momentum & Kalkan)</span>
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
@@ -1240,7 +1239,7 @@ export default function AutoSettingsPanel({
       {/* Footer Actions */}
       <div className="flex items-center justify-between pt-3 border-t border-bunker-800">
         <div className="text-[11px] text-bunker-muted">
-          💡 Seçilen algoritmalar ve semboller anında kaydedilip canlı motora uygulanır.
+          Seçilen algoritmalar ve semboller anında kaydedilip canlı motora uygulanır.
         </div>
         <div className="flex items-center gap-2">
           <button

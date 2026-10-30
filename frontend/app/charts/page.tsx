@@ -430,7 +430,7 @@ export default function ChartsPage() {
                     </button>
                     <div className="hidden sm:block">
                         <h1 className="font-mono text-sm font-bold text-white flex items-center gap-2">
-                            📈 GRAFİK
+                            GRAFİK
                             <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neon-green/15 text-neon-green border border-neon-green/30">
                                 {count === 1 ? "TEKLİ" : `${count}'LÜ`}
                             </span>
@@ -476,7 +476,7 @@ export default function ChartsPage() {
                                 className="px-2.5 py-1 bg-neon-green/20 hover:bg-neon-green/30 text-neon-green border-l border-bunker-700 font-mono text-xs font-bold transition-colors"
                                 title="Bu sembolü tüm grafiklere yükle (Enter)"
                             >
-                                ⚡ TÜMÜ
+                                TÜMÜ
                             </button>
                         </div>
 

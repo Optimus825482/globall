@@ -192,7 +192,7 @@ function getToday0001Cutoff(): number {
 
 export default function ForexIslemlerPage() {
   // Global Tema Context'i
-  const { isLight: isLightMode, toggleTheme } = useTheme();
+  const { isLight: isLightMode } = useTheme();
   const [loading, setLoading] = useState<boolean>(true);
   const [dataError, setDataError] = useState("");
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -457,7 +457,7 @@ export default function ForexIslemlerPage() {
       return {
         wrapper: "bg-slate-100 text-slate-800 min-h-screen",
         cardBg: "bg-white border-slate-200/90 shadow-sm",
-        headerBg: "bg-gradient-to-r from-blue-50/90 via-white to-indigo-50/90 border-blue-200/80 shadow-sm",
+        headerBg: "border-transparent",
         kpiCard: "bg-white border-slate-200/90 shadow-sm text-slate-900",
         tableHeader: "bg-slate-100/90 text-slate-600 border-slate-200 text-[11px]",
         tableRow: "hover:bg-slate-50 transition-colors border-slate-100",
@@ -474,7 +474,7 @@ export default function ForexIslemlerPage() {
     return {
       wrapper: "bg-[#080c14] text-white min-h-screen",
       cardBg: "bg-bunker-900/90 border-bunker-800 shadow-xl",
-      headerBg: "bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-indigo-950/40 border-blue-500/20 shadow-lg",
+      headerBg: "border-transparent",
       kpiCard: "bg-bunker-900/80 border-bunker-800 shadow-lg text-white",
       tableHeader: "bg-bunker-950/80 text-bunker-muted border-bunker-800 text-[11px]",
       tableRow: "hover:bg-bunker-800/40 transition-colors border-bunker-800/60",
@@ -493,11 +493,8 @@ export default function ForexIslemlerPage() {
     <div className={`space-y-4 pb-16 font-mono transition-colors duration-200 ${theme.wrapper}`}>
       
       {/* 1. ÜST BAŞLIK & TEMA / YENİLEME ÇUBUĞU */}
-      <div className={`p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${theme.headerBg}`}>
+      <div className={`flex flex-wrap items-center justify-between gap-3 ${theme.headerBg}`}>
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(59,130,246,0.25)] shrink-0">
-            ⚡
-          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-black tracking-tight">
@@ -528,7 +525,7 @@ export default function ForexIslemlerPage() {
             }`}
             title="Sembol EV Kalkanı ve Muafiyet Listesi"
           >
-            <span>🛡️ EV Kalkanı</span>
+            <span>EV Kalkanı</span>
             {(evShieldStatus?.blocked_count ?? 0) > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-black">
                 {evShieldStatus?.blocked_count}
@@ -536,19 +533,6 @@ export default function ForexIslemlerPage() {
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-              isLightMode
-                ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
-                : "bg-bunker-800 text-blue-300 border-bunker-700 hover:bg-bunker-750"
-            }`}
-            title="Açık Mod / Koyu Mod Değiştir"
-          >
-            <span>{isLightMode ? "☀️" : "🌙"}</span>
-            <span>{isLightMode ? "Açık Mod" : "Koyu Mod"}</span>
-          </button>
 
           <button
             type="button"
@@ -560,7 +544,7 @@ export default function ForexIslemlerPage() {
                 : "bg-bunker-800 text-white border-bunker-700 hover:bg-bunker-750"
             }`}
           >
-            <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+            <span className={refreshing ? "animate-spin" : ""}>↻</span>
             <span className="hidden sm:inline">Yenile</span>
           </button>
 
@@ -582,9 +566,6 @@ export default function ForexIslemlerPage() {
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-lg shrink-0 animate-pulse">
-              🛡️
-            </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black uppercase text-rose-700 dark:text-rose-300">
@@ -605,7 +586,7 @@ export default function ForexIslemlerPage() {
             onClick={() => setEvShieldModalOpen(true)}
             className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-auto active:scale-95"
           >
-            <span>🛡️ Kalkanı İncele &amp; İptal Et</span>
+            <span>Kalkanı İncele &amp; İptal Et</span>
             <span>↗</span>
           </button>
         </div>
@@ -626,7 +607,7 @@ export default function ForexIslemlerPage() {
           href="/forex/reports"
           className="text-xs text-blue-500 dark:text-cyan-400 hover:underline flex items-center gap-1 font-semibold transition-colors"
         >
-          <span>📅 Geçmiş Tarihli Kayıtları İncele</span>
+          <span>Geçmiş Tarihli Kayıtları İncele</span>
           <span>→</span>
         </Link>
       </div>
@@ -639,7 +620,6 @@ export default function ForexIslemlerPage() {
             <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Günün Başarı Oranı
             </span>
-            <span className="text-lg">🎯</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400">
@@ -667,7 +647,6 @@ export default function ForexIslemlerPage() {
             <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Bugünkü Net K/Z
             </span>
-            <span className="text-lg">💰</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span
@@ -700,7 +679,6 @@ export default function ForexIslemlerPage() {
             <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Özkaynak (Equity)
             </span>
-            <span className="text-lg">🏛️</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400">
@@ -726,7 +704,6 @@ export default function ForexIslemlerPage() {
             <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Açık İşlemler PnL
             </span>
-            <span className="text-lg">📊</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span
@@ -774,7 +751,6 @@ export default function ForexIslemlerPage() {
                 : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:bg-bunker-800 hover:text-white"
             }`}
           >
-            <span>💼</span>
             <span>Açık Pozisyonlar</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
@@ -800,7 +776,6 @@ export default function ForexIslemlerPage() {
                 : "bg-bunker-900 text-bunker-muted border border-bunker-800 hover:bg-bunker-800 hover:text-white"
             }`}
           >
-            <span>📜</span>
             <span>Kapanan İşlemler</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
@@ -820,7 +795,7 @@ export default function ForexIslemlerPage() {
           href="/forex/reports"
           className="text-xs font-bold text-blue-600 dark:text-cyan-400 hover:underline flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors"
         >
-          <span>📊 Detaylı Raporlar &amp; Analiz</span>
+          <span>Detaylı Raporlar &amp; Analiz</span>
           <span>→</span>
         </Link>
       </div>
@@ -831,7 +806,6 @@ export default function ForexIslemlerPage() {
       <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">💼</span>
             <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
               Açık Olan Forex İşlemleri
             </h2>
@@ -872,7 +846,6 @@ export default function ForexIslemlerPage() {
           </div>
         ) : openPositions.length === 0 ? (
           <div className="p-10 text-center space-y-2">
-            <div className="text-3xl">☕</div>
             <p className={`text-sm font-bold ${theme.textPrimary}`}>
               Şu an açık forex işlemi bulunmuyor.
             </p>
@@ -884,7 +857,7 @@ export default function ForexIslemlerPage() {
                 href="/forex"
                 className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-500 transition-colors inline-block"
               >
-                📡 Forex Radarına Git
+                Forex Radarına Git
               </Link>
             </div>
           </div>
@@ -1065,7 +1038,6 @@ export default function ForexIslemlerPage() {
       <div className={`p-4 rounded-2xl border space-y-3 ${theme.cardBg}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-lg">🏆</span>
             <div>
               <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
                 Günün İşlem Gören Sembolleri &amp; Başarı Oranları
@@ -1187,7 +1159,6 @@ export default function ForexIslemlerPage() {
       <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">📋</span>
             <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
               Kapanan Forex İşlemleri (00:01 Sonrası - {filteredClosedTrades.length} İşlem)
             </h2>

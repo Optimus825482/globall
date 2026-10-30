@@ -198,7 +198,6 @@ function UpsideScoutCard({ scout }: { scout: ScoutResult }) {
     <div className="card mb-3 border-cyan-500/30 bg-cyan-950/20 p-3 text-xs font-mono">
       <div className="flex items-center justify-between gap-2 border-b border-bunker-700/60 pb-2">
         <span className="font-bold text-neon-green flex items-center gap-1.5">
-          <span>🎯</span>
           <span>EN HIZLI YÜKSELİŞ TESPİTLERİ (5DK + 15DK HARMAN)</span>
         </span>
         {scout.generated_at && (
@@ -749,7 +748,7 @@ function ChatPageInner() {
         ...current,
         {
           role: "user" as const,
-          content: `🎯 EN HIZLI YÜKSELİŞ ANALİZİ: ${scoreText}`,
+          content: `EN HIZLI YÜKSELİŞ ANALİZİ: ${scoreText}`,
           time: nowTime,
         },
         {
@@ -802,16 +801,13 @@ function ChatPageInner() {
           {/* Üst Başlık & Kontrol Çubuğu */}
           <div className="chat-top-bar flex flex-wrap items-center justify-between gap-2 pb-3 mb-2 border-b border-bunker-800">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-base">
-                💬
-              </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="font-mono text-sm font-bold text-white tracking-wide">
                     CHAT MERKEZİ
                   </h1>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${role === "admin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/40" : "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40"}`}>
-                    {role === "admin" ? "🛡️ YÖNETİCİ" : "📈 UZMAN TRADER"}
+                    {role === "admin" ? "YÖNETİCİ" : "UZMAN TRADER"}
                   </span>
                   <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono text-bunker-muted">
                     <span className={`w-1.5 h-1.5 rounded-full ${busy ? "bg-amber-400 animate-ping" : "bg-neon-green"}`} />
@@ -838,7 +834,6 @@ function ChatPageInner() {
                 }`}
                 title="Hızlı Eylemler & Soru Şablonları"
               >
-                <span>⚡</span>
                 <span className="hidden sm:inline">HIZLI MENÜ</span>
               </button>
               <Button variant="secondary" onClick={startNewChat} className="text-xs px-2.5 py-1.5 font-mono">
@@ -850,7 +845,6 @@ function ChatPageInner() {
                 className="ui-button ui-button-secondary text-xs px-2.5 py-1.5 flex items-center gap-1 font-mono md:hidden"
                 title="Model Akışını Aç/Kapat"
               >
-                <span>⚡</span>
                 <span>AKIŞ</span>
                 {activities.length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-cyan-500/30 text-cyan-300 text-[9px] flex items-center justify-center font-bold">
@@ -879,9 +873,6 @@ function ChatPageInner() {
             {messages.length <= 1 && (
               <div className="chat-welcome-card card border-bunker-700/60 bg-gradient-to-br from-bunker-900/90 via-bunker-950/80 to-cyan-950/25 p-4 sm:p-5 shadow-xl mb-3">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-xl">
-                    📈
-                  </div>
                   <div>
                     <h2 className="text-white font-mono font-bold text-sm sm:text-base flex items-center gap-2">
                       SCALPER AI <span className="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">{role === "admin" ? "YÖNETİCİ MODU" : "UZMAN TRADER MODU"}</span>
@@ -912,7 +903,6 @@ function ChatPageInner() {
 
                 <div className="pt-3 mt-3 border-t border-bunker-800/80">
                   <p className="text-[11px] font-mono text-cyan-300/80 mb-2 flex items-center gap-1.5">
-                    <span>⚡</span>
                     <span>Hızlı Başlangıç Soruları:</span>
                   </p>
                   <div className="flex flex-wrap gap-1.5">
@@ -934,7 +924,6 @@ function ChatPageInner() {
                       disabled={upsideScoutBusy || busy}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-400/40 hover:border-cyan-400 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-bold transition-all disabled:opacity-40"
                     >
-                      <span>🎯</span>
                       <span>En Hızlı Yükseliş Analizi</span>
                     </button>
                   </div>
@@ -1070,9 +1059,6 @@ function ChatPageInner() {
               <div className="chat-actions-popover mb-2 border border-cyan-500/40 bg-gradient-to-b from-bunker-900/98 via-bunker-950/98 to-cyan-950/30 p-3 sm:p-4 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200 z-30">
                 <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-bunker-800">
                   <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-xs">
-                      ⚡
-                    </span>
                     <span className="font-mono text-xs font-bold text-cyan-300 tracking-wide uppercase">
                       Hızlı Eylemler & Soru Şablonları
                     </span>
@@ -1099,9 +1085,6 @@ function ChatPageInner() {
                     className="w-full flex items-center justify-between p-2.5 rounded-xl border border-cyan-500/40 hover:border-cyan-400 bg-gradient-to-r from-cyan-950/40 via-bunker-900 to-cyan-950/40 text-left transition-all group disabled:opacity-50"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 flex items-center justify-center text-base group-hover:scale-105 transition-transform">
-                        🎯
-                      </div>
                       <div>
                         <div className="text-xs font-mono font-bold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                           <span>EN HIZLI YÜKSELİŞ TESPİTİ</span>
@@ -1121,7 +1104,6 @@ function ChatPageInner() {
                 {/* Soru Şablonları Grid */}
                 <div>
                   <div className="text-[10px] font-mono text-bunker-muted uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                    <span>💡</span>
                     <span>Hazır Analiz Soruları (Tek Tıkla Sor)</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -1185,7 +1167,7 @@ function ChatPageInner() {
                       onClick={() => stopListening("insert")}
                       className="text-xs text-yellow-300 hover:text-yellow-200 px-2.5 py-1 rounded bg-yellow-500/20 border border-yellow-500/40 hover:bg-yellow-500/30 transition-colors font-mono font-semibold"
                     >
-                      ✏️ Düzenle
+                      Düzenle
                     </button>
                     <button
                       type="button"
@@ -1196,7 +1178,6 @@ function ChatPageInner() {
                       disabled={!((speechTranscript || "") + (speechInterim || "")).trim()}
                       className="text-xs text-black bg-neon-green hover:bg-sky-400 px-3 py-1 rounded font-mono font-bold transition-all disabled:opacity-40 flex items-center gap-1"
                     >
-                      <span>➤</span>
                       <span>Gönder</span>
                     </button>
                   </div>
@@ -1280,13 +1261,12 @@ function ChatPageInner() {
                     title="Gönder (Enter)"
                   >
                     <span>GÖNDER</span>
-                    <span className="text-xs">➤</span>
                   </Button>
                 )}
               </div>
 
               <div className="flex items-center justify-between text-[10px] text-bunker-muted mt-1 px-1 font-mono">
-                <span>💡 Enter: Gönder · Shift+Enter: Yeni Satır · 🎙️: Sesli Mesaj</span>
+                <span>Enter: Gönder · Shift+Enter: Yeni Satır · 🎙️: Sesli Mesaj</span>
                 {input.length > 0 && <span>{input.length} karakter</span>}
               </div>
             </form>
@@ -1307,7 +1287,7 @@ function ChatPageInner() {
             <div className="flex items-center gap-1.5">
               {role === "admin" && (
                 <Link href="/settings?tab=chat" className="ui-button ui-button-secondary text-[10px] px-2 py-1 font-mono" style={{ textDecoration: "none" }}>
-                  ⚙ AYARLAR
+                  AYARLAR
                 </Link>
               )}
               <button

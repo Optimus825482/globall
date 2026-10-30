@@ -45,7 +45,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const isForexIslemler = pathname === "/forex/islemler" || pathname?.startsWith("/forex/islemler/");
   const isMetaMobil = pathname === "/metamobil" || pathname === "/forex/metamobil" || pathname?.startsWith("/metamobil/") || pathname?.startsWith("/forex/metamobil/");
 
   if (isMetaMobil) {
@@ -63,22 +62,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (isForexIslemler) {
-    return (
-      <ExchangeContext.Provider value={exchange}>
-        <main className="min-h-screen w-full overflow-y-auto">
-          <div className="sticky top-0 z-30">
-            <ForexEventTickerBanner />
-          </div>
-          <div className="w-full px-2 sm:px-4 lg:px-6 py-2.5 sm:py-4 max-w-[1700px] mx-auto">
-            {children}
-          </div>
-          <ForexRadarModal />
-          <ForexCalendarAlertModal />
-        </main>
-      </ExchangeContext.Provider>
-    );
-  }
   return (
     <ExchangeContext.Provider value={exchange}>
       <div className="flex min-h-screen">

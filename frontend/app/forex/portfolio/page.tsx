@@ -487,11 +487,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   return (
     <div className="space-y-5 pb-16 font-sans">
       {/* ÜST BAŞLIK VE KONTROL PANELİ */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-indigo-950/40 border border-blue-500/20 backdrop-blur-md shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(59,130,246,0.3)]">
-            💼
-          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold font-mono text-white tracking-tight">
@@ -519,31 +516,30 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             type="button"
             onClick={toggleMt5Auto}
             disabled={isTogglingMt5 || !mt5.connected}
-            className={`px-3.5 py-2 rounded-xl font-mono text-xs font-bold transition-all shadow-md flex items-center gap-2 ${
+            className={`min-h-11 sm:min-h-0 px-3.5 py-2 rounded-xl font-mono text-xs font-bold transition-all shadow-md flex items-center gap-2 ${
               mt5.auto_trade
                 ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
             }`}
           >
-            <span>{mt5.auto_trade ? "🟢 Otonom Scalper Aktif" : "⏸️ Otonom Scalper Durduruldu"}</span>
+            <span>{mt5.auto_trade ? "Otonom Scalper Aktif" : "⏸️ Otonom Scalper Durduruldu"}</span>
           </button>
 
           <Link
             href="/settings"
-            className="px-3 py-2 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-slate-200 border border-bunker-700 text-xs font-bold transition-all flex items-center gap-1.5"
+            className="min-h-11 sm:min-h-0 px-3 py-2 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-slate-200 border border-bunker-700 text-xs font-bold transition-all flex items-center gap-1.5"
             title="Forex & Algoritma Ayarlarını Aç"
           >
-            <span>⚙️</span>
             <span>Ayarlar</span>
           </Link>
 
           <button
             type="button"
             onClick={() => setShowMt5Guide((p) => !p)}
-            className="px-2.5 py-2 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-bunker-muted hover:text-white border border-bunker-700 text-xs font-bold"
+            className="min-h-11 sm:min-h-0 px-2.5 py-2 rounded-xl bg-bunker-800 hover:bg-bunker-700 text-bunker-muted hover:text-white border border-bunker-700 text-xs font-bold"
             title="Yardım & Rehber"
           >
-            ❓
+            ?
           </button>
         </div>
       </div>
@@ -567,7 +563,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       {showMt5Guide && (
         <div className="p-4 rounded-xl bg-bunker-950 border border-blue-500/30 text-xs text-bunker-muted space-y-2">
           <div className="font-bold text-white flex items-center gap-1.5">
-            <span>🚀 IC Markets MT5 ve 4 Sekmeli Komuta Merkezi Nasıl Çalışır?</span>
+            <span>IC Markets MT5 ve 4 Sekmeli Komuta Merkezi Nasıl Çalışır?</span>
           </div>
           <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
             <li><strong>Portföy &amp; İşlemler:</strong> Hesap bakiyesi, kâr/zarar, sembol başarı kartları ve anlık açık pozisyonları izleyip yönetebilirsiniz.</li>
@@ -581,10 +577,10 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
       {/* 4 ANA SEKME BAŞLIKLARI */}
       <div className="flex flex-wrap gap-2 border-b border-bunker-800 pb-2">
         {[
-          { id: "portfolio", label: "💼 Portföy & İşlemler", badge: `${mt5.open_positions?.length || 0} Açık` },
-          { id: "xauusd", label: "🥇 XAUUSD Komuta & Loglar", badge: xauCandidate ? `Skor ${xauCandidate.score}` : "Canlı" },
-          { id: "forex_tech", label: "💱 Forex Çiftleri Teknik Analiz", badge: `${filteredForexCandidates.length} Parite` },
-          { id: "crypto_tech", label: "⚡ Kripto Çiftleri (7/24)", badge: "10 Varlık" },
+          { id: "portfolio", label: "Portföy & İşlemler", badge: `${mt5.open_positions?.length || 0} Açık` },
+          { id: "xauusd", label: "XAUUSD Komuta & Loglar", badge: xauCandidate ? `Skor ${xauCandidate.score}` : "Canlı" },
+          { id: "forex_tech", label: "Forex Çiftleri Teknik Analiz", badge: `${filteredForexCandidates.length} Parite` },
+          { id: "crypto_tech", label: "Kripto Çiftleri (7/24)", badge: "10 Varlık" },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -753,7 +749,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
               <div className="flex items-center gap-2">
-                <span className="text-base">📊</span>
                 <h2 className="text-sm font-black text-white uppercase tracking-wider">
                   Sembol Bazlı Başarı Kartları
                 </h2>
@@ -822,7 +817,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 overflow-hidden shadow-xl">
             <div className="p-4 border-b border-bunker-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-lg">⚡</span>
                 <h2 className="text-sm font-black text-white uppercase tracking-wider">
                   Canlı IC Markets MT5 Açık Pozisyonları ({mt5.open_positions?.length || 0})
                 </h2>
@@ -834,7 +828,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   onClick={closeAllMt5Positions}
                   className="px-3 py-1 rounded-lg bg-rose-600/25 border border-rose-500/50 text-rose-300 hover:bg-rose-600/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
                 >
-                  <span>🛑 Tüm Pozisyonları Kapat ({mt5.open_positions.length})</span>
+                  <span>Tüm Pozisyonları Kapat ({mt5.open_positions.length})</span>
                 </button>
               )}
             </div>
@@ -893,15 +887,15 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                           <td className="py-3 px-3">
                             {isTrailing ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                                🏃 TRAILING STOP
+                                TRAILING STOP
                               </span>
                             ) : isBE ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
-                                🛡️ BAŞABAŞ (BE)
+                                BAŞABAŞ (BE)
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-bunker-800 text-bunker-muted">
-                                🛑 Sabit SL
+                                Sabit SL
                               </span>
                             )}
                           </td>
@@ -940,7 +934,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-bunker-800 pb-3 mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-base">🏁</span>
                 <h3 className="text-xs font-black text-white uppercase tracking-wider">
                   Kapanan Scalp İşlemleri ({closedTrades.length})
                 </h3>
@@ -951,7 +944,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 disabled={closedTrades.length === 0}
                 className="px-3 py-1 rounded-lg text-xs font-bold bg-blue-600/30 text-blue-300 border border-blue-400/40 hover:bg-blue-600/50 transition-all disabled:opacity-40 flex items-center gap-1.5"
               >
-                <span>📥</span>
                 <span>CSV İndir</span>
               </button>
             </div>
@@ -1001,9 +993,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           {/* XAUUSD Canlı Fiyat & Gösterge Başlığı */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-yellow-950/20 to-slate-900 border border-amber-500/30 shadow-xl flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(245,158,11,0.3)]">
-                🥇
-              </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-black text-white">XAUUSD — ONS ALTIN KOMUTA MERKEZİ</h2>
@@ -1043,7 +1032,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   onClick={() => setChartModalCandidate(xauCandidate)}
                   className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-400/40 text-blue-300 hover:bg-blue-600/50 text-xs font-bold transition-all"
                 >
-                  📈 Grafik
+                  Grafik
                 </button>
               )}
             </div>
@@ -1104,7 +1093,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           {gateSnapshotXAU && (
             <div className="space-y-2">
               <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                <span>🛡️</span>
                 <span>XAUUSD Otonom Karar Kapıları Zinciri</span>
               </h3>
               <GateSnapshotCard snapshot={gateSnapshotXAU} loading={false} />
@@ -1115,7 +1103,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bunker-800 pb-3">
               <div className="flex items-center gap-2">
-                <span className="text-base">📜</span>
                 <h3 className="text-xs font-black text-white uppercase tracking-wider">
                   Sistem Algoritmaları Karar &amp; Tarama Logları ({decisionLogs.length})
                 </h3>
@@ -1267,7 +1254,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
             <input
               type="text"
-              placeholder="🔍 Parite ara (EUR, GBP, JPY...)"
+              placeholder="Parite ara (EUR, GBP, JPY...)"
               value={forexSearchQuery}
               onChange={(e) => setForexSearchQuery(e.target.value)}
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white placeholder-bunker-600 outline-none focus:border-blue-400 w-52"
@@ -1333,7 +1320,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       onClick={() => setChartModalCandidate(c)}
                       className="px-2.5 py-1 rounded bg-blue-600/30 text-blue-300 border border-blue-400/40 text-[11px] font-bold hover:bg-blue-600/50 transition-all flex items-center gap-1"
                     >
-                      <span>📈</span>
                       <span>Grafik</span>
                     </button>
                   </div>
@@ -1384,9 +1370,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           {/* Kripto Portföy Bannerı */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-slate-900 border border-purple-500/30 shadow-xl flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-400/50 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(168,85,247,0.3)]">
-                ⚡
-              </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-black text-white">IC MARKETS 7/24 KRİPTO PORTFÖYÜ</h2>
@@ -1402,7 +1385,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
             <input
               type="text"
-              placeholder="🔍 Kripto ara (SOL, ETH, BTC...)"
+              placeholder="Kripto ara (SOL, ETH, BTC...)"
               value={cryptoSearchQuery}
               onChange={(e) => setCryptoSearchQuery(e.target.value)}
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white placeholder-bunker-600 outline-none focus:border-purple-400 w-52"
@@ -1453,14 +1436,12 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   <div className="p-2.5 rounded-lg bg-bunker-950/70 border border-bunker-800 space-y-1.5 text-xs font-mono">
                     <div className="flex items-center justify-between">
                       <span className="text-bunker-muted flex items-center gap-1">
-                        <span>⚡</span>
                         <span>FVG Pullback:</span>
                       </span>
                       <span className="text-emerald-400 font-bold">1.8R TP Takipte</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-bunker-muted flex items-center gap-1">
-                        <span>🚀</span>
                         <span>S3 SuperTrend:</span>
                       </span>
                       <span className={`font-bold ${c?.supertrend_dir && c.supertrend_dir > 0 ? "text-emerald-400" : "text-rose-400"}`}>
@@ -1498,7 +1479,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                         onClick={() => setChartModalCandidate(c)}
                         className="px-2.5 py-1 rounded bg-purple-600/30 text-purple-300 border border-purple-400/40 text-[11px] font-bold hover:bg-purple-600/50 transition-all flex items-center gap-1"
                       >
-                        <span>📈</span>
                         <span>Grafik</span>
                       </button>
                     )}
@@ -1509,22 +1489,6 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           </div>
         </div>
       )}
-
-      {/* ALT BAĞLANTILAR */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-bunker-muted pt-4 border-t border-bunker-800">
-        <div className="flex items-center gap-4">
-          <Link href="/forex" className="hover:text-blue-400 transition-colors">
-            ← Forex Radar &amp; Canlı Piyasa
-          </Link>
-          <span className="text-bunker-700">|</span>
-          <Link href="/forex/reports" className="hover:text-blue-300 font-bold text-blue-400 transition-colors flex items-center gap-1">
-            📊 Tüm İşlem Raporları &amp; Analitik →
-          </Link>
-        </div>
-        <Link href="/forex/charts" className="hover:text-blue-400 transition-colors">
-          Grafik Ekranı (1 / 2 / 4) →
-        </Link>
-      </div>
 
       {/* GRAFİK MODALI */}
       {chartModalCandidate && (

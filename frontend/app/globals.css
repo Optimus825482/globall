@@ -1254,3 +1254,19 @@ html.light ::-webkit-scrollbar-thumb:hover {
   .ticker-banner .animate-ticker > div { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; row-gap: .25rem; padding-right: 0; }
   .ticker-banner .ticker-item { flex-wrap: wrap; row-gap: .125rem; max-width: 100%; }
 }
+
+/* Telefon genişliğinde (≤767px) dokunma hedefleri: düğme, seçici, giriş ve
+   düğme görünümlü bağlantılar en az 44px. Tablo içi denetimler satırı
+   şişirmesin diye hariç; onların satırı zaten dokunma hedefi. */
+@media (max-width: 767px) {
+  main button:not(table button):not([role="tab"]):not(.touch-compact),
+  main select,
+  main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+  main a[class*="rounded-"][class*="px-"]:not(table a) {
+    min-height: 2.75rem;
+  }
+  main button:not(table button):not(.touch-compact),
+  main a[class*="rounded-"][class*="px-"]:not(table a) {
+    min-width: 2.75rem;
+  }
+}

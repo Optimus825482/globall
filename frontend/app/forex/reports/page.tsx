@@ -75,14 +75,14 @@ interface KpiScope {
  * sunucu saati ayrışmasın diye). `custom` seçildiğinde iki tarih girişi açılır.
  */
 const PERIOD_PRESETS: { key: string; label: string; hint: string }[] = [
-  { key: "all", label: "🌐 Tüm Zamanlar", hint: "Tüm arşiv" },
-  { key: "today", label: "🟢 Bugün", hint: "00:00'dan beri (UTC+3)" },
-  { key: "yesterday", label: "🟡 Dün", hint: "Dün 00:00–24:00 (UTC+3)" },
-  { key: "single_date", label: "📅 Belirli Bir Gün Seç", hint: "İstediğiniz tarihe ait işlemler ve başarı karnesi" },
+  { key: "all", label: "Tüm Zamanlar", hint: "Tüm arşiv" },
+  { key: "today", label: "Bugün", hint: "00:00'dan beri (UTC+3)" },
+  { key: "yesterday", label: "Dün", hint: "Dün 00:00–24:00 (UTC+3)" },
+  { key: "single_date", label: "Belirli Bir Gün Seç", hint: "İstediğiniz tarihe ait işlemler ve başarı karnesi" },
   { key: "last12h", label: "⏱️ Son 12 Saat", hint: "Şu andan geriye 12 saat" },
-  { key: "this_week", label: "📅 Bu Hafta", hint: "Pazartesi'den beri (UTC+3)" },
-  { key: "this_month", label: "🗓️ Bu Ay", hint: "Ayın 1'inden beri (UTC+3)" },
-  { key: "custom", label: "🎯 Tarih Aralığı", hint: "Başlangıç–bitiş (bitiş dahil)" },
+  { key: "this_week", label: "Bu Hafta", hint: "Pazartesi'den beri (UTC+3)" },
+  { key: "this_month", label: "Bu Ay", hint: "Ayın 1'inden beri (UTC+3)" },
+  { key: "custom", label: "Tarih Aralığı", hint: "Başlangıç–bitiş (bitiş dahil)" },
 ];
 
 /** Backend dönem anahtarı → kart başlığında gösterilecek kısa etiket. */
@@ -114,7 +114,7 @@ function strategyLabel(code?: string): string {
 }
 
 // Çıkış rozeti: MT5 işlemlerinde `exit_reason` kod değil görüntü metni gelir
-// ("🎯 Kâr Al (TP)", "🛑 Zarar Durdur (SL)"); eski kod değerleri de desteklenir.
+// ("Kâr Al (TP)", "Zarar Durdur (SL)"); eski kod değerleri de desteklenir.
 // Kârda kapanan stop (BE/iz süren stop) "Zarar Durdur" etiketiyle kırmızı
 // gösterilirse kazanç kayıp gibi okunur — sonuç (pnl) etikete yansıtılır.
 function exitBadge(t: ClosedTrade): { label: string; cls: string } {
@@ -133,7 +133,7 @@ function exitBadge(t: ClosedTrade): { label: string; cls: string } {
   if (t.exit_reason === "MANUAL" || low.includes("manuel")) return { label: raw || "Manuel", cls: indigo };
   if (low.includes("zarar durdur") || /sl/.test(low)) {
     return pnl > 0
-      ? { label: "🔒 Stop (kârda)", cls: yellow }
+      ? { label: "Stop (kârda)", cls: yellow }
       : { label: raw || "Zarar Durdur (SL)", cls: red };
   }
   if (!raw) return { label: "IC Markets MT5", cls: grey };
@@ -363,11 +363,8 @@ export default function ForexReportsPage() {
   return (
     <div className="space-y-6 pb-16 animate-in fade-in duration-300">
       {/* ÜST BAŞLIK & NAVİGASYON */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-cyan-950/40 border border-blue-500/20 backdrop-blur-md shadow-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 ">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-2xl shadow-[0_0_20px_rgba(59,130,246,0.3)]">
-            📊
-          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-black font-mono text-white tracking-tight">
@@ -403,7 +400,7 @@ export default function ForexReportsPage() {
             className="p-2 rounded-xl bg-bunker-900/90 border border-bunker-800 text-bunker-muted hover:text-white transition-colors"
             title="Yenile"
           >
-            🔄
+            ↻
           </button>
 
           {/* CSV İndir Butonu */}
@@ -413,7 +410,6 @@ export default function ForexReportsPage() {
             disabled={isExporting || trades.length === 0}
             className="min-h-11 sm:min-h-0 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 flex items-center gap-2 transition-all disabled:opacity-50"
           >
-            <span>📥</span>
             <span>{isExporting ? "Dışa Aktarılıyor…" : "Excel / CSV İndir"}</span>
           </button>
         </div>
@@ -551,7 +547,7 @@ export default function ForexReportsPage() {
             </span>
             <span className="text-bunker-muted">
               ({openPositions.map((p) => {
-                const badge = (p.protection === "TRAILING" || p.trailing_activated) ? " [🏃 Trailing]" : (p.protection === "BREAKEVEN" || p.breakeven_activated) ? " [🛡️ BE]" : "";
+                const badge = (p.protection === "TRAILING" || p.trailing_activated) ? " [Trailing]" : (p.protection === "BREAKEVEN" || p.breakeven_activated) ? " [🛡️ BE]" : "";
                 return `${p.display || p.symbol} ${p.direction}${badge}`;
               }).join(", ")})
             </span>
@@ -577,7 +573,7 @@ export default function ForexReportsPage() {
       <div className="p-4 rounded-2xl bg-bunker-900/70 border border-bunker-800 space-y-3 shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] text-bunker-muted font-semibold uppercase tracking-wider mr-1">
-            📆 Dönem:
+            Dönem:
           </span>
           {PERIOD_PRESETS.map((item) => {
             const active = period === item.key;
@@ -603,7 +599,7 @@ export default function ForexReportsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-bunker-800 text-xs">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] text-cyan-300 font-bold uppercase tracking-wider">
-                📅 İncelenecek Gün:
+                İncelenecek Gün:
               </span>
               <div className="flex items-center gap-1.5">
                 <button
@@ -686,7 +682,7 @@ export default function ForexReportsPage() {
           {/* Arama */}
           <div>
             <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
-              🔍 Bilet No veya Sembol Ara:
+              Bilet No veya Sembol Ara:
             </label>
             <input
               type="text"
@@ -718,7 +714,7 @@ export default function ForexReportsPage() {
           {/* Strateji Filtresi */}
           <div>
             <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
-              🎯 Strateji Filtresi:
+              Strateji Filtresi:
             </label>
             <select
               value={selectedStrategy}
@@ -749,8 +745,8 @@ export default function ForexReportsPage() {
               className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
             >
               <option value="ALL">Tümü (Kazanç & Kayıp)</option>
-              <option value="WIN">Sadece Kazananlar (WIN 🎯)</option>
-              <option value="LOSS">Sadece Kaybedenler (LOSS 🛑)</option>
+              <option value="WIN">Sadece Kazananlar (WIN)</option>
+              <option value="LOSS">Sadece Kaybedenler (LOSS)</option>
             </select>
           </div>
 
@@ -765,11 +761,11 @@ export default function ForexReportsPage() {
               className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
             >
               <option value="ALL">Tüm Çıkışlar</option>
-              <option value="TP_HIT">🎯 Kâr Al (Take Profit)</option>
-              <option value="SL_HIT">🛑 Zarar Durdur (Stop Loss)</option>
-              <option value="BE_HIT">🛡️ Başabaş Koruma (Breakeven)</option>
-              <option value="TRAILING_HIT">📈 İz Süren Stop (Trailing)</option>
-              <option value="MANUAL">✋ Manuel Kapatma</option>
+              <option value="TP_HIT">Kâr Al (Take Profit)</option>
+              <option value="SL_HIT">Zarar Durdur (Stop Loss)</option>
+              <option value="BE_HIT">Başabaş Koruma (Breakeven)</option>
+              <option value="TRAILING_HIT">İz Süren Stop (Trailing)</option>
+              <option value="MANUAL">Manuel Kapatma</option>
             </select>
           </div>
         </div>
@@ -802,7 +798,6 @@ export default function ForexReportsPage() {
       <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 shadow-2xl overflow-hidden">
         <div className="p-4 border-b border-bunker-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg">📜</span>
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">
               Kapanan İşlemler Tablosu ({trades.length})
             </h2>
@@ -837,7 +832,6 @@ export default function ForexReportsPage() {
           </div>
         ) : trades.length === 0 ? (
           <div className="p-16 text-center space-y-3">
-            <div className="text-4xl">🏁</div>
             <p className="text-sm font-bold text-white">
               {kpi && kpi.total_trades > 0 ? "Bu tablo filtrelerine uyan işlem yok." : "Rapora henüz kapanmış işlem gelmedi."}
             </p>
