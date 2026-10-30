@@ -1,5 +1,6 @@
 """LLM onay katmanı ölçümü: kontrollü keşif, rastgele-veto kontrolü, Brier/AUC kalibrasyonu, fail-open metrikleri."""
 import asyncio
+import json
 
 import pytest
 
@@ -145,3 +146,56 @@ def test_fail_stats_rate_alert_and_outcomes():
 def test_summarize_includes_new_sections():
     s = lr.summarize([row() for _ in range(3)])
     assert {"calibration_deep", "veto_value", "fail_stats"} <= set(s)
+
+
+def test_summarize_reports_floating_results_for_unfinished_decisions():
+    rows = [{"decision": "REJECT", "applied": "blocked", "symbol": "NZDUSD", "shadow_status": "IZLENIYOR", "shadow_pips": -2.1},
+            {"decision": "REJECT", "applied": "blocked", "symbol": "NZDUSD", "shadow_status": "IZLENIYOR", "shadow_pips": -3.3},
+            {"decision": "REJECT", "applied": "blocked", "symbol": "USDCAD", "shadow_status": "IZLENIYOR", "shadow_pips": 1.0},
+            {"decision": "APPROVE", "applied": "allowed", "symbol": "XAUUSD", "shadow_status": "IZLENIYOR", "shadow_pips": 25.0},
+            {"decision": "APPROVE", "applied": "reject_voided", "symbol": "XAUUSD", "shadow_status": "IZLENIYOR", "shadow_pips": 9.0},
+            {"decision": "REJECT", "applied": "blocked", "symbol": "X", "shadow_status": "IZLENIYOR", "shadow_pips": None}]
+    s = lr.summarize(rows)
+    assert s["rejected_stats"]["closed"] == 0                                   # hiçbiri stop/hedefe değmedi
+    assert s["floating"]["rejected"] == {"n": 3, "winning": 1, "losing": 2, "sum_pips": -4.4}
+    assert s["floating"]["approved"] == {"n": 1, "winning": 1, "losing": 0, "sum_pips": 25.0}   # geçersiz red dışlanır
+    assert s["tracking"] == 6
+
+
+def test_latency_stats_percentiles_and_timeouts():
+    rows = [{"latency_ms": 1000 * i, "error": None} for i in range(1, 11)] + [{"latency_ms": 25000, "error": "TimeoutError: x"}]
+    s = lr.latency_stats(rows)
+    assert s["n"] == 11 and s["p50_ms"] == 6000 and s["max_ms"] == 25000 and s["timeouts"] == 1 and s["timeout_rate"] == pytest.approx(1 / 11, abs=0.001)
+    assert lr.latency_stats([])["n"] == 0 and "latency" in lr.summarize(rows)
+
+
+def test_features_csv_flattens_features_and_outcomes(monkeypatch):
+    from app import database
+    rows = [{"id": 1, "created_at": 1.0, "symbol": "XAUUSD", "direction": "BUY", "strategy_label": "Radar", "score": 80, "decision": "APPROVE",
+             "confidence": 70, "applied": "allowed", "exploration": 0, "control_veto": 1, "sl_pips": 8, "tp_pips": 12,
+             "shadow_status": "TP", "shadow_pips": 12.0, "mfe_pips": 13, "mae_pips": -2,
+             "features": '{"session": "londra", "htf_agree_count": 4, "hard_flags": ["haber_15dk", "spread_atr_yuksek"]}', "path": "[1,2]"},
+            {"id": 2, "features": None, "path": None}]
+
+    async def fake(since_ts=0.0, limit=5000):
+        return rows
+
+    monkeypatch.setattr(database, "list_llm_review_dataset", fake)
+    resp = asyncio.run(lr.llm_review_features_csv(days=30))
+    text = resp.body.decode("utf-8")
+    head, first = text.lstrip("\ufeff").splitlines()[:2]
+    assert "f_session" in head and "f_hard_flags" in head and "shadow_pips" in head
+    assert "londra" in first and "haber_15dk|spread_atr_yuksek" in first and ";TP;" in first
+    assert resp.headers["content-disposition"].endswith("veri-seti.csv")
+
+
+def test_exit_ab_endpoint_uses_recorded_paths(monkeypatch):
+    from app import database
+    rows = [{"path": json.dumps([5, 12, 4, -1, 6, 26]), "sl_pips": 10, "tp_pips": 25}, {"path": None, "sl_pips": 10, "tp_pips": 25}]
+
+    async def fake(since_ts=0.0, limit=5000):
+        return rows
+
+    monkeypatch.setattr(database, "list_llm_review_dataset", fake)
+    out = asyncio.run(lr.llm_review_exit_ab(days=30))
+    assert out["n"] == 1 and out["means_pips"]["baseline"] == 25.0 and not out["decisive"]

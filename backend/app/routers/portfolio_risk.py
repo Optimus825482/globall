@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app import database, portfolio_risk, position_supervisor
+from app import database, portfolio_analytics, portfolio_risk, position_supervisor
 from app.api_common import rate_limit
 
 router = APIRouter(prefix="/api", tags=["portfolio-risk"])
@@ -79,6 +79,42 @@ async def portfolio_sizing(symbol: str, sl_pips: float = Query(..., gt=0), base_
     edge = {"wins": wins, "n": len(closed), "rr": rr} if closed else None
     return portfolio_risk.sizing_suggestion(symbol.upper(), sl_pips, float(spec.get("pip_val") or 0), equity, snap["drawdown"]["mult"],
                                             snap["risk_budget_remaining_usd"], base_risk_pct, edge)
+
+
+@router.get("/portfolio/cells")
+async def portfolio_cells(days: int = Query(180, ge=7, le=730)):
+    """Strateji × sembol × seans hücrelerinde büzülmüş kazanma oranı ve alt sınır (n ≥ 30 olanlar)."""
+    rows = await database.list_position_excursions(since_ts=time.time() - days * 86400)
+    return portfolio_analytics.cell_stats(rows)
+
+
+@router.get("/portfolio/allocation")
+async def portfolio_allocation(days: int = Query(180, ge=7, le=730)):
+    """Strateji bazlı risk ağırlığı ÖNERİSİ (uygulanmaz; eşit-risk tabanına karşı gölgede ölçülmeli)."""
+    rows = await database.list_position_excursions(since_ts=time.time() - days * 86400)
+    return portfolio_analytics.strategy_allocation(rows)
+
+
+@router.get("/portfolio/enb")
+async def portfolio_enb():
+    """Açık pozisyonların etkin bahis sayısı ve korelasyon kümeleri (1 saatlik işaretli getiriler)."""
+    from app import forex_research
+    from app.routers import forex as fx
+    positions = list(fx._MT5_STATE.get("open_positions") or [])
+    rets: Dict[str, List[float]] = {}
+    signs: Dict[str, float] = {}
+    for p in positions:
+        sym = str(p.get("symbol", "")).upper()
+        if sym in rets:
+            continue
+        bars, _src = await forex_research.run_blocking(forex_research.get_candles, sym, "1h")
+        closes = [b["close"] for b in bars[-121:]]
+        if len(closes) >= 21:
+            rets[sym] = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes))]
+            signs[sym] = 1.0 if str(p.get("direction", "")).upper() == "BUY" else -1.0
+    out = portfolio_analytics.effective_bets(rets, signs)
+    out["positions"] = len(positions)
+    return out
 
 
 @router.get("/portfolio/gate-log")

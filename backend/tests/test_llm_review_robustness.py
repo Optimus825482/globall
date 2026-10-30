@@ -114,3 +114,12 @@ def test_error_then_retry_after_short_ttl(monkeypatch):
     first, same, later = asyncio.run(run())
     assert first["applied"] == "fail_open" and same["cached"] and len(calls) == 2
     assert later["applied"] == "allowed" and not later["cached"]
+
+
+def test_parse_verdict_captures_premortem_and_p_win():
+    v = ltr.parse_verdict('{"decision":"APPROVE","confidence":70,"p_win":58.4,"summary":"ok","reasons":["a"],'
+                          '"premortem":["Haber spike","Direnç tutar","üçüncü"],"risks":["r1"],"checks":{"haber":"nötr"}}')
+    assert v["checks"]["p_win"] == "58" and v["checks"]["haber"] == "nötr"
+    assert v["risks"] == ["r1", "Ön-ölüm: Haber spike", "Ön-ölüm: Direnç tutar"]          # en fazla 2 ön-ölüm
+    assert "p_win" not in ltr.parse_verdict('{"decision":"REJECT","confidence":60,"summary":"x"}')["checks"]
+    assert "premortem" in ltr.SYSTEM_PROMPT and "p_win" in ltr.SYSTEM_PROMPT

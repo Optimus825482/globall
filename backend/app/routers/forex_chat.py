@@ -164,6 +164,21 @@ def compact_calendar(items: Any, now_ts: float, currencies: Optional[set] = None
     return {"aciklanan_son_6_saat": released[:8], "yaklasan_24_saat": upcoming[:10]}
 
 
+async def attach_surprise_z(cal: Dict[str, Any]) -> None:
+    """Açıklanan satırlara z = (gerçekleşen − beklenen)/geçmiş sürpriz SD ekler (≥8 örnek varsa; kart 2.6)."""
+    from app import database
+    from app.forex_news import normalize_event_title, parse_calendar_value
+
+    for row in cal.get("aciklanan_son_6_saat", []):
+        a, f = parse_calendar_value(row.get("actual")), parse_calendar_value(row.get("forecast"))
+        if a is None or f is None:
+            continue
+        sd, n = await database.get_surprise_sd(normalize_event_title(row.get("title")))
+        if n >= 8 and sd > 0:
+            row["z"] = round((a - f) / sd, 2)
+            row["z_n"] = n
+
+
 def describe_calendar(cal: Dict[str, Any]) -> str:
     lines: List[str] = []
     for r in cal.get("aciklanan_son_6_saat", [])[:3]:
@@ -264,6 +279,7 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
         from app.forex_news import get_forex_news
         items = await get_forex_news(force_refresh=False)
         cal = compact_calendar(items, time.time(), cur, symbols)
+        await attach_surprise_z(cal)
         cal["ozet"] = describe_calendar(cal)   # model boş listeyi "takvim yok" diye okumasın
         cal["kaynak"] = f"ekonomik takvim veritabanı, {len(items or [])} olay tarandı"
         return cal["ozet"], cal

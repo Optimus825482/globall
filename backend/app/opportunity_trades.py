@@ -57,6 +57,11 @@ def news_effect(calendar: Optional[Dict[str, Any]], symbol: str, bias: str) -> D
         if d == 0 or ago < 0 or ago > NEWS_LOOKBACK_MIN:
             continue
         w = 2.0 if int(r.get("stars") or 0) >= 3 else 1.0
+        z = r.get("z")
+        if z is not None:                                 # z-skoru biliniyorsa: gürültüyü ele, büyük sürprizi ağırlıklandır (kart 2.6)
+            if abs(float(z)) < 0.5:
+                continue
+            w *= min(abs(float(z)), 2.0)
         net += w * d
         verdict = r.get("sonuc") or f"gerçekleşen {r.get('actual')}, beklenen {r.get('forecast')}"
         lines.append(f"{r.get('currency', '')} {r.get('title')} ({verdict}) → {'BUY' if d > 0 else 'SELL'} yönünü destekler")
@@ -144,7 +149,7 @@ async def open_from_scan(analyses: Dict[str, Dict[str, Any]], scan: Dict[str, An
             if est:
                 gate = await portfolio_risk.check_entry({"symbol": sym, "direction": plan["direction"], "lots": est,
                                                          "sl_pips": plan["sl_pips"], "pip_size": spec.get("pip_size"),
-                                                         "pip_val": spec.get("pip_val")}, fx._AUTO_SETTINGS)
+                                                         "pip_val": spec.get("pip_val"), "entry_price": plan["entry_price"]}, fx._AUTO_SETTINGS)
                 if gate["blocked"]:
                     skipped.append({"symbol": sym, "reason": "portföy risk kapısı: " + "; ".join(r["text"] for r in gate["reasons"][:2])})
                     continue

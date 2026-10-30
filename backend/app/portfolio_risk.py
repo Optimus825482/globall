@@ -232,6 +232,21 @@ def spread_percentile(symbol: str, hour: int, q: float = SPREAD_PCTL) -> Optiona
 
 # --------------------------------------------------------------------------- giriş kapısı
 
+def vol_multiplier(vol: Optional[Dict[str, Any]]) -> float:
+    """Rejime göre YALNIZCA AŞAĞI YÖNLÜ boyut çarpanı (kart 3.7): hızlı küçült, yavaş geri yükle (burada anlık hesaplanır).
+
+    ATR(14)/ATR(100) > 2 ya da yüzdelik > 95 → ×0.4 · > 1.5 ya da > 90 → ×0.6 · aksi 1.0. Veri yoksa 1.0.
+    """
+    if not vol:
+        return 1.0
+    ratio, pct = vol.get("ratio") or 0.0, vol.get("pctile") or 0.0
+    if ratio > 2.0 or pct > 95.0:
+        return 0.4
+    if ratio > 1.5 or pct > 90.0:
+        return 0.6
+    return 1.0
+
+
 def evaluate_entry(ctx: Dict[str, Any], cfg: Dict[str, Any], account: Dict[str, Any], positions: List[Dict[str, Any]],
                    prices: Dict[str, float], specs: Callable[[str], Dict[str, Any]], state: RiskState,
                    now: Optional[float] = None) -> Dict[str, Any]:
@@ -251,6 +266,11 @@ def evaluate_entry(ctx: Dict[str, Any], cfg: Dict[str, Any], account: Dict[str, 
                         cfg.get("daily_loss_pct", 3.0), cfg.get("weekly_loss_pct", 6.0), cfg.get("kill_dd_pct", 12.0))
     metrics["drawdown"] = dd
     mult = dd["mult"]
+    vm = vol_multiplier(ctx.get("vol"))
+    if vm < 1.0:
+        metrics["vol"] = {k: ctx["vol"].get(k) for k in ("ratio", "pctile")}
+        metrics["vol_mult"] = vm
+        mult = min(mult, vm)
     if dd["kill"]:
         reasons.append({"code": "kill_dd", "text": f"Tepeden düşüş %{dd['dd_pct']} ≥ kill eşiği: otomatik durdurma"})
     if dd["daily_breach"]:
@@ -279,6 +299,20 @@ def evaluate_entry(ctx: Dict[str, Any], cfg: Dict[str, Any], account: Dict[str, 
             reasons.append({"code": "usd_net", "text": f"Net USD riski %{metrics['usd_net_after_pct']} > limit %{cfg.get('usd_net_limit_pct', 3.0)}"})
     if heat["no_sl_tickets"]:
         reasons.append({"code": "no_sl", "text": f"{len(heat['no_sl_tickets'])} açık pozisyonda SL yok (sınırsız risk)"})
+
+    # 3b) Stres: bu işlem, şimdiye dek limit içindeki bir senaryoyu limit dışına itiyor mu? (kart 3.5)
+    entry_px = float(ctx.get("entry_price") or 0)
+    if equity > 0 and entry_px > 0 and lots > 0:
+        margin_used = float(account.get("margin") or 0.0)
+        before = stress_test(positions, equity, margin_used, specs)
+        after = stress_test(list(positions) + [{"symbol": sym, "direction": direction, "lots": lots, "current_price": entry_px}],
+                            equity, margin_used, specs)
+        keys_pushed = [k for k in after if after[k]["breach"] and not before[k]["breach"]]
+        pushed = [after[k]["label"] for k in keys_pushed]
+        if keys_pushed:
+            reasons.append({"code": "stress", "text": f"Bu işlem stres limitini aşırır: {pushed[0]} "
+                                                    f"(zarar %{abs(after[keys_pushed[0]]['pnl_pct']):.1f})"})
+        metrics["stress_pushed"] = pushed
 
     # 4) Maliyet-R ve spread kapıları
     spread = float(ctx.get("spread_pips") or 0)
@@ -374,6 +408,13 @@ async def check_entry(ctx: Dict[str, Any], settings: Any) -> Dict[str, Any]:
     equity = float(account.get("equity") or account.get("balance") or 0.0)
     state = await refresh_state(equity)
     ctx = {**ctx}
+    if "vol" not in ctx:
+        try:
+            from app import forex_research
+            ctx["vol"] = await forex_research.run_blocking(forex_research.vol_regime, ctx["symbol"])
+        except Exception as exc:  # noqa: BLE001 - rejim verisi yoksa çarpan 1.0
+            logger.info("vol rejimi alınamadı (%s): %s", ctx.get("symbol"), exc)
+            ctx["vol"] = None
     if ctx.get("spread_pips"):
         record_spread(ctx["symbol"], float(ctx["spread_pips"]))
     res = evaluate_entry(ctx, cfg, account, positions, live_prices(fx), lambda s: fx.get_symbol_trading_specs(s), state)

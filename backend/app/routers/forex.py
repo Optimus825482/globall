@@ -9228,7 +9228,7 @@ async def _forex_auto_paper_loop():
                     _rg = await _pr.check_entry({
                         "symbol": sym, "direction": direction, "lots": mt5_lots, "sl_pips": sl_pips,
                         "spread_pips": float(cand.get("spread_pips", 0.0) or 0.0), "pip_size": spec["pip_size"],
-                        "pip_val": pip_val, "comm_per_lot": comm_per_lot}, _AUTO_SETTINGS)
+                        "pip_val": pip_val, "comm_per_lot": comm_per_lot, "entry_price": entry_p}, _AUTO_SETTINGS)
                 except Exception as exc:
                     logger.warning("Risk kapısı çağrısı çöktü (%s): %s", sym, exc)
                     _rg = None

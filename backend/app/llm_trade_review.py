@@ -32,6 +32,7 @@ ERROR_CACHE_SEC = 45.0            # LLM hatası/zaman aşımı kısa süre sakla
 MAX_REVIEW_TOKENS = 4000          # düşünen modeller jetonun çoğunu akıl yürütmeye harcar; 1200 yetmiyordu
 SHADOW_WINDOW_SEC = 4 * 3600.0    # gölge sonuç izleme süresi
 TRACKER_INTERVAL_SEC = 20.0
+PRICE_MAX_AGE_SEC = 180.0
 MAX_DOSSIER_CHARS = 7000
 
 SYSTEM_PROMPT = (
@@ -57,8 +58,8 @@ SYSTEM_PROMPT = (
     "- Yaklaşan yüksek etkili veri (açıklamaya 45 dk'dan az) ya da üst zaman dilimlerinin netçe ters yönü güçlü REJECT sebebidir.\n"
     "- Düşünme sürecini KISA tut; sonunda YALNIZCA aşağıdaki JSON'u ver. Yalnızca Türkçe, sade yaz.\n"
     "ÇIKTI: YALNIZCA şu JSON (başka metin yok):\n"
-    '{"decision":"APPROVE|REJECT","confidence":0-100,"summary":"tek cümle gerekçe","reasons":["en fazla 4 madde"],'
-    '"risks":["en fazla 3 madde"],"checks":{"mtf_uyum":"olumlu|olumsuz|nötr","haber":"olumlu|olumsuz|nötr",'
+    '{"decision":"APPROVE|REJECT","confidence":0-100,"p_win":0-100,"summary":"tek cümle gerekçe","reasons":["en fazla 4 madde"],'
+    '"premortem":["bu işlem NEDEN KAYBEDER: en fazla 2 somut neden"],"risks":["en fazla 3 madde"],"checks":{"mtf_uyum":"olumlu|olumsuz|nötr","haber":"olumlu|olumsuz|nötr",'
     '"maliyet":"olumlu|olumsuz|nötr","seviye":"olumlu|olumsuz|nötr","korelasyon":"olumlu|olumsuz|nötr",'
     '"rejim":"olumlu|olumsuz|nötr"}}'
 )
@@ -129,12 +130,15 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
     cand = ctx.get("cand") or {}
     pip = float(ctx.get("pip_size") or 0.0) or None
 
+    holder: Dict[str, Any] = {}
+
     async def _tech():
         await forex_research.run_blocking(forex_research.mt5_request, sym)
         await forex_research.run_blocking(forex_research.mt5_wait, sym, 3.0)
         a = await forex_research.run_blocking(forex_research.analyze_symbol, sym)
         if not a.get("ok"):
             return {"durum": "veri yok"}
+        holder["a"] = a
         out = {
             "yon": a["bias"], "puan": a["score"], "fiyat": a["price"], "fiyat_kaynagi": a.get("price_source"),
             "zaman_dilimleri": {tf: forex_research._dir_word(f["score"]) for tf, f in a["frames"].items()},
@@ -152,7 +156,12 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
     async def _cal():
         from app.forex_news import get_forex_news
         items = await get_forex_news(force_refresh=False)
-        cal = compact_calendar(items, time.time(), forex_research.currencies_for(sym))
+        cal = compact_calendar(items, time.time(), forex_research.currencies_for(sym), [sym])
+        try:
+            from app.routers.forex_chat import attach_surprise_z
+            await attach_surprise_z(cal)
+        except Exception:  # noqa: BLE001 - z-skoru yoksa sürpriz işareti yeterli
+            pass
         cal["ozet"] = describe_calendar(cal)
         return cal
 
@@ -179,6 +188,25 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
     tech, cal, news, dxy, tv = await asyncio.gather(_guard(_tech(), "teknik"), _guard(_cal(), "takvim"),
                                                     _guard(_news(), "haber"), _guard(_dxy(), "dxy"), _guard(_tv(), "tv"))
     now = time.time()
+    features = None
+    try:
+        if holder.get("a"):
+            from app import portfolio_analytics
+            nm = None
+            for e in ((cal or {}).get("yaklasan_24_saat") or []):
+                if int(e.get("stars") or 0) >= 3:
+                    nm = e.get("dakika")
+                    break
+            features = portfolio_analytics.entry_features(direction, holder["a"], float(cand.get("spread_pips") or 0), float(pip or 0), nm, now)
+            try:
+                from app import portfolio_risk
+                vol = await forex_research.run_blocking(forex_research.vol_regime, sym)
+                if vol:
+                    features["vol_ratio"], features["vol_pctile"] = vol["ratio"], vol["pctile"]
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001
+        features = None
     try:
         perf = {"son_24_saat": fx._collect_symbol_ev(sym, now, 24 * 3600), "son_7_gun": fx._collect_symbol_ev(sym, now, 7 * 24 * 3600)}
     except Exception:  # noqa: BLE001
@@ -215,6 +243,7 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
         "dolar_rejimi": dxy,
         "hesap_ve_yigilma": acct,
         "sembol_performansi": perf,
+        "ozellikler": features,
     }
     return dossier
 
@@ -274,9 +303,16 @@ def parse_verdict(text: str) -> Optional[Dict[str, Any]]:
         return [str(x)[:240] for x in (v if isinstance(v, list) else [])][:n]
 
     checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
+    premortem = ["Ön-ölüm: " + x for x in _list(data.get("premortem"), 2)]
+    checks_out = {str(k)[:20]: str(v)[:12] for k, v in list(checks.items())[:8]}
+    try:
+        pw = int(max(0, min(100, round(float(data.get("p_win"))))))
+        checks_out["p_win"] = str(pw)
+    except (TypeError, ValueError):
+        pass
     return {"decision": decision, "confidence": confidence, "summary": str(data.get("summary") or "")[:300],
-            "reasons": _list(data.get("reasons"), 4), "risks": _list(data.get("risks"), 3),
-            "checks": {str(k)[:20]: str(v)[:12] for k, v in list(checks.items())[:8]}}
+            "reasons": _list(data.get("reasons"), 4), "risks": (_list(data.get("risks"), 3) + premortem)[:5],
+            "checks": checks_out}
 
 
 async def ask_llm(dossier: Dict[str, Any], timeout: float) -> tuple:
@@ -428,6 +464,11 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
             })
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM karar kaydı yazılamadı: %s", exc)
+        if review_id and dossier.get("ozellikler"):
+            try:
+                await database.set_llm_review_features(review_id, dossier["ozellikler"])
+            except Exception as exc:  # noqa: BLE001
+                logger.info("LLM karar özellikleri yazılamadı: %s", exc)
         if review_id and (explore or control_veto):
             try:
                 await database.set_llm_review_flags(review_id, int(explore), int(control_veto))
@@ -495,10 +536,17 @@ async def tracker_loop() -> None:
             for row in rows:
                 key = fx.canonical_symbol(row["symbol"])
                 price = fx._LIVE_PRICES_CACHE.get(key)
-                if not price:
-                    continue
+                ts_price = float(fx._PRICE_TS.get(key, 0.0) or 0.0)
+                if not price or (ts_price and now - ts_price > PRICE_MAX_AGE_SEC):
+                    continue                  # bayat/yok fiyatla gölge sonuç ilerletilmez (piyasa kapalı ya da tik akışı durmuş)
                 upd = shadow_update(row, float(price), now)
                 if upd:
+                    try:
+                        old = json.loads(row["path"]) if row.get("path") else []
+                    except Exception:  # noqa: BLE001
+                        old = []
+                    if upd.get("shadow_pips") is not None:
+                        upd["path"] = json.dumps((old + [round(float(upd["shadow_pips"]), 1)])[-800:])
                     await database.update_llm_review_shadow(row["id"], upd)
         except asyncio.CancelledError:
             break

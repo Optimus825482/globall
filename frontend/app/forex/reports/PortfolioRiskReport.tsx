@@ -26,6 +26,10 @@ interface Excursion {
 interface SupEvent { id: number; ts: number; ticket: number; symbol: string; kind: string; detail: string; action: string; mode: string }
 interface StressRow { label: string; pnl_usd: number; pnl_pct: number; margin_level_after_pct: number | null; worst_position: string | null; breach: boolean }
 interface MonteCarlo { n: number; ok: boolean; note?: string; risk_pct?: number; dd_p50?: number; dd_p90?: number; dd_p95?: number; dd_p99?: number; p_dd_over_limit?: number; dd_limit_pct?: number; mean_r?: number }
+interface Cell { strategy: string; symbol: string; session: string; n: number; p_raw: number; p_shrunk: number; p_lower: number; mean_r_shrunk: number }
+interface CellStats { n_total: number; min_n: number; n_cells_total: number; cells: Cell[]; pool?: { p: number; mean_r: number }; note?: string }
+interface Allocation { strategies: { strategy: string; n: number; n_eff: number; expectancy_r: number; suggested_weight: number; capped_by_sample: boolean }[]; note?: string }
+interface Enb { n: number; enb: number; avg_abs_corr: number; avg_signed_corr?: number; clusters: string[][]; warning: boolean; note?: string }
 interface Proposal { ticket: number; symbol?: string; action: string; pct?: number | null; reason?: string; ok?: boolean }
 
 const MODE_TR: Record<string, string> = { off: "Kapalı", shadow: "Gölge (yalnız günlük)", enforce: "Uygulanıyor", log: "Öneri günlüğü", act: "Komut veriyor" };
@@ -56,17 +60,26 @@ export default function PortfolioRiskReport() {
   const [asking, setAsking] = useState(false);
   const [stress, setStress] = useState<Record<string, StressRow> | null>(null);
   const [mc, setMc] = useState<MonteCarlo | null>(null);
+  const [cells, setCells] = useState<CellStats | null>(null);
+  const [alloc, setAlloc] = useState<Allocation | null>(null);
+  const [enb, setEnb] = useState<Enb | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [s, g, e, l, st, m] = await Promise.all([
+      const [s, g, e, l, st, m, ce, al, en] = await Promise.all([
         apiFetch("/api/portfolio/risk"),
         apiFetch("/api/portfolio/gate-log?days=7"),
         apiFetch("/api/positions/excursions?days=30"),
         apiFetch("/api/positions/supervisor-log?days=7"),
         apiFetch("/api/portfolio/stress"),
         apiFetch("/api/portfolio/montecarlo?days=90&risk_pct=1"),
+        apiFetch("/api/portfolio/cells"),
+        apiFetch("/api/portfolio/allocation"),
+        apiFetch("/api/portfolio/enb"),
       ]);
+      setCells(ce as CellStats);
+      setAlloc(al as Allocation);
+      setEnb(en as Enb);
       setStress((st as { scenarios: Record<string, StressRow> }).scenarios);
       setMc(m as MonteCarlo);
       setSnap(s as Snapshot);
@@ -207,6 +220,65 @@ export default function PortfolioRiskReport() {
               ) : (
                 <p className="text-xs text-bunker-muted">{mc.note} (şu an {mc.n} işlem)</p>
               )}
+            </div>
+          )}
+
+          {enb && (
+            <div className={card}>
+              <p className="mb-1 text-xs font-bold text-white">Etkin bahis sayısı (korelasyon kümeleri)</p>
+              {enb.n < 2 ? (
+                <p className="text-xs text-bunker-muted">{enb.note ?? "En az 2 açık pozisyon gerekir."}</p>
+              ) : (
+                <>
+                  <p className={`text-xs ${enb.warning ? "text-amber-300" : "text-slate-300"}`}>
+                    {enb.n} pozisyon ≈ <b>{enb.enb}</b> bağımsız bahis · ort. işaretli korelasyon {enb.avg_signed_corr ?? "—"}
+                    {enb.warning ? " · UYARI: pozisyonlar fiilen tek tema gibi davranıyor" : ""}
+                  </p>
+                  {enb.clusters.length > 0 && <p className="mt-1 font-mono text-[11px] text-bunker-muted">Kümeler (ρ &gt; 0,7): {enb.clusters.map((c) => c.join(" + ")).join(" · ")}</p>}
+                </>
+              )}
+            </div>
+          )}
+
+          {cells && (
+            <div className={card}>
+              <p className="mb-1 text-xs font-bold text-white">Hücre bazlı kenar (strateji × sembol × seans; Beta-Binomial büzülme)</p>
+              {cells.cells.length === 0 ? (
+                <p className="text-xs text-bunker-muted">{cells.n_total} kapanmış işlem, {cells.n_cells_total} hücre: hiçbirinde n ≥ {cells.min_n} yok; raporlanacak hücre yok.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead><tr><th className={th}>Hücre</th><th className={th}>n</th><th className={th}>Ham</th><th className={th}>Büzülmüş</th><th className={th}>Alt sınır</th><th className={th}>Ort. R</th></tr></thead>
+                    <tbody>
+                      {cells.cells.slice(0, 10).map((c) => (
+                        <tr key={`${c.strategy}${c.symbol}${c.session}`} className="border-t border-bunker-800/70">
+                          <td className="px-3 py-2 text-white">{c.strategy} · {c.symbol} · {c.session}</td>
+                          <td className="px-3 py-2">{c.n}</td>
+                          <td className="px-3 py-2">%{(c.p_raw * 100).toFixed(0)}</td>
+                          <td className="px-3 py-2">%{(c.p_shrunk * 100).toFixed(0)}</td>
+                          <td className={`px-3 py-2 ${cells.pool && c.p_lower > cells.pool.p ? "text-emerald-300" : "text-amber-300"}`}>%{(c.p_lower * 100).toFixed(0)}</td>
+                          <td className="px-3 py-2">{c.mean_r_shrunk}R</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="mt-1 text-[11px] text-bunker-muted">{cells.note ?? "Çoklu dilimleme sahte keşif üretir; alt sınır havuz oranını aşmayan hücre kanıtlı sayılmaz."}</p>
+            </div>
+          )}
+
+          {alloc && alloc.strategies.length > 0 && (
+            <div className={card}>
+              <p className="mb-1 text-xs font-bold text-white">Strateji bazlı risk ağırlığı ÖNERİSİ (uygulanmaz)</p>
+              <ul className="space-y-1 font-mono text-xs text-slate-300">
+                {alloc.strategies.map((s) => (
+                  <li key={s.strategy}>
+                    {s.strategy}: ×{s.suggested_weight} · n={s.n} (etkin {s.n_eff}) · beklenti {s.expectancy_r}R{s.capped_by_sample ? " · örneklem az: ≤1" : ""}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-bunker-muted">{alloc.note}</p>
             </div>
           )}
 

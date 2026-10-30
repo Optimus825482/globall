@@ -761,3 +761,33 @@ def describe_scan(scan: Optional[Dict[str, Any]]) -> str:
         name = name if name == r["symbol"] else f"{name} ({r['symbol']})"
         lines.append(f"• {name}: {r['summary']} — zaman dilimi uyumu %{int(r['agreement'] * 100)}")
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- volatilite rejimi (kart 3.7)
+
+_vol_cache: Dict[str, Tuple[float, Optional[Dict[str, Any]]]] = {}
+
+
+def vol_regime(symbol: str) -> Optional[Dict[str, Any]]:
+    """1 saatlik ATR(14)/ATR(100) oranı ve ATR(14)'ün son ~250 saatteki yüzdeliği. Veri yoksa None (MT5 öncelikli)."""
+    sym = symbol.upper()
+    now = time.time()
+    hit = _vol_cache.get(sym)
+    if hit and now - hit[0] < 60:
+        return hit[1]
+    bars, src = get_candles(sym, "1h")
+    out: Optional[Dict[str, Any]] = None
+    if len(bars) >= 110:
+        tr = []
+        for i in range(1, len(bars)):
+            h, l, pc = bars[i]["high"], bars[i]["low"], bars[i - 1]["close"]
+            tr.append(max(h - l, abs(h - pc), abs(l - pc)))
+        atr14 = sum(tr[-14:]) / 14.0
+        atr100 = sum(tr[-100:]) / 100.0
+        series = [sum(tr[i - 13:i + 1]) / 14.0 for i in range(13, len(tr))][-250:]
+        pctile = 100.0 * sum(1 for v in series if v <= atr14) / len(series) if series else None
+        if atr100 > 0:
+            out = {"atr14": atr14, "atr100": atr100, "ratio": round(atr14 / atr100, 2),
+                   "pctile": round(pctile, 1) if pctile is not None else None, "source": src}
+    _vol_cache[sym] = (now, out)
+    return out

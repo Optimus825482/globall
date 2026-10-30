@@ -148,3 +148,33 @@ def test_gate_log_summary():
     s = summarize_gate_log(rows)
     assert (s["would_block"], s["blocked_enforced"], s["size_reduced"]) == (2, 1, 1)
     assert s["by_reason"] == {"heat": 2, "cost_r": 1} and s["by_symbol"] == {"XAUUSD": 2}
+
+
+# ----------------------------------------------------------------------------- tez-geçersizleşme (1.5)
+
+def _bars(closes, hi=0.5):
+    return [{"time": i, "open": c, "high": c + hi, "low": c - hi, "close": c} for i, c in enumerate(closes)]
+
+
+def test_structure_broken_both_directions():
+    up = _bars([100 + i * 0.1 for i in range(30)])
+    assert not ps.structure_broken(up, "BUY") and not ps.structure_broken(up, "SELL")
+    crash = up + _bars([90.0])                                       # son kapanış önceki 20 mumun en düşüğünün çok altında
+    assert ps.structure_broken(crash, "BUY") and not ps.structure_broken(crash, "SELL")
+    spike = up + _bars([120.0])
+    assert ps.structure_broken(spike, "SELL") and not ps.structure_broken(spike, "BUY")
+    assert not ps.structure_broken(_bars([1, 2, 3]), "BUY")          # yetersiz veri
+
+
+def test_invalidation_findings_rules():
+    P = position()
+    clean = {"atr_ratio": 1.0, "htf_break": False, "usd_bias": "USD_SHORT", "dxy_regime": "USD_WEAK", "minutes_open": 20, "progress": 0.6}
+    assert ps.invalidation_findings(P, clean, CFG) == []
+    bad = {"atr_ratio": 2.4, "htf_break": True, "usd_bias": "USD_SHORT", "dxy_regime": "USD_STRONG", "minutes_open": 90, "progress": 0.1}
+    kinds = {f["kind"] for f in ps.invalidation_findings(P, bad, CFG)}
+    assert kinds == {"invalidation:atr_spike", "invalidation:yapi_kirilimi", "invalidation:dxy_ters", "invalidation:ilerleme_yok"}
+    assert all(f["action"] == "flag" for f in ps.invalidation_findings(P, bad, CFG))                      # yalnız işaret, eylem yok
+    assert ps.invalidation_findings(P, {**clean, "usd_bias": "USD_LONG", "dxy_regime": "USD_WEAK"}, CFG)[0]["kind"] == "invalidation:dxy_ters"
+    assert not ps.invalidation_findings(P, {**clean, "usd_bias": "USD_NEUTRAL", "dxy_regime": "USD_WEAK"}, CFG)
+    assert not ps.invalidation_findings(P, {**clean, "minutes_open": 90, "progress": 0.5}, CFG)            # ilerleme var
+    assert ps.invalidation_findings(P, {**clean, "minutes_open": 90, "progress": -0.5}, CFG)[0]["kind"] == "invalidation:ilerleme_yok"

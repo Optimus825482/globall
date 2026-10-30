@@ -293,3 +293,51 @@ def test_sizing_rejects_when_min_lot_exceeds_limit():
     r = pr.sizing_suggestion("XAUUSD", 100.0, 10.0, 500.0, 1.0, 1000.0, base_risk_pct=0.25)       # sınır $1.25, min lot riski $10
     assert r["lots"] == 0.0 and "%20" in r["reason"]
     assert pr.sizing_suggestion("EURUSD", 0.0, 10.0, 1000.0, 1.0, 100.0)["lots"] == 0.0
+
+
+# ----------------------------------------------------------------------------- rejim çarpanı (3.7) + stres engeli (3.5)
+
+def test_vol_multiplier_is_down_only_and_tiered():
+    assert pr.vol_multiplier(None) == 1.0 and pr.vol_multiplier({"ratio": 1.0, "pctile": 50}) == 1.0
+    assert pr.vol_multiplier({"ratio": 1.6, "pctile": 50}) == 0.6 and pr.vol_multiplier({"ratio": 1.0, "pctile": 92}) == 0.6
+    assert pr.vol_multiplier({"ratio": 2.2, "pctile": 50}) == 0.4 and pr.vol_multiplier({"ratio": 1.0, "pctile": 97}) == 0.4
+
+
+def test_vol_shock_scales_lots_inside_gate():
+    r = gate({"vol": {"ratio": 2.5, "pctile": 99}})
+    assert r["mult"] == 0.4 and r["metrics"]["vol_mult"] == 0.4 and r["metrics"]["lots_after_mult"] == pytest.approx(0.04)
+    st = state(10000)
+    st.daily_max = {datetime.now(timezone.utc).strftime("%Y-%m-%d"): 10000.0}
+    both = gate({"vol": {"ratio": 1.6, "pctile": 50}}, equity=9400, st=st)           # dd ×0.5 ve vol ×0.6 → en kısıtlayıcı
+    assert both["mult"] == 0.5
+    assert gate({"vol": {"ratio": 1.0, "pctile": 40}})["mult"] == 1.0
+
+
+def test_stress_gate_blocks_only_when_new_trade_pushes_scenario_over_limit():
+    ctx = {"symbol": "XAUUSD", "direction": "BUY", "lots": 0.1, "sl_pips": 60.0, "pip_size": 0.1, "pip_val": 10.0, "entry_price": 4000.0,
+           "spread_pips": 0.0}
+    r = gate(ctx, equity=1000.0)                                                      # altın −%5 → 0.1 lot = −$2000: limiti aşar
+    assert "stress" in codes(r) and r["metrics"]["stress_pushed"]
+    small = gate({**ctx, "lots": 0.001}, equity=100000.0)
+    assert "stress" not in codes(small)
+    # zaten limit ihlalindeki senaryo yeni bir 'itme' sayılmaz (önceki ihlal başkaca raporlanır)
+    held = [pos("XAUUSD", "BUY", 0.5, entry=4000.0, sl=3900.0)]
+    held[0]["current_price"] = 4000.0
+    again = gate({**ctx, "lots": 0.001, "sl_pips": 60.0}, equity=1000.0, positions=held)
+    assert "stress" not in codes(again)
+    assert "stress" not in codes(gate({k: v for k, v in ctx.items() if k != "entry_price"}, equity=1000.0))   # fiyat yoksa atlanır
+
+
+def test_vol_regime_from_candles(monkeypatch):
+    from app import forex_research as fr
+    bars = [{"time": i, "open": 100 + i * 0.01, "high": 100.5 + i * 0.01, "low": 99.5 + i * 0.01, "close": 100 + i * 0.01} for i in range(150)]
+    for b in bars[-14:]:                                           # son 14 saatte aralık 3× büyür
+        b["high"] += 1.0
+        b["low"] -= 1.0
+    monkeypatch.setattr(fr, "get_candles", lambda s, tf: (bars, "mt5"))
+    fr._vol_cache.clear()
+    v = fr.vol_regime("EURUSD")
+    assert v["ratio"] > 1.5 and v["pctile"] == 100.0 and v["source"] == "mt5"
+    monkeypatch.setattr(fr, "get_candles", lambda s, tf: (bars[:50], "yahoo"))
+    fr._vol_cache.clear()
+    assert fr.vol_regime("GBPUSD") is None                          # yetersiz veri

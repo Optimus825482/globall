@@ -260,3 +260,34 @@ def test_compact_calendar_adds_per_symbol_direction_from_outcome():
     assert row["yon"]["XAUUSD"] == -1 and row["yon"]["EURUSD"] == -1        # USD güçlü: altın ve EURUSD aşağı
     plain = forex_chat.compact_calendar(items, time.time(), {"USD"})
     assert "yon" not in plain["aciklanan_son_6_saat"][0]
+
+
+# ----------------------------------------------------------------------------- sürpriz z-skoru (2.6)
+
+def test_news_effect_uses_z_to_drop_noise_and_weight_big_surprises():
+    base = lambda z: {"aciklanan_son_6_saat": [{"title": "CPI", "stars": 2, "dakika": -10, "yon": {"XAUUSD": -1}, "z": z}]}   # noqa: E731
+    assert ot.news_effect(base(0.3), "XAUUSD", "BUY")["verdict"] == "neutral"            # |z|<0.5: gürültü
+    mid = ot.news_effect(base(1.0), "XAUUSD", "BUY")
+    assert mid["net"] == -1.0 and mid["verdict"] == "opposes"
+    big = ot.news_effect(base(3.0), "XAUUSD", "BUY")
+    assert big["net"] == -2.0                                                              # z üst sınırı 2
+    half = ot.news_effect(base(0.6), "XAUUSD", "BUY")
+    assert half["net"] == pytest.approx(-0.6) and half["verdict"] == "neutral"             # küçük sürpriz: eşik altı
+
+
+def test_attach_surprise_z_requires_history(monkeypatch):
+    from app import database
+
+    async def fake_sd(key, n=36):
+        return (0.2, 12) if key.startswith("cpi") else (0.0, 3)
+
+    monkeypatch.setattr(database, "get_surprise_sd", fake_sd)
+    monkeypatch.setattr("app.forex_news.normalize_event_title", lambda t: str(t).lower())
+    cal = {"aciklanan_son_6_saat": [
+        {"title": "CPI", "actual": "3.4%", "forecast": "3.0%"},
+        {"title": "Retail", "actual": "1.0%", "forecast": "0.5%"},
+        {"title": "Konuşma", "actual": "—", "forecast": "—"}]}
+    asyncio.run(forex_chat.attach_surprise_z(cal))
+    rows = cal["aciklanan_son_6_saat"]
+    assert rows[0]["z"] == pytest.approx(2.0) and rows[0]["z_n"] == 12
+    assert "z" not in rows[1] and "z" not in rows[2]                                      # <8 örnek / sayısal değil

@@ -30,6 +30,7 @@ interface Summary {
   approved_stats: Stats;
   rejected_stats: Stats;
   net_value_pips: number;
+  floating?: { approved: { n: number; winning: number; losing: number; sum_pips: number }; rejected: { n: number; winning: number; losing: number; sum_pips: number } };
   avg_latency_ms: number;
   calibration: Record<string, { closed: number; wins: number; win_rate: number | null }>;
   by_symbol: Record<string, { approved: number; rejected: number; approved_net_pips: number; rejected_net_pips: number }>;
@@ -43,6 +44,7 @@ interface Summary {
     exploration: { n: number; mean_pips: number | null };
     verdict: string;
   };
+  latency?: { n: number; p50_ms?: number; p90_ms?: number; p99_ms?: number; max_ms?: number; timeouts: number; timeout_rate?: number };
   fail_stats?: { fail_count: number; fail_rate: number; fail_mean_pips: number | null; normal_mean_pips: number | null; alert: boolean; note: string };
 }
 
@@ -132,13 +134,16 @@ export default function LlmReviewReport() {
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<number | null>(null);
   const [detail, setDetail] = useState<Decision | null>(null);
+  const [ab, setAb] = useState<{ n: number; means_pips: Record<string, number>; vs_baseline: Record<string, number>; decisive: boolean; note: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [s, d] = await Promise.all([
+      const [s, d, x] = await Promise.all([
         apiFetch(`/api/llm-review/summary?days=${days}`),
         apiFetch(`/api/llm-review/decisions?days=${days}&limit=200`),
+        apiFetch(`/api/llm-review/exit-ab?days=${days}`),
       ]);
+      setAb(x as { n: number; means_pips: Record<string, number>; vs_baseline: Record<string, number>; decisive: boolean; note: string });
       setSummary(s as Summary);
       setRows(Array.isArray((d as { decisions?: Decision[] }).decisions) ? (d as { decisions: Decision[] }).decisions : []);
       setError("");
@@ -228,7 +233,13 @@ export default function LlmReviewReport() {
                   </p>
                 </>
               ) : (
-                <p className="text-xs text-bunker-muted">Henüz sonuçlanan onay yok.</p>
+                <p className="text-xs text-bunker-muted">Henüz stop/hedefe değen onay yok.</p>
+              )}
+              {summary.floating && summary.floating.approved.n > 0 && (
+                <p className="text-xs text-slate-300">
+                  Fiyatı izlenen {summary.floating.approved.n} onay: {summary.floating.approved.winning} kârda, {summary.floating.approved.losing} zararda · anlık toplam{" "}
+                  <span className={pipTone(summary.floating.approved.sum_pips)}>{fmtPips(summary.floating.approved.sum_pips)} pip</span>
+                </p>
               )}
             </div>
             <div className="rounded-xl border border-rose-500/20 bg-bunker-950/60 p-3 space-y-1">
@@ -244,7 +255,14 @@ export default function LlmReviewReport() {
                   </p>
                 </>
               ) : (
-                <p className="text-xs text-bunker-muted">Henüz sonuçlanan red yok.</p>
+                <p className="text-xs text-bunker-muted">Henüz stop/hedefe değen red yok.</p>
+              )}
+              {summary.floating && summary.floating.rejected.n > 0 && (
+                <p className="text-xs text-slate-300">
+                  Fiyatı izlenen {summary.floating.rejected.n} red: şu an <span className="text-emerald-400">{summary.floating.rejected.losing} tanesi zararda (LLM haklı görünüyor)</span>,{" "}
+                  <span className="text-rose-400">{summary.floating.rejected.winning} tanesi kârda</span> · anlık toplam{" "}
+                  <span className={pipTone(-summary.floating.rejected.sum_pips)}>{fmtPips(summary.floating.rejected.sum_pips)} pip</span> (kesin sonuç değil)
+                </p>
               )}
             </div>
           </div>
@@ -301,6 +319,24 @@ export default function LlmReviewReport() {
             <div className={`rounded-xl border p-3 text-xs ${summary.fail_stats.alert ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-bunker-800 bg-bunker-950/60 text-slate-300"}`}>
               <p className="font-bold">LLM hata / zaman aşımı: {summary.fail_stats.fail_count} karar (%{(summary.fail_stats.fail_rate * 100).toFixed(0)})</p>
               <p>{summary.fail_stats.note}. Bu işlemlerin ort. gölge sonucu {fmtPips(summary.fail_stats.fail_mean_pips)} pip, normal kararlarınki {fmtPips(summary.fail_stats.normal_mean_pips)} pip (fail-open yanlılığı ölçümü).</p>
+            </div>
+          )}
+
+          {summary.latency && summary.latency.n > 0 && (
+            <p className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 font-mono text-[11px] text-bunker-muted">
+              LLM gecikmesi: medyan {((summary.latency.p50_ms ?? 0) / 1000).toFixed(1)} sn · %90 {((summary.latency.p90_ms ?? 0) / 1000).toFixed(1)} sn · %99 {((summary.latency.p99_ms ?? 0) / 1000).toFixed(1)} sn ·
+              zaman aşımı {summary.latency.timeouts} (%{((summary.latency.timeout_rate ?? 0) * 100).toFixed(0)}). Motor bu süre kadar bekler; tarama döngüsü gecikir.{" "}
+              <a className="text-cyan-300 underline" href="/api/llm-review/features.csv" download>Veri setini indir (CSV)</a>
+            </p>
+          )}
+
+          {ab && ab.n > 0 && (
+            <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 space-y-1">
+              <p className="text-xs font-bold text-white">Çıkış kuralı A/B (kayıtlı gölge yolu, {ab.n} karar)</p>
+              <p className="font-mono text-[11px] text-slate-300">
+                {Object.entries(ab.means_pips).map(([k, v]) => `${k}: ${v > 0 ? "+" : ""}${v} pip${k !== "baseline" && ab.vs_baseline[k] !== undefined ? ` (${ab.vs_baseline[k] > 0 ? "+" : ""}${ab.vs_baseline[k]})` : ""}`).join(" · ")}
+              </p>
+              <p className={`text-[11px] ${ab.decisive ? "text-emerald-300" : "text-amber-300"}`}>{ab.note}</p>
             </div>
           )}
 

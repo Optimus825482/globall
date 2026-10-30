@@ -13,9 +13,14 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException, Query
+import csv
+import io
+import json
 
-from app import database
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
+
+from app import database, portfolio_analytics
 
 router = APIRouter(prefix="/api/llm-review", tags=["llm-review"])
 
@@ -145,6 +150,17 @@ def fail_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                      else "Normal")}
 
 
+def latency_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """LLM gecikme dağılımı (kart 2.10): p50/p90/p99 ve zaman aşımı sayısı. Sert bütçe `llm_review_timeout_sec`."""
+    lat = sorted(int(r["latency_ms"]) for r in rows if r.get("latency_ms"))
+    timeouts = sum(1 for r in rows if str(r.get("error") or "").startswith("TimeoutError"))
+    if not lat:
+        return {"n": 0, "timeouts": timeouts}
+    q = lambda p: lat[min(len(lat) - 1, int(p * len(lat)))]  # noqa: E731
+    return {"n": len(lat), "p50_ms": q(0.5), "p90_ms": q(0.9), "p99_ms": q(0.99), "max_ms": lat[-1], "timeouts": timeouts,
+            "timeout_rate": round(timeouts / len(rows), 3) if rows else 0.0}
+
+
 def _bucket(conf: Any) -> str:
     try:
         c = int(conf)
@@ -159,6 +175,9 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "total": len(rows), "approved": 0, "rejected": 0, "errors": 0, "blocked": 0, "tracking": 0,
         "approved_stats": {"closed": 0, "wins": 0, "tp": 0, "sl": 0, "net_pips": 0.0},
         "rejected_stats": {"closed": 0, "would_win": 0, "would_lose": 0, "avoided_pips": 0.0, "missed_pips": 0.0},
+        # Henüz TP/SL'e değmemiş (izlenen) kararların ANLIK (floating) sonucu: kesin değil ama yön gösterir.
+        "floating": {"approved": {"n": 0, "winning": 0, "losing": 0, "sum_pips": 0.0},
+                     "rejected": {"n": 0, "winning": 0, "losing": 0, "sum_pips": 0.0}},
         "calibration": {}, "by_symbol": {}, "avg_latency_ms": 0,
     }
     lat: List[int] = []
@@ -178,6 +197,12 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         status = r.get("shadow_status")
         if status == "IZLENIYOR":
             out["tracking"] += 1
+            if r.get("shadow_pips") is not None and dec in ("APPROVE", "REJECT") and applied != "reject_voided":
+                f = out["floating"]["approved" if dec == "APPROVE" else "rejected"]
+                fp = float(r["shadow_pips"])
+                f["n"] += 1
+                f["sum_pips"] = round(f["sum_pips"] + fp, 1)
+                f["winning" if fp > 0 else "losing"] += 1
         if status not in CLOSED or r.get("shadow_pips") is None:
             continue
         pips = float(r["shadow_pips"])
@@ -216,6 +241,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     out["calibration_deep"] = calibration_deep(rows)
     out["veto_value"] = veto_value(rows)
     out["fail_stats"] = fail_stats(rows)
+    out["latency"] = latency_stats(rows)
     for b in out["calibration"].values():
         b["win_rate"] = round(100.0 * b["wins"] / b["closed"], 1) if b["closed"] else None
     return out
@@ -239,3 +265,35 @@ async def llm_review_detail(review_id: int):
     if not rows:
         raise HTTPException(status_code=404, detail="Karar bulunamadı")
     return rows[0]
+
+
+@router.get("/exit-ab")
+async def llm_review_exit_ab(days: int = Query(30, ge=1, le=365)):
+    """Kayıtlı gölge fiyat yolunda alternatif çıkış kuralları (BE@1R, kısmi kâr, trailing) — kart 1.7. Yalnızca A/B bilgisi."""
+    rows = await database.list_llm_review_dataset(since_ts=time.time() - days * 86400)
+    return portfolio_analytics.compare_variants([r for r in rows if r.get("path")])
+
+
+@router.get("/features.csv")
+async def llm_review_features_csv(days: int = Query(90, ge=1, le=365)):
+    """Meta-etiketleme veri seti (kart 2.7/2.8): giriş özellikleri + LLM kararı + gölge sonuç. Önce veri toplama; model P3."""
+    rows = await database.list_llm_review_dataset(since_ts=time.time() - days * 86400)
+    feats: List[Dict[str, Any]] = []
+    for r in rows:
+        try:
+            f = json.loads(r["features"]) if r.get("features") else {}
+        except Exception:  # noqa: BLE001
+            f = {}
+        if isinstance(f.get("hard_flags"), list):
+            f["hard_flags"] = "|".join(f["hard_flags"])
+        feats.append(f)
+    fcols = sorted({k for f in feats for k in f})
+    base = ["id", "created_at", "symbol", "direction", "strategy_label", "score", "decision", "confidence", "applied", "exploration",
+            "control_veto", "sl_pips", "tp_pips", "shadow_status", "shadow_pips", "mfe_pips", "mae_pips"]
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(base + ["f_" + c for c in fcols])
+    for r, f in zip(rows, feats):
+        w.writerow([r.get(c) for c in base] + [f.get(c) for c in fcols])
+    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": "attachment; filename=llm-karar-veri-seti.csv"})

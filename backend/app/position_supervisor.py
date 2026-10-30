@@ -107,6 +107,48 @@ def assess(position: Dict[str, Any], now: float, calendar_items: List[Dict[str, 
     return out
 
 
+# --------------------------------------------------------------------------- tez-geçersizleşme denetçisi (kart 1.5)
+
+STALE_MINUTES = 60
+ATR_SPIKE_RATIO = 2.0
+
+
+def structure_broken(bars: List[Dict[str, float]], direction: str, lookback: int = 20) -> bool:
+    """Üst zaman diliminde (4sa) yapı pozisyon aleyhine kırıldı mı? BUY: son kapanış, önceki `lookback` mumun en düşüğünün altında."""
+    if len(bars) < lookback + 2:
+        return False
+    prior = bars[-(lookback + 1):-1]
+    last = bars[-1]["close"]
+    if str(direction).upper() == "BUY":
+        return last < min(b["low"] for b in prior)
+    return last > max(b["high"] for b in prior)
+
+
+def invalidation_findings(position: Dict[str, Any], inputs: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Makine-kontrol edilebilir tez geçersizleşme kuralları. Yalnız İŞARETLER; LLM kapat/küçült ÖNEREBİLİR, uygulama yok.
+
+    inputs: atr_ratio (1sa ATR14/ATR100), htf_break (4sa yapı kırıldı), usd_bias (USD_LONG/USD_SHORT/USD_NEUTRAL),
+    dxy_regime (USD_STRONG/USD_WEAK/USD_NEUTRAL), minutes_open, progress (pnl_pip / stop_pip).
+    Araştırma notu: bu kuralların fiyat stopuna göre üstünlüğüne dair nicel kanıt YOK; gölgede ölçülür (günlük kaydı).
+    """
+    out: List[Dict[str, Any]] = []
+    ratio = inputs.get("atr_ratio")
+    if ratio is not None and ratio > ATR_SPIKE_RATIO:
+        out.append({"kind": "invalidation:atr_spike", "action": "flag",
+                    "detail": f"Rejim sıçraması: 1sa ATR14/ATR100 = {ratio:.1f} (> {ATR_SPIKE_RATIO}); giriş varsayımları değişmiş olabilir"})
+    if inputs.get("htf_break"):
+        out.append({"kind": "invalidation:yapi_kirilimi", "action": "flag",
+                    "detail": "4 saatlik yapı pozisyon aleyhine kırıldı (son 20 mumun aşırı seviyesi aşıldı)"})
+    bias, dxy = inputs.get("usd_bias"), inputs.get("dxy_regime")
+    if (bias == "USD_LONG" and dxy == "USD_WEAK") or (bias == "USD_SHORT" and dxy == "USD_STRONG"):
+        out.append({"kind": "invalidation:dxy_ters", "action": "flag",
+                    "detail": f"Dolar rejimi ({dxy}) pozisyonun USD yönüyle ({bias}) çelişiyor"})
+    if inputs.get("minutes_open", 0) >= cfg.get("stale_minutes", STALE_MINUTES) and (inputs.get("progress") is not None and inputs["progress"] < 0.3):
+        out.append({"kind": "invalidation:ilerleme_yok", "action": "flag",
+                    "detail": f"{inputs['minutes_open']:.0f} dk geçti, kâr stopun %{max(0, inputs['progress']) * 100:.0f}'ine ulaşmadı: bayat işlem"})
+    return out
+
+
 # --------------------------------------------------------------------------- LLM arayüzü: durum + beyaz liste
 
 def validate_action(position: Dict[str, Any], proposal: Dict[str, Any]) -> Dict[str, Any]:
@@ -295,6 +337,20 @@ def build_command(position: Dict[str, Any], action: str) -> Optional[Dict[str, A
     return None
 
 
+async def invalidation_inputs(fx: Any, p: Dict[str, Any], now: float, dxy_regime: Optional[str]) -> Dict[str, Any]:
+    sym = str(p.get("symbol", "")).upper()
+    vol = await forex_research.run_blocking(forex_research.vol_regime, sym)
+    bars, _src = await forex_research.run_blocking(forex_research.get_candles, sym, "4h")
+    spec = fx.get_symbol_trading_specs(sym)
+    pip = float(spec.get("pip_size") or 0)
+    entry, sl = float(p.get("entry_price", 0) or 0), float(p.get("sl_price", 0) or 0)
+    sl_pips = abs(entry - sl) / pip if sl > 0 and pip > 0 else 0.0
+    return {"atr_ratio": (vol or {}).get("ratio"), "htf_break": structure_broken(bars or [], str(p.get("direction", ""))),
+            "usd_bias": fx.get_usd_bias(sym, str(p.get("direction", ""))), "dxy_regime": dxy_regime,
+            "minutes_open": (now - float(p.get("open_ts") or now)) / 60.0,
+            "progress": (float(p.get("pnl_pips", 0) or 0) / sl_pips) if sl_pips > 0 else None}
+
+
 async def supervisor_loop() -> None:
     from app import database
     from app.forex_news import get_forex_news
@@ -326,8 +382,17 @@ async def supervisor_loop() -> None:
             if cfg["mode"] == "off" or not positions:
                 continue
             items = await get_forex_news(force_refresh=False)
+            try:
+                dxy_reg = ((await forex_research.run_blocking(fx.get_dxy_regime)) or {}).get("regime")
+            except Exception:  # noqa: BLE001
+                dxy_reg = None
             for p in positions:
-                for f in assess(p, now, items, cfg):
+                findings = assess(p, now, items, cfg)
+                try:
+                    findings += invalidation_findings(p, await invalidation_inputs(fx, p, now, dxy_reg), cfg)
+                except Exception as exc:  # noqa: BLE001 - denetçi hatası gözetimi durdurmaz
+                    logger.info("invalidation girdileri alınamadı (%s): %s", p.get("symbol"), exc)
+                for f in findings:
                     ticket = int(p.get("ticket") or 0)
                     if await database.supervisor_event_exists(ticket, f["kind"], now - EVENT_DEDUPE_SEC):
                         continue

@@ -1862,6 +1862,18 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
             logger.warning("[EconomicCalendar] Bayat satır temizleme hatası: %s", exc)
 
     _update_event_dynamic_fields(final_items)
+    if database:
+        try:
+            rows = []
+            for ev in final_items:
+                a, f = parse_calendar_value(ev.get("actual")), parse_calendar_value(ev.get("forecast"))
+                if a is None or f is None or not ev.get("date_iso"):
+                    continue
+                rows.append({"title_key": normalize_event_title(ev.get("title")), "ts_key": str(ev["date_iso"]),
+                             "currency": ev.get("currency"), "surprise": a - f})
+            await database.save_calendar_surprises(rows)
+        except Exception as exc:
+            logger.debug("[EconomicCalendar] sürpriz kaydı hatası: %s", exc)
     return final_items
 
 

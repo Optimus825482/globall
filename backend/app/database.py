@@ -6326,6 +6326,8 @@ def _ensure_llm_review_schema(conn) -> None:
         """)
         conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS exploration INTEGER DEFAULT 0")
         conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS control_veto INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS features TEXT")
+        conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS path TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_created ON llm_trade_reviews(created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_shadow ON llm_trade_reviews(shadow_status)")
         conn.commit()
@@ -6387,17 +6389,17 @@ async def get_llm_reviews_tracking(max_age_sec: float) -> List[Dict[str, Any]]:
     def op(conn):
         _ensure_llm_review_schema(conn)
         cur = conn.execute(
-            "SELECT id, created_at, symbol, direction, entry_price, sl_pips, tp_pips, pip_size, mfe_pips, mae_pips "
+            "SELECT id, created_at, symbol, direction, entry_price, sl_pips, tp_pips, pip_size, mfe_pips, mae_pips, path "
             "FROM llm_trade_reviews WHERE shadow_status = 'IZLENIYOR' AND created_at > ? AND entry_price IS NOT NULL",
             (cutoff,))
-        keys = ["id", "created_at", "symbol", "direction", "entry_price", "sl_pips", "tp_pips", "pip_size", "mfe_pips", "mae_pips"]
+        keys = ["id", "created_at", "symbol", "direction", "entry_price", "sl_pips", "tp_pips", "pip_size", "mfe_pips", "mae_pips", "path"]
         return [_row_to_dict(keys, r) for r in cur.fetchall()]
 
     return await _run_db(op)
 
 
 async def update_llm_review_shadow(review_id: int, upd: Dict[str, Any]) -> None:
-    allowed = ("shadow_status", "shadow_pips", "mfe_pips", "mae_pips", "shadow_closed_at")
+    allowed = ("shadow_status", "shadow_pips", "mfe_pips", "mae_pips", "shadow_closed_at", "path")
     cols = [k for k in allowed if k in upd]
     if not cols:
         return
@@ -6621,6 +6623,79 @@ async def set_llm_review_flags(review_id: int, exploration: int = 0, control_vet
         conn.commit()
 
     await _run_db(op)
+
+
+async def set_llm_review_features(review_id: int, features: Dict[str, Any]) -> None:
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        conn.execute("UPDATE llm_trade_reviews SET features = ? WHERE id = ?",
+                     (json.dumps(features, ensure_ascii=False, default=str)[:3000], review_id))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def list_llm_review_dataset(since_ts: float = 0.0, limit: int = 5000) -> List[Dict[str, Any]]:
+    """Meta-etiketleme veri seti: giriş özellikleri + karar + gölge sonuç + fiyat yolu."""
+    keys = ["id", "created_at", "symbol", "direction", "strategy_label", "score", "decision", "confidence", "applied", "exploration",
+            "control_veto", "sl_pips", "tp_pips", "shadow_status", "shadow_pips", "mfe_pips", "mae_pips", "features", "path"]
+
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        cur = conn.execute(f"SELECT {', '.join(keys)} FROM llm_trade_reviews WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
+                           (since_ts, int(limit)))
+        return _rows(keys, cur)
+
+    return await _run_db(op)
+
+
+_SURPRISE_SCHEMA_READY = False
+
+
+def _ensure_surprise_schema(conn) -> None:
+    global _SURPRISE_SCHEMA_READY
+    if _SURPRISE_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS calendar_surprises (
+                title_key TEXT NOT NULL, ts_key TEXT NOT NULL, currency TEXT, surprise DOUBLE PRECISION,
+                PRIMARY KEY (title_key, ts_key)
+            )""")
+        conn.commit()
+        _SURPRISE_SCHEMA_READY = True
+    except Exception as exc:
+        logger.warning("calendar_surprises şema hatası: %s", exc)
+
+
+async def save_calendar_surprises(rows: List[Dict[str, Any]]) -> int:
+    """Açıklanan olayların (gerçekleşen − beklenen) sürprizini biriktirir; z-skoru için standart sapma buradan hesaplanır."""
+    if not rows:
+        return 0
+
+    def op(conn):
+        _ensure_surprise_schema(conn)
+        conn.executemany(
+            "INSERT INTO calendar_surprises (title_key, ts_key, currency, surprise) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            [(r["title_key"], r["ts_key"], r.get("currency"), float(r["surprise"])) for r in rows])
+        conn.commit()
+        return len(rows)
+
+    return await _run_db(op)
+
+
+async def get_surprise_sd(title_key: str, n: int = 36) -> tuple:
+    """(standart_sapma, örnek_sayısı) — aynı olay türünün son n sürprizi."""
+    def op(conn):
+        _ensure_surprise_schema(conn)
+        cur = conn.execute("SELECT surprise FROM calendar_surprises WHERE title_key = ? ORDER BY ts_key DESC LIMIT ?", (title_key, int(n)))
+        vals = [float(r[0]) for r in cur.fetchall()]
+        if len(vals) < 2:
+            return (0.0, len(vals))
+        m = sum(vals) / len(vals)
+        return ((sum((v - m) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5, len(vals))
+
+    return await _run_db(op)
 
 
 async def get_last_economic_calendar_sync() -> float:
