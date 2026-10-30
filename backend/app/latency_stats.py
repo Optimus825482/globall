@@ -22,6 +22,11 @@ SLOW_THRESHOLD_MS = 500.0
 SLOW_LOG_SIZE = 100
 # Ölçüm uç noktasının kendisi ve gürültülü olanlar istatistiği bozmasın.
 IGNORED_PATHS = ("/api/system/latency",)
+# Saldırgan kontrollü anahtar üretimini önler: yalnız standart yöntemler ve yalnız
+# yönlendirmeyle eşleşen yol ŞABLONLARI ayrı satır olur; eşleşmeyenler (404 taraması,
+# rastgele yol/yöntem) tek kovada toplanır, gerçek uç noktaların yerini dolduramaz.
+STANDARD_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
+UNMATCHED_BUCKET = "<eşleşmeyen>"
 
 _lock = threading.Lock()
 _started_at = time.time()
@@ -119,8 +124,11 @@ class LatencyMiddleware:
                 status["code"] = int(message.get("status", 0))
             elif message["type"] == "http.response.body" and not message.get("more_body", False):
                 route = scope.get("route")
-                path = getattr(route, "path", None) or scope.get("path", "")
-                record(scope.get("method", "GET"), path, (time.perf_counter() - start) * 1000.0, status["code"])
+                path = getattr(route, "path", None) or UNMATCHED_BUCKET
+                method = str(scope.get("method", "GET")).upper()
+                if method not in STANDARD_METHODS:
+                    method = "OTHER"
+                record(method, path, (time.perf_counter() - start) * 1000.0, status["code"])
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
