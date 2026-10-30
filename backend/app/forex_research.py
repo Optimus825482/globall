@@ -45,18 +45,26 @@ NEWS_QUERY = {
 SYMBOL_NAME = {"XAUUSD": "Altın", "XAGUSD": "Gümüş", "BTCUSD": "Bitcoin", "ETHUSD": "Ethereum",
                "USTEC": "Nasdaq 100", "US30": "Dow Jones"}
 
-# (arayüz periyodu) → (yahoo interval, yahoo range, ağırlık)
-TIMEFRAMES: List[Tuple[str, str, str, int]] = [
-    ("15m", "15m", "5d", 1),
-    ("1h", "60m", "1mo", 2),
-    ("4h", "60m", "3mo", 2),   # 1 saatlikten türetilir
-    ("1d", "1d", "1y", 3),
+# (periyot, yahoo interval, yahoo range, ağırlık). 3dk ve 4sa Yahoo'da yok: 1dk / 1sa'ten türetilir.
+TIMEFRAMES: List[Tuple[str, str, str, float]] = [
+    ("1m", "1m", "2d", 0.5),
+    ("3m", "1m", "2d", 0.5),     # 1 dakikalıktan türetilir
+    ("5m", "5m", "5d", 1.0),
+    ("15m", "15m", "5d", 1.5),
+    ("30m", "30m", "1mo", 1.5),
+    ("1h", "60m", "1mo", 2.0),
+    ("4h", "60m", "3mo", 2.5),   # 1 saatlikten türetilir
+    ("1d", "1d", "1y", 3.0),
 ]
-TF_LABEL = {"15m": "15 dk", "1h": "1 saat", "4h": "4 saat", "1d": "Günlük"}
+_DERIVED_SEC = {"3m": 180, "4h": 4 * 3600}
+TF_LABEL = {"1m": "1 dk", "3m": "3 dk", "5m": "5 dk", "15m": "15 dk", "30m": "30 dk",
+            "1h": "1 saat", "4h": "4 saat", "1d": "Günlük"}
+MIN_BARS = 60
+MT5_WAIT_SEC = 7.0
 
 _cache: Dict[Tuple[str, str], Tuple[float, List[Dict[str, float]]]] = {}
 _cache_lock = threading.Lock()
-_CACHE_TTL = {"15m": 60.0, "1h": 180.0, "4h": 300.0, "1d": 600.0}
+_CACHE_TTL = {"1m": 30.0, "3m": 30.0, "5m": 45.0, "15m": 60.0, "30m": 120.0, "1h": 180.0, "4h": 300.0, "1d": 600.0}
 
 
 def yahoo_ticker(symbol: str) -> Optional[str]:
@@ -115,7 +123,7 @@ def _resample(candles: List[Dict[str, float]], bucket_sec: int) -> List[Dict[str
     return out
 
 
-def get_candles(symbol: str, tf: str) -> List[Dict[str, float]]:
+def _yahoo_tf(symbol: str, tf: str) -> List[Dict[str, float]]:
     ticker = yahoo_ticker(symbol)
     spec = next((t for t in TIMEFRAMES if t[0] == tf), None)
     if not ticker or not spec:
@@ -127,12 +135,83 @@ def get_candles(symbol: str, tf: str) -> List[Dict[str, float]]:
         if hit and now - hit[0] < _CACHE_TTL.get(tf, 120.0):
             return hit[1]
     candles = _yahoo_candles(ticker, spec[1], spec[2])
-    if tf == "4h":
-        candles = _resample(candles, 4 * 3600)
+    if tf in _DERIVED_SEC:
+        candles = _resample(candles, _DERIVED_SEC[tf])
     if candles:
         with _cache_lock:
             _cache[key] = (now, candles)
     return candles
+
+
+# --------------------------------------------------------------------------- MT5 köprüsü
+
+def _fx():
+    """Forex router'ı (MT5 mum/fiyat önbellekleri). Ağır bağımlılık: geç içe aktarılır."""
+    from app.routers import forex as fx
+    return fx
+
+
+def mt5_request(symbol: str) -> None:
+    """Köprüye bu sembolün TÜM periyotlarını izlemesini söyler (sonraki senkronda mumlar gelir)."""
+    fx = _fx()
+    for tf, *_ in TIMEFRAMES:
+        fx._note_forex_viewed(symbol, tf)
+
+
+def mt5_candles(symbol: str, tf: str) -> List[Dict[str, float]]:
+    try:
+        fx = _fx()
+        return list(fx._fetch_mt5_candles(fx._clean_forex_chart_symbol(symbol), tf, 300) or [])
+    except Exception as exc:  # noqa: BLE001
+        logger.info("MT5 mum okunamadı (%s %s): %s", symbol, tf, exc)
+        return []
+
+
+def mt5_bridge_alive() -> bool:
+    """Köprü son 60 sn içinde senkron yaptı mı? (Değilse mum beklemenin anlamı yok.)"""
+    try:
+        st = _fx()._MT5_STATE
+        return bool(st.get("connected") and time.time() - float(st.get("last_ping", 0.0) or 0.0) < 60.0)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def mt5_wait(symbol: str, timeout: float = MT5_WAIT_SEC) -> int:
+    """Köprü mumlarının gelmesini bekler (talepten sonra birkaç sn sürebilir). Gelen periyot sayısını döner."""
+    if not mt5_bridge_alive():
+        return sum(1 for tf, *_ in TIMEFRAMES if len(mt5_candles(symbol, tf)) >= MIN_BARS)
+    deadline = time.time() + timeout
+    have = 0
+    while True:
+        have = sum(1 for tf, *_ in TIMEFRAMES if len(mt5_candles(symbol, tf)) >= MIN_BARS)
+        if have == len(TIMEFRAMES) or time.time() >= deadline:
+            return have
+        time.sleep(0.5)
+
+
+def get_candles(symbol: str, tf: str) -> Tuple[List[Dict[str, float]], str]:
+    """(mumlar, kaynak). MT5 köprüsü öncelikli; yeterli mum yoksa Yahoo."""
+    bars = mt5_candles(symbol, tf)
+    if len(bars) >= MIN_BARS:
+        return bars, "mt5"
+    return _yahoo_tf(symbol, tf), "yahoo"
+
+
+def live_price(symbol: str, fallback: Optional[float] = None) -> Tuple[Optional[float], str, Optional[float]]:
+    """(fiyat, kaynak, yaş_sn). Önce MT5 anlık tik; yoksa son MT5 1dk mumu; yoksa verilen yedek."""
+    try:
+        fx = _fx()
+        key = fx.canonical_symbol(symbol)
+        px = fx._LIVE_PRICES_CACHE.get(key)
+        ts = float(fx._PRICE_TS.get(key, 0.0) or 0.0)
+        if px and fx._PRICE_SOURCE.get(key) == "mt5_tick" and ts and time.time() - ts < 60:
+            return float(px), "mt5_tick", round(time.time() - ts, 1)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("MT5 anlık fiyat okunamadı (%s): %s", symbol, exc)
+    one = mt5_candles(symbol, "1m")
+    if one:
+        return float(one[-1]["close"]), "mt5_mum", None
+    return fallback, "yahoo", None
 
 
 # --------------------------------------------------------------------------- teknik analiz
@@ -207,33 +286,39 @@ def _fmt(v: Optional[float], price: float) -> str:
 
 
 def analyze_symbol(symbol: str) -> Dict[str, Any]:
-    """Çok zaman dilimli analiz + toplam yön + seviyeler. Ağ çağrısı yapar (thread'de çağır)."""
+    """8 zaman dilimli analiz + anlık fiyat + toplam yön + seviyeler (MT5 öncelikli). Ağ/IO yapar: thread'de çağır."""
     frames: Dict[str, Dict[str, Any]] = {}
-    # 4 zaman dilimi paralel çekilir (her biri ayrı HTTP çağrısı).
+    sources: Dict[str, str] = {}
+    candles: Dict[str, List[Dict[str, float]]] = {}
     with ThreadPoolExecutor(max_workers=len(TIMEFRAMES)) as pool:
-        fetched = list(pool.map(lambda spec: (spec[0], get_candles(symbol, spec[0])), TIMEFRAMES))
-    for tf, candles in fetched:
-        res = analyze_candles(candles)
+        fetched = list(pool.map(lambda spec: (spec[0], *get_candles(symbol, spec[0])), TIMEFRAMES))
+    for tf, bars, src in fetched:
+        res = analyze_candles(bars)
         if res:
             frames[tf] = res
+            sources[tf] = src
+            candles[tf] = bars
     if not frames:
         return {"symbol": symbol, "ok": False, "error": "Fiyat verisi alınamadı"}
     weights = {tf: w for tf, _i, _r, w in TIMEFRAMES}
     total_w = sum(weights[tf] for tf in frames)
     avg = sum(frames[tf]["score"] * weights[tf] for tf in frames) / total_w   # ≈ -6..+6
-    price = (frames.get("15m") or frames.get("1h") or next(iter(frames.values())))["price"]
+    last_close = (frames.get("1m") or frames.get("5m") or next(iter(frames.values())))["price"]
+    price, price_src, price_age = live_price(symbol, fallback=last_close)
+    price = price or last_close
     ref = frames.get("4h") or frames.get("1h") or next(iter(frames.values()))
     daily = frames.get("1d")
     bias = "BUY" if avg >= 2.0 else "SELL" if avg <= -2.0 else "BEKLE"
-    # Üst zaman dilimi ters ise güveni düşür: 15dk BUY ama günlük SELL → BEKLE.
+    # Üst zaman dilimi ters ise güveni düşür: kısa vade BUY ama günlük SELL → BEKLE.
     if daily and bias == "BUY" and daily["score"] <= -2:
         bias = "BEKLE"
     if daily and bias == "SELL" and daily["score"] >= 2:
         bias = "BEKLE"
     atr = ref.get("atr")
     return {
-        "symbol": symbol, "ok": True, "price": price, "bias": bias, "score": round(avg, 2),
-        "frames": frames, "support": ref.get("support"), "resistance": ref.get("resistance"),
+        "symbol": symbol, "ok": True, "price": price, "price_source": price_src, "price_age": price_age,
+        "bias": bias, "score": round(avg, 2), "frames": frames, "sources": sources, "candles": candles,
+        "support": ref.get("support"), "resistance": ref.get("resistance"),
         "atr": atr, "stop_distance": round(atr * 1.5, 6) if atr else None,
     }
 
@@ -246,11 +331,7 @@ def describe_analysis(a: Dict[str, Any]) -> str:
     price = a["price"]
     label = name if name == a["symbol"] else f"{name} ({a['symbol']})"
     lines = [f"{label} şu an {_fmt(price, price)}; teknik yön: {a['bias']} (puan {a['score']:+.1f})."]
-    parts = []
-    for tf in ("15m", "1h", "4h", "1d"):
-        f = a["frames"].get(tf)
-        if f:
-            parts.append(f"{TF_LABEL[tf]} {_dir_word(f['score'])}")
+    parts = [f"{TF_LABEL[tf]} {_dir_word(a['frames'][tf]['score'])}" for tf, *_ in TIMEFRAMES if tf in a["frames"]]
     lines.append("Zaman dilimleri: " + ", ".join(parts) + ".")
     ref = a["frames"].get("4h") or a["frames"].get("1h") or {}
     notes = []
@@ -271,7 +352,26 @@ def describe_analysis(a: Dict[str, Any]) -> str:
         lines.append(", ".join(levels).capitalize() + ".")
     if a.get("stop_distance"):
         lines.append(f"Normal oynaklığa göre stop mesafesi yaklaşık {_fmt(a['stop_distance'], price)}.")
+    lines.append(describe_sources(a))
     return " ".join(lines)
+
+
+def describe_sources(a: Dict[str, Any]) -> str:
+    src = a.get("sources", {})
+    yahoo = [TF_LABEL[tf] for tf, *_ in TIMEFRAMES if src.get(tf) == "yahoo"]
+    n_mt5 = sum(1 for v in src.values() if v == "mt5")
+    if a.get("price_source") == "mt5_tick":
+        age = a.get("price_age")
+        px = "fiyat MT5'ten anlık" + (f" ({age:.0f} sn önce)" if age is not None and age >= 1 else "")
+    elif a.get("price_source") == "mt5_mum":
+        px = "fiyat MT5 mumundan"
+    else:
+        px = "fiyat Yahoo'dan (MT5 anlık fiyatı gelmedi)"
+    if not yahoo:
+        return f"Veri: MT5 köprüsü, {len(src)} zaman diliminin hepsi; {px}."
+    if n_mt5 == 0:
+        return f"Veri: MT5 verisi henüz gelmedi, hepsi Yahoo'dan; {px}."
+    return f"Veri: {n_mt5} dilim MT5'ten, {', '.join(yahoo)} Yahoo'dan; {px}."
 
 
 # --------------------------------------------------------------------------- haber başlıkları

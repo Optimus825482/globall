@@ -491,6 +491,18 @@ export default function ForexNativeChart({
     loadKlines(timeframe);
   }, [timeframe, loadKlines]);
 
+  // Köprü mumları ilk istekte birkaç sn gecikir ("MT5 tik geçmişi kısa" vb.): kullanıcı
+  // "Tekrar Dene"ye basmadan, MT5 kaynaklı hatada ~30 sn boyunca sessizce yeniden dene.
+  useEffect(() => {
+    if (!error || candles.length > 0 || !/MT5/i.test(error)) return;
+    let tries = 0;
+    const id = window.setInterval(() => {
+      if (++tries > 10) { window.clearInterval(id); return; }
+      void loadKlines(timeframe, true);
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [error, candles.length, timeframe, loadKlines]);
+
   // 4'lü ekrandaki slot periyot butonları `initialTimeframe` prop'unu günceller;
   // bileşen bunu yalnız useState başlangıcında okuyordu → dıştaki butonlar grafiği
   // değiştirmiyordu ("çift periyot kontrolü tutarsız" hissi). Prop değişince senkronla.

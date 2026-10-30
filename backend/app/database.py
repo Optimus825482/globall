@@ -357,6 +357,7 @@ async def init_db():
         conn.execute("ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS username TEXT")
         # 2026-10-08: Investing.com & küresel ekonomik takvim verileri (2 & 3 yıldız)
         _ensure_economic_calendar_schema(conn)
+        _ensure_forex_research_schema(conn)
         # V-04: MACD kanıt şeması artık OKUMA yolunda değil, açılışta bir kez
         # hazırlanır (istatistik uçları DDL/INSERT/COMMIT yapmaz).
         _ensure_macd_evidence_schema(conn)
@@ -6174,6 +6175,107 @@ async def prune_economic_calendar_events(
             return 0
 
     return await _run_db(op)
+
+
+_FOREX_RESEARCH_SCHEMA_READY = False
+
+
+def _ensure_forex_research_schema(conn) -> None:
+    """Forex sohbet araştırması: mum arşivi + analiz kayıtları (idempotent)."""
+    global _FOREX_RESEARCH_SCHEMA_READY
+    if _FOREX_RESEARCH_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS forex_candles (
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                ts BIGINT NOT NULL,
+                open DOUBLE PRECISION,
+                high DOUBLE PRECISION,
+                low DOUBLE PRECISION,
+                close DOUBLE PRECISION,
+                source TEXT,
+                updated_at DOUBLE PRECISION,
+                PRIMARY KEY (symbol, timeframe, ts)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS forex_chat_analysis (
+                id BIGSERIAL PRIMARY KEY,
+                created_at DOUBLE PRECISION NOT NULL,
+                symbol TEXT NOT NULL,
+                price DOUBLE PRECISION,
+                price_source TEXT,
+                bias TEXT,
+                score DOUBLE PRECISION,
+                support DOUBLE PRECISION,
+                resistance DOUBLE PRECISION,
+                stop_distance DOUBLE PRECISION,
+                frames TEXT,
+                sources TEXT,
+                question TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_forex_chat_analysis_sym_time ON forex_chat_analysis(symbol, created_at DESC)")
+        conn.commit()
+        _FOREX_RESEARCH_SCHEMA_READY = True
+    except Exception as exc:
+        logger.warning("forex araştırma şema hazırlama hatası: %s", exc)
+
+
+async def save_forex_candles(symbol: str, timeframe: str, source: str, bars: List[Dict[str, Any]]) -> int:
+    """Mumları (symbol, timeframe, ts) anahtarıyla yazar; yalnız yeni + son (oluşan) mum güncellenir."""
+    if not bars:
+        return 0
+    now_ts = time.time()
+
+    def op(conn):
+        _ensure_forex_research_schema(conn)
+        row = conn.execute(
+            "SELECT MAX(ts) FROM forex_candles WHERE symbol = ? AND timeframe = ?", (symbol, timeframe)
+        ).fetchone()
+        last = row[0] if row and row[0] is not None else None
+        fresh = [b for b in bars if last is None or int(b["time"]) >= int(last)]
+        if not fresh:
+            return 0
+        conn.executemany(
+            """
+            INSERT INTO forex_candles (symbol, timeframe, ts, open, high, low, close, source, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, timeframe, ts) DO UPDATE SET
+                open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close,
+                source=EXCLUDED.source, updated_at=EXCLUDED.updated_at
+            """,
+            [(symbol, timeframe, int(b["time"]), float(b["open"]), float(b["high"]), float(b["low"]),
+              float(b["close"]), source, now_ts) for b in fresh],
+        )
+        conn.commit()
+        return len(fresh)
+
+    return await _run_db(op)
+
+
+async def save_forex_analysis(rec: Dict[str, Any]) -> None:
+    """Sohbetin yaptığı teknik analiz anlık görüntüsünü kaydeder (geçmiş doğruluk takibi için)."""
+    def op(conn):
+        _ensure_forex_research_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO forex_chat_analysis
+                (created_at, symbol, price, price_source, bias, score, support, resistance, stop_distance,
+                 frames, sources, question)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (time.time(), rec.get("symbol"), rec.get("price"), rec.get("price_source"), rec.get("bias"),
+             rec.get("score"), rec.get("support"), rec.get("resistance"), rec.get("stop_distance"),
+             json.dumps(rec.get("frames") or {}, ensure_ascii=False),
+             json.dumps(rec.get("sources") or {}, ensure_ascii=False),
+             str(rec.get("question") or "")[:500]),
+        )
+        conn.commit()
+
+    await _run_db(op)
 
 
 async def get_last_economic_calendar_sync() -> float:

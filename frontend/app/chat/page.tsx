@@ -137,7 +137,9 @@ function ChatPageInner() {
     if (!chunks.length) return;
     setSpeakingIndex(index);
     try {
-      const requests = chunks.map(async (text) => {
+      // Parçalar tembel istenir: yalnız çalan + bir sonraki (sunucu hız sınırı 3 patlama / 5 sn;
+      // uzun yanıtta hepsini birden istemek 429 veriyordu).
+      const fetchChunk = async (text: string) => {
         const response = await apiRequest(`${API_BASE}/api/tts/edge`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -148,10 +150,19 @@ function ChatPageInner() {
           throw new Error(detail.detail || `Ses servisi HTTP ${response.status}`);
         }
         return URL.createObjectURL(await response.blob());
-      });
+      };
+      const requests: Promise<string>[] = [];
+      const load = (i: number) => (requests[i] ??= fetchChunk(chunks[i]));
+      const fail = (cause: unknown) => {
+        if (session === ttsSessionRef.current) {
+          stopSpeaking();
+          setError(cause instanceof Error ? cause.message : "Sesli yanıt üretilemedi.");
+        }
+      };
       const play = async (i: number) => {
         if (session !== ttsSessionRef.current) return;
-        const url = await requests[i];
+        const url = await load(i);
+        if (i + 1 < chunks.length) load(i + 1).catch(() => undefined);
         ttsUrlsRef.current.push(url);
         if (session !== ttsSessionRef.current) { URL.revokeObjectURL(url); return; }
         const audio = new Audio(url);
@@ -159,7 +170,7 @@ function ChatPageInner() {
         audio.onended = () => {
           URL.revokeObjectURL(url);
           if (session !== ttsSessionRef.current) return;
-          if (i + 1 < requests.length) void play(i + 1); else setSpeakingIndex(null);
+          if (i + 1 < chunks.length) play(i + 1).catch(fail); else setSpeakingIndex(null);
         };
         audio.onerror = () => {
           if (session === ttsSessionRef.current) { stopSpeaking(); setError("Ses oynatılamadı."); }

@@ -282,9 +282,25 @@ async def edge_tts_audio(payload: dict, request: Request = None):
         pitch = max(-50, min(50, int(payload.get("pitch", 0))))
     except (TypeError, ValueError):
         raise HTTPException(400, "Ses hızı ve perde sayısal olmalı")
+    communicate = edge_tts.Communicate(text, _TTS_VOICE, rate=f"{rate:+d}%", pitch=f"{pitch:+d}Hz")
+    stream = communicate.stream()
+    # İlk ses parçası YAYINDAN ÖNCE okunur: Microsoft bağlantısı reddederse (403 vb.)
+    # eskiden 200 + boş gövde dönüyordu ve tarayıcı yalnız "ses oynatılamadı" diyordu.
+    first = None
+    try:
+        async for chunk in stream:
+            if chunk["type"] == "audio":
+                first = chunk["data"]
+                break
+    except Exception as exc:
+        logging.getLogger("scalper.tts").warning("edge-tts hatası: %s", exc)
+        raise HTTPException(502, "Seslendirme servisi (Microsoft Edge TTS) şu an yanıt vermiyor")
+    if first is None:
+        raise HTTPException(502, "Seslendirme servisi ses üretemedi")
+
     async def audio():
-        communicate = edge_tts.Communicate(text, _TTS_VOICE, rate=f"{rate:+d}%", pitch=f"{pitch:+d}Hz")
-        async for chunk in communicate.stream():
+        yield first
+        async for chunk in stream:
             if chunk["type"] == "audio":
                 yield chunk["data"]
     return StreamingResponse(audio(), media_type="audio/mpeg", headers={"Cache-Control": "no-store"})

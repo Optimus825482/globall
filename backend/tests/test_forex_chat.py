@@ -30,7 +30,7 @@ def test_compact_calendar_splits_released_and_upcoming():
     out = forex_chat.compact_calendar(items, now)
     assert [r["title"] for r in out["aciklanan_son_6_saat"]] == ["CPI"]
     assert out["aciklanan_son_6_saat"][0]["sonuc"] == "Beklentiden yüksek"
-    assert [r["title"] for r in out["yaklasan_12_saat"]] == ["NFP"]
+    assert [r["title"] for r in out["yaklasan_24_saat"]] == ["NFP"]
 
 
 def test_calendar_currency_filter_keeps_high_impact():
@@ -41,11 +41,11 @@ def test_calendar_currency_filter_keeps_high_impact():
         {"title": "USD orta", "currency": "USD", "stars": 2, "date_iso": _iso(30)},
     ]
     out = forex_chat.compact_calendar(items, now, {"USD"})
-    assert {r["title"] for r in out["yaklasan_12_saat"]} == {"EUR kritik", "USD orta"}
+    assert {r["title"] for r in out["yaklasan_24_saat"]} == {"EUR kritik", "USD orta"}
 
 
 def test_compact_calendar_tolerates_bad_input():
-    assert forex_chat.compact_calendar(None, time.time()) == {"aciklanan_son_6_saat": [], "yaklasan_12_saat": []}
+    assert forex_chat.compact_calendar(None, time.time()) == {"aciklanan_son_6_saat": [], "yaklasan_24_saat": []}
 
 
 def test_stream_delta_keeps_spaces():
@@ -109,3 +109,22 @@ def test_build_context_marks_empty_research():
     assert "uyari" in forex_chat.build_context({})
     ctx = forex_chat.build_context({"ta:XAUUSD": {"yon": "SELL"}, "calendar": {"x": 1}})
     assert ctx["teknik_analiz"] == [{"yon": "SELL"}] and ctx["ekonomik_takvim"] == {"x": 1}
+
+
+def test_get_candles_prefers_mt5_and_falls_back_to_yahoo(monkeypatch):
+    bars = _trend(n=80)
+    monkeypatch.setattr(forex_research, "mt5_candles", lambda s, tf: bars if tf == "5m" else [])
+    monkeypatch.setattr(forex_research, "_yahoo_tf", lambda s, tf: _trend(n=70))
+    got, src = forex_research.get_candles("XAUUSD", "5m")
+    assert src == "mt5" and got is bars
+    got, src = forex_research.get_candles("XAUUSD", "15m")
+    assert src == "yahoo" and len(got) == 70
+
+
+def test_analysis_reports_data_sources(monkeypatch):
+    monkeypatch.setattr(forex_research, "get_candles", lambda s, tf: (_trend(), "mt5"))
+    monkeypatch.setattr(forex_research, "live_price", lambda s, fallback=None: (4000.5, "mt5_tick", 2.0))
+    a = forex_research.analyze_symbol("XAUUSD")
+    assert a["ok"] and a["price"] == 4000.5 and len(a["frames"]) == 8
+    text = forex_research.describe_analysis(a)
+    assert "MT5 köprüsü, 8 zaman diliminin hepsi" in text and "anlık" in text
