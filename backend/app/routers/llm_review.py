@@ -69,9 +69,10 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             st["sl"] += 1 if status == "SL" else 0
             sym["approved"] += 1
             sym["approved_net_pips"] = round(sym["approved_net_pips"] + pips, 1)
-            b = out["calibration"].setdefault(_bucket(r.get("confidence")), {"closed": 0, "wins": 0})
-            b["closed"] += 1
-            b["wins"] += 1 if pips > 0 else 0
+            if applied != "reject_voided":        # nötr güven (50) kalibrasyonu bozmasın
+                b = out["calibration"].setdefault(_bucket(r.get("confidence")), {"closed": 0, "wins": 0})
+                b["closed"] += 1
+                b["wins"] += 1 if pips > 0 else 0
         elif dec == "REJECT":
             st = out["rejected_stats"]
             st["closed"] += 1

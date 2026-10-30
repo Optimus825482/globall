@@ -239,26 +239,32 @@ NEWS_RISK_WINDOW_MIN = 45
 def harden_verdict(verdict: Dict[str, Any], dossier: Dict[str, Any]) -> Dict[str, Any]:
     """Haber başlığı tek başına veto sebebi olamaz (prompt-injection / manipülasyon savunması).
 
-    Başlıklar dış kaynaktır. REDDİN dayanağı yalnızca 'haber' kontrolü ise VE yapısal takvimde (başlık
-    değil, takvim verisi) 45 dk içinde 2+ yıldızlı olay yoksa red geçersiz sayılır: karar APPROVE'a çevrilir,
-    gerekçeye açık not düşülür. Diğer kontrollerden (zaman dilimi, maliyet, seviye, korelasyon, rejim) en az biri
-    olumsuzsa ya da takvim riski varsa red olduğu gibi kalır.
+    Başlıklar dış kaynaktır. REDDİN dayanağı kanıtlanabilir biçimde yalnızca 'haber' kontrolü ise red GEÇERSİZ
+    sayılır. "Kanıtlanabilir" için hepsi gerekir:
+      - kontrol listesinde olumsuz kontroller var ve hepsi 'haber' (liste boşsa ispatlanamaz),
+      - yapısal TAKVİM verisi geldi (yoksa/alınamadıysa ispatlanamaz → red kalır),
+      - takvimde ±45 dk içinde (yaklaşan ya da yeni açıklanan) 2+ yıldızlı olay yok.
+    Geçersiz sayılan red yüksek güveni DEVRALMAZ: karar `downgraded` işaretli, güveni nötr 50'dir ve `decide()`
+    bunu eşiği aşan bir onay gibi değil, 'red geçersiz' olarak (motor kararı geçerli) işler.
     """
     if verdict.get("decision") != "REJECT":
         return verdict
     checks = verdict.get("checks") or {}
     negatives = [k for k, v in checks.items() if str(v).lower().startswith("olumsuz")]
     non_news = [k for k in negatives if k != "haber"]
-    cal = (dossier.get("ekonomik_takvim") or {}) if isinstance(dossier, dict) else {}
-    near = [e for e in (cal.get("yaklasan_24_saat") or []) if isinstance(e, dict)
-            and 0 <= int(e.get("dakika", 9999)) <= NEWS_RISK_WINDOW_MIN]
-    # Kanıtlanabilir "yalnız haber" durumu: olumsuz kontroller var ve hepsi 'haber'. Kontrol listesi boşsa
-    # (model doldurmamış) habere dayandığı ispatlanamaz → red olduğu gibi kalır.
-    if non_news or near or not negatives:
+    cal = dossier.get("ekonomik_takvim") if isinstance(dossier, dict) else None
+    if non_news or not negatives or not isinstance(cal, dict) or "yaklasan_24_saat" not in cal:
         return verdict
-    # Dayanak yok ya da yalnızca haber: veto uygulanmaz.
+    window = NEWS_RISK_WINDOW_MIN
+    for key in ("yaklasan_24_saat", "aciklanan_son_6_saat"):
+        for e in cal.get(key) or []:
+            try:
+                if isinstance(e, dict) and abs(int(e.get("dakika", 9999))) <= window:
+                    return verdict          # takvim riski var: red kalır
+            except (TypeError, ValueError):
+                return verdict              # okunamayan takvim satırı: ispatlanamaz
     out = dict(verdict)
-    out.update(decision="APPROVE", confidence=max(60, int(verdict.get("confidence", 0))), downgraded=True,
+    out.update(decision="APPROVE", confidence=50, downgraded=True,
                summary="(Red yalnızca haber başlığına dayandığı için geçersiz sayıldı) " + str(verdict.get("summary", ""))[:240])
     out["reasons"] = ["Red gerekçesi yapısal veriyle (teknik, takvim, maliyet, seviye) desteklenmedi"] + list(verdict.get("reasons") or [])[:3]
     return out
@@ -273,6 +279,9 @@ def decide(verdict: Optional[Dict[str, Any]], error: Optional[str], *, mode: str
     if verdict is None:
         return {"blocked": not fail_open, "applied": "fail_open" if fail_open else "fail_closed",
                 "reason": error or "LLM yanıt vermedi"}
+    if verdict.get("downgraded"):
+        # Red yalnız habere dayandığı için geçersiz: LLM onay vermedi, motorun kararı geçerli (güven eşiği uygulanmaz).
+        return {"blocked": False, "applied": "reject_voided", "reason": verdict.get("summary", "")}
     ok = verdict["decision"] == "APPROVE" and verdict["confidence"] >= int(min_confidence)
     if mode == "advisory":
         return {"blocked": False, "applied": "advisory_allow" if ok else "advisory_reject", "reason": verdict.get("summary", "")}

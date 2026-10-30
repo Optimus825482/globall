@@ -71,6 +71,7 @@ const APPLIED_TR: Record<string, string> = {
   blocked: "Engellendi",
   advisory_allow: "Danışman: onay",
   advisory_reject: "Danışman: red (engellemedi)",
+  reject_voided: "Red geçersiz sayıldı (yalnız habere dayanıyordu), motor açtı",
   fail_open: "LLM yok, motor açtı",
   fail_closed: "LLM yok, engellendi",
   hata: "Hata",

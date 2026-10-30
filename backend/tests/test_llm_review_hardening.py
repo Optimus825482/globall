@@ -41,7 +41,7 @@ def _rej(checks, conf=85):
 
 def test_news_only_reject_is_voided():
     out = ltr.harden_verdict(_rej({"haber": "olumsuz", "mtf_uyum": "olumlu", "maliyet": "nötr"}), {"ekonomik_takvim": {"yaklasan_24_saat": []}})
-    assert out["decision"] == "APPROVE" and out["downgraded"] and out["confidence"] >= 60
+    assert out["decision"] == "APPROVE" and out["downgraded"] and out["confidence"] == 50   # güven devralınmaz
     assert "haber başlığına" in out["summary"]
 
 
@@ -66,3 +66,37 @@ def test_approve_is_untouched():
 def test_reject_without_any_checks_is_kept():
     v = _rej({})
     assert ltr.harden_verdict(v, {"ekonomik_takvim": {}}) is v
+
+
+def test_reject_kept_when_calendar_data_missing():
+    v = _rej({"haber": "olumsuz"})
+    assert ltr.harden_verdict(v, {}) is v                                   # takvim hiç yok
+    assert ltr.harden_verdict(v, {"ekonomik_takvim": None}) is v
+    assert ltr.harden_verdict(v, {"ekonomik_takvim": {"ozet": "x"}}) is v   # takvim anahtarları yok: ispatlanamaz
+
+
+def test_reject_kept_when_event_just_released():
+    cal = {"yaklasan_24_saat": [], "aciklanan_son_6_saat": [{"title": "CPI", "stars": 3, "dakika": -20}]}
+    v = _rej({"haber": "olumsuz"})
+    assert ltr.harden_verdict(v, {"ekonomik_takvim": cal}) is v
+    old = {"yaklasan_24_saat": [], "aciklanan_son_6_saat": [{"title": "CPI", "stars": 3, "dakika": -200}]}
+    assert ltr.harden_verdict(_rej({"haber": "olumsuz"}), {"ekonomik_takvim": old})["downgraded"]
+
+
+def test_reject_kept_when_calendar_row_unreadable():
+    cal = {"yaklasan_24_saat": [{"title": "NFP", "dakika": "yakında"}]}
+    v = _rej({"haber": "olumsuz"})
+    assert ltr.harden_verdict(v, {"ekonomik_takvim": cal}) is v
+
+
+def test_voided_reject_is_not_an_endorsement_and_ignores_threshold():
+    voided = ltr.harden_verdict(_rej({"haber": "olumsuz"}), {"ekonomik_takvim": {"yaklasan_24_saat": []}})
+    res = ltr.decide(voided, None, mode="veto", fail_open=False, min_confidence=90)
+    assert res["blocked"] is False and res["applied"] == "reject_voided"     # eşik ne olursa olsun yüksek güven aranmaz
+
+
+def test_voided_rows_excluded_from_calibration():
+    from app.routers import llm_review
+    rows = [{"decision": "APPROVE", "applied": "reject_voided", "symbol": "XAUUSD", "shadow_status": "TP",
+             "shadow_pips": 10, "confidence": 50}]
+    assert llm_review.summarize(rows)["calibration"] == {}
