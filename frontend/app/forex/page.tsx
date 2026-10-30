@@ -387,7 +387,7 @@ export default function ForexRadarPage() {
 
   // PERFORMANS (2026-10-08): 3 sn'lik çıplak interval yerine usePolling —
   // arka planda durur, üst üste binen istekleri engeller.
-  usePolling(fetchRadar, 5000);
+  usePolling(fetchRadar, 3000);
 
   // Strateji taraması 5 sn'de bir (backend'de aynı TTL önbelleği var): radar
   // tablosu klasik skoru, bu bölüm ise DİĞER tüm giriş kollarını gösterir.

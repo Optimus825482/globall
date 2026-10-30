@@ -374,7 +374,7 @@ export default function HomePage() {
   }, []);
 
   // PERFORMANS (2026-10-08): usePolling sekme arka plandayken durur.
-  usePolling(() => fetchData(true), 5000);
+  usePolling(() => fetchData(true), 4000);
   usePolling(() => fetchCalendar(), 180000);
 
   const nowSec = useSharedNowSec(calendarEvents.length > 0);

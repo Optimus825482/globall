@@ -328,7 +328,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     }
   };
 
-  usePolling(fetchStatus, 5000);
+  usePolling(fetchStatus, 3000);
 
   // MT5 Otomatik Emir İletimini Aç / Kapat
   const toggleMt5Auto = async () => {

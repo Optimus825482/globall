@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
+from app.latency_stats import LatencyMiddleware
 from starlette.background import BackgroundTask
 from starlette.datastructures import MutableHeaders
 from fastapi.middleware.cors import CORSMiddleware
@@ -208,6 +209,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 # PERFORMANS (2026-10-30): JSON yanıtları (radar, işlemler, takvim) sıkıştırılmıyordu.
 # En dıştaki katman: SSE (`text/event-stream`) Starlette tarafından varsayılan olarak hariç tutulur.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+# En dış katman: istek gecikmesi ölçümü (Ayarlar → Sistem Sağlığı → API gecikmeleri).
+app.add_middleware(LatencyMiddleware)
 
 app.include_router(maintenance_routes.router)
 app.include_router(llm_chat_routes.router)
@@ -1182,6 +1185,7 @@ async def startup_services():
         logger.info("[Forex-Only] Binance spot coin tarama ve işlem döngüleri devre dışı bırakıldı.")
 
     _start_background(ws_broadcast_loop, "ws-broadcast")
+    _start_background(binance_public.warm_exchange_info, "exchange-info-warmup", single_pass=True)
     await asyncio.sleep(0.05)
     _start_background(forex_auto_paper_start_loop, "forex-auto-paper")
     await asyncio.sleep(0.05)

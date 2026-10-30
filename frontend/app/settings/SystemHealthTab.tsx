@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
+import ApiLatencyPanel from "./ApiLatencyPanel";
 
 export default function SystemHealthTab() {
   const [data, setData] = useState<any>(null);
@@ -36,5 +37,6 @@ export default function SystemHealthTab() {
       <div className="card"><p className="eyebrow">MARKET DATA</p><p className="mt-3 font-mono text-sm">Ticker: {data?.market?.tickers ?? "—"}</p><p className="mt-2 font-mono text-sm">Max ticker yaşı: {data?.market?.max_ticker_age_sec == null ? "—" : `${data.market.max_ticker_age_sec.toFixed(1)} sn`}</p><p className="mt-2 font-mono text-sm">Timeframe: {data?.market?.timeframes?.join(", ") || "—"}</p></div>
       <div className="card"><p className="eyebrow">ALTYAPI / RİSK</p><p className="mt-3 font-mono text-sm">DB: {data?.database?.status || "—"}</p><p className="mt-2 font-mono text-sm">Açık pozisyon: {data?.portfolio?.open_positions ?? "—"} / {data?.portfolio?.max_open_positions ?? "—"}</p><p className="mt-2 font-mono text-sm">LLM: {data?.llm?.active ? "aktif" : "pasif veya yapılandırılmamış"}</p></div>
     </div>
+    <ApiLatencyPanel />
   </section>;
 }

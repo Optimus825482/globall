@@ -24,7 +24,7 @@ export const WS_URL = `${WS_BASE.replace(/\/$/, "")}/ws`;
 // her çağırana `clone()` ile verilir. İmzalı/iptal edilebilir (signal) istekler
 // ve gövdeli isteklere dokunulmaz.
 const inflightGets = new Map<string, Promise<Response>>();
-const INFLIGHT_LINGER_MS = 300;
+const INFLIGHT_LINGER_MS = 0;
 
 export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
   const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
@@ -69,9 +69,6 @@ export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
 const TTL_RULES: Array<[RegExp, number]> = [
   [/^\/api\/forex\/news(\?(?!.*refresh)|$)/, 15_000],
   [/^\/api\/system\/health$/, 8_000],
-  // Radar sayfası (5 sn) ile global radar modalı (4 sn) aynı veriyi ayrı yokluyordu.
-  [/^\/api\/forex\/radar$/, 3_500],
-  [/^\/api\/forex\/auto-paper\/status$/, 2_500],
 ];
 const ttlCache = new Map<string, { at: number; data: unknown }>();
 

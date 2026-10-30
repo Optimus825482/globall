@@ -268,19 +268,59 @@ async def historical_klines(symbol: str, interval: str, days_back: int, end_time
     return rows
 
 
+_exchange_info_refreshing = False
+
+
+def _refresh_exchange_info_background() -> None:
+    """Süresi dolmuş önbelleği arka planda yeniler (tek seferde bir iş parçacığı)."""
+    global _exchange_info_refreshing
+    with _exchange_info_lock:
+        if _exchange_info_refreshing:
+            return
+        _exchange_info_refreshing = True
+
+    def _run() -> None:
+        global _exchange_info_refreshing
+        try:
+            fetched = _get_json("/api/v3/exchangeInfo", {})
+            with _exchange_info_lock:
+                _exchange_info_cache.update({
+                    "payload": fetched,
+                    "expires": time.monotonic() + EXCHANGE_INFO_CACHE_TTL_SEC,
+                })
+        except Exception:
+            # Yenileme başarısız: eski veri kullanılmaya devam eder, bir sonraki istek yeniden dener.
+            pass
+        finally:
+            with _exchange_info_lock:
+                _exchange_info_refreshing = False
+
+    threading.Thread(target=_run, name="exchange-info-refresh", daemon=True).start()
+
+
 def _exchange_info_payload() -> dict:
-    """`/api/v3/exchangeInfo` gövdesi — 10 dakikalık modül önbelleğiyle."""
+    """`/api/v3/exchangeInfo` gövdesi — 10 dakikalık modül önbelleğiyle.
+
+    PERFORMANS (2026-10-30): önbellek SÜRESİ DOLUNCA eskiden isteği Binance
+    yanıtına kadar (~4 sn) bekletiyordu; `/api/market-symbols` her sayfa
+    açılışında çağrıldığı için kullanıcı 10 dakikada bir bu gecikmeyi yaşıyordu.
+    Artık süresi dolmuş veri HEMEN döner ve yenileme arka planda yapılır
+    (stale-while-revalidate). Önbellek hiç dolmadıysa (ilk açılış) bekler;
+    sunucu açılışında `warm_exchange_info` ile önceden ısıtılır.
+    """
     now = time.monotonic()
     with _exchange_info_lock:
         payload = _exchange_info_cache.get("payload")
         if payload is not None and now < float(_exchange_info_cache.get("expires") or 0.0):
             return payload
+    if payload is not None:
+        _refresh_exchange_info_background()
+        return payload
     with _exchange_info_load_lock:
-        now = time.monotonic()
         with _exchange_info_lock:
             payload = _exchange_info_cache.get("payload")
-            if payload is not None and now < float(_exchange_info_cache.get("expires") or 0.0):
-                return payload
+        if payload is not None:
+            return payload
         fetched = _get_json("/api/v3/exchangeInfo", {})
         with _exchange_info_lock:
             _exchange_info_cache.update({
@@ -288,6 +328,14 @@ def _exchange_info_payload() -> dict:
                 "expires": time.monotonic() + EXCHANGE_INFO_CACHE_TTL_SEC,
             })
         return fetched
+
+
+async def warm_exchange_info() -> None:
+    """Sunucu açılışında önbelleği doldurur; ilk kullanıcı beklemesin."""
+    try:
+        await asyncio.to_thread(_exchange_info_payload)
+    except Exception:
+        pass
 
 
 def exchange_info_cache_snapshot() -> dict:

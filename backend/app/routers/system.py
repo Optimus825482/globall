@@ -219,3 +219,41 @@ async def memory_retrieve(payload: dict = None, request: Request = None):
         await conn.execute("INSERT INTO memory_retrieval_logs(query_scope,query_text_hash,filters,model_id,result_ids,latency_ms) VALUES($1,$2,$3::jsonb,$4,$5::jsonb,$6)", body.get("scope", "memory"), memory_service.content_hash(text), json.dumps({k: body.get(k) for k in ("layer", "symbol", "strategy", "timeframe") if body.get(k) is not None}), embedded.get("model_id"), json.dumps([r.get("id") for r in rows]), None)
     return {"query": text, "results": rows, "count": len(rows)}
 
+
+# ---------------------------------------------------------------------------
+# API GECİKME ÖLÇÜMÜ (2026-10-30) — Ayarlar → Sistem Sağlığı
+# ---------------------------------------------------------------------------
+@router.get("/api/system/latency")
+async def system_latency(request: Request):
+    """Uç nokta başına gecikme istatistikleri (bellekte, yeniden başlatınca sıfırlanır).
+
+    Yalnız yönetici. Yanıt: `routes` (p95'e göre azalan), `slow_requests`
+    (eşik üstü son istekler) ve anlık `db_ping_ms` (`SELECT 1` gidiş-dönüşü).
+    """
+    from app.security import require_admin
+    from app import latency_stats
+
+    require_admin(request)
+    snap = latency_stats.snapshot()
+    db_ms = None
+    pool = _main_pg_pool()
+    if pool:
+        try:
+            t0 = time.perf_counter()
+            async with pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            db_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        except Exception as exc:  # pragma: no cover - ağ/DB hatası
+            snap["db_error"] = f"{type(exc).__name__}"
+    snap["db_ping_ms"] = db_ms
+    return snap
+
+
+@router.post("/api/system/latency/reset")
+async def system_latency_reset(request: Request):
+    from app.security import require_admin
+    from app import latency_stats
+
+    require_admin(request)
+    latency_stats.reset()
+    return {"status": "reset"}

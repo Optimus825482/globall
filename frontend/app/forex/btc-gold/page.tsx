@@ -1019,7 +1019,7 @@ export default function BtcGoldForexPage() {
   // sekme arka plana geçince tamamen durur, üst üste binme engellenir; aralık
   // 3 sn'ye çıkarıldı (backend teknik önbelleği zaten 15 sn'de tazeleniyor —
   // 1.5 sn'lik sorgu görsel fark üretmiyordu, yalnız CPU/ağ yakıyordu).
-  usePolling(fetchAllData, 5000);
+  usePolling(fetchAllData, 3000);
 
   // Otomatik yorum: 60 sn'de bir backend'den insan-okur analiz çeker
   // (gösterge verisi ana döngüyle zaten canlı; yorum metni sakin kalsın diye ayrı yavaş döngü)
@@ -1053,7 +1053,7 @@ export default function BtcGoldForexPage() {
       setGateLoading(false);
     }
   };
-  usePolling(fetchGateSnapshots, 5000);
+  usePolling(fetchGateSnapshots, 3000);
 
   // Otomatik kaydırma
   useEffect(() => {
