@@ -432,7 +432,8 @@ async def forex_chat(payload: dict, request: Request):
                     findings["demo"] = {"acilan": result["opened"], "acilmayan": result["skipped"],
                                         "not": ("Yalnızca 'acilan' listesindeki işlemler kayıtlı DEMO MT5 hesabına iletildi; izleme: Raporlar > İşlem Raporu, 'Fırsat Taraması (Sohbet)'."
                                                 if result["opened"] else
-                                                "HİÇBİR emir iletilmedi, demo hesapta işlem açılmadı. 'emir iletildi' deme; yalnızca neden açılmadığını anlat.")}
+                                                "BU TURDA hiçbir emir iletilmedi. 'Bu turda emir iletildi' deme; yalnızca neden açılmadığını anlat. Önceki mesajlarda açılan "
+                                                "işlemler geçerlidir: onları düzeltme, 'önceki mesajım hatalıydı' deme.")}
                     yield _sse("step", {"id": "demo", "label": "Demo hesap işlem kararı", "status": "done",
                                         "text": opportunity_trades.describe_opening(result, forex_research.SYMBOL_NAME)})
                 except Exception as exc:  # noqa: BLE001
