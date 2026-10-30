@@ -129,3 +129,20 @@ def test_compact_chart_and_ranges():
     assert fp.compact_chart([], 5) == []
     r = fp.key_ranges(f)
     assert {"son_24s_yuksek", "son_24s_dusuk", "onceki_gun", "hafta_yuksek", "hafta_dusuk"} <= set(r)
+
+
+# ----------------------------------------------------------------------------- sıkışma süresi
+
+def _bar(o, h, l, c):
+    return {"open": o, "high": h, "low": l, "close": c}
+
+
+def test_consolidation_measures_minutes_in_tight_band():
+    wild = [_bar(100 + i, 104 + i, 98 + i, 102 + i) for i in range(30)]               # güçlü trend: geniş mumlar
+    flat = [_bar(130, 130.5, 129.6, 130.1) for _ in range(12)]                          # son 12 mum dar bantta
+    r = fp.consolidation(wild + flat, 5)
+    assert r["mum"] >= 12 and r["dakika"] == r["mum"] * 5 and r["genislik_atr"] <= fp.SQUEEZE_SPAN_ATR
+    assert r["yuksek"] >= 130.5 and r["dusuk"] <= 129.6
+    assert fp.consolidation(wild[:10], 5) == {}                                          # yetersiz veri
+    trend_only = fp.consolidation(wild, 5)
+    assert trend_only["mum"] < r["mum"]                                                  # trendde sıkışma daha kısa

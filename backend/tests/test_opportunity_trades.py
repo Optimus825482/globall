@@ -393,3 +393,17 @@ def test_weekend_universe_is_researchable():
     from app import forex_research as fr
     for s in ot.WEEKEND_UNIVERSE:
         assert s in fr._TV and s in fr.YAHOO and s in fr.SYMBOL_NAME and fr._asset_class(s) == "crypto"
+
+
+# ----------------------------------------------------------------------------- başarısız emir geri çekilmesi
+
+def test_open_failure_backoff_grows_and_resets(monkeypatch):
+    monkeypatch.setattr(fx, "_OPEN_FAIL_STATE", {})
+    assert fx.open_fail_backoff_sec(1, "Invalid stops (Kod: 10016)") == 300.0           # kalıcı hata: 5 dk
+    assert fx.open_fail_backoff_sec(3, "Invalid stops") == 1200.0                       # iki katına çıkar
+    assert fx.open_fail_backoff_sec(10, "Invalid stops") == 3600.0                      # tavan 1 saat
+    assert fx.open_fail_backoff_sec(1, "timeout") == 30.0                               # geçici hata: 30 sn
+    w1 = fx.register_open_failure("ADAUSD", "Invalid stops", 1000.0)
+    w2 = fx.register_open_failure("ADAUSD", "Invalid stops", 1300.0)
+    assert (w1, w2) == (300.0, 600.0) and fx.open_fail_left("ADAUSD", 1400.0) == 500.0
+    assert fx.open_fail_left("EURUSD", 1400.0) == 0.0

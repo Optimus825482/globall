@@ -260,3 +260,40 @@ def key_ranges(frames: Dict[str, List[Bar]]) -> Dict[str, Any]:
         out["hafta_yuksek"] = max(b["high"] for b in wk)
         out["hafta_dusuk"] = min(b["low"] for b in wk)
     return out
+
+
+TF_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
+SQUEEZE_SPAN_ATR = 2.5          # pencere genişliği (yüksek-düşük) bu kadar ATR'yi aşana kadar mumlar "aynı sıkışma"dır
+BIG_MOVE_ATR = 2.0              # bir mumun aralığı ≥ bu kadar ATR ise "büyük hareket" sayılır
+
+
+def consolidation(bars: List[Bar], minutes: int) -> Dict[str, Any]:
+    """Fiyat kaç dakikadır dar bantta? (kullanıcı sorusu: "kaç dakikadır yatay?").
+
+    Sondan geriye mumlar eklenir; pencerenin (yüksek-düşük) aralığı `SQUEEZE_SPAN_ATR`×ATR'yi aşınca durulur.
+    Döner: {mum, dakika, yuksek, dusuk, genislik_atr, son_buyuk_hareket_dakika_once}. Veri yetersizse {}.
+    """
+    if len(bars) < 20 or minutes <= 0:
+        return {}
+    trs = []
+    for i in range(1, len(bars)):
+        h, l, pc = bars[i]["high"], bars[i]["low"], bars[i - 1]["close"]
+        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+    atr = sum(trs[-14:]) / 14.0
+    if atr <= 0:
+        return {}
+    hi, lo, n = bars[-1]["high"], bars[-1]["low"], 1
+    for b in reversed(bars[:-1]):
+        nh, nl_ = max(hi, b["high"]), min(lo, b["low"])
+        if nh - nl_ > SQUEEZE_SPAN_ATR * atr:
+            break
+        hi, lo, n = nh, nl_, n + 1
+    since_big = None
+    for k, tr in enumerate(reversed(trs)):
+        if tr >= BIG_MOVE_ATR * atr:
+            since_big = k * minutes
+            break
+    price = bars[-1]["close"]
+    d = 2 if price >= 100 else 4 if price >= 1 else 5
+    return {"mum": n, "dakika": n * minutes, "yuksek": round(hi, d), "dusuk": round(lo, d),
+            "genislik_atr": round((hi - lo) / atr, 2), "son_buyuk_hareket_dakika_once": since_big}

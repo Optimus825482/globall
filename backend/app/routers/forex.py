@@ -5717,6 +5717,30 @@ _LAST_CANDIDATE_LOG_TIME: Dict[str, float] = {}
 _LAST_DATA_GAP_LOG: Dict[str, float] = {}
 _LAST_SYMBOL_ENTRY_TIME: Dict[str, float] = {}
 
+# Başarısız OPEN_ORDER için sembol bazlı GERİ ÇEKİLME (2026-10-31: ADAUSD "Invalid stops" her 5 sn'de aynı emri sonsuza dek
+# yeniden gönderiyordu). Sayaç ardışık başarısızlıktır; başarılı emir sıfırlar. Kalıcı hatalar (stop/hacim/piyasa/bakiye)
+# 5 dk'dan başlar ve iki katına çıkar (en çok 1 saat); geçici hatalar 30 sn'den başlar.
+_OPEN_FAIL_STATE: Dict[str, Tuple[int, float]] = {}
+_PERMANENT_OPEN_ERRORS = ("invalid stops", "10016", "invalid volume", "10014", "market closed", "10018", "trade is disabled",
+                          "10017", "not enough money", "no money", "10019", "invalid price", "10015", "symbol not found")
+
+
+def open_fail_backoff_sec(count: int, err: Any) -> float:
+    text = str(err or "").lower()
+    base = 300.0 if any(k in text for k in _PERMANENT_OPEN_ERRORS) else 30.0
+    return min(3600.0, base * (2 ** max(0, count - 1)))
+
+
+def register_open_failure(sym: str, err: Any, now: float) -> float:
+    count = _OPEN_FAIL_STATE.get(sym, (0, 0.0))[0] + 1
+    wait = open_fail_backoff_sec(count, err)
+    _OPEN_FAIL_STATE[sym] = (count, now + wait)
+    return wait
+
+
+def open_fail_left(sym: str, now: float) -> float:
+    return max(0.0, _OPEN_FAIL_STATE.get(sym, (0, 0.0))[1] - now)
+
 _AUTO_SETTINGS = ForexAutoPaperSettings()
 
 
@@ -8612,6 +8636,18 @@ async def _forex_auto_paper_loop():
                             )
                         continue
 
+                # 2c. Başarısız emir geri çekilmesi (aynı kalıcı hata her 5 sn'de yeniden gönderilmesin)
+                _fail_left = open_fail_left(sym, now_ts)
+                if _fail_left > 0:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_openfail", 0) > 60.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_openfail"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] Emir Hatası Geri Çekilmesi: son emir reddedildi, {int(_fail_left)} sn bekleniyor.",
+                            symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                        )
+                    continue
+
                 # 3. Sembol Soğuma Süresi
                 sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else 60.0
                 last_sym_time = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
@@ -11355,15 +11391,19 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
                 _cr_err = _cr.get("error") or _cr.get("retcode")
                 _cr_ticket = _cr.get("ticket")
                 if not _cr_ok:
+                    _wait_txt = "soğuma geri açıldı, yeniden denenecek"
                     if _cr_action == "OPEN_ORDER" and _cr_sym:
                         _LAST_SYMBOL_ENTRY_TIME.pop(_cr_sym, None)
+                        _wait = register_open_failure(_cr_sym, _cr_err, now_ts)
+                        _wait_txt = f"ardışık hata {_OPEN_FAIL_STATE[_cr_sym][0]}: {int(_wait)} sn geri çekilme, sonra yeniden denenecek"
                     _log_auto_decision(
                         "SYSTEM",
-                        f"❌ MT5 emri BAŞARISIZ: {_cr_action} {_cr_sym} — {_cr_err} "
-                        f"(soğuma geri açıldı, yeniden denenecek).",
+                        f"❌ MT5 emri BAŞARISIZ: {_cr_action} {_cr_sym} — {_cr_err} ({_wait_txt}).",
                         symbol=_cr_sym or None,
                     )
                 else:
+                    if _cr_action == "OPEN_ORDER" and _cr_sym:
+                        _OPEN_FAIL_STATE.pop(_cr_sym, None)
                     if _cr_action == "OPEN_ORDER" and _cr.get("fill_price") is not None:
                         # 2026-10-28 kayma ölçümü: köprü istek/fill fiyatı ve icra spread'ini
                         # yankılar; sinyal alanları komutla birlikte geri gelir.
