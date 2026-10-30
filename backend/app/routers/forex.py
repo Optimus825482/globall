@@ -878,6 +878,88 @@ def _mt5_sync_authorized(request: Any) -> bool:
     return _token_equal(str(provided), secret)
 
 
+def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float, atr_pips: float,
+                       score: float, note: str) -> Dict[str, Any]:
+    """Sohbet "Fırsat taraması": motorun KOMUT KUYRUĞUYLA kayıtlı DEMO MT5 hesabına işlem açar.
+
+    Radarın açtığı işlemlerle aynı yol (OPEN_ORDER → köprü): BE/trailing köprüde aynı kurallarla yönetilir,
+    kapanınca Raporlar'da `FIRSAT_TARAMASI` stratejisiyle görünür. Güvenceler: yalnız DEMO hesap (sunucu adında
+    'demo'), MT5 bağlı + otomatik işlem açık, motorun toplam açık pozisyon sınırı, aynı sembolde açık pozisyon
+    varsa açılmaz, lot bakiyenin %`SCAN_RISK_PCT`'ine göre ve motorun kategori tavanlarıyla sınırlı.
+    """
+    st = _MT5_STATE
+    if not st.get("connected"):
+        return {"ok": False, "reason": "MT5 köprüsü bağlı değil"}
+    acct = st.get("account") or {}
+    if "demo" not in str(acct.get("server") or "").lower():
+        return {"ok": False, "reason": "Fırsat taraması yalnızca DEMO hesapta işlem açar"}
+    if not st.get("auto_trade"):
+        return {"ok": False, "reason": "MT5 otomatik işlem kapalı"}
+    direction = str(direction).upper()
+    if direction not in ("BUY", "SELL"):
+        return {"ok": False, "reason": "geçersiz yön"}
+    opens = list(st.get("open_positions") or [])
+    if len(opens) >= int(_AUTO_SETTINGS.max_open_positions):
+        return {"ok": False, "reason": f"açık pozisyon sınırı ({_AUTO_SETTINGS.max_open_positions}) dolu"}
+    key = canonical_symbol(sym)
+    if any(canonical_symbol(str(p.get("symbol", ""))) == key for p in opens):
+        return {"ok": False, "reason": "bu sembolde zaten açık pozisyon var"}
+    if sl_pips <= 0:
+        return {"ok": False, "reason": "stop mesafesi geçersiz"}
+
+    spec = get_symbol_trading_specs(sym, base_sl=_AUTO_SETTINGS.sl_pips, base_tp=_AUTO_SETTINGS.tp_pips,
+                                    base_be=_AUTO_SETTINGS.breakeven_pips, base_trail=_AUTO_SETTINGS.trailing_stop_pips)
+    pip_val = float(spec["pip_val"])
+    balance = float(acct.get("balance") or 0.0)
+    if balance <= 0 or pip_val <= 0:
+        return {"ok": False, "reason": "hesap bakiyesi/pip değeri okunamadı"}
+    risk_usd = balance * SCAN_RISK_PCT / 100.0
+    is_gold = "XAU" in sym
+    is_crypto = is_crypto_symbol(sym)
+    comm = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
+    raw_lots = round(risk_usd / max(1.0, sl_pips * pip_val + comm), 2)
+    if is_gold:
+        ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, max(0.01, round(balance * 0.00006, 2)))
+    elif is_crypto:
+        ceiling = 10.0
+    else:
+        is_cross = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
+        ceiling = min(0.75 if is_cross else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot, max(0.01, round(balance * 0.00025, 2)))
+    lots = round(max(0.01, min(raw_lots, ceiling)), 2)
+    lots, risk_skip = apply_risk_normalization(sym, lots, sl_pips, pip_val, risk_usd)
+    if risk_skip:
+        if not floor_lot_respects_budget(0.01, sl_pips, pip_val, risk_usd):
+            return {"ok": False, "reason": f"stop {sl_pips:.0f} pip ile en küçük lot bile risk bütçesini aşıyor"}
+        lots = 0.01
+
+    now = time.time()
+    cmd_id = f"CMD-{int(now * 1000) % 1000000}"
+    spec_exits = get_symbol_trading_specs(sym, base_sl=8.0, base_be=_AUTO_SETTINGS.breakeven_pips,
+                                          base_trail=_AUTO_SETTINGS.trailing_stop_pips)
+    st["pending_commands"].append({
+        "id": cmd_id, "action": "OPEN_ORDER", "symbol": sym, "direction": direction, "lots": lots,
+        "sl_pips": round(sl_pips, 1), "tp_pips": round(tp_pips, 1),
+        "max_positions_per_symbol": _AUTO_SETTINGS.max_positions_per_symbol,
+        "be_pips": spec_exits["be_pips"], "trail_pips": spec_exits["trail_pips"],
+        "entry_atr_pips": round(float(atr_pips), 1),
+        "be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio if is_gold else 0.40,
+        "partial_pips": 0.0, "comment": f"{FIRSAT_COMMENT_TAG} {score:.0f}", "strategy": FIRSAT_STRATEGY,
+        "strategy_label": FIRSAT_LABEL, "strategy_tag": FIRSAT_COMMENT_TAG, "entry_source": FIRSAT_ENTRY_SOURCE,
+        "signal_price": None, "signal_bar_time": None, "spread_pips_signal": 0.0, "created_ts": now,
+    })
+    _LAST_SYMBOL_ENTRY_TIME[sym] = now
+    _invalidate_status_cache()
+    actual_risk = round(lots * sl_pips * pip_val, 2)
+    _log_auto_decision(
+        "ENTRY",
+        f"⚡ [FIRSAT TARAMASI] {lots} Lot {direction} {sym} | TP: +{tp_pips:.0f}p | SL: -{sl_pips:.0f}p | Risk: ${actual_risk:.2f} — {note}",
+        symbol=sym, strategy=FIRSAT_STRATEGY, strategy_label=FIRSAT_LABEL,
+        metadata={"lots": lots, "direction": direction, "risk_usd": actual_risk, "strategy": FIRSAT_STRATEGY,
+                  "strategy_label": FIRSAT_LABEL, "entry_source": FIRSAT_ENTRY_SOURCE, "scan_note": note},
+    )
+    return {"ok": True, "cmd_id": cmd_id, "lots": lots, "risk_usd": actual_risk}
+
+
 def _non_demo_live_blocked(server: Any) -> bool:
     """Development iken demo olmayan MT5 hesabına emir yazılmaz."""
     try:
@@ -1963,6 +2045,14 @@ CANLI_S3_SYMBOLS_5M = (
 )
 
 
+# Sohbet "Fırsat taraması" (2026-10-30): kendi strateji kimliği → Raporlar'da ayrı filtrelenir.
+FIRSAT_ENTRY_SOURCE = "firsat_taramasi"
+FIRSAT_STRATEGY = "FIRSAT_TARAMASI"
+FIRSAT_LABEL = "Fırsat Taraması (Sohbet)"
+FIRSAT_COMMENT_TAG = "FRS"
+SCAN_RISK_PCT = 1.0          # işlem başı risk: bakiyenin %1'i (motorun sembol riskinden bağımsız, muhafazakâr)
+
+
 def strategy_name_for(entry_source: Any) -> str:
     """Giriş kaynağından işlem kaydına yazılacak strateji kimliğini türetir.
 
@@ -1988,6 +2078,8 @@ def strategy_name_for(entry_source: Any) -> str:
         return COMBO3_STRATEGY
     if src == _km.KOMBO_ENTRY_SOURCE:
         return KOMBO_STRATEGY
+    if src == FIRSAT_ENTRY_SOURCE:
+        return FIRSAT_STRATEGY
     return "M1_M5_RADAR_SCALPER"
 
 
@@ -2016,6 +2108,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
         return _c3.COMBO3_COMMENT_TAG
     if src == _km.KOMBO_ENTRY_SOURCE:
         return _km.KOMBO_COMMENT_PREFIX  # kombo başına KMB1/KMB4/KMB9 — bkz. candidate_comment_tag
+    if src == FIRSAT_ENTRY_SOURCE:
+        return FIRSAT_COMMENT_TAG
     return "RADAR"
 
 
@@ -2029,6 +2123,8 @@ def strategy_display_label(code_or_source: Any) -> str:
     """Strateji kodundan veya giriş kaynağından insan-okur Türkçe etiket türetir."""
     s = str(code_or_source or "").strip()
     u = s.upper()
+    if u in ("FIRSAT_TARAMASI", "FRS") or "FIRSAT" in u:
+        return FIRSAT_LABEL
     if u in ("EMA_ADX_PULLBACK", "EMA_ADX_PULLBACK_M5", "EAP", "EAP-M5") or "EMA_ADX" in u or "EAP" in u:
         return "EMA+ADX Pullback (M5)"
     if u in ("S3_SUPERTREND_RSI", "S3", "S3_5M", "S3_15M") or "S3" in u:
@@ -2068,6 +2164,8 @@ def strategy_from_mt5_deal(deal: Dict[str, Any]) -> str:
     if src:
         return src
     raw_tag = str(deal.get("strategy_tag") or deal.get("entry_source") or deal.get("comment") or "").upper().strip()
+    if raw_tag.startswith("FRS") or "FIRSAT" in raw_tag:
+        return FIRSAT_STRATEGY
     if "EAP" in raw_tag or "EMA_ADX" in raw_tag:
         return EMA_ADX_PULLBACK_STRATEGY
     if "S3" in raw_tag:

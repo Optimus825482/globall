@@ -19,14 +19,23 @@ type Message = {
 };
 
 // Hazır sorular yalnız Altın, Bitcoin ve Forex içindir; her biri tek tıkla sorulur.
-const QUICK_PROMPTS = [
+// `mode: "opportunity_scan"` yalnız bu düğmede gönderilir: backend Forex/Bitcoin/Altın'da yönlü fırsat arar ve
+// kapıları geçenler için kayıtlı DEMO hesaba işlem açar (serbest metin asla işlem açmaz).
+type QuickPrompt = { label: string; prompt: string; mode?: string };
+
+const QUICK_PROMPTS: readonly QuickPrompt[] = [
+  {
+    label: "Fırsat taraması · demo işlem açar",
+    mode: "opportunity_scan",
+    prompt: "Fırsat taraması: Forex, Bitcoin ve Altın'da BUY veya SELL yönlü fırsat var mı? Varsa demo hesapta işlem aç.",
+  },
   { label: "Altın şimdi nasıl?", prompt: "Altın (XAUUSD) şu an nasıl görünüyor? İşlem için uygun mu, beklemek mi mantıklı?" },
   { label: "Bitcoin ne yapıyor?", prompt: "Bitcoin şu an nasıl görünüyor? Kısa vadede yön ve dikkat edilecek nokta ne?" },
   { label: "Bugün hangi pariteler?", prompt: "Şu an en fırsatlı görünen Forex pariteleri hangileri? Neden?" },
   { label: "Yaklaşan haberler", prompt: "Önümüzdeki saatlerde işlemleri etkileyecek önemli ekonomik veriler var mı? Ne yapmalıyım?" },
   { label: "Son açıklanan veriler", prompt: "Az önce açıklanan ekonomik veriler neydi ve hangi pariteleri nasıl etkiledi?" },
   { label: "Dolar durumu", prompt: "Dolar şu an güçlü mü zayıf mı? Bu Altın ve EURUSD için ne anlama geliyor?" },
-] as const;
+];
 
 const starter: Message[] = [
   {
@@ -196,7 +205,7 @@ function ChatPageInner() {
     }
   };
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, mode?: string) => {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
     const time = nowTime();
@@ -219,7 +228,7 @@ function ChatPageInner() {
             ...current.slice(0, -1),
             { ...current[current.length - 1], role: "assistant", content: (current[current.length - 1]?.content || "") + delta, time },
           ]),
-        {},
+        mode ? { mode } : {},
         {
           signal: controller.signal,
           onEvent: ({ event, data }) => {
@@ -338,9 +347,14 @@ function ChatPageInner() {
                 <button
                   key={item.label}
                   type="button"
-                  onClick={() => void sendMessage(item.prompt)}
+                  onClick={() => void sendMessage(item.prompt, item.mode)}
                   disabled={busy}
-                  className="shrink-0 min-h-9 px-3 py-1.5 rounded-full bg-bunker-900/90 border border-bunker-700/80 hover:border-cyan-400/60 hover:text-cyan-300 text-slate-200 text-xs transition-colors disabled:opacity-40"
+                  className={`shrink-0 min-h-9 px-3 py-1.5 rounded-full border text-xs transition-colors disabled:opacity-40 ${
+                    item.mode
+                      ? "bg-cyan-500/15 border-cyan-400/60 text-cyan-200 font-bold hover:bg-cyan-500/25"
+                      : "bg-bunker-900/90 border-bunker-700/80 hover:border-cyan-400/60 hover:text-cyan-300 text-slate-200"
+                  }`}
+                  title={item.mode ? "Forex, Bitcoin ve Altın'ı tarar; uygun fırsat varsa kayıtlı DEMO hesapta işlem açar" : undefined}
                 >
                   {item.label}
                 </button>

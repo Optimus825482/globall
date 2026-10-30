@@ -105,6 +105,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   COMBO3_M5: "Combo3 UTBot+Vortex (M5)",
   KOMBO_M5: "Kombo XAU (M5) KMB1/4/9",
   M1_M5_RADAR_SCALPER: "M1/M5 Çoklu Radar",
+  FIRSAT_TARAMASI: "Fırsat Taraması (Sohbet)",
   MANUAL: "Manuel Giriş",
   IC_MARKETS_MT5: "IC Markets MT5",
 };
@@ -750,6 +751,7 @@ export default function ForexReportsPage() {
               <option value="COMBO3_M5">Combo3 UTBot+Vortex (M5)</option>
               <option value="KOMBO_M5">Kombo XAU (M5) KMB1/4/9</option>
               <option value="M1_M5_RADAR_SCALPER">M1/M5 Çoklu Radar</option>
+              <option value="FIRSAT_TARAMASI">Fırsat Taraması (Sohbet)</option>
               <option value="IC_MARKETS_MT5">IC Markets MT5</option>
               <option value="MANUAL">Manuel Giriş</option>
             </select>
