@@ -405,16 +405,19 @@ async def forex_chat(payload: dict, request: Request):
                 picked = [explicit["symbol"]]
             if opp:
                 # Fırsat taraması: Forex + Bitcoin + Altın evrenini tara; en net adayları derin analiz et.
-                yield _sse("step", {"id": "scan", "label": "Fırsat taraması (Forex, Bitcoin, Altın, Endeks)", "status": "running"})
-                scan = await forex_research.run_blocking(forex_research.scan_opportunities, opportunity_trades.OPPORTUNITY_UNIVERSE, 8)
+                weekend = opportunity_trades.is_weekend()
+                scan_label = ("Fırsat taraması (hafta sonu: Bitcoin, Ethereum, altcoinler)" if weekend
+                              else "Fırsat taraması (Forex, Bitcoin, Altın, Endeks)")
+                yield _sse("step", {"id": "scan", "label": scan_label, "status": "running"})
+                scan = await forex_research.run_blocking(forex_research.scan_opportunities, opportunity_trades.universe_now(), 8)
                 if scan:
                     findings["scan"] = scan
                     ranked = [r["symbol"] for r in scan["all"] if r["agreement"] >= opportunity_trades.MIN_AGREEMENT]
-                    picked = (ranked or [r["symbol"] for r in scan["top"]])[:opportunity_trades.DEEP_ANALYSIS_TOP]
-                    yield _sse("step", {"id": "scan", "label": "Fırsat taraması (Forex, Bitcoin, Altın, Endeks)", "status": "done",
+                    picked = (ranked or [r["symbol"] for r in scan["top"]])[:opportunity_trades.deep_top_now()]
+                    yield _sse("step", {"id": "scan", "label": scan_label, "status": "done",
                                         "text": forex_research.describe_scan(scan)})
                 else:
-                    yield _sse("step", {"id": "scan", "label": "Fırsat taraması (Forex, Bitcoin, Altın, Endeks)", "status": "error",
+                    yield _sse("step", {"id": "scan", "label": scan_label, "status": "error",
                                         "text": "Tarama yapılamadı (TradingView verisi alınamadı); işlem açılmadı."})
             elif wants_scan(last_text):
                 # Sembol belirtilmemiş genel fırsat sorusu: önce geniş evreni tara, en net 3'ü derin analiz et.

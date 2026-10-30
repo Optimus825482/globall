@@ -25,6 +25,25 @@ logger = logging.getLogger("scalper.opportunity")
 OPPORTUNITY_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY",
                         "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "BTCUSD", "USTEC", "US30"]
 DEEP_ANALYSIS_TOP = 4              # taramada en net N sembol derin analiz edilir
+# Hafta sonu forex/altın/endeks kapalı: yalnızca kripto taranır (BTC, ETH ve sistemde tanımlı altcoinler) ve daha çok aday derin analiz edilir.
+WEEKEND_UNIVERSE = ["BTCUSD", "ETHUSD", "XRPUSD", "SOLUSD", "BNBUSD", "ADAUSD", "LNKUSD", "UNIUSD", "AVXUSD", "XTZUSD"]
+WEEKEND_DEEP_TOP = 5
+
+
+def is_weekend(now_ts: Optional[float] = None) -> bool:
+    """Forex haftalık kapanışı: Cuma 22:00 UTC (≈ NY 17:00) → Pazar 22:00 UTC. Saf fonksiyon (zaman parametreli)."""
+    from datetime import datetime, timezone
+    d = datetime.fromtimestamp(time.time() if now_ts is None else now_ts, timezone.utc)
+    wd, h = d.weekday(), d.hour
+    return wd == 5 or (wd == 4 and h >= 22) or (wd == 6 and h < 22)
+
+
+def universe_now(now_ts: Optional[float] = None) -> List[str]:
+    return list(WEEKEND_UNIVERSE if is_weekend(now_ts) else OPPORTUNITY_UNIVERSE)
+
+
+def deep_top_now(now_ts: Optional[float] = None) -> int:
+    return WEEKEND_DEEP_TOP if is_weekend(now_ts) else DEEP_ANALYSIS_TOP
 
 SYMBOL_COOLDOWN_SEC = 30 * 60      # aynı sembolde yeni giriş için bekleme (bellek içi)
 SL_ATR_MULT = 1.5                  # stop = 1 saatlik ATR × 1.5

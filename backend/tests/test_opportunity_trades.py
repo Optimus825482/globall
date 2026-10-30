@@ -363,3 +363,33 @@ def test_open_requested_blocks_opposite_direction_and_opens_matching(monkeypatch
     assert not wrong["opened"] and "ters yönde" in wrong["skipped"][0]["reason"] and not seen
     ok = asyncio.run(ot.open_requested(a, "SELL", None))
     assert len(ok["opened"]) == 1 and seen == {"sym": "XAUUSD", "direction": "SELL"}
+
+
+# ----------------------------------------------------------------------------- hafta sonu: yalnız kripto evreni
+
+def utc(y, mo, d, h, mi=0):
+    from datetime import datetime, timezone
+    return datetime(y, mo, d, h, mi, tzinfo=timezone.utc).timestamp()
+
+
+def test_weekend_window_boundaries():
+    assert not ot.is_weekend(utc(2026, 10, 30, 21, 59))        # Cuma 21:59 UTC: piyasa açık
+    assert ot.is_weekend(utc(2026, 10, 30, 22, 0))             # Cuma 22:00 UTC: kapandı
+    assert ot.is_weekend(utc(2026, 10, 31, 12))                # Cumartesi
+    assert ot.is_weekend(utc(2026, 11, 1, 21, 59))             # Pazar 21:59 UTC: hâlâ kapalı
+    assert not ot.is_weekend(utc(2026, 11, 1, 22, 0))          # Pazar 22:00 UTC: açıldı
+    assert not ot.is_weekend(utc(2026, 11, 2, 10))             # Pazartesi
+
+
+def test_weekend_universe_is_crypto_only_and_deeper():
+    wk, wd = utc(2026, 10, 31, 12), utc(2026, 11, 2, 10)
+    assert ot.universe_now(wk) == ot.WEEKEND_UNIVERSE and all(s.endswith("USD") and not s.startswith(("EUR", "GBP", "XAU", "US")) for s in ot.WEEKEND_UNIVERSE)
+    assert "BTCUSD" in ot.WEEKEND_UNIVERSE and "ETHUSD" in ot.WEEKEND_UNIVERSE
+    assert ot.universe_now(wd) == ot.OPPORTUNITY_UNIVERSE and "XAUUSD" in ot.OPPORTUNITY_UNIVERSE
+    assert ot.deep_top_now(wk) > ot.deep_top_now(wd)
+
+
+def test_weekend_universe_is_researchable():
+    from app import forex_research as fr
+    for s in ot.WEEKEND_UNIVERSE:
+        assert s in fr._TV and s in fr.YAHOO and s in fr.SYMBOL_NAME and fr._asset_class(s) == "crypto"

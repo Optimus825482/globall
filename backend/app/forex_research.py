@@ -47,14 +47,20 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; ScalperResearch/1.0)"}
 YAHOO = {
     "XAUUSD": "GC=F", "XAGUSD": "SI=F", "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD",
     "USTEC": "^NDX", "NAS100": "^NDX", "US30": "^DJI",
+    # Altcoinler (hafta sonu fırsat taraması evreni; broker adları: LNK=LINK, AVX=AVAX, UNI=UNI)
+    "XRPUSD": "XRP-USD", "SOLUSD": "SOL-USD", "BNBUSD": "BNB-USD", "ADAUSD": "ADA-USD", "LNKUSD": "LINK-USD",
+    "UNIUSD": "UNI7083-USD", "AVXUSD": "AVAX-USD", "XTZUSD": "XTZ-USD",
 }
 _FX_CODES = ("EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF", "JPY")
 NEWS_QUERY = {
     "XAUUSD": "gold price XAUUSD", "XAGUSD": "silver price", "BTCUSD": "Bitcoin price",
     "ETHUSD": "Ethereum price", "USTEC": "Nasdaq 100", "US30": "Dow Jones",
+    "XRPUSD": "XRP Ripple price", "SOLUSD": "Solana price", "BNBUSD": "BNB Binance Coin price", "ADAUSD": "Cardano ADA price",
+    "LNKUSD": "Chainlink LINK price", "UNIUSD": "Uniswap UNI price", "AVXUSD": "Avalanche AVAX price", "XTZUSD": "Tezos XTZ price",
 }
 SYMBOL_NAME = {"XAUUSD": "Altın", "XAGUSD": "Gümüş", "BTCUSD": "Bitcoin", "ETHUSD": "Ethereum",
-               "USTEC": "Nasdaq 100", "US30": "Dow Jones"}
+               "USTEC": "Nasdaq 100", "US30": "Dow Jones", "XRPUSD": "XRP", "SOLUSD": "Solana", "BNBUSD": "BNB",
+               "ADAUSD": "Cardano", "LNKUSD": "Chainlink", "UNIUSD": "Uniswap", "AVXUSD": "Avalanche", "XTZUSD": "Tezos"}
 
 # (periyot, yahoo interval, yahoo range, ağırlık). 3dk ve 4sa Yahoo'da yok: 1dk / 1sa'ten türetilir.
 TIMEFRAMES: List[Tuple[str, str, str, float]] = [
@@ -437,6 +443,9 @@ def describe_sources(a: Dict[str, Any]) -> str:
 _TV = {
     "XAUUSD": ("cfd", "OANDA:XAUUSD"), "XAGUSD": ("cfd", "OANDA:XAGUSD"),
     "BTCUSD": ("crypto", "BINANCE:BTCUSDT"), "ETHUSD": ("crypto", "BINANCE:ETHUSDT"),
+    "XRPUSD": ("crypto", "BINANCE:XRPUSDT"), "SOLUSD": ("crypto", "BINANCE:SOLUSDT"), "BNBUSD": ("crypto", "BINANCE:BNBUSDT"),
+    "ADAUSD": ("crypto", "BINANCE:ADAUSDT"), "LNKUSD": ("crypto", "BINANCE:LINKUSDT"), "UNIUSD": ("crypto", "BINANCE:UNIUSDT"),
+    "AVXUSD": ("crypto", "BINANCE:AVAXUSDT"), "XTZUSD": ("crypto", "BINANCE:XTZUSDT"),
     "USTEC": ("cfd", "OANDA:NAS100USD"), "NAS100": ("cfd", "OANDA:NAS100USD"), "US30": ("cfd", "OANDA:US30USD"),
 }
 
@@ -448,7 +457,8 @@ _INVESTING_FEEDS = {
 # Akışlar sembole özel değil: başlık bu anahtar sözcüklerden birini içeriyorsa alınır.
 _RELEVANCE = {
     "gold": ("gold", "bullion", "xau", "precious", "fed", "inflation", "pce", "dollar", "treasury", "yield"),
-    "crypto": ("bitcoin", "btc", "crypto", "ether", "etf", "binance", "stablecoin"),
+    "crypto": ("bitcoin", "btc", "crypto", "ether", "etf", "binance", "stablecoin", "altcoin", "solana", "xrp", "ripple",
+               "bnb", "cardano", "chainlink", "uniswap", "avalanche", "tezos", "sec ", "defi"),
     "index": ("nasdaq", "dow", "s&p", "wall street", "stocks", "fed", "inflation", "yield"),
 }
 _CCY_WORDS = {
@@ -463,7 +473,7 @@ def _asset_class(sym: str) -> str:
     sym = sym.upper()
     if sym.startswith(("XAU", "XAG")):
         return "gold"
-    if sym.startswith(("BTC", "ETH")):
+    if sym.startswith(("BTC", "ETH", "XRP", "SOL", "BNB", "ADA", "LNK", "UNI", "AVX", "XTZ")):
         return "crypto"
     if sym in ("USTEC", "NAS100", "US30"):
         return "index"
