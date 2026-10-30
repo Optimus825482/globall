@@ -482,59 +482,45 @@ export default function ForexRadarPage() {
   return (
     <div className="space-y-6 pb-12">
       {/* ÜST BAŞLIK & SEANS BİLGİSİ */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-indigo-950/40 border border-blue-500/20 backdrop-blur-md shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-2xl shadow-[0_0_16px_rgba(59,130,246,0.3)]">
-            💱
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold font-mono text-white tracking-tight">
-                FOREX RADAR &amp; CANLI PİYASA
-              </h1>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                24/5 LIVE
-              </span>
-            </div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold font-mono text-white tracking-tight">Forex Radar</h1>
             <p className="text-xs text-bunker-muted font-mono mt-0.5">
-              Majör Döviz Çiftleri, Değerli Madenler ve Endeksler — algoritma taraması
+              Majör pariteler, değerli madenler ve endeksler — algoritma taraması (24/5)
             </p>
           </div>
           <button
             onClick={runScanNow}
             disabled={scanning}
-            className="ml-2 shrink-0 px-4 py-2.5 rounded-lg font-mono text-sm font-bold bg-emerald-600/90 hover:bg-emerald-500 disabled:bg-bunker-700 disabled:text-bunker-muted text-white border border-emerald-400/40 shadow-[0_0_12px_rgba(16,185,129,0.25)] transition-all flex items-center gap-2"
+            className="shrink-0 min-h-11 sm:min-h-10 px-4 rounded-lg font-mono text-sm font-bold bg-cyan-400 text-bunker-950 hover:bg-sky-400 disabled:bg-bunker-700 disabled:text-bunker-muted disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             title="Tüm stratejileri (Radar, S3, LB, Donchian, EAP) sırayla tek turda tetikler — salt-okunur rapor, işlem açmaz"
           >
             {scanning ? (
               <>
-                <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                <span className="inline-block w-3 h-3 border-2 border-bunker-950/40 border-t-bunker-950 rounded-full animate-spin" />
                 Taranıyor…
               </>
             ) : (
-              <>🔍 Şimdi Tara</>
+              "Şimdi tara"
             )}
           </button>
         </div>
 
-        {/* Canlı Piyasa Seansları */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+        {/* Piyasa seansları */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0" aria-label="Piyasa seansları">
           {sessions.map((s) => (
             <div
               key={s.name}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-mono text-xs transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-mono text-xs whitespace-nowrap ${
                 s.active
-                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.2)]"
-                  : "bg-bunker-900/80 border-bunker-800 text-bunker-muted opacity-60"
+                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                  : "bg-bunker-900/80 border-bunker-800 text-bunker-muted"
               }`}
             >
-              <span>{s.flag}</span>
+              <span aria-hidden>{s.flag}</span>
               <span className="font-bold">{s.name}</span>
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  s.active ? "bg-emerald-400 animate-pulse" : "bg-bunker-600"
-                }`}
-              />
+              <span className="text-[10px]">{s.active ? "açık" : "kapalı"}</span>
             </div>
           ))}
         </div>
@@ -679,60 +665,13 @@ export default function ForexRadarPage() {
         </div>
       )}
 
-      {/* HIZLI ERİŞİM KARTLARI */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <Link
-          href="/forex/portfolio?tab=xauusd"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-amber-500/40 hover:border-amber-400 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">🥇</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-amber-300">
-            XAUUSD Komuta &amp; Loglar
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Teknik Analiz · Karar Logları</div>
+      {/* Menüde olmayan iki derin bağlantı (rapor/grafik/takvim zaten menüde) */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-xs">
+        <Link href="/forex/portfolio?tab=xauusd" className="inline-flex items-center min-h-11 sm:min-h-0 font-bold text-cyan-300 hover:text-cyan-200 hover:underline">
+          XAUUSD komuta ve karar logları →
         </Link>
-        <Link
-          href="/forex/portfolio"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-blue-500/30 hover:border-blue-400 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">💼</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            Merkezi Otonom İzleme
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Tüm Semboller · Tek Ayar</div>
-        </Link>
-        <Link
-          href="/forex/reports"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-indigo-500/30 hover:border-indigo-400 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📊</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-indigo-300">
-            İşlem Raporları
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Tüm Giriş/Çıkış &amp; CSV</div>
-        </Link>
-        {/* 2026-10-14: "4'lü Grafik" ve "Tekli Grafik" kartları TEK karta birleşti
-            (kullanıcı isteği). Tek giriş /forex/charts; grafik sayısı sayfa içindeki
-            1/2/4 seçicisinden ayarlanır. */}
-        <Link
-          href="/forex/charts"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📈</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            Grafik
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">1 / 2 / 4 Ekran · MA · MACD</div>
-        </Link>
-        <Link
-          href="/forex/calendar"
-          className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group"
-        >
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📅</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">
-            Takvim
-          </div>
-          <div className="text-[11px] text-bunker-muted font-mono">Ekonomik Veriler</div>
+        <Link href="/forex/portfolio" className="inline-flex items-center min-h-11 sm:min-h-0 font-bold text-cyan-300 hover:text-cyan-200 hover:underline">
+          Merkezi otonom izleme →
         </Link>
       </div>
 

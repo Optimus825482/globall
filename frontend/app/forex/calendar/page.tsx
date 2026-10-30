@@ -31,6 +31,14 @@ interface CalendarEvent {
   } | null;
   /** Para birimi yönünün paritelere çevrilmiş hali (backend `pair_impacts`). */
   pair_impacts?: Array<{ symbol: string; direction: number }>;
+  /** "Ne olursa ne olur" senaryosu (backend `generate_event_scenario`). */
+  scenario?: {
+    bullish_trigger?: string;
+    bullish_outcome?: string;
+    bearish_trigger?: string;
+    bearish_outcome?: string;
+    scalper_tip?: string;
+  } | null;
 }
 
 // API `country` alanında ülke değil para birimi kodu (JPY, USD…) geliyor;
@@ -477,9 +485,30 @@ export default function ForexCalendarPage() {
                               Açıklanan değer ({ev.actual}) beklenti veya önceki değerle karşılaştırılamadı (birim farkı ya da değer yok), bu yüzden yön verilmiyor.
                             </p>
                           ) : (
-                            <p className="text-bunker-muted">
-                              Henüz açıklanmadı. Açıklanınca sonuç ve parite yönleri burada görünür.
-                            </p>
+                            <div className="space-y-2.5">
+                              <p className="text-bunker-muted">
+                                Henüz açıklanmadı. Açıklanınca sonuç ve parite yönleri burada görünür.
+                              </p>
+                              {ev.scenario && (ev.scenario.bullish_outcome || ev.scenario.bearish_outcome) && (
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {ev.scenario.bullish_outcome && (
+                                    <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-2.5">
+                                      <p className="font-bold text-emerald-300">{ev.scenario.bullish_trigger || "Beklenti üzeri gelirse"}</p>
+                                      <p className="mt-1 text-white/90">{ev.scenario.bullish_outcome}</p>
+                                    </div>
+                                  )}
+                                  {ev.scenario.bearish_outcome && (
+                                    <div className="rounded-lg border border-rose-400/30 bg-rose-500/10 p-2.5">
+                                      <p className="font-bold text-rose-300">{ev.scenario.bearish_trigger || "Beklenti altı kalırsa"}</p>
+                                      <p className="mt-1 text-white/90">{ev.scenario.bearish_outcome}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {ev.scenario?.scalper_tip && (
+                                <p className="text-amber-300">{ev.scenario.scalper_tip}</p>
+                              )}
+                            </div>
                           )}
                           {ev.bias_direction && ev.bias_direction !== "NEUTRAL" && ev.bias_explanation && (
                             <p className="text-blue-300">İşlem motoru: {ev.bias_explanation}</p>
