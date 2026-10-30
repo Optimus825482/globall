@@ -409,7 +409,9 @@ async def forex_chat(payload: dict, request: Request):
                     result = await asyncio.wait_for(
                         opportunity_trades.open_from_scan(analyses, findings["scan"], findings.get("calendar")), timeout=15)
                     findings["demo"] = {"acilan": result["opened"], "acilmayan": result["skipped"],
-                                        "not": "Kayıtlı DEMO MT5 hesabına emir iletildi; Raporlar > İşlem Raporu'nda 'Fırsat Taraması (Sohbet)' stratejisiyle izlenir."}
+                                        "not": ("Yalnızca 'acilan' listesindeki işlemler kayıtlı DEMO MT5 hesabına iletildi; izleme: Raporlar > İşlem Raporu, 'Fırsat Taraması (Sohbet)'."
+                                                if result["opened"] else
+                                                "HİÇBİR emir iletilmedi, demo hesapta işlem açılmadı. 'emir iletildi' deme; yalnızca neden açılmadığını anlat.")}
                     yield _sse("step", {"id": "demo", "label": "Demo hesap işlem kararı", "status": "done",
                                         "text": opportunity_trades.describe_opening(result, forex_research.SYMBOL_NAME)})
                 except Exception as exc:  # noqa: BLE001
