@@ -420,6 +420,24 @@ const JOB_STATUS_TR: Record<string, string> = {
 /** Sohbetten kurulan hatırlatıcı / zamanlı kapatma işleri: bekleyenler + son 12 saatte sonuçlananlar. */
 function ScheduledJobs() {
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const [dismissed, setDismissed] = useState<number[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("dismissedJobs") || "[]") as number[];
+    } catch {
+      return [];
+    }
+  });
+
+  const dismiss = (id: number) => {
+    const next = [...dismissed, id].slice(-100);
+    setDismissed(next);
+    try {
+      window.localStorage.setItem("dismissedJobs", JSON.stringify(next));
+    } catch {
+      /* depolama kapalı: yalnız bu oturumda gizlenir */
+    }
+  };
 
   const load = async () => {
     try {
@@ -427,6 +445,7 @@ function ScheduledJobs() {
       if (!r.ok) return;
       const body = (await r.json()) as { jobs?: ScheduledJob[] };
       setJobs(body.jobs ?? []);
+      setNow(Date.now() / 1000);
     } catch {
       /* ağ hatası: kart sessizce eski halini korur */
     }
@@ -443,8 +462,11 @@ function ScheduledJobs() {
     void load();
   };
 
-  const recent = Date.now() / 1000 - 12 * 3600;
-  const visible = jobs.filter((j) => j.status === "pending" || ((j.done_at ?? 0) > recent && j.status !== "cancelled"));
+  // Bekleyenler hep görünür. Sonuçlananlar yalnız 10 dk görünür ve ✕ ile hemen kapatılabilir (kalıcı gizlenir).
+  const recent = now - 10 * 60;
+  const visible = jobs.filter(
+    (j) => j.status === "pending" || ((j.done_at ?? 0) > recent && j.status !== "cancelled" && !dismissed.includes(j.id)),
+  );
   if (visible.length === 0) return null;
 
   return (
@@ -462,9 +484,13 @@ function ScheduledJobs() {
               </p>
               {j.result && <p className="truncate text-[10px] text-bunker-muted" title={j.result}>{j.result}</p>}
             </div>
-            {j.status === "pending" && (
+            {j.status === "pending" ? (
               <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/10">
                 İptal
+              </button>
+            ) : (
+              <button type="button" onClick={() => dismiss(j.id)} aria-label="Kapat" title="Kapat" className="shrink-0 rounded-md border border-bunker-700 px-2 py-0.5 text-[10px] text-bunker-muted hover:text-white">
+                ✕
               </button>
             )}
           </li>
