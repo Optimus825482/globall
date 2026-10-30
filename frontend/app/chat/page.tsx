@@ -294,6 +294,8 @@ function ChatPageInner() {
             </Button>
           </div>
 
+          <ScheduledJobs />
+
           <div className="chat-messages flex-1 overflow-y-auto space-y-3 p-1">
             {messages.map((message, index) => {
               const isUser = message.role === "user";
@@ -342,7 +344,6 @@ function ChatPageInner() {
           </div>
 
           <div className="pt-2">
-            <ScheduledJobs />
             <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="Hazır sorular">
               {QUICK_PROMPTS.map((item) => (
                 <button
@@ -447,22 +448,22 @@ function ScheduledJobs() {
   if (visible.length === 0) return null;
 
   return (
-    <div className="mb-2 rounded-xl border border-bunker-700/80 bg-bunker-900/80 p-2.5" aria-label="Zamanlanmış işler">
-      <p className="mb-1.5 text-[11px] font-mono font-bold text-white">Zamanlanmış işler</p>
-      <ul className="space-y-1.5">
+    <div className="shrink-0 rounded-lg border border-bunker-700/80 bg-bunker-900/80 px-2.5 py-1.5" aria-label="Zamanlanmış işler">
+      <ul className="max-h-[4.5rem] space-y-1 overflow-y-auto">
         {visible.map((j) => (
-          <li key={j.id} className="flex items-start justify-between gap-2 text-xs">
-            <div className="min-w-0">
-              <p className="text-slate-200">
+          <li key={j.id} className="flex items-center justify-between gap-2 text-[11px]">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-slate-200" title={`${j.summary}${j.result ? ` — ${j.result}` : ""}`}>
+                <span aria-hidden="true">🕒 </span>
                 <span className={j.status === "pending" ? "text-cyan-300" : j.status === "done" ? "text-emerald-300" : "text-amber-300"}>
                   {JOB_STATUS_TR[j.status] ?? j.status}
                 </span>{" "}
                 · {j.due_label} · {j.summary}
               </p>
-              {j.result && <p className="mt-0.5 break-words text-[11px] text-bunker-muted">{j.result}</p>}
+              {j.result && <p className="truncate text-[10px] text-bunker-muted" title={j.result}>{j.result}</p>}
             </div>
             {j.status === "pending" && (
-              <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/10">
+              <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/10">
                 İptal
               </button>
             )}
