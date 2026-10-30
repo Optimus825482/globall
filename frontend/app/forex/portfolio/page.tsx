@@ -6,7 +6,12 @@ import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3 } from "../../lib/format";
 import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
-import ForexChartModal, { type ForexCandidateMeta } from "../components/ForexChartModal";
+import dynamic from "next/dynamic";
+import type { ForexCandidateMeta } from "../components/ForexChartModal";
+
+// PERFORMANS (2026-10-30): grafik penceresi ~250 KB (gzip) gösterge kütüphanesi
+// çeker; yalnız bir aday seçilince açıldığı için sayfa yüklemesinden çıkarıldı.
+const ForexChartModal = dynamic(() => import("../components/ForexChartModal"), { ssr: false });
 
 // --- VERİ TİPLERİ ---
 interface AutoPosition {
@@ -323,7 +328,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     }
   };
 
-  usePolling(fetchStatus, 3000);
+  usePolling(fetchStatus, 5000);
 
   // MT5 Otomatik Emir İletimini Aç / Kapat
   const toggleMt5Auto = async () => {

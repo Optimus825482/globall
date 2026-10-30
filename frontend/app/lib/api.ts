@@ -18,6 +18,14 @@ export const WS_URL = `${WS_BASE.replace(/\/$/, "")}/ws`;
  * kaydedildikten sonra sekmeye geri dönüldüğünde eski değer görünebiliyordu.
  * Çağıran kendi `cache` değerini verirse o değer kazanır.
  */
+// PERFORMANS (2026-10-30): aynı GET isteği birden fazla bileşenden (ör. radar
+// sayfası + global radar modalı, takvim bandı + takvim uyarısı) aynı anda
+// atılıyordu. Uçuştaki aynı URL'ye giden GET'ler tek istekte birleşir; yanıt
+// her çağırana `clone()` ile verilir. İmzalı/iptal edilebilir (signal) istekler
+// ve gövdeli isteklere dokunulmaz.
+const inflightGets = new Map<string, Promise<Response>>();
+const INFLIGHT_LINGER_MS = 300;
+
 export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
   const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
   // Audit: başarısız login POST'u auth-expired yayınlamamalı (login ekranında
@@ -31,7 +39,22 @@ export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
   if ((method === "GET" || method === "HEAD") && merged.cache === undefined) {
     merged.cache = "no-store";
   }
-  return fetch(input, merged).then((response) => {
+  const dedupe = method === "GET" && !(input instanceof Request) && !merged.signal && !merged.body;
+  let request: Promise<Response>;
+  if (dedupe) {
+    const key = url;
+    let shared = inflightGets.get(key);
+    if (!shared) {
+      shared = fetch(input, merged);
+      inflightGets.set(key, shared);
+      const release = () => setTimeout(() => inflightGets.delete(key), INFLIGHT_LINGER_MS);
+      shared.then(release, release);
+    }
+    request = shared.then((r) => r.clone());
+  } else {
+    request = fetch(input, merged);
+  }
+  return request.then((response) => {
     const isLoginPost = method === "POST" && url.includes("/auth/login");
     if (response.status === 401 && typeof window !== "undefined" && !isLoginPost) {
       window.dispatchEvent(new CustomEvent("scalper:auth-expired"));
@@ -40,10 +63,30 @@ export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
   });
 }
 
+// Sık değişmeyen, salt-okunur uçlar için kısa ömürlü bellek önbelleği. Takvim
+// ve sağlık verisi birden çok bileşende (bant, uyarı, kenar çubuğu, sayfa)
+// ayrı yoklamalarla çekiliyordu. `refresh` parametreli çağrı önbelleği atlar.
+const TTL_RULES: Array<[RegExp, number]> = [
+  [/^\/api\/forex\/news(\?(?!.*refresh)|$)/, 15_000],
+  [/^\/api\/system\/health$/, 8_000],
+  // Radar sayfası (5 sn) ile global radar modalı (4 sn) aynı veriyi ayrı yokluyordu.
+  [/^\/api\/forex\/radar$/, 3_500],
+  [/^\/api\/forex\/auto-paper\/status$/, 2_500],
+];
+const ttlCache = new Map<string, { at: number; data: unknown }>();
+
 export async function apiFetch(path: string, init?: RequestInit) {
+  const method = String(init?.method || "GET").toUpperCase();
+  const ttl = method === "GET" && !init?.signal ? TTL_RULES.find(([re]) => re.test(path))?.[1] : undefined;
+  if (ttl) {
+    const hit = ttlCache.get(path);
+    if (hit && Date.now() - hit.at < ttl) return typeof structuredClone === "function" ? structuredClone(hit.data) : hit.data;
+  }
   const response = await apiRequest(`${API_BASE}${path}`, { cache: "no-store", ...init });
   if (!response.ok) throw new Error(`API ${response.status}`);
-  return response.json();
+  const data = await response.json();
+  if (ttl) ttlCache.set(path, { at: Date.now(), data });
+  return data;
 }
 
 /**

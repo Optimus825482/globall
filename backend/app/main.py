@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.background import BackgroundTask
 from starlette.datastructures import MutableHeaders
 from fastapi.middleware.cors import CORSMiddleware
@@ -204,6 +205,9 @@ app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials
                    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
                    allow_headers=["Authorization", "Content-Type", "X-Real-IP"])
 app.add_middleware(SecurityHeadersMiddleware)
+# PERFORMANS (2026-10-30): JSON yanıtları (radar, işlemler, takvim) sıkıştırılmıyordu.
+# En dıştaki katman: SSE (`text/event-stream`) Starlette tarafından varsayılan olarak hariç tutulur.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 app.include_router(maintenance_routes.router)
 app.include_router(llm_chat_routes.router)

@@ -315,7 +315,7 @@ export default function ForexIslemlerPage() {
 
   // PERFORMANS (2026-10-08): Çıplak interval yerine usePolling — arka plana
   // geçince tamamen durur ve tur üst üste binmesi engellenir.
-  usePolling(() => fetchData(true), 3000);
+  usePolling(() => fetchData(true), 5000);
 
   // Dinamik Açık PnL Toplamları
   const openSummary = useMemo(() => {

@@ -5,7 +5,11 @@ import Link from "next/link";
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/usePolling";
 import { formatPrice } from "../lib/format";
-import ForexChartModal from "./components/ForexChartModal";
+import dynamic from "next/dynamic";
+
+// PERFORMANS (2026-10-30): grafik penceresi ~250 KB (gzip) gösterge kütüphanesi
+// çeker; yalnız bir aday seçilince açıldığı için sayfa yüklemesinden çıkarıldı.
+const ForexChartModal = dynamic(() => import("./components/ForexChartModal"), { ssr: false });
 
 interface SessionInfo {
   name: string;
@@ -383,7 +387,7 @@ export default function ForexRadarPage() {
 
   // PERFORMANS (2026-10-08): 3 sn'lik çıplak interval yerine usePolling —
   // arka planda durur, üst üste binen istekleri engeller.
-  usePolling(fetchRadar, 3000);
+  usePolling(fetchRadar, 5000);
 
   // Strateji taraması 5 sn'de bir (backend'de aynı TTL önbelleği var): radar
   // tablosu klasik skoru, bu bölüm ise DİĞER tüm giriş kollarını gösterir.

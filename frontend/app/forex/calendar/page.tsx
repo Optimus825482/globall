@@ -116,10 +116,15 @@ export default function ForexCalendarPage() {
       return next;
     });
 
-  const fetchNews = useCallback(async () => {
+  // Sayfa açılışı ve 60 sn'lik yoklama veritabanı/bellek önbelleğinden okur
+  // (anında). Sağlayıcılardan (TradingView/Investing) çekim yalnız "Kaynağı
+  // yenile" ile tetiklenir — eskiden `?refresh=1` her açılışta ve dakikada bir
+  // dış siteleri bekletiyordu.
+  const fetchNews = useCallback(async (forceRefresh = false) => {
     try {
-      const data = await apiFetch("/api/forex/news?refresh=1");
+      const data = await apiFetch(forceRefresh ? "/api/forex/news?refresh=1" : "/api/forex/news");
       setEvents(Array.isArray(data?.news) ? data.news : []);
+      setLastUpdated(new Date());
       setError("");
     } catch (e) {
       const detail = e instanceof Error ? e.message : "";
@@ -129,7 +134,18 @@ export default function ForexCalendarPage() {
     }
   }, []);
 
-  usePolling(fetchNews, 60_000);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const refreshSource = async () => {
+    setRefreshing(true);
+    try {
+      await fetchNews(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  usePolling(() => fetchNews(false), 60_000);
 
   const todayKey = trDayKey(Date.now());
   const evDay = (e: CalendarEvent) => (e.date_iso ? trDayKey(Date.parse(e.date_iso) || 0) : "");
@@ -241,9 +257,20 @@ export default function ForexCalendarPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-xs text-bunker-muted">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Canlı Makro Veri Akışı</span>
+        <div className="flex items-center gap-3 font-mono text-xs text-bunker-muted">
+          <span className="flex items-center gap-1.5" aria-live="polite">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden />
+            {lastUpdated ? `Güncellendi ${lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Yükleniyor…"}
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshSource()}
+            disabled={refreshing}
+            title="TradingView ve Investing.com'dan taze veri çeker (birkaç saniye sürebilir)"
+            className="px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border border-bunker-700 bg-bunker-800/80 text-white font-bold hover:border-blue-400/60 disabled:opacity-50 transition-colors"
+          >
+            {refreshing ? "Çekiliyor…" : "Kaynağı yenile"}
+          </button>
         </div>
       </div>
 
@@ -340,7 +367,7 @@ export default function ForexCalendarPage() {
           <p>{error}</p>
           <button
             type="button"
-            onClick={() => { setLoading(true); void fetchNews(); }}
+            onClick={() => { setLoading(true); void fetchNews(false); }}
             className="px-4 py-1.5 rounded-lg bg-rose-500/20 border border-rose-400/40 font-bold text-xs"
           >
             Tekrar Dene
