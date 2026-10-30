@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app import forex_research, llm_analysis, opportunity_trades, scheduled_actions
-from app.api_common import rate_limit
+from app.api_common import rate_limit, require_admin
 
 logger = logging.getLogger("scalper.routers.forex_chat")
 
@@ -371,13 +371,19 @@ async def forex_chat(payload: dict, request: Request):
     mode = str(payload.get("mode") or "")     # yalnız arayüzdeki "Fırsat taraması" düğmesi gönderir
     trimmed = [{"role": m.get("role", "user"), "content": str(m["content"])[:2000]} for m in messages[-8:]]
 
+    try:
+        require_admin(request)          # zamanlı kapatma emir üretir: yalnız yönetici kurabilir (diğerleri sohbeti LLM'e düşer)
+        is_admin = True
+    except Exception:
+        is_admin = False
+
     async def events():
         started = time.perf_counter()
         try:
             findings: Dict[str, Any] = {}
             picked: Optional[List[str]] = None
             opp = mode == "opportunity_scan"
-            if not opp:
+            if not opp and is_admin:
                 # "Cuma 23:50'de BTC hariç tüm pozisyonları kapat" / "14:30'da hatırlat": LLM'e gitmeden kaydedilir.
                 try:
                     confirm = await scheduled_actions.create_from_text(last_text, _mentioned_symbols(last_text))
