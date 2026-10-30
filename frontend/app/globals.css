@@ -1243,4 +1243,14 @@ html.light ::-webkit-scrollbar-thumb:hover {
   animation-play-state: paused;
 }
 
-
+/* Hareket azaltma açıkken (Windows "animasyon efektleri" kapalıysa da) genel
+   kural animasyonu 0.001 sn'ye indirir; bant kaymaz ve görünen alanın ötesi
+   kesik kalırdı. Bu durumda tek kopya, satıra sarılan okunur bir liste gösterilir. */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-banner .ticker-link { height: auto; min-height: 2rem; padding-block: .25rem; align-items: stretch; }
+  .ticker-banner .ticker-track { white-space: normal; overflow: visible; }
+  .ticker-banner .animate-ticker { animation: none !important; transform: none; width: auto; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+  .ticker-banner .animate-ticker > [aria-hidden="true"] { display: none; }
+  .ticker-banner .animate-ticker > div { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; row-gap: .25rem; padding-right: 0; }
+  .ticker-banner .ticker-item { flex-wrap: wrap; row-gap: .125rem; max-width: 100%; }
+}

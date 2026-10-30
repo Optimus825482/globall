@@ -4,21 +4,12 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "./ui";
 import { apiFetch } from "../lib/api";
-import { toMs } from "../lib/format";
-import { useLiveMessages, useLiveStatus } from "../lib/liveSocket";
+import { useLiveStatus } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
-import SymbolLink from "./SymbolLink";
 import { useAuth } from "../lib/auth";
-import { ML_PROB_CLASS, ML_PROB_TITLE, formatMlProbability } from "../lib/mlProbability";
 import { visibleGroups } from "../lib/menu";
 
 import { usePwa } from "../lib/pwa";
-
-const formatNotificationDate = (value: unknown) => {
-    const numeric = Number(value);
-    const date = Number.isFinite(numeric) ? new Date(toMs(numeric)) : new Date(String(value || ""));
-    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("tr-TR");
-};
 
 export default function Sidebar() {
     const pathname = usePathname();
@@ -30,22 +21,8 @@ export default function Sidebar() {
     // Grup açık/kapalı durumu. undefined = varsayılan (ana açık, diğerleri kapalı).
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
     const [busyLogout, setBusyLogout] = useState(false);
-    const [notifications, setNotifications] = useState<any[]>([]);
-    const [unread, setUnread] = useState(0);
-    const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [health, setHealth] = useState<any>(null);
     const liveStatus = useLiveStatus();
-    const onLiveMessage = useCallback((message: any) => {
-        if (message.type !== "alert" && message.type !== "forex_alert") return;
-        const sym = String(message.data?.symbol || "").toUpperCase();
-        if (sym && !sym.includes("USD") && !sym.includes("EUR") && !sym.includes("XAU") && !sym.includes("GBP") && !sym.includes("JPY")) {
-            return; // Kripto spot alarmlarını yut
-        }
-        const item = { ...(message.data || {}), id: message.data?.id || `${Date.now()}`, triggered_at: message.data?.triggered_at || Date.now() / 1000 };
-        setNotifications((current) => [item, ...current.filter((entry) => entry.id !== item.id)].slice(0, 30));
-        setUnread((count) => count + 1);
-    }, []);
-    useLiveMessages(onLiveMessage);
     useEffect(() => setOpen(false), [pathname]);
     useEffect(() => {
         if (!open) return;
@@ -64,18 +41,6 @@ export default function Sidebar() {
         const handleOpen = () => setOpen(true);
         window.addEventListener("open-mobile-menu", handleOpen);
         return () => window.removeEventListener("open-mobile-menu", handleOpen);
-    }, []);
-    useEffect(() => {
-        const load = () => apiFetch("/api/alerts")
-            .then((data) => {
-                const list = (data.events || []).filter((e: any) => {
-                    const s = String(e.symbol || "").toUpperCase();
-                    return !s || s.includes("USD") || s.includes("EUR") || s.includes("XAU") || s.includes("GBP") || s.includes("JPY");
-                });
-                setNotifications(list.slice(0, 30));
-            })
-            .catch(() => undefined);
-        load();
     }, []);
     const loadHealth = useCallback(() => {
         apiFetch("/api/system/health").then(setHealth).catch(() => setHealth(null));
@@ -138,15 +103,6 @@ export default function Sidebar() {
                         </span>
                     </div>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => { setNotificationsOpen(true); setUnread(0); }}
-                    className="relative mt-3.5 flex w-full items-center justify-between rounded-xl border border-slate-300 dark:border-bunker-700 bg-slate-50 dark:bg-bunker-950/70 px-3 py-2 text-left transition-colors hover:border-blue-400"
-                    aria-label={`Bildirimleri aç${unread ? `, ${unread} yeni bildirim` : ""}`}
-                >
-                    <span className="flex items-center gap-2 font-mono text-xs font-bold text-slate-900 dark:text-white"><span className="text-lg">🔔</span> BİLDİRİMLER</span>
-                    {unread > 0 && <span className="min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center font-mono text-[10px] font-bold text-white">{unread > 99 ? "99+" : unread}</span>}
-                </button>
             </div>
 
             <nav className="flex-1 overflow-y-auto p-3 space-y-4" aria-label="Ana gezinme">
@@ -290,17 +246,6 @@ export default function Sidebar() {
                 </div>
             </nav>
         </aside>
-        {notificationsOpen && <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4" onClick={() => setNotificationsOpen(false)}>
-            <section className="w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="notifications-title">
-                <div className="flex shrink-0 items-center justify-between border-b border-bunker-800 px-5 py-4">
-                    <div><p className="eyebrow">CANLI MERKEZ</p><h2 id="notifications-title" className="font-mono text-lg font-bold text-white">Bildirimler</h2></div>
-                    <button type="button" onClick={() => setNotificationsOpen(false)} className="text-bunker-muted hover:text-white" aria-label="Bildirimleri kapat">✕</button>
-                </div>
-                <div className="max-h-[75vh] overflow-y-auto p-4">
-                    {notifications.length === 0 ? <p className="py-8 text-center font-mono text-sm text-bunker-muted">Henüz bildirim yok.</p> : <div className="space-y-2">{notifications.map((item, index) => <article key={item.id || index} className="rounded-lg border border-bunker-800 bg-bunker-900/70 p-3"><div className="flex items-start justify-between gap-3">{item.symbol ? <SymbolLink symbol={item.symbol} className="font-bold text-neon-green hover:text-white" /> : <span className="font-mono text-sm font-bold text-neon-green">SİSTEM</span>}<time className="font-mono text-[10px] text-bunker-muted">{formatNotificationDate(item.triggered_at)}</time></div><p className="mt-1 text-sm text-white">{item.message || item.reason || "Yeni alarm bildirimi"}</p>{item.ml_hit_probability != null && <span className={`mt-1 inline-block ${ML_PROB_CLASS}`} title={ML_PROB_TITLE}>ML {formatMlProbability(item.ml_hit_probability)}</span>}</article>)}</div>}
-                </div>
-            </section>
-        </div>}
         </>
     );
 }

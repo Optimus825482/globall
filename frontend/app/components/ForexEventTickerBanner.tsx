@@ -122,7 +122,7 @@ export default function ForexEventTickerBanner() {
     >
       <Link
         href="/forex/calendar"
-        className="flex items-center h-8 sm:h-9 text-xs sm:text-[13px] font-mono font-bold tracking-tight text-white hover:text-white transition-colors cursor-pointer group"
+        className="ticker-link flex items-center h-8 sm:h-9 text-xs sm:text-[13px] font-mono font-bold tracking-tight text-white hover:text-white transition-colors cursor-pointer group"
         title="Detaylı takvimi ve senaryoları görmek için tıklayın"
       >
         {/* Sabit Sol Etiket (Sabit İkaz Rozeti) */}
@@ -133,12 +133,12 @@ export default function ForexEventTickerBanner() {
         </div>
 
         {/* Sağdan Sola Kayan Bant (Marquee Track) */}
-        <div className="overflow-hidden whitespace-nowrap flex-1 flex items-center relative">
+        <div className="ticker-track overflow-hidden whitespace-nowrap flex-1 flex items-center relative">
           <div className="animate-ticker flex items-center">
             {/* 1. Kopya */}
             <div className="flex items-center shrink-0 pr-10">
               {tickerItems.map((item, idx) => (
-                <span key={`t1-${item.id}-${idx}`} className="inline-flex items-center gap-2 mr-8">
+                <span key={`t1-${item.id}-${idx}`} className="ticker-item inline-flex items-center gap-2 mr-8">
                   <span className="text-base">{item.flag}</span>
                   <span className="underline decoration-white/60 font-extrabold">{item.title}</span>
                   <span className="px-2 py-0.5 rounded bg-black/50 text-white font-black text-[10px] sm:text-xs border border-white/20">
@@ -159,7 +159,7 @@ export default function ForexEventTickerBanner() {
             {/* 2. Kopya (Kesintisiz döngü için) */}
             <div className="flex items-center shrink-0 pr-10" aria-hidden="true">
               {tickerItems.map((item, idx) => (
-                <span key={`t2-${item.id}-${idx}`} className="inline-flex items-center gap-2 mr-8">
+                <span key={`t2-${item.id}-${idx}`} className="ticker-item inline-flex items-center gap-2 mr-8">
                   <span className="text-base">{item.flag}</span>
                   <span className="underline decoration-white/60 font-extrabold">{item.title}</span>
                   <span className="px-2 py-0.5 rounded bg-black/50 text-white font-black text-[10px] sm:text-xs border border-white/20">
