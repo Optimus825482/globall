@@ -850,7 +850,7 @@ async def chat(snapshot, messages, tools=None, tool_executor=None, active_skills
     except Exception as exc:
         return {"enabled": True, "status": "error", "text": None, "error": str(exc)}
 
-async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active_skills=None, max_tokens=None):
+async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active_skills=None, max_tokens=None, system_override=None):
     """SSE-compatible chat path with the same tool loop as buffered chat.
 
     Providers differ in streaming tool-call support. When tools are supplied,
@@ -891,6 +891,9 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
     if isinstance(snapshot, dict) and snapshot.get("plain_turkish"):
         plain_turkish_instruction = _build_plain_turkish_instruction()
     system = get_persona(snapshot) + "\n" + TRADE_MANAGER_RULES + "\n" + OUTPUT_RULES + "\nSen Türkçe konuşan bir strateji araştırma asistanısın. ÇALIŞMA KURALI: Düşünce sürecini, ara adımlarını, İngilizce iç konuşmanı, 'Let me...' tarzı ara monologları yanıtta GÖSTERME — kullanıcıya yalnızca nihai yanıtı yaz; nihai yanıtın dili her zaman Türkçe'dir. Yalnızca sağlanan public market verisini yorumla; gerçek emir veya işlem talimatı verme. Coin analizinde kullanıcıyı gösterge detayıyla boğma ama gerekçesiz bırakma: önce durumu, sonra olası senaryoları (yön + seviye + bozulma), sonra tek neden cümlesi, en sonda net sonucu söyle.\n" + skills + plain_turkish_instruction
+    if system_override:
+        # Forex uzman sohbeti: kripto persona/kurallari yerine kendi kisa istemi.
+        system = system_override
     conversation = [{"role": "system", "content": system}, {"role": "user", "content": "Güncel snapshot:\n" + _compact_json_dumps(snapshot)}]
     for item in (messages or [])[-12:]:
         if isinstance(item, dict):
