@@ -208,3 +208,55 @@ def test_chat_opens_orders_only_in_opportunity_mode(monkeypatch):
     assert not calls                                   # metinle emir yazılmaz
     asyncio.run(drive("opportunity_scan"))
     assert calls == [1]                                # yalnız düğme modu açma adımını çalıştırır
+
+
+# ----------------------------------------------------------------------------- haber SONUCU: destekler / bloklar
+
+def released(yon, dakika=-20, stars=3, title="ABD CPI"):
+    return {"aciklanan_son_6_saat": [{"title": title, "currency": "USD", "stars": stars, "dakika": dakika,
+                                      "actual": "3.4%", "forecast": "3.0%", "sonuc": "Beklentiden yüksek", "yon": yon}]}
+
+
+def test_released_data_opposing_technical_direction_blocks():
+    v = plan(cal=released({"XAUUSD": -1}))                    # USD güçlü → altın SELL; teknik BUY
+    assert not v["ok"] and "çelişiyor" in v["reason"] and "ABD CPI" in v["reason"]
+
+
+def test_released_data_supporting_direction_allows_and_relaxes_score():
+    weak = analysis(score=2.1)                                # tek başına eşik (2.5) altı
+    assert "sinyal gücü" in plan(weak)["reason"]
+    v = plan(weak, cal=released({"XAUUSD": +1}))              # veri BUY'ı destekliyor → eşik 2.0
+    assert v["ok"] and "haber DESTEKLİYOR" in v["plan"]["note"] and v["plan"]["news"]["verdict"] == "supports"
+
+
+def test_old_or_unrelated_released_data_is_ignored():
+    assert plan(cal=released({"XAUUSD": -1}, dakika=-300))["ok"]          # 3 saatten eski: etkisiz
+    assert plan(cal=released({"EURUSD": -1}))["ok"]                       # başka sembole ait yön
+    e = ot.news_effect(released({"XAUUSD": -1}, stars=2), "XAUUSD", "BUY")
+    assert e["net"] == -1.0 and e["verdict"] == "opposes"                 # 2★ ağırlık 1 yeter
+    assert ot.news_effect(None, "XAUUSD", "BUY")["verdict"] == "neutral"
+
+
+def test_conflicting_events_net_out_and_sell_direction_flips_meaning():
+    cal = {"aciklanan_son_6_saat": [
+        {"title": "A", "stars": 2, "dakika": -10, "yon": {"XAUUSD": 1}},
+        {"title": "B", "stars": 2, "dakika": -30, "yon": {"XAUUSD": -1}}]}
+    assert ot.news_effect(cal, "XAUUSD", "BUY")["verdict"] == "neutral"
+    assert ot.news_effect(released({"XAUUSD": -1}), "XAUUSD", "SELL")["verdict"] == "supports"     # SELL için -1 destek
+
+
+def test_unreleased_imminent_event_still_blocks_even_with_supporting_result():
+    cal = {**released({"XAUUSD": +1}), "yaklasan_24_saat": [{"title": "NFP", "stars": 3, "dakika": 10}]}
+    assert "yüksek etkili veri" in plan(cal=cal)["reason"]               # henüz sonucu yok: bekle
+
+
+def test_compact_calendar_adds_per_symbol_direction_from_outcome():
+    from datetime import datetime, timezone
+    iso = datetime.fromtimestamp(time.time() - 20 * 60, tz=timezone.utc).isoformat()
+    items = [{"title": "CPI", "currency": "USD", "stars": 3, "date_iso": iso, "actual": "3.4%", "forecast": "3.0%",
+              "outcome": {"side": "bullish", "label_tr": "Beklentiden yüksek"}, "affected_symbols": ["XAUUSD"]}]
+    out = forex_chat.compact_calendar(items, time.time(), {"USD"}, ["XAUUSD", "EURUSD"])
+    row = out["aciklanan_son_6_saat"][0]
+    assert row["yon"]["XAUUSD"] == -1 and row["yon"]["EURUSD"] == -1        # USD güçlü: altın ve EURUSD aşağı
+    plain = forex_chat.compact_calendar(items, time.time(), {"USD"})
+    assert "yon" not in plain["aciklanan_son_6_saat"][0]

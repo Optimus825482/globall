@@ -106,11 +106,14 @@ def _pick(d: Dict[str, Any], keys) -> Dict[str, Any]:
     return {k: d[k] for k in keys if k in d and d[k] not in (None, "", [])}
 
 
-def compact_calendar(items: Any, now_ts: float, currencies: Optional[set] = None) -> Dict[str, Any]:
+def compact_calendar(items: Any, now_ts: float, currencies: Optional[set] = None,
+                     symbols: Optional[List[str]] = None) -> Dict[str, Any]:
     """Son 6 saatte açıklananlar (sonuçlarıyla) + önümüzdeki 12 saatin 2-3 yıldızlı olayları.
 
     `currencies` verilirse yalnız o para birimlerinin olayları (USD her zaman dahil değil;
     çağıran seçer). Yüksek etkili (3 yıldız) olaylar para birimi ne olursa olsun korunur.
+    `symbols` verilirse açıklanan olayların her satırına `yon` eklenir: {sembol: +1 (BUY'ı destekler) | -1 (SELL'i)},
+    verinin sonucundan (beklenti/gerçekleşen) türetilir; fırsat taraması bunu teknik yönle karşılaştırır.
     """
     from app.forex_news_bias import _iso_to_ts
 
@@ -133,6 +136,18 @@ def compact_calendar(items: Any, now_ts: float, currencies: Optional[set] = None
         if outcome.get("label_tr") or outcome.get("comparison_tr"):
             row["sonuc"] = outcome.get("label_tr") or outcome.get("comparison_tr")
         side = outcome.get("side")
+        if side and symbols:
+            from app.forex_news_bias import symbol_direction
+            yon = {}
+            for sym_ in symbols:
+                try:
+                    d_ = symbol_direction(cur, side == "bullish", sym_)
+                except Exception:  # noqa: BLE001
+                    d_ = 0
+                if d_:
+                    yon[sym_] = d_
+            if yon:
+                row["yon"] = yon
         if side:
             from app.forex_news_bias import symbol_direction
             try:
@@ -248,7 +263,7 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
     async def _cal():
         from app.forex_news import get_forex_news
         items = await get_forex_news(force_refresh=False)
-        cal = compact_calendar(items, time.time(), cur)
+        cal = compact_calendar(items, time.time(), cur, symbols)
         cal["ozet"] = describe_calendar(cal)   # model boş listeyi "takvim yok" diye okumasın
         cal["kaynak"] = f"ekonomik takvim veritabanı, {len(items or [])} olay tarandı"
         return cal["ozet"], cal

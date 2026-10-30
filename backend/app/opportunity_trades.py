@@ -8,8 +8,9 @@ Güvenceler
   - Yalnızca sohbetteki "Fırsat taraması" düğmesi (mode=opportunity_scan) işlem açar; serbest metin açmaz.
   - Yalnızca DEMO hesap (bkz. `open_scan_position`); motorun açık pozisyon sınırı ve sembol başına tek pozisyon geçerli.
   - Giriş yalnızca MT5 fiyatı varken: Yahoo/MT5 fiyat farkı sahte stop/hedef üretmesin.
-  - Kapılar: TradingView yönü + kendi 8 dilimli analizimiz AYNI yönde, zaman dilimi uyumu, yakın yüksek etkili haber
-    yok, karşı seviye (direnç/destek) stop mesafesinden uzak, sembolde soğuma süresi.
+  - Kapılar: TradingView yönü + kendi 8 dilimli analizimiz AYNI yönde, zaman dilimi uyumu; haber: açıklanmamış yakın
+    yüksek etkili veri varsa bekler, AÇIKLANMIŞ verinin sonucu teknik yönü destekler (skor eşiği gevşer) ya da bloklar;
+    karşı seviye (direnç/destek) stop mesafesinden uzak; sembolde soğuma süresi.
 """
 from __future__ import annotations
 
@@ -29,10 +30,39 @@ RR = 1.5                           # hedef = stop × 1.5
 MIN_AGREEMENT = 0.75               # TradingView zaman dilimi uyumu
 MIN_TV_AVG = 0.25                  # TradingView ağırlıklı reytingin mutlak değeri
 MIN_OWN_SCORE = 2.5                # kendi analiz puanımızın mutlak değeri
-NEWS_BLOCK_MIN = 30                # yüksek etkili veriye bu kadar dakika kala giriş yok
+NEWS_BLOCK_MIN = 30                # AÇIKLANMAMIŞ yüksek etkili veriye bu kadar dakika kala giriş yok (sonucu bilinmiyor)
+NEWS_LOOKBACK_MIN = 180            # AÇIKLANMIŞ verinin sonucu bu süre boyunca yönü etkiler
+NEWS_DECISIVE = 1.0                # ağırlıklı net etki bu eşiği aşarsa destekler/bloklar (2★=1, 3★=2)
+NEWS_SUPPORT_SCORE_RELIEF = 0.5    # veri yönü destekliyorsa teknik puan eşiği bu kadar gevşer
 LEVEL_CLEARANCE = 0.8              # karşı seviye en az stop mesafesinin bu katı uzakta olmalı
 
 _last_open: Dict[str, float] = {}  # sembol -> son açılış zamanı (süreç ömrü)
+
+
+def news_effect(calendar: Optional[Dict[str, Any]], symbol: str, bias: str) -> Dict[str, Any]:
+    """Son `NEWS_LOOKBACK_MIN` dakikada AÇIKLANAN verilerin sonucu bu sembolün yönüne ne yapıyor?
+
+    Her açıklanan olay (2★ ağırlık 1, 3★ ağırlık 2) sembolün BUY/SELL tarafını destekler ya da zayıflatır
+    (`yon`: +1/-1, verinin beklenti/gerçekleşen sonucundan). Net etki işlem yönüyle aynı işaretteyse DESTEKLER,
+    zıtsa ÇELİŞİR. Döner: {"net", "verdict": supports|opposes|neutral, "lines": [...]}.
+    """
+    sign = 1 if bias == "BUY" else -1
+    net, lines = 0.0, []
+    for r in (calendar or {}).get("aciklanan_son_6_saat") or []:
+        try:
+            ago = -int(r.get("dakika", 0))
+            d = int((r.get("yon") or {}).get(symbol, 0))
+        except (TypeError, ValueError):
+            continue
+        if d == 0 or ago < 0 or ago > NEWS_LOOKBACK_MIN:
+            continue
+        w = 2.0 if int(r.get("stars") or 0) >= 3 else 1.0
+        net += w * d
+        verdict = r.get("sonuc") or f"gerçekleşen {r.get('actual')}, beklenen {r.get('forecast')}"
+        lines.append(f"{r.get('currency', '')} {r.get('title')} ({verdict}) → {'BUY' if d > 0 else 'SELL'} yönünü destekler")
+    aligned = net * sign
+    verdict = "supports" if aligned >= NEWS_DECISIVE else "opposes" if aligned <= -NEWS_DECISIVE else "neutral"
+    return {"net": net, "verdict": verdict, "lines": lines}
 
 
 def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], calendar: Optional[Dict[str, Any]],
@@ -48,8 +78,6 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
         return {"ok": False, "reason": "TradingView yönü kendi analizimizle uyumsuz"}
     if float(scan_row.get("agreement", 0)) < MIN_AGREEMENT or abs(float(scan_row.get("average", 0))) < MIN_TV_AVG:
         return {"ok": False, "reason": "zaman dilimleri yeterince hemfikir değil"}
-    if abs(float(analysis.get("score", 0))) < MIN_OWN_SCORE:
-        return {"ok": False, "reason": "teknik sinyal gücü düşük"}
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}
     atr = (analysis.get("frames", {}).get("1h") or {}).get("atr") or analysis.get("atr")
@@ -62,6 +90,13 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
                 return {"ok": False, "reason": f"{NEWS_BLOCK_MIN} dk içinde yüksek etkili veri: {e.get('title', '')}"}
         except (TypeError, ValueError):
             continue
+    # Açıklanmış verinin SONUCU teknik yönü destekler ya da bloklar (veri varsa bile sonuca bakılır).
+    effect = news_effect(calendar, sym, bias)
+    if effect["verdict"] == "opposes":
+        return {"ok": False, "reason": "açıklanan veri teknik yönle çelişiyor: " + "; ".join(effect["lines"][:2])}
+    min_score = MIN_OWN_SCORE - (NEWS_SUPPORT_SCORE_RELIEF if effect["verdict"] == "supports" else 0.0)
+    if abs(float(analysis.get("score", 0))) < min_score:
+        return {"ok": False, "reason": "teknik sinyal gücü düşük"}
     sl_dist = SL_ATR_MULT * float(atr)
     tp_dist = RR * sl_dist
     lv = analysis.get("levels") or {}
@@ -74,8 +109,10 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     return {"ok": True, "reason": "tüm kapılar geçti", "plan": {
         "symbol": sym, "direction": bias, "entry_price": price, "sl_pips": round(sl_dist / pip_size, 1),
         "tp_pips": round(tp_dist / pip_size, 1), "atr_pips": round(float(atr) / pip_size, 1), "score": analysis.get("score"),
+        "news": effect,
         "note": f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
-                f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}"}}
+                f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}"
+                + (f"; haber DESTEKLİYOR: {effect['lines'][0]}" if effect["verdict"] == "supports" else "")}}
 
 
 async def open_from_scan(analyses: Dict[str, Dict[str, Any]], scan: Dict[str, Any],
