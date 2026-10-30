@@ -878,8 +878,41 @@ def _mt5_sync_authorized(request: Any) -> bool:
     return _token_equal(str(provided), secret)
 
 
+def _scan_lot_size(sym: str, sl_pips: float, balance: float, pip_val: float) -> Tuple[Optional[float], str]:
+    """Fırsat taraması lotu: bakiyenin %SCAN_RISK_PCT'i riske göre, motorun kategori tavanlarıyla sınırlı."""
+    risk_usd = balance * SCAN_RISK_PCT / 100.0
+    is_gold = "XAU" in sym
+    is_crypto = is_crypto_symbol(sym)
+    comm = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
+    raw_lots = round(risk_usd / max(1.0, sl_pips * pip_val + comm), 2)
+    if is_gold:
+        ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, max(0.01, round(balance * 0.00006, 2)))
+    elif is_crypto:
+        ceiling = 10.0
+    else:
+        is_cross = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
+        ceiling = min(0.75 if is_cross else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot, max(0.01, round(balance * 0.00025, 2)))
+    lots = round(max(0.01, min(raw_lots, ceiling)), 2)
+    lots, risk_skip = apply_risk_normalization(sym, lots, sl_pips, pip_val, risk_usd)
+    if risk_skip:
+        if not floor_lot_respects_budget(0.01, sl_pips, pip_val, risk_usd):
+            return None, f"stop {sl_pips:.0f} pip ile en küçük lot bile risk bütçesini aşıyor"
+        lots = 0.01
+    return lots, ""
+
+
+def scan_lot_estimate(sym: str, sl_pips: float) -> Optional[float]:
+    """Risk kapısı için: bu işlemin lotu ne olurdu (hesap bağlı değilse None)."""
+    acct = (_MT5_STATE.get("account") or {})
+    balance = float(acct.get("balance") or 0.0)
+    pip_val = float(get_symbol_trading_specs(sym).get("pip_val") or 0.0)
+    if balance <= 0 or pip_val <= 0 or sl_pips <= 0:
+        return None
+    return _scan_lot_size(sym, sl_pips, balance, pip_val)[0]
+
+
 def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float, atr_pips: float,
-                       score: float, note: str) -> Dict[str, Any]:
+                       score: float, note: str, lots_mult: float = 1.0) -> Dict[str, Any]:
     """Sohbet "Fırsat taraması": motorun KOMUT KUYRUĞUYLA kayıtlı DEMO MT5 hesabına işlem açar.
 
     Radarın açtığı işlemlerle aynı yol (OPEN_ORDER → köprü): BE/trailing köprüde aynı kurallarla yönetilir,
@@ -913,25 +946,13 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
     balance = float(acct.get("balance") or 0.0)
     if balance <= 0 or pip_val <= 0:
         return {"ok": False, "reason": "hesap bakiyesi/pip değeri okunamadı"}
-    risk_usd = balance * SCAN_RISK_PCT / 100.0
-    is_gold = "XAU" in sym
-    is_crypto = is_crypto_symbol(sym)
-    comm = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
-    raw_lots = round(risk_usd / max(1.0, sl_pips * pip_val + comm), 2)
-    if is_gold:
-        ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, max(0.01, round(balance * 0.00006, 2)))
-    elif is_crypto:
-        ceiling = 10.0
-    else:
-        is_cross = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
-        ceiling = min(0.75 if is_cross else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot, max(0.01, round(balance * 0.00025, 2)))
-    lots = round(max(0.01, min(raw_lots, ceiling)), 2)
-    lots, risk_skip = apply_risk_normalization(sym, lots, sl_pips, pip_val, risk_usd)
-    if risk_skip:
-        if not floor_lot_respects_budget(0.01, sl_pips, pip_val, risk_usd):
-            return {"ok": False, "reason": f"stop {sl_pips:.0f} pip ile en küçük lot bile risk bütçesini aşıyor"}
-        lots = 0.01
+    lots, why = _scan_lot_size(sym, sl_pips, balance, pip_val)
+    if lots is None:
+        return {"ok": False, "reason": why}
+    if lots_mult < 1.0:
+        lots = max(0.01, round(math.floor(lots * lots_mult * 100 + 1e-9) / 100.0, 2))
 
+    is_gold = "XAU" in sym
     now = time.time()
     cmd_id = f"CMD-{int(now * 1000) % 1000000}"
     spec_exits = get_symbol_trading_specs(sym, base_sl=8.0, base_be=_AUTO_SETTINGS.breakeven_pips,
@@ -5523,6 +5544,20 @@ class ForexAutoPaperSettings(BaseModel):
     llm_review_fail_open: bool = Field(True, description="LLM yanıt vermez/yavaşsa/bozuksa: True = işlem yine açılır (motor kararı), False = işlem açılmaz")
     llm_review_min_confidence: int = Field(55, ge=0, le=100, description="Onay için LLM'in minimum güven puanı (altındaki onaylar da engellenir)")
     llm_review_timeout_sec: float = Field(25.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-30 sn sürebilir. Aşılırsa fail-open/closed kuralı uygulanır")
+    risk_gate_mode: str = Field("shadow", pattern="^(off|shadow|enforce)$", description="Portföy risk kapısı: off · shadow (varsayılan: yalnız günlüğe 'engellerdi' yazar, motoru DEĞİŞTİRMEZ) · enforce (engeller + drawdown çarpanını uygular)")
+    risk_kill_switch: bool = Field(False, description="KILL SWITCH: açıkken mod ne olursa olsun yeni giriş (motor ve fırsat taraması) engellenir. Açık pozisyonlara dokunmaz.")
+    risk_heat_limit_pct: float = Field(6.0, ge=0.5, le=50.0, description="Toplam açık risk (stop'a kadar) / özsermaye sınırı (%). Araştırma başlangıç değeri 3-6; kaynaksız, önce gölgede kalibre edin.")
+    risk_usd_net_limit_pct: float = Field(3.0, ge=0.5, le=50.0, description="Net USD yönlü risk sınırı (özsermaye %): aynı yönde USD maruziyeti yığılmasını sınırlar")
+    risk_daily_loss_pct: float = Field(3.0, ge=0.5, le=50.0, description="Günlük kayıp limiti (özsermaye %): aşılınca yeni giriş yok")
+    risk_weekly_loss_pct: float = Field(6.0, ge=1.0, le=80.0, description="Haftalık kayıp limiti (özsermaye %)")
+    risk_kill_dd_pct: float = Field(12.0, ge=3.0, le=90.0, description="Tepeden düşüş bu eşikte otomatik durdurma (30 günlük kayan tepe). Kademeler: %3→×0.75, %5→×0.5, %8→×0.25")
+    risk_cost_r_max: float = Field(0.25, ge=0.02, le=2.0, description="Maliyet-R tavanı: (spread + komisyon) / stop mesafesi")
+    risk_stop_spread_mult: float = Field(8.0, ge=1.0, le=50.0, description="Stop mesafesi en az bu kat × spread olmalı")
+    risk_block_losing_adds: bool = Field(True, description="Zarardaki aynı yönlü pozisyona ekleme (ortalama düşürme) yasak")
+    position_supervisor_mode: str = Field("log", pattern="^(off|log|act)$", description="Açık pozisyon gözetimi: off · log (varsayılan: öneriyi günlüğe yazar) · act (olay öncesi başabaş/risk azaltma ve hafta sonu öncesi kapama komutu verir)")
+    position_event_window_min: int = Field(10, ge=1, le=60, description="Yüksek etkili veriye bu kadar dakika kala açık pozisyon için olay-riski kuralı devreye girer")
+    position_flat_before_close_min: int = Field(30, ge=5, le=240, description="Haftalık piyasa kapanışından (Cuma 17:00 New York) bu kadar dakika önce FX/altın pozisyonları hafta sonu riski olarak işaretlenir")
+    llm_review_explore_pct: float = Field(5.0, ge=0.0, le=50.0, description="LLM'in reddettiği işlemlerin bu yüzdesi KONTROLLÜ KEŞİF olarak yine açılır (yalnız veto modu): vetonun gerçek değerini ölçmek için")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
     ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
     ev_max_win_rate: float = Field(45.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (42 → 35 → 45: 2026-10-06 30g replay A/B kararı)")
@@ -9186,6 +9221,30 @@ async def _forex_auto_paper_loop():
 
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
 
+                # 8b2. Portföy risk kapısı (deterministik, LLM'den bağımsız; araştırma Alan 3 + kart 2.4/1.6).
+                # shadow modda yalnız günlüğe "engellerdi" yazar; enforce modda engeller / lotu drawdown çarpanıyla küçültür.
+                try:
+                    from app import portfolio_risk as _pr
+                    _rg = await _pr.check_entry({
+                        "symbol": sym, "direction": direction, "lots": mt5_lots, "sl_pips": sl_pips,
+                        "spread_pips": float(cand.get("spread_pips", 0.0) or 0.0), "pip_size": spec["pip_size"],
+                        "pip_val": pip_val, "comm_per_lot": comm_per_lot}, _AUTO_SETTINGS)
+                except Exception as exc:
+                    logger.warning("Risk kapısı çağrısı çöktü (%s): %s", sym, exc)
+                    _rg = None
+                if _rg and _rg["blocked"]:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_riskgate", 0) > 60.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_riskgate"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] 🛡️ Portföy risk kapısı: " + "; ".join(r["text"] for r in _rg["reasons"][:3]),
+                            symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                            metadata={"risk_gate": _rg["reasons"], "mode": _rg["mode"]},
+                        )
+                    continue
+                if _rg and _rg["enforced"] and _rg["mult"] < 1.0:
+                    mt5_lots = _pr.adjust_lots(mt5_lots, _rg["mult"])
+
                 # 8c. LLM Trader İncelemesi (ayarlardan açılır): açılıştan ÖNCE ikinci görüş.
                 # Karar her durumda kaydedilir; veto modunda RED işlemi engeller, LLM yoksa
                 # fail-open/closed ayarı belirler. Aday başına en fazla `llm_review_timeout_sec` bekler.
@@ -9202,6 +9261,7 @@ async def _forex_auto_paper_loop():
                             "mode": _AUTO_SETTINGS.llm_review_mode, "fail_open": _AUTO_SETTINGS.llm_review_fail_open,
                             "min_confidence": _AUTO_SETTINGS.llm_review_min_confidence,
                             "timeout_sec": _AUTO_SETTINGS.llm_review_timeout_sec,
+                            "explore_pct": _AUTO_SETTINGS.llm_review_explore_pct,
                         })
                     except Exception as exc:
                         logger.warning("LLM inceleme çağrısı çöktü (%s): %s", sym, exc)

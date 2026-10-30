@@ -6324,6 +6324,8 @@ def _ensure_llm_review_schema(conn) -> None:
                 shadow_closed_at DOUBLE PRECISION
             )
         """)
+        conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS exploration INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS control_veto INTEGER DEFAULT 0")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_created ON llm_trade_reviews(created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_shadow ON llm_trade_reviews(shadow_status)")
         conn.commit()
@@ -6410,7 +6412,8 @@ async def update_llm_review_shadow(review_id: int, upd: Dict[str, Any]) -> None:
     await _run_db(op)
 
 
-_LLM_REVIEW_LIST_COLS = ("id", "created_at", "symbol", "direction", "strategy_label", "score", "lots", "entry_price",
+_LLM_REVIEW_LIST_COLS = ("id", "created_at", "symbol", "direction", "strategy_label", "score", "lots", "entry_price", "exploration",
+                         "control_veto",
                          "sl_pips", "tp_pips", "mode", "decision", "confidence", "applied", "summary", "reasons", "risks",
                          "checks", "model", "latency_ms", "error", "repeat_count", "executed", "shadow_status",
                          "shadow_pips", "mfe_pips", "mae_pips")
@@ -6448,6 +6451,176 @@ async def list_llm_reviews(since_ts: float = 0.0, limit: int = 200, review_id: O
         return [_llm_review_row(keys, r) for r in cur.fetchall()]
 
     return await _run_db(op)
+
+
+_RISK_SCHEMA_READY = False
+
+
+def _ensure_risk_schema(conn) -> None:
+    """Portföy risk kapısı günlüğü, pozisyon sapma (MAE/MFE) kaydı ve gözetim olayları (idempotent)."""
+    global _RISK_SCHEMA_READY
+    if _RISK_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS risk_gate_log (
+                id BIGSERIAL PRIMARY KEY,
+                ts DOUBLE PRECISION NOT NULL,
+                symbol TEXT, direction TEXT, lots DOUBLE PRECISION, mult DOUBLE PRECISION,
+                decision TEXT, mode TEXT, enforced INTEGER DEFAULT 0, reasons TEXT, metrics TEXT
+            )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_risk_gate_ts ON risk_gate_log(ts DESC)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS position_excursions (
+                ticket BIGINT PRIMARY KEY,
+                symbol TEXT, direction TEXT, entry_price DOUBLE PRECISION, sl_pips DOUBLE PRECISION,
+                open_ts DOUBLE PRECISION, strategy_tag TEXT,
+                mfe_pips DOUBLE PRECISION DEFAULT 0, mae_pips DOUBLE PRECISION DEFAULT 0, mfe_ts DOUBLE PRECISION,
+                last_pnl_pips DOUBLE PRECISION, last_pnl_usd DOUBLE PRECISION,
+                last_seen DOUBLE PRECISION, closed_at DOUBLE PRECISION
+            )""")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS position_supervisor_log (
+                id BIGSERIAL PRIMARY KEY,
+                ts DOUBLE PRECISION NOT NULL,
+                ticket BIGINT, symbol TEXT, kind TEXT, detail TEXT, action TEXT, mode TEXT
+            )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_sup_ts ON position_supervisor_log(ts DESC)")
+        conn.commit()
+        _RISK_SCHEMA_READY = True
+    except Exception as exc:
+        logger.warning("risk şema hazırlama hatası: %s", exc)
+
+
+def _rows(keys, cur):
+    out = []
+    for r in cur.fetchall():
+        out.append({k: r[k] for k in keys} if hasattr(r, "keys") else dict(zip(keys, r)))
+    return out
+
+
+async def log_risk_gate(rec: Dict[str, Any]) -> None:
+    def op(conn):
+        _ensure_risk_schema(conn)
+        conn.execute(
+            "INSERT INTO risk_gate_log (ts, symbol, direction, lots, mult, decision, mode, enforced, reasons, metrics) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), rec.get("symbol"), rec.get("direction"), rec.get("lots"), rec.get("mult"), rec.get("decision"),
+             rec.get("mode"), 1 if rec.get("enforced") else 0, json.dumps(rec.get("reasons") or [], ensure_ascii=False),
+             json.dumps(rec.get("metrics") or {}, ensure_ascii=False, default=str)[:4000]))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def list_risk_gate_log(since_ts: float = 0.0, limit: int = 300) -> List[Dict[str, Any]]:
+    keys = ["id", "ts", "symbol", "direction", "lots", "mult", "decision", "mode", "enforced", "reasons", "metrics"]
+
+    def op(conn):
+        _ensure_risk_schema(conn)
+        cur = conn.execute(f"SELECT {', '.join(keys)} FROM risk_gate_log WHERE ts >= ? ORDER BY ts DESC LIMIT ?",
+                           (since_ts, int(limit)))
+        rows = _rows(keys, cur)
+        for r in rows:
+            for k in ("reasons", "metrics"):
+                try:
+                    r[k] = json.loads(r[k]) if isinstance(r[k], str) else r[k]
+                except Exception:
+                    r[k] = [] if k == "reasons" else {}
+        return rows
+
+    return await _run_db(op)
+
+
+async def upsert_position_excursions(rows: List[Dict[str, Any]], open_tickets: List[int]) -> None:
+    """Açık pozisyonların MFE/MAE'sini günceller (en iyi/en kötü korunur); artık açık olmayanları kapalı işaretler."""
+    now = time.time()
+
+    def op(conn):
+        _ensure_risk_schema(conn)
+        for r in rows:
+            conn.execute(
+                """
+                INSERT INTO position_excursions (ticket, symbol, direction, entry_price, sl_pips, open_ts, strategy_tag,
+                    mfe_pips, mae_pips, mfe_ts, last_pnl_pips, last_pnl_usd, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticket) DO UPDATE SET
+                    mfe_ts = CASE WHEN EXCLUDED.mfe_pips > position_excursions.mfe_pips THEN EXCLUDED.last_seen
+                                  ELSE position_excursions.mfe_ts END,
+                    mfe_pips = GREATEST(position_excursions.mfe_pips, EXCLUDED.mfe_pips),
+                    mae_pips = LEAST(position_excursions.mae_pips, EXCLUDED.mae_pips),
+                    last_pnl_pips = EXCLUDED.last_pnl_pips, last_pnl_usd = EXCLUDED.last_pnl_usd,
+                    last_seen = EXCLUDED.last_seen
+                """,
+                (int(r["ticket"]), r.get("symbol"), r.get("direction"), r.get("entry_price"), r.get("sl_pips"),
+                 r.get("open_ts"), r.get("strategy_tag"), max(0.0, float(r.get("pnl_pips") or 0)),
+                 min(0.0, float(r.get("pnl_pips") or 0)), now, r.get("pnl_pips"), r.get("pnl_usd"), now))
+        if open_tickets:
+            marks = ", ".join("?" for _ in open_tickets)
+            conn.execute(f"UPDATE position_excursions SET closed_at = ? WHERE closed_at IS NULL AND ticket NOT IN ({marks})",
+                         (now, *[int(t) for t in open_tickets]))
+        else:
+            conn.execute("UPDATE position_excursions SET closed_at = ? WHERE closed_at IS NULL", (now,))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def list_position_excursions(since_ts: float = 0.0, limit: int = 2000) -> List[Dict[str, Any]]:
+    keys = ["ticket", "symbol", "direction", "entry_price", "sl_pips", "open_ts", "strategy_tag", "mfe_pips", "mae_pips",
+            "mfe_ts", "last_pnl_pips", "last_pnl_usd", "last_seen", "closed_at"]
+
+    def op(conn):
+        _ensure_risk_schema(conn)
+        cur = conn.execute(f"SELECT {', '.join(keys)} FROM position_excursions WHERE open_ts >= ? OR closed_at IS NULL "
+                           "ORDER BY open_ts DESC LIMIT ?", (since_ts, int(limit)))
+        return _rows(keys, cur)
+
+    return await _run_db(op)
+
+
+async def log_supervisor_event(rec: Dict[str, Any]) -> None:
+    def op(conn):
+        _ensure_risk_schema(conn)
+        conn.execute(
+            "INSERT INTO position_supervisor_log (ts, ticket, symbol, kind, detail, action, mode) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), rec.get("ticket"), rec.get("symbol"), rec.get("kind"), str(rec.get("detail") or "")[:500],
+             rec.get("action"), rec.get("mode")))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def list_supervisor_events(since_ts: float = 0.0, limit: int = 300) -> List[Dict[str, Any]]:
+    keys = ["id", "ts", "ticket", "symbol", "kind", "detail", "action", "mode"]
+
+    def op(conn):
+        _ensure_risk_schema(conn)
+        cur = conn.execute(f"SELECT {', '.join(keys)} FROM position_supervisor_log WHERE ts >= ? ORDER BY ts DESC LIMIT ?",
+                           (since_ts, int(limit)))
+        return _rows(keys, cur)
+
+    return await _run_db(op)
+
+
+async def supervisor_event_exists(ticket: int, kind: str, since_ts: float) -> bool:
+    def op(conn):
+        _ensure_risk_schema(conn)
+        row = conn.execute("SELECT COUNT(*) FROM position_supervisor_log WHERE ticket = ? AND kind = ? AND ts >= ?",
+                           (int(ticket), kind, since_ts)).fetchone()
+        return int(row[0] or 0) > 0
+
+    return await _run_db(op)
+
+
+async def set_llm_review_flags(review_id: int, exploration: int = 0, control_veto: int = 0) -> None:
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        conn.execute("UPDATE llm_trade_reviews SET exploration = ?, control_veto = ? WHERE id = ?",
+                     (int(exploration), int(control_veto), review_id))
+        conn.commit()
+
+    await _run_db(op)
 
 
 async def get_last_economic_calendar_sync() -> float:

@@ -33,6 +33,17 @@ interface Summary {
   avg_latency_ms: number;
   calibration: Record<string, { closed: number; wins: number; win_rate: number | null }>;
   by_symbol: Record<string, { approved: number; rejected: number; approved_net_pips: number; rejected_net_pips: number }>;
+  calibration_deep?: {
+    n: number; note?: string; brier?: number; brier_baseline?: number; brier_skill?: number | null; auc?: number | null; usable?: boolean; saturated?: boolean;
+    reliability?: { bin: string; n: number; predicted: number; observed: number }[];
+  };
+  veto_value?: {
+    llm: { vetoed_n: number; vetoed_mean_pips: number | null; passed_n: number; passed_mean_pips: number | null; edge_pips: number | null };
+    random_control: { vetoed_n: number; vetoed_mean_pips: number | null; passed_n: number; passed_mean_pips: number | null; edge_pips: number | null };
+    exploration: { n: number; mean_pips: number | null };
+    verdict: string;
+  };
+  fail_stats?: { fail_count: number; fail_rate: number; fail_mean_pips: number | null; normal_mean_pips: number | null; alert: boolean; note: string };
 }
 
 interface Decision {
@@ -72,6 +83,7 @@ const APPLIED_TR: Record<string, string> = {
   advisory_allow: "Danışman: onay",
   advisory_reject: "Danışman: red (engellemedi)",
   reject_voided: "Red geçersiz sayıldı (yalnız habere dayanıyordu), motor açtı",
+  explore_pass: "Kontrollü keşif: veto edilen işlem ölçüm için açıldı",
   fail_open: "LLM yok, motor açtı",
   fail_closed: "LLM yok, engellendi",
   hata: "Hata",
@@ -249,6 +261,46 @@ export default function LlmReviewReport() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {summary.veto_value && (
+            <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 space-y-1">
+              <p className="text-xs font-bold text-white">LLM vetosu rastgele vetodan iyi mi?</p>
+              <p className="text-xs text-slate-300">{summary.veto_value.verdict}</p>
+              <p className="font-mono text-[11px] text-bunker-muted">
+                LLM: geçenler {fmtPips(summary.veto_value.llm.passed_mean_pips)} pip (n={summary.veto_value.llm.passed_n}) − veto edilenler {fmtPips(summary.veto_value.llm.vetoed_mean_pips)} pip (n={summary.veto_value.llm.vetoed_n}) = fark {fmtPips(summary.veto_value.llm.edge_pips)}
+                {" · "}Rastgele kontrol farkı {fmtPips(summary.veto_value.random_control.edge_pips)}
+                {" · "}Kontrollü keşif: {summary.veto_value.exploration.n} işlem, ort. {fmtPips(summary.veto_value.exploration.mean_pips)} pip
+              </p>
+            </div>
+          )}
+
+          {summary.calibration_deep && (
+            <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 space-y-1">
+              <p className="text-xs font-bold text-white">Güven puanı kalibrasyonu (Brier / AUC)</p>
+              <p className={`text-xs ${summary.calibration_deep.usable ? "text-emerald-300" : "text-amber-300"}`}>{summary.calibration_deep.note}</p>
+              {summary.calibration_deep.brier != null && (
+                <p className="font-mono text-[11px] text-bunker-muted">
+                  n={summary.calibration_deep.n} · Brier {summary.calibration_deep.brier} (taban {summary.calibration_deep.brier_baseline}) · skill {summary.calibration_deep.brier_skill ?? "—"} · AUC {summary.calibration_deep.auc ?? "—"}
+                </p>
+              )}
+              {summary.calibration_deep.reliability && summary.calibration_deep.reliability.length > 0 && (
+                <div className="flex flex-wrap gap-2 font-mono text-[11px]">
+                  {summary.calibration_deep.reliability.map((b) => (
+                    <span key={b.bin} className="rounded border border-bunker-700 px-2 py-1 text-bunker-muted">
+                      {b.bin}: öngörülen %{(b.predicted * 100).toFixed(0)} / gerçekleşen %{(b.observed * 100).toFixed(0)} (n={b.n})
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {summary.fail_stats && summary.fail_stats.fail_count > 0 && (
+            <div className={`rounded-xl border p-3 text-xs ${summary.fail_stats.alert ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-bunker-800 bg-bunker-950/60 text-slate-300"}`}>
+              <p className="font-bold">LLM hata / zaman aşımı: {summary.fail_stats.fail_count} karar (%{(summary.fail_stats.fail_rate * 100).toFixed(0)})</p>
+              <p>{summary.fail_stats.note}. Bu işlemlerin ort. gölge sonucu {fmtPips(summary.fail_stats.fail_mean_pips)} pip, normal kararlarınki {fmtPips(summary.fail_stats.normal_mean_pips)} pip (fail-open yanlılığı ölçümü).</p>
             </div>
           )}
 

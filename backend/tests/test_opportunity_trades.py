@@ -138,7 +138,7 @@ def test_strategy_labels_and_deal_inference():
 def _patch_open(monkeypatch, ok=True, reason="x"):
     calls = []
 
-    def fake_open(sym, direction, sl, tp, atr, score, note):
+    def fake_open(sym, direction, sl, tp, atr, score, note, lots_mult=1.0):
         calls.append((sym, direction))
         return {"ok": True, "cmd_id": "CMD-1", "lots": 0.02, "risk_usd": 10.0} if ok else {"ok": False, "reason": reason}
 

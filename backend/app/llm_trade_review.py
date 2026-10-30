@@ -18,7 +18,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
+from collections import deque
 from typing import Any, Dict, List, Optional
 
 from app import forex_research, llm_analysis
@@ -62,6 +64,27 @@ SYSTEM_PROMPT = (
 )
 
 _cache: Dict[tuple, tuple] = {}
+_recent_vetoes: deque = deque(maxlen=100)        # son LLM kararlarında veto oranı (rastgele-veto kontrolü için)
+DEFAULT_VETO_RATE = 0.2
+
+
+def recent_veto_rate() -> float:
+    """Rastgele-veto kontrol kolunun kullanacağı oran: LLM'in son (hatasız) kararlarındaki veto oranı."""
+    if len(_recent_vetoes) < 10:
+        return DEFAULT_VETO_RATE
+    return sum(_recent_vetoes) / len(_recent_vetoes)
+
+
+def apply_exploration(policy: Dict[str, Any], explore_pct: float, rng: float) -> tuple:
+    """Saf kural: LLM'in ENGELLEDİĞİ işlemin `explore_pct` yüzdesi KONTROLLÜ KEŞİF olarak yine açılır.
+
+    Reddedilenlerin sonucu hiç gözlenmezse vetonun değeri ölçülemez (seçilim yanlılığı). `rng` [0,1) rastgele sayıdır.
+    Döner: (politika, keşif_mi). Yalnız veto kararı (applied=blocked) etkilenir; fail-closed/eşik-altı onay etkilenmez.
+    """
+    if policy.get("applied") == "blocked" and explore_pct > 0 and rng < explore_pct / 100.0:
+        return ({"blocked": False, "applied": "explore_pass",
+                 "reason": "Kontrollü keşif: veto edilen işlem ölçüm için açıldı. " + str(policy.get("reason", ""))[:200]}, True)
+    return policy, False
 _review_lock = asyncio.Lock()
 
 
@@ -162,8 +185,16 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
         perf = None
     try:
         acct = _positions_summary(fx, sym, direction)
+        # Deterministik portföy durumu (araştırma kartları 3.1-3.3): LLM bu sınırları aşamaz, yalnızca bağlam olarak görür.
+        from app import portfolio_risk
+        snap = await portfolio_risk.snapshot(fx._AUTO_SETTINGS)
+        acct = {**(acct or {}), "net_para_birimi_maruziyeti_usd": snap["exposure"]["legs"], "usd_net_maruziyet": snap["exposure"]["usd_net"],
+                "portfoy_isisi_yuzde": snap["heat"]["heat_pct"], "kalan_risk_butcesi_yuzde": snap["risk_budget_remaining_pct"],
+                "tepeden_dusus_yuzde": snap["drawdown"]["dd_pct"], "gunluk_degisim_yuzde": snap["drawdown"]["daily_pct"],
+                "drawdown_kademesi": snap["drawdown"]["level"], "stopsuz_pozisyon": len(snap["heat"]["no_sl_tickets"]),
+                "not": "Risk kapısı ve limitler LLM'den bağımsızdır; yeni işlemin riski kalan bütçeyi aşıyorsa REJECT için somut dayanaktır."}
     except Exception:  # noqa: BLE001
-        acct = None
+        acct = acct if "acct" in locals() else None
 
     sl, tp = ctx.get("sl_pips"), ctx.get("tp_pips")
     dossier = {
@@ -373,6 +404,15 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
         latency_ms = int((time.perf_counter() - started) * 1000)
         policy = decide(verdict, error, mode=ctx.get("mode", "veto"), fail_open=bool(ctx.get("fail_open", True)),
                         min_confidence=int(ctx.get("min_confidence", 55)))
+        rnd = ctx.get("rng") or random.random
+        explore = False
+        if ctx.get("mode", "veto") == "veto":
+            policy, explore = apply_exploration(policy, float(ctx.get("explore_pct", 0.0) or 0.0), rnd())
+        control_veto = False
+        if verdict is not None:
+            vetoed = verdict["decision"] == "REJECT" or policy["applied"] in ("blocked", "explore_pass")
+            control_veto = rnd() < recent_veto_rate()           # eşit oranlı RASTGELE veto (kontrol kolu, uygulanmaz)
+            _recent_vetoes.append(1 if vetoed else 0)
         review_id = None
         try:
             review_id = await database.save_llm_review({
@@ -388,7 +428,13 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
             })
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM karar kaydı yazılamadı: %s", exc)
-        res = {**policy, "review_id": review_id, "verdict": verdict, "cached": False, "latency_ms": latency_ms}
+        if review_id and (explore or control_veto):
+            try:
+                await database.set_llm_review_flags(review_id, int(explore), int(control_veto))
+            except Exception as exc:  # noqa: BLE001
+                logger.info("LLM karar bayrakları yazılamadı: %s", exc)
+        res = {**policy, "review_id": review_id, "verdict": verdict, "cached": False, "latency_ms": latency_ms,
+               "exploration": explore}
         _cache[key] = (time.time(), res)
         if len(_cache) > 200:
             for k in [k for k, v in _cache.items() if time.time() - v[0] > _ttl(v[1])][:100]:

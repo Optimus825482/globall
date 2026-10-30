@@ -136,8 +136,23 @@ async def open_from_scan(analyses: Dict[str, Dict[str, Any]], scan: Dict[str, An
         if time.time() - _last_open.get(sym, 0.0) < SYMBOL_COOLDOWN_SEC:
             skipped.append({"symbol": sym, "reason": "bu sembolde yakın zamanda işlem açıldı (soğuma)"})
             continue
+        # Portföy risk kapısı (shadow: yalnız günlük; enforce: engeller / lotu küçültür). Fırsat işlemi de aynı kapıdan geçer.
+        lots_mult = 1.0
+        try:
+            from app import portfolio_risk
+            est = fx.scan_lot_estimate(sym, plan["sl_pips"])
+            if est:
+                gate = await portfolio_risk.check_entry({"symbol": sym, "direction": plan["direction"], "lots": est,
+                                                         "sl_pips": plan["sl_pips"], "pip_size": spec.get("pip_size"),
+                                                         "pip_val": spec.get("pip_val")}, fx._AUTO_SETTINGS)
+                if gate["blocked"]:
+                    skipped.append({"symbol": sym, "reason": "portföy risk kapısı: " + "; ".join(r["text"] for r in gate["reasons"][:2])})
+                    continue
+                lots_mult = gate["mult"] if gate["enforced"] else 1.0
+        except Exception as exc:  # noqa: BLE001 - kapı hatası fırsat taramasını durdurmaz ama günlüğe düşer
+            logger.warning("Fırsat risk kapısı hatası (%s): %s", sym, exc)
         res = fx.open_scan_position(sym, plan["direction"], plan["sl_pips"], plan["tp_pips"], plan["atr_pips"],
-                                    float(plan.get("score") or 0), plan["note"])
+                                    float(plan.get("score") or 0), plan["note"], lots_mult)
         if not res.get("ok"):
             skipped.append({"symbol": sym, "reason": res.get("reason", "emir yazılamadı")})
             continue

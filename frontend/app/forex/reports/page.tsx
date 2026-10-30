@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3, localDateInput } from "../../lib/format";
 import LlmReviewReport from "./LlmReviewReport";
+import PortfolioRiskReport from "./PortfolioRiskReport";
 
 interface ClosedTrade {
   id: string;
@@ -144,7 +145,7 @@ function exitBadge(t: ClosedTrade): { label: string; cls: string } {
 
 export default function ForexReportsPage() {
   // Rapor görünümü: işlem raporu ya da LLM Trader kararları.
-  const [view, setView] = useState<"trades" | "llm">("trades");
+  const [view, setView] = useState<"trades" | "llm" | "risk">("trades");
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<any[]>([]);
   const [kpi, setKpi] = useState<ReportKPI | null>(null);
@@ -420,7 +421,7 @@ export default function ForexReportsPage() {
       </div>
 
       <div role="tablist" aria-label="Rapor türü" className="flex gap-2">
-        {([["trades", "İşlem Raporu"], ["llm", "LLM Kararları"]] as const).map(([key, label]) => (
+        {([["trades", "İşlem Raporu"], ["llm", "LLM Kararları"], ["risk", "Portföy & Risk"]] as const).map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -436,7 +437,7 @@ export default function ForexReportsPage() {
         ))}
       </div>
 
-      {view === "llm" ? <LlmReviewReport /> : (<>
+      {view === "llm" ? <LlmReviewReport /> : view === "risk" ? <PortfolioRiskReport /> : (<>
       {/* KPI PERFORMANS METRİKLERİ KARTLARI */}
       {kpi && (
         <>

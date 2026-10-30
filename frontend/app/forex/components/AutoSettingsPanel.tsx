@@ -14,6 +14,20 @@ export interface AutoSettings {
   llm_review_fail_open?: boolean;
   llm_review_min_confidence?: number;
   llm_review_timeout_sec?: number;
+  llm_review_explore_pct?: number;
+  risk_gate_mode?: "off" | "shadow" | "enforce";
+  risk_kill_switch?: boolean;
+  risk_heat_limit_pct?: number;
+  risk_usd_net_limit_pct?: number;
+  risk_daily_loss_pct?: number;
+  risk_weekly_loss_pct?: number;
+  risk_kill_dd_pct?: number;
+  risk_cost_r_max?: number;
+  risk_stop_spread_mult?: number;
+  risk_block_losing_adds?: boolean;
+  position_supervisor_mode?: "off" | "log" | "act";
+  position_event_window_min?: number;
+  position_flat_before_close_min?: number;
   balance: number;
   risk_per_trade_pct: number;
   risk_gold_pct?: number;
@@ -477,6 +491,79 @@ export default function AutoSettingsPanel({
       {/* TAB 1: GENEL RİSK & ÇIKIŞ MOTORU */}
       {activeTab === "risk" && (
         <div className="space-y-4 animate-in fade-in duration-150">
+          {/* PORTFÖY RİSK KAPISI + POZİSYON GÖZETİMİ (LLM'den bağımsız, deterministik) */}
+          <div className="p-3 rounded-xl bg-bunker-950/80 border border-amber-500/30 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
+              <span className="text-xs font-bold text-amber-300">Portföy Risk Kapısı &amp; Pozisyon Gözetimi</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${form.risk_kill_switch ? "bg-rose-500/15 text-rose-300 border-rose-500/40" : "bg-bunker-800 text-bunker-muted border-bunker-700"}`}>
+                {form.risk_kill_switch ? "KILL SWITCH AÇIK" : (form.risk_gate_mode ?? "shadow") === "enforce" ? "UYGULANIYOR" : (form.risk_gate_mode ?? "shadow") === "off" ? "KAPALI" : "GÖLGE"}
+              </span>
+            </div>
+            <p className="text-[10px] text-bunker-muted">
+              Isı, net USD riski, günlük/haftalık kayıp, drawdown merdiveni (%3→×0.75, %5→×0.5, %8→×0.25), maliyet-R/spread ve kaybedene ekleme yasağı.
+              <b> Gölge</b> modda yalnızca &quot;engellerdi&quot; diye günlüğe yazar (Raporlar &gt; Portföy &amp; Risk); motoru değiştirmez. Eşikler kaynaksız başlangıç değerleridir.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Kapı modu:</label>
+                <select value={form.risk_gate_mode ?? "shadow"} onChange={(e) => setField("risk_gate_mode", e.target.value)} className={`${inputCls}`}>
+                  <option value="shadow">Gölge: yalnız günlüğe yaz (önerilen başlangıç)</option>
+                  <option value="enforce">Uygula: engelle + lotu küçült</option>
+                  <option value="off">Kapalı</option>
+                </select>
+              </div>
+              <label className="inline-flex items-start gap-2 cursor-pointer self-end">
+                <input type="checkbox" checked={Boolean(form.risk_kill_switch)} onChange={(e) => setField("risk_kill_switch", e.target.checked)}
+                       className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`} />
+                <span>
+                  <span className="text-white font-semibold block">KILL SWITCH: yeni giriş yok</span>
+                  <span className="text-[10px] text-bunker-muted">Motor ve fırsat taraması yeni işlem açmaz; açık pozisyonlara dokunmaz.</span>
+                </span>
+              </label>
+              {([
+                ["risk_heat_limit_pct", "Toplam açık risk sınırı (özsermaye %)", 6],
+                ["risk_usd_net_limit_pct", "Net USD risk sınırı (%)", 3],
+                ["risk_daily_loss_pct", "Günlük kayıp limiti (%)", 3],
+                ["risk_weekly_loss_pct", "Haftalık kayıp limiti (%)", 6],
+                ["risk_kill_dd_pct", "Otomatik durdurma: tepeden düşüş (%)", 12],
+                ["risk_cost_r_max", "Maliyet tavanı (R: spread+komisyon/stop)", 0.25],
+                ["risk_stop_spread_mult", "Stop en az × spread", 8],
+              ] as const).map(([key, label, def]) => (
+                <div key={key}>
+                  <label className="text-[11px] text-bunker-muted block mb-1">{label}:</label>
+                  <input type="number" step="0.05" value={(form[key] as number | undefined) ?? def}
+                         onChange={(e) => setNumField(key, e.target.value)} className={`${inputCls} text-amber-300`} />
+                </div>
+              ))}
+              <label className="inline-flex items-start gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.risk_block_losing_adds !== false} onChange={(e) => setField("risk_block_losing_adds", e.target.checked)}
+                       className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`} />
+                <span>
+                  <span className="text-white font-semibold block">Kaybedene ekleme yasak</span>
+                  <span className="text-[10px] text-bunker-muted">Zarardaki aynı yönlü pozisyona yeni işlem eklenmez (ortalama düşürme).</span>
+                </span>
+              </label>
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Pozisyon gözetimi:</label>
+                <select value={form.position_supervisor_mode ?? "log"} onChange={(e) => setField("position_supervisor_mode", e.target.value)} className={`${inputCls}`}>
+                  <option value="log">Öneri günlüğü (önerilen başlangıç)</option>
+                  <option value="act">Komut ver: başabaş stop / hafta sonu kapama</option>
+                  <option value="off">Kapalı (MAE/MFE örneklemesi sürer)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Olay öncesi pencere (dk):</label>
+                <input type="number" min="1" max="60" value={form.position_event_window_min ?? 10}
+                       onChange={(e) => setNumField("position_event_window_min", e.target.value)} className={`${inputCls} text-amber-300`} />
+              </div>
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Hafta sonu öncesi işaretleme (dk):</label>
+                <input type="number" min="5" max="240" value={form.position_flat_before_close_min ?? 30}
+                       onChange={(e) => setNumField("position_flat_before_close_min", e.target.value)} className={`${inputCls} text-amber-300`} />
+              </div>
+            </div>
+          </div>
+
           {/* LLM TRADER İNCELEMESİ: işlem açılmadan önce ikinci görüş */}
           <div className="p-3 rounded-xl bg-bunker-950/80 border border-cyan-500/30 space-y-2.5">
             <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
@@ -530,6 +617,16 @@ export default function AutoSettingsPanel({
                   onChange={(e) => setNumField("llm_review_timeout_sec", e.target.value)}
                   className={`${inputCls} text-cyan-300`}
                 />
+              </div>
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Kontrollü keşif (% veto edilenin açılması):</label>
+                <input
+                  type="number" min="0" max="50" step="1"
+                  value={form.llm_review_explore_pct ?? 5}
+                  onChange={(e) => setNumField("llm_review_explore_pct", e.target.value)}
+                  className={`${inputCls} text-cyan-300`}
+                />
+                <span className="text-[10px] text-bunker-muted">Vetonun gerçek değerini ölçmek için küçük bir pay yine açılır (0 = kapalı).</span>
               </div>
               <label className="inline-flex items-start gap-2 cursor-pointer self-end">
                 <input
