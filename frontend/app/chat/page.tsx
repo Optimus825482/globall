@@ -8,10 +8,14 @@ import { Button, Card } from "../components/ui";
 import { useAuth } from "../lib/auth";
 import AppLoader from "../components/AppLoader";
 
+// Araştırma adımı: backend `step` olayı (teknik analiz, takvim, haber, dolar…).
+type ResearchStep = { id: string; label: string; status: "running" | "done" | "error"; text?: string };
+
 type Message = {
   role: "user" | "assistant";
   content: string;
   time?: string;
+  steps?: ResearchStep[];
 };
 
 // Hazır sorular yalnız Altın, Bitcoin ve Forex içindir; her biri tek tıkla sorulur.
@@ -22,13 +26,12 @@ const QUICK_PROMPTS = [
   { label: "Yaklaşan haberler", prompt: "Önümüzdeki saatlerde işlemleri etkileyecek önemli ekonomik veriler var mı? Ne yapmalıyım?" },
   { label: "Son açıklanan veriler", prompt: "Az önce açıklanan ekonomik veriler neydi ve hangi pariteleri nasıl etkiledi?" },
   { label: "Dolar durumu", prompt: "Dolar şu an güçlü mü zayıf mı? Bu Altın ve EURUSD için ne anlama geliyor?" },
-  { label: "Açık işlemlerim", prompt: "Açık pozisyonlarım nasıl gidiyor? Dikkat etmem gereken bir şey var mı?" },
 ] as const;
 
 const starter: Message[] = [
   {
     role: "assistant",
-    content: "Merhaba. Altın, Bitcoin ve Forex hakkında sorabilirsin: güncel görünüm, yaklaşan haberler, açıklanan verilerin etkisi veya açık işlemlerin.",
+    content: "Merhaba. Altın, Bitcoin ve Forex hakkında sorabilirsin: teknik görünüm, ekonomik takvim, haberler ve açıklanan verilerin etkisi. Her soruda güncel veriyi ve haberleri kendim araştırırım.",
     time: "Şimdi",
   },
 ];
@@ -37,6 +40,37 @@ const starter: Message[] = [
 const CHAT_STORAGE_KEY = "scalperagent:forexchat:v2";
 
 const nowTime = () => new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+
+/** Araştırma bulguları: her adım bittiği anda satır olarak düşer (araştırma sürerken görünür). */
+function ResearchPanel({ steps, live }: { steps: ResearchStep[]; live: boolean }) {
+  const visible = steps.filter((s) => s.id !== "answer");
+  const done = visible.filter((s) => s.status !== "running").length;
+  return (
+    <details open={live} className="mb-3 rounded-lg border border-bunker-700/70 bg-black/20 text-xs">
+      <summary className="cursor-pointer select-none px-3 py-2 font-mono font-bold text-cyan-300">
+        {live ? `Araştırılıyor… ${done}/${visible.length}` : `Araştırma bulguları (${visible.length})`}
+      </summary>
+      <ul className="space-y-2 px-3 pb-3">
+        {visible.map((s) => (
+          <li key={s.id} className="leading-relaxed">
+            <div className="flex items-center gap-2 font-semibold text-slate-200">
+              {s.status === "running" && live ? (
+                <span aria-hidden="true" className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-cyan-400/40 border-t-cyan-300" />
+              ) : s.status === "error" ? (
+                <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+              ) : (
+                <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+              )}
+              <span>{s.label}</span>
+              <span className="sr-only">{s.status === "running" && live ? "sürüyor" : s.status === "error" ? "tamamlanamadı" : "tamamlandı"}</span>
+            </div>
+            {s.text && <p className="mt-0.5 whitespace-pre-line pl-5 text-bunker-muted">{s.text}</p>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 function ChatPageInner() {
   const { username } = useAuth();
@@ -172,10 +206,31 @@ function ChatPageInner() {
         (delta) =>
           setMessages((current) => [
             ...current.slice(0, -1),
-            { role: "assistant", content: (current[current.length - 1]?.content || "") + delta, time },
+            { ...current[current.length - 1], role: "assistant", content: (current[current.length - 1]?.content || "") + delta, time },
           ]),
         {},
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          onEvent: ({ event, data }) => {
+            if (event !== "step") return;
+            const d = data as { id?: unknown; label?: unknown; status?: unknown; text?: unknown };
+            const step: ResearchStep = {
+              id: String(d.id ?? ""),
+              label: String(d.label ?? ""),
+              status: d.status === "done" || d.status === "error" ? d.status : "running",
+              text: typeof d.text === "string" ? d.text : undefined,
+            };
+            if (!step.id) return;
+            setMessages((current) => {
+              const last = current[current.length - 1];
+              if (!last || last.role !== "assistant") return current;
+              const steps = [...(last.steps ?? [])];
+              const at = steps.findIndex((x) => x.id === step.id);
+              if (at >= 0) steps[at] = step; else steps.push(step);
+              return [...current.slice(0, -1), { ...last, steps }];
+            });
+          },
+        },
       );
     } catch (e) {
       if (controller.signal.aborted) return;
@@ -235,6 +290,9 @@ function ChatPageInner() {
                           : "bg-bunker-900/95 border border-bunker-700/70 text-slate-200 rounded-tl-sm"
                       }`}
                     >
+                      {!isUser && message.steps && message.steps.length > 0 && (
+                        <ResearchPanel steps={message.steps} live={busy && index === messages.length - 1} />
+                      )}
                       <MarkdownMessage content={message.content} colorful={!isUser} />
                       {!isUser && message.content && index > 0 && (
                         <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-2 border-t border-bunker-800/80 text-xs">
@@ -257,8 +315,8 @@ function ChatPageInner() {
               );
             })}
 
-            {busy && messages[messages.length - 1]?.content === "" && (
-              <AppLoader variant="card" label="Piyasa verileri okunuyor…" sublabel="Radar, takvim ve açık işlemler kontrol ediliyor" className="!p-5 !bg-bunker-900/80" />
+            {busy && messages[messages.length - 1]?.content === "" && !(messages[messages.length - 1]?.steps?.length) && (
+              <AppLoader variant="card" label="Araştırma başlıyor…" sublabel="Teknik analiz, ekonomik takvim ve haberler taranıyor" className="!p-5 !bg-bunker-900/80" />
             )}
             <div ref={endRef} />
           </div>
@@ -308,7 +366,7 @@ function ChatPageInner() {
             </form>
             {error && <p role="alert" className="mt-2 text-xs text-neon-red font-mono bg-red-950/20 border border-red-500/30 p-2 rounded">{error}</p>}
             <p className="mt-1.5 px-1 text-[10px] text-bunker-muted">
-              Yorumlar mevcut radar, takvim ve hesap verisine dayanır; yatırım tavsiyesi değildir.
+              Yorumlar canlı fiyat verisi, ekonomik takvim ve haber başlıklarına dayanır; yatırım tavsiyesi değildir.
             </p>
           </div>
         </Card>

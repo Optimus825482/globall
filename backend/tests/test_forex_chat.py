@@ -1,7 +1,10 @@
-"""Forex uzman sohbeti: bağlam sıkıştırma ve sembol çözümleme."""
+"""Forex uzman sohbeti: sembol çözümleme, takvim sıkıştırma, araştırma hattı ve teknik analiz."""
+import asyncio
+import json
 import time
 from datetime import datetime, timezone
 
+from app import forex_research
 from app.routers import forex_chat
 
 
@@ -30,18 +33,79 @@ def test_compact_calendar_splits_released_and_upcoming():
     assert [r["title"] for r in out["yaklasan_12_saat"]] == ["NFP"]
 
 
-def test_compact_helpers_tolerate_bad_input():
-    assert forex_chat.compact_radar(None) == {}
-    assert forex_chat.compact_status("x") == {}
+def test_calendar_currency_filter_keeps_high_impact():
+    now = time.time()
+    items = [
+        {"title": "JPY orta", "currency": "JPY", "stars": 2, "date_iso": _iso(30)},
+        {"title": "EUR kritik", "currency": "EUR", "stars": 3, "date_iso": _iso(30)},
+        {"title": "USD orta", "currency": "USD", "stars": 2, "date_iso": _iso(30)},
+    ]
+    out = forex_chat.compact_calendar(items, now, {"USD"})
+    assert {r["title"] for r in out["yaklasan_12_saat"]} == {"EUR kritik", "USD orta"}
+
+
+def test_compact_calendar_tolerates_bad_input():
     assert forex_chat.compact_calendar(None, time.time()) == {"aciklanan_son_6_saat": [], "yaklasan_12_saat": []}
 
 
 def test_stream_delta_keeps_spaces():
     from app.llm_analysis import _stream_delta_text
 
-    # Akış parçalarında baştaki/sondaki boşluk korunmalı; yoksa kelimeler yapışır.
     parts = [{"content": "sterlin"}, {"content": " güçlü,"}, {"content": " dolar"}, {"content": " zayıf"}]
     assert "".join(_stream_delta_text(p) for p in parts) == "sterlin güçlü, dolar zayıf"
     assert _stream_delta_text({"content": " "}) == " "
     assert _stream_delta_text({"content": ""}) is None
     assert _stream_delta_text({}, {"text": "x"}) == "x"
+
+
+def _trend(n=260, step=1.0, start=100.0):
+    return [{"time": i * 3600, "open": start + i * step, "high": start + i * step + 0.5,
+             "low": start + i * step - 0.5, "close": start + i * step + 0.2} for i in range(n)]
+
+
+def test_analyze_candles_trend_direction_and_short_series():
+    up = forex_research.analyze_candles(_trend(step=1.0))
+    down = forex_research.analyze_candles(_trend(step=-0.2, start=500.0))
+    assert up["score"] > 2 and down["score"] < -2
+    assert forex_research.analyze_candles(_trend(n=30)) is None
+
+
+def test_symbol_tickers_and_currencies():
+    assert forex_research.yahoo_ticker("XAUUSD") == "GC=F"
+    assert forex_research.yahoo_ticker("GBPUSD") == "GBPUSD=X"
+    assert forex_research.yahoo_ticker("FOOBAR") is None
+    assert forex_research.currencies_for("GBPJPY") == {"GBP", "JPY"}
+    assert forex_research.currencies_for("XAUUSD") == {"USD"}
+
+
+def test_research_events_stream_each_step_as_it_finishes():
+    async def fast():
+        return "hızlı bulgu", {"a": 1}
+
+    async def slow():
+        await asyncio.sleep(0.05)
+        return "yavaş bulgu", {"b": 2}
+
+    async def broken():
+        raise RuntimeError("x")
+
+    async def run():
+        findings = {}
+        steps = [("slow", "Yavaş", slow()), ("fast", "Hızlı", fast()), ("bad", "Bozuk", broken())]
+        out = []
+        async for chunk in forex_chat.research_events(steps, findings):
+            out.append(json.loads(chunk.split("data: ", 1)[1]))
+        return findings, out
+
+    findings, events = asyncio.run(run())
+    done_order = [e["id"] for e in events if e["status"] == "done"]
+    assert done_order == ["fast", "slow"]            # hızlı olan önce bildirilir
+    assert [e["id"] for e in events if e["status"] == "error"] == ["bad"]
+    assert [e["status"] for e in events[:3]] == ["running"] * 3
+    assert set(findings) == {"fast", "slow"}
+
+
+def test_build_context_marks_empty_research():
+    assert "uyari" in forex_chat.build_context({})
+    ctx = forex_chat.build_context({"ta:XAUUSD": {"yon": "SELL"}, "calendar": {"x": 1}})
+    assert ctx["teknik_analiz"] == [{"yon": "SELL"}] and ctx["ekonomik_takvim"] == {"x": 1}
