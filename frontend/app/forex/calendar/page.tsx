@@ -183,13 +183,13 @@ export default function ForexCalendarPage() {
     if (dir === "BUY")
       return (
         <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold">
-          AL {conf ? `· %${Math.round(conf * 100)}` : ""}
+          BUY {conf ? `· %${Math.round(conf * 100)}` : ""}
         </span>
       );
     if (dir === "SELL")
       return (
         <span className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-400/40 text-rose-300 font-mono text-[10px] font-bold">
-          SAT {conf ? `· %${Math.round(conf * 100)}` : ""}
+          SELL {conf ? `· %${Math.round(conf * 100)}` : ""}
         </span>
       );
     return null;
@@ -494,7 +494,7 @@ export default function ForexCalendarPage() {
                                             : "bg-bunker-800 border-bunker-700 text-bunker-muted"
                                         }`}
                                       >
-                                        {pr.symbol} {pr.direction > 0 ? "▲ AL" : pr.direction < 0 ? "▼ SAT" : "— belirsiz"}
+                                        {pr.symbol} {pr.direction > 0 ? "▲ BUY" : pr.direction < 0 ? "▼ SELL" : "— belirsiz"}
                                       </span>
                                     ))}
                                   </div>

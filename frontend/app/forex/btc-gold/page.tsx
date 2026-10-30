@@ -383,7 +383,7 @@ function DirectionBar({
     : isSell
     ? "text-rose-300"
     : "text-slate-300";
-  const verdict = !hasData ? "VERİ YOK" : isBuy ? "ALIŞ YÖNÜ" : isSell ? "SATIŞ YÖNÜ" : "NÖTR / BEKLE";
+  const verdict = !hasData ? "VERİ YOK" : isBuy ? "BUY" : isSell ? "SELL" : "NÖTR / BEKLE";
   // İbrenin yanında okunacak ham değer: ölçeğin ±1 olduğu, ortasının 0 olduğu
   // barın alt etiketlerinden anlaşılır (kullanıcı isteği 2026-10-13).
   const valueText = hasData ? `${clamped >= 0 ? "+" : ""}${clamped.toFixed(2)}` : "—";
@@ -1716,7 +1716,7 @@ export default function BtcGoldForexPage() {
                             : "bg-bunker-800 text-bunker-muted border-bunker-700"
                         }`}
                       >
-                        {action === "BUY" ? "GÜÇLÜ ALIŞ (BUY)" : action === "SELL" ? "GÜÇLÜ SATIŞ (SELL)" : "⏸ BEKLEMEDE (HOLD)"}
+                        {action === "BUY" ? "GÜÇLÜ BUY" : action === "SELL" ? "GÜÇLÜ SELL" : "⏸ BEKLEMEDE (HOLD)"}
                       </span>
                       <div className="flex flex-col items-end gap-1">
                         {gate ? (
@@ -1974,7 +1974,7 @@ export default function BtcGoldForexPage() {
                       needleLabel={macdText}
                       barColor={momentumNorm > NEUTRAL_DEAD_ZONE ? "emerald" : momentumNorm < -NEUTRAL_DEAD_ZONE ? "rose" : "amber"}
                       diverging
-                      endLabels={{ left: "◀ AYI SATIŞ", right: "BOĞA ALIŞ ▶" }}
+                      endLabels={{ left: "◀ SELL (AYI)", right: "BUY (BOĞA) ▶" }}
                     />
 
                     {/* Bar: Volatilite & Osilatörler (CMO & CCI)

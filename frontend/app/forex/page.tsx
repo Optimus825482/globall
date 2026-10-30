@@ -649,7 +649,7 @@ export default function ForexRadarPage() {
                   <span className="font-bold text-white shrink-0">{r.display}</span>
                   {r.action && (
                     <span className={`font-bold shrink-0 ${r.action === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
-                      {r.action === "BUY" ? "▲ AL" : "▼ SAT"}
+                      {r.action === "BUY" ? "▲ BUY" : "▼ SELL"}
                     </span>
                   )}
                   <span className={r.action ? "text-emerald-200/90" : "text-bunker-muted"}>{r.status}</span>
@@ -865,7 +865,7 @@ export default function ForexRadarPage() {
                           : "bg-rose-500/20 text-rose-300 border border-rose-400/50"
                       }`}
                     >
-                      {isBuy ? "▲ AL" : "▼ SAT"}
+                      {isBuy ? "▲ BUY" : "▼ SELL"}
                     </span>
                   </div>
 
@@ -994,8 +994,8 @@ export default function ForexRadarPage() {
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-white outline-none focus:border-blue-400"
             >
               <option value="ALL">Tüm Yönler</option>
-              <option value="BUY">▲ AL</option>
-              <option value="SELL">▼ SAT</option>
+              <option value="BUY">▲ BUY</option>
+              <option value="SELL">▼ SELL</option>
             </select>
             {filtersActive && (
               <button
@@ -1129,7 +1129,7 @@ export default function ForexRadarPage() {
                                   : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
                               }`}
                             >
-                              {isBuy ? "▲ AL" : "▼ SAT"}
+                              {isBuy ? "▲ BUY" : "▼ SELL"}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">
@@ -1254,7 +1254,7 @@ export default function ForexRadarPage() {
                               : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
                           }`}
                         >
-                          {isBuy ? "▲ AL" : "▼ SAT"}
+                          {isBuy ? "▲ BUY" : "▼ SELL"}
                         </span>
                       ) : (
                         <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">

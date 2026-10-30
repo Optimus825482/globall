@@ -19,7 +19,7 @@ import {
   type CalendarOutcome,
 } from "./lib/calendarOutcome";
 import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
-import { Badge, Button, Card } from "./components/ui";
+import { Button, Card, DirectionBadge } from "./components/ui";
 
 interface OpenPosition {
   id: string;
@@ -608,7 +608,7 @@ export default function HomePage() {
                             )}
                           </td>
                           <td className="px-2 py-2.5">
-                            <Badge tone={p.direction === "BUY" ? "info" : "warning"}>{p.direction === "BUY" ? "AL" : "SAT"}</Badge>
+                            <DirectionBadge direction={p.direction} />
                           </td>
                           <td className="px-2 py-2.5 text-right">{p.lots}</td>
                           <td className="px-2 py-2.5 text-right">{formatPrice(p.entry_price, p.symbol)}</td>
@@ -735,7 +735,7 @@ export default function HomePage() {
                           </td>
                           <td className="px-2 py-2.5 font-bold whitespace-nowrap">{t.display || t.symbol}</td>
                           <td className="px-2 py-2.5">
-                            <Badge tone={t.direction === "BUY" ? "info" : "warning"}>{t.direction === "BUY" ? "AL" : "SAT"}</Badge>
+                            <DirectionBadge direction={t.direction} />
                           </td>
                           <td className={`px-2 py-2.5 text-right ${tone(Number(t.pnl_pips) || 0)}`}>{pips(Number(t.pnl_pips) || 0)}</td>
                           <td className="px-2 py-2.5 text-right text-bunker-muted whitespace-nowrap">{t.duration_human || "—"}</td>

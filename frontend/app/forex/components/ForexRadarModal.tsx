@@ -333,7 +333,7 @@ export default function ForexRadarModal() {
                   : "bg-rose-500/25 text-rose-300 border border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.3)]"
               }`}
             >
-              {isBuy ? "▲ AL (LONG)" : "▼ SAT (SHORT)"}
+              {isBuy ? "▲ BUY" : "▼ SELL"}
             </span>
           </div>
         </div>

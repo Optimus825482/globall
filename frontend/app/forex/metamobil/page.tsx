@@ -676,9 +676,9 @@ export default function MetaMobilePage() {
                 <button
                   type="button"
                   onClick={() => handleExecuteOrder("BUY")}
-                  className="py-1.5 px-2 rounded bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold flex flex-col items-center justify-center transition-transform active:scale-95"
+                  className="py-1.5 px-2 rounded bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold flex flex-col items-center justify-center transition-transform active:scale-95"
                 >
-                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-400">BUY</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">BUY</span>
                   <span className="font-mono text-xs">{formatPrice(activeQuote.ask, activeQuote.symbol)}</span>
                 </button>
               </div>
@@ -1191,14 +1191,14 @@ export default function MetaMobilePage() {
               {/* Büyük Çift Fiyat Göstergesi */}
               <div className="grid grid-cols-2 gap-2 text-center py-1">
                 <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
-                  <span className="text-[10px] font-bold text-rose-400 block uppercase">BİD (SATIŞ)</span>
+                  <span className="text-[10px] font-bold text-rose-400 block uppercase">BID (SELL)</span>
                   <span className="text-xl font-black font-mono text-rose-300">
                     {formatPrice(orderQuote.bid, orderQuote.symbol)}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30">
-                  <span className="text-[10px] font-bold text-blue-400 block uppercase">ASK (ALIŞ)</span>
-                  <span className="text-xl font-black font-mono text-blue-300">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                  <span className="text-[10px] font-bold text-emerald-400 block uppercase">ASK (BUY)</span>
+                  <span className="text-xl font-black font-mono text-emerald-300">
                     {formatPrice(orderQuote.ask, orderQuote.symbol)}
                   </span>
                 </div>
@@ -1244,17 +1244,17 @@ export default function MetaMobilePage() {
                   onClick={() => handleExecuteOrder("SELL")}
                   className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm flex flex-col items-center justify-center shadow-lg shadow-rose-600/30 transition-transform active:scale-95"
                 >
-                  <span>PİYASA SATIŞ</span>
-                  <span className="text-[10px] font-mono opacity-80">SELL BY MARKET</span>
+                  <span>SELL</span>
+                  <span className="text-[10px] font-mono opacity-80">PİYASA FİYATINDAN</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleExecuteOrder("BUY")}
-                  className="py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-sm flex flex-col items-center justify-center shadow-lg shadow-blue-600/30 transition-transform active:scale-95"
+                  className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm flex flex-col items-center justify-center shadow-lg shadow-blue-600/30 transition-transform active:scale-95"
                 >
-                  <span>PİYASA ALIŞ</span>
-                  <span className="text-[10px] font-mono opacity-80">BUY BY MARKET</span>
+                  <span>BUY</span>
+                  <span className="text-[10px] font-mono opacity-80">PİYASA FİYATINDAN</span>
                 </button>
               </div>
             </div>

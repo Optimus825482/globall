@@ -1313,7 +1313,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                             : "bg-bunker-800 text-bunker-muted"
                         }`}
                       >
-                        {isBuy ? "▲ AL SİNYALİ" : isSell ? "▼ SAT SİNYALİ" : "BEKLE"}
+                        {isBuy ? "▲ BUY" : isSell ? "▼ SELL" : "BEKLE"}
                       </span>
                       <span className="text-bunker-muted font-mono text-[11px] font-bold">
                         Skor: {c.score}/100
@@ -1471,7 +1471,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                             : "bg-bunker-800 text-bunker-muted"
                         }`}
                       >
-                        {isBuy ? "▲ AL SİNYALİ" : isSell ? "▼ SAT SİNYALİ" : "BEKLE"}
+                        {isBuy ? "▲ BUY" : isSell ? "▼ SELL" : "BEKLE"}
                       </span>
                       <span className="text-bunker-muted font-mono text-[11px] font-bold">
                         Skor: {c?.score || 75}/100

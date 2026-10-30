@@ -26,6 +26,13 @@ export function SectionHeader({ eyebrow, title, description, actions }: { eyebro
   return <div className="ui-section-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2>{description && <p className="ui-section-description">{description}</p>}</div>{actions && <div className="ui-section-actions">{actions}</div>}</div>;
 }
 
+/** İşlem yönü rozeti: BUY yeşil, SELL kırmızı (tüm uygulamada tek biçim). */
+export function DirectionBadge({ direction, className = "" }: { direction?: string | null; className?: string }) {
+  const d = String(direction ?? "").toUpperCase();
+  if (d !== "BUY" && d !== "SELL") return <span className={`ui-badge ui-badge-neutral ${className}`}>—</span>;
+  return <span className={`ui-badge ${d === "BUY" ? "ui-badge-buy" : "ui-badge-sell"} ${className}`}>{d}</span>;
+}
+
 export function StatCard({ label, value, tone = "default", detail }: { label: string; value: ReactNode; tone?: "default" | "positive" | "negative" | "warning"; detail?: ReactNode }) {
   return <Card className="ui-stat-card"><p className="eyebrow">{label}</p><p className={`ui-stat-value ui-tone-${tone}`}>{value}</p>{detail && <p className="ui-stat-detail">{detail}</p>}</Card>;
 }

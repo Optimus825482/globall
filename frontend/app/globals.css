@@ -557,6 +557,10 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 .ui-badge-negative { color: #fda4af; background: rgb(244 63 94 / .12); border-color: rgb(244 63 94 / .3); }
 .ui-badge-warning { color: #fde68a; background: rgb(234 179 8 / .12); border-color: rgb(250 204 21 / .3); }
 .ui-badge-info { color: #93c5fd; background: rgb(59 130 246 / .12); border-color: rgb(96 165 250 / .3); }
+.ui-badge-buy { color: #fff; background: #059669; border-color: #10b981; font-weight: 700; letter-spacing: .04em; }
+.ui-badge-sell { color: #fff; background: #e11d48; border-color: #fb7185; font-weight: 700; letter-spacing: .04em; }
+html.light .ui-badge-buy { color: #fff !important; background: #059669 !important; border-color: #047857 !important; }
+html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !important; border-color: #be123c !important; }
 .ui-button { min-height: 2.5rem; padding: .65rem .9rem; border-radius: .65rem; border: 1px solid transparent; font: 600 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out; }
 .ui-button:active { transform: scale(.97); }
 .ui-button:disabled { cursor: not-allowed; opacity: .5; }
