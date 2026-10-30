@@ -11438,6 +11438,39 @@ async def get_macro_forex_news(
                 it["bias_confidence"] = 0
                 it["bias_explanation"] = "Henüz açıklanmamış veya yön belirsiz"
 
+            # Olay BAŞINA sonuç (yalnız görüntü): `bias_*` alanları işlem motorunun
+            # sembol-bazlı 30 dk penceresidir; 30 dk'yı geçen her olay NEUTRAL
+            # görünür. Burada açıklanan değer beklenti/önceki ile kıyaslanır ve
+            # para biriminin güçlenip zayıfladığı + pariteler üzerindeki yönü döner.
+            try:
+                from app.forex_news import evaluate_event_outcome as _eval_outcome
+                from app.forex_news_bias import symbol_direction as _sym_dir
+                res = _eval_outcome(
+                    it.get("original_title") or it.get("title") or "",
+                    it.get("forecast"), it.get("previous"), it.get("actual"),
+                )
+            except Exception:
+                res = None
+            if res:
+                cur = str(it.get("currency") or it.get("country") or "").upper().strip()
+                side = res.get("side")
+                pairs = []
+                if side:
+                    for s in it.get("affected_symbols") or []:
+                        pairs.append({
+                            "symbol": str(s),
+                            "direction": _sym_dir(cur, side == "bullish", str(s)),
+                        })
+                it["outcome"] = {
+                    "side": side,
+                    "currency": cur,
+                    "label": res.get("label_tr"),
+                    "comparison": res.get("comparison_tr"),
+                    "basis": res.get("basis"),
+                    "direction_note": res.get("direction_note_tr"),
+                    "pairs": pairs,
+                }
+
         upcoming_5m = [x for x in items if x.get("is_within_5m")]
 
         last_sync_ts = 0.0

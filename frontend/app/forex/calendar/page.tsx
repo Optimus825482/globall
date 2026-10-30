@@ -21,6 +21,16 @@ interface CalendarEvent {
   bias_direction?: "BUY" | "SELL" | "NEUTRAL";
   bias_confidence?: number;
   bias_explanation?: string;
+  /** Olay başına sonuç (backend `/news`): açıklanan değerin beklenti/önceki ile kıyası. */
+  outcome?: {
+    side: "bullish" | "bearish" | null;
+    currency: string;
+    label?: string;
+    comparison?: string;
+    basis?: string;
+    direction_note?: string | null;
+    pairs: Array<{ symbol: string; direction: number }>;
+  };
 }
 
 // API `country` alanında ülke değil para birimi kodu (JPY, USD…) geliyor;
@@ -88,6 +98,14 @@ export default function ForexCalendarPage() {
   const [error, setError] = useState("");
   const [filterStars, setFilterStars] = useState<number | null>(null);
   const [showPast, setShowPast] = useState(false);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const toggleOpen = (id: string) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const fetchNews = useCallback(async () => {
     try {
@@ -128,11 +146,7 @@ export default function ForexCalendarPage() {
           SAT {conf ? `· %${Math.round(conf * 100)}` : ""}
         </span>
       );
-    return (
-      <span className="px-1.5 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted font-mono text-[10px]">
-        NÖTR
-      </span>
-    );
+    return null;
   };
 
   const starsBadge = (stars?: number, impact?: string) => {
@@ -154,6 +168,27 @@ export default function ForexCalendarPage() {
         ⭐
       </span>
     );
+  };
+
+  const resultBadge = (
+    released: boolean,
+    o: CalendarEvent["outcome"],
+    cur: string
+  ) => {
+    const base = "px-2 py-0.5 rounded border font-mono text-[10px] font-bold whitespace-nowrap";
+    if (!released)
+      return <span className={`${base} bg-bunker-800 border-bunker-700 text-bunker-muted`}>BEKLENİYOR</span>;
+    if (!o)
+      return (
+        <span title="Değer beklenti/önceki ile kıyaslanamadı" className={`${base} bg-bunker-800 border-bunker-700 text-bunker-muted`}>
+          YORUMSUZ
+        </span>
+      );
+    if (o.side === "bullish")
+      return <span className={`${base} bg-emerald-500/20 border-emerald-400/40 text-emerald-300`}>{cur} GÜÇLÜ ▲</span>;
+    if (o.side === "bearish")
+      return <span className={`${base} bg-rose-500/20 border-rose-400/40 text-rose-300`}>{cur} ZAYIF ▼</span>;
+    return <span className={`${base} bg-bunker-800 border-bunker-700 text-bunker-muted`}>BEKLENTİYE UYGUN</span>;
   };
 
   return (
@@ -276,62 +311,133 @@ export default function ForexCalendarPage() {
               </div>
 
               <div className="space-y-2">
-                {dayEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border transition-all ${
-                      ev.is_within_5m
-                        ? "bg-amber-950/20 border-amber-500/40"
-                        : ev.actual && ev.actual !== "—"
-                        ? "bg-bunker-950/40 border-bunker-700"
-                        : "bg-bunker-950/20 border-bunker-800 hover:border-bunker-700"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="shrink-0 w-9 h-9 rounded-lg bg-bunker-800 border border-bunker-700 flex items-center justify-center text-lg">
-                        {getFlag(ev)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-sm font-bold text-white truncate">
-                            {ev.title}
-                          </span>
-                          {starsBadge(ev.stars, ev.impact)}
-                          {ev.is_within_5m && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-[10px] font-bold animate-pulse">
-                              ⏳ 5 DK
-                            </span>
-                          )}
-                          {ev.actual && ev.actual !== "—" && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold">
-                              ✓ AÇIKLANDI
-                            </span>
-                          )}
+                {dayEvents.map((ev) => {
+                  const released = !!ev.actual && ev.actual !== "—";
+                  const isOpen = openIds.has(ev.id);
+                  const o = ev.outcome;
+                  const cur = (o?.currency || ev.currency || "").toUpperCase();
+                  return (
+                    <div
+                      key={ev.id}
+                      className={`rounded-xl border transition-all ${
+                        ev.is_within_5m
+                          ? "bg-amber-950/20 border-amber-500/40"
+                          : released
+                          ? "bg-bunker-950/40 border-bunker-700"
+                          : "bg-bunker-950/20 border-bunker-800 hover:border-bunker-700"
+                      }`}
+                    >
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isOpen}
+                        onClick={() => toggleOpen(ev.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleOpen(ev.id);
+                          }
+                        }}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 min-h-11 cursor-pointer rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="shrink-0 w-9 h-9 rounded-lg bg-bunker-800 border border-bunker-700 flex items-center justify-center text-lg">
+                            {getFlag(ev)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-sm font-bold text-white">{ev.title}</span>
+                              {starsBadge(ev.stars, ev.impact)}
+                              {ev.is_within_5m && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-[10px] font-bold animate-pulse">
+                                  ⏳ 5 DK
+                                </span>
+                              )}
+                              {released && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold">
+                                  ✓ AÇIKLANDI
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-x-3 gap-y-1 text-[11px] text-bunker-muted font-mono mt-1 flex-wrap">
+                              <span className="text-white/70 font-bold">{formatUtc3Time(ev.date_iso)}</span>
+                              <span>Önceki: {ev.previous || "—"}</span>
+                              <span>Beklenti: {ev.forecast || "—"}</span>
+                              {released && <span className="text-white font-bold">Açıklanan: {ev.actual}</span>}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-x-3 gap-y-1 text-[11px] text-bunker-muted font-mono mt-1 flex-wrap">
-                          <span className="text-white/70 font-bold">{formatUtc3Time(ev.date_iso)}</span>
-                          <span>Önceki: {ev.previous || "—"}</span>
-                          <span>Beklenti: {ev.forecast || "—"}</span>
-                          {ev.actual && ev.actual !== "—" && (
-                            <>
-                                  <span className="text-white font-bold">Açıklanan: {ev.actual}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 flex-wrap sm:justify-end">
-                      {biasBadge(ev.bias_direction, ev.bias_confidence)}
-                      {ev.affected_symbols && ev.affected_symbols.length > 0 && (
-                        <span title={ev.affected_symbols.join(", ")} className="px-1.5 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted font-mono text-[10px]">
-                          {ev.affected_symbols.slice(0, 4).join(", ")}
-                          {ev.affected_symbols.length > 4 ? ` +${ev.affected_symbols.length - 4}` : ""}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+                          {resultBadge(released, o, cur)}
+                          {biasBadge(ev.bias_direction, ev.bias_confidence)}
+                          <span aria-hidden className={`text-bunker-muted text-xs transition-transform ${isOpen ? "rotate-90" : ""}`}>▶</span>
+                        </div>
+                      </div>
+
+                      {isOpen && (
+                        <div className="border-t border-bunker-800 px-3 py-3 space-y-3 font-mono text-xs">
+                          {released && o ? (
+                            <>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-bunker-muted">Sonuç:</span>
+                                <span className="text-white font-bold">{o.comparison || o.label}</span>
+                              </div>
+                              <p className="text-white/90">
+                                {o.side === "bullish"
+                                  ? `${cur} için olumlu: veri para birimini güçlendirir.`
+                                  : o.side === "bearish"
+                                  ? `${cur} için olumsuz: veri para birimini zayıflatır.`
+                                  : "Veri beklentiyle aynı: belirgin bir yön yok."}
+                              </p>
+                              {o.direction_note && <p className="text-amber-300">{o.direction_note}</p>}
+                              {o.pairs.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <span className="text-bunker-muted">Parite etkisi:</span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {o.pairs.map((pr) => (
+                                      <span
+                                        key={pr.symbol}
+                                        className={`px-2 py-1 rounded border text-[11px] font-bold ${
+                                          pr.direction > 0
+                                            ? "bg-emerald-500/15 border-emerald-400/40 text-emerald-300"
+                                            : pr.direction < 0
+                                            ? "bg-rose-500/15 border-rose-400/40 text-rose-300"
+                                            : "bg-bunker-800 border-bunker-700 text-bunker-muted"
+                                        }`}
+                                      >
+                                        {pr.symbol} {pr.direction > 0 ? "▲ AL" : pr.direction < 0 ? "▼ SAT" : "— belirsiz"}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              <p className="text-[10px] text-bunker-muted">
+                                Kıyas tabanı: {o.basis === "forecast" ? "beklenti" : "önceki değer"}. Bilgi amaçlıdır, işlem emri değildir.
+                              </p>
+                            </>
+                          ) : released ? (
+                            <p className="text-bunker-muted">
+                              Açıklanan değer ({ev.actual}) beklenti veya önceki değerle karşılaştırılamadı (birim farkı ya da değer yok), bu yüzden yön verilmiyor.
+                            </p>
+                          ) : (
+                            <p className="text-bunker-muted">
+                              Henüz açıklanmadı. Açıklanınca sonuç ve parite yönleri burada görünür.
+                            </p>
+                          )}
+                          {ev.bias_direction && ev.bias_direction !== "NEUTRAL" && ev.bias_explanation && (
+                            <p className="text-blue-300">İşlem motoru: {ev.bias_explanation}</p>
+                          )}
+                          {ev.affected_symbols && ev.affected_symbols.length > 0 && (
+                            <div className="text-[11px] text-bunker-muted">
+                              Etkilenen semboller: {ev.affected_symbols.join(", ")}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
