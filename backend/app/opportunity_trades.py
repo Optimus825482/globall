@@ -1,4 +1,4 @@
-"""Sohbet "Fırsat taraması": Forex / Bitcoin / Altın'da yönlü fırsat bulunca kayıtlı DEMO hesapta işlem açar.
+"""Sohbet "Fırsat taraması": Forex / Bitcoin / Altın / ABD endekslerinde (Nasdaq 100, Dow Jones) yönlü fırsat bulunca kayıtlı DEMO hesapta işlem açar.
 
 Akış: TradingView toplu taraması → en net adaylar derin analiz (8 dilim, MT5 öncelikli) → burada çok katmanlı
 kapılar → geçenler için `forex.open_scan_position` radarın kullandığı MT5 komut kuyruğuyla DEMO hesaba emir yazar.
@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("scalper.opportunity")
 
 OPPORTUNITY_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY",
-                        "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "BTCUSD"]
+                        "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "BTCUSD", "USTEC", "US30"]
 DEEP_ANALYSIS_TOP = 4              # taramada en net N sembol derin analiz edilir
 
 SYMBOL_COOLDOWN_SEC = 30 * 60      # aynı sembolde yeni giriş için bekleme (bellek içi)
