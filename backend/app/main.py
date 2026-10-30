@@ -4391,6 +4391,8 @@ async def activate_llm(request: Request, payload: dict):
     _require_admin(request)
     await database.set_llm_setting("llm_enabled", "1" if payload.get("enabled") else "0")
     if payload.get("model_id") is not None: await database.set_llm_setting("active_model_id", payload["model_id"])
+    if "fallback_model_id" in payload:
+        await database.set_llm_setting("fallback_model_id", payload["fallback_model_id"] or "")
     return {"ok": True}
 
 @app.post("/api/llm/test")

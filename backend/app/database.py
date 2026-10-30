@@ -794,7 +794,13 @@ async def get_llm_config():
             active_model_id = int(active[0]) if active else None
         except (ValueError, TypeError):
             active_model_id = None
-        return {"providers": providers, "models": models, "skills": skills, "active_model_id": active_model_id}
+        fb = conn.execute("SELECT value FROM llm_settings WHERE key='fallback_model_id'").fetchone()
+        try:
+            fallback_model_id = int(fb[0]) if fb and fb[0] else None
+        except (ValueError, TypeError):
+            fallback_model_id = None
+        return {"providers": providers, "models": models, "skills": skills, "active_model_id": active_model_id,
+                "fallback_model_id": fallback_model_id}
     return await _run_db(op)
 
 async def get_active_llm_config():
@@ -803,6 +809,19 @@ async def get_active_llm_config():
         if not setting or setting[0] != "1": return None
         row = conn.execute("SELECT m.*, p.name provider_name,p.base_url,p.api_key_encrypted,p.enabled provider_enabled FROM llm_models m JOIN llm_providers p ON p.id=m.provider_id JOIN llm_settings s ON s.key='active_model_id' AND s.value=CAST(m.id AS TEXT) WHERE m.enabled=1 AND p.enabled=1 AND m.model_type='chat'").fetchone()
         if not row: return None
+        skills = [dict(r) for r in conn.execute("SELECT id,name,instructions,enabled FROM llm_skills WHERE enabled=1").fetchall()]
+        return {"provider": dict(row), "model": dict(row), "skills": skills}
+    return await _run_db(op)
+
+async def get_fallback_llm_config():
+    """Yedek sohbet modeli (ayarlardaki `fallback_model_id`). Yoksa/pasifse/aktif modelle aynıysa None."""
+    def op(conn):
+        setting = conn.execute("SELECT value FROM llm_settings WHERE key='llm_enabled'").fetchone()
+        if not setting or setting[0] != "1": return None
+        row = conn.execute("SELECT m.*, p.name provider_name,p.base_url,p.api_key_encrypted,p.enabled provider_enabled FROM llm_models m JOIN llm_providers p ON p.id=m.provider_id JOIN llm_settings s ON s.key='fallback_model_id' AND s.value=CAST(m.id AS TEXT) WHERE m.enabled=1 AND p.enabled=1 AND m.model_type='chat'").fetchone()
+        if not row: return None
+        active = conn.execute("SELECT value FROM llm_settings WHERE key='active_model_id'").fetchone()
+        if active and str(active[0]) == str(row["id"]): return None
         skills = [dict(r) for r in conn.execute("SELECT id,name,instructions,enabled FROM llm_skills WHERE enabled=1").fetchall()]
         return {"provider": dict(row), "model": dict(row), "skills": skills}
     return await _run_db(op)

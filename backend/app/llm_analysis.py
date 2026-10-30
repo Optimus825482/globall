@@ -450,6 +450,8 @@ TOOL_LOOP_TOTAL_TIMEOUT = max(30, int(os.getenv("LLM_TOOL_TOTAL_TIMEOUT", "300")
 # hiç bitmeyen bir provider akışı bağlantıyı sonsuza kadar tutar.
 STREAM_TOTAL_TIMEOUT = max(30, int(os.getenv("LLM_STREAM_TOTAL_TIMEOUT", "600")))
 STREAM_OPEN_TIMEOUT = max(5, int(os.getenv("LLM_STREAM_OPEN_TIMEOUT", "120")))
+# Hiç jeton (içerik ya da akıl yürütme) gelmeden beklenen azami süre; aşılırsa yedek modele geçilir.
+FIRST_TOKEN_TIMEOUT = max(5, int(os.getenv("LLM_FIRST_TOKEN_TIMEOUT", "45")))
 
 
 def _clamp_max_tokens(value, default=None, cap=None):
@@ -871,7 +873,33 @@ async def chat(snapshot, messages, tools=None, tool_executor=None, active_skills
         return {"enabled": True, "status": "error", "text": None, "error": str(exc)}
 
 async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active_skills=None, max_tokens=None, system_override=None,
-                      accept_reasoning=False):
+                      accept_reasoning=False, fallback=True, cfg_override=None):
+    """Akış sarmalayıcı: ana model HİÇ metin üretmeden hata verirse (zaman aşımı, HTTP, boş yanıt) yedek modele döner.
+
+    `fallback=False` çağıranın kendi süre bütçesini yönettiği durumlar içindir (ör. işlem öncesi LLM onayı).
+    Metin akmaya başladıktan sonra model değiştirilmez (yarım yanıt karışmasın).
+    """
+    use_tools = bool(tools and tool_executor)
+    emitted = False
+    async for ev in _stream_chat_once(snapshot, messages, tools, tool_executor, active_skills, max_tokens, system_override,
+                                      accept_reasoning, cfg_override):
+        if ev["event"] == "delta" and (ev["data"] or {}).get("text"):
+            emitted = True
+        if ev["event"] == "error" and not emitted and fallback and cfg_override is None and not use_tools:
+            fb = await database.get_fallback_llm_config()
+            if fb:
+                logger.warning("LLM ana model başarısız (%s) → yedek model: %s", (ev["data"] or {}).get("error"), fb["model"]["name"])
+                async for ev2 in _stream_chat_once(snapshot, messages, tools, tool_executor, active_skills, max_tokens,
+                                                   system_override, accept_reasoning, fb):
+                    if ev2["event"] == "done":
+                        ev2["data"]["fallback_used"] = True
+                    yield ev2
+                return
+        yield ev
+
+
+async def _stream_chat_once(snapshot, messages, tools=None, tool_executor=None, active_skills=None, max_tokens=None,
+                            system_override=None, accept_reasoning=False, cfg_override=None):
     """SSE-compatible chat path with the same tool loop as buffered chat.
 
     Providers differ in streaming tool-call support. When tools are supplied,
@@ -903,7 +931,7 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
         yield {"event": "delta", "data": {"text": result["text"]}}
         yield {"event": "done", "data": {**result, "provider_stream": False, "tool_loop": True}}
         return
-    cfg = await database.get_active_llm_config()
+    cfg = cfg_override or await database.get_active_llm_config()
     if not cfg:
         yield {"event": "error", "data": {"status": "disabled", "error": "Aktif LLM yapılandırması yok"}}
         return
@@ -1016,7 +1044,13 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
         emitted = False
         reasoning_parts: list[str] = []
         stream_deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
+        first_deadline = time.monotonic() + FIRST_TOKEN_TIMEOUT
+        truncated = False
         while True:
+            if not emitted and not reasoning_parts and time.monotonic() > first_deadline:
+                _close_stream_response()
+                reader.cancel()
+                raise RuntimeError(f"LLM ilk jeton zaman aşımı ({FIRST_TOKEN_TIMEOUT} sn)")
             if time.monotonic() > stream_deadline:
                 # LLM-01: hiç bitmeyen akış bağlantıyı ve okuma thread'ini
                 # sonsuza kadar tutmasın.
@@ -1053,6 +1087,8 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
             data = item.get("data", item) if isinstance(item, dict) else item
             choices = data.get("choices", []) if isinstance(data, dict) else []
             delta = choices[0].get("delta", {}) if choices else {}
+            if choices and choices[0].get("finish_reason") == "length":
+                truncated = True
             # BOŞ YANIT DÜZELTMESİ (2026-09-18, kullanıcı raporu: "chat
             # sayfasında LLM yanıtları boş geliyor"): ZORUNLU kural ("monolog
             # gösterme") GLM interleaved-thinking'te metni reasoning_content
@@ -1094,7 +1130,10 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
                 yield {"event": "error", "data": {"status": "error",
                        "error": "Sağlayıcı yanıtı boş döndü; mesajı tekrar gönderin veya LLM sağlayıcı ayarlarını kontrol edin"}}
                 return
-        yield {"event": "done", "data": {"status": "ok", "model": cfg["model"]["name"], "generated_at": time.time(), "provider_stream": True, "emitted": emitted}}
+        if truncated and emitted and not accept_reasoning:
+            # Jeton sınırı yanıtı ortadan kesti: sessiz yarım bırakma, kullanıcıya göster.
+            yield {"event": "delta", "data": {"text": "\n\n_(Yanıt uzunluk sınırında kesildi; devamı için «devam et» yazın.)_"}}
+        yield {"event": "done", "data": {"status": "ok", "model": cfg["model"]["name"], "generated_at": time.time(), "provider_stream": True, "emitted": emitted, "truncated": truncated}}
     except Exception as exc:
         yield {"event": "error", "data": {"status": "error", "error": str(exc)}}
     finally:

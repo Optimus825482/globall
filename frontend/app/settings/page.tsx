@@ -508,6 +508,10 @@ function SettingsPageInner() {
               <option value="">Aktif model seç</option>
               {(llm.models ?? []).map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
+            <select value={llm.fallback_model_id || ""} onChange={async e => { const id=e.target.value ? Number(e.target.value) : null; await llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,fallback_model_id:id})}, id ? "Yedek model kaydedildi" : "Yedek model kaldırıldı"); }} className="input" title="Ana model zaman aşımı/hata verirse otomatik bu modele geçilir">
+              <option value="">Yedek model (yok)</option>
+              {(llm.models ?? []).filter((m:any)=>m.model_type==="chat" && m.id!==llm.active_model_id).map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
             <button onClick={() => llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,model_id:llm.active_model_id})}, "LLM aktif edildi")} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs">
               LLM AKTİF
             </button>

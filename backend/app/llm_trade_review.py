@@ -23,7 +23,7 @@ import time
 from collections import deque
 from typing import Any, Dict, List, Optional
 
-from app import forex_research, llm_analysis
+from app import database, forex_research, llm_analysis
 
 logger = logging.getLogger("scalper.llm_review")
 
@@ -315,16 +315,19 @@ def parse_verdict(text: str) -> Optional[Dict[str, Any]]:
             "checks": checks_out}
 
 
-async def ask_llm(dossier: Dict[str, Any], timeout: float) -> tuple:
-    """(karar_sözlüğü, model_adı). Hata/zaman aşımında istisna fırlatır."""
+PRIMARY_BUDGET_SHARE = 0.6        # yedek model tanımlıysa süre bütçesinin bu payı ana modele verilir
+MIN_FALLBACK_SEC = 10.0
+
+
+async def _ask_once(dossier: Dict[str, Any], budget: float, cfg_override: Optional[Dict[str, Any]]) -> tuple:
     messages = [{"role": "user", "content": "Bu işlemi açılmadan önce değerlendir ve YALNIZCA JSON döndür."}]
     parts: List[str] = []
     model = ""
 
     async def _run():
         nonlocal model
-        async for ev in llm_analysis.stream_chat(dossier, messages, max_tokens=MAX_REVIEW_TOKENS,
-                                                 system_override=SYSTEM_PROMPT, accept_reasoning=True):
+        async for ev in llm_analysis.stream_chat(dossier, messages, max_tokens=MAX_REVIEW_TOKENS, system_override=SYSTEM_PROMPT,
+                                                 accept_reasoning=True, fallback=False, cfg_override=cfg_override):
             if ev["event"] == "delta":
                 parts.append(str(ev["data"].get("text", "")))
             elif ev["event"] == "error":
@@ -332,11 +335,30 @@ async def ask_llm(dossier: Dict[str, Any], timeout: float) -> tuple:
             elif ev["event"] == "done":
                 model = str((ev["data"] or {}).get("model") or "")
 
-    await asyncio.wait_for(_run(), timeout=timeout)
+    try:
+        await asyncio.wait_for(_run(), timeout=budget)
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"LLM {budget:.0f} sn içinde yanıt vermedi") from None
     verdict = parse_verdict("".join(parts))
     if verdict is None:
         raise ValueError("LLM yanıtı geçerli karar JSON'u değil")
     return verdict, model
+
+
+async def ask_llm(dossier: Dict[str, Any], timeout: float) -> tuple:
+    """(karar_sözlüğü, model_adı). Ana model hata/zaman aşımı/geçersiz yanıt verirse YEDEK modele hemen geçilir
+    (ayar: `fallback_model_id`); ikisi de başarısızsa istisna fırlatır (fail-open/closed politikası çağırandadır)."""
+    fb = await database.get_fallback_llm_config()
+    if not fb:
+        return await _ask_once(dossier, timeout, None)
+    started = time.monotonic()
+    try:
+        return await _ask_once(dossier, timeout * PRIMARY_BUDGET_SHARE, None)
+    except (asyncio.TimeoutError, TimeoutError, RuntimeError, ValueError) as exc:
+        left = max(MIN_FALLBACK_SEC, timeout - (time.monotonic() - started))
+        logger.warning("LLM onayı: ana model başarısız (%s: %s) → yedek %s (%.0f sn)", type(exc).__name__, exc, fb["model"]["name"], left)
+        verdict, model = await _ask_once(dossier, left, fb)
+        return verdict, f"{model} (yedek)"
 
 
 NEWS_RISK_WINDOW_MIN = 45

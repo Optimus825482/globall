@@ -32,7 +32,7 @@ logger = logging.getLogger("scalper.routers.forex_chat")
 router = APIRouter(prefix="/api/forex", tags=["forex-chat"])
 
 STEP_TIMEOUT_SEC = 14.0
-MAX_ANSWER_TOKENS = 2000
+MAX_ANSWER_TOKENS = 4096     # düşünen model jetonun çoğunu akıl yürütmeye harcıyor; 2000'de yanıt yarım kalıyordu
 DEFAULT_SYMBOLS = ["XAUUSD", "BTCUSD", "EURUSD"]
 
 # Kullanıcı yazısında geçen ad → sembol (Türkçe/gündelik adlar dahil).
