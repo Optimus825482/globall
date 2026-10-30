@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3, localDateInput } from "../../lib/format";
+import LlmReviewReport from "./LlmReviewReport";
 
 interface ClosedTrade {
   id: string;
@@ -141,6 +142,8 @@ function exitBadge(t: ClosedTrade): { label: string; cls: string } {
 }
 
 export default function ForexReportsPage() {
+  // Rapor görünümü: işlem raporu ya da LLM Trader kararları.
+  const [view, setView] = useState<"trades" | "llm">("trades");
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<any[]>([]);
   const [kpi, setKpi] = useState<ReportKPI | null>(null);
@@ -415,6 +418,24 @@ export default function ForexReportsPage() {
         </div>
       </div>
 
+      <div role="tablist" aria-label="Rapor türü" className="flex gap-2">
+        {([["trades", "İşlem Raporu"], ["llm", "LLM Kararları"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            onClick={() => setView(key)}
+            className={`px-4 py-2 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
+              view === key ? "bg-blue-500/20 border-blue-400/60 text-blue-200" : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "llm" ? <LlmReviewReport /> : (<>
       {/* KPI PERFORMANS METRİKLERİ KARTLARI */}
       {kpi && (
         <>
@@ -996,6 +1017,7 @@ export default function ForexReportsPage() {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

@@ -9,6 +9,11 @@ import { apiFetch } from "../../lib/api";
 
 export interface AutoSettings {
   enabled: boolean;
+  llm_review_enabled?: boolean;
+  llm_review_mode?: "veto" | "advisory";
+  llm_review_fail_open?: boolean;
+  llm_review_min_confidence?: number;
+  llm_review_timeout_sec?: number;
   balance: number;
   risk_per_trade_pct: number;
   risk_gold_pct?: number;
@@ -472,6 +477,75 @@ export default function AutoSettingsPanel({
       {/* TAB 1: GENEL RİSK & ÇIKIŞ MOTORU */}
       {activeTab === "risk" && (
         <div className="space-y-4 animate-in fade-in duration-150">
+          {/* LLM TRADER İNCELEMESİ: işlem açılmadan önce ikinci görüş */}
+          <div className="p-3 rounded-xl bg-bunker-950/80 border border-cyan-500/30 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
+              <span className="text-xs font-bold text-cyan-300">LLM Trader İncelemesi (işlem açılmadan önce)</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${form.llm_review_enabled !== false ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : "bg-bunker-800 text-bunker-muted border-bunker-700"}`}>
+                {form.llm_review_enabled !== false ? "AÇIK" : "KAPALI"}
+              </span>
+            </div>
+            <label className="inline-flex items-start gap-2 cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={form.llm_review_enabled !== false}
+                onChange={(e) => setField("llm_review_enabled", e.target.checked)}
+                className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`}
+              />
+              <span>
+                <span className="text-white font-semibold block">Açılmadan önce LLM değerlendirsin</span>
+                <span className="text-[10px] text-bunker-muted">
+                  Motor bir işlemi açmadan önce deneyimli trader istemiyle LLM: çok zaman dilimli analiz, mum formasyonları, destek/direnç,
+                  ekonomik takvim, haberler, dolar ve açık pozisyon yığılmasına bakıp ONAY/RED verir. Her karar kaydedilir; sonuçları
+                  Raporlar &gt; LLM Kararları sekmesinde.
+                </span>
+              </span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Çalışma modu:</label>
+                <select
+                  value={form.llm_review_mode ?? "veto"}
+                  onChange={(e) => setField("llm_review_mode", e.target.value)}
+                  className={`${inputCls}`}
+                >
+                  <option value="veto">Veto: LLM reddederse işlem açılmaz</option>
+                  <option value="advisory">Danışman: yalnız kaydeder, engellemez (deneme)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">Onay için min. güven (0-100):</label>
+                <input
+                  type="number" min="0" max="100"
+                  value={form.llm_review_min_confidence ?? 55}
+                  onChange={(e) => setNumField("llm_review_min_confidence", e.target.value)}
+                  className={`${inputCls} text-cyan-300`}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-bunker-muted block mb-1">En fazla bekleme (sn, 3-60):</label>
+                <input
+                  type="number" min="3" max="60" step="1"
+                  value={form.llm_review_timeout_sec ?? 12}
+                  onChange={(e) => setNumField("llm_review_timeout_sec", e.target.value)}
+                  className={`${inputCls} text-cyan-300`}
+                />
+              </div>
+              <label className="inline-flex items-start gap-2 cursor-pointer self-end">
+                <input
+                  type="checkbox"
+                  checked={form.llm_review_fail_open !== false}
+                  onChange={(e) => setField("llm_review_fail_open", e.target.checked)}
+                  className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`}
+                />
+                <span>
+                  <span className="text-white font-semibold block">LLM yanıt vermezse işlem yine açılsın</span>
+                  <span className="text-[10px] text-bunker-muted">Kapalıysa LLM yokken/yavaşken hiçbir işlem açılmaz.</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div>
               <label className="text-[11px] text-bunker-muted block mb-1">Forex Riski (% Bakiye):</label>

@@ -358,6 +358,7 @@ async def init_db():
         # 2026-10-08: Investing.com & küresel ekonomik takvim verileri (2 & 3 yıldız)
         _ensure_economic_calendar_schema(conn)
         _ensure_forex_research_schema(conn)
+        _ensure_llm_review_schema(conn)
         # V-04: MACD kanıt şeması artık OKUMA yolunda değil, açılışta bir kez
         # hazırlanır (istatistik uçları DDL/INSERT/COMMIT yapmaz).
         _ensure_macd_evidence_schema(conn)
@@ -6276,6 +6277,177 @@ async def save_forex_analysis(rec: Dict[str, Any]) -> None:
         conn.commit()
 
     await _run_db(op)
+
+
+_LLM_REVIEW_SCHEMA_READY = False
+
+
+def _ensure_llm_review_schema(conn) -> None:
+    """LLM işlem incelemesi kararları + gölge sonuçları (idempotent)."""
+    global _LLM_REVIEW_SCHEMA_READY
+    if _LLM_REVIEW_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS llm_trade_reviews (
+                id BIGSERIAL PRIMARY KEY,
+                created_at DOUBLE PRECISION NOT NULL,
+                symbol TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                strategy TEXT,
+                strategy_label TEXT,
+                score DOUBLE PRECISION,
+                lots DOUBLE PRECISION,
+                entry_price DOUBLE PRECISION,
+                sl_pips DOUBLE PRECISION,
+                tp_pips DOUBLE PRECISION,
+                pip_size DOUBLE PRECISION,
+                mode TEXT,
+                decision TEXT,
+                confidence INTEGER,
+                applied TEXT,
+                summary TEXT,
+                reasons TEXT,
+                risks TEXT,
+                checks TEXT,
+                dossier TEXT,
+                model TEXT,
+                latency_ms INTEGER,
+                error TEXT,
+                repeat_count INTEGER DEFAULT 0,
+                executed INTEGER DEFAULT 0,
+                exec_ref TEXT,
+                shadow_status TEXT DEFAULT 'IZLENIYOR',
+                shadow_pips DOUBLE PRECISION,
+                mfe_pips DOUBLE PRECISION,
+                mae_pips DOUBLE PRECISION,
+                shadow_closed_at DOUBLE PRECISION
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_created ON llm_trade_reviews(created_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_shadow ON llm_trade_reviews(shadow_status)")
+        conn.commit()
+        _LLM_REVIEW_SCHEMA_READY = True
+    except Exception as exc:
+        logger.warning("llm_trade_reviews şema hazırlama hatası: %s", exc)
+
+
+async def save_llm_review(rec: Dict[str, Any]) -> int:
+    """Kararı yazar; kayıt id'sini döner. Hata/LLM'siz kararlar da yazılır (denetim izi)."""
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        row = conn.execute(
+            """
+            INSERT INTO llm_trade_reviews
+                (created_at, symbol, direction, strategy, strategy_label, score, lots, entry_price, sl_pips, tp_pips,
+                 pip_size, mode, decision, confidence, applied, summary, reasons, risks, checks, dossier, model,
+                 latency_ms, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (time.time(), rec.get("symbol"), rec.get("direction"), rec.get("strategy"), rec.get("strategy_label"),
+             rec.get("score"), rec.get("lots"), rec.get("entry_price"), rec.get("sl_pips"), rec.get("tp_pips"),
+             rec.get("pip_size"), rec.get("mode"), rec.get("decision"), rec.get("confidence"), rec.get("applied"),
+             rec.get("summary"), json.dumps(rec.get("reasons") or [], ensure_ascii=False),
+             json.dumps(rec.get("risks") or [], ensure_ascii=False), json.dumps(rec.get("checks") or {}, ensure_ascii=False),
+             rec.get("dossier"), rec.get("model"), rec.get("latency_ms"), rec.get("error")),
+        ).fetchone()
+        conn.commit()
+        return int(row[0])
+
+    return await _run_db(op)
+
+
+async def bump_llm_review_repeat(review_id: int) -> None:
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        conn.execute("UPDATE llm_trade_reviews SET repeat_count = COALESCE(repeat_count, 0) + 1 WHERE id = ?", (review_id,))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def mark_llm_review_executed(review_id: int, ref: str) -> None:
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        conn.execute(
+            "UPDATE llm_trade_reviews SET executed = COALESCE(executed, 0) + 1, exec_ref = ? WHERE id = ?",
+            (ref, review_id))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def get_llm_reviews_tracking(max_age_sec: float) -> List[Dict[str, Any]]:
+    """Gölge sonucu henüz kapanmamış kararlar (fiyat izleyici için)."""
+    cutoff = time.time() - max_age_sec
+
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        cur = conn.execute(
+            "SELECT id, created_at, symbol, direction, entry_price, sl_pips, tp_pips, pip_size, mfe_pips, mae_pips "
+            "FROM llm_trade_reviews WHERE shadow_status = 'IZLENIYOR' AND created_at > ? AND entry_price IS NOT NULL",
+            (cutoff,))
+        keys = ["id", "created_at", "symbol", "direction", "entry_price", "sl_pips", "tp_pips", "pip_size", "mfe_pips", "mae_pips"]
+        return [_row_to_dict(keys, r) for r in cur.fetchall()]
+
+    return await _run_db(op)
+
+
+async def update_llm_review_shadow(review_id: int, upd: Dict[str, Any]) -> None:
+    allowed = ("shadow_status", "shadow_pips", "mfe_pips", "mae_pips", "shadow_closed_at")
+    cols = [k for k in allowed if k in upd]
+    if not cols:
+        return
+
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        conn.execute(
+            f"UPDATE llm_trade_reviews SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?",
+            tuple(upd[c] for c in cols) + (review_id,))
+        conn.commit()
+
+    await _run_db(op)
+
+
+_LLM_REVIEW_LIST_COLS = ("id", "created_at", "symbol", "direction", "strategy_label", "score", "lots", "entry_price",
+                         "sl_pips", "tp_pips", "mode", "decision", "confidence", "applied", "summary", "reasons", "risks",
+                         "checks", "model", "latency_ms", "error", "repeat_count", "executed", "shadow_status",
+                         "shadow_pips", "mfe_pips", "mae_pips")
+
+
+def _row_to_dict(keys, r) -> Dict[str, Any]:
+    """Satır hem sözlük-benzeri (anahtarla) hem sıralı gelebilir: ikisini de doğru eşle."""
+    if hasattr(r, "keys"):
+        return {k: r[k] for k in keys}
+    return dict(zip(keys, r))
+
+
+def _llm_review_row(keys, r) -> Dict[str, Any]:
+    d = _row_to_dict(keys, r)
+    for k in ("reasons", "risks", "checks"):
+        if isinstance(d.get(k), str):
+            try:
+                d[k] = json.loads(d[k])
+            except Exception:
+                d[k] = [] if k != "checks" else {}
+    return d
+
+
+async def list_llm_reviews(since_ts: float = 0.0, limit: int = 200, review_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        if review_id is not None:
+            keys = list(_LLM_REVIEW_LIST_COLS) + ["dossier"]
+            cur = conn.execute(f"SELECT {', '.join(keys)} FROM llm_trade_reviews WHERE id = ?", (review_id,))
+        else:
+            keys = list(_LLM_REVIEW_LIST_COLS)
+            cur = conn.execute(
+                f"SELECT {', '.join(keys)} FROM llm_trade_reviews WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
+                (since_ts, int(limit)))
+        return [_llm_review_row(keys, r) for r in cur.fetchall()]
+
+    return await _run_db(op)
 
 
 async def get_last_economic_calendar_sync() -> float:

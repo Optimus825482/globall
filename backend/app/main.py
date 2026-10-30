@@ -226,6 +226,7 @@ from app.routers import bridge as bridge_routes
 from app.routers import forex as forex_routes
 from app.routers import snapback as snapback_routes
 from app.routers import forex_chat as forex_chat_routes
+from app.routers import llm_review as llm_review_routes
 from app.forex_news import economic_calendar_background_loop
 app.include_router(auto_paper_routes.router)
 app.include_router(macd_monitor_routes.router)
@@ -233,6 +234,7 @@ app.include_router(bridge_routes.router)
 app.include_router(forex_routes.router)
 app.include_router(snapback_routes.router)
 app.include_router(forex_chat_routes.router)
+app.include_router(llm_review_routes.router)
 
 
 _TTS_VOICE = "tr-TR-EmelNeural"
@@ -1208,6 +1210,8 @@ async def startup_services():
     _start_background(forex_auto_paper_start_loop, "forex-auto-paper")
     await asyncio.sleep(0.05)
     _start_background(economic_calendar_background_loop, "economic-calendar-sync")
+    from app.llm_trade_review import tracker_loop
+    _start_background(tracker_loop, "llm-review-tracker")
 
 async def forex_auto_paper_start_loop():
     """Forex Otonom Scalper motorunu arka planda başlat."""

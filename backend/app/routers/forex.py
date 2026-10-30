@@ -5420,6 +5420,11 @@ class ForexAutoPaperSettings(BaseModel):
     supertrend_filter_enabled: bool = Field(True, description="SuperTrend yön teyidi: giriş yalnızca SuperTrend yönüyle aynı tarafta açılır")
     ev_guard_enabled: bool = Field(True, description="Sembol EV kalkanı: zaman penceresinde sermaye yakan semboller otomatik dinlenmeye alınır")
     require_mt5_connection: bool = Field(True, description="MT5 köprüsü bağlı değilken YENİ işlem açılmaz (paper'a sessiz kayma + gerçek MT5 pozisyonunun yanlışlıkla kapanması biter — #7). False yapılırsa eski davranış: köprü yokken paper motoru devreye girer.")
+    llm_review_enabled: bool = Field(True, description="LLM Trader incelemesi: motor işlem açmadan ÖNCE deneyimli-trader istemiyle LLM'e ikinci görüş sordurur (varsayılan AÇIK; LLM yoksa fail-open ayarı geçerli). Karar ve sonucu Raporlar > LLM Kararları'nda izlenir.")
+    llm_review_mode: str = Field("veto", pattern="^(veto|advisory)$", description="veto: LLM reddederse işlem açılmaz · advisory: yalnız kayıt/rapor, işlemi engellemez (denemek için)")
+    llm_review_fail_open: bool = Field(True, description="LLM yanıt vermez/yavaşsa/bozuksa: True = işlem yine açılır (motor kararı), False = işlem açılmaz")
+    llm_review_min_confidence: int = Field(55, ge=0, le=100, description="Onay için LLM'in minimum güven puanı (altındaki onaylar da engellenir)")
+    llm_review_timeout_sec: float = Field(12.0, ge=3.0, le=60.0, description="LLM incelemesi için en fazla bekleme (sn); aşılırsa fail-open/closed kuralı uygulanır")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
     ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
     ev_max_win_rate: float = Field(45.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (42 → 35 → 45: 2026-10-06 30g replay A/B kararı)")
@@ -9083,6 +9088,41 @@ async def _forex_auto_paper_loop():
 
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
 
+                # 8c. LLM Trader İncelemesi (ayarlardan açılır): açılıştan ÖNCE ikinci görüş.
+                # Karar her durumda kaydedilir; veto modunda RED işlemi engeller, LLM yoksa
+                # fail-open/closed ayarı belirler. Aday başına en fazla `llm_review_timeout_sec` bekler.
+                _review_id, _review_ref = None, None
+                if _AUTO_SETTINGS.llm_review_enabled:
+                    try:
+                        from app import llm_trade_review
+                        _verdict = await llm_trade_review.review_entry({
+                            "symbol": sym, "direction": direction, "cand": cand, "lots": mt5_lots,
+                            "sl_pips": sl_pips, "tp_pips": tp_pips, "atr_pips": round(float(atr_pips), 1),
+                            "pip_size": spec["pip_size"], "entry_price": entry_p,
+                            "risk_usd": round(mt5_lots * sl_pips * pip_val, 2),
+                            "strategy": _c_strat, "strategy_label": _c_strat_lbl,
+                            "mode": _AUTO_SETTINGS.llm_review_mode, "fail_open": _AUTO_SETTINGS.llm_review_fail_open,
+                            "min_confidence": _AUTO_SETTINGS.llm_review_min_confidence,
+                            "timeout_sec": _AUTO_SETTINGS.llm_review_timeout_sec,
+                        })
+                    except Exception as exc:
+                        logger.warning("LLM inceleme çağrısı çöktü (%s): %s", sym, exc)
+                        _verdict = {"blocked": not _AUTO_SETTINGS.llm_review_fail_open, "applied": "hata",
+                                    "reason": str(exc)[:160], "review_id": None, "verdict": None, "cached": False}
+                    _review_id = _verdict.get("review_id")
+                    if _verdict.get("blocked"):
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_llmrev", 0) > 60.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_llmrev"] = now_ts
+                            _v = _verdict.get("verdict") or {}
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand['display']}][{_c_strat_lbl}] 🧠 LLM Trader işlemi ONAYLAMADI "
+                                f"({direction}, güven %{_v.get('confidence', '—')}): {_verdict.get('reason', '')}",
+                                symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                                metadata={"llm_review_id": _review_id, "applied": _verdict.get("applied")},
+                            )
+                        continue
+
                 # IC Markets MT5 bağlıysa doğrudan MT5 emir kuyruğuna ekle
                 if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
                     if _non_demo_live_blocked((_MT5_STATE.get("account") or {}).get("server")):
@@ -9097,6 +9137,7 @@ async def _forex_auto_paper_loop():
                             )
                         continue
                     cmd_id = f"CMD-{int(time.time() * 1000) % 1000000}"
+                    _review_ref = cmd_id
                     # Çıkış planı: köprünün dynamic-exits spec'iyle BİREBİR değerler (ATR'siz,
                     # base_sl=8 default — 2 pencere replay kazananı A davranışı). Değerler pozisyon
                     # bazlı cmd ile taşınır → köprü kendi spec kopyasından ikinci kez hesaplamaz
@@ -9205,8 +9246,12 @@ async def _forex_auto_paper_loop():
                     }
                     async with _AUTO_PAPER_LOCK:
                         _AUTO_STATE["open_positions"].append(pos_item)
+                    _review_ref = pos_item["id"]
                     _invalidate_status_cache()
 
+                if _review_id:
+                    from app import llm_trade_review as _ltr
+                    await _ltr.mark_executed(_review_id, _review_ref)
                 _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
                 _commit_arm_quota(cand)
                 _opened_cycle.add(sym)

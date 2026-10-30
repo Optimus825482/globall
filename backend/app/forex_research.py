@@ -24,6 +24,7 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 
+from app import forex_patterns as fp
 from app.technical_analysis import _adx, _atr, _bollinger, _ema, _macd, _rsi
 
 logger = logging.getLogger("scalper.forex_research")
@@ -315,11 +316,40 @@ def analyze_symbol(symbol: str) -> Dict[str, Any]:
     if daily and bias == "SELL" and daily["score"] >= 2:
         bias = "BEKLE"
     atr = ref.get("atr")
+    # Karar desteği: çok kaynaklı seviyeler, mum formasyonları, piyasa yapısı, kısa grafik, aralıklar.
+    atr_1h = (frames.get("1h") or {}).get("atr") or atr
+    levels = fp.key_levels({tf: candles[tf] for tf in ("1h", "4h", "1d") if tf in candles}, price, atr_1h)
+    patterns = {tf: fp.detect_patterns(candles[tf]) for tf in ("5m", "15m", "1h", "4h", "1d") if tf in candles}
+    structure = {tf: fp.market_structure(candles[tf]) for tf in ("15m", "1h", "4h", "1d") if tf in candles}
+    chart = {tf: fp.compact_chart(candles[tf], n) for tf, n in (("15m", 16), ("1h", 24), ("4h", 12), ("1d", 10)) if tf in candles}
+    sup = levels["supports"][0]["price"] if levels["supports"] else ref.get("support")
+    res = levels["resistances"][0]["price"] if levels["resistances"] else ref.get("resistance")
     return {
         "symbol": symbol, "ok": True, "price": price, "price_source": price_src, "price_age": price_age,
         "bias": bias, "score": round(avg, 2), "frames": frames, "sources": sources, "candles": candles,
-        "support": ref.get("support"), "resistance": ref.get("resistance"),
+        "support": sup, "resistance": res, "levels": levels, "patterns": patterns, "structure": structure,
+        "chart": chart, "ranges": fp.key_ranges(candles),
         "atr": atr, "stop_distance": round(atr * 1.5, 6) if atr else None,
+    }
+
+
+def compact_for_llm(a: Dict[str, Any]) -> Dict[str, Any]:
+    """Analiz sonucunun modele verilen kısa hali (seviyeler, formasyonlar, yapı, grafik, aralıklar)."""
+    price = a["price"]
+
+    def lv(rows):
+        return [{"fiyat": round(r["price"], 5 if price < 10 else 2), "kaynak": r["labels"], "guc": r["strength"],
+                 "uzaklik_atr": r.get("distance_atr"), "uzaklik_yuzde": r.get("distance_pct")} for r in rows]
+
+    pats = {tf: [{"ad": p["name"], "yon": p["bias"], "kac_mum_once": p["bars_ago"], "guc": p["strength"]} for p in ps]
+            for tf, ps in (a.get("patterns") or {}).items() if ps}
+    return {
+        "destekler": lv((a.get("levels") or {}).get("supports", [])),
+        "direncler": lv((a.get("levels") or {}).get("resistances", [])),
+        "mum_formasyonlari": pats,
+        "piyasa_yapisi": {tf: {"yapi": st.get("yapi"), "kirilim": st.get("kirilim")} for tf, st in (a.get("structure") or {}).items()},
+        "aralıklar": a.get("ranges"),
+        "son_mumlar_OHLC": a.get("chart"),
     }
 
 
@@ -343,13 +373,30 @@ def describe_analysis(a: Dict[str, Any]) -> str:
         notes.append("trend güçlü" if ref["adx"] >= 25 else "trend zayıf/yatay" if ref["adx"] < 20 else "trend orta")
     if notes:
         lines.append("4 saatlikte " + ", ".join(notes) + ".")
-    levels = []
-    if a.get("support"):
-        levels.append(f"yakın destek {_fmt(a['support'], price)}")
-    if a.get("resistance"):
-        levels.append(f"yakın direnç {_fmt(a['resistance'], price)}")
-    if levels:
-        lines.append(", ".join(levels).capitalize() + ".")
+    lv = a.get("levels") or {}
+    if lv.get("supports") or lv.get("resistances"):
+        def fmt_lv(rows):
+            return ", ".join(f"{_fmt(r['price'], price)} ({r['labels'][0]})" for r in rows[:3]) or "—"
+        lines.append(f"Destekler: {fmt_lv(lv.get('supports', []))}. Dirençler: {fmt_lv(lv.get('resistances', []))}.")
+    else:
+        levels = []
+        if a.get("support"):
+            levels.append(f"yakın destek {_fmt(a['support'], price)}")
+        if a.get("resistance"):
+            levels.append(f"yakın direnç {_fmt(a['resistance'], price)}")
+        if levels:
+            lines.append(", ".join(levels).capitalize() + ".")
+    pat_parts = []
+    for tf in ("5m", "15m", "1h", "4h", "1d"):
+        for p in (a.get("patterns") or {}).get(tf, []):
+            if p["bias"] != "NEUTRAL" and p["bars_ago"] <= 1 and p["strength"] >= 2:
+                pat_parts.append(f"{TF_LABEL[tf]}: {p['name']} ({p['bias']}{', son mum' if p['bars_ago'] == 0 else ''})")
+    if pat_parts:
+        lines.append("Mum formasyonları: " + "; ".join(pat_parts[:4]) + ".")
+    st = a.get("structure") or {}
+    if st.get("4h") or st.get("1d"):
+        lines.append("Yapı: " + ", ".join(f"{TF_LABEL[tf]} {st[tf]['yapi']}" for tf in ("1h", "4h", "1d")
+                                          if st.get(tf) and st[tf].get("yapi") not in (None, "belirsiz", "yetersiz veri")) + ".")
     if a.get("stop_distance"):
         lines.append(f"Normal oynaklığa göre stop mesafesi yaklaşık {_fmt(a['stop_distance'], price)}.")
     lines.append(describe_sources(a))
@@ -376,26 +423,63 @@ def describe_sources(a: Dict[str, Any]) -> str:
 
 # --------------------------------------------------------------------------- haber başlıkları
 
-def fetch_headlines(symbol: str, max_items: int = 8, max_age_hours: float = 36.0) -> List[Dict[str, Any]]:
-    """Google News RSS: sembolle ilgili güncel başlıklar (en yeni üstte)."""
-    sym = symbol.upper()
-    query = NEWS_QUERY.get(sym)
-    if not query:
-        query = f"{sym[:3]} {sym[3:]} forex" if re.fullmatch(r"[A-Z]{6}", sym) else sym
-    url = f"https://news.google.com/rss/search?q={quote(query)}%20when:2d&hl=en-US&gl=US&ceid=US:en"
-    try:
-        with urlopen(Request(url, headers=UA), timeout=HTTP_TIMEOUT_SEC) as resp:  # noqa: S310 - sabit host
-            body = resp.read(MAX_BODY_BYTES)
-        # XXE / "billion laughs": RSS'te DTD olmaz; içeren yanıt reddedilir (defusedxml yerine).
-        if b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
-            logger.warning("haber yanıtı DTD içeriyor, reddedildi (%s)", sym)
-            return []
-        root = ET.fromstring(body)  # noqa: S314 - DTD yukarıda elendi
-    except Exception as exc:  # noqa: BLE001
-        logger.info("haber araması hatası (%s): %s", sym, exc)
+# TradingView sembolleri: (scanner pazarı, kod). Haber akışı için aynı kod kullanılır.
+_TV = {
+    "XAUUSD": ("cfd", "OANDA:XAUUSD"), "XAGUSD": ("cfd", "OANDA:XAGUSD"),
+    "BTCUSD": ("crypto", "BINANCE:BTCUSDT"), "ETHUSD": ("crypto", "BINANCE:ETHUSDT"),
+    "USTEC": ("cfd", "OANDA:NAS100USD"), "NAS100": ("cfd", "OANDA:NAS100USD"), "US30": ("cfd", "OANDA:US30USD"),
+}
+
+# Investing.com RSS: sembol sınıfına göre kategori akışları (+ genel piyasa özeti).
+_INVESTING_FEEDS = {
+    "gold": ["news_11", "market_overview"], "crypto": ["news_301", "market_overview"], "fx": ["news_1", "market_overview"],
+    "index": ["news_25", "market_overview"],
+}
+# Akışlar sembole özel değil: başlık bu anahtar sözcüklerden birini içeriyorsa alınır.
+_RELEVANCE = {
+    "gold": ("gold", "bullion", "xau", "precious", "fed", "inflation", "pce", "dollar", "treasury", "yield"),
+    "crypto": ("bitcoin", "btc", "crypto", "ether", "etf", "binance", "stablecoin"),
+    "index": ("nasdaq", "dow", "s&p", "wall street", "stocks", "fed", "inflation", "yield"),
+}
+_CCY_WORDS = {
+    "USD": ("dollar", "usd", "fed", "treasury", "powell", "payroll", "pce", "inflation", "cpi"),
+    "EUR": ("euro", "eur", "ecb", "lagarde", "eurozone"), "GBP": ("pound", "sterling", "gbp", "boe", "bank of england"),
+    "JPY": ("yen", "jpy", "boj", "bank of japan"), "AUD": ("aussie", "aud", "rba", "australia"),
+    "NZD": ("kiwi", "nzd", "rbnz"), "CAD": ("loonie", "cad", "boc", "canada"), "CHF": ("franc", "chf", "snb", "swiss"),
+}
+
+
+def _asset_class(sym: str) -> str:
+    sym = sym.upper()
+    if sym.startswith(("XAU", "XAG")):
+        return "gold"
+    if sym.startswith(("BTC", "ETH")):
+        return "crypto"
+    if sym in ("USTEC", "NAS100", "US30"):
+        return "index"
+    return "fx"
+
+
+def _keywords(sym: str) -> tuple:
+    cls = _asset_class(sym)
+    if cls == "fx":
+        out: list = []
+        for ccy in (sym[:3], sym[3:]):
+            out.extend(_CCY_WORDS.get(ccy, ()))
+        return tuple(out)
+    return _RELEVANCE.get(cls, ())
+
+
+def _parse_rss(body: bytes, via: str, now: float, max_age_hours: float) -> List[Dict[str, Any]]:
+    # XXE / "billion laughs": RSS'te DTD olmaz; içeren yanıt reddedilir (defusedxml yerine).
+    if b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
+        logger.warning("haber yanıtı DTD içeriyor, reddedildi (%s)", via)
         return []
-    now = time.time()
-    items: List[Dict[str, Any]] = []
+    try:
+        root = ET.fromstring(body)  # noqa: S314 - DTD yukarıda elendi
+    except ET.ParseError:
+        return []
+    out: List[Dict[str, Any]] = []
     for it in root.iter("item"):
         title = (it.findtext("title") or "").strip()
         if not title:
@@ -407,20 +491,238 @@ def fetch_headlines(symbol: str, max_items: int = 8, max_age_hours: float = 36.0
         age_h = (now - ts) / 3600
         if age_h > max_age_hours or age_h < -1:
             continue
-        src = (it.findtext("source") or "").strip()
-        items.append({"title": title[:200], "source": src[:40], "age_hours": round(max(age_h, 0), 1), "ts": ts})
-    items.sort(key=lambda x: x["ts"], reverse=True)
-    for x in items:
+        src = (it.findtext("source") or "").strip() or via
+        out.append({"title": title[:200], "source": src[:40], "via": via, "age_hours": round(max(age_h, 0), 1), "ts": ts})
+    return out
+
+
+def _http_bytes(url: str, headers: Optional[Dict[str, str]] = None, data: Optional[bytes] = None) -> bytes:
+    h = dict(UA)
+    h.update(headers or {})
+    try:
+        with urlopen(Request(url, headers=h, data=data), timeout=HTTP_TIMEOUT_SEC) as resp:  # noqa: S310 - sabit host
+            return resp.read(MAX_BODY_BYTES)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("haber/veri HTTP hatası (%s): %s", url.split("?")[0][-48:], exc)
+        return b""
+
+
+def _google_headlines(sym: str, now: float, max_age_hours: float) -> List[Dict[str, Any]]:
+    query = NEWS_QUERY.get(sym)
+    if not query:
+        query = f"{sym[:3]} {sym[3:]} forex" if re.fullmatch(r"[A-Z]{6}", sym) else sym
+    url = f"https://news.google.com/rss/search?q={quote(query)}%20when:2d&hl=en-US&gl=US&ceid=US:en"
+    return _parse_rss(_http_bytes(url), "Google News", now, max_age_hours)
+
+
+def _investing_headlines(sym: str, now: float, max_age_hours: float) -> List[Dict[str, Any]]:
+    keys = _keywords(sym)
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    for feed in _INVESTING_FEEDS.get(_asset_class(sym), ["news_1"]):
+        for item in _parse_rss(_http_bytes(f"https://www.investing.com/rss/{feed}.rss"), "Investing.com", now, max_age_hours):
+            low = item["title"].lower()
+            norm = _norm_title(item["title"])
+            if norm in seen:      # aynı haber birden çok akışta çıkabilir
+                continue
+            if not keys or any(k in low for k in keys):
+                seen.add(norm)
+                out.append(item)
+    return out
+
+
+def _tradingview_headlines(sym: str, now: float, max_age_hours: float) -> List[Dict[str, Any]]:
+    spec = _TV.get(sym)
+    code = spec[1] if spec else (f"OANDA:{sym}" if re.fullmatch(r"[A-Z]{6}", sym) else None)
+    if not code:
+        return []
+    body = _http_bytes(f"https://news-headlines.tradingview.com/v2/headlines?client=web&lang=en&symbol={quote(code, safe='')}")
+    try:
+        items = json.loads(body).get("items", [])
+    except Exception:  # noqa: BLE001
+        return []
+    out: List[Dict[str, Any]] = []
+    for it in items[:60]:
+        try:
+            ts = float(it["published"])
+            title = str(it["title"]).strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        age_h = (now - ts) / 3600
+        if not title or age_h > max_age_hours or age_h < -1:
+            continue
+        out.append({"title": title[:200], "source": str(it.get("source") or "TradingView")[:40], "via": "TradingView",
+                    "age_hours": round(max(age_h, 0), 1), "ts": ts})
+    return out
+
+
+def _norm_title(t: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()[:70]
+
+
+def fetch_headlines(symbol: str, max_items: int = 8, max_age_hours: float = 36.0) -> List[Dict[str, Any]]:
+    """Üç kaynaktan güncel başlıklar: Google News + Investing.com RSS + TradingView haber akışı.
+
+    Kaynaklar paralel çekilir; biri çökerse diğerleri sürer. Aynı haber (benzer başlık) bir kez
+    sayılır; en yeni üstte. Her kaydın `via` alanı kaynağı gösterir.
+    """
+    sym = symbol.upper()
+    now = time.time()
+    fetchers = (_google_headlines, _investing_headlines, _tradingview_headlines)
+    with ThreadPoolExecutor(max_workers=len(fetchers)) as pool:
+        results = list(pool.map(lambda f: _safe(f, sym, now, max_age_hours), fetchers))
+    merged: List[Dict[str, Any]] = []
+    seen: set = set()
+    for item in sorted((i for r in results for i in r), key=lambda x: x["ts"], reverse=True):
+        key = _norm_title(item["title"])
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    # Kaynak çeşitliliği: her kaynaktan en az 2 başlık (varsa) listeye girsin, kalanı yeniliğe göre.
+    picked: List[Dict[str, Any]] = []
+    for via in ("TradingView", "Investing.com", "Google News"):
+        picked.extend([m for m in merged if m["via"] == via][:2])
+    for m in merged:
+        if len(picked) >= max_items:
+            break
+        if m not in picked:
+            picked.append(m)
+    picked.sort(key=lambda x: x["ts"], reverse=True)
+    for x in picked:
         x.pop("ts", None)
-    return items[:max_items]
+    return picked[:max_items]
+
+
+def _safe(fn, *args) -> List[Dict[str, Any]]:
+    try:
+        return fn(*args)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("haber kaynağı hatası (%s): %s", getattr(fn, "__name__", "?"), exc)
+        return []
 
 
 def describe_headlines(symbol: str, items: List[Dict[str, Any]]) -> str:
     name = SYMBOL_NAME.get(symbol, symbol)
     if not items:
-        return f"{name} için son 36 saatte öne çıkan haber başlığı bulunamadı."
-    lines = [f"{name} için son haberlerden {len(items)} başlık:"]
-    for x in items[:4]:
+        return f"{name} için son 36 saatte öne çıkan haber başlığı bulunamadı (Google News, Investing.com, TradingView tarandı)."
+    counts: Dict[str, int] = {}
+    for x in items:
+        counts[x["via"]] = counts.get(x["via"], 0) + 1
+    srcs = ", ".join(f"{k} {v}" for k, v in counts.items())
+    lines = [f"{name} için son haberlerden {len(items)} başlık ({srcs}):"]
+    for x in items[:5]:
         age = f"{x['age_hours']:.0f} sa önce" if x["age_hours"] >= 1 else "az önce"
-        lines.append(f"• {x['title']} ({age})")
+        lines.append(f"• {x['title']} ({x['source']}, {age})")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- TradingView teknik özeti (halka açık)
+
+_TV_COLS = ["Recommend.All|1", "Recommend.All|5", "Recommend.All|15", "Recommend.All|30", "Recommend.All|60",
+            "Recommend.All|240", "Recommend.All", "close"]
+_TV_LABELS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+_tv_cache: Dict[str, Tuple[float, Optional[Dict[str, Any]]]] = {}
+
+
+def _tv_word(v: float) -> str:
+    return ("güçlü AL" if v >= 0.5 else "AL" if v >= 0.1 else "güçlü SAT" if v <= -0.5
+            else "SAT" if v <= -0.1 else "nötr")
+
+
+def tradingview_technicals(symbol: str) -> Optional[Dict[str, Any]]:
+    """TradingView'in halka açık tarayıcı verisi: 1dk–günlük teknik reyting (-1 SAT … +1 AL) ve fiyat."""
+    sym = symbol.upper()
+    spec = _TV.get(sym) or (("forex", f"OANDA:{sym}") if re.fullmatch(r"[A-Z]{6}", sym) else None)
+    if not spec:
+        return None
+    now = time.time()
+    hit = _tv_cache.get(sym)
+    if hit and now - hit[0] < 60:
+        return hit[1]
+    body = json.dumps({"symbols": {"tickers": [spec[1]]}, "columns": _TV_COLS}).encode()
+    raw = _http_bytes(f"https://scanner.tradingview.com/{spec[0]}/scan", {"Content-Type": "application/json"}, body)
+    result: Optional[Dict[str, Any]] = None
+    try:
+        row = json.loads(raw)["data"][0]["d"]
+        ratings = {tf: round(float(v), 2) for tf, v in zip(_TV_LABELS, row[:7]) if v is not None}
+        if ratings:
+            avg = sum(ratings.values()) / len(ratings)
+            result = {"ratings": ratings, "words": {tf: _tv_word(v) for tf, v in ratings.items()},
+                      "average": round(avg, 2), "summary": _tv_word(avg), "price": row[7]}
+    except Exception:  # noqa: BLE001
+        result = None
+    _tv_cache[sym] = (now, result)
+    return result
+
+
+def describe_tradingview(symbol: str, tv: Optional[Dict[str, Any]]) -> str:
+    name = SYMBOL_NAME.get(symbol, symbol)
+    if not tv:
+        return f"{name} için TradingView teknik özeti alınamadı."
+    parts = [f"{TF_LABEL[tf]} {w}" for tf, w in tv["words"].items() if tf in TF_LABEL]
+    return (f"TradingView teknik özeti ({name}): genel {tv['summary']}. " + ", ".join(parts) + ".")
+
+
+# --------------------------------------------------------------------------- fırsat taraması (TradingView toplu)
+
+SCAN_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY",
+                 "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD", "USTEC", "US30"]
+_SCAN_WEIGHTS = {"15m": 1.0, "1h": 2.0, "4h": 2.0, "1d": 3.0}
+
+
+def scan_opportunities(symbols: Optional[List[str]] = None, top: int = 5) -> Optional[Dict[str, Any]]:
+    """Tüm evreni TradingView'in toplu tarayıcısıyla (pazar başına 1 istek) sıralar.
+
+    Sıra puanı: 15dk/1sa/4sa/günlük reytinglerin ağırlıklı ortalamasının mutlağı × zaman dilimi uyumu.
+    Sonuç yalnız ADAY listesidir; asıl derin analiz üst adaylara ayrıca yapılır.
+    """
+    syms = [x.upper() for x in (symbols or SCAN_UNIVERSE)]
+    by_market: Dict[str, List[Tuple[str, str]]] = {}
+    for sym in syms:
+        spec = _TV.get(sym) or (("forex", f"OANDA:{sym}") if re.fullmatch(r"[A-Z]{6}", sym) else None)
+        if spec:
+            by_market.setdefault(spec[0], []).append((sym, spec[1]))
+
+    def _one(item):
+        market, pairs = item
+        body = json.dumps({"symbols": {"tickers": [c for _s, c in pairs]}, "columns": _TV_COLS}).encode()
+        raw = _http_bytes(f"https://scanner.tradingview.com/{market}/scan", {"Content-Type": "application/json"}, body)
+        try:
+            data = json.loads(raw)["data"]
+        except Exception:  # noqa: BLE001
+            return []
+        code_to_sym = {c: s_ for s_, c in pairs}
+        return [(code_to_sym.get(d["s"]), d["d"]) for d in data if code_to_sym.get(d["s"])]
+
+    with ThreadPoolExecutor(max_workers=max(1, len(by_market))) as pool:
+        rows = [r for part in pool.map(_one, by_market.items()) for r in part]
+    ranked: List[Dict[str, Any]] = []
+    for sym, d in rows:
+        ratings = {tf: float(v) for tf, v in zip(_TV_LABELS, d[:7]) if v is not None}
+        use = {tf: ratings[tf] for tf in _SCAN_WEIGHTS if tf in ratings}
+        if len(use) < 3:
+            continue
+        total_w = sum(_SCAN_WEIGHTS[tf] for tf in use)
+        avg = sum(v * _SCAN_WEIGHTS[tf] for tf, v in use.items()) / total_w
+        sign = 1 if avg >= 0 else -1
+        agree = sum(1 for v in use.values() if v * sign > 0.05) / len(use)
+        ranked.append({"symbol": sym, "direction": "BUY" if avg >= 0 else "SELL", "average": round(avg, 2),
+                       "agreement": round(agree, 2), "score": round(abs(avg) * agree, 3),
+                       "summary": _tv_word(avg), "price": d[7],
+                       "ratings": {tf: round(v, 2) for tf, v in ratings.items()}})
+    if not ranked:
+        return None
+    ranked.sort(key=lambda r: r["score"], reverse=True)
+    return {"top": ranked[:top], "all": ranked, "scanned": len(ranked)}
+
+
+def describe_scan(scan: Optional[Dict[str, Any]]) -> str:
+    if not scan:
+        return "Fırsat taraması yapılamadı (TradingView verisi alınamadı)."
+    lines = [f"{scan['scanned']} enstrüman tarandı; en net yönlü olanlar (TradingView teknik reytingi, çoklu zaman dilimi uyumuna göre):"]
+    for r in scan["top"][:5]:
+        name = SYMBOL_NAME.get(r["symbol"], r["symbol"])
+        name = name if name == r["symbol"] else f"{name} ({r['symbol']})"
+        lines.append(f"• {name}: {r['summary']} — zaman dilimi uyumu %{int(r['agreement'] * 100)}")
     return "\n".join(lines)
