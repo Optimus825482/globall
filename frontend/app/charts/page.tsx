@@ -372,8 +372,9 @@ export default function ChartsPage() {
     const gridLayoutClass = useMemo(() => {
         if (maximizedId !== null) return "grid-cols-1 grid-rows-1";
         if (count === 1) return "grid-cols-1 grid-rows-1";
-        if (count === 2) return "grid-cols-1 md:grid-cols-2 grid-rows-1";
-        return "grid-cols-1 md:grid-cols-2 grid-rows-2";
+        // Mobil: kartlar alt alta, sabit yükseklikte; sayfa kayar. Masaüstü: sabit ekrana sığan ızgara.
+        if (count === 2) return "grid-cols-1 auto-rows-[26rem] md:auto-rows-auto md:grid-cols-2 md:grid-rows-1";
+        return "grid-cols-1 auto-rows-[26rem] md:auto-rows-auto md:grid-cols-2 md:grid-rows-2";
     }, [count, maximizedId]);
 
     const filteredSymbols = availableSymbols.filter(s =>
@@ -393,13 +394,13 @@ export default function ChartsPage() {
             className={`flex flex-col bg-bunker-950 ${
                 isPageFullscreen
                     ? "fixed inset-0 z-[9998] overflow-hidden"
-                    : "h-[calc(100vh-4rem)]"
+                    : "min-h-[calc(100dvh-4rem)] md:h-[calc(100vh-4rem)]"
             }`}
         >
             {/* ── Komut Çubuğu ────────────────────────────────────────────── */}
             <div
                 ref={toolbarRef}
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-bunker-900 border-b border-bunker-800 shrink-0"
+                className="flex flex-wrap items-center justify-between gap-2 px-2 sm:px-3 py-2 bg-bunker-900 border-b border-bunker-800 shrink-0"
             >
 
                 {/* Sol: sidebar + tam ekran + başlık */}
@@ -439,7 +440,7 @@ export default function ChartsPage() {
                 </div>
 
                 {/* Orta: grafik sayısı + global sembol + global TF */}
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap order-last md:order-none w-full md:w-auto">
                     {/* 1 / 2 / 4 grafik */}
                     <div className="flex items-center bg-bunker-950 p-0.5 rounded-lg border border-bunker-700" title="Gösterilecek grafik sayısı">
                         {COUNT_OPTIONS.map((n) => (

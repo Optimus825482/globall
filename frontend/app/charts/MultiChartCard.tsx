@@ -405,7 +405,6 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     const [priceData, setPriceData] = useState<{ last: number; changePct: number } | null>(null);
     // Seçili TF'nin son mumlarından hesaplanan canlı momentum değerleri.
     const [momentum, setMomentum] = useState<{ rsi14: number | null; adx14: number | null } | null>(null);
-    const [hoverLegend, setHoverLegend] = useState<{ open: number; high: number; low: number; close: number } | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isDark, setIsDark] = useState(true); // dark varsayılan
     const klineReqIdRef = useRef(0);
@@ -469,12 +468,6 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         const candleSeries = chart.addSeries(CandlestickSeries, { upColor: "#10b981", downColor: "#ef4444", borderVisible: false, wickUpColor: "#10b981", wickDownColor: "#ef4444" });
         chartRef.current = chart;
         candleSeriesRef.current = candleSeries;
-        chart.subscribeCrosshairMove((param) => {
-            if (!param.time || !param.seriesData || !candleSeriesRef.current) { setHoverLegend(null); return; }
-            const candle = param.seriesData.get(candleSeriesRef.current) as any;
-            if (candle?.open !== undefined) setHoverLegend({ open: candle.open, high: candle.high, low: candle.low, close: candle.close });
-            else setHoverLegend(null);
-        });
         const ro = new ResizeObserver(() => {
             if (!chartRef.current || !containerRef.current) return;
             chartRef.current.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
@@ -833,7 +826,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
             {/* ── Header ─────────────────────────────────────────────────────── */}
             <div className={`flex flex-wrap items-center justify-between gap-1.5 px-3 py-2 border-b shrink-0 text-xs ${isDark ? "bg-bunker-900/90 border-bunker-800" : "bg-gray-50 border-gray-200"}`}>
                 {/* Left: ID + Symbol */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap min-w-0 max-w-full">
                     {/* Sıra numarası: çok grafikte 1'den başlar (slot id'si değil,
                         GÖRÜNEN sıra — 2 grafik seçilince 1·2, 4 grafikte 1·2·3·4). */}
                     <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-neon-green/15 text-neon-green border border-neon-green/30 shrink-0">{ordinal}</span>
@@ -903,15 +896,22 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${priceData.changePct >= 0 ? "bg-neon-green/15 text-neon-green border border-neon-green/30" : "bg-neon-red/15 text-neon-red border border-neon-red/30"}`}>
                                 {priceData.changePct >= 0 ? "+" : ""}{priceData.changePct.toFixed(2)}%
                             </span>
+                            {/* RSI-14 / ADX-14 (KULLANICI İSTEĞİ 2026-10-14: her zaman görünür; 2026-10-30: grafik üstündeki şerit yerine fiyatın yanında) */}
+                            {momentum?.rsi14 != null && (
+                                <span className="text-[10px] text-bunker-muted whitespace-nowrap">RSI <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>
+                            )}
+                            {momentum?.adx14 != null && (
+                                <span className="text-[10px] text-bunker-muted whitespace-nowrap">ADX <strong className={momentum.adx14 >= 25 ? "text-neon-green" : momentum.adx14 >= 20 ? "text-yellow-300" : "text-bunker-muted"}>{momentum.adx14.toFixed(1)}</strong></span>
+                            )}
                         </div>
                     )}
                 </div>
 
                 {/* Center: TF Selector */}
-                <div className="flex items-center gap-0.5 bg-bunker-950/80 p-0.5 rounded-lg border border-bunker-800">
+                <div className="flex items-center gap-0.5 bg-bunker-950/80 p-0.5 rounded-lg border border-bunker-800 max-w-full overflow-x-auto order-last sm:order-none w-full sm:w-auto [scrollbar-width:none]">
                     {INTERVALS.map(int => (
                         <button key={int.v} type="button" onClick={() => onUpdateConfig({ interval: int.v })}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${config.interval === int.v ? "bg-neon-green text-bunker-950 font-bold" : "text-bunker-muted hover:text-white hover:bg-bunker-800/60"}`}>
+                            className={`px-2 sm:px-1.5 py-1 sm:py-0.5 rounded text-[11px] sm:text-[10px] font-mono font-medium transition-colors shrink-0 flex-1 sm:flex-none ${config.interval === int.v ? "bg-neon-green text-bunker-950 font-bold" : "text-bunker-muted hover:text-white hover:bg-bunker-800/60"}`}>
                             {int.l}
                         </button>
                     ))}
@@ -1017,29 +1017,6 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
 
             {/* ── Chart Area ─────────────────────────────────────────────────── */}
             <div className="relative flex-1 w-full min-h-[200px] overflow-hidden">
-                <div className="absolute top-2 left-3 z-10 pointer-events-none flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-bunker-muted bg-bunker-950/70 px-2 py-1 rounded border border-bunker-800/50">
-                    <span className="text-white font-bold">{config.symbol}</span>
-                    <span className="text-bunker-400">{config.interval.toUpperCase()}</span>
-                    {hoverLegend ? (<>
-                        <span>A: <strong className="text-white">{formatPrice(hoverLegend.open)}</strong></span>
-                        <span>Y: <strong className="text-neon-green">{formatPrice(hoverLegend.high)}</strong></span>
-                        <span>D: <strong className="text-neon-red">{formatPrice(hoverLegend.low)}</strong></span>
-                        <span>K: <strong className="text-white">{formatPrice(hoverLegend.close)}</strong></span>
-                    </>) : (
-                        priceData ? <span>Son: <strong className="text-white">{formatPrice(priceData.last)}</strong></span> : null
-                    )}
-                    {/* RSI-14 / ADX-14 — KULLANICI İSTEĞİ (2026-10-14): bu değerler
-                        grafiğin üstünde VARSAYILAN yazılı olmalı. Eskiden yalnız
-                        imleç grafiğin üstünde DEĞİLKEN görünüyorlardı; fareyle
-                        üzerine gelindiğinde kaybolmaları "yok" izlenimi veriyordu.
-                        Artık OHLC satırından bağımsız, her zaman buradalar. */}
-                    {momentum?.rsi14 != null && (
-                        <span>RSI-14: <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>
-                    )}
-                    {momentum?.adx14 != null && (
-                        <span>ADX-14: <strong className={momentum.adx14 >= 25 ? "text-neon-green" : momentum.adx14 >= 20 ? "text-yellow-300" : "text-bunker-muted"}>{momentum.adx14.toFixed(1)}</strong></span>
-                    )}
-                </div>
                 <div ref={containerRef} className="w-full h-full" />
                 {loading && (
                     <div className="absolute inset-0 bg-bunker-950/60 backdrop-blur-sm flex items-center justify-center pointer-events-none">

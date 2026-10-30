@@ -98,6 +98,7 @@ const SHADOW_TR: Record<string, string> = {
 };
 
 const fmtPips = (v?: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}`);
+const fmtR = (v?: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}`);
 const pipTone = (v?: number | null) => (v == null || v === 0 ? "text-bunker-muted" : v > 0 ? "text-emerald-400" : "text-rose-400");
 const fmtTime = (ts: number) =>
   new Date(ts * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -185,7 +186,7 @@ export default function LlmReviewReport() {
           <h2 className="text-sm font-bold text-white uppercase tracking-wider">LLM Trader Kararları</h2>
           <p className="mt-0.5 max-w-3xl text-xs text-bunker-muted">
             Motor her işlemi açmadan önce LLM&apos;e sorar. Her karar için fiyat izlenir: reddedilen işlem sonradan stopa gittiyse LLM haklıdır
-            (kaçınılan zarar), hedefe gittiyse kaçırılan kazançtır. Sonuçlar tahmindir (trailing, kısmi kâr ve gerçek spread yok).
+            (kaçınılan zarar), hedefe gittiyse kaçırılan kazançtır. Sonuçlar R cinsindendir (1R = işlemin stop mesafesi; sembollerin pip değeri farklı olduğu için pip toplanmaz) ve tahmindir (trailing, kısmi kâr ve gerçek spread yok).
           </p>
         </div>
         <div className="flex items-center gap-2" role="group" aria-label="Dönem">
@@ -213,7 +214,7 @@ export default function LlmReviewReport() {
             <Kpi label="Engellenen işlem" value={summary.blocked} sub={`ortalama ${(summary.avg_latency_ms / 1000).toFixed(1)} sn düşündü`} tone="text-rose-300" />
             <Kpi
               label="LLM'in net katkısı"
-              value={`${fmtPips(summary.net_value_pips)} pip`}
+              value={`${fmtR(summary.net_value_pips)} R`}
               tone={pipTone(summary.net_value_pips)}
               sub="reddedilenlerin kaçınılan zararı − kaçırılan kazancı"
             />
@@ -229,7 +230,7 @@ export default function LlmReviewReport() {
                     %{a.win_rate?.toFixed(0)} <span className="text-xs font-normal text-bunker-muted">isabet ({a.wins}/{a.closed})</span>
                   </p>
                   <p className="text-xs text-bunker-muted">
-                    {a.tp} hedefe, {a.sl} stopa gitti · toplam <span className={pipTone(a.net_pips)}>{fmtPips(a.net_pips)} pip</span>
+                    {a.tp} hedefe, {a.sl} stopa gitti · toplam <span className={pipTone(a.net_pips)}>{fmtR(a.net_pips)} R</span>
                   </p>
                 </>
               ) : (
@@ -238,7 +239,7 @@ export default function LlmReviewReport() {
               {summary.floating && summary.floating.approved.n > 0 && (
                 <p className="text-xs text-slate-300">
                   Fiyatı izlenen {summary.floating.approved.n} onay: {summary.floating.approved.winning} kârda, {summary.floating.approved.losing} zararda · anlık toplam{" "}
-                  <span className={pipTone(summary.floating.approved.sum_pips)}>{fmtPips(summary.floating.approved.sum_pips)} pip</span>
+                  <span className={pipTone(summary.floating.approved.sum_pips)}>{fmtR(summary.floating.approved.sum_pips)} R</span>
                 </p>
               )}
             </div>
@@ -250,8 +251,8 @@ export default function LlmReviewReport() {
                     %{r.correct_rate?.toFixed(0)} <span className="text-xs font-normal text-bunker-muted">haklı ({r.would_lose}/{r.closed})</span>
                   </p>
                   <p className="text-xs text-bunker-muted">
-                    Kaçınılan zarar <span className="text-emerald-400">{fmtPips(r.avoided_pips)} pip</span> · kaçırılan kazanç{" "}
-                    <span className="text-rose-400">{fmtPips(-(r.missed_pips ?? 0))} pip</span>
+                    Kaçınılan zarar <span className="text-emerald-400">{fmtR(r.avoided_pips)} R</span> · kaçırılan kazanç{" "}
+                    <span className="text-rose-400">{fmtR(-(r.missed_pips ?? 0))} R</span>
                   </p>
                 </>
               ) : (
@@ -261,7 +262,7 @@ export default function LlmReviewReport() {
                 <p className="text-xs text-slate-300">
                   Fiyatı izlenen {summary.floating.rejected.n} red: şu an <span className="text-emerald-400">{summary.floating.rejected.losing} tanesi zararda (LLM haklı görünüyor)</span>,{" "}
                   <span className="text-rose-400">{summary.floating.rejected.winning} tanesi kârda</span> · anlık toplam{" "}
-                  <span className={pipTone(-summary.floating.rejected.sum_pips)}>{fmtPips(summary.floating.rejected.sum_pips)} pip</span> (kesin sonuç değil)
+                  <span className={pipTone(-summary.floating.rejected.sum_pips)}>{fmtR(summary.floating.rejected.sum_pips)} R</span> (kesin sonuç değil)
                 </p>
               )}
             </div>
@@ -287,9 +288,9 @@ export default function LlmReviewReport() {
               <p className="text-xs font-bold text-white">LLM vetosu rastgele vetodan iyi mi?</p>
               <p className="text-xs text-slate-300">{summary.veto_value.verdict}</p>
               <p className="font-mono text-[11px] text-bunker-muted">
-                LLM: geçenler {fmtPips(summary.veto_value.llm.passed_mean_pips)} pip (n={summary.veto_value.llm.passed_n}) − veto edilenler {fmtPips(summary.veto_value.llm.vetoed_mean_pips)} pip (n={summary.veto_value.llm.vetoed_n}) = fark {fmtPips(summary.veto_value.llm.edge_pips)}
-                {" · "}Rastgele kontrol farkı {fmtPips(summary.veto_value.random_control.edge_pips)}
-                {" · "}Kontrollü keşif: {summary.veto_value.exploration.n} işlem, ort. {fmtPips(summary.veto_value.exploration.mean_pips)} pip
+                LLM: geçenler {fmtR(summary.veto_value.llm.passed_mean_pips)} R (n={summary.veto_value.llm.passed_n}) − veto edilenler {fmtR(summary.veto_value.llm.vetoed_mean_pips)} R (n={summary.veto_value.llm.vetoed_n}) = fark {fmtR(summary.veto_value.llm.edge_pips)}
+                {" · "}Rastgele kontrol farkı {fmtR(summary.veto_value.random_control.edge_pips)}
+                {" · "}Kontrollü keşif: {summary.veto_value.exploration.n} işlem, ort. {fmtR(summary.veto_value.exploration.mean_pips)} R
               </p>
             </div>
           )}
@@ -318,7 +319,7 @@ export default function LlmReviewReport() {
           {summary.fail_stats && summary.fail_stats.fail_count > 0 && (
             <div className={`rounded-xl border p-3 text-xs ${summary.fail_stats.alert ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-bunker-800 bg-bunker-950/60 text-slate-300"}`}>
               <p className="font-bold">LLM hata / zaman aşımı: {summary.fail_stats.fail_count} karar (%{(summary.fail_stats.fail_rate * 100).toFixed(0)})</p>
-              <p>{summary.fail_stats.note}. Bu işlemlerin ort. gölge sonucu {fmtPips(summary.fail_stats.fail_mean_pips)} pip, normal kararlarınki {fmtPips(summary.fail_stats.normal_mean_pips)} pip (fail-open yanlılığı ölçümü).</p>
+              <p>{summary.fail_stats.note}. Bu işlemlerin ort. gölge sonucu {fmtR(summary.fail_stats.fail_mean_pips)} R, normal kararlarınki {fmtR(summary.fail_stats.normal_mean_pips)} R (fail-open yanlılığı ölçümü).</p>
             </div>
           )}
 
@@ -334,7 +335,7 @@ export default function LlmReviewReport() {
             <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 space-y-1">
               <p className="text-xs font-bold text-white">Çıkış kuralı A/B (kayıtlı gölge yolu, {ab.n} karar)</p>
               <p className="font-mono text-[11px] text-slate-300">
-                {Object.entries(ab.means_pips).map(([k, v]) => `${k}: ${v > 0 ? "+" : ""}${v} pip${k !== "baseline" && ab.vs_baseline[k] !== undefined ? ` (${ab.vs_baseline[k] > 0 ? "+" : ""}${ab.vs_baseline[k]})` : ""}`).join(" · ")}
+                {Object.entries(ab.means_pips).map(([k, v]) => `${k}: ${v > 0 ? "+" : ""}${v} R${k !== "baseline" && ab.vs_baseline[k] !== undefined ? ` (${ab.vs_baseline[k] > 0 ? "+" : ""}${ab.vs_baseline[k]})` : ""}`).join(" · ")}
               </p>
               <p className={`text-[11px] ${ab.decisive ? "text-emerald-300" : "text-amber-300"}`}>{ab.note}</p>
             </div>
@@ -347,9 +348,9 @@ export default function LlmReviewReport() {
                   <tr className="text-[10px] uppercase tracking-wider text-bunker-muted">
                     <th scope="col" className="px-3 py-2 text-left font-medium">Sembol</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Onay</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium">Onaylananın pip</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Onaylananın R</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Red</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium">Reddedilenin pip</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Reddedilenin R</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -357,9 +358,9 @@ export default function LlmReviewReport() {
                     <tr key={sym} className="border-t border-bunker-800/70">
                       <td className="px-3 py-2 font-bold text-white">{sym}</td>
                       <td className="px-3 py-2 text-right">{v.approved}</td>
-                      <td className={`px-3 py-2 text-right ${pipTone(v.approved_net_pips)}`}>{fmtPips(v.approved_net_pips)}</td>
+                      <td className={`px-3 py-2 text-right ${pipTone(v.approved_net_pips)}`}>{fmtR(v.approved_net_pips)}</td>
                       <td className="px-3 py-2 text-right">{v.rejected}</td>
-                      <td className={`px-3 py-2 text-right ${pipTone(v.rejected_net_pips)}`}>{fmtPips(v.rejected_net_pips)}</td>
+                      <td className={`px-3 py-2 text-right ${pipTone(v.rejected_net_pips)}`}>{fmtR(v.rejected_net_pips)}</td>
                     </tr>
                   ))}
                 </tbody>

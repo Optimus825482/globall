@@ -169,6 +169,24 @@ def _bucket(conf: Any) -> str:
     return "80+" if c >= 80 else "60-79" if c >= 60 else "<60"
 
 
+def to_r(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Gölge sonuçları R'ye (stop mesafesinin katı) çevirir. Pip sembolden sembole eşit değer taşımaz (BTC'de 1 pip çok küçük,
+    EURUSD'de büyük); pip toplamı BTC/XRP'nin gürültüsüne gömülürdü. Alan adları aynı kalır, değerler R'dir.
+    Stop mesafesi bilinmeyen satır R'ye çevrilemez: sonuç alanları boşaltılır (karar/hata sayımı etkilenmez)."""
+    out = []
+    for r in rows:
+        r = dict(r)
+        try:
+            sl = float(r.get("sl_pips") or 0)
+        except (TypeError, ValueError):
+            sl = 0.0
+        for k in ("shadow_pips", "mfe_pips", "mae_pips"):
+            if r.get(k) is not None:
+                r[k] = round(float(r[k]) / sl, 3) if sl > 0 else None
+        out.append(r)
+    return out
+
+
 def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Saf fonksiyon: karar satırlarından rapor özeti (test edilebilir)."""
     out: Dict[str, Any] = {
@@ -250,7 +268,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 @router.get("/summary")
 async def llm_review_summary(days: int = Query(7, ge=1, le=365)):
     rows = await database.list_llm_reviews(since_ts=time.time() - days * 86400, limit=5000)
-    return {"days": days, **summarize(rows)}
+    return {"days": days, "unit": "R", **summarize(to_r(rows))}
 
 
 @router.get("/decisions")
@@ -271,7 +289,19 @@ async def llm_review_detail(review_id: int):
 async def llm_review_exit_ab(days: int = Query(30, ge=1, le=365)):
     """Kayıtlı gölge fiyat yolunda alternatif çıkış kuralları (BE@1R, kısmi kâr, trailing) — kart 1.7. Yalnızca A/B bilgisi."""
     rows = await database.list_llm_review_dataset(since_ts=time.time() - days * 86400)
-    return portfolio_analytics.compare_variants([r for r in rows if r.get("path")])
+    scaled = []
+    for r in rows:
+        try:
+            sl = float(r.get("sl_pips") or 0)
+            path = json.loads(r["path"]) if isinstance(r.get("path"), str) else (r.get("path") or [])
+        except (TypeError, ValueError):
+            continue
+        if sl > 0 and path:
+            scaled.append({**r, "path": json.dumps([round(float(x) / sl, 4) for x in path]), "sl_pips": 1.0,
+                           "tp_pips": round(float(r.get("tp_pips") or 0) / sl, 4)})
+    out = portfolio_analytics.compare_variants(scaled)
+    out["unit"] = "R"
+    return out
 
 
 @router.get("/features.csv")

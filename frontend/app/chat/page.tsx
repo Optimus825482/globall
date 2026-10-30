@@ -342,6 +342,7 @@ function ChatPageInner() {
           </div>
 
           <div className="pt-2">
+            <ScheduledJobs />
             <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="Hazır sorular">
               {QUICK_PROMPTS.map((item) => (
                 <button
@@ -396,6 +397,78 @@ function ChatPageInner() {
           </div>
         </Card>
       </div>
+    </div>
+  );
+}
+
+interface ScheduledJob {
+  id: number;
+  due_ts: number;
+  due_label: string;
+  kind: string;
+  status: string;
+  summary: string;
+  result?: string | null;
+  done_at?: number | null;
+}
+
+const JOB_STATUS_TR: Record<string, string> = {
+  pending: "Bekliyor", done: "Tamamlandı", missed: "Kaçırıldı", failed: "Başarısız", cancelled: "İptal",
+};
+
+/** Sohbetten kurulan hatırlatıcı / zamanlı kapatma işleri: bekleyenler + son 12 saatte sonuçlananlar. */
+function ScheduledJobs() {
+  const [jobs, setJobs] = useState<ScheduledJob[]>([]);
+
+  const load = async () => {
+    try {
+      const r = await apiRequest(`${API_BASE}/api/scheduled`);
+      if (!r.ok) return;
+      const body = (await r.json()) as { jobs?: ScheduledJob[] };
+      setJobs(body.jobs ?? []);
+    } catch {
+      /* ağ hatası: kart sessizce eski halini korur */
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 20000);
+    return () => clearInterval(t);
+  }, []);
+
+  const cancel = async (id: number) => {
+    await apiRequest(`${API_BASE}/api/scheduled/${id}/cancel`, { method: "POST" });
+    void load();
+  };
+
+  const recent = Date.now() / 1000 - 12 * 3600;
+  const visible = jobs.filter((j) => j.status === "pending" || ((j.done_at ?? 0) > recent && j.status !== "cancelled"));
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="mb-2 rounded-xl border border-bunker-700/80 bg-bunker-900/80 p-2.5" aria-label="Zamanlanmış işler">
+      <p className="mb-1.5 text-[11px] font-mono font-bold text-white">Zamanlanmış işler</p>
+      <ul className="space-y-1.5">
+        {visible.map((j) => (
+          <li key={j.id} className="flex items-start justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <p className="text-slate-200">
+                <span className={j.status === "pending" ? "text-cyan-300" : j.status === "done" ? "text-emerald-300" : "text-amber-300"}>
+                  {JOB_STATUS_TR[j.status] ?? j.status}
+                </span>{" "}
+                · {j.due_label} · {j.summary}
+              </p>
+              {j.result && <p className="mt-0.5 break-words text-[11px] text-bunker-muted">{j.result}</p>}
+            </div>
+            {j.status === "pending" && (
+              <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/10">
+                İptal
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

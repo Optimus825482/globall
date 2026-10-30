@@ -6733,3 +6733,101 @@ async def get_last_economic_calendar_sync() -> float:
 
     return await _run_db(op)
 
+
+
+# --------------------------------------------------------------------------- zamanlanmış işler (sohbetten kurulan hatırlatıcı / kapatma)
+_SCHED_SCHEMA_READY = False
+
+
+def _ensure_sched_schema(conn) -> None:
+    global _SCHED_SCHEMA_READY
+    if _SCHED_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scheduled_actions (
+                id BIGSERIAL PRIMARY KEY,
+                created_at DOUBLE PRECISION NOT NULL,
+                due_ts DOUBLE PRECISION NOT NULL,
+                kind TEXT NOT NULL,
+                params TEXT,
+                source_text TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result TEXT,
+                done_at DOUBLE PRECISION
+            )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sched_status_due ON scheduled_actions(status, due_ts)")
+        conn.commit()
+        _SCHED_SCHEMA_READY = True
+    except Exception as exc:
+        logger.warning("zamanlanmış iş şeması hazırlanamadı: %s", exc)
+
+
+_SCHED_KEYS = ["id", "created_at", "due_ts", "kind", "params", "source_text", "status", "result", "done_at"]
+
+
+def _sched_rows(cur) -> List[Dict[str, Any]]:
+    rows = _rows(_SCHED_KEYS, cur)
+    for r in rows:
+        try:
+            r["params"] = json.loads(r["params"]) if r.get("params") else {}
+        except Exception:
+            r["params"] = {}
+    return rows
+
+
+async def sched_create(kind: str, due_ts: float, params: Dict[str, Any], source_text: str) -> int:
+    def op(conn):
+        _ensure_sched_schema(conn)
+        row = conn.execute(
+            "INSERT INTO scheduled_actions (created_at, due_ts, kind, params, source_text, status) VALUES (?, ?, ?, ?, ?, 'pending') RETURNING id",
+            (time.time(), float(due_ts), kind, json.dumps(params or {}, ensure_ascii=False), (source_text or "")[:500])).fetchone()
+        conn.commit()
+        return int(row[0])
+
+    return await _run_db(op)
+
+
+async def sched_list(limit: int = 30) -> List[Dict[str, Any]]:
+    def op(conn):
+        _ensure_sched_schema(conn)
+        cur = conn.execute(f"SELECT {', '.join(_SCHED_KEYS)} FROM scheduled_actions ORDER BY (status = 'pending') DESC, due_ts DESC LIMIT ?",
+                           (int(limit),))
+        return _sched_rows(cur)
+
+    return await _run_db(op)
+
+
+async def sched_due(now: float) -> List[Dict[str, Any]]:
+    def op(conn):
+        _ensure_sched_schema(conn)
+        cur = conn.execute(f"SELECT {', '.join(_SCHED_KEYS)} FROM scheduled_actions WHERE status = 'pending' AND due_ts <= ? ORDER BY due_ts",
+                           (float(now),))
+        return _sched_rows(cur)
+
+    return await _run_db(op)
+
+
+async def sched_update(job_id: int, status: Optional[str], result: Optional[str]) -> None:
+    """status None → yalnız sonuç notu güncellenir (iş beklemede kalır, ör. köprü bağlı değil)."""
+    def op(conn):
+        _ensure_sched_schema(conn)
+        if status is None:
+            conn.execute("UPDATE scheduled_actions SET result = ? WHERE id = ?", (result, int(job_id)))
+        else:
+            conn.execute("UPDATE scheduled_actions SET status = ?, result = ?, done_at = ? WHERE id = ?",
+                         (status, result, time.time(), int(job_id)))
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def sched_cancel(job_id: int) -> bool:
+    def op(conn):
+        _ensure_sched_schema(conn)
+        cur = conn.execute("UPDATE scheduled_actions SET status = 'cancelled', done_at = ? WHERE id = ? AND status = 'pending'",
+                           (time.time(), int(job_id)))
+        conn.commit()
+        return (getattr(cur, "rowcount", 1) or 0) > 0
+
+    return await _run_db(op)

@@ -213,14 +213,11 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
         perf = None
     try:
         acct = _positions_summary(fx, sym, direction)
-        # Deterministik portföy durumu (araştırma kartları 3.1-3.3): LLM bu sınırları aşamaz, yalnızca bağlam olarak görür.
+        # Yalnızca para birimi maruziyeti/yığılma bağlamı verilir. Risk bütçesi, ısı ve drawdown kademesi LLM'e VERİLMEZ:
+        # bunlar deterministik risk kapısının işidir; LLM'in "bütçe %0" gerekçesiyle reddetmesi iki katmanı karıştırıyordu.
         from app import portfolio_risk
         snap = await portfolio_risk.snapshot(fx._AUTO_SETTINGS)
-        acct = {**(acct or {}), "net_para_birimi_maruziyeti_usd": snap["exposure"]["legs"], "usd_net_maruziyet": snap["exposure"]["usd_net"],
-                "portfoy_isisi_yuzde": snap["heat"]["heat_pct"], "kalan_risk_butcesi_yuzde": snap["risk_budget_remaining_pct"],
-                "tepeden_dusus_yuzde": snap["drawdown"]["dd_pct"], "gunluk_degisim_yuzde": snap["drawdown"]["daily_pct"],
-                "drawdown_kademesi": snap["drawdown"]["level"], "stopsuz_pozisyon": len(snap["heat"]["no_sl_tickets"]),
-                "not": "Risk kapısı ve limitler LLM'den bağımsızdır; yeni işlemin riski kalan bütçeyi aşıyorsa REJECT için somut dayanaktır."}
+        acct = {**(acct or {}), "net_para_birimi_maruziyeti_usd": snap["exposure"]["legs"], "usd_net_maruziyet": snap["exposure"]["usd_net"]}
     except Exception:  # noqa: BLE001
         acct = acct if "acct" in locals() else None
 
@@ -315,8 +312,9 @@ def parse_verdict(text: str) -> Optional[Dict[str, Any]]:
             "checks": checks_out}
 
 
-PRIMARY_BUDGET_SHARE = 0.6        # yedek model tanımlıysa süre bütçesinin bu payı ana modele verilir
-MIN_FALLBACK_SEC = 10.0
+PRIMARY_BUDGET_SHARE = 0.5        # yedek model tanımlıysa süre bütçesinin bu payı ana modele verilir
+FALLBACK_BUDGET_SHARE = 0.6       # yedeğe kalan süre DEĞİL, kendi bağımsız payı verilir (artık süre 10 sn'ye düşüp yedeği boğuyordu)
+MIN_FALLBACK_SEC = 20.0
 
 
 async def _ask_once(dossier: Dict[str, Any], budget: float, cfg_override: Optional[Dict[str, Any]]) -> tuple:
@@ -355,7 +353,7 @@ async def ask_llm(dossier: Dict[str, Any], timeout: float) -> tuple:
     try:
         return await _ask_once(dossier, timeout * PRIMARY_BUDGET_SHARE, None)
     except (asyncio.TimeoutError, TimeoutError, RuntimeError, ValueError) as exc:
-        left = max(MIN_FALLBACK_SEC, timeout - (time.monotonic() - started))
+        left = max(MIN_FALLBACK_SEC, timeout * FALLBACK_BUDGET_SHARE)
         logger.warning("LLM onayı: ana model başarısız (%s: %s) → yedek %s (%.0f sn)", type(exc).__name__, exc, fb["model"]["name"], left)
         verdict, model = await _ask_once(dossier, left, fb)
         return verdict, f"{model} (yedek)"

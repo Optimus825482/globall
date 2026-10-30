@@ -24,7 +24,7 @@ from typing import Any, Awaitable, Dict, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app import forex_research, llm_analysis, opportunity_trades
+from app import forex_research, llm_analysis, opportunity_trades, scheduled_actions
 from app.api_common import rate_limit
 
 logger = logging.getLogger("scalper.routers.forex_chat")
@@ -85,6 +85,9 @@ SYSTEM_PROMPT = (
     "- Açıklanan verilerde gerçekleşen/beklenen farkını ve hangi pariteye ne yönde etki ettiğini sade anlat.\n"
     "- Kullanıcının açık pozisyonlarını, radarı veya otomatik motoru değerlendirme; konu dışı.\n"
     "- Emir açma/kapama talimatı verme, kesin kazanç vaat etme; riski (stop, pozisyon büyüklüğü) kısaca hatırlat.\n"
+    "- ZAMANLAMA: Sistem 'SS:DD' saatli 'kapat'/'hatırlat' isteklerini sen devreye girmeden kendisi kurar (hatırlatıcı ve DEMO hesapta "
+    "zamanlı pozisyon kapatma). Bu istek sana ulaştıysa kurulamamıştır: 'yapamam' DEME; neyin eksik olduğunu söyle ve şu kalıbı öner: "
+    "\"cuma 23:50'de BTC ve coinler hariç tüm pozisyonları kapat\" (saat, hariç/yalnızca kapsamı ve 'kapat' ya da 'hatırlat' açık olmalı).\n"
     "- Soru piyasa dışıysa tek cümleyle kibarca konuya yönlendir."
 )
 
@@ -374,6 +377,18 @@ async def forex_chat(payload: dict, request: Request):
             findings: Dict[str, Any] = {}
             picked: Optional[List[str]] = None
             opp = mode == "opportunity_scan"
+            if not opp:
+                # "Cuma 23:50'de BTC hariç tüm pozisyonları kapat" / "14:30'da hatırlat": LLM'e gitmeden kaydedilir.
+                try:
+                    confirm = await scheduled_actions.create_from_text(last_text, _mentioned_symbols(last_text))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("zamanlanmış iş kurulamadı: %s: %s", type(exc).__name__, exc)
+                    confirm = None
+                if confirm:
+                    yield _sse("step", {"id": "schedule", "label": "Zamanlanmış iş", "status": "done", "text": "İş kaydedildi"})
+                    yield _sse("delta", {"text": confirm})
+                    yield _sse("done", {"status": "ok", "scheduled": True})
+                    return
             if opp:
                 # Fırsat taraması: Forex + Bitcoin + Altın evrenini tara; en net adayları derin analiz et.
                 yield _sse("step", {"id": "scan", "label": "Fırsat taraması (Forex, Bitcoin, Altın)", "status": "running"})

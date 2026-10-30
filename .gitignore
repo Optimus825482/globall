@@ -79,3 +79,9 @@ $null
 /node_modules/
 /package.json
 /package-lock.json
+
+# Yerel dosyalar (commit edilmez)
+.env.bak*
+**/.impeccable/
+reports/
+research_notes/

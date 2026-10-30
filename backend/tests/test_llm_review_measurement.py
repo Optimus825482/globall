@@ -198,4 +198,16 @@ def test_exit_ab_endpoint_uses_recorded_paths(monkeypatch):
 
     monkeypatch.setattr(database, "list_llm_review_dataset", fake)
     out = asyncio.run(lr.llm_review_exit_ab(days=30))
-    assert out["n"] == 1 and out["means_pips"]["baseline"] == 25.0 and not out["decisive"]
+    assert out["n"] == 1 and out["means_pips"]["baseline"] == 2.5 and out["unit"] == "R" and not out["decisive"]
+
+
+def test_summary_is_in_r_so_btc_pips_do_not_swamp_forex():
+    rows = [
+        {"symbol": "BTCUSD", "decision": "REJECT", "applied": "blocked", "shadow_status": "SL", "shadow_pips": -340.0, "sl_pips": 340.0},
+        {"symbol": "EURUSD", "decision": "REJECT", "applied": "blocked", "shadow_status": "SL", "shadow_pips": -8.0, "sl_pips": 8.0},
+        {"symbol": "XAUUSD", "decision": "APPROVE", "applied": "allowed", "shadow_status": "TP", "shadow_pips": 90.0, "sl_pips": 60.0},
+        {"symbol": "ETHUSD", "decision": "APPROVE", "applied": "allowed", "shadow_status": "SL", "shadow_pips": -5.0, "sl_pips": None},
+    ]
+    s = lr.summarize(lr.to_r(rows))
+    assert s["rejected_stats"]["avoided_pips"] == 2.0 and s["net_value_pips"] == 2.0     # BTC ve EURUSD eşit ağırlıkta: 1R + 1R
+    assert s["approved_stats"]["net_pips"] == 1.5 and s["approved_stats"]["closed"] == 1   # stop mesafesiz satır R'ye çevrilemez
