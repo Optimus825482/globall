@@ -79,7 +79,7 @@ function formatUtc3Time(dateIso: string) {
   }
 }
 
-function groupByDate(events: CalendarEvent[]) {
+function groupByDate(events: CalendarEvent[], newestFirst = false) {
   const map = new Map<string, CalendarEvent[]>();
   for (const ev of events) {
     let key = "Tarihsiz";
@@ -94,10 +94,12 @@ function groupByDate(events: CalendarEvent[]) {
     map.get(key)!.push(ev);
   }
   // Gün içinde saat sırası (API sırası saat sırasını garanti etmiyor).
+  // Açıklananlar sekmesi: en yeni üstte; Bekleyenler: ilk açıklanacak üstte.
+  const dir = newestFirst ? -1 : 1;
   for (const list of map.values()) {
-    list.sort((a, b) => (Date.parse(a.date_iso) || 0) - (Date.parse(b.date_iso) || 0));
+    list.sort((a, b) => dir * ((Date.parse(a.date_iso) || 0) - (Date.parse(b.date_iso) || 0)));
   }
-  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  return Array.from(map.entries()).sort(([a], [b]) => dir * a.localeCompare(b));
 }
 
 export default function ForexCalendarPage() {
@@ -105,6 +107,8 @@ export default function ForexCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterStars, setFilterStars] = useState<number | null>(null);
+  // Varsayılan sekme: açıklananlar (en yeni üstte).
+  const [tab, setTab] = useState<"released" | "pending">("released");
   // "" = bugünden itibaren · "ALL" = tüm günler · "YYYY-MM-DD" = tek gün
   const [dayFilter, setDayFilter] = useState<string>("");
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
@@ -177,7 +181,11 @@ export default function ForexCalendarPage() {
     ? visible.filter((e) => (e.stars || (e.impact === "High" ? 3 : 2)) === filterStars)
     : visible;
 
-  const grouped = groupByDate(filtered);
+  const isReleased = (e: CalendarEvent) => !!e.actual && e.actual !== "—";
+  const releasedCount = filtered.filter(isReleased).length;
+  const pendingCount = filtered.length - releasedCount;
+  const tabbed = filtered.filter((e) => (tab === "released") === isReleased(e));
+  const grouped = groupByDate(tabbed, tab === "released");
 
   const biasBadge = (dir?: string, conf?: number) => {
     if (dir === "BUY")
@@ -350,8 +358,31 @@ export default function ForexCalendarPage() {
           Tüm günler
         </button>
         <span className="ml-auto text-[11px] text-bunker-muted font-mono">
-          {filtered.length} olay
+          {tabbed.length} olay
         </span>
+      </div>
+
+      {/* SEKMELER: Açıklananlar (varsayılan) / Bekleyenler */}
+      <div role="tablist" aria-label="Takvim görünümü" className="flex gap-2">
+        {([
+          ["released", "Açıklananlar", releasedCount],
+          ["pending", "Bekleyenler", pendingCount],
+        ] as const).map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
+              tab === key
+                ? "bg-blue-500/20 border-blue-400/60 text-blue-200"
+                : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+            }`}
+          >
+            {label} <span className="opacity-70">({count})</span>
+          </button>
+        ))}
       </div>
 
       {/* YÜKLENİYOR / HATA */}
@@ -375,11 +406,13 @@ export default function ForexCalendarPage() {
         </div>
       )}
 
-      {!loading && !error && filtered.length === 0 && (
+      {!loading && !error && tabbed.length === 0 && (
         <div className="text-bunker-muted font-mono text-sm text-center py-12">
           {dayFilter && dayFilter !== "ALL"
-            ? `${dayHeading(dayFilter)} için 2-3 yıldızlı olay yok.`
-            : "Seçilen filtreye uygun olay bulunamadı."}
+            ? `${dayHeading(dayFilter)} için bu sekmede olay yok.`
+            : tab === "released"
+            ? "Seçilen aralıkta açıklanmış veri yok."
+            : "Seçilen aralıkta bekleyen veri yok."}
         </div>
       )}
 
