@@ -163,12 +163,16 @@ _DXY_TR = {"USD_STRONG": "dolar güçlü", "USD_WEAK": "dolar zayıf", "USD_NEUT
 Step = Tuple[str, str, Awaitable[Tuple[str, Any]]]   # (id, başlık, korutin → (kullanıcı metni, model verisi))
 
 
-async def _guarded(coro: Awaitable[Tuple[str, Any]], step_id: str) -> Optional[Tuple[str, Any]]:
+async def _guarded(coro: Awaitable[Tuple[str, Any]], step_id: str) -> Tuple[bool, Any]:
+    """(başarılı_mı, sonuç | hata_nedeni). Kısmi araştırma kabul edilir; neden kullanıcıya gösterilir."""
     try:
-        return await asyncio.wait_for(coro, timeout=STEP_TIMEOUT_SEC)
-    except Exception as exc:  # noqa: BLE001 - kısmi araştırma kabul edilir
-        logger.info("forex araştırma adımı atlandı (%s): %s", step_id, exc)
-        return None
+        return True, await asyncio.wait_for(coro, timeout=STEP_TIMEOUT_SEC)
+    except asyncio.TimeoutError:
+        logger.warning("forex araştırma adımı zaman aşımına uğradı (%s, %.0f sn)", step_id, STEP_TIMEOUT_SEC)
+        return False, f"Zaman aşımı ({STEP_TIMEOUT_SEC:.0f} sn) — kaynak yanıt vermedi."
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("forex araştırma adımı başarısız (%s): %s: %s", step_id, type(exc).__name__, exc)
+        return False, f"Alınamadı ({type(exc).__name__})."
 
 
 _bg_tasks: set = set()
@@ -213,9 +217,9 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
     for sym in symbols:
         async def _ta(sym=sym):
             # Köprüye 8 periyodu da izlet, mumların gelmesini kısa süre bekle (gelmezse Yahoo yedeği).
-            await asyncio.to_thread(forex_research.mt5_request, sym)
-            await asyncio.to_thread(forex_research.mt5_wait, sym)
-            a = await asyncio.to_thread(forex_research.analyze_symbol, sym)
+            await forex_research.run_blocking(forex_research.mt5_request, sym)
+            await forex_research.run_blocking(forex_research.mt5_wait, sym)
+            a = await forex_research.run_blocking(forex_research.analyze_symbol, sym)
             text = forex_research.describe_analysis(a)
             data = {"sembol": sym, "metin": text}
             if a.get("ok"):
@@ -227,7 +231,7 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
 
     for sym in symbols:
         async def _tv(sym=sym):
-            tv = await asyncio.to_thread(forex_research.tradingview_technicals, sym)
+            tv = await forex_research.run_blocking(forex_research.tradingview_technicals, sym)
             if not tv:
                 raise RuntimeError("TradingView verisi yok")
             return forex_research.describe_tradingview(sym, tv), {"sembol": sym, "genel": tv["summary"], "dilimler": tv["words"]}
@@ -248,14 +252,14 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
 
     for sym in symbols:
         async def _news(sym=sym):
-            heads = await asyncio.to_thread(forex_research.fetch_headlines, sym)
+            heads = await forex_research.run_blocking(forex_research.fetch_headlines, sym)
             return forex_research.describe_headlines(sym, heads), {
                 "sembol": sym, "basliklar": [f"{h['title']} ({h['source']}, {h['age_hours']:.0f} sa önce)" for h in heads]}
         steps.append((f"news:{sym}", f"{names.get(sym, sym)} haber araştırması", _news()))
 
     async def _dxy():
         from app.routers import forex as fx
-        d = await asyncio.to_thread(fx.get_dxy_regime)
+        d = await forex_research.run_blocking(fx.get_dxy_regime)
         if not d:
             raise RuntimeError("DXY verisi yok")
         label = _DXY_TR.get(d.get("regime"), "dolar nötr/kararsız")
@@ -279,10 +283,9 @@ async def research_events(steps: List[Step], findings: Dict[str, Any]):
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
             for t in done:
                 sid, label = tasks[t]
-                res = t.result()
-                if res is None:
-                    yield _sse("step", {"id": sid, "label": label, "status": "error",
-                                        "text": "Bu adım şu an tamamlanamadı."})
+                ok, res = t.result()
+                if not ok:
+                    yield _sse("step", {"id": sid, "label": label, "status": "error", "text": str(res)})
                     continue
                 text, data = res
                 findings[sid] = data
@@ -335,7 +338,7 @@ async def forex_chat(payload: dict, request: Request):
             if wants_scan(last_text):
                 # Sembol belirtilmemiş genel fırsat sorusu: önce geniş evreni tara, en net 3'ü derin analiz et.
                 yield _sse("step", {"id": "scan", "label": "Fırsat taraması", "status": "running"})
-                scan = await asyncio.to_thread(forex_research.scan_opportunities)
+                scan = await forex_research.run_blocking(forex_research.scan_opportunities)
                 if scan:
                     findings["scan"] = scan
                     picked = [r["symbol"] for r in scan["top"][:3]]

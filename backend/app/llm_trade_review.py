@@ -105,9 +105,9 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
     pip = float(ctx.get("pip_size") or 0.0) or None
 
     async def _tech():
-        await asyncio.to_thread(forex_research.mt5_request, sym)
-        await asyncio.to_thread(forex_research.mt5_wait, sym, 3.0)
-        a = await asyncio.to_thread(forex_research.analyze_symbol, sym)
+        await forex_research.run_blocking(forex_research.mt5_request, sym)
+        await forex_research.run_blocking(forex_research.mt5_wait, sym, 3.0)
+        a = await forex_research.run_blocking(forex_research.analyze_symbol, sym)
         if not a.get("ok"):
             return {"durum": "veri yok"}
         out = {
@@ -133,11 +133,11 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
     async def _news():
         # `fetch_headlines` başlıkları temizler ve talimat benzerlerini eler (forex_research.sanitize_headline).
-        heads = await asyncio.to_thread(forex_research.fetch_headlines, sym, 5)
+        heads = await forex_research.run_blocking(forex_research.fetch_headlines, sym, 5)
         return [f"{h['title'][:120]} ({h['age_hours']:.0f} sa önce)" for h in heads]
 
     async def _dxy():
-        d = await asyncio.to_thread(fx.get_dxy_regime)
+        d = await forex_research.run_blocking(fx.get_dxy_regime)
         return (d or {}).get("regime")
 
     async def _guard(coro, name):
@@ -148,7 +148,7 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
             return None
 
     async def _tv():
-        tv = await asyncio.to_thread(forex_research.tradingview_technicals, sym)
+        tv = await forex_research.run_blocking(forex_research.tradingview_technicals, sym)
         return {"genel": tv["summary"], "dilimler": tv["words"]} if tv else None
 
     tech, cal, news, dxy, tv = await asyncio.gather(_guard(_tech(), "teknik"), _guard(_cal(), "takvim"),

@@ -944,8 +944,19 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
 
     try:
         headers = {"Content-Type": "application/json", "Authorization": "Bearer " + decrypt_key(cfg["provider"]["api_key_encrypted"])}
-        import queue
-        lines = queue.Queue()
+        # Okuyucu thread'den olay döngüsüne ZAMAN AŞIMI-GÜVENLİ aktarım. Eskiden `to_thread(queue.get)` +
+        # `wait_for(1 sn)` kullanılıyordu: zaman aşımında thread kuyrukta SONSUZA KADAR bloke kalıyor (varsayılan
+        # havuz tükeniyor → tüm `to_thread` işleri kilitleniyor) ve sonradan gelen parçayı iptal edilmiş
+        # bekleyene verip KAYBEDİYORDU. asyncio.Queue iptal edilen `get`te öğeyi korur; thread bloke olmaz.
+        _loop = asyncio.get_running_loop()
+        _aq: asyncio.Queue = asyncio.Queue()
+
+        class _Sink:
+            @staticmethod
+            def put(item):
+                _loop.call_soon_threadsafe(_aq.put_nowait, item)
+
+        lines = _Sink()
 
         def _drain_response(response, sink):
             """Gövdeyi SENKRON okur — ayrı thread'de çalıştırılmalıdır (LLM-01).
@@ -1018,7 +1029,7 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
                     f"LLM akışı toplam süre sınırını aştı: {STREAM_TOTAL_TIMEOUT} sn")
             # Blocking queue.get yerine asyncio.Queue kullan — event loop'u bloke etme
             try:
-                kind, raw_line = await asyncio.wait_for(asyncio.to_thread(lines.get), timeout=1.0)
+                kind, raw_line = await asyncio.wait_for(_aq.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
             if kind == "error":

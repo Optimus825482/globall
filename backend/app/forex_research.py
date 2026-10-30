@@ -29,6 +29,16 @@ from app.technical_analysis import _adx, _atr, _bollinger, _ema, _macd, _rsi
 
 logger = logging.getLogger("scalper.forex_research")
 
+# Araştırma işleri (MT5 bekleme, HTTP, analiz) ASYNCIO'NUN VARSAYILAN HAVUZUNDAN AYRI çalışır: bu işler
+# saniyelerce thread tutar; ortak havuzu (DB ve diğer `to_thread` çağrıları) açlığa düşürmemeli.
+_RESEARCH_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="research")
+
+
+async def run_blocking(fn, *args):
+    """Bloke eden araştırma fonksiyonunu özel havuzda çalıştırır (olay döngüsü ve varsayılan havuz serbest kalır)."""
+    import asyncio
+    return await asyncio.get_running_loop().run_in_executor(_RESEARCH_POOL, lambda: fn(*args))
+
 HTTP_TIMEOUT_SEC = 6.0
 MAX_BODY_BYTES = 1_500_000
 UA = {"User-Agent": "Mozilla/5.0 (compatible; ScalperResearch/1.0)"}
