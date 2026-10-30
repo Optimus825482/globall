@@ -149,32 +149,18 @@ export default function Sidebar() {
                 </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto p-3 space-y-3" aria-label="Ana gezinme">
+            <nav className="flex-1 overflow-y-auto p-3 space-y-4" aria-label="Ana gezinme">
                 {groups.map((group) => {
                     if (!group.items.length) return null;
-                    // 2026-09-27: `forex_ana` grubu DÜZ liste (grup başlığı yok
-                    // — kullanıcı "gruplamayı kaldır" istedi). `diger` grubu
-                    // açık/kapalı chevron'lu; varsayılan kapalı.
-                    const isFlat = group.id === "forex_ana";
+                    // 2026-10-30: gruplar (İZLE / İŞLEM / ANALİZ / SİSTEM) her zaman
+                    // açık; başlık yalnız etiket. Açıklamalar ipucu (title) olarak kalır.
+                    const isFlat = true;
                     const open = openGroups[group.id] ?? isFlat;
                     return (
                         <div key={group.id} className="space-y-1">
-                            {!isFlat && (
-                                <button
-                                    type="button"
-                                    onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
-                                    className="flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-bunker-800/50"
-                                    aria-expanded={open}
-                                >
-                                    <span className={`text-[10px] text-bunker-muted transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
-                                    <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-bunker-muted">
-                                        {group.label}
-                                    </span>
-                                    <span className="ml-auto font-mono text-[10px] text-bunker-muted/60">
-                                        {group.items.length}
-                                    </span>
-                                </button>
-                            )}
+                            <p className="px-3 pt-1 font-mono text-[10px] font-bold tracking-[0.14em] text-bunker-muted/70">
+                                {group.label}
+                            </p>
                             {(open || isFlat) && group.items.map((m) => {
                                 const active = pathname === m.href
                                     || (m.alsoActive || []).includes(pathname);
@@ -185,7 +171,7 @@ export default function Sidebar() {
                                         href={m.href}
                                         onClick={() => setOpen(false)}
                                         title={m.desc || label}
-                                        className={`block px-3 py-2.5 rounded-lg border transition-colors touch-target ${active
+                                        className={`block px-3 py-2 rounded-lg border transition-colors touch-target ${active
                                             ? "bg-neon-green/10 border-neon-green/30"
                                             : "border-transparent hover:bg-bunker-800/60 hover:border-bunker-700"
                                             }`}
@@ -196,9 +182,6 @@ export default function Sidebar() {
                                                 {label}
                                             </span>
                                         </span>
-                                        {/* Açıklama yalnız geniş ekranda: 6 öğeli grupta
-                                            her satıra iki satır harçlanıyordu. */}
-                                        {m.desc && <span className="hidden lg:block text-[11px] text-bunker-muted mt-0.5 ml-7">{m.desc}</span>}
                                     </Link>
                                 );
                             })}

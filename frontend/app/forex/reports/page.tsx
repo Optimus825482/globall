@@ -113,6 +113,33 @@ function strategyLabel(code?: string): string {
   return STRATEGY_LABELS[code] || code;
 }
 
+// Çıkış rozeti: MT5 işlemlerinde `exit_reason` kod değil görüntü metni gelir
+// ("🎯 Kâr Al (TP)", "🛑 Zarar Durdur (SL)"); eski kod değerleri de desteklenir.
+// Kârda kapanan stop (BE/iz süren stop) "Zarar Durdur" etiketiyle kırmızı
+// gösterilirse kazanç kayıp gibi okunur — sonuç (pnl) etikete yansıtılır.
+function exitBadge(t: ClosedTrade): { label: string; cls: string } {
+  const raw = String(t.exit_reason_title || t.exit_reason || "").trim();
+  const low = raw.toLowerCase();
+  const pnl = Number((t as any).pnl_usd ?? 0);
+  const green = "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
+  const cyan = "bg-cyan-500/20 text-cyan-300 border-cyan-500/30";
+  const yellow = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
+  const indigo = "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
+  const red = "bg-rose-500/20 text-rose-300 border-rose-500/30";
+  const grey = "bg-bunker-800 text-bunker-muted border-bunker-700";
+  if (t.exit_reason === "TP_HIT" || low.includes("kâr al") || /tp/.test(low)) return { label: raw || "Kâr Al (TP)", cls: green };
+  if (t.exit_reason === "BE_HIT" || low.includes("başabaş")) return { label: raw || "Başabaş", cls: cyan };
+  if (t.exit_reason === "TRAILING_HIT" || low.includes("iz süren")) return { label: raw || "İz Süren Stop", cls: yellow };
+  if (t.exit_reason === "MANUAL" || low.includes("manuel")) return { label: raw || "Manuel", cls: indigo };
+  if (low.includes("zarar durdur") || /sl/.test(low)) {
+    return pnl > 0
+      ? { label: "🔒 Stop (kârda)", cls: yellow }
+      : { label: raw || "Zarar Durdur (SL)", cls: red };
+  }
+  if (!raw) return { label: "IC Markets MT5", cls: grey };
+  return { label: raw, cls: pnl >= 0 ? grey : red };
+}
+
 export default function ForexReportsPage() {
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<any[]>([]);
@@ -346,9 +373,6 @@ export default function ForexReportsPage() {
               <h1 className="text-xl sm:text-2xl font-black font-mono text-white tracking-tight">
                 Forex İşlem Raporları & Analitik
               </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-400/30">
-                CSV Dışa Aktarım
-              </span>
             </div>
             <p className="text-xs text-bunker-muted mt-0.5">
               Otonom scalper işlemlerinin tüm giriş-çıkış fiyatları, işlem süreleri, pips ve getiri dökümü.
@@ -362,7 +386,7 @@ export default function ForexReportsPage() {
           <button
             type="button"
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all ${
+            className={`min-h-11 sm:min-h-0 px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all ${
               autoRefresh
                 ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                 : "bg-bunker-900 text-bunker-muted border-bunker-800"
@@ -387,7 +411,7 @@ export default function ForexReportsPage() {
             type="button"
             onClick={downloadCsv}
             disabled={isExporting || trades.length === 0}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 flex items-center gap-2 transition-all disabled:opacity-50"
+            className="min-h-11 sm:min-h-0 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 flex items-center gap-2 transition-all disabled:opacity-50"
           >
             <span>📥</span>
             <span>{isExporting ? "Dışa Aktarılıyor…" : "Excel / CSV İndir"}</span>
@@ -446,7 +470,7 @@ export default function ForexReportsPage() {
             <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Kazanma Oranı (WR)</span>
             <span
               className={`text-xl font-black ${
-                kpi.win_rate >= 50 ? "text-emerald-400" : kpi.win_rate > 0 ? "text-rose-400" : "text-white"
+                kpi.total_trades === 0 ? "text-white" : kpi.win_rate >= 50 ? "text-emerald-400" : kpi.win_rate > 0 ? "text-rose-400" : "text-white"
               }`}
             >
               %{kpi.win_rate.toFixed(1)}
@@ -461,7 +485,7 @@ export default function ForexReportsPage() {
             <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Net Realize Kâr</span>
             <span
               className={`text-xl font-black ${
-                kpi.total_pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"
+                kpi.total_trades === 0 ? "text-white" : kpi.total_pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"
               }`}
             >
               {kpi.total_pnl_usd >= 0 ? "+" : ""}${kpi.total_pnl_usd.toFixed(2)}
@@ -480,7 +504,7 @@ export default function ForexReportsPage() {
             <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Kâr Faktörü (PF)</span>
             <span
               className={`text-xl font-black ${
-                kpi.profit_factor >= 1.5 ? "text-emerald-400" : kpi.profit_factor >= 1.0 ? "text-yellow-400" : "text-rose-400"
+                kpi.total_trades === 0 ? "text-white" : kpi.profit_factor >= 1.5 ? "text-emerald-400" : kpi.profit_factor >= 1.0 ? "text-yellow-400" : "text-rose-400"
               }`}
             >
               {kpi.profit_factor_infinite || kpi.profit_factor >= 999 ? "∞" : kpi.profit_factor.toFixed(2)}
@@ -495,7 +519,7 @@ export default function ForexReportsPage() {
             <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Ortalama İşlem</span>
             <span
               className={`text-xl font-black ${
-                kpi.avg_trade_usd >= 0 ? "text-emerald-400" : "text-rose-400"
+                kpi.total_trades === 0 ? "text-white" : kpi.avg_trade_usd >= 0 ? "text-emerald-400" : "text-rose-400"
               }`}
             >
               {kpi.avg_trade_usd >= 0 ? "+" : ""}${kpi.avg_trade_usd.toFixed(2)}
@@ -563,7 +587,7 @@ export default function ForexReportsPage() {
                 type="button"
                 title={item.hint}
                 onClick={() => setPeriod(item.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono border transition-all ${
+                className={`min-h-11 sm:min-h-0 px-3 py-1.5 rounded-xl text-xs font-bold font-mono border transition-all ${
                   active
                     ? "bg-blue-500/20 text-blue-300 border-blue-400/50 shadow-sm"
                     : "bg-bunker-950 text-bunker-muted border-bunker-800 hover:text-white hover:border-bunker-700"
@@ -585,7 +609,7 @@ export default function ForexReportsPage() {
                 <button
                   type="button"
                   onClick={() => shiftSingleDate(-1)}
-                  className="px-2.5 py-1.5 rounded-lg bg-bunker-950 hover:bg-bunker-800 border border-bunker-700 text-white font-bold text-xs transition-colors flex items-center gap-1 active:scale-95"
+                  className="min-h-11 sm:min-h-0 px-2.5 py-1.5 rounded-lg bg-bunker-950 hover:bg-bunker-800 border border-bunker-700 text-white font-bold text-xs transition-colors flex items-center gap-1 active:scale-95"
                   title="Bir önceki güne git"
                 >
                   <span>◀</span>
@@ -595,12 +619,12 @@ export default function ForexReportsPage() {
                   type="date"
                   value={selectedSingleDate}
                   onChange={(e) => setSelectedSingleDate(e.target.value)}
-                  className="bg-bunker-950 border border-cyan-500/60 rounded-lg px-3 py-1.5 text-white font-mono text-xs font-bold outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all shadow-inner"
+                  className="min-h-11 sm:min-h-0 bg-bunker-950 border border-cyan-500/60 rounded-lg px-3 py-1.5 text-white font-mono text-xs font-bold outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all shadow-inner"
                 />
                 <button
                   type="button"
                   onClick={() => shiftSingleDate(1)}
-                  className="px-2.5 py-1.5 rounded-lg bg-bunker-950 hover:bg-bunker-800 border border-bunker-700 text-white font-bold text-xs transition-colors flex items-center gap-1 active:scale-95"
+                  className="min-h-11 sm:min-h-0 px-2.5 py-1.5 rounded-lg bg-bunker-950 hover:bg-bunker-800 border border-bunker-700 text-white font-bold text-xs transition-colors flex items-center gap-1 active:scale-95"
                   title="Bir sonraki güne git"
                 >
                   <span>Sonraki Gün</span>
@@ -609,7 +633,7 @@ export default function ForexReportsPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedSingleDate(localDateInput())}
-                  className="px-2.5 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 text-cyan-300 font-bold text-xs transition-colors active:scale-95"
+                  className="min-h-11 sm:min-h-0 px-2.5 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 text-cyan-300 font-bold text-xs transition-colors active:scale-95"
                   title="Bugünün tarihine dön"
                 >
                   Bugün
@@ -631,7 +655,7 @@ export default function ForexReportsPage() {
                 value={dateFrom}
                 max={dateTo || undefined}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-mono outline-none focus:border-blue-400 transition-colors"
+                className="min-h-11 sm:min-h-0 bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-mono outline-none focus:border-blue-400 transition-colors"
               />
             </label>
             <label className="flex items-center gap-2">
@@ -641,7 +665,7 @@ export default function ForexReportsPage() {
                 value={dateTo}
                 min={dateFrom || undefined}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-mono outline-none focus:border-blue-400 transition-colors"
+                className="min-h-11 sm:min-h-0 bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 text-white font-mono outline-none focus:border-blue-400 transition-colors"
               />
             </label>
             {!customRangeReady && (
@@ -669,7 +693,7 @@ export default function ForexReportsPage() {
               placeholder="Örn: FX-500751, AUD/USD..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white placeholder-bunker-600 outline-none focus:border-blue-400 transition-colors"
+              className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white placeholder-bunker-600 outline-none focus:border-blue-400 transition-colors"
             />
           </div>
 
@@ -681,7 +705,7 @@ export default function ForexReportsPage() {
             <select
               value={selectedSymbol}
               onChange={(e) => setSelectedSymbol(e.target.value)}
-              className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
+              className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
             >
               {availableSymbols.map((item) => (
                 <option key={item.key} value={item.key}>
@@ -699,7 +723,7 @@ export default function ForexReportsPage() {
             <select
               value={selectedStrategy}
               onChange={(e) => setSelectedStrategy(e.target.value)}
-              className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
+              className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
             >
               <option value="ALL">Tüm Stratejiler</option>
               <option value="EMA_ADX_PULLBACK_M5">EMA+ADX Pullback (M5)</option>
@@ -722,7 +746,7 @@ export default function ForexReportsPage() {
             <select
               value={selectedOutcome}
               onChange={(e) => setSelectedOutcome(e.target.value)}
-              className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
+              className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
             >
               <option value="ALL">Tümü (Kazanç & Kayıp)</option>
               <option value="WIN">Sadece Kazananlar (WIN 🎯)</option>
@@ -738,7 +762,7 @@ export default function ForexReportsPage() {
             <select
               value={selectedReason}
               onChange={(e) => setSelectedReason(e.target.value)}
-              className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
+              className="min-h-11 sm:min-h-0 w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-400 transition-colors"
             >
               <option value="ALL">Tüm Çıkışlar</option>
               <option value="TP_HIT">🎯 Kâr Al (Take Profit)</option>
@@ -814,13 +838,17 @@ export default function ForexReportsPage() {
         ) : trades.length === 0 ? (
           <div className="p-16 text-center space-y-3">
             <div className="text-4xl">🏁</div>
-            <p className="text-sm font-bold text-white">Henüz kriterlere uyan bir işlem bulunmuyor.</p>
+            <p className="text-sm font-bold text-white">
+              {kpi && kpi.total_trades > 0 ? "Bu tablo filtrelerine uyan işlem yok." : "Rapora henüz kapanmış işlem gelmedi."}
+            </p>
             <p className="text-xs text-bunker-muted max-w-md mx-auto">
-              Otonom motor pozisyonları kapatıp hedeflerine (TP, SL, Breakeven) ulaştığında tüm işlemler otomatik olarak bu raporda arşivlenecektir.
+              {kpi && kpi.total_trades > 0
+                ? "Sonuç, çıkış türü veya arama filtresini genişletin; KPI kartları bu dönemde işlem olduğunu gösteriyor."
+                : "İşlemler MT5 hesabından ve otonom motordan gelir. MT5 köprüsü bağlı değilse veya seçili dönemde işlem kapanmadıysa liste boş kalır; Dönem filtresini “Tüm Zamanlar” yapıp kontrol edin."}
             </p>
             <Link
               href="/forex/portfolio"
-              className="inline-block mt-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md"
+              className="inline-flex items-center min-h-11 mt-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md"
             >
               Canlı Portföye Git
             </Link>
@@ -929,21 +957,17 @@ export default function ForexReportsPage() {
 
                       {/* Çıkış Tipi */}
                       <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
-                            tr.exit_reason === "TP_HIT"
-                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                              : tr.exit_reason === "BE_HIT"
-                              ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                              : tr.exit_reason === "TRAILING_HIT"
-                              ? "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
-                              : tr.exit_reason === "MANUAL"
-                              ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-                              : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
-                          }`}
-                        >
-                          {tr.exit_reason_title || tr.exit_reason || "IC Markets MT5"}
-                        </span>
+                        {(() => {
+                          const exit = exitBadge(tr);
+                          return (
+                            <span
+                              title={tr.exit_reason_title || tr.exit_reason || undefined}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${exit.cls}`}
+                            >
+                              {exit.label}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* Pip */}
@@ -977,24 +1001,6 @@ export default function ForexReportsPage() {
             </table>
           </div>
         )}
-      </div>
-
-      {/* ALT BAĞLANTILAR */}
-      <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-bunker-muted pt-4 border-t border-bunker-800">
-        <div className="flex items-center gap-4">
-          <Link href="/forex/portfolio" className="hover:text-blue-400 transition-colors flex items-center gap-1 font-bold">
-            ← Otonom Scalper Portföy & Canlı Takip
-          </Link>
-          <span className="text-bunker-700">|</span>
-          <Link href="/forex" className="hover:text-blue-400 transition-colors">
-            Forex Radar
-          </Link>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/forex/charts" className="hover:text-blue-400 transition-colors">
-            Grafik Ekranı (1 / 2 / 4) →
-          </Link>
-        </div>
       </div>
     </div>
   );

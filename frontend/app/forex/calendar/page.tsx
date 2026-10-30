@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
-import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 
@@ -24,13 +23,32 @@ interface CalendarEvent {
   bias_explanation?: string;
 }
 
+// API `country` alanında ülke değil para birimi kodu (JPY, USD…) geliyor;
+// bu yüzden her iki anahtar türü de eşlenir.
 const FLAG_MAP: Record<string, string> = {
-  US: "🇺🇸", EU: "🇪🇺", GB: "🇬🇧", JP: "🇯🇵",
-  CA: "🇨🇦", AU: "🇦🇺", NZ: "🇳🇿", CH: "🇨🇭",
+  US: "🇺🇸", USD: "🇺🇸", EU: "🇪🇺", EUR: "🇪🇺", GB: "🇬🇧", GBP: "🇬🇧",
+  JP: "🇯🇵", JPY: "🇯🇵", CA: "🇨🇦", CAD: "🇨🇦", AU: "🇦🇺", AUD: "🇦🇺",
+  NZ: "🇳🇿", NZD: "🇳🇿", CH: "🇨🇭", CHF: "🇨🇭", CN: "🇨🇳", CNY: "🇨🇳",
 };
 
 function getFlag(ev: CalendarEvent) {
-  return FLAG_MAP[ev.country] || FLAG_MAP[ev.currency] || "🌐";
+  return FLAG_MAP[ev.currency] || FLAG_MAP[ev.country] || "🌐";
+}
+
+/** UTC+3 (TR) gün anahtarı: YYYY-MM-DD. */
+function trDayKey(ms: number) {
+  return new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function dayHeading(dayKey: string) {
+  const today = trDayKey(Date.now());
+  const tomorrow = trDayKey(Date.now() + 24 * 3600 * 1000);
+  const long = new Date(dayKey + "T00:00:00").toLocaleDateString("tr-TR", {
+    weekday: "long", day: "numeric", month: "long",
+  });
+  if (dayKey === today) return `BUGÜN · ${long}`;
+  if (dayKey === tomorrow) return `YARIN · ${long}`;
+  return long;
 }
 
 function formatUtc3Time(dateIso: string) {
@@ -57,6 +75,10 @@ function groupByDate(events: CalendarEvent[]) {
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(ev);
   }
+  // Gün içinde saat sırası (API sırası saat sırasını garanti etmiyor).
+  for (const list of map.values()) {
+    list.sort((a, b) => (Date.parse(a.date_iso) || 0) - (Date.parse(b.date_iso) || 0));
+  }
   return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
@@ -65,6 +87,7 @@ export default function ForexCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterStars, setFilterStars] = useState<number | null>(null);
+  const [showPast, setShowPast] = useState(false);
 
   const fetchNews = useCallback(async () => {
     try {
@@ -81,9 +104,14 @@ export default function ForexCalendarPage() {
 
   usePolling(fetchNews, 60_000);
 
+  // Varsayılan: bugünden itibaren. Geçmiş günler "Geçmişi göster" ile açılır.
+  const todayKey = trDayKey(Date.now());
+  const visible = showPast
+    ? events
+    : events.filter((e) => !e.date_iso || trDayKey(Date.parse(e.date_iso) || 0) >= todayKey);
   const filtered = filterStars
-    ? events.filter((e) => (e.stars || (e.impact === "High" ? 3 : 2)) === filterStars)
-    : events;
+    ? visible.filter((e) => (e.stars || (e.impact === "High" ? 3 : 2)) === filterStars)
+    : visible;
 
   const grouped = groupByDate(filtered);
 
@@ -157,35 +185,11 @@ export default function ForexCalendarPage() {
         </div>
       </div>
 
-      {/* HIZLI NAVİGASYON — ana sayfadaki gibi */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link href="/forex" className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group">
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">💱</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">Radar</div>
-          <div className="text-[11px] text-bunker-muted font-mono">Canlı Tarama</div>
-        </Link>
-        <Link href="/forex/charts" className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group">
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📈</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">Grafik</div>
-          <div className="text-[11px] text-bunker-muted font-mono">1 / 2 / 4 Ekran · MA · MACD</div>
-        </Link>
-        <Link href="/forex/islemler" className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group">
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">📋</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">İşlemler</div>
-          <div className="text-[11px] text-bunker-muted font-mono">Açık Pozisyonlar</div>
-        </Link>
-        <Link href="/forex/ayarlar" className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 hover:border-blue-500/40 transition-all group">
-          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">⚙️</div>
-          <div className="font-mono text-sm font-bold text-white group-hover:text-blue-300">Ayarlar</div>
-          <div className="text-[11px] text-bunker-muted font-mono">Bias & Filtreler</div>
-        </Link>
-      </div>
-
       {/* FİLTRELER */}
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => setFilterStars(null)}
-          className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all ${
+          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
             filterStars === null
               ? "bg-blue-500/20 border-blue-400/60 text-blue-200"
               : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
@@ -195,7 +199,7 @@ export default function ForexCalendarPage() {
         </button>
         <button
           onClick={() => setFilterStars(3)}
-          className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all ${
+          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
             filterStars === 3
               ? "bg-red-500/20 border-red-400/60 text-red-200"
               : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
@@ -205,13 +209,25 @@ export default function ForexCalendarPage() {
         </button>
         <button
           onClick={() => setFilterStars(2)}
-          className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all ${
+          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
             filterStars === 2
               ? "bg-amber-500/20 border-amber-400/60 text-amber-200"
               : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
           }`}
         >
           ⭐⭐ Orta
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowPast((v) => !v)}
+          aria-pressed={showPast}
+          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
+            showPast
+              ? "bg-blue-500/20 border-blue-400/60 text-blue-200"
+              : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+          }`}
+        >
+          Geçmişi göster
         </button>
         <span className="ml-auto text-[11px] text-bunker-muted font-mono">
           {filtered.length} olay
@@ -248,9 +264,7 @@ export default function ForexCalendarPage() {
       {/* TAKVİM LİSTESİ — günlük gruplar */}
       <div className="space-y-6">
         {grouped.map(([dateStr, dayEvents]) => {
-          const dateLabel = new Date(dateStr + "T00:00:00").toLocaleDateString("tr-TR", {
-            weekday: "long", year: "numeric", month: "long", day: "numeric",
-          });
+          const dateLabel = dayHeading(dateStr);
           return (
             <div key={dateStr} className="space-y-2">
               <div className="flex items-center gap-3">
@@ -294,16 +308,13 @@ export default function ForexCalendarPage() {
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-bunker-muted font-mono mt-1 flex-wrap">
+                        <div className="flex items-center gap-x-3 gap-y-1 text-[11px] text-bunker-muted font-mono mt-1 flex-wrap">
                           <span className="text-white/70 font-bold">{formatUtc3Time(ev.date_iso)}</span>
-                          <span>·</span>
                           <span>Önceki: {ev.previous || "—"}</span>
-                          <span>·</span>
                           <span>Beklenti: {ev.forecast || "—"}</span>
                           {ev.actual && ev.actual !== "—" && (
                             <>
-                              <span>·</span>
-                              <span className="text-white font-bold">Açıklanan: {ev.actual}</span>
+                                  <span className="text-white font-bold">Açıklanan: {ev.actual}</span>
                             </>
                           )}
                         </div>
@@ -313,8 +324,9 @@ export default function ForexCalendarPage() {
                     <div className="flex items-center gap-2 flex-wrap sm:justify-end">
                       {biasBadge(ev.bias_direction, ev.bias_confidence)}
                       {ev.affected_symbols && ev.affected_symbols.length > 0 && (
-                        <span className="px-1.5 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted font-mono text-[10px]">
-                          {ev.affected_symbols.join(", ")}
+                        <span title={ev.affected_symbols.join(", ")} className="px-1.5 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted font-mono text-[10px]">
+                          {ev.affected_symbols.slice(0, 4).join(", ")}
+                          {ev.affected_symbols.length > 4 ? ` +${ev.affected_symbols.length - 4}` : ""}
                         </span>
                       )}
                     </div>
