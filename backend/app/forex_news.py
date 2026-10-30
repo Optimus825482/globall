@@ -52,6 +52,12 @@ except Exception:
 # Önbellek ve Senkronizasyon Ayarları
 _CACHE_TTL_SEC = 300  # 5 dakika bellek tazeleme
 CALENDAR_REFRESH_INTERVAL_SEC = 3 * 3600  # 3 saatte bir arka planda kontrol ve DB güncelleme
+# Saati geçip "Açıklanan" değeri henüz gelmemiş olay varsa sağlayıcı bu aralıkla
+# (3 saati beklemeden) yeniden çekilir; veri geldiğinde ya da bekleme penceresi
+# dolduğunda yoğun yoklama durur. Sağlayıcıları dövmemek için alt sınır var.
+RELEASE_CHASE_INTERVAL_SEC = 45.0
+RELEASE_CHASE_WINDOW_SEC = 90 * 60   # saatinden sonra en fazla 90 dk kovala
+RELEASE_CHASE_LEAD_SEC = 30.0        # saatinden 30 sn önce de hazırlan
 
 # Takvimde tutulacak en fazla olay. DB okuma limiti
 # (`database.get_economic_calendar_events`) bu değerle hizalanır.
@@ -1931,6 +1937,39 @@ async def get_forex_news(force_refresh: bool = False, min_stars: int = 2) -> Lis
 # 3 SAATLİK ARKA PLAN DÖNGÜSÜ (GÜNDE BİR VE GÜN İÇİNDE 3 SAATTE BİR)
 # ============================================================================
 
+def events_awaiting_actual(
+    items: List[Dict[str, Any]],
+    now_ts: float,
+    window_sec: float = RELEASE_CHASE_WINDOW_SEC,
+    lead_sec: float = RELEASE_CHASE_LEAD_SEC,
+) -> List[Dict[str, Any]]:
+    """Saati geldi/geçti ama `actual` değeri henüz boş olan olaylar.
+
+    Yalnız `window_sec` içindekiler döner: haftalar önceki, hiç verisi
+    gelmeyecek satırlar sonsuza kadar yoklama tetiklemez.
+    """
+    out: List[Dict[str, Any]] = []
+    for ev in items or []:
+        if not isinstance(ev, dict):
+            continue
+        actual = str(ev.get("actual") or "").strip()
+        if actual and actual != "—":
+            continue
+        iso = ev.get("date_iso")
+        if not iso:
+            continue
+        try:
+            ts = datetime.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=datetime.timezone.utc)
+            age = now_ts - ts.timestamp()
+        except Exception:
+            continue
+        if -lead_sec <= age <= window_sec:
+            out.append(ev)
+    return out
+
+
 async def economic_calendar_background_loop():
     """Investing.com 2 & 3 yıldızlı takvim verilerini 3 saatte bir arka planda kontrol eder ve DB'ye yazar."""
     logger.info("[EconomicCalendar] 3 saatlik arka plan senkronizasyon servisi devrede.")
@@ -1956,7 +1995,9 @@ async def economic_calendar_background_loop():
     except Exception as exc:
         logger.warning("[EconomicCalendar] Başlangıç senkronizasyon kontrol hatası: %s", exc)
 
-    # 2. Periyodik Kontrol Döngüsü: Her 60 saniyede bir kontrol et, 3 saatlik süre dolduğunda arka planda çek
+    # 2. Periyodik Kontrol Döngüsü: Her 60 saniyede bir kontrol et, 3 saatlik süre dolduğunda arka planda çek;
+    #    saati geçip değeri gelmemiş olay varsa (açıklama anı) ~dakikada bir hızlandır.
+    last_chase = 0.0
     while True:
         try:
             await asyncio.sleep(60)
@@ -1968,6 +2009,14 @@ async def economic_calendar_background_loop():
             if (now - last_sync) >= CALENDAR_REFRESH_INTERVAL_SEC:
                 logger.info("[EconomicCalendar] 3 saatlik periyot doldu, arka planda ekonomik takvim güncelleniyor...")
                 await sync_economic_calendar_to_db()
+                last_chase = now
+            elif (now - last_chase) >= RELEASE_CHASE_INTERVAL_SEC:
+                waiting = events_awaiting_actual(_CALENDAR_CACHE.get("items") or [], now)
+                if waiting:
+                    last_chase = now
+                    logger.info("[EconomicCalendar] %d olayın açıklanan değeri bekleniyor (%s); takvim yeniden çekiliyor.",
+                                len(waiting), ", ".join(str(w.get("title"))[:28] for w in waiting[:3]))
+                    await sync_economic_calendar_to_db()
         except asyncio.CancelledError:
             logger.info("[EconomicCalendar] Arka plan servisi durduruldu.")
             break
