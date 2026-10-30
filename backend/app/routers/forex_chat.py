@@ -25,7 +25,8 @@ logger = logging.getLogger("scalper.routers.forex_chat")
 router = APIRouter(prefix="/api/forex", tags=["forex-chat"])
 
 PART_TIMEOUT_SEC = 4.0
-MAX_ANSWER_TOKENS = 700
+# Akıl yürüten modeller düşünme jetonlarını da bu sınırdan harcar; 700 yanıtı ortadan kesiyordu.
+MAX_ANSWER_TOKENS = 2000
 
 # Kullanıcı yazısında geçen ad → sembol (Türkçe/gündelik adlar dahil).
 _ALIASES = {
@@ -42,8 +43,16 @@ SYSTEM_PROMPT = (
     "KURALLAR:\n"
     "- Yalnızca Türkçe, sade ve kısa yaz. Teknik terimleri (RSI, EMA, ATR, kapı, skor…) ancak gerekirse ve "
     "günlük dille açıklayarak kullan; sayı yığma.\n"
-    "- Önce tek cümlelik SONUÇ ver (ör. 'Altında şu an beklemek mantıklı.'), sonra en fazla 3 kısa madde gerekçe, "
-    "gerekiyorsa bir cümle 'Neye dikkat?'.\n"
+    "- YANIT BİÇİMİ (Markdown, hep aynı düzen; ekranda renkli gösterilir):\n"
+    "  ## <BUY, SELL veya BEKLE> — <tek cümlelik sonuç>  (başlıkta yönü BUY / SELL / BEKLE yaz)\n"
+    "  ### Neden\n"
+    "  - en fazla 3 kısa madde; önemli sözcükleri **kalın** yaz (yön için **BUY**/**SELL**, güç için **güçlü**/**zayıf**)\n"
+    "  ### Dikkat\n"
+    "  - yaklaşan haber / seans / maliyet uyarısı (yoksa bu bölümü yazma)\n"
+    "  ### Risk\n"
+    "  - tek cümle: stop ve pozisyon büyüklüğü hatırlatması\n"
+    "  Birden fazla sembol sorulursa her biri için ayrı '## ' başlığı aç. Selamlaşma ya da basit soruda "
+    "bu düzeni zorlama, kısa düz yanıt ver.\n"
     "- Yalnızca aşağıdaki 'VERİ' bölümündeki bilgilere dayan: radar, kapı durumu, DXY/dolar, oturum, ekonomik takvim, "
     "pozisyonlar. Veri yoksa veya eskiyse bunu açıkça söyle; rakam uydurma.\n"
     "- Yaklaşan yüksek etkili veri (NFP, CPI, faiz kararı…) varsa mutlaka uyar: açıklamadan önce işlem açma.\n"

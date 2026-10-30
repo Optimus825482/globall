@@ -235,7 +235,7 @@ function ChatPageInner() {
                           : "bg-bunker-900/95 border border-bunker-700/70 text-slate-200 rounded-tl-sm"
                       }`}
                     >
-                      <MarkdownMessage content={message.content} />
+                      <MarkdownMessage content={message.content} colorful={!isUser} />
                       {!isUser && message.content && index > 0 && (
                         <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-2 border-t border-bunker-800/80 text-xs">
                           <button type="button" onClick={() => handleCopy(message.content, index)} className="chat-action-btn" title="Metni kopyala">

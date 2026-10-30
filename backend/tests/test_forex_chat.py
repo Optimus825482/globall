@@ -34,3 +34,14 @@ def test_compact_helpers_tolerate_bad_input():
     assert forex_chat.compact_radar(None) == {}
     assert forex_chat.compact_status("x") == {}
     assert forex_chat.compact_calendar(None, time.time()) == {"aciklanan_son_6_saat": [], "yaklasan_12_saat": []}
+
+
+def test_stream_delta_keeps_spaces():
+    from app.llm_analysis import _stream_delta_text
+
+    # Akış parçalarında baştaki/sondaki boşluk korunmalı; yoksa kelimeler yapışır.
+    parts = [{"content": "sterlin"}, {"content": " güçlü,"}, {"content": " dolar"}, {"content": " zayıf"}]
+    assert "".join(_stream_delta_text(p) for p in parts) == "sterlin güçlü, dolar zayıf"
+    assert _stream_delta_text({"content": " "}) == " "
+    assert _stream_delta_text({"content": ""}) is None
+    assert _stream_delta_text({}, {"text": "x"}) == "x"

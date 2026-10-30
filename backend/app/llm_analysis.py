@@ -200,6 +200,26 @@ def _message_text(message):
     return None
 
 
+def _stream_delta_text(delta, choice=None):
+    """Akış parçasının metni — BOŞLUKLARI KORUR.
+
+    `_message_text` tam mesaj için `.strip()` yapar; akışta her parça bir kelimenin
+    ortası ya da " kelime" olabilir, strip edilince kelimeler yapışıyordu
+    ("sterlingüçlü, dolar zayıf" → "sterlingüçlü"). Burada metin olduğu gibi döner.
+    """
+    content = delta.get("content") if isinstance(delta, dict) else None
+    if isinstance(content, str):
+        return content or None
+    if isinstance(content, list):
+        joined = "".join(
+            b if isinstance(b, str) else str(b.get("text") or "")
+            for b in content if isinstance(b, (str, dict))
+        )
+        return joined or None
+    text = choice.get("text") if isinstance(choice, dict) else None
+    return text if isinstance(text, str) and text else None
+
+
 def _join_text_parts(parts):
     """Join content blocks without losing spaces between segmented provider chunks."""
     out = []
@@ -1031,7 +1051,7 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
             reasoning_delta = delta.get("reasoning_content") if isinstance(delta, dict) else None
             if reasoning_delta:
                 reasoning_parts.append(str(reasoning_delta))
-            text = _message_text(delta) or (choices[0].get("text") if choices else None)
+            text = _stream_delta_text(delta, choices[0] if choices else None)
             if text:
                 emitted = True
                 yield {"event": "delta", "data": {"text": text}}
