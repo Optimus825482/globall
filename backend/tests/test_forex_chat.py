@@ -128,3 +128,12 @@ def test_analysis_reports_data_sources(monkeypatch):
     assert a["ok"] and a["price"] == 4000.5 and len(a["frames"]) == 8
     text = forex_research.describe_analysis(a)
     assert "MT5 köprüsü, 8 zaman diliminin hepsi" in text and "anlık" in text
+
+
+def test_altcoin_aliases_resolve_to_app_symbols():
+    from app.routers import forex_chat as fc
+    assert fc._mentioned_symbols("ADAUSDT nasıl?") == ["ADAUSD"]
+    assert fc._mentioned_symbols("xrp ve avax bnb ne yapıyor") == ["XRPUSD", "AVXUSD", "BNBUSD"]
+    assert fc._mentioned_symbols("chainlink ve solanaya bak") == ["LNKUSD"]       # 'solanaya' ek almış kelime: tam sözcük değil
+    assert fc._mentioned_symbols("sol taraftaki link çalışmıyor") == []           # Türkçe sıradan sözcükler sembol sayılmaz
+    assert fc._mentioned_symbols("ETHUSDT") == ["ETHUSD"]

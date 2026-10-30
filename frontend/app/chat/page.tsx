@@ -478,15 +478,15 @@ function ScheduledJobs() {
               <p className="truncate text-slate-200" title={`${j.summary}${j.result ? ` — ${j.result}` : ""}`}>
                 <span aria-hidden="true">🕒 </span>
                 <span className={j.status === "pending" ? "text-cyan-300" : j.status === "done" ? "text-emerald-300" : "text-amber-300"}>
-                  {JOB_STATUS_TR[j.status] ?? j.status}
+                  {j.kind === "watch" && j.status === "pending" ? "Takipte" : (JOB_STATUS_TR[j.status] ?? j.status)}
                 </span>{" "}
-                · {j.due_label} · {j.summary}
+                · {j.kind === "watch" ? "" : `${j.due_label} · `}{j.summary}
               </p>
               {j.result && <p className="truncate text-[10px] text-bunker-muted" title={j.result}>{j.result}</p>}
             </div>
             {j.status === "pending" ? (
               <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/10">
-                İptal
+                {j.kind === "watch" ? "Durdur" : "İptal"}
               </button>
             ) : (
               <button type="button" onClick={() => dismiss(j.id)} aria-label="Kapat" title="Kapat" className="shrink-0 rounded-md border border-bunker-700 px-2 py-0.5 text-[10px] text-bunker-muted hover:text-white">

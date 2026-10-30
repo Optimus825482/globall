@@ -39,8 +39,17 @@ DEFAULT_SYMBOLS = ["XAUUSD", "BTCUSD", "EURUSD"]
 _ALIASES = {
     "ALTIN": "XAUUSD", "GOLD": "XAUUSD", "XAU": "XAUUSD", "XAUUSD": "XAUUSD", "ONS": "XAUUSD",
     "GUMUS": "XAGUSD", "GÜMÜŞ": "XAGUSD", "SILVER": "XAGUSD", "XAGUSD": "XAGUSD",
-    "BTC": "BTCUSD", "BITCOIN": "BTCUSD", "BTCUSD": "BTCUSD",
-    "ETH": "ETHUSD", "ETHEREUM": "ETHUSD",
+    "BTC": "BTCUSD", "BITCOIN": "BTCUSD", "BTCUSD": "BTCUSD", "BTCUSDT": "BTCUSD",
+    "ETH": "ETHUSD", "ETHEREUM": "ETHUSD", "ETHUSD": "ETHUSD", "ETHUSDT": "ETHUSD",
+    # Altcoinler (radar/hafta sonu tarama evreni; broker adları LNK=LINK, AVX=AVAX). USDT/USD/adı yazımları aynı sembole gider. SOL/LINK/UNI çıplak yazımı Türkçe 'sol', 'link' gibi sözcüklerle karıştığı için YOK.
+    "XRP": "XRPUSD", "RIPPLE": "XRPUSD", "XRPUSD": "XRPUSD", "XRPUSDT": "XRPUSD",
+    "SOLANA": "SOLUSD", "SOLUSD": "SOLUSD", "SOLUSDT": "SOLUSD",
+    "BNB": "BNBUSD", "BNBUSD": "BNBUSD", "BNBUSDT": "BNBUSD",
+    "ADA": "ADAUSD", "CARDANO": "ADAUSD", "ADAUSD": "ADAUSD", "ADAUSDT": "ADAUSD",
+    "LNK": "LNKUSD", "CHAINLINK": "LNKUSD", "LNKUSD": "LNKUSD", "LINKUSDT": "LNKUSD",
+    "UNISWAP": "UNIUSD", "UNIUSD": "UNIUSD", "UNIUSDT": "UNIUSD",
+    "AVAX": "AVXUSD", "AVX": "AVXUSD", "AVALANCHE": "AVXUSD", "AVXUSD": "AVXUSD", "AVAXUSDT": "AVXUSD",
+    "XTZ": "XTZUSD", "TEZOS": "XTZUSD", "XTZUSD": "XTZUSD", "XTZUSDT": "XTZUSD",
     "NASDAQ": "USTEC", "NAS100": "USTEC", "USTEC": "USTEC", "US30": "US30", "DOW": "US30",
 }
 _FX = re.compile(r"\b(?:EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(?:EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)\b")
@@ -95,6 +104,9 @@ SYSTEM_PROMPT = (
     "- SÜRE/GEÇMİŞ SORULARI: 'Kaç dakikadır yatay/sıkışık?' gibi sorularda 'sikisma_suresi' (zaman dilimi başına mum sayısı, dakika, "
     "bant yüksek/düşük, son büyük hareketten beri geçen dakika) ve 'son_mumlar_OHLC' (1dk–günlük son mumlar) alanlarını kullan; "
     "'elimde mum geçmişi yok' DEME, sayıyı bu alanlardan ver ve hangi zaman diliminden hesaplandığını söyle.\n"
+    "- TAKİP: Kullanıcı \"BTC'yi takibe al\" derse sistem sembolü kendi belirlediği aralıklarla (2-10 dk) otomatik analiz edip fırsat "
+    "çıkarsa DEMO hesapta işlem açar; \"BTC takibini durdur\" ya da şeritteki Durdur düğmesiyle biter. Bu istek sana ulaştıysa "
+    "kurulamamıştır (tek sembol ve \"takibe al\" ifadesi gerekir): 'takip edemem' DEME, doğru kalıbı öner.\n"
     "- EMİR KOMUTU: Kullanıcı net bir komut yazarsa (ör. \"BTC sell aç\", \"altında buy açar mısın\") sistem tek sembol için "
     "analiz yapıp aynı kapılardan geçirerek DEMO hesaba kendisi işlem açmayı dener. Bu istek sana ulaştıysa 'demo_islemler' "
     "alanına bak: açıldıysa yön/lot/stop/hedef/riski, açılmadıysa nedenini sade söyle. 'Emir açamam' DEME; komut kalıbı "

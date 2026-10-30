@@ -6831,3 +6831,14 @@ async def sched_cancel(job_id: int) -> bool:
         return (getattr(cur, "rowcount", 1) or 0) > 0
 
     return await _run_db(op)
+
+
+async def sched_reschedule(job_id: int, due_ts: float, params: Dict[str, Any], result: Optional[str]) -> None:
+    """Tekrarlayan iş (takip): bir sonraki tur zamanını ve durum bilgisini yazar; iş 'pending' kalır."""
+    def op(conn):
+        _ensure_sched_schema(conn)
+        conn.execute("UPDATE scheduled_actions SET due_ts = ?, params = ?, result = ? WHERE id = ? AND status = 'pending'",
+                     (float(due_ts), json.dumps(params or {}, ensure_ascii=False), result, int(job_id)))
+        conn.commit()
+
+    await _run_db(op)

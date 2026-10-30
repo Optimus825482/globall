@@ -128,6 +128,16 @@ def select_positions(positions: List[Dict[str, Any]], params: Dict[str, Any]) ->
     return out
 
 
+def describe_job(job: Dict[str, Any]) -> str:
+    """Zamanlanmış iş şeridi satırı."""
+    if job["kind"] == "close_positions":
+        return "Pozisyon kapatma — " + describe_params(job["params"])
+    if job["kind"] == "watch":
+        from app import symbol_watch
+        return symbol_watch.describe_job(job)
+    return "Hatırlatıcı — " + str((job["params"] or {}).get("message") or "")[:120]
+
+
 def fmt_due(due_ts: float) -> str:
     d = datetime.fromtimestamp(due_ts, TR_TZ)
     return f"{WEEKDAY_TR[d.weekday()]} {d:%d.%m %H:%M} (TSİ)"
@@ -170,6 +180,10 @@ def confirmation_text(job: Dict[str, Any], job_id: int, positions: List[Dict[str
 
 async def create_from_text(text: str, symbols: Optional[List[str]] = None) -> Optional[str]:
     """Metin zamanlama isteğiyse işi kaydeder ve kullanıcıya gösterilecek onay metnini döner; değilse None."""
+    from app import symbol_watch
+    watched = await symbol_watch.handle_text(text, [s.upper() for s in (symbols or [])])
+    if watched:
+        return watched
     job = parse_schedule_request(text, time.time(), symbols)
     if not job:
         return None
@@ -210,9 +224,15 @@ def _execute_close(job: Dict[str, Any], now: float) -> tuple:
 async def run_due_jobs(now: Optional[float] = None) -> int:
     now = time.time() if now is None else now
     handled = 0
-    for job in await database.sched_due(now):
+    due = sorted(await database.sched_due(now), key=lambda j: j["kind"] == "watch")      # kapatma/hatırlatıcı önce, takip turu en son
+    for job in due:
         late = now - float(job["due_ts"])
         try:
+            if job["kind"] == "watch":
+                from app import symbol_watch
+                symbol_watch.spawn_if_idle(job)             # uzun analiz arka planda; kapatma işlerini geciktirmez
+                handled += 1
+                continue
             if job["kind"] == "reminder":
                 msg = str((job["params"] or {}).get("message") or "")
                 tail = " (gecikmeli: sunucu kapalıydı)" if late > REMINDER_STALE_SEC else ""
