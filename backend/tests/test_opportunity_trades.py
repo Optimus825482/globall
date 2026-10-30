@@ -301,3 +301,15 @@ def test_attach_surprise_z_requires_history(monkeypatch):
     rows = cal["aciklanan_son_6_saat"]
     assert rows[0]["z"] == pytest.approx(2.0) and rows[0]["z_n"] == 12
     assert "z" not in rows[1] and "z" not in rows[2]                                      # <8 örnek / sayısal değil
+
+
+# ----------------------------------------------------------------------------- kısmi kapatmada etiket kaybı
+
+def test_partial_close_comment_overwrite_restores_strategy_tag():
+    fx._TICKET_TAGS.clear()
+    fx.restore_position_tags([{"ticket": 7, "strategy_tag": "RADAR 96"}, {"ticket": 8, "strategy_tag": "FRS -4"}])
+    out = fx.restore_position_tags([{"ticket": 7, "strategy_tag": "Scalper Partial"}, {"ticket": 9, "strategy_tag": "Scalper Partial"}])
+    assert out[0]["strategy_tag"] == "RADAR 96"                       # ezilen etiket geri yazıldı
+    assert out[1]["strategy_tag"] == "Scalper Partial"                # bilinmeyen: değişmez
+    assert 8 not in fx._TICKET_TAGS                                   # kapanan pozisyon temizlenir
+    assert fx.restore_position_tags(None) is None

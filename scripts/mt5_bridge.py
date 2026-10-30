@@ -308,6 +308,29 @@ def resolve_mt5_symbol(symbol: str) -> str:
     return raw
 
 
+_POSITION_TAG_CACHE = {}
+
+
+def _original_position_tag(p):
+    """Pozisyonun emir AÇILIRKEN yazılan yorumu. Kısmi kapatmada broker pozisyon yorumunu "Scalper Partial" ile ezer;
+    bu durumda giriş (IN) deal'inin yorumu geçmişten okunur (yeniden başlatmaya dayanıklı)."""
+    tag = str(getattr(p, "comment", "") or "").strip()
+    ticket = getattr(p, "ticket", None)
+    if tag and not tag.lower().startswith("scalper"):
+        _POSITION_TAG_CACHE[ticket] = tag
+        return tag
+    if ticket in _POSITION_TAG_CACHE:
+        return _POSITION_TAG_CACHE[ticket]
+    try:
+        for d in mt5.history_deals_get(position=ticket) or []:
+            if d.entry == mt5.DEAL_ENTRY_IN and str(d.comment or "").strip():
+                _POSITION_TAG_CACHE[ticket] = str(d.comment).strip()
+                return _POSITION_TAG_CACHE[ticket]
+    except Exception:
+        pass
+    return tag
+
+
 def get_symbol_trading_specs(
     symbol: str,
     base_sl: float = 8.0,
@@ -1505,7 +1528,7 @@ def sync_with_server(api_base: str):
             "open_time": datetime.datetime.fromtimestamp(pos_open_ts, datetime.timezone.utc).strftime("%H:%M:%S"),
             "open_ts": pos_open_ts,
             # Açık pozisyonun strateji etiketi (emir açılışındaki yorum; panel rozet için)
-            "strategy_tag": str(getattr(p, "comment", "") or "").strip(),
+            "strategy_tag": _original_position_tag(p),
         })
 
     # Kapanan işlem geçmişi (Broker zaman dilimi farkını tolere etmek için +2 gün buffer)

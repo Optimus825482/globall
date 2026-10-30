@@ -5543,7 +5543,7 @@ class ForexAutoPaperSettings(BaseModel):
     llm_review_mode: str = Field("veto", pattern="^(veto|advisory)$", description="veto: LLM reddederse işlem açılmaz · advisory: yalnız kayıt/rapor, işlemi engellemez (denemek için)")
     llm_review_fail_open: bool = Field(True, description="LLM yanıt vermez/yavaşsa/bozuksa: True = işlem yine açılır (motor kararı), False = işlem açılmaz")
     llm_review_min_confidence: int = Field(55, ge=0, le=100, description="Onay için LLM'in minimum güven puanı (altındaki onaylar da engellenir)")
-    llm_review_timeout_sec: float = Field(25.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-30 sn sürebilir. Aşılırsa fail-open/closed kuralı uygulanır")
+    llm_review_timeout_sec: float = Field(45.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-35 sn sürebilir (ölçülen p90 ≈ 27 sn). Yedek model varsa %60'ı ana modele gider. Aşılırsa fail-open/closed kuralı uygulanır")
     risk_gate_mode: str = Field("shadow", pattern="^(off|shadow|enforce)$", description="Portföy risk kapısı: off · shadow (varsayılan: yalnız günlüğe 'engellerdi' yazar, motoru DEĞİŞTİRMEZ) · enforce (engeller + drawdown çarpanını uygular)")
     risk_kill_switch: bool = Field(False, description="KILL SWITCH: açıkken mod ne olursa olsun yeni giriş (motor ve fırsat taraması) engellenir. Açık pozisyonlara dokunmaz.")
     risk_heat_limit_pct: float = Field(6.0, ge=0.5, le=50.0, description="Toplam açık risk (stop'a kadar) / özsermaye sınırı (%). Araştırma başlangıç değeri 3-6; kaynaksız, önce gölgede kalibre edin.")
@@ -9260,7 +9260,7 @@ async def _forex_auto_paper_loop():
                             "strategy": _c_strat, "strategy_label": _c_strat_lbl,
                             "mode": _AUTO_SETTINGS.llm_review_mode, "fail_open": _AUTO_SETTINGS.llm_review_fail_open,
                             "min_confidence": _AUTO_SETTINGS.llm_review_min_confidence,
-                            "timeout_sec": _AUTO_SETTINGS.llm_review_timeout_sec,
+                            "timeout_sec": max(float(_AUTO_SETTINGS.llm_review_timeout_sec), 40.0),   # eski kayıtlı 25 sn ölçülen gecikmeden kısa kalıyordu (%17 zaman aşımı)
                             "explore_pct": _AUTO_SETTINGS.llm_review_explore_pct,
                         })
                     except Exception as exc:
@@ -11200,6 +11200,31 @@ class MT5ToggleAutoRequest(BaseModel):
     auto_trade: bool
 
 
+_TICKET_TAGS: Dict[Any, str] = {}      # bilet -> emir AÇILIRKEN yazılan strateji etiketi (süreç ömrü)
+
+
+def restore_position_tags(positions: Any) -> Any:
+    """Kısmi kapatmada broker pozisyon yorumunu "Scalper Partial"/"Scalper Close" ile EZER; strateji etiketi
+    (RADAR, FRS, EAP...) kaybolur ve rapor/süzgeçler pozisyonu tanıyamaz. Etiket ilk görüldüğünde hatırlanır,
+    ezildiyse geri yazılır. Saf fonksiyon + modül içi sözlük (test edilebilir)."""
+    if not isinstance(positions, list):
+        return positions
+    live = set()
+    for p in positions:
+        if not isinstance(p, dict):
+            continue
+        ticket = p.get("ticket")
+        live.add(ticket)
+        tag = str(p.get("strategy_tag") or "").strip()
+        if tag and not tag.lower().startswith("scalper"):
+            _TICKET_TAGS[ticket] = tag
+        elif ticket in _TICKET_TAGS:
+            p["strategy_tag"] = _TICKET_TAGS[ticket]
+    for t in [t for t in _TICKET_TAGS if t not in live]:
+        _TICKET_TAGS.pop(t, None)
+    return positions
+
+
 @router.post("/mt5/sync")
 async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
     """Windows MT5 köprüsünden gelen canlı veriyi alır ve bekleyen emirleri iletir.
@@ -11216,7 +11241,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
 
     if req.account:
         _MT5_STATE["account"].update(req.account)
-    _MT5_STATE["open_positions"] = req.positions
+    _MT5_STATE["open_positions"] = restore_position_tags(req.positions)
 
     # Broker mumlarını önbelleğe al (panel grafiği + sinyal motoru bu veriyi kullanır →
     # geçmiş + canlı AYNI broker kotasyonu, baz farkı yok). Anahtar "SYMBOL|interval" (interval küçük harf).
