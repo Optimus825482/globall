@@ -5,11 +5,12 @@ import { useExchange } from "../lib/exchange";
 import { usePwa } from "../lib/pwa";
 import { useTheme } from "../lib/theme";
 import ForexEventTickerBanner from "./ForexEventTickerBanner";
+import NavIcon from "./NavIcon";
 
 // 2026-10-07: Yalnız var olan rotaların başlıkları tutulur. Silinen spot
 // sayfalarının girdileri burada kalsaydı ölü referans olurdu.
 const labels: Record<string, string> = {
-  "/": "Canlı Terminal",
+  "/": "Ana Sayfa",
   "/settings": "Ayarlar",
   "/profile": "Kullanıcı Profili",
   "/chat": "Chat Merkezi",
@@ -47,7 +48,7 @@ export default function TopBar() {
   return (
     <>
       {/* Global Terminal Üst Vurgu Çizgisi: Siber-siyan ışıltılı bant */}
-      <div className="fixed top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-600 shadow-[0_0_12px_rgba(0,240,255,0.7)] z-50 pointer-events-none" />
+      <div className="fixed top-0 left-0 right-0 h-[2px] bg-cyan-400/80 z-50 pointer-events-none" />
 
       <div className="sticky top-0 z-30">
         <header
@@ -63,20 +64,13 @@ export default function TopBar() {
             className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl border border-bunker-700 bg-bunker-900/90 text-white hover:text-cyan-300 hover:border-cyan-400/50 transition-all touch-target active:scale-95 shadow-sm"
             aria-label="Menüyü aç"
           >
-            <span className="text-lg leading-none">☰</span>
+            <NavIcon name="menu" className="w-5 h-5" />
           </button>
 
           <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-mono text-[9px] font-bold tracking-wider bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.25)]">
-                💱 FOREX
-              </span>
-              <p className="topbar-kicker text-cyan-400/80 font-mono hidden sm:block">
-                FOREX &amp; EMTİA · DEMO / LIVE
-              </p>
-            </div>
-            <p className="topbar-title truncate text-sm sm:text-base font-bold text-white font-mono">
-              {currentTitle}
+            <p className="topbar-title truncate text-sm sm:text-base font-bold text-white font-mono flex items-center gap-2">
+              <span className="truncate">{currentTitle}</span>
+              <span className="hidden sm:inline-flex shrink-0 rounded border border-amber-400/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-amber-200">DEMO</span>
             </p>
           </div>
         </div>
@@ -91,8 +85,7 @@ export default function TopBar() {
             title={isLight ? "Karanlık Moda Geç (Dark Mode)" : "Aydınlık Moda Geç (Light Mode)"}
             aria-label={isLight ? "Karanlık Moda Geç" : "Aydınlık Moda Geç"}
           >
-            <span>{isLight ? "🌙" : "☀️"}</span>
-            <span className="hidden xs:inline sm:inline">{isLight ? "Karanlık" : "Aydınlık"}</span>
+            <span>{isLight ? "Karanlık" : "Aydınlık"}</span>
           </button>
 
           {/* Mobil/Masaüstü PWA Yükleme Butonu */}
@@ -103,7 +96,6 @@ export default function TopBar() {
               className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-cyan-400/50 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900/80 hover:to-blue-900/80 text-cyan-300 font-mono text-[10px] sm:text-xs font-bold tracking-wide shadow-[0_0_10px_rgba(0,240,255,0.2)] transition-all touch-target active:scale-95"
               title="Scalper Global uygulamasını cihazınıza yükleyin"
             >
-              <span>📲</span>
               <span className="hidden xs:inline sm:inline">YÜKLE</span>
             </button>
           )}
@@ -111,18 +103,10 @@ export default function TopBar() {
           {/* 2026-10-07: Piyasa modu hızlı değiştirici (SPOT / FX) KALDIRILDI —
               uygulama yalnızca Forex & Emtia sunar, seçilecek ikinci piyasa yok. */}
 
-          {/* Canlı Veri Göstergesi */}
-          <div className="hidden md:flex items-center gap-1.5 rounded-full border border-blue-300 dark:border-cyan-500/30 bg-blue-50 dark:bg-cyan-950/40 px-2.5 py-1 font-mono text-[10px] text-blue-950 dark:text-cyan-300 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-blue-500 dark:bg-cyan-400 animate-pulse shadow-[0_0_8px_#38bdf8]" />
-            <span className="font-black tracking-wider">
-              GLOBAL FOREX
-            </span>
-          </div>
-
           <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-900 dark:text-slate-300 font-black">
             <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-neon-green animate-pulse" />
             <span className="hidden sm:inline">
-              {exchange.error && !exchange.loading ? "BAĞLANTI HATASI" : "CANLI PİYASA"}
+              {exchange.error && !exchange.loading ? "BAĞLANTI HATASI" : "Veri akışı canlı"}
             </span>
           </div>
         </div>

@@ -21,16 +21,16 @@ interface CalendarEvent {
   bias_direction?: "BUY" | "SELL" | "NEUTRAL";
   bias_confidence?: number;
   bias_explanation?: string;
-  /** Olay başına sonuç (backend `/news`): açıklanan değerin beklenti/önceki ile kıyası. */
+  /** Backend `evaluate_event_outcome` sonucu (ana sayfa da aynı alanı okur). */
   outcome?: {
-    side: "bullish" | "bearish" | null;
-    currency: string;
-    label?: string;
-    comparison?: string;
-    basis?: string;
-    direction_note?: string | null;
-    pairs: Array<{ symbol: string; direction: number }>;
-  };
+    side?: "bullish" | "bearish" | null;
+    basis?: "forecast" | "previous" | null;
+    comparison_tr?: string | null;
+    label_tr?: string | null;
+    direction_note_tr?: string | null;
+  } | null;
+  /** Para birimi yönünün paritelere çevrilmiş hali (backend `pair_impacts`). */
+  pair_impacts?: Array<{ symbol: string; direction: number }>;
 }
 
 // API `country` alanında ülke değil para birimi kodu (JPY, USD…) geliyor;
@@ -97,7 +97,8 @@ export default function ForexCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterStars, setFilterStars] = useState<number | null>(null);
-  const [showPast, setShowPast] = useState(false);
+  // "" = bugünden itibaren · "ALL" = tüm günler · "YYYY-MM-DD" = tek gün
+  const [dayFilter, setDayFilter] = useState<string>("");
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const toggleOpen = (id: string) =>
     setOpenIds((prev) => {
@@ -122,11 +123,32 @@ export default function ForexCalendarPage() {
 
   usePolling(fetchNews, 60_000);
 
-  // Varsayılan: bugünden itibaren. Geçmiş günler "Geçmişi göster" ile açılır.
   const todayKey = trDayKey(Date.now());
-  const visible = showPast
-    ? events
-    : events.filter((e) => !e.date_iso || trDayKey(Date.parse(e.date_iso) || 0) >= todayKey);
+  const evDay = (e: CalendarEvent) => (e.date_iso ? trDayKey(Date.parse(e.date_iso) || 0) : "");
+  const dayKeys = events.map(evDay).filter(Boolean).sort();
+  const minDay = dayKeys[0] || todayKey;
+  const maxDay = dayKeys[dayKeys.length - 1] || todayKey;
+  const visible =
+    dayFilter === "ALL"
+      ? events
+      : dayFilter
+      ? events.filter((e) => evDay(e) === dayFilter)
+      : events.filter((e) => !e.date_iso || evDay(e) >= todayKey);
+  // Oklar olaylı bir sonraki/önceki güne atlar (hafta sonu gibi boş günlerde
+  // takılmaz); o yönde olaylı gün yoksa tek gün kayar.
+  const uniqueDays = Array.from(new Set(dayKeys));
+  const shiftDay = (delta: number) =>
+    setDayFilter((cur) => {
+      const base = cur && cur !== "ALL" ? cur : todayKey;
+      const next =
+        delta > 0
+          ? uniqueDays.find((d) => d > base)
+          : [...uniqueDays].reverse().find((d) => d < base);
+      if (next) return next;
+      const d = new Date(base + "T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() + delta);
+      return d.toISOString().slice(0, 10);
+    });
   const filtered = filterStars
     ? visible.filter((e) => (e.stars || (e.impact === "High" ? 3 : 2)) === filterStars)
     : visible;
@@ -252,17 +274,48 @@ export default function ForexCalendarPage() {
         >
           ⭐⭐ Orta
         </button>
+        <div className="flex items-center gap-1.5" role="group" aria-label="Gün seçici">
+          <button
+            type="button"
+            onClick={() => shiftDay(-1)}
+            aria-label="Önceki gün"
+            className="px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+          >
+            ◀
+          </button>
+          <input
+            type="date"
+            value={dayFilter && dayFilter !== "ALL" ? dayFilter : todayKey}
+            min={minDay}
+            max={maxDay}
+            onChange={(e) => setDayFilter(e.target.value || "")}
+            aria-label="Gün seç"
+            className="px-2 py-1.5 min-h-11 sm:min-h-0 rounded-lg border bg-bunker-950 border-bunker-700 text-white font-mono text-xs font-bold"
+          />
+          <button
+            type="button"
+            onClick={() => shiftDay(1)}
+            aria-label="Sonraki gün"
+            className="px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
+          >
+            ▶
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => setShowPast((v) => !v)}
-          aria-pressed={showPast}
-          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${
-            showPast
-              ? "bg-blue-500/20 border-blue-400/60 text-blue-200"
-              : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
-          }`}
+          onClick={() => setDayFilter("")}
+          aria-pressed={dayFilter === ""}
+          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${dayFilter === "" ? "bg-blue-500/20 border-blue-400/60 text-blue-200" : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"}`}
         >
-          Geçmişi göster
+          Bugünden itibaren
+        </button>
+        <button
+          type="button"
+          onClick={() => setDayFilter("ALL")}
+          aria-pressed={dayFilter === "ALL"}
+          className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-lg border font-mono text-xs font-bold transition-all ${dayFilter === "ALL" ? "bg-blue-500/20 border-blue-400/60 text-blue-200" : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"}`}
+        >
+          Tüm günler
         </button>
         <span className="ml-auto text-[11px] text-bunker-muted font-mono">
           {filtered.length} olay
@@ -292,7 +345,9 @@ export default function ForexCalendarPage() {
 
       {!loading && !error && filtered.length === 0 && (
         <div className="text-bunker-muted font-mono text-sm text-center py-12">
-          Seçilen filtreye uygun olay bulunamadı.
+          {dayFilter && dayFilter !== "ALL"
+            ? `${dayHeading(dayFilter)} için 2-3 yıldızlı olay yok.`
+            : "Seçilen filtreye uygun olay bulunamadı."}
         </div>
       )}
 
@@ -315,7 +370,8 @@ export default function ForexCalendarPage() {
                   const released = !!ev.actual && ev.actual !== "—";
                   const isOpen = openIds.has(ev.id);
                   const o = ev.outcome;
-                  const cur = (o?.currency || ev.currency || "").toUpperCase();
+                  const cur = (ev.currency || "").toUpperCase();
+                  const pairs = ev.pair_impacts || [];
                   return (
                     <div
                       key={ev.id}
@@ -381,7 +437,7 @@ export default function ForexCalendarPage() {
                             <>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-bunker-muted">Sonuç:</span>
-                                <span className="text-white font-bold">{o.comparison || o.label}</span>
+                                <span className="text-white font-bold">{o.comparison_tr || o.label_tr}</span>
                               </div>
                               <p className="text-white/90">
                                 {o.side === "bullish"
@@ -390,12 +446,12 @@ export default function ForexCalendarPage() {
                                   ? `${cur} için olumsuz: veri para birimini zayıflatır.`
                                   : "Veri beklentiyle aynı: belirgin bir yön yok."}
                               </p>
-                              {o.direction_note && <p className="text-amber-300">{o.direction_note}</p>}
-                              {o.pairs.length > 0 && (
+                              {o.direction_note_tr && <p className="text-amber-300">{o.direction_note_tr}</p>}
+                              {pairs.length > 0 && (
                                 <div className="space-y-1.5">
                                   <span className="text-bunker-muted">Parite etkisi:</span>
                                   <div className="flex flex-wrap gap-1.5">
-                                    {o.pairs.map((pr) => (
+                                    {pairs.map((pr) => (
                                       <span
                                         key={pr.symbol}
                                         className={`px-2 py-1 rounded border text-[11px] font-bold ${

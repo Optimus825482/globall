@@ -66,23 +66,22 @@ describe("menu — rol görünürlüğü", () => {
     expect(groups.flatMap((g) => g.items).length).toBeGreaterThan(3);
   });
 
-  it("kullanıcı istediği sıralamada Forex sayfalarını listeler", () => {
+  it("2026-10-30: menü İZLE / İŞLEM / ANALİZ / SİSTEM gruplarında, belirlenen sırada", () => {
     const groups = visibleGroups(ADMIN);
-    const forex = groups.find((g) => g.id === "forex_ana");
-    expect(forex).toBeDefined();
-    const items = forex!.items.map((i) => i.href);
-    const expectedOrder = [
+    expect(groups.map((g) => g.id)).toEqual(["izle", "islem", "analiz", "sistem"]);
+    const items = groups.flatMap((g) => g.items.map((i) => i.href));
+    expect(items).toEqual([
       "/",
-      "/forex/portfolio",
-      "/metamobil",
       "/forex",
       "/forex/charts",
-      "/chat",
+      "/metamobil",
+      "/forex/portfolio",
       "/forex/islemler",
+      "/forex/calendar",
       "/forex/reports",
+      "/chat",
       "/settings",
-    ];
-    expect(items).toEqual(expectedOrder);
+    ]);
   });
 
   it("2026-10-14: Grafik ve Teknik Grafik TEK menü öğesinde birleşti", () => {

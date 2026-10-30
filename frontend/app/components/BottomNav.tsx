@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BOTTOM_NAV_ITEMS } from "../lib/menu";
+import NavIcon from "./NavIcon";
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -33,7 +34,7 @@ export default function BottomNav() {
                 : "text-bunker-muted hover:text-white"
             }`}
           >
-            <span className="text-xl leading-none mb-1 transition-transform">{item.icon}</span>
+            <NavIcon name={item.icon} className="w-5 h-5 mb-1" />
             <span className="truncate tracking-tight text-[10px]">{item.label}</span>
           </Link>
         );
@@ -45,7 +46,7 @@ export default function BottomNav() {
         className="flex flex-1 flex-col items-center justify-center py-1 px-1 rounded-xl text-bunker-muted hover:text-white transition-all touch-target active:scale-90"
         aria-label="Tüm Menüyü Aç"
       >
-        <span className="text-xl leading-none mb-1">☰</span>
+        <NavIcon name="menu" className="w-5 h-5 mb-1" />
         <span className="truncate tracking-tight text-[10px]">Menü</span>
       </button>
     </nav>

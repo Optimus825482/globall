@@ -8,6 +8,7 @@ import { useLiveStatus } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 import { useAuth } from "../lib/auth";
 import { visibleGroups } from "../lib/menu";
+import NavIcon from "./NavIcon";
 
 import { usePwa } from "../lib/pwa";
 
@@ -55,9 +56,8 @@ export default function Sidebar() {
             <div className="p-4 sm:p-5 border-b border-bunker-800">
                 <div className="flex items-center justify-between">
                     <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2.5">
-                        <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/25 to-blue-600/30 border border-cyan-400/40 shadow-[0_0_12px_rgba(0,240,255,0.3)]">
-                            <span className="text-base select-none">🌐</span>
-                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#00f0ff]" />
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/30">
+                            <NavIcon name="logo" className="w-5 h-5 text-cyan-300" />
                         </div>
                         <div className="flex flex-col">
                             <span className="font-mono text-sm font-bold tracking-tight text-white flex items-center gap-1">
@@ -76,32 +76,6 @@ export default function Sidebar() {
                     >
                         ✕
                     </button>
-                </div>
-                {/* PİYASA MODU SEÇİCİ (SPOT / FOREX) ve BTC BEAR REGIME ROZETİ
-                    KALDIRILDI (2026-10-07): uygulama artık YALNIZCA Forex &
-                    Emtia sunar; spot sayfalar silindiği için (a) piyasa-modu
-                    anahtarı ve (b) yalnız spot sayfalardaki BTC rejim kalkanını
-                    anlatan rozet yoktur. */}
-
-                {/* Global Borsa / Forex Rozet Kartı — tek piyasa (Forex). */}
-                <div className="mt-2.5 rounded-xl border p-2.5 shadow-sm transition-colors border-blue-300 dark:border-blue-500/40 bg-blue-50/80 dark:bg-gradient-to-r dark:from-blue-950/70 dark:via-slate-900/70 dark:to-indigo-950/60">
-                    <div className="flex items-center justify-between font-mono">
-                        <span className="flex items-center gap-1.5 text-xs font-black text-blue-900 dark:text-cyan-300">
-                            <span className="w-2 h-2 rounded-full animate-pulse bg-blue-500 shadow-[0_0_8px_#38bdf8]" />
-                            GLOBAL FOREX
-                        </span>
-                        <span className="rounded px-2 py-0.5 text-[10px] font-bold border bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-400/40">
-                            FX
-                        </span>
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono border-t border-blue-200 dark:border-bunker-700/60 pt-1.5">
-                        <span className="text-blue-700 dark:text-blue-300/80 font-bold">
-                            PARİTE &amp; EMTİA
-                        </span>
-                        <span className="text-emerald-700 dark:text-emerald-400 font-black">
-                            DEMO / LIVE
-                        </span>
-                    </div>
                 </div>
             </div>
 
@@ -133,7 +107,7 @@ export default function Sidebar() {
                                             }`}
                                     >
                                         <span className="flex items-center gap-2.5">
-                                            <span className="text-sm">{m.icon}</span>
+                                            <NavIcon name={m.icon} />
                                             <span className={`font-mono text-sm ${active ? "text-neon-green font-bold" : "text-white"}`}>
                                                 {label}
                                             </span>
@@ -241,7 +215,7 @@ export default function Sidebar() {
                             <span className="w-1 h-1 rounded-full bg-cyan-400/50" />
                             v{typeof window !== "undefined" ? (document.documentElement.dataset.buildId || process.env.NEXT_PUBLIC_BUILD_ID || "dev") : (process.env.NEXT_PUBLIC_BUILD_ID || "dev")}
                         </span>
-                        <span className="text-[8px] text-cyan-500/60 font-semibold tracking-wider">GLOBAL FOREX</span>
+                        
                     </div>
                 </div>
             </nav>
