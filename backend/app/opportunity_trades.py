@@ -9,8 +9,9 @@ Güvenceler
   - Yalnızca DEMO hesap (bkz. `open_scan_position`); motorun açık pozisyon sınırı ve sembol başına tek pozisyon geçerli.
   - Giriş yalnızca MT5 fiyatı varken: Yahoo/MT5 fiyat farkı sahte stop/hedef üretmesin.
   - Kapılar: TradingView yönü + kendi 8 dilimli analizimiz AYNI yönde, zaman dilimi uyumu; haber: açıklanmamış yakın
-    yüksek etkili veri varsa bekler, AÇIKLANMIŞ verinin sonucu teknik yönü destekler (skor eşiği gevşer) ya da bloklar;
-    karşı seviye (direnç/destek) stop mesafesinden uzak; sembolde soğuma süresi.
+    yüksek etkili veri varsa bekler, AÇIKLANMIŞ verinin sonucu teknik yönü destekler (skor eşiği gevşer) ya da çelişir (lot yarıya iner);
+    karşı seviye (direnç/destek) stop mesafesinden uzak değilse ya da çelişen veri varsa LOT küçülür (engellemez;
+    seviye neredeyse üstündeyse yine açılmaz); sembolde soğuma süresi.
 """
 from __future__ import annotations
 
@@ -34,7 +35,10 @@ NEWS_BLOCK_MIN = 30                # AÇIKLANMAMIŞ yüksek etkili veriye bu kad
 NEWS_LOOKBACK_MIN = 180            # AÇIKLANMIŞ verinin sonucu bu süre boyunca yönü etkiler
 NEWS_DECISIVE = 1.0                # ağırlıklı net etki bu eşiği aşarsa destekler/bloklar (2★=1, 3★=2)
 NEWS_SUPPORT_SCORE_RELIEF = 0.5    # veri yönü destekliyorsa teknik puan eşiği bu kadar gevşer
-LEVEL_CLEARANCE = 0.8              # karşı seviye en az stop mesafesinin bu katı uzakta olmalı
+LEVEL_CLEARANCE = 0.8              # karşı seviye en az stop mesafesinin bu katı uzakta olmalı; daha yakınsa LOT küçülür
+LEVEL_HARD_BLOCK = 0.15            # seviye stop mesafesinin %15'inden de yakınsa (neredeyse üstünde) yine de açılmaz
+NEWS_OPPOSE_LOT_MULT = 0.5         # açıklanan veri teknik yönle çelişiyorsa engellemek yerine lot bu çarpanla küçülür
+MIN_SIZE_MULT = 0.25               # birleşik küçültme tabanı
 
 _last_open: Dict[str, float] = {}  # sembol -> son açılış zamanı (süreç ömrü)
 
@@ -97,8 +101,10 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
             continue
     # Açıklanmış verinin SONUCU teknik yönü destekler ya da bloklar (veri varsa bile sonuca bakılır).
     effect = news_effect(calendar, sym, bias)
+    size_mult, size_notes = 1.0, []
     if effect["verdict"] == "opposes":
-        return {"ok": False, "reason": "açıklanan veri teknik yönle çelişiyor: " + "; ".join(effect["lines"][:2])}
+        size_mult *= NEWS_OPPOSE_LOT_MULT
+        size_notes.append("açıklanan veri teknik yönle çelişiyor (lot ×%.2g): %s" % (NEWS_OPPOSE_LOT_MULT, "; ".join(effect["lines"][:2])))
     min_score = MIN_OWN_SCORE - (NEWS_SUPPORT_SCORE_RELIEF if effect["verdict"] == "supports" else 0.0)
     if abs(float(analysis.get("score", 0))) < min_score:
         return {"ok": False, "reason": "teknik sinyal gücü düşük"}
@@ -110,14 +116,20 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
         gap = abs(float(opposing[0]["price"]) - price)
         if gap < LEVEL_CLEARANCE * sl_dist:
             kind = "dirence" if bias == "BUY" else "desteğe"
-            return {"ok": False, "reason": f"{kind} çok yakın ({gap / pip_size:.0f} pip); hedefe yer yok"}
+            if gap < LEVEL_HARD_BLOCK * sl_dist:
+                return {"ok": False, "reason": f"{kind} neredeyse üzerinde ({gap / pip_size:.0f} pip); hedefe yer yok"}
+            room = gap / (LEVEL_CLEARANCE * sl_dist)
+            size_mult *= room
+            size_notes.append(f"{kind} yakın ({gap / pip_size:.0f} pip): lot ×{room:.2f}")
+    size_mult = max(MIN_SIZE_MULT, round(size_mult, 3))
     return {"ok": True, "reason": "tüm kapılar geçti", "plan": {
         "symbol": sym, "direction": bias, "entry_price": price, "sl_pips": round(sl_dist / pip_size, 1),
         "tp_pips": round(tp_dist / pip_size, 1), "atr_pips": round(float(atr) / pip_size, 1), "score": analysis.get("score"),
-        "news": effect,
+        "news": effect, "size_mult": size_mult,
         "note": f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
                 f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}"
-                + (f"; haber DESTEKLİYOR: {effect['lines'][0]}" if effect["verdict"] == "supports" else "")}}
+                + (f"; haber DESTEKLİYOR: {effect['lines'][0]}" if effect["verdict"] == "supports" else "")
+                + (f"; KÜÇÜLTÜLMÜŞ LOT (×{size_mult:g}): " + " | ".join(size_notes) if size_notes else "")}}
 
 
 async def open_from_scan(analyses: Dict[str, Dict[str, Any]], scan: Dict[str, Any],
@@ -156,6 +168,7 @@ async def open_from_scan(analyses: Dict[str, Dict[str, Any]], scan: Dict[str, An
                 lots_mult = gate["mult"] if gate["enforced"] else 1.0
         except Exception as exc:  # noqa: BLE001 - kapı hatası fırsat taramasını durdurmaz ama günlüğe düşer
             logger.warning("Fırsat risk kapısı hatası (%s): %s", sym, exc)
+        lots_mult = max(MIN_SIZE_MULT, lots_mult * float(plan.get("size_mult") or 1.0)) if plan.get("size_mult", 1.0) < 1.0 else lots_mult
         res = fx.open_scan_position(sym, plan["direction"], plan["sl_pips"], plan["tp_pips"], plan["atr_pips"],
                                     float(plan.get("score") or 0), plan["note"], lots_mult)
         if not res.get("ok"):

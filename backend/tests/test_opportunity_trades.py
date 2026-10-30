@@ -62,11 +62,26 @@ def test_imminent_high_impact_news_blocks_but_far_or_low_impact_does_not():
     assert plan(cal={"yaklasan_24_saat": [{"title": "X", "stars": 2, "dakika": 5}]})["ok"]
 
 
-def test_opposing_level_too_close_blocks_sell_uses_supports():
-    assert "dirence" in plan(analysis(levels={"resistances": [{"price": 4003.0}], "supports": []}))["reason"]
-    a = analysis(bias="SELL", score=-3.4, levels={"resistances": [], "supports": [{"price": 3997.0}]})
+def test_opposing_level_nearly_on_top_still_blocks_sell_uses_supports():
+    assert "dirence" in plan(analysis(levels={"resistances": [{"price": 4000.5}], "supports": []}))["reason"]
+    a = analysis(bias="SELL", score=-3.4, levels={"resistances": [], "supports": [{"price": 3999.5}]})
     v = ot.plan_trade(a, {**SCAN, "direction": "SELL", "average": -0.6}, None, 0.1)
     assert not v["ok"] and "desteğe" in v["reason"]
+
+
+def test_close_level_shrinks_lot_instead_of_blocking():
+    v = plan(analysis(levels={"resistances": [{"price": 4003.0}], "supports": []}))        # stop 6, boşluk 3 → 3/4.8
+    assert v["ok"] and v["plan"]["size_mult"] == pytest.approx(0.625) and "KÜÇÜLTÜLMÜŞ LOT" in v["plan"]["note"]
+    assert plan()["plan"]["size_mult"] == 1.0                                               # uzak seviye: tam lot
+
+
+def test_opposing_news_halves_lot_and_stacks_with_level_room():
+    v = plan(cal=released({"XAUUSD": -1}))
+    assert v["ok"] and v["plan"]["size_mult"] == 0.5 and "ABD CPI" in v["plan"]["note"]
+    both = plan(analysis(levels={"resistances": [{"price": 4003.0}], "supports": []}), cal=released({"XAUUSD": -1}))
+    assert both["plan"]["size_mult"] == pytest.approx(0.312, abs=0.001)
+    floor = plan(analysis(levels={"resistances": [{"price": 4001.0}], "supports": []}), cal=released({"XAUUSD": -1}))
+    assert floor["plan"]["size_mult"] == ot.MIN_SIZE_MULT
 
 
 # ----------------------------------------------------------------------------- demo hesaba emir
@@ -215,11 +230,6 @@ def test_chat_opens_orders_only_in_opportunity_mode(monkeypatch):
 def released(yon, dakika=-20, stars=3, title="ABD CPI"):
     return {"aciklanan_son_6_saat": [{"title": title, "currency": "USD", "stars": stars, "dakika": dakika,
                                       "actual": "3.4%", "forecast": "3.0%", "sonuc": "Beklentiden yüksek", "yon": yon}]}
-
-
-def test_released_data_opposing_technical_direction_blocks():
-    v = plan(cal=released({"XAUUSD": -1}))                    # USD güçlü → altın SELL; teknik BUY
-    assert not v["ok"] and "çelişiyor" in v["reason"] and "ABD CPI" in v["reason"]
 
 
 def test_released_data_supporting_direction_allows_and_relaxes_score():
