@@ -870,7 +870,8 @@ async def chat(snapshot, messages, tools=None, tool_executor=None, active_skills
     except Exception as exc:
         return {"enabled": True, "status": "error", "text": None, "error": str(exc)}
 
-async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active_skills=None, max_tokens=None, system_override=None):
+async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active_skills=None, max_tokens=None, system_override=None,
+                      accept_reasoning=False):
     """SSE-compatible chat path with the same tool loop as buffered chat.
 
     Providers differ in streaming tool-call support. When tools are supplied,
@@ -1069,7 +1070,13 @@ async def stream_chat(snapshot, messages, tools=None, tool_executor=None, active
         await reader
         if not emitted:
             reasoning_text = "".join(reasoning_parts).strip()
-            if reasoning_text and not _looks_english(reasoning_text):
+            if accept_reasoning and reasoning_text:
+                # Yapılandırılmış (JSON) çıktı isteyen çağıranlar için: düşünen model yanıtı reasoning_content'e
+                # koyduysa dil kuralı uygulanmaz; çağıran JSON'u kendisi ayıklar (Türkçe-yalnızca kuralı sohbet metni içindir).
+                yield {"event": "delta", "data": {"text": reasoning_text}}
+                emitted = True
+                logger.info("akış: yanıt reasoning_content'te geldi, çağıran ayıklayacak (%d karakter)", len(reasoning_text))
+            elif reasoning_text and not _looks_english(reasoning_text):
                 # SON ÇARE (akış): sağlayıcı metni reasoning_content'te
                 # sıkıştırdı — Türkçe metin var; sessiz boş yerine yanıt
                 # olarak ilet (kural: düşünce gösterme, ama boş yanıt daha kötü).

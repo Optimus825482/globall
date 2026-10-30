@@ -26,6 +26,8 @@ from app import forex_research, llm_analysis
 logger = logging.getLogger("scalper.llm_review")
 
 CACHE_SEC = 240.0                 # aynı (sembol, yön) için karar bu süre yeniden kullanılır
+ERROR_CACHE_SEC = 45.0            # LLM hatası/zaman aşımı kısa süre saklanır (hemen yeniden denenebilsin)
+MAX_REVIEW_TOKENS = 4000          # düşünen modeller jetonun çoğunu akıl yürütmeye harcar; 1200 yetmiyordu
 SHADOW_WINDOW_SEC = 4 * 3600.0    # gölge sonuç izleme süresi
 TRACKER_INTERVAL_SEC = 20.0
 MAX_DOSSIER_CHARS = 7000
@@ -51,7 +53,7 @@ SYSTEM_PROMPT = (
     "- Motorun sinyali varsayılan olarak makuldür. Yalnızca somut, veriyle desteklenen bir olumsuzluk varsa REJECT et; "
     "belirsizlikte düşük güvenle APPROVE et. Aşırı seçici olma ama sermayeyi koru.\n"
     "- Yaklaşan yüksek etkili veri (açıklamaya 45 dk'dan az) ya da üst zaman dilimlerinin netçe ters yönü güçlü REJECT sebebidir.\n"
-    "- Yalnızca Türkçe, sade yaz; teknik ayrıntıya boğma.\n"
+    "- Düşünme sürecini KISA tut; sonunda YALNIZCA aşağıdaki JSON'u ver. Yalnızca Türkçe, sade yaz.\n"
     "ÇIKTI: YALNIZCA şu JSON (başka metin yok):\n"
     '{"decision":"APPROVE|REJECT","confidence":0-100,"summary":"tek cümle gerekçe","reasons":["en fazla 4 madde"],'
     '"risks":["en fazla 3 madde"],"checks":{"mtf_uyum":"olumlu|olumsuz|nötr","haber":"olumlu|olumsuz|nötr",'
@@ -188,9 +190,45 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 # --------------------------------------------------------------------------- LLM kararı
 
+def _balanced_objects(text: str) -> List[str]:
+    """Metindeki üst düzey {...} bloklarını (dizge/kaçış farkındalıklı) sırayla döner."""
+    out: List[str] = []
+    depth, start, in_str, esc = 0, -1, False, False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                out.append(text[start:i + 1])
+    return out
+
+
 def parse_verdict(text: str) -> Optional[Dict[str, Any]]:
-    """Model çıktısından kararı ayıklar (kod çiti/ön yazı toleranslı). Geçersizse None."""
-    data = llm_analysis._json_load_lenient(text)
+    """Model çıktısından kararı ayıklar (kod çiti/ön yazı/akıl yürütme toleranslı). Geçersizse None.
+
+    Metinde birden çok JSON olabilir (özellikle akıl yürütme taslakları): `decision` içeren SON blok alınır.
+    """
+    data = None
+    for block in reversed(_balanced_objects(text or "")):
+        cand = llm_analysis._json_load_lenient(block)
+        if isinstance(cand, dict) and "decision" in cand:
+            data = cand
+            break
+    if data is None:
+        data = llm_analysis._json_load_lenient(text)
     if not isinstance(data, dict):
         return None
     decision = str(data.get("decision", "")).strip().upper()
@@ -218,7 +256,8 @@ async def ask_llm(dossier: Dict[str, Any], timeout: float) -> tuple:
 
     async def _run():
         nonlocal model
-        async for ev in llm_analysis.stream_chat(dossier, messages, max_tokens=1200, system_override=SYSTEM_PROMPT):
+        async for ev in llm_analysis.stream_chat(dossier, messages, max_tokens=MAX_REVIEW_TOKENS,
+                                                 system_override=SYSTEM_PROMPT, accept_reasoning=True):
             if ev["event"] == "delta":
                 parts.append(str(ev["data"].get("text", "")))
             elif ev["event"] == "error":
@@ -293,6 +332,11 @@ def decide(verdict: Optional[Dict[str, Any]], error: Optional[str], *, mode: str
     return {"blocked": True, "applied": "blocked", "reason": why}
 
 
+def _ttl(res: Dict[str, Any]) -> float:
+    """Gerçek bir LLM kararı 4 dk, hata/zaman aşımı 45 sn saklanır."""
+    return CACHE_SEC if res.get("verdict") else ERROR_CACHE_SEC
+
+
 async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Motorun çağırdığı ana giriş. `ctx` anahtarları: symbol, direction, cand, lots, sl_pips, tp_pips,
     atr_pips, pip_size, entry_price, risk_usd, strategy, strategy_label + ayarlar (mode, fail_open,
@@ -302,7 +346,7 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
     key = (ctx["symbol"], ctx["direction"])
     now = time.time()
     hit = _cache.get(key)
-    if hit and now - hit[0] < CACHE_SEC:
+    if hit and now - hit[0] < _ttl(hit[1]):
         res = dict(hit[1])
         res["cached"] = True
         try:
@@ -313,7 +357,7 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
     async with _review_lock:
         hit = _cache.get(key)               # kilidi beklerken başkası karar vermiş olabilir
-        if hit and time.time() - hit[0] < CACHE_SEC:
+        if hit and time.time() - hit[0] < _ttl(hit[1]):
             res = dict(hit[1])
             res["cached"] = True
             return res
@@ -347,7 +391,7 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
         res = {**policy, "review_id": review_id, "verdict": verdict, "cached": False, "latency_ms": latency_ms}
         _cache[key] = (time.time(), res)
         if len(_cache) > 200:
-            for k in [k for k, v in _cache.items() if time.time() - v[0] > CACHE_SEC][:100]:
+            for k in [k for k, v in _cache.items() if time.time() - v[0] > _ttl(v[1])][:100]:
                 _cache.pop(k, None)
         return res
 

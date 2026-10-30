@@ -523,10 +523,10 @@ export default function AutoSettingsPanel({
                 />
               </div>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">En fazla bekleme (sn, 3-60):</label>
+                <label className="text-[11px] text-bunker-muted block mb-1">En fazla bekleme (sn, 3-90):</label>
                 <input
-                  type="number" min="3" max="60" step="1"
-                  value={form.llm_review_timeout_sec ?? 12}
+                  type="number" min="3" max="90" step="1"
+                  value={form.llm_review_timeout_sec ?? 25}
                   onChange={(e) => setNumField("llm_review_timeout_sec", e.target.value)}
                   className={`${inputCls} text-cyan-300`}
                 />

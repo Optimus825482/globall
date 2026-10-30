@@ -5424,7 +5424,7 @@ class ForexAutoPaperSettings(BaseModel):
     llm_review_mode: str = Field("veto", pattern="^(veto|advisory)$", description="veto: LLM reddederse işlem açılmaz · advisory: yalnız kayıt/rapor, işlemi engellemez (denemek için)")
     llm_review_fail_open: bool = Field(True, description="LLM yanıt vermez/yavaşsa/bozuksa: True = işlem yine açılır (motor kararı), False = işlem açılmaz")
     llm_review_min_confidence: int = Field(55, ge=0, le=100, description="Onay için LLM'in minimum güven puanı (altındaki onaylar da engellenir)")
-    llm_review_timeout_sec: float = Field(12.0, ge=3.0, le=60.0, description="LLM incelemesi için en fazla bekleme (sn); aşılırsa fail-open/closed kuralı uygulanır")
+    llm_review_timeout_sec: float = Field(25.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-30 sn sürebilir. Aşılırsa fail-open/closed kuralı uygulanır")
     ev_window_hours: float = Field(24.0, ge=1.0, le=72.0, description="EV kalkanı geriye dönük bakış penceresi (saat)")
     ev_min_trades: int = Field(10, ge=3, le=50, description="EV kararı için pencerede gereken minimum işlem sayısı (yumuşatıldı: 8 → 10)")
     ev_max_win_rate: float = Field(45.0, ge=0.0, le=100.0, description="Kronik kaybeden eşiği: pencere WR'si bunun altındaysa ve net zarardaysa sembol dinlenir (42 → 35 → 45: 2026-10-06 30g replay A/B kararı)")
