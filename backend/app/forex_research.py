@@ -556,6 +556,26 @@ def _tradingview_headlines(sym: str, now: float, max_age_hours: float) -> List[D
     return out
 
 
+# Dış kaynaktan gelen başlıklar LLM istemine girer: talimat/JSON enjeksiyonu denemeleri elenir.
+_INJECTION_RE = re.compile(
+    r"(ignore|disregard|forget|override)\W+(\w+\W+){0,4}(instruction|rule|prompt|above|previous)"
+    r"|system\s+prompt|developer\s+(message|mode)|\byou\s+(must|should|are\s+now|will)\b|\bas\s+an\s+ai\b"
+    r"|\bassistant\b|respond\s+with|output\s+(only\s+)?json|return\s+(only\s+)?json|\"decision\"|\"confidence\""
+    r"|\bapprove\s+(this|the)\s+(trade|order)|\breject\s+(this|the)\s+(trade|order)",
+    re.IGNORECASE,
+)
+
+
+def sanitize_headline(title: str, max_len: int = 160) -> Optional[str]:
+    """Başlığı veri olarak güvenli hale getirir; talimat benzeri içerik taşıyorsa None (elenir)."""
+    t = "".join(ch for ch in str(title or "") if ch.isprintable())
+    t = re.sub(r"[{}\[\]<>`\\]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    if not t or _INJECTION_RE.search(t):
+        return None
+    return t[:max_len]
+
+
 def _norm_title(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()[:70]
 
@@ -574,6 +594,11 @@ def fetch_headlines(symbol: str, max_items: int = 8, max_age_hours: float = 36.0
     merged: List[Dict[str, Any]] = []
     seen: set = set()
     for item in sorted((i for r in results for i in r), key=lambda x: x["ts"], reverse=True):
+        clean = sanitize_headline(item["title"])
+        if clean is None:
+            logger.warning("talimat benzeri haber başlığı elendi (%s)", item.get("via"))
+            continue
+        item["title"] = clean
         key = _norm_title(item["title"])
         if key in seen:
             continue
