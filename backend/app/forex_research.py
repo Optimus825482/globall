@@ -24,6 +24,7 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 
+from app import forex_indicators as fi
 from app import forex_patterns as fp
 from app.technical_analysis import _adx, _atr, _bollinger, _ema, _macd, _rsi
 
@@ -340,13 +341,14 @@ def analyze_symbol(symbol: str) -> Dict[str, Any]:
     chart = {tf: fp.compact_chart(candles[tf], n) for tf, n in
              (("1m", 20), ("3m", 16), ("5m", 24), ("15m", 16), ("30m", 16), ("1h", 24), ("4h", 12), ("1d", 10)) if tf in candles}
     squeeze = {tf: c for tf, bars in candles.items() if (c := fp.consolidation(bars, fp.TF_MINUTES.get(tf, 0)))}
+    indicators = {tf: pk for tf in ("1m", "5m", "15m", "30m", "1h", "4h", "1d") if tf in candles and (pk := fi.pack(candles[tf]))}
     sup = levels["supports"][0]["price"] if levels["supports"] else ref.get("support")
     res = levels["resistances"][0]["price"] if levels["resistances"] else ref.get("resistance")
     return {
         "symbol": symbol, "ok": True, "price": price, "price_source": price_src, "price_age": price_age,
         "bias": bias, "score": round(avg, 2), "frames": frames, "sources": sources, "candles": candles,
         "support": sup, "resistance": res, "levels": levels, "patterns": patterns, "structure": structure,
-        "chart": chart, "squeeze": squeeze, "ranges": fp.key_ranges(candles),
+        "chart": chart, "squeeze": squeeze, "indicators": indicators, "ranges": fp.key_ranges(candles),
         "atr": atr, "stop_distance": round(atr * 1.5, 6) if atr else None,
     }
 
@@ -369,6 +371,9 @@ def compact_for_llm(a: Dict[str, Any]) -> Dict[str, Any]:
         "aralıklar": a.get("ranges"),
         # "Kaç dakikadır yatay/sıkışık?" sorusu için: her zaman diliminde fiyatın dar bantta kaldığı süre ve son büyük hareketten beri geçen süre.
         "sikisma_suresi": a.get("squeeze"),
+        # Karar desteği göstergeleri (zaman dilimi başına): Bollinger (%B, bant genişliği/yüzdelik, sıkışma, bant yürüyüşü), Keltner/TTM
+        # sıkışma, Supertrend yönü, StochRSI, CCI(20), Donchian(20). Teyit/çelişki bilgisidir; tek başına işlem nedeni değildir.
+        "gostergeler": a.get("indicators"),
         "son_mumlar_OHLC": a.get("chart"),
     }
 
