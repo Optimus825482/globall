@@ -88,6 +88,10 @@ SYSTEM_PROMPT = (
     "- ZAMANLAMA: Sistem 'SS:DD' saatli 'kapat'/'hatırlat' isteklerini sen devreye girmeden kendisi kurar (hatırlatıcı ve DEMO hesapta "
     "zamanlı pozisyon kapatma). Bu istek sana ulaştıysa kurulamamıştır: 'yapamam' DEME; neyin eksik olduğunu söyle ve şu kalıbı öner: "
     "\"cuma 23:50'de BTC ve coinler hariç tüm pozisyonları kapat\" (saat, hariç/yalnızca kapsamı ve 'kapat' ya da 'hatırlat' açık olmalı).\n"
+    "- EMİR KOMUTU: Kullanıcı net bir komut yazarsa (ör. \"BTC sell aç\", \"altında buy açar mısın\") sistem tek sembol için "
+    "analiz yapıp aynı kapılardan geçirerek DEMO hesaba kendisi işlem açmayı dener. Bu istek sana ulaştıysa 'demo_islemler' "
+    "alanına bak: açıldıysa yön/lot/stop/hedef/riski, açılmadıysa nedenini sade söyle. 'Emir açamam' DEME; komut kalıbı "
+    "gerekirse \"<sembol> sell aç\" ya da \"<sembol> buy aç\" öner.\n"
     "- Soru piyasa dışıysa tek cümleyle kibarca konuya yönlendir."
 )
 
@@ -383,6 +387,7 @@ async def forex_chat(payload: dict, request: Request):
             findings: Dict[str, Any] = {}
             picked: Optional[List[str]] = None
             opp = mode == "opportunity_scan"
+            explicit = None             # "BTC sell aç": açık komut → tek sembol derin analiz + aynı kapılar (yalnız yönetici)
             if not opp and is_admin:
                 # "Cuma 23:50'de BTC hariç tüm pozisyonları kapat" / "14:30'da hatırlat": LLM'e gitmeden kaydedilir.
                 try:
@@ -395,6 +400,9 @@ async def forex_chat(payload: dict, request: Request):
                     yield _sse("delta", {"text": confirm})
                     yield _sse("done", {"status": "ok", "scheduled": True})
                     return
+                explicit = opportunity_trades.parse_open_request(last_text, _mentioned_symbols(last_text))
+            if explicit:
+                picked = [explicit["symbol"]]
             if opp:
                 # Fırsat taraması: Forex + Bitcoin + Altın evrenini tara; en net adayları derin analiz et.
                 yield _sse("step", {"id": "scan", "label": "Fırsat taraması (Forex, Bitcoin, Altın, Endeks)", "status": "running"})
@@ -422,13 +430,21 @@ async def forex_chat(payload: dict, request: Request):
                                         "text": "Tarama şu an yapılamadı; varsayılan semboller araştırılıyor."})
             async for chunk in research_events(plan_steps(last_text, picked), findings):
                 yield chunk
-            if opp and "scan" in findings:
+            if (opp and "scan" in findings) or explicit:
                 yield _sse("step", {"id": "demo", "label": "Demo hesap işlem kararı", "status": "running"})
                 try:
                     analyses = {k.split(":", 1)[1]: v["_analysis"] for k, v in findings.items()
                                 if k.startswith("ta:") and isinstance(v, dict) and "_analysis" in v}
-                    result = await asyncio.wait_for(
-                        opportunity_trades.open_from_scan(analyses, findings["scan"], findings.get("calendar")), timeout=15)
+                    if explicit:
+                        a = analyses.get(explicit["symbol"])
+                        if not a:
+                            result = {"opened": [], "skipped": [{"symbol": explicit["symbol"], "reason": "teknik analiz verisi alınamadı"}]}
+                        else:
+                            result = await asyncio.wait_for(
+                                opportunity_trades.open_requested(a, explicit["direction"], findings.get("calendar")), timeout=15)
+                    else:
+                        result = await asyncio.wait_for(
+                            opportunity_trades.open_from_scan(analyses, findings["scan"], findings.get("calendar")), timeout=15)
                     findings["demo"] = {"acilan": result["opened"], "acilmayan": result["skipped"],
                                         "not": ("Yalnızca 'acilan' listesindeki işlemler kayıtlı DEMO MT5 hesabına iletildi; izleme: Raporlar > İşlem Raporu, 'Fırsat Taraması (Sohbet)'."
                                                 if result["opened"] else

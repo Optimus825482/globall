@@ -120,3 +120,27 @@ def test_confirmation_text_lists_closing_and_kept():
     j = sa.parse_schedule_request(Q, NOW, ["BTCUSD"])
     t = sa.confirmation_text(j, 5, POS)
     assert "#5" in t and "EURUSD BUY" in t and "Açık kalacaklar: BTCUSD, ETHUSD" in t and "DEMO" in t
+
+
+def test_time_without_colon_needs_suffix():
+    j = sa.parse_schedule_request("23 50 de kapatacan hepsini btc vee coınler harıc", NOW, ["BTCUSD"])
+    assert j and j["due_ts"] == ts(2026, 10, 30, 23, 50) and j["params"]["exclude_groups"] == ["crypto"]
+    assert sa.parse_schedule_request("5 10 kapat", NOW) is None            # ek yok: saat sayılmaz
+
+
+def test_duplicate_job_is_not_created_twice(monkeypatch):
+    j = sa.parse_schedule_request(Q, NOW, ["BTCUSD"])
+    created = []
+
+    async def listing(limit):
+        return [{"id": 1, "status": "pending", "kind": j["kind"], "due_ts": j["due_ts"], "params": j["params"]}]
+
+    async def create(*a):
+        created.append(a)
+        return 2
+
+    monkeypatch.setattr(sa.database, "sched_list", listing)
+    monkeypatch.setattr(sa.database, "sched_create", create)
+    monkeypatch.setattr(sa.time, "time", lambda: NOW)
+    out = asyncio.run(sa.create_from_text(Q, ["BTCUSD"]))
+    assert "zaten kurulu" in out and "#1" in out and not created

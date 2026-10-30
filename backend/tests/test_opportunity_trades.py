@@ -313,3 +313,53 @@ def test_partial_close_comment_overwrite_restores_strategy_tag():
     assert out[1]["strategy_tag"] == "Scalper Partial"                # bilinmeyen: değişmez
     assert 8 not in fx._TICKET_TAGS                                   # kapanan pozisyon temizlenir
     assert fx.restore_position_tags(None) is None
+
+
+# ----------------------------------------------------------------------------- sohbette açık emir komutu
+
+@pytest.mark.parametrize("text,sym,expect", [
+    ("btc sell açamıyormusun pozıyon", "BTCUSD", "SELL"),
+    ("BTC sell aç", "BTCUSD", "SELL"),
+    ("altında buy açar mısın", "XAUUSD", "BUY"),
+    ("eurusd short ac", "EURUSD", "SELL"),
+])
+def test_parse_open_request_accepts_explicit_commands(text, sym, expect):
+    assert ot.parse_open_request(text, [sym]) == {"symbol": sym, "direction": expect}
+
+
+@pytest.mark.parametrize("text", [
+    "neden btc sell açmıyor",                 # soru/olumsuz
+    "btc sell açmak mantıklı mı",             # tavsiye sorusu
+    "btc sell açma",                          # açma = yapma
+    "23:50'de btc sell aç",                   # saat → zamanlanmış iş
+    "btc aç",                                 # yön yok
+    "btc buy sell aç",                        # çelişkili yön
+])
+def test_parse_open_request_rejects_questions_and_ambiguity(text):
+    assert ot.parse_open_request(text, ["BTCUSD"]) is None
+    assert ot.parse_open_request("btc eth sell aç", ["BTCUSD", "ETHUSD"]) is None      # tek sembol şart
+
+
+def test_explicit_plan_uses_lower_score_and_skips_tradingview_gate():
+    weak = analysis(score=-2.0, bias="SELL", levels={"resistances": [], "supports": []})
+    assert not ot.plan_trade(weak, SCAN, None, 0.1)["ok"]                                   # normal kapı: 2.0 < 2.5
+    v = ot.plan_trade(weak, None, None, 0.1, explicit=True)
+    assert v["ok"] and v["plan"]["direction"] == "SELL" and "Kullanıcı komutuyla" in v["plan"]["note"]
+    assert not ot.plan_trade(analysis(score=1.0, bias="SELL"), None, None, 0.1, explicit=True)["ok"]   # 1.0 < 1.5
+
+
+def test_open_requested_blocks_opposite_direction_and_opens_matching(monkeypatch):
+    seen = {}
+
+    def fake_open(sym, direction, sl, tp, atr, score, note, lots_mult=1.0):
+        seen.update(sym=sym, direction=direction)
+        return {"ok": True, "lots": 0.01, "risk_usd": 2.0, "cmd_id": "CMD-9"}
+
+    monkeypatch.setattr(fx, "open_scan_position", fake_open)
+    monkeypatch.setattr(fx, "scan_lot_estimate", lambda *a: None)
+    ot._last_open.clear()
+    a = analysis(symbol="XAUUSD", score=-2.0, bias="SELL", levels={"resistances": [], "supports": []})
+    wrong = asyncio.run(ot.open_requested(a, "BUY", None))
+    assert not wrong["opened"] and "ters yönde" in wrong["skipped"][0]["reason"] and not seen
+    ok = asyncio.run(ot.open_requested(a, "SELL", None))
+    assert len(ok["opened"]) == 1 and seen == {"sym": "XAUUSD", "direction": "SELL"}

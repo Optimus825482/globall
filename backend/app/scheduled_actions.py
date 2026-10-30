@@ -32,10 +32,12 @@ WEEKDAYS = {"pazartesi": 0, "salı": 1, "sali": 1, "çarşamba": 2, "carsamba": 
             "cuma": 4, "cumartesi": 5, "pazar": 6}
 WEEKDAY_TR = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 CRYPTO_PREFIXES = ("BTC", "ETH", "XRP", "LTC", "SOL", "DOGE", "ADA", "BNB", "DOT", "AVAX", "LINK", "MATIC", "TRX")
-CRYPTO_WORDS = ("btc", "bitcoin", "coin", "kripto", "crypto", "eth", "ethereum", "xrp", "ripple")
+CRYPTO_WORDS = ("btc", "bitcoin", "coin", "coın", "krıpto", "kripto", "crypto", "eth", "ethereum", "xrp", "ripple")
 GOLD_WORDS = ("altın", "altin", "xau", "gold")
-EXCLUDE_WORDS = ("hariç", "haric", "dışında", "disinda", "haricinde", "hariçte")
+EXCLUDE_WORDS = ("hariç", "haric", "harıc", "dışında", "disinda", "haricinde", "hariçte")
 _TIME_RE = re.compile(r"(?<![\d.:])([01]?\d|2[0-3])[:.]([0-5]\d)(?![\d:])")
+# "23 50 de kapat" gibi iki nokta/nokta olmadan yazılan saat: yalnızca ardından ek (de/da/te/ta) geliyorsa saat sayılır
+_TIME_SPACE_RE = re.compile(r"(?<![\d.:])([01]?\d|2[0-3])\s([0-5]\d)\s*['’]?\s*(?:de|da|te|ta)\b")
 
 
 def is_crypto(symbol: str) -> bool:
@@ -60,7 +62,7 @@ def parse_schedule_request(text: str, now_ts: float, symbols: Optional[List[str]
     Tetik: açık bir saat (SS:DD) + "kapat" ya da "hatırlat" fiili. `symbols`: metinde geçen semboller (çağıran bulur).
     """
     t = _norm(text)
-    m = _TIME_RE.search(t)
+    m = _TIME_RE.search(t) or _TIME_SPACE_RE.search(t)
     if not m:
         return None
     wants_close = "kapat" in t and "kapatt" not in t and "kapatıl" not in t
@@ -171,6 +173,12 @@ async def create_from_text(text: str, symbols: Optional[List[str]] = None) -> Op
     job = parse_schedule_request(text, time.time(), symbols)
     if not job:
         return None
+    # Aynı iş (tür + zaman + kapsam) zaten bekliyorsa ikinci kez kurma ("hatırlıyor musun?" gibi tekrar mesajları)
+    for ex in await database.sched_list(50):
+        if (ex.get("status") == "pending" and ex.get("kind") == job["kind"] and abs(float(ex["due_ts"]) - job["due_ts"]) < 60
+                and (ex.get("params") or {}) == job["params"]):
+            return (f"✅ Bu iş **zaten kurulu** (#{ex['id']}) — {fmt_due(ex['due_ts'])}. Yeniden kurmadım; "
+                    f"iptal etmek için *Zamanlanmış işler* şeridindeki İptal düğmesini kullan.")
     job_id = await database.sched_create(job["kind"], job["due_ts"], job["params"], job["text"])
     from app.routers import forex as fx
     return confirmation_text(job, job_id, list(fx._MT5_STATE.get("open_positions") or []))

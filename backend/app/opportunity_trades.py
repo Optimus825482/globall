@@ -16,6 +16,7 @@ Güvenceler
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,7 @@ RR = 1.5                           # hedef = stop × 1.5
 MIN_AGREEMENT = 0.75               # TradingView zaman dilimi uyumu
 MIN_TV_AVG = 0.25                  # TradingView ağırlıklı reytingin mutlak değeri
 MIN_OWN_SCORE = 2.5                # kendi analiz puanımızın mutlak değeri
+MIN_EXPLICIT_SCORE = 1.5           # kullanıcı sohbette AÇIKÇA emir isterse (yön teknikle aynı olmalı) daha düşük puan yeter
 NEWS_BLOCK_MIN = 30                # AÇIKLANMAMIŞ yüksek etkili veriye bu kadar dakika kala giriş yok (sonucu bilinmiyor)
 NEWS_LOOKBACK_MIN = 180            # AÇIKLANMIŞ verinin sonucu bu süre boyunca yönü etkiler
 NEWS_DECISIVE = 1.0                # ağırlıklı net etki bu eşiği aşarsa destekler/bloklar (2★=1, 3★=2)
@@ -75,7 +77,7 @@ def news_effect(calendar: Optional[Dict[str, Any]], symbol: str, bias: str) -> D
 
 
 def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], calendar: Optional[Dict[str, Any]],
-               pip_size: float) -> Dict[str, Any]:
+               pip_size: float, explicit: bool = False) -> Dict[str, Any]:
     """Saf karar fonksiyonu: {ok, reason, plan?}. Ağ/DB/MT5 yok (test edilebilir)."""
     sym = analysis.get("symbol")
     if not analysis.get("ok"):
@@ -83,10 +85,12 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     bias = analysis.get("bias")
     if bias not in ("BUY", "SELL"):
         return {"ok": False, "reason": f"net yön yok (teknik: {bias})"}
-    if not scan_row or scan_row.get("direction") != bias:
-        return {"ok": False, "reason": "TradingView yönü kendi analizimizle uyumsuz"}
-    if float(scan_row.get("agreement", 0)) < MIN_AGREEMENT or abs(float(scan_row.get("average", 0))) < MIN_TV_AVG:
-        return {"ok": False, "reason": "zaman dilimleri yeterince hemfikir değil"}
+    if not explicit:                   # açık kullanıcı komutunda TradingView toplu tarama kapısı aranmaz
+        if not scan_row or scan_row.get("direction") != bias:
+            return {"ok": False, "reason": "TradingView yönü kendi analizimizle uyumsuz"}
+        if float(scan_row.get("agreement", 0)) < MIN_AGREEMENT or abs(float(scan_row.get("average", 0))) < MIN_TV_AVG:
+            return {"ok": False, "reason": "zaman dilimleri yeterince hemfikir değil"}
+    scan_row = scan_row or {}
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}
     atr = (analysis.get("frames", {}).get("1h") or {}).get("atr") or analysis.get("atr")
@@ -105,7 +109,7 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     if effect["verdict"] == "opposes":
         size_mult *= NEWS_OPPOSE_LOT_MULT
         size_notes.append("açıklanan veri teknik yönle çelişiyor (lot ×%.2g): %s" % (NEWS_OPPOSE_LOT_MULT, "; ".join(effect["lines"][:2])))
-    min_score = MIN_OWN_SCORE - (NEWS_SUPPORT_SCORE_RELIEF if effect["verdict"] == "supports" else 0.0)
+    min_score = (MIN_EXPLICIT_SCORE if explicit else MIN_OWN_SCORE) - (NEWS_SUPPORT_SCORE_RELIEF if effect["verdict"] == "supports" else 0.0)
     if abs(float(analysis.get("score", 0))) < min_score:
         return {"ok": False, "reason": "teknik sinyal gücü düşük"}
     sl_dist = SL_ATR_MULT * float(atr)
@@ -126,8 +130,9 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
         "symbol": sym, "direction": bias, "entry_price": price, "sl_pips": round(sl_dist / pip_size, 1),
         "tp_pips": round(tp_dist / pip_size, 1), "atr_pips": round(float(atr) / pip_size, 1), "score": analysis.get("score"),
         "news": effect, "size_mult": size_mult,
-        "note": f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
-                f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}"
+        "note": (f"Kullanıcı komutuyla; teknik {bias} ({float(analysis.get('score', 0)):+.1f})" if explicit else
+                 f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
+                 f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}")
                 + (f"; haber DESTEKLİYOR: {effect['lines'][0]}" if effect["verdict"] == "supports" else "")
                 + (f"; KÜÇÜLTÜLMÜŞ LOT (×{size_mult:g}): " + " | ".join(size_notes) if size_notes else "")}}
 
@@ -153,32 +158,87 @@ async def open_from_scan(analyses: Dict[str, Dict[str, Any]], scan: Dict[str, An
         if time.time() - _last_open.get(sym, 0.0) < SYMBOL_COOLDOWN_SEC:
             skipped.append({"symbol": sym, "reason": "bu sembolde yakın zamanda işlem açıldı (soğuma)"})
             continue
-        # Portföy risk kapısı (shadow: yalnız günlük; enforce: engeller / lotu küçültür). Fırsat işlemi de aynı kapıdan geçer.
-        lots_mult = 1.0
-        try:
-            from app import portfolio_risk
-            est = fx.scan_lot_estimate(sym, plan["sl_pips"])
-            if est:
-                gate = await portfolio_risk.check_entry({"symbol": sym, "direction": plan["direction"], "lots": est,
-                                                         "sl_pips": plan["sl_pips"], "pip_size": spec.get("pip_size"),
-                                                         "pip_val": spec.get("pip_val"), "entry_price": plan["entry_price"]}, fx._AUTO_SETTINGS)
-                if gate["blocked"]:
-                    skipped.append({"symbol": sym, "reason": "portföy risk kapısı: " + "; ".join(r["text"] for r in gate["reasons"][:2])})
-                    continue
-                lots_mult = gate["mult"] if gate["enforced"] else 1.0
-        except Exception as exc:  # noqa: BLE001 - kapı hatası fırsat taramasını durdurmaz ama günlüğe düşer
-            logger.warning("Fırsat risk kapısı hatası (%s): %s", sym, exc)
-        lots_mult = max(MIN_SIZE_MULT, lots_mult * float(plan.get("size_mult") or 1.0)) if plan.get("size_mult", 1.0) < 1.0 else lots_mult
-        res = fx.open_scan_position(sym, plan["direction"], plan["sl_pips"], plan["tp_pips"], plan["atr_pips"],
-                                    float(plan.get("score") or 0), plan["note"], lots_mult)
-        if not res.get("ok"):
-            skipped.append({"symbol": sym, "reason": res.get("reason", "emir yazılamadı")})
-            continue
-        _last_open[sym] = time.time()
-        opened.append({"symbol": sym, "direction": plan["direction"], "lots": res["lots"], "risk_usd": res["risk_usd"],
-                       "sl_pips": plan["sl_pips"], "tp_pips": plan["tp_pips"], "cmd_id": res["cmd_id"], "note": plan["note"]})
-        logger.info("Fırsat işlemi demo hesaba iletildi: %s %s %s lot (%s)", sym, plan["direction"], res["lots"], res["cmd_id"])
+        await _open_verified(fx, sym, plan, spec, opened, skipped)
     return {"opened": opened, "skipped": skipped}
+
+
+# --------------------------------------------------------------------------- sohbette açık emir komutu
+_TR_FOLD = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+_BUY_RE = re.compile(r"\b(?:buy|long|al|alim|alis)\b")
+_SELL_RE = re.compile(r"\b(?:sell|short|sat|satis)\b")
+_OPEN_RE = re.compile(r"\bac\b|\bac(?:sin|ar|abilir|amiyor|mak)\w*")
+_NOT_A_COMMAND = ("neden", "niye", "nicin", "acildi", "acilmadi", "acilmiyor", "acti", "actim", "acmiyor", "acik",
+                  "mantikli", "sence", "uygun mu", "dogru mu", "olur mu", "acmasin", "acma ")
+
+
+def parse_open_request(text: str, symbols: List[str]) -> Optional[Dict[str, str]]:
+    """Saf fonksiyon: "BTC sell aç" / "altında buy açar mısın" → {"symbol","direction"}; komut değilse None.
+
+    Güvenceler: tek sembol + tek yön + açık "aç" fiili şart; soru/olumsuz kalıplar ("neden açmıyor", "mantıklı mı") komut sayılmaz;
+    saat içeren mesajlar (zamanlanmış iş) buraya düşmez.
+    """
+    from app import scheduled_actions as sa
+    t = str(text or "").translate(_TR_FOLD).lower()
+    if sa._TIME_RE.search(t) or sa._TIME_SPACE_RE.search(t):
+        return None
+    if any(w in t for w in _NOT_A_COMMAND) or not _OPEN_RE.search(t):
+        return None
+    buy, sell = bool(_BUY_RE.search(t)), bool(_SELL_RE.search(t))
+    if buy == sell or len(symbols) != 1:
+        return None
+    return {"symbol": symbols[0], "direction": "BUY" if buy else "SELL"}
+
+
+async def open_requested(analysis: Dict[str, Any], direction: str, calendar: Optional[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Kullanıcının sohbette açıkça istediği işlemi aynı kapılardan (daha düşük puan eşiğiyle) DEMO hesaba yazar.
+
+    Kapılar: teknik yön istenen yönle AYNI olmalı (aksi halde açılmaz), MT5 fiyatı, yaklaşan yüksek etkili veri, haber çelişkisi
+    (lot küçülür), seviye boşluğu (lot küçülür), portföy risk kapısı, lot/risk bütçesi, açık pozisyon/DEMO denetimi. Soğuma yoktur.
+    """
+    from app.routers import forex as fx
+    sym = str(analysis.get("symbol") or "")
+    opened: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    spec = fx.get_symbol_trading_specs(sym)
+    if analysis.get("ok") and analysis.get("bias") in ("BUY", "SELL") and analysis["bias"] != direction:
+        skipped.append({"symbol": sym, "reason": f"teknik yön {analysis['bias']}, istenen {direction}: ters yönde açılmadı"})
+        return {"opened": opened, "skipped": skipped}
+    verdict = plan_trade(analysis, None, calendar, float(spec.get("pip_size") or 0), explicit=True)
+    if not verdict["ok"]:
+        skipped.append({"symbol": sym, "reason": verdict["reason"]})
+        return {"opened": opened, "skipped": skipped}
+    await _open_verified(fx, sym, verdict["plan"], spec, opened, skipped)
+    return {"opened": opened, "skipped": skipped}
+
+
+async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str, Any],
+                         opened: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) -> None:
+    """Kapılardan geçmiş planı portföy risk kapısı + lot hesabıyla DEMO hesaba yazar (opened/skipped listelerine ekler)."""
+    # Portföy risk kapısı (shadow: yalnız günlük; enforce: engeller / lotu küçültür). Fırsat işlemi de aynı kapıdan geçer.
+    lots_mult = 1.0
+    try:
+        from app import portfolio_risk
+        est = fx.scan_lot_estimate(sym, plan["sl_pips"])
+        if est:
+            gate = await portfolio_risk.check_entry({"symbol": sym, "direction": plan["direction"], "lots": est,
+                                                     "sl_pips": plan["sl_pips"], "pip_size": spec.get("pip_size"),
+                                                     "pip_val": spec.get("pip_val"), "entry_price": plan["entry_price"]}, fx._AUTO_SETTINGS)
+            if gate["blocked"]:
+                skipped.append({"symbol": sym, "reason": "portföy risk kapısı: " + "; ".join(r["text"] for r in gate["reasons"][:2])})
+                return
+            lots_mult = gate["mult"] if gate["enforced"] else 1.0
+    except Exception as exc:  # noqa: BLE001 - kapı hatası fırsat taramasını durdurmaz ama günlüğe düşer
+        logger.warning("Fırsat risk kapısı hatası (%s): %s", sym, exc)
+    lots_mult = max(MIN_SIZE_MULT, lots_mult * float(plan.get("size_mult") or 1.0)) if plan.get("size_mult", 1.0) < 1.0 else lots_mult
+    res = fx.open_scan_position(sym, plan["direction"], plan["sl_pips"], plan["tp_pips"], plan["atr_pips"],
+                                float(plan.get("score") or 0), plan["note"], lots_mult)
+    if not res.get("ok"):
+        skipped.append({"symbol": sym, "reason": res.get("reason", "emir yazılamadı")})
+        return
+    _last_open[sym] = time.time()
+    opened.append({"symbol": sym, "direction": plan["direction"], "lots": res["lots"], "risk_usd": res["risk_usd"],
+                   "sl_pips": plan["sl_pips"], "tp_pips": plan["tp_pips"], "cmd_id": res["cmd_id"], "note": plan["note"]})
+    logger.info("Fırsat işlemi demo hesaba iletildi: %s %s %s lot (%s)", sym, plan["direction"], res["lots"], res["cmd_id"])
 
 
 def describe_opening(result: Dict[str, List[Dict[str, Any]]], names: Dict[str, str]) -> str:
