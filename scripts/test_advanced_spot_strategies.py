@@ -326,6 +326,13 @@ def generate_signals(df: pd.DataFrame, strat_name: str, tf: str) -> pd.Series:
         fish_up = (fish.shift(1) <= -1.2) & (fish > fish.shift(1))
         signals = fish_up
 
+    # ─── HACİM VE DURAĞANLIK (ÖLÜ TAHTA) FİLTRESİ ───
+    range_pct = (df["high"].rolling(20).max() - df["low"].rolling(20).min()) / close * 100.0
+    vol_avg = df["volume"].rolling(20).mean()
+    vol_active = df["volume"] >= (vol_avg * 0.30)
+    not_dormant = (range_pct >= 0.40) & vol_active
+    signals = signals & not_dormant
+
     return signals.fillna(False)
 
 # ─── ANA ÇALIŞTIRMA VE TEST MATRİSİ ──────────────────────────────────────────

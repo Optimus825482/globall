@@ -21,6 +21,10 @@ Bu beceri, Binance TR ve Binance Spot kripto piyasalarında yüksek başarı ora
    - Tek barda aynı anda hem TP hem SL seviyesi görülmüşse muhafazakar olarak SL kabul edilir.
    - Zaman aşımı kuralı (maksimum 48 bar / 4 saat) ile likiditesi kilitlenen işlemler anlık fiyattan kapatılır.
    - Bir sembolde pozisyon açıkken aynı sembole mükerrer pozisyon açılmaz.
+4. **Hacim ve Durağanlık (Ölü Tahta) Eleme Filtresi:**
+   - **Range/Oynaklık Eşiği:** Son 20 barda fiyat tepe-dip aralığı (`recent_range_pct`) en az **%0.40** olmalıdır; saatlerce dar bir bantta sıkışıp donan ölü tahtalar doğrudan elenir.
+   - **Minimum TRY Hacmi:** Son 20 barın ortalama bar hacmi en az **20.000 TL** ve ortalama işlem adedi bar başına en az **3 trade** olmalıdır.
+   - **Göreceli Hacim (Fake Kırılım Koruması):** Sinyal anındaki bar hacmi, ortalama hacmin en az **%30**'u olmalıdır; hacimsiz ölü barlarda sahte indikatör kesişimleri engellenir.
 
 ---
 

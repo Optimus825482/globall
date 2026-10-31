@@ -19,7 +19,7 @@ COMMISSION_RATE = 0.0004 # %0.04 Maker/Taker
 # Taranacak ana ve hacimli semboller
 CORE_SYMBOLS = [
     "BTCTRY", "ETHTRY", "SOLTRY", "AVAXTRY", "NEARTRY", "DOGETRY", 
-    "PEPETRY", "BNBTRY", "XRPTRY", "LINKTRY", "SHTRY", "ADATRY",
+    "PEPETRY", "BNBTRY", "XRPTRY", "LINKTRY", "SHIBTRY", "ADATRY",
     "DOTTRY", "RENDERTRY", "FETTRY", "ARBTRY", "OPTRY", "INJTRY"
 ]
 
@@ -105,6 +105,28 @@ async def run_single_scan():
                 lows = [float(k[3]) for k in klines]
                 closes = [float(k[4]) for k in klines]
                 price = closes[-1]
+                quote_vols = [float(k[7]) for k in klines]
+                trades = [int(k[8]) for k in klines]
+
+                # ─── HACİM VE DURAĞANLIK (ÖLÜ TAHTA) FİLTRELERİ ───
+                # 1. Durağanlık (Ölü Range): Son 20 barda tepe-dip farkı %0.40 altındaysa saatlerce hareket etmeyen ölü tahta elenir
+                recent_range_pct = ((max(highs[-20:]) - min(lows[-20:])) / price) * 100.0
+                if recent_range_pct < 0.40:
+                    continue
+
+                # 2. Minimum Bar Hacmi: Son 20 bar ortalama TRY hacmi en az 20.000 TL olmalı
+                avg_bar_try_vol = sum(quote_vols[-20:]) / 20.0
+                if avg_bar_try_vol < 20_000.0:
+                    continue
+
+                # 3. Derinlik / İşlem Sayısı: Bar başına en az ortalama 3 trade gerçekleşmiş olmalı
+                avg_trades = sum(trades[-20:]) / 20.0
+                if avg_trades < 3.0:
+                    continue
+
+                # 4. Hacimsiz Sahte Mum Koruması: Sinyal mumunun hacmi, ortalama bar hacminin %30'undan az olmamalı
+                if quote_vols[-1] < (avg_bar_try_vol * 0.30):
+                    continue
 
                 kdj = _kdj(highs, lows, closes, period=9, signal=3) or {}
                 st = _supertrend(highs, lows, closes, period=10, factor=3.0) or {}
@@ -205,7 +227,7 @@ async def run_single_scan():
                         "stop_price": stop_p,
                         "score": score,
                         "kdj_j": j_val,
-                        "details": {"note": note, "tp_pct": tp_pct, "sl_pct": sl_pct},
+                        "details": {"note": note, "tp_pct": tp_pct, "sl_pct": sl_pct, "range_pct": round(recent_range_pct, 2), "avg_vol_try": round(avg_bar_try_vol, 0)},
                         "detected_at": datetime.now(timezone.utc)
                     })
                     open_symbols.add(sym)
