@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "../lib/api";
 import { Card, Badge, Button } from "../components/ui";
+import SpotChartModal from "./SpotChartModal";
 
 type SignalItem = {
   id: number;
@@ -56,6 +57,7 @@ export default function SpotMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY">("ACTIVE");
+  const [selectedModalSignal, setSelectedModalSignal] = useState<SignalItem | null>(null);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -243,7 +245,19 @@ export default function SpotMonitorPage() {
                   <tr key={s.id} className="hover:bg-bunker-800/40 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex flex-col">
-                        <span className="font-bold text-white text-sm">{s.symbol}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedModalSignal(s)}
+                          className="text-left group flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                          title="Canlı Grafik, KDJ ve EMA 50 Göstergelerini Aç"
+                        >
+                          <span className="font-bold text-white group-hover:text-cyan-400 text-sm underline decoration-dotted decoration-bunker-600 underline-offset-4 cursor-pointer">
+                            {s.symbol}
+                          </span>
+                          <span className="text-xs text-cyan-400 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+                            📊
+                          </span>
+                        </button>
                         <span className="text-[10px] text-bunker-muted">
                           {new Date(s.detected_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
                         </span>
@@ -314,6 +328,14 @@ export default function SpotMonitorPage() {
           </tbody>
         </table>
       </div>
+
+      {/* CANLI GRAFİK & KDJ / EMA 50 AÇILIR PENCERESİ (MODAL) */}
+      {selectedModalSignal && (
+        <SpotChartModal
+          signal={selectedModalSignal}
+          onClose={() => setSelectedModalSignal(null)}
+        />
+      )}
     </div>
   );
 }
