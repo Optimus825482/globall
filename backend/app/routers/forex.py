@@ -2812,7 +2812,7 @@ def get_symbol_trading_specs(
         else:
             eff_sl_pips = base_sl_pips
 
-        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.83, 1))
+        eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.50, 1))  # Optimize: R:R=1.50 (TP %1.2 / SL %0.8)
         eff_be_pips = max(25.0, round(eff_sl_pips * 0.7, 1))
         eff_trail_pips = max(40.0, round(eff_sl_pips * 1.2, 1))
 
@@ -2851,10 +2851,12 @@ def get_symbol_trading_specs(
         mult = 5.0
         digits = 2
         pip_val = 1.0
-        eff_sl_pips = round(base_sl * mult, 1)
-        eff_tp_pips = round(base_tp * mult, 1)
-        eff_be_pips = max(40.0, round(base_be_floored * mult, 1))
-        eff_trail_pips = round(base_trail * mult, 1)
+        # Optimize: VectorBT BTC Master R:R=1.50 (TP %1.2 / SL %0.8)
+        base_sl_calc = round(base_sl * mult, 1)
+        eff_sl_pips = base_sl_calc if atr_pips is None else max(base_sl_calc, round(atr_pips * 1.2, 1))
+        eff_tp_pips = round(eff_sl_pips * 1.50, 1)
+        eff_be_pips = max(40.0, round(eff_sl_pips * 0.6, 1))
+        eff_trail_pips = round(eff_sl_pips * 1.2, 1)
 
     # ETHUSD emekliye ayrıldı ama spec dalı KALIR: arşivdeki ETH kayıtları
     # yeniden hesaplanırken pip_val/digits buradan okunur (bkz. _RETIRED_FOREX_SYMBOLS).

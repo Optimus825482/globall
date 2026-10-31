@@ -769,7 +769,7 @@ class Config:
     LLM_EMBED_CACHE_TTL_SEC = max(0.0, float(os.getenv("LLM_EMBED_CACHE_TTL_SEC", "900")))
     LLM_EMBED_CACHE_MAX = max(8, int(os.getenv("LLM_EMBED_CACHE_MAX", "128")))
     
-    HARD_STOP_LOSS_PCT = 0.012
+    HARD_STOP_LOSS_PCT = 0.008  # Optimize: -%0.8 SL (VectorBT R:R=1.50)
     COOLDOWN_BARS = 2
     VELOCITY_REENTRY_COOLDOWN_BARS = max(
         0, int(os.getenv("VELOCITY_REENTRY_COOLDOWN_BARS", "1"))
@@ -778,7 +778,7 @@ class Config:
     # position ages. Single stage by design; the multi-stage decay and the
     # legacy TAKE_PROFIT_PCT / TRAILING_* knobs were dead configuration and
     # were removed.
-    SPOT_PROFIT_TARGET_PCT = 0.01
+    SPOT_PROFIT_TARGET_PCT = 0.012  # Optimize: +%1.2 TP (VectorBT R:R=1.50)
 
     # Klasik/sistem stratejileri için exit modeli. LLM_PAPER bu ayarları kullanmaz;
     # kendi planındaki stop, hedef ve max-hold değerleriyle yönetilir.
