@@ -17,7 +17,7 @@ type SignalItem = {
   stop_price: number;
   score: number;
   kdj_j: number | null;
-  status: "OPEN" | "WIN_TP" | "LOSS_SL" | "EXPIRED" | "MANUAL_CLOSED" | string;
+  status: "OPEN" | "WIN_TP" | "WIN_TRAILING" | "WIN_EXPIRED" | "LOSS_SL" | "EXPIRED" | "MANUAL_CLOSED" | string;
   pnl_pct: number;
   mfe_pct: number;
   net_pnl_try: number;
@@ -960,6 +960,14 @@ export default function SpotMonitorPage() {
                           {s.status === "WIN_TP" ? (
                             <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                               🎯 TP ALINDI
+                            </span>
+                          ) : s.status === "WIN_TRAILING" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" title="Takipçi stop veya başabaş korumasıyla kâr kilitlendi">
+                              🛡️ TAKİPÇİ KÂR
+                            </span>
+                          ) : s.status === "WIN_EXPIRED" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/40" title="Süre dolumunda kârdayken realize edildi">
+                              ⏱️ KÂRLI SÜRE
                             </span>
                           ) : s.status === "LOSS_SL" ? (
                             <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
