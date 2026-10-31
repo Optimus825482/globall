@@ -884,20 +884,30 @@ def _scan_lot_size(sym: str, sl_pips: float, balance: float, pip_val: float) -> 
     is_gold = "XAU" in sym
     is_crypto = is_crypto_symbol(sym)
     comm = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
-    raw_lots = round(risk_usd / max(1.0, sl_pips * pip_val + comm), 2)
+    per_lot_risk = sl_pips * pip_val + comm
+    raw_lots = round(risk_usd / max(0.0001, per_lot_risk), 2)
+    floor_lot = 0.01
     if is_gold:
         ceiling = min(HARD_MAX_GOLD_LOT, _AUTO_SETTINGS.max_gold_lot, max(0.01, round(balance * 0.00006, 2)))
     elif is_crypto:
-        ceiling = 10.0
+        sym_u = sym.upper()
+        if any(k in sym_u for k in ("XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ")):
+            ceiling = 1000.0
+            floor_lot = 100.0
+        elif "SOL" in sym_u or "DATA" in sym_u:
+            ceiling = 100.0
+            floor_lot = 1.0
+        else:
+            ceiling = 10.0
     else:
         is_cross = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
         ceiling = min(0.75 if is_cross else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot, max(0.01, round(balance * 0.00025, 2)))
-    lots = round(max(0.01, min(raw_lots, ceiling)), 2)
+    lots = round(max(floor_lot, min(raw_lots, ceiling)), 2)
     lots, risk_skip = apply_risk_normalization(sym, lots, sl_pips, pip_val, risk_usd)
     if risk_skip:
-        if not floor_lot_respects_budget(0.01, sl_pips, pip_val, risk_usd):
-            return None, f"stop {sl_pips:.0f} pip ile en küçük lot bile risk bütçesini aşıyor"
-        lots = 0.01
+        if not floor_lot_respects_budget(floor_lot, sl_pips, pip_val, risk_usd):
+            return None, f"stop {sl_pips:.0f} pip ile taban {floor_lot} lot bile risk bütçesini aşıyor"
+        lots = floor_lot
     return lots, ""
 
 

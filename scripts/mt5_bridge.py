@@ -718,30 +718,36 @@ def execute_market_order(cmd: dict) -> dict:
     digits = s_info.digits if s_info else spec["digits"]
     pip_size = spec["pip_size"]
 
-    # Broker minimum stop mesafesi (stops_level) ve point hesaplama
+    # Broker minimum stop mesafesi (trade_stops_level) ve point hesaplama
     point = getattr(s_info, "point", 0.0) or (10.0 ** (-digits))
-    stops_level = getattr(s_info, "stops_level", 0) or 0
+    stops_level = getattr(s_info, "trade_stops_level", 0) or getattr(s_info, "stops_level", 0) or 0
     # MT5 10016 koruması: Stop fiyatı cari fiyata broker stops_level'dan yakın olamaz
     min_stop_dist = max(stops_level * point, point * 5.0)
 
     if direction == "BUY":
         order_type = mt5.ORDER_TYPE_BUY
         price = tick.ask
+        # BUY işlemi BID fiyatından kapanır; SL Bid altında, TP Ask üzerinde olmalıdır.
         sl_dist = max(sl_pips * pip_size, min_stop_dist) if sl_pips > 0 else 0.0
-        sl = round(price - sl_dist, digits) if sl_pips > 0 else 0.0
-        if sl_pips > 0 and sl >= price:
-            sl = round(price - min_stop_dist, digits)
+        sl = round(tick.bid - sl_dist, digits) if sl_pips > 0 else 0.0
+        if sl_pips > 0 and sl >= tick.bid - min_stop_dist:
+            sl = round(tick.bid - min_stop_dist, digits)
         tp_dist = max(tp_pips * pip_size, min_stop_dist) if tp_pips > 0 else 0.0
         tp = round(price + tp_dist, digits) if tp_pips > 0 else 0.0
+        if tp_pips > 0 and tp <= price + min_stop_dist:
+            tp = round(price + min_stop_dist, digits)
     else:
         order_type = mt5.ORDER_TYPE_SELL
         price = tick.bid
+        # SELL işlemi ASK fiyatından kapanır; SL Ask üzerinde, TP Bid altında olmalıdır.
         sl_dist = max(sl_pips * pip_size, min_stop_dist) if sl_pips > 0 else 0.0
-        sl = round(price + sl_dist, digits) if sl_pips > 0 else 0.0
-        if sl_pips > 0 and sl <= price:
-            sl = round(price + min_stop_dist, digits)
+        sl = round(tick.ask + sl_dist, digits) if sl_pips > 0 else 0.0
+        if sl_pips > 0 and sl <= tick.ask + min_stop_dist:
+            sl = round(tick.ask + min_stop_dist, digits)
         tp_dist = max(tp_pips * pip_size, min_stop_dist) if tp_pips > 0 else 0.0
         tp = round(price - tp_dist, digits) if tp_pips > 0 else 0.0
+        if tp_pips > 0 and tp >= price - min_stop_dist:
+            tp = round(price - min_stop_dist, digits)
 
     # Dolum modunu broker desteğine göre seç (bitmask: 1=FOK, 2=IOC)
     filling = mt5.ORDER_FILLING_IOC
