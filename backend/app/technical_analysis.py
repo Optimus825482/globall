@@ -1283,3 +1283,53 @@ def _bb_kc_squeeze(highs, lows, closes, bb_period: int = 20, bb_mult: float = 2.
         }
     except Exception:
         return None
+
+
+def _linreg_slope_turn(closes, volumes, slope_n: int = 14, vo_fast: int = 5,
+                       vo_slow: int = 10, ema_n: int = 50, vo_thr: float = 0.0) -> dict | None:
+    """Doğrusal Regresyon Eğimi sıfır üstü dönüşü + Volume Oscillator teyidi + trend filtresi.
+
+    Spot laboratuvar kanıtı (5m, 18 coin): v3 turunun tüm sert kriterlerini geçen tek aday —
+    WR %55.8, PF 1.53, 12/18 coin pozitif; 1500 bar pencerede split-half pozitif (H1 +15.4 /
+    H2 +6.2), 4 TP/SL varyantı pozitif. Eğim son barda sıfırın üstüne çıktığında ve hacim
+    osilatörü pozitifken (alım hacmi baskın) EMA50 üstündeki kapanışta giriş.
+    """
+    try:
+        if len(closes) < max(slope_n, ema_n) + vo_slow + 5 or len(volumes) != len(closes):
+            return None
+        c = np.asarray(closes, dtype=float)
+        v = np.asarray(volumes, dtype=float)
+        n = len(c)
+        x = np.arange(slope_n, dtype=float)
+        x_mean = x.mean()
+        denom = ((x - x_mean) ** 2).sum()
+
+        def slope_at(i: int) -> float:
+            w = c[i - slope_n + 1: i + 1]
+            b = ((x - x_mean) * (w - w.mean())).sum() / denom
+            return b / w.mean() * 100.0
+
+        slope_now = slope_at(n - 1)
+        slope_prev = slope_at(n - 2)
+
+        af = 2.0 / (vo_fast + 1.0)
+        as_ = 2.0 / (vo_slow + 1.0)
+        ef = v[0]
+        es = v[0]
+        for val in v[1:]:
+            ef = val * af + ef * (1.0 - af)
+            es = val * as_ + es * (1.0 - as_)
+        vo = (ef - es) / es * 100.0 if es != 0 else 0.0
+
+        ema_val = _ema(list(c), ema_n)
+        if ema_val is None:
+            return None
+        slope_turn = bool(slope_prev <= 0.0 and slope_now > 0.0)
+        return {
+            "slope_turn": slope_turn and vo > vo_thr and c[-1] > ema_val,
+            "slope": round(slope_now, 3),
+            "vo": round(vo, 2),
+            "above_ema": bool(c[-1] > ema_val),
+        }
+    except Exception:
+        return None

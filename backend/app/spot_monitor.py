@@ -7,7 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 import asyncpg
 from app.config import config
-from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze
+from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze, _linreg_slope_turn
 
 logger = logging.getLogger("scalper.spot_monitor")
 
@@ -73,6 +73,14 @@ ACTIVE_STRATEGIES = [
         "timeframes": ["5m", "15m", "1h"],
     },
     {
+        "code": "linreg_slope_turn",
+        "label": "LinReg Eğim Dönüşü + Hacim",
+        "score": 86.0,
+        "description": "Doğrusal regresyon eğiminin sıfırın üstüne çıkması (momentum dönüşü) + Volume Oscillator > 0 (alım hacmi baskın) + EMA50 trend filtresi.",
+        "evidence": "Lab v3 (5m): WR %55.8, PF 1.53, 12/18 coin; 1500 bar H2 pozitif",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+    {
         "code": "kdj_pure_dip",
         "label": "KDJ Saf Dip (J≤12)",
         "score": 82.0,
@@ -81,6 +89,53 @@ ACTIVE_STRATEGIES = [
         "timeframes": ["5m", "15m", "1h"],
     },
 ]
+
+ACTIVE_STRATEGY_CODES = {s["code"] for s in ACTIVE_STRATEGIES}
+
+# Otomatik tarama döngüsünde strateji açık/kapalı durumu (DB'de kalıcı, süreç içi önbellek).
+_strategy_enabled: dict[str, bool] = {}
+_strategy_settings_loaded = False
+
+
+async def _ensure_strategy_settings(conn) -> None:
+    """Ayar tablosunu oluşturur ve aç/kapa durumunu süreç içi önbelleğe yükler."""
+    global _strategy_settings_loaded
+    if _strategy_settings_loaded:
+        return
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS spot_monitor_strategy_settings (
+            strategy_code TEXT PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    rows = await conn.fetch("SELECT strategy_code, enabled FROM spot_monitor_strategy_settings")
+    _strategy_enabled.update({r["strategy_code"]: bool(r["enabled"]) for r in rows})
+    _strategy_settings_loaded = True
+
+
+async def set_strategy_enabled(code: str, enabled: bool) -> dict:
+    """Bir stratejinin otomatik taramadaki aktif/pasif durumunu değiştirir ve kalıcılaştırır."""
+    if code not in ACTIVE_STRATEGY_CODES:
+        raise ValueError(f"Bilinmeyen strateji kodu: {code}")
+    conn = await get_db_conn()
+    try:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS spot_monitor_strategy_settings (
+                strategy_code TEXT PRIMARY KEY,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            INSERT INTO spot_monitor_strategy_settings (strategy_code, enabled, updated_at)
+            VALUES ($1, $2, now())
+            ON CONFLICT (strategy_code) DO UPDATE SET enabled = $2, updated_at = now()
+        """, code, enabled)
+    finally:
+        await conn.close()
+    _strategy_enabled[code] = enabled
+    return {"strategy_code": code, "enabled": enabled}
 
 _monitor_running = False
 _last_scan_time = 0.0
@@ -114,10 +169,21 @@ def _fetch_all_prices() -> dict:
     except Exception:
         return {}
 
-def get_active_strategies() -> dict:
-    """Panelden görüntülenmek üzere aktif tarama stratejilerini ve tarama parametrelerini döndürür."""
+async def get_active_strategies() -> dict:
+    """Panelden görüntülenmek üzere aktif tarama stratejilerini, açık/kapalı durumlarını ve
+    tarama parametrelerini döndürür."""
+    conn = await get_db_conn()
+    try:
+        await _ensure_strategy_settings(conn)
+    finally:
+        await conn.close()
+    strategies = [
+        {**s, "enabled": _strategy_enabled.get(s["code"], True)}
+        for s in ACTIVE_STRATEGIES
+    ]
     return {
         "count": len(ACTIVE_STRATEGIES),
+        "active_count": sum(1 for s in strategies if s["enabled"]),
         "symbols_count": len(CORE_SYMBOLS),
         "timeframes": [
             {"code": tf, "label": cfg["label"], "tp_pct": cfg["tp_pct"], "sl_pct": cfg["sl_pct"]}
@@ -126,7 +192,7 @@ def get_active_strategies() -> dict:
         "trade_size_try": TRADE_SIZE_TRY,
         "initial_portfolio_try": INITIAL_PORTFOLIO_TRY,
         "commission_rate": COMMISSION_RATE,
-        "strategies": ACTIVE_STRATEGIES,
+        "strategies": strategies,
     }
 
 async def run_single_scan():
@@ -154,6 +220,10 @@ async def run_single_scan():
         open_symbols = {r["symbol"] for r in existing_open}
         max_positions = int(INITIAL_PORTFOLIO_TRY // TRADE_SIZE_TRY)
 
+        # Strateji aç/kapa durumunu yükle (pasif stratejiler taramaya girmez)
+        await _ensure_strategy_settings(conn)
+        enabled = {code: _strategy_enabled.get(code, True) for code in ACTIVE_STRATEGY_CODES}
+
         for sym in CORE_SYMBOLS:
             # Bu sembolde zaten açık pozisyon varsa yeni işlem açma
             if sym in open_symbols:
@@ -172,6 +242,7 @@ async def run_single_scan():
                 highs = [float(k[2]) for k in klines]
                 lows = [float(k[3]) for k in klines]
                 closes = [float(k[4]) for k in klines]
+                volumes = [float(k[5]) for k in klines]
                 price = closes[-1]
                 quote_vols = [float(k[7]) for k in klines]
                 trades = [int(k[8]) for k in klines]
@@ -202,6 +273,7 @@ async def run_single_scan():
                 stc = _stc(closes, period=10, fast=23, slow=50) or {}
                 zl = _zlmacd(closes, fast=12, slow=26, signal=9) or {}
                 sq = _bb_kc_squeeze(highs, lows, closes) or {}
+                lr = _linreg_slope_turn(closes, volumes) or {}
                 ema20 = _ema(closes, 20)
                 ema50 = _ema(closes, 50)
 
@@ -229,7 +301,7 @@ async def run_single_scan():
                 note = ""
 
                 # 1. EMA 50 Pullback Bounce + KDJ (WinRate %83-%100 Şampiyonu)
-                if ema_bounce and (dip_buy or j_val <= 25.0):
+                if ema_bounce and (dip_buy or j_val <= 25.0) and enabled.get("ema_bounce", True):
                     matched = True
                     strategy_code = "ema_bounce"
                     strategy_label = "EMA 50 Sekmesi + KDJ Dip"
@@ -238,7 +310,7 @@ async def run_single_scan():
 
                 # 2. BB-KC Sıkışma Kırılımı (Lab v2: 5m WR %56.8, PF 1.74, 13/17 coin pozitif,
                 #    26 komşu parametreden 23'ü net pozitif — sağlamlık doğrulandı)
-                elif sq_break:
+                elif sq_break and enabled.get("squeeze_breakout", True):
                     matched = True
                     strategy_code = "squeeze_breakout"
                     strategy_label = "BB-KC Sıkışma Kırılımı"
@@ -246,7 +318,7 @@ async def run_single_scan():
                     note = f"Bollinger-Keltner sikismasi sonrasi ust bant kirilimi (BBU={sq_bb_up:.6g}, BBW=%{sq_width:.2f})"
 
                 # 3. Schaff Trend Cycle (STC) Dip Dönüşü (SOL/LINK Şampiyonu WinRate %64+, PF 2.79)
-                elif stc_dip:
+                elif stc_dip and enabled.get("stc_cycle", True):
                     matched = True
                     strategy_code = "stc_cycle"
                     strategy_label = "Schaff Trend Cycle (STC Dip)"
@@ -254,7 +326,7 @@ async def run_single_scan():
                     note = f"STC 25 altından yukarı kırdı (STC={stc_val:.1f})"
 
                 # 4. Zero-Lag MACD + EMA 20/50 Momentum Sıçraması (OP/AVAX Şampiyonu PF 2.17)
-                elif zl_cross and trend_bull:
+                elif zl_cross and trend_bull and enabled.get("zlmacd_momentum", True):
                     matched = True
                     strategy_code = "zlmacd_momentum"
                     strategy_label = "Zero-Lag MACD + Momentum"
@@ -262,15 +334,23 @@ async def run_single_scan():
                     note = f"ZLMACD sıfırı yukarı kesti (Hist={zl_hist:.4f}), EMA20>=EMA50"
 
                 # 5. SuperTrend Boğada KDJ Dip Kesişimi
-                elif st_bull and dip_buy:
+                elif st_bull and dip_buy and enabled.get("supertrend_pullback", True):
                     matched = True
                     strategy_code = "supertrend_pullback"
                     strategy_label = "SuperTrend Pullback (KDJ Dip)"
                     score = 88.0
                     note = f"SuperTrend Boğada, KDJ J={j_val:.1f} yukarı kesti"
 
-                # 6. KDJ Ekstrem Saf Dip Dönüşü
-                elif dip_buy and j_val <= 12.0:
+                # 6. LinReg Eğim Dönüşü + Hacim (Lab v3: 5m WR %55.8, PF 1.53, 1500 bar H2 pozitif)
+                elif lr.get("slope_turn") and enabled.get("linreg_slope_turn", True):
+                    matched = True
+                    strategy_code = "linreg_slope_turn"
+                    strategy_label = "LinReg Eğim Dönüşü + Hacim"
+                    score = 86.0
+                    note = f"LinReg egim sifir ustu donus (slope={lr.get('slope', 0):.3f}), VolOsc={lr.get('vo', 0):.1f}, EMA50 ustu"
+
+                # 7. KDJ Ekstrem Saf Dip Dönüşü
+                elif dip_buy and j_val <= 12.0 and enabled.get("kdj_pure_dip", True):
                     matched = True
                     strategy_code = "kdj_pure_dip"
                     strategy_label = "KDJ Saf Dip (J<=12)"

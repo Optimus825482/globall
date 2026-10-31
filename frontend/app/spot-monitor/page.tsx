@@ -61,10 +61,12 @@ type ActiveStrategy = {
   description: string;
   evidence: string;
   timeframes: string[];
+  enabled: boolean;
 };
 
 type StrategiesData = {
   count: number;
+  active_count: number;
   symbols_count: number;
   timeframes: Array<{ code: string; label: string; tp_pct: number; sl_pct: number }>;
   trade_size_try: number;
@@ -80,12 +82,33 @@ export default function SpotMonitorPage() {
   const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY">("ACTIVE");
   const [selectedModalSignal, setSelectedModalSignal] = useState<SignalItem | null>(null);
   const [strategies, setStrategies] = useState<StrategiesData | null>(null);
+  const [togglingCode, setTogglingCode] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch("/api/spot-monitor/strategies")
       .then((res) => setStrategies(res as StrategiesData))
       .catch((err) => console.error("Aktif stratejiler yüklenirken hata:", err));
   }, []);
+
+  const toggleStrategy = async (code: string, enabled: boolean) => {
+    setTogglingCode(code);
+    try {
+      await apiFetch(`/api/spot-monitor/strategies/${code}/toggle?enabled=${enabled}`, { method: "POST" });
+      setStrategies((prev) =>
+        prev
+          ? {
+              ...prev,
+              active_count: prev.active_count + (enabled ? 1 : -1),
+              strategies: prev.strategies.map((s) => (s.code === code ? { ...s, enabled } : s)),
+            }
+          : prev
+      );
+    } catch (err) {
+      console.error("Strateji aç/kapa hatası:", err);
+    } finally {
+      setTogglingCode(null);
+    }
+  };
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -232,10 +255,10 @@ export default function SpotMonitorPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <h2 className="font-mono text-xs uppercase tracking-wide text-bunker-muted">
-              🔬 Aktif Tarama Stratejileri
+              🔬 Tarama Stratejileri
             </h2>
             <Badge tone="info" className="font-mono text-[10px]">
-              {strategies?.count ?? "..."} strateji aktif
+              {strategies ? `${strategies.active_count}/${strategies.count} aktif` : "..."}
             </Badge>
           </div>
           <p className="text-[10px] font-mono text-bunker-muted">
@@ -246,19 +269,40 @@ export default function SpotMonitorPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
           {strategies?.strategies.map((st, i) => (
-            <div key={st.code} className="rounded-lg border border-bunker-800 bg-bunker-950/60 p-2.5">
+            <div
+              key={st.code}
+              className={`rounded-lg border bg-bunker-950/60 p-2.5 transition-opacity ${
+                st.enabled ? "border-bunker-800" : "border-bunker-800/50 opacity-55"
+              }`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-bunker-800 text-bunker-muted">
                     #{i + 1}
                   </span>
-                  <span className="text-[11px] font-semibold text-slate-200 truncate" title={st.label}>
+                  <span className={`text-[11px] font-semibold truncate ${st.enabled ? "text-slate-200" : "text-bunker-muted"}`} title={st.label}>
                     {st.label}
                   </span>
                 </div>
-                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
-                  {st.score.toFixed(0)}p
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
+                    {st.score.toFixed(0)}p
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleStrategy(st.code, !st.enabled)}
+                    disabled={togglingCode === st.code}
+                    title={st.enabled ? "Otomatik taramayı duraklat (pasifleştir)" : "Otomatik taramaya dahil et (aktifleştir)"}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border transition-colors cursor-pointer disabled:opacity-50 ${
+                      st.enabled
+                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25"
+                        : "bg-bunker-800 text-bunker-muted border-bunker-700 hover:text-slate-300"
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${st.enabled ? "bg-emerald-400 animate-pulse" : "bg-bunker-600"}`} />
+                    {togglingCode === st.code ? "..." : st.enabled ? "AKTİF" : "PASİF"}
+                  </button>
+                </div>
               </div>
               <p className="text-[10px] text-bunker-muted mt-1.5 leading-snug">{st.description}</p>
               <p className="text-[9px] text-emerald-400/80 mt-1 font-mono">📈 {st.evidence}</p>
@@ -267,6 +311,7 @@ export default function SpotMonitorPage() {
         </div>
         <p className="text-[9px] font-mono text-bunker-muted mt-2.5">
           Öncelik sırası yukarıdan aşağıya ilerler; aynı sembolde ilk eşleşen kural sinyal üretir.
+          Pasif (PASİF) durumdaki stratejiler otomatik tarama döngüsünde devre dışıdır ve ayar kalıcıdır.
           Kâr/stop kademeleri: {strategies?.timeframes.map((t) => `${t.code} (TP %${t.tp_pct}/SL %${t.sl_pct})`).join(" · ")}
         </p>
       </div>

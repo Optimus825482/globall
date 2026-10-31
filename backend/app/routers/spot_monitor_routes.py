@@ -14,8 +14,22 @@ async def get_dashboard():
 
 @router.get("/strategies")
 async def get_strategies():
-    """Spot Monitor'de şu an aktif olan tarama stratejilerini, skorlarını ve laboratuvar kanıtlarını döndürür."""
-    return spot_monitor.get_active_strategies()
+    """Spot Monitor'de şu an aktif olan tarama stratejilerini, skorlarını, laboratuvar
+    kanıtlarını ve otomatik taramadaki açık/kapalı durumlarını döndürür."""
+    try:
+        return await spot_monitor.get_active_strategies()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.post("/strategies/{code}/toggle")
+async def toggle_strategy(code: str, enabled: bool):
+    """Bir stratejinin otomatik tarama döngüsündeki aktif/pasif durumunu değiştirir (kalıcı)."""
+    try:
+        return await spot_monitor.set_strategy_enabled(code, enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 @router.post("/scan-now")
 async def trigger_scan(background_tasks: BackgroundTasks):
