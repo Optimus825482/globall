@@ -67,82 +67,109 @@ async def run_single_scan():
     start_ts = time.time()
     discovered_signals = []
 
-    for sym in CORE_SYMBOLS:
-        for tf, tf_cfg in TIMEFRAMES.items():
-            klines = _fetch_klines(sym, tf, limit=65)
-            if len(klines) < 55:
-                continue
-
-            highs = [float(k[2]) for k in klines]
-            lows = [float(k[3]) for k in klines]
-            closes = [float(k[4]) for k in klines]
-            price = closes[-1]
-
-            kdj = _kdj(highs, lows, closes, period=9, signal=3) or {}
-            st = _supertrend(highs, lows, closes, period=10, factor=3.0) or {}
-            ema = _ema_pullback_bounce(closes, lows, period=50, tolerance_pct=0.010) or {}
-
-            j_val = float(kdj.get("j", 50.0))
-            dip_buy = bool(kdj.get("dip_buy"))
-            st_bull = bool(st.get("bullish"))
-            ema_bounce = bool(ema.get("pullback_bounce"))
-            dist_ema = ema.get("dist_pct")
-
-            matched = False
-            strategy_code = ""
-            strategy_label = ""
-            score = 70.0
-            note = ""
-
-            # 1. EMA 50 Pullback Bounce + KDJ (WinRate %83-%100 Şampiyonu)
-            if ema_bounce and (dip_buy or j_val <= 25.0):
-                matched = True
-                strategy_code = "ema_bounce"
-                strategy_label = "EMA 50 Sekmesi + KDJ Dip"
-                score = 94.0
-                note = f"EMA50 desteginde (%{dist_ema}), KDJ J={j_val:.1f}"
-
-            # 2. SuperTrend Boğada KDJ Dip Kesişimi
-            elif st_bull and dip_buy:
-                matched = True
-                strategy_code = "supertrend_pullback"
-                strategy_label = "SuperTrend Pullback (KDJ Dip)"
-                score = 88.0
-                note = f"SuperTrend Boğada, KDJ J={j_val:.1f} yukarı kesti"
-
-            # 3. KDJ Ekstrem Saf Dip Dönüşü
-            elif dip_buy and j_val <= 12.0:
-                matched = True
-                strategy_code = "kdj_pure_dip"
-                strategy_label = "KDJ Saf Dip (J<=12)"
-                score = 82.0
-                note = f"Ekstrem aşırı satım sıçraması J={j_val:.1f}"
-
-            if matched:
-                tp_pct = tf_cfg["tp_pct"]
-                sl_pct = tf_cfg["sl_pct"]
-                target_p = price * (1.0 + (tp_pct / 100.0))
-                stop_p = price * (1.0 - (sl_pct / 100.0))
-                sig_key = f"{sym}-{tf}-{strategy_code}-{int(start_ts // 1800)}" # 30 dk kova
-
-                discovered_signals.append({
-                    "signal_key": sig_key,
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "strategy": strategy_code,
-                    "strategy_label": strategy_label,
-                    "entry_price": price,
-                    "target_price": target_p,
-                    "stop_price": stop_p,
-                    "score": score,
-                    "kdj_j": j_val,
-                    "details": {"note": note, "tp_pct": tp_pct, "sl_pct": sl_pct},
-                    "detected_at": datetime.now(timezone.utc)
-                })
-
-    # Keşfedilenleri veritabanına ekle
     conn = await get_db_conn()
     try:
+        # 1. Eski mükerrer açık kayıtları temizle (aynı sembolde birden fazla OPEN varsa en eskisini tut, fazlalıkları sil)
+        await conn.execute("""
+            DELETE FROM spot_monitor_signals
+            WHERE status = 'OPEN'
+              AND id NOT IN (
+                  SELECT MIN(id)
+                  FROM spot_monitor_signals
+                  WHERE status = 'OPEN'
+                  GROUP BY symbol
+              )
+        """)
+
+        # 2. Hangi sembollerde zaten AÇIK pozisyon var?
+        existing_open = await conn.fetch("SELECT symbol FROM spot_monitor_signals WHERE status = 'OPEN'")
+        open_symbols = {r["symbol"] for r in existing_open}
+        max_positions = int(INITIAL_PORTFOLIO_TRY // TRADE_SIZE_TRY)
+
+        for sym in CORE_SYMBOLS:
+            # Bu sembolde zaten açık pozisyon varsa yeni işlem açma
+            if sym in open_symbols:
+                continue
+            if len(open_symbols) >= max_positions:
+                break
+
+            for tf, tf_cfg in TIMEFRAMES.items():
+                if sym in open_symbols:
+                    break
+
+                klines = _fetch_klines(sym, tf, limit=65)
+                if len(klines) < 55:
+                    continue
+
+                highs = [float(k[2]) for k in klines]
+                lows = [float(k[3]) for k in klines]
+                closes = [float(k[4]) for k in klines]
+                price = closes[-1]
+
+                kdj = _kdj(highs, lows, closes, period=9, signal=3) or {}
+                st = _supertrend(highs, lows, closes, period=10, factor=3.0) or {}
+                ema = _ema_pullback_bounce(closes, lows, period=50, tolerance_pct=0.010) or {}
+
+                j_val = float(kdj.get("j", 50.0))
+                dip_buy = bool(kdj.get("dip_buy"))
+                st_bull = bool(st.get("bullish"))
+                ema_bounce = bool(ema.get("pullback_bounce"))
+                dist_ema = ema.get("dist_pct")
+
+                matched = False
+                strategy_code = ""
+                strategy_label = ""
+                score = 70.0
+                note = ""
+
+                # 1. EMA 50 Pullback Bounce + KDJ (WinRate %83-%100 Şampiyonu)
+                if ema_bounce and (dip_buy or j_val <= 25.0):
+                    matched = True
+                    strategy_code = "ema_bounce"
+                    strategy_label = "EMA 50 Sekmesi + KDJ Dip"
+                    score = 94.0
+                    note = f"EMA50 desteginde (%{dist_ema}), KDJ J={j_val:.1f}"
+
+                # 2. SuperTrend Boğada KDJ Dip Kesişimi
+                elif st_bull and dip_buy:
+                    matched = True
+                    strategy_code = "supertrend_pullback"
+                    strategy_label = "SuperTrend Pullback (KDJ Dip)"
+                    score = 88.0
+                    note = f"SuperTrend Boğada, KDJ J={j_val:.1f} yukarı kesti"
+
+                # 3. KDJ Ekstrem Saf Dip Dönüşü
+                elif dip_buy and j_val <= 12.0:
+                    matched = True
+                    strategy_code = "kdj_pure_dip"
+                    strategy_label = "KDJ Saf Dip (J<=12)"
+                    score = 82.0
+                    note = f"Ekstrem aşırı satım sıçraması J={j_val:.1f}"
+
+                if matched:
+                    tp_pct = tf_cfg["tp_pct"]
+                    sl_pct = tf_cfg["sl_pct"]
+                    target_p = price * (1.0 + (tp_pct / 100.0))
+                    stop_p = price * (1.0 - (sl_pct / 100.0))
+                    sig_key = f"{sym}-{tf}-{strategy_code}-{int(start_ts)}"
+
+                    discovered_signals.append({
+                        "signal_key": sig_key,
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "strategy": strategy_code,
+                        "strategy_label": strategy_label,
+                        "entry_price": price,
+                        "target_price": target_p,
+                        "stop_price": stop_p,
+                        "score": score,
+                        "kdj_j": j_val,
+                        "details": {"note": note, "tp_pct": tp_pct, "sl_pct": sl_pct},
+                        "detected_at": datetime.now(timezone.utc)
+                    })
+                    open_symbols.add(sym)
+                    break
+
         for s in discovered_signals:
             await conn.execute("""
                 INSERT INTO spot_monitor_signals (
@@ -238,6 +265,18 @@ async def get_spot_monitor_dashboard():
     """Frontend arayüzü için anlık sinyalleri, geçmişi, başarı oranını ve 5.000 TL portföy simülasyonunu döndürür."""
     conn = await get_db_conn()
     try:
+        # Eski mükerrer açık kayıtları temizle (aynı sembolde birden fazla OPEN varsa en eskisini tut, fazlalıkları sil)
+        await conn.execute("""
+            DELETE FROM spot_monitor_signals
+            WHERE status = 'OPEN'
+              AND id NOT IN (
+                  SELECT MIN(id)
+                  FROM spot_monitor_signals
+                  WHERE status = 'OPEN'
+                  GROUP BY symbol
+              )
+        """)
+
         # 1. Tüm sinyaller
         rows = await conn.fetch("SELECT * FROM spot_monitor_signals ORDER BY detected_at DESC LIMIT 100")
         
@@ -292,15 +331,21 @@ async def get_spot_monitor_dashboard():
         total_portfolio_try = INITIAL_PORTFOLIO_TRY + realized_pnl + unrealized_pnl
         portfolio_growth_pct = ((total_portfolio_try - INITIAL_PORTFOLIO_TRY) / INITIAL_PORTFOLIO_TRY) * 100.0
 
+        open_positions_count = len(open_signals)
+        in_positions_try = open_positions_count * TRADE_SIZE_TRY
+        free_balance_try = max(0.0, (INITIAL_PORTFOLIO_TRY + realized_pnl) - in_positions_try)
+
         return {
             "portfolio": {
                 "initial_balance_try": INITIAL_PORTFOLIO_TRY,
                 "current_balance_try": round(total_portfolio_try, 2),
+                "free_balance_try": round(free_balance_try, 2),
+                "in_positions_try": round(in_positions_try, 2),
                 "realized_pnl_try": round(realized_pnl, 2),
                 "unrealized_pnl_try": round(unrealized_pnl, 2),
                 "growth_pct": round(portfolio_growth_pct, 2),
                 "trade_size_try": TRADE_SIZE_TRY,
-                "open_positions_count": len(open_signals)
+                "open_positions_count": open_positions_count
             },
             "metrics": {
                 "total_signals": total_signals,

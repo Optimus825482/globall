@@ -34,6 +34,8 @@ type DashboardData = {
   portfolio: {
     initial_balance_try: number;
     current_balance_try: number;
+    free_balance_try: number;
+    in_positions_try: number;
     realized_pnl_try: number;
     unrealized_pnl_try: number;
     growth_pct: number;
@@ -129,18 +131,28 @@ export default function SpotMonitorPage() {
 
       {/* PORTFÖY SİMÜLASYONU KARTLARI (5.000 TL BAZLI, 300 TL SABİT İŞLEM) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        {/* 1. PORTFÖY BAKİYESİ */}
         <Card className="p-4 bg-bunker-900/90 border-bunker-800">
-          <p className="text-[11px] font-mono uppercase text-bunker-muted">Portföy Bakiyesi</p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-mono uppercase text-bunker-muted">Portföy Bakiyesi</p>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted font-mono">
+              Başlangıç: ₺5.000
+            </span>
+          </div>
           <div className="flex items-baseline gap-2 mt-1.5">
             <span className="text-2xl font-bold font-mono text-white">
               ₺{(data?.portfolio.current_balance_try || 5000).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
             </span>
           </div>
-          <p className="text-[11px] text-bunker-muted mt-1">
-            Başlangıç: <span className="font-mono">₺5.000,00</span>
-          </p>
+          <div className="mt-2 pt-2 border-t border-bunker-800/80 flex items-center justify-between text-[11px] font-mono">
+            <span className="text-bunker-muted">Serbest Bakiye:</span>
+            <span className="text-cyan-400 font-bold">
+              ₺{(data?.portfolio.free_balance_try ?? 5000).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+            </span>
+          </div>
         </Card>
 
+        {/* 2. NET PORTFÖY BÜYÜMESİ */}
         <Card className="p-4 bg-bunker-900/90 border-bunker-800">
           <p className="text-[11px] font-mono uppercase text-bunker-muted">Net Portföy Büyümesi</p>
           <div className="flex items-baseline gap-2 mt-1.5">
@@ -148,13 +160,15 @@ export default function SpotMonitorPage() {
               %{data?.portfolio.growth_pct?.toFixed(2) || "0.00"}
             </span>
           </div>
-          <p className="text-[11px] text-bunker-muted mt-1">
-            Net Kâr: <span className={`font-mono font-medium ${pnlColor((data?.portfolio.realized_pnl_try || 0) + (data?.portfolio.unrealized_pnl_try || 0))}`}>
+          <div className="mt-2 pt-2 border-t border-bunker-800/80 flex items-center justify-between text-[11px] font-mono">
+            <span className="text-bunker-muted">Net Kâr (TL):</span>
+            <span className={`font-medium ${pnlColor((data?.portfolio.realized_pnl_try || 0) + (data?.portfolio.unrealized_pnl_try || 0))}`}>
               ₺{((data?.portfolio.realized_pnl_try || 0) + (data?.portfolio.unrealized_pnl_try || 0)).toFixed(2)}
             </span>
-          </p>
+          </div>
         </Card>
 
+        {/* 3. İŞLEM BAŞARI ORANI */}
         <Card className="p-4 bg-bunker-900/90 border-bunker-800">
           <p className="text-[11px] font-mono uppercase text-bunker-muted">İşlem Başarı Oranı</p>
           <div className="flex items-baseline gap-2 mt-1.5">
@@ -162,11 +176,15 @@ export default function SpotMonitorPage() {
               %{data?.metrics.win_rate_pct?.toFixed(1) || "0.0"}
             </span>
           </div>
-          <p className="text-[11px] text-bunker-muted mt-1">
-            <span className="text-emerald-400 font-mono font-medium">{data?.metrics.win_count || 0} Başarılı</span> / <span className="text-rose-400 font-mono font-medium">{data?.metrics.loss_count || 0} Stop</span>
-          </p>
+          <div className="mt-2 pt-2 border-t border-bunker-800/80 flex items-center justify-between text-[11px] font-mono">
+            <span className="text-bunker-muted">Sonuç:</span>
+            <span>
+              <span className="text-emerald-400 font-medium">{data?.metrics.win_count || 0} Başarılı</span> / <span className="text-rose-400 font-medium">{data?.metrics.loss_count || 0} Stop</span>
+            </span>
+          </div>
         </Card>
 
+        {/* 4. İŞLEM BÜYÜKLÜĞÜ & POZİSYONDAKİ TUTAR */}
         <Card className="p-4 bg-bunker-900/90 border-bunker-800">
           <p className="text-[11px] font-mono uppercase text-bunker-muted">İşlem Büyüklüğü</p>
           <div className="flex items-baseline gap-2 mt-1.5">
@@ -174,9 +192,12 @@ export default function SpotMonitorPage() {
               ₺300,00
             </span>
           </div>
-          <p className="text-[11px] text-bunker-muted mt-1">
-            {data?.portfolio.open_positions_count || 0} Aktif Pozisyon ({((data?.portfolio.open_positions_count || 0) * 300).toLocaleString()} TL)
-          </p>
+          <div className="mt-2 pt-2 border-t border-bunker-800/80 flex items-center justify-between text-[11px] font-mono">
+            <span className="text-bunker-muted">Pozisyondaki:</span>
+            <span className="text-amber-300 font-medium">
+              {data?.portfolio.open_positions_count || 0} Aktif (₺{(data?.portfolio.in_positions_try ?? ((data?.portfolio.open_positions_count || 0) * 300)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })})
+            </span>
+          </div>
         </Card>
       </div>
 
