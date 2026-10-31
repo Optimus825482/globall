@@ -657,11 +657,276 @@ def optimize_smc_sweep_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
     return {"status": "success", "strategy": "SMC Likidite Süpürme + WaveTrend", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
 
 
+
+
+# ==============================================================================
+# YENI GOSTERGELER (GOSTERGELER.HTML'DEN ALINAN KONSOLIDASYONLAR)
+# ==============================================================================
+
+def calc_fisher(df: pd.DataFrame, period: int = 10) -> pd.Series:
+    """Ehlers Fisher Transform (#74) - Gaussian normalizasyonu ile dip/tepe tespiti."""
+    high = df["high"]
+    low = df["low"]
+    hl2 = (high + low) / 2.0
+    min_l = low.rolling(period).min()
+    max_h = high.rolling(period).max()
+    diff = np.maximum(max_h - min_l, 1e-9)
+
+    v1 = np.zeros(len(df))
+    fisher = np.zeros(len(df))
+    val = 0.0
+    fish = 0.0
+    hl2_v = hl2.values
+    min_l_v = min_l.values
+    diff_v = diff.values
+
+    for i in range(len(df)):
+        if np.isnan(min_l_v[i]) or diff_v[i] <= 0:
+            continue
+        raw = 2.0 * ((hl2_v[i] - min_l_v[i]) / diff_v[i] - 0.5)
+        raw = max(-0.999, min(0.999, raw))
+        val = 0.33 * raw + 0.67 * val
+        val = max(-0.999, min(0.999, val))
+        v1[i] = val
+        fish = 0.5 * np.log((1.0 + val) / (1.0 - val)) + 0.5 * fish
+        fisher[i] = fish
+
+    return pd.Series(fisher, index=df.index)
+
+
+def calc_kdj(df: pd.DataFrame, period: int = 9, signal: int = 3):
+    """KDJ Gostergesi (#114) - Stokastik bazli 3-hatli gelismis donus osilatoru."""
+    low_min = df["low"].rolling(period).min()
+    high_max = df["high"].rolling(period).max()
+    rsv = (df["close"] - low_min) / np.maximum(high_max - low_min, 1e-9) * 100.0
+    rsv = rsv.fillna(50.0)
+
+    k = rsv.ewm(com=signal - 1, adjust=False).mean()
+    d = k.ewm(com=signal - 1, adjust=False).mean()
+    j = 3.0 * k - 2.0 * d
+    return k, d, j
+
+
+def calc_squeeze_momentum(df: pd.DataFrame, bb_len: int = 20, bb_mult: float = 2.0, kc_mult: float = 1.5):
+    """John Carter Squeeze Momentum (#17) - Bollinger vs Keltner Sıkışma & Patlama."""
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+
+    sma = close.rolling(bb_len).mean()
+    std = close.rolling(bb_len).std()
+    bb_up = sma + bb_mult * std
+    bb_dn = sma - bb_mult * std
+
+    tr = np.maximum(high - low, np.maximum(np.abs(high - close.shift(1)), np.abs(low - close.shift(1))))
+    atr = tr.rolling(bb_len).mean()
+    kc_up = sma + kc_mult * atr
+    kc_dn = sma - kc_mult * atr
+
+    squeeze_on = (bb_up < kc_up) & (bb_dn > kc_dn)
+    donch_mid = (high.rolling(bb_len).max() + low.rolling(bb_len).min()) / 2.0
+    mom = close - ((donch_mid + sma) / 2.0)
+    return squeeze_on, mom
+
+
+def optimize_fisher_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """Ehlers Fisher Transform (#74) Dip Donusu + EMA Filtresi."""
+    periods = [8, 10, 14]
+    thresholds = [-1.5, -2.0]
+    trend_emas = [100, 200]
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+
+    close = df["close"]
+    start_time = time.time()
+    all_results = []
+    print("[VectorBT - Ehlers Fisher Transform] Optimizasyon Basliyor...")
+
+    for p in periods:
+        fish = calc_fisher(df, period=p)
+        fish_turn_up = (fish > fish.shift(1)) & (fish.shift(1) <= fish.shift(2))
+        for th in thresholds:
+            fish_oversold = fish < th
+            for ema_len in trend_emas:
+                ema_trend = close.ewm(span=ema_len, adjust=False).mean()
+                trend_ok = close > ema_trend
+                entries = fish_oversold & fish_turn_up & trend_ok
+                exits = (fish < fish.shift(1)) & (fish > 1.0)
+
+                for tp, sl in tp_sl_pairs:
+                    pf = vbt.Portfolio.from_signals(
+                        close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                        freq="15m" if len(df) > 500 else "1m"
+                    )
+                    t_count = pf.trades.count()
+                    if t_count < 3:
+                        continue
+                    s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+                    all_results.append({
+                        "parameters": {"period": p, "threshold": th, "trend_ema": ema_len, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                        "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                        "sharpe_ratio": round(s_val, 3),
+                        "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                        "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                        "trade_count": int(t_count),
+                    })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "Ehlers Fisher Transform (#74)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
+def optimize_kdj_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """KDJ Gostergesi (#114) Dip Kesisi + EMA Filtresi."""
+    periods = [9, 14]
+    j_levels = [0.0, 10.0, 20.0]
+    trend_emas = [100, 200]
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+
+    close = df["close"]
+    start_time = time.time()
+    all_results = []
+    print("[VectorBT - KDJ Osilatoru] Optimizasyon Basliyor...")
+
+    for p in periods:
+        k, d, j = calc_kdj(df, period=p)
+        j_cross_up = (j > d) & (j.shift(1) <= d.shift(1))
+        for j_os in j_levels:
+            j_oversold = j.shift(1) <= j_os
+            for ema_len in trend_emas:
+                ema_trend = close.ewm(span=ema_len, adjust=False).mean()
+                trend_ok = close > ema_trend
+                entries = j_oversold & j_cross_up & trend_ok
+                exits = (j < d) & (j.shift(1) >= d.shift(1)) & (j > 80.0)
+
+                for tp, sl in tp_sl_pairs:
+                    pf = vbt.Portfolio.from_signals(
+                        close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                        freq="15m" if len(df) > 500 else "1m"
+                    )
+                    t_count = pf.trades.count()
+                    if t_count < 3:
+                        continue
+                    s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+                    all_results.append({
+                        "parameters": {"period": p, "j_oversold": j_os, "trend_ema": ema_len, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                        "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                        "sharpe_ratio": round(s_val, 3),
+                        "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                        "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                        "trade_count": int(t_count),
+                    })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "KDJ Osilatoru (#114)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
+def optimize_squeeze_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """John Carter Squeeze Momentum (#17) - Squeeze Patlamasi."""
+    kc_mults = [1.5, 2.0]
+    trend_emas = [50, 100, 200]
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+
+    close = df["close"]
+    start_time = time.time()
+    all_results = []
+    print("[VectorBT - Squeeze Momentum] Optimizasyon Basliyor...")
+
+    for kc_m in kc_mults:
+        sq_on, mom = calc_squeeze_momentum(df, bb_len=20, bb_mult=2.0, kc_mult=kc_m)
+        # Squeeze sonlanmasi (patlama baslangici) veya pozitif ivmelenme
+        sq_fire = (~sq_on) & (mom > 0) & (mom > mom.shift(1)) & (mom.shift(1) <= mom.shift(2))
+        for ema_len in trend_emas:
+            ema_trend = close.ewm(span=ema_len, adjust=False).mean()
+            trend_ok = close > ema_trend
+            entries = sq_fire & trend_ok
+            exits = (mom < mom.shift(1)) & (mom > 0)
+
+            for tp, sl in tp_sl_pairs:
+                pf = vbt.Portfolio.from_signals(
+                    close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                    freq="15m" if len(df) > 500 else "1m"
+                )
+                t_count = pf.trades.count()
+                if t_count < 3:
+                    continue
+                s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+                all_results.append({
+                    "parameters": {"kc_mult": kc_m, "trend_ema": ema_len, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                    "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                    "sharpe_ratio": round(s_val, 3),
+                    "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                    "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                    "trade_count": int(t_count),
+                })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "Squeeze Momentum (#17)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
+def optimize_fvg_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """SMC Fair Value Gap (FVG #182) Kurumsal Imbalance Mitigasyonu + WaveTrend."""
+    lookbacks = [5, 8, 12]
+    trend_emas = [100, 200]
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+
+    # 3-bar Bullish FVG tespiti: high[t-2] < low[t]
+    fvg_gap_bottom = high.shift(2)
+    fvg_gap_top = low
+    bullish_fvg = fvg_gap_bottom < fvg_gap_top
+
+    wt1, wt2 = calc_wavetrend(df, ch_len=10, avg_len=21)
+    wt_bull = wt1 > wt2
+
+    start_time = time.time()
+    all_results = []
+    print("[VectorBT - SMC FVG Pullback] Optimizasyon Basliyor...")
+
+    for lb in lookbacks:
+        # Son lb barda olusmus bir FVG'nin icine geri cekilme (low <= fvg_gap_top ve close >= fvg_gap_bottom)
+        # Basitlestirilmis vektorize mitigasyon:
+        has_recent_fvg = bullish_fvg.rolling(lb).max() > 0
+        mitigation = has_recent_fvg & (low <= close.rolling(lb).mean()) & (close > close.shift(1))
+
+        for ema_len in trend_emas:
+            ema_trend = close.ewm(span=ema_len, adjust=False).mean()
+            trend_ok = close > ema_trend
+            entries = mitigation & wt_bull & trend_ok
+            exits = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+
+            for tp, sl in tp_sl_pairs:
+                pf = vbt.Portfolio.from_signals(
+                    close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                    freq="15m" if len(df) > 500 else "1m"
+                )
+                t_count = pf.trades.count()
+                if t_count < 3:
+                    continue
+                s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+                all_results.append({
+                    "parameters": {"lookback": lb, "trend_ema": ema_len, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                    "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                    "sharpe_ratio": round(s_val, 3),
+                    "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                    "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                    "trade_count": int(t_count),
+                })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "SMC Fair Value Gap (#182)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
 def main():
     parser = argparse.ArgumentParser(description="VectorBT Gelişmiş Çoklu-Strateji Optimizasyon Motoru")
     parser.add_argument("--symbol", default="BTCUSD", help="Analiz edilecek sembol (ör: BTCUSD, XAUUSD, US30)")
     parser.add_argument("--strategy", default="btc_master",
-                        choices=["ema", "wavetrend", "zlmacd", "kombo", "supertrend", "stochrsi", "btc_master", "stc", "tv_ultimate", "smc_sweep"],
+                        choices=["ema", "wavetrend", "zlmacd", "kombo", "supertrend", "stochrsi", "btc_master", "stc", "tv_ultimate", "smc_sweep", "fisher", "kdj", "squeeze", "fvg"],
                         help="Optimizasyon stratejisi")
     parser.add_argument("--cache", default="outputs/forex_replay_21d.json", help="Bar verisi JSON önbellek yolu")
     parser.add_argument("--top", type=int, default=5, help="Raporlanacak en iyi sonuç sayısı")
@@ -677,7 +942,15 @@ def main():
 
     df = load_candles_from_cache(args.cache, args.symbol)
 
-    if args.strategy == "smc_sweep":
+    if args.strategy == "fisher":
+        res = optimize_fisher_vbt(df, top_n=args.top)
+    elif args.strategy == "kdj":
+        res = optimize_kdj_vbt(df, top_n=args.top)
+    elif args.strategy == "squeeze":
+        res = optimize_squeeze_vbt(df, top_n=args.top)
+    elif args.strategy == "fvg":
+        res = optimize_fvg_vbt(df, top_n=args.top)
+    elif args.strategy == "smc_sweep":
         res = optimize_smc_sweep_vbt(df, top_n=args.top)
     elif args.strategy == "tv_ultimate":
         res = optimize_tv_ultimate_vbt(df, top_n=args.top)
