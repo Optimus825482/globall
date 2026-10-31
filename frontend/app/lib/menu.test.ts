@@ -30,7 +30,7 @@ describe("menu — kapsam", () => {
   it("2026-10-07: TÜM menü öğeleri geçerli rotalara gider (tek piyasa Forex + Ana Sayfa)", () => {
     // /metamobil, 2026-10-07 birleşik menüde MetaTrader mobil kopyası olarak
     // eklendi (menu.ts); test bu rotayı tanımıyordu ve zincirleme bayattı.
-    const ALLOWED = ["/", "/forex", "/chat", "/settings", "/metamobil"];
+    const ALLOWED = ["/", "/spot-monitor", "/forex", "/chat", "/settings", "/metamobil"];
     for (const href of hrefs) {
       expect(ALLOWED.some((p) => href === p || href.startsWith(p + "/"))).toBe(true);
     }
@@ -72,6 +72,7 @@ describe("menu — rol görünürlüğü", () => {
     const items = groups.flatMap((g) => g.items.map((i) => i.href));
     expect(items).toEqual([
       "/",
+      "/spot-monitor",
       "/forex",
       "/forex/charts",
       "/metamobil",
@@ -115,3 +116,4 @@ describe("menu — mobil alt navigasyon", () => {
     }
   });
 });
+
