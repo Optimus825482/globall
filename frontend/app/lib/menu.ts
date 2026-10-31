@@ -38,6 +38,7 @@ export const MENU_GROUPS: MenuGroup[] = [
     label: "İZLE",
     items: [
       { href: "/", label: "Ana Sayfa", icon: "home", desc: "Günün Forex işlem karnesi, başarı oranı ve kârlılık özeti" },
+      { href: "/spot-monitor", label: "Spot Monitor", icon: "radar", desc: "Binance TR Spot MTF canlı tarayıcı, başarı analizi ve 5.000 TL portföy simülatörü" },
       { href: "/forex", label: "Forex Radar", icon: "radar", desc: "Majör pariteler ve emtia takibi" },
       // 2026-10-14: "Grafik" ve "Teknik Grafik" TEK sayfada birleşti. Tek giriş
       // kalır; eski iki rota da bu sayfaya düşer (`alsoActive`).

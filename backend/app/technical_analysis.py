@@ -1048,3 +1048,76 @@ def _microstructure_block(flow: dict, price: float) -> dict:
         "updated_at": flow.get("updated_at"),
     }
     return block
+
+
+def _kdj(highs, lows, closes, period=9, signal=3):
+    """KDJ Göstergesi (#114) - Spot Altcoin Dip Dönüşü & Momentum Osilatörü."""
+    if len(closes) < period + signal:
+        return None
+    c = np.asarray(closes, dtype=float)
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    rsv = []
+    for i in range(period - 1, len(c)):
+        hi = float(np.max(h[i - period + 1 : i + 1]))
+        lo = float(np.min(l[i - period + 1 : i + 1]))
+        rsv.append((float(c[i]) - lo) / (hi - lo) * 100.0 if hi != lo else 50.0)
+    if len(rsv) < signal:
+        return None
+    k_val = 50.0
+    d_val = 50.0
+    k_series = []
+    d_series = []
+    alpha = 1.0 / float(signal)
+    for r in rsv:
+        k_val = (1.0 - alpha) * k_val + alpha * float(r)
+        d_val = (1.0 - alpha) * d_val + alpha * k_val
+        k_series.append(k_val)
+        d_series.append(d_val)
+    j_series = [3.0 * k - 2.0 * d for k, d in zip(k_series, d_series)]
+    k_now = float(k_series[-1])
+    d_now = float(d_series[-1])
+    j_now = float(j_series[-1])
+    j_prev = float(j_series[-2]) if len(j_series) >= 2 else j_now
+    d_prev = float(d_series[-2]) if len(d_series) >= 2 else d_now
+    cross_up = bool(j_prev <= d_prev and j_now > d_now)
+    dip_buy = bool(j_prev <= 15.0 and cross_up)
+    return {
+        "k": round(k_now, 2),
+        "d": round(d_now, 2),
+        "j": round(j_now, 2),
+        "cross_up": cross_up,
+        "dip_buy": dip_buy,
+    }
+
+def _supertrend(highs, lows, closes, period=10, factor=3.0):
+    if len(closes) < period + 1: return None
+    atr_values = []
+    for i in range(len(closes)):
+        start = max(1, i - period + 1)
+        trs = [max(highs[j] - lows[j], abs(highs[j] - closes[j-1]), abs(lows[j] - closes[j-1])) for j in range(start, i + 1)]
+        atr_values.append(float(np.mean(trs)) if len(trs) >= period else None)
+    direction, line = 1, None
+    for i, atr in enumerate(atr_values):
+        if atr is None: continue
+        midpoint = (highs[i] + lows[i]) / 2; upper, lower = midpoint + factor * atr, midpoint - factor * atr
+        direction = 1 if closes[i] >= (line if line is not None else lower) else -1
+        line = max(lower, line) if direction == 1 and line is not None else min(upper, line) if direction == -1 and line is not None else lower if direction == 1 else upper
+    return {"line": float(line), "direction": int(direction), "bullish": bool(direction == 1), "factor": factor, "atr_period": period}
+
+def _ema_pullback_bounce(closes: list[float], lows: list[float], period: int = 50, tolerance_pct: float = 0.008) -> dict:
+    if len(closes) < period + 5:
+        return {"ema": None, "pullback_bounce": False, "dist_pct": None}
+    k = 2.0 / (period + 1.0)
+    ema_val = float(closes[0])
+    for close_val in closes[1:]:
+        ema_val = (float(close_val) * k) + (ema_val * (1.0 - k))
+    c = float(closes[-1])
+    l = float(lows[-1]) if lows else c
+    dist_pct = round(((c - ema_val) / ema_val) * 100.0, 2)
+    bounce = bool(c >= ema_val and l <= ema_val * (1.0 + tolerance_pct))
+    return {
+        "ema": round(ema_val, 6),
+        "pullback_bounce": bounce,
+        "dist_pct": dist_pct,
+    }

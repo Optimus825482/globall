@@ -224,6 +224,8 @@ from app.routers import auto_paper as auto_paper_routes
 from app.routers import macd_monitor as macd_monitor_routes
 from app.routers import bridge as bridge_routes
 from app.routers import forex as forex_routes
+from app.routers import spot_monitor_routes
+from app import spot_monitor
 from app.routers import snapback as snapback_routes
 from app.routers import forex_chat as forex_chat_routes
 from app.routers import llm_review as llm_review_routes
@@ -234,6 +236,7 @@ app.include_router(auto_paper_routes.router)
 app.include_router(macd_monitor_routes.router)
 app.include_router(bridge_routes.router)
 app.include_router(forex_routes.router)
+app.include_router(spot_monitor_routes.router)
 app.include_router(snapback_routes.router)
 app.include_router(forex_chat_routes.router)
 app.include_router(llm_review_routes.router)
@@ -1146,6 +1149,8 @@ async def startup_services():
         _start_background(microstructure_snapshot_loop, "microstructure-snapshot")
         await asyncio.sleep(0.05)
         _start_background(strategy_loop, "strategy-loop")
+        await asyncio.sleep(0.05)
+        _start_background(spot_monitor.spot_monitor_background_loop, "spot-monitor-loop")
         await asyncio.sleep(0.05)
         # Canlı Hesap açık pozisyonları: WS fiyat + 24s hacim tick'leri (4 sn)
         _start_background(binance_price_tick_loop, "binance-price-tick")
