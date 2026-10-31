@@ -46,6 +46,8 @@ HTTP_TIMEOUT_SEC = float(os.getenv("LLM_SECOND_EYE_HTTP_TIMEOUT", "40") or 40)
 
 VERDICT_SCHEMA_HINT = (
     '{"verdict":"DEVAM|FAKE|BELIRSIZ","confidence":<0-100 tam sayı>,'
+    '"bull_thesis":"Boğa Uzmanı: yükselişi destekleyen temel kanıt",'
+    '"bear_antithesis":"Ayı Uzmanı: sahte kırılım/tuzak riski argümanı",'
     '"regime":"TRENDING|RANGE|PANIC",'
     '"suggested_tp_pct":<önerilen dinamik TP yüzdesi örn 2.5>,'
     '"suggested_sl_pct":<önerilen dinamik SL yüzdesi örn 1.2>,'
@@ -54,18 +56,20 @@ VERDICT_SCHEMA_HINT = (
 )
 
 SECOND_EYE_PROMPT = FAST_SYSTEM_PROMPT = (
-    "SEN KIDEMLİ BİR KRİPTO QUANT VE SCALPER HAKEMİSİN. TEK GÖREVİN: aşağıdaki şemada JSON döndürmek. "
+    "SEN TRADINGAGENTS ÇOKLU-AJAN MASASI HAKEMİ VE KIDEMLİ KRİPTO QUANTISIN. TEK GÖREVİN: aşağıdaki şemada JSON döndürmek. "
     "Düşünme sürecini, ara cümleleri, İngilizce yorumları YAZMA. İlk karakterin '{' son karakterin '}' olsun.\n"
     "Örnek çıktı:\n"
-    '{"verdict":"DEVAM","confidence":85,"regime":"TRENDING","suggested_tp_pct":3.2,"suggested_sl_pct":1.4,'
+    '{"verdict":"DEVAM","confidence":85,"bull_thesis":"Guclu CVD alim baskisi ve MTF direncinin net asilmasi",'
+    '"bear_antithesis":"Ust zaman diliminde StochRSI asiri alimda fakat retest saglam",'
+    '"regime":"TRENDING","suggested_tp_pct":3.2,"suggested_sl_pct":1.4,'
     '"reasons":["cvd_alici_ustunlugu","m15_direnc_kirilimi"],"trap_evidence":[],"summary":"Trend genislemesi teyitli, akis guclu"}\n\n'
-    "UZMANLIK BECERİLERİN:\n"
-    "1. SİNYAL HAKEMLİĞİ & TUZAK ANALİZİ: Kural motorunun yükseliş sinyalini incele. Fiyat çıkarken CVD/trade_imbalance "
-    "negatifse, üst fitil/direnç iğnesi varsa, ladder_asymmetry negatifse veya funding EXTREME_LONG ise FAKE (Boğa Tuzağı) de.\n"
-    "2. PİYASA REJİMİ (regime): Bollinger/ATR genişlemesi ve MTF uyumu varsa TRENDING; yatay/sıkışık ise RANGE; BTC çöküşteyse PANIC.\n"
-    "3. DİNAMİK ÇIKIŞ VE HEDEF: Sabit %1.5 yerine volatiliteye ve dirence göre akılcı suggested_tp_pct ve suggested_sl_pct öner.\n"
-    "4. ÇELİK RİSK KURALI: Kanıtlar çelişkiliyse FAKE'e eğil; yetersizse BELIRSIZ. Asla hayali veri üretme.\n"
-    "verdict değeri TAM OLARAK şu üç kelimeden biri: DEVAM, FAKE, BELIRSIZ. JSON dışında tek karakter yazma."
+    "MÜNAZARA VE HAKEMLİK KURALLARI (TradingAgents Protokolü):\n"
+    "1. BOĞA TEZİ (bull_thesis): Yükseliş yönündeki en güçlü dayanak (CVD pozitifliği, direnç kırılımı, hacim patlaması).\n"
+    "2. AYI ANTİTEZİ (bear_antithesis): Tuzağa düşme riski, üst fitil, ask duvarı, sığ likidite veya fonlama şişkinliği.\n"
+    "3. SİNYAL HAKEMLİĞİ: İki tezi tarafsız tart. Fiyat çıkarken CVD negatifse, üst fitil varsa veya funding EXTREME_LONG ise FAKE de.\n"
+    "4. PİYASA REJİMİ (regime): Bollinger/ATR genişlemesi varsa TRENDING; yatay ise RANGE; panik satışta PANIC.\n"
+    "5. DİNAMİK TP/SL: Oynaklığa ve dirence göre akılcı suggested_tp_pct ve suggested_sl_pct öner.\n"
+    "verdict TAM OLARAK şu üçünden biri: DEVAM, FAKE, BELIRSIZ. JSON dışında tek karakter yazma."
 )
 
 
@@ -378,6 +382,8 @@ def parse_verdict(text) -> dict | None:
     return {
         "verdict": verdict,
         "confidence": round(confidence),
+        "bull_thesis": str((decoded or {}).get("bull_thesis") or "").strip()[:250] or None,
+        "bear_antithesis": str((decoded or {}).get("bear_antithesis") or "").strip()[:250] or None,
         "regime": regime,
         "suggested_tp_pct": suggested_tp,
         "suggested_sl_pct": suggested_sl,

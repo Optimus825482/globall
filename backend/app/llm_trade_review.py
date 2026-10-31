@@ -64,7 +64,7 @@ SYSTEM_PROMPT = (
     "- Yaklaşan yüksek etkili veri (açıklamaya 45 dk'dan az) ya da üst zaman dilimlerinin netçe ters yönü güçlü REJECT sebebidir.\n"
     "- Düşünme sürecini KISA tut; sonunda YALNIZCA aşağıdaki JSON'u ver. Yalnızca Türkçe, sade yaz.\n"
     "ÇIKTI: YALNIZCA şu JSON (başka metin yok):\n"
-    '{"decision":"APPROVE|REJECT","confidence":0-100,"p_win":0-100,"summary":"tek cümle gerekçe","reasons":["en fazla 4 madde"],'
+    '{"decision":"APPROVE|REJECT","confidence":0-100,"p_win":0-100,"bull_thesis":"Boğa Tezi: kazanma argümanı","bear_antithesis":"Ayı Antitezi: kayıp riski argümanı","summary":"tek cümle gerekçe","reasons":["en fazla 4 madde"],'
     '"premortem":["bu işlem NEDEN KAYBEDER: en fazla 2 somut neden"],"risks":["en fazla 3 madde"],"checks":{"mtf_uyum":"olumlu|olumsuz|nötr","haber":"olumlu|olumsuz|nötr",'
     '"maliyet":"olumlu|olumsuz|nötr","seviye":"olumlu|olumsuz|nötr","korelasyon":"olumlu|olumsuz|nötr",'
     '"rejim":"olumlu|olumsuz|nötr"}}'
@@ -313,7 +313,9 @@ def parse_verdict(text: str) -> Optional[Dict[str, Any]]:
         checks_out["p_win"] = str(pw)
     except (TypeError, ValueError):
         pass
-    return {"decision": decision, "confidence": confidence, "summary": str(data.get("summary") or "")[:300],
+    bull_thesis = str(data.get("bull_thesis") or "")[:250] or None
+    bear_antithesis = str(data.get("bear_antithesis") or "")[:250] or None
+    return {"decision": decision, "confidence": confidence, "bull_thesis": bull_thesis, "bear_antithesis": bear_antithesis, "summary": str(data.get("summary") or "")[:300],
             "reasons": _list(data.get("reasons"), 4), "risks": (_list(data.get("risks"), 3) + premortem)[:5],
             "checks": checks_out}
 
@@ -485,7 +487,7 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
                 "decision": (verdict or {}).get("decision") or "HATA", "confidence": (verdict or {}).get("confidence"),
                 "applied": policy["applied"], "summary": (verdict or {}).get("summary") or policy["reason"],
                 "reasons": (verdict or {}).get("reasons") or [], "risks": (verdict or {}).get("risks") or [],
-                "checks": (verdict or {}).get("checks") or {}, "dossier": json.dumps(dossier, ensure_ascii=False, default=str)[:MAX_DOSSIER_CHARS],
+                "checks": {**((verdict or {}).get("checks") or {}), **({"bull_thesis": verdict["bull_thesis"]} if (verdict or {}).get("bull_thesis") else {}), **({"bear_antithesis": verdict["bear_antithesis"]} if (verdict or {}).get("bear_antithesis") else {})}, "dossier": json.dumps(dossier, ensure_ascii=False, default=str)[:MAX_DOSSIER_CHARS],
                 "model": model, "latency_ms": latency_ms, "error": error,
             })
         except Exception as exc:  # noqa: BLE001

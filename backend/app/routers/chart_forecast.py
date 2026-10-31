@@ -73,6 +73,12 @@ async def collect_forecast_features(symbol: str) -> dict | None:
     if price <= 0:
         return None
     feats = _velocity_ml_feature_dict(closes, highs, lows, vols)
+    try:
+        from app.freqai_features import compute_adaptive_regime_features
+        freq_feats = compute_adaptive_regime_features(closes, highs, lows, vols)
+        feats.update(freq_feats)
+    except Exception:
+        pass
     feats["price"] = price
     feats["timestamp"] = int(rows[-1][0])
     return feats

@@ -29,3 +29,10 @@ Hakemlik sonucunda şu standart kararlar üretilir:
 - **DEVAM:** Hacim, derinlik, CVD ve MTF trend uyumlu; sahte kırılım riski düşük. (Güven: %75–%98)
 - **FAKE:** Hacim desteği yok, dirençten ret yedi, CVD negatif veya aşırı fonlama riski var. (Güven: %80–%99)
 - **BELIRSIZ:** Kanıtlar yetersiz, veri bayat veya teyitler çelişkili.
+
+## 3. TradingAgents Münazara Protokolü (Debate Protocol)
+
+Tekil LLM kararlarındaki teyit yanlılığını (confirmation bias) kırmak amacıyla çoklu ajan yaklaşımı uygulanır:
+- **Boğa Savunucusu (bull_thesis):** Yükseliş yönündeki pozitif argümanları (CVD alıcı ivmesi, üst MTF trendi, hacim patlaması) net kanıtlarla ortaya koyar.
+- **Ayı Savunucusu (bear_antithesis):** Bu işlemin aleyhindeki en somut tuzakları (üst fitiller, ask likidite duvarları, sığ spread, negatif fonlama baskısı) sıralar.
+- **Hakem & Risk Kararı (Arbiter Verdict):** Hakem bu iki zıt argümanı tartar; ayı antitezi yapısal bir veriyle destekleniyorsa vetonun (FAKE) çekinmeden verilmesini sağlar.
