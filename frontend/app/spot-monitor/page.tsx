@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { apiFetch } from "../lib/api";
 import { Card, Badge, Button } from "../components/ui";
 import SpotChartModal from "./SpotChartModal";
@@ -94,12 +94,26 @@ export default function SpotMonitorPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY">("ACTIVE");
+  const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY" | "SYMBOLS" | "STRATEGIES">("ACTIVE");
   const [selectedModalSignal, setSelectedModalSignal] = useState<SignalItem | null>(null);
   const [strategies, setStrategies] = useState<StrategiesData | null>(null);
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<number | null>(null);
   const [closingAll, setClosingAll] = useState(false);
+
+  // Tarih Filtresi
+  type DatePreset = "ALL" | "TODAY" | "24H" | "7D" | "CUSTOM";
+  const [dateFilter, setDateFilter] = useState<DatePreset>("ALL");
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
+
+  // Sayfalama
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Kart Sıralama
+  const [symbolSort, setSymbolSort] = useState<"pnl" | "winrate" | "trades">("pnl");
+  const [strategySort, setStrategySort] = useState<"pnl" | "winrate" | "trades">("pnl");
 
   useEffect(() => {
     const loadStrategies = () =>
@@ -189,8 +203,222 @@ export default function SpotMonitorPage() {
     }
   };
 
-  const openSignals = (data?.signals || []).filter((s) => s.status === "OPEN");
-  const historySignals = (data?.signals || []).filter((s) => s.status !== "OPEN");
+  const openSignals = useMemo(() => (data?.signals || []).filter((s) => s.status === "OPEN"), [data]);
+  const historySignals = useMemo(() => (data?.signals || []).filter((s) => s.status !== "OPEN"), [data]);
+
+  const filteredHistory = useMemo(() => {
+    if (dateFilter === "ALL") return historySignals;
+
+    const now = new Date();
+    let startTs = 0;
+    let endTs = Number.MAX_SAFE_INTEGER;
+
+    if (dateFilter === "TODAY") {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      startTs = today.getTime();
+    } else if (dateFilter === "24H") {
+      startTs = now.getTime() - 24 * 60 * 60 * 1000;
+    } else if (dateFilter === "7D") {
+      startTs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    } else if (dateFilter === "CUSTOM") {
+      if (customStartDate) {
+        startTs = new Date(customStartDate + "T00:00:00").getTime();
+      }
+      if (customEndDate) {
+        endTs = new Date(customEndDate + "T23:59:59").getTime();
+      }
+    }
+
+    return historySignals.filter((s) => {
+      const d = new Date(s.detected_at).getTime();
+      return d >= startTs && d <= endTs;
+    });
+  }, [historySignals, dateFilter, customStartDate, customEndDate]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredHistory.length / pageSize));
+  const validCurrentPage = Math.min(currentPage, totalPages);
+  const pagedHistorySignals = useMemo(() => {
+    const start = (validCurrentPage - 1) * pageSize;
+    return filteredHistory.slice(start, start + pageSize);
+  }, [filteredHistory, validCurrentPage, pageSize]);
+
+  interface SymbolStats {
+    symbol: string;
+    totalTrades: number;
+    winCount: number;
+    lossCount: number;
+    expiredCount: number;
+    manualCount: number;
+    winRate: number;
+    totalNetPnl: number;
+    totalPnlPct: number;
+    avgNetPnl: number;
+    bestPnl: number;
+    worstPnl: number;
+  }
+
+  const symbolStatsList = useMemo(() => {
+    const map = new Map<string, SymbolStats>();
+
+    for (const s of filteredHistory) {
+      if (!map.has(s.symbol)) {
+        map.set(s.symbol, {
+          symbol: s.symbol,
+          totalTrades: 0,
+          winCount: 0,
+          lossCount: 0,
+          expiredCount: 0,
+          manualCount: 0,
+          winRate: 0,
+          totalNetPnl: 0,
+          totalPnlPct: 0,
+          avgNetPnl: 0,
+          bestPnl: -Infinity,
+          worstPnl: Infinity,
+        });
+      }
+      const st = map.get(s.symbol)!;
+      st.totalTrades += 1;
+      const net = s.net_pnl_try || 0;
+      st.totalNetPnl += net;
+      st.totalPnlPct += s.pnl_pct || 0;
+
+      if (net > 0) st.winCount += 1;
+      else st.lossCount += 1;
+
+      if (s.status === "EXPIRED" || s.status === "EXPIRED_TIME") st.expiredCount += 1;
+      if (s.status === "MANUAL_CLOSED") st.manualCount += 1;
+
+      if (net > st.bestPnl) st.bestPnl = net;
+      if (net < st.worstPnl) st.worstPnl = net;
+    }
+
+    const list = Array.from(map.values()).map((st) => ({
+      ...st,
+      winRate: st.totalTrades > 0 ? (st.winCount / st.totalTrades) * 100 : 0,
+      avgNetPnl: st.totalTrades > 0 ? st.totalNetPnl / st.totalTrades : 0,
+      bestPnl: st.bestPnl === -Infinity ? 0 : st.bestPnl,
+      worstPnl: st.worstPnl === Infinity ? 0 : st.worstPnl,
+    }));
+
+    if (symbolSort === "pnl") {
+      list.sort((a, b) => b.totalNetPnl - a.totalNetPnl);
+    } else if (symbolSort === "winrate") {
+      list.sort((a, b) => b.winRate - a.winRate);
+    } else {
+      list.sort((a, b) => b.totalTrades - a.totalTrades);
+    }
+
+    return list;
+  }, [filteredHistory, symbolSort]);
+
+  interface StrategyStats {
+    strategyCode: string;
+    strategyLabel: string;
+    totalTrades: number;
+    winCount: number;
+    lossCount: number;
+    expiredCount: number;
+    manualCount: number;
+    winRate: number;
+    totalNetPnl: number;
+    totalPnlPct: number;
+    avgNetPnl: number;
+    grossProfit: number;
+    grossLoss: number;
+    profitFactor: number;
+    bestSymbol: string;
+    bestSymbolPnl: number;
+  }
+
+  const strategyStatsList = useMemo(() => {
+    const map = new Map<string, StrategyStats & { symbolPnlMap: Record<string, number> }>();
+
+    for (const s of filteredHistory) {
+      const code = s.strategy || "unknown";
+      if (!map.has(code)) {
+        map.set(code, {
+          strategyCode: code,
+          strategyLabel: s.strategy_label || code,
+          totalTrades: 0,
+          winCount: 0,
+          lossCount: 0,
+          expiredCount: 0,
+          manualCount: 0,
+          winRate: 0,
+          totalNetPnl: 0,
+          totalPnlPct: 0,
+          avgNetPnl: 0,
+          grossProfit: 0,
+          grossLoss: 0,
+          profitFactor: 0,
+          bestSymbol: "-",
+          bestSymbolPnl: -Infinity,
+          symbolPnlMap: {},
+        });
+      }
+      const st = map.get(code)!;
+      st.totalTrades += 1;
+      const net = s.net_pnl_try || 0;
+      st.totalNetPnl += net;
+      st.totalPnlPct += s.pnl_pct || 0;
+
+      if (net > 0) {
+        st.winCount += 1;
+        st.grossProfit += net;
+      } else {
+        st.lossCount += 1;
+        st.grossLoss += Math.abs(net);
+      }
+
+      if (s.status === "EXPIRED" || s.status === "EXPIRED_TIME") st.expiredCount += 1;
+      if (s.status === "MANUAL_CLOSED") st.manualCount += 1;
+
+      st.symbolPnlMap[s.symbol] = (st.symbolPnlMap[s.symbol] || 0) + net;
+    }
+
+    const list = Array.from(map.values()).map((st) => {
+      let bestSym = "-";
+      let bestSymPnl = -Infinity;
+      for (const [sym, pnl] of Object.entries(st.symbolPnlMap)) {
+        if (pnl > bestSymPnl) {
+          bestSymPnl = pnl;
+          bestSym = sym;
+        }
+      }
+
+      const pf = st.grossLoss > 0 ? st.grossProfit / st.grossLoss : (st.grossProfit > 0 ? 99.9 : 0);
+
+      return {
+        strategyCode: st.strategyCode,
+        strategyLabel: st.strategyLabel,
+        totalTrades: st.totalTrades,
+        winCount: st.winCount,
+        lossCount: st.lossCount,
+        expiredCount: st.expiredCount,
+        manualCount: st.manualCount,
+        winRate: st.totalTrades > 0 ? (st.winCount / st.totalTrades) * 100 : 0,
+        totalNetPnl: st.totalNetPnl,
+        totalPnlPct: st.totalPnlPct,
+        avgNetPnl: st.totalTrades > 0 ? st.totalNetPnl / st.totalTrades : 0,
+        grossProfit: st.grossProfit,
+        grossLoss: st.grossLoss,
+        profitFactor: pf,
+        bestSymbol: bestSym,
+        bestSymbolPnl: bestSymPnl === -Infinity ? 0 : bestSymPnl,
+      };
+    });
+
+    if (strategySort === "pnl") {
+      list.sort((a, b) => b.totalNetPnl - a.totalNetPnl);
+    } else if (strategySort === "winrate") {
+      list.sort((a, b) => b.winRate - a.winRate);
+    } else {
+      list.sort((a, b) => b.totalTrades - a.totalTrades);
+    }
+
+    return list;
+  }, [filteredHistory, strategySort]);
 
   const pnlColor = (val: number) => {
     if (val > 0) return "text-emerald-400";
@@ -383,13 +611,13 @@ export default function SpotMonitorPage() {
         </p>
       </div>
 
-      {/* SEKMELER: AKTİF İŞLEMLER / TARAMA GEÇMİŞİ & BAŞARI TABLOSU */}
+      {/* SEKMELER: AKTİF İŞLEMLER / TARAMA GEÇMİŞİ / SEMBOL BAŞARISI / STRATEJİ BAŞARISI */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bunker-800 pb-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setActiveTab("ACTIVE")}
-            className={`px-4 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-2 ${
+            className={`px-3.5 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
               activeTab === "ACTIVE"
                 ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
                 : "text-bunker-muted hover:text-white hover:bg-bunker-800"
@@ -400,14 +628,41 @@ export default function SpotMonitorPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("HISTORY")}
-            className={`px-4 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-2 ${
+            onClick={() => {
+              setActiveTab("HISTORY");
+              setCurrentPage(1);
+            }}
+            className={`px-3.5 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
               activeTab === "HISTORY"
                 ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
                 : "text-bunker-muted hover:text-white hover:bg-bunker-800"
             }`}
           >
-            <span>📊</span> Tarama Geçmişi & Kâr Tablosu ({historySignals.length})
+            <span>📊</span> Tarama Geçmişi ({filteredHistory.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("SYMBOLS")}
+            className={`px-3.5 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "SYMBOLS"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                : "text-bunker-muted hover:text-white hover:bg-bunker-800"
+            }`}
+          >
+            <span>🪙</span> Sembol Başarısı ({symbolStatsList.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("STRATEGIES")}
+            className={`px-3.5 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "STRATEGIES"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                : "text-bunker-muted hover:text-white hover:bg-bunker-800"
+            }`}
+          >
+            <span>🔬</span> Strateji Başarısı ({strategyStatsList.length})
           </button>
         </div>
 
@@ -424,42 +679,105 @@ export default function SpotMonitorPage() {
         )}
       </div>
 
-      {/* İÇERİK TABLOSU */}
-      <div className="overflow-x-auto rounded-xl border border-bunker-800 bg-bunker-900/80">
-        <table className="w-full text-left font-mono text-xs">
-          <thead className="bg-bunker-950/80 text-bunker-muted uppercase text-[10px] border-b border-bunker-800">
-            <tr>
-              <th className="py-3 px-4">Zaman / Sembol</th>
-              <th className="py-3 px-4">TF</th>
-              <th className="py-3 px-4">Strateji</th>
-              <th className="py-3 px-4">Giriş Fiyatı</th>
-              <th className="py-3 px-4">Anlık / Çıkış</th>
-              <th className="py-3 px-4">Hedef / Stop</th>
-              <th className="py-3 px-4">Net Kâr (300₺)</th>
-              <th className="py-3 px-4">Durum</th>
-              {activeTab === "ACTIVE" && <th className="py-3 px-4 text-right">İşlem</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-bunker-800/60">
-            {loading ? (
-              <tr>
-                <td colSpan={activeTab === "ACTIVE" ? 9 : 8} className="text-center py-10 text-bunker-muted">
-                  Veriler yükleniyor...
-                </td>
-              </tr>
-            ) : (activeTab === "ACTIVE" ? openSignals : historySignals).length === 0 ? (
-              <tr>
-                <td colSpan={activeTab === "ACTIVE" ? 9 : 8} className="text-center py-10 text-bunker-muted">
-                  {activeTab === "ACTIVE"
-                    ? "Şu an aktif takip edilen sinyal yok. 'Şimdi Tara' butonuna basabilirsiniz."
-                    : "Henüz sonuçlanmış geçmiş işlem kaydı bulunmuyor."}
-                </td>
-              </tr>
-            ) : (
-              (activeTab === "ACTIVE" ? openSignals : historySignals).map((s) => {
-                const isWin = s.status === "WIN_TP";
-                const isLoss = s.status === "LOSS_SL";
+      {/* TARİH FİLTRESİ (Geçmiş, Sembol ve Strateji sekmelerinde geçerli) */}
+      {activeTab !== "ACTIVE" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-bunker-900/90 border border-bunker-800 text-xs font-mono">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-bunker-muted uppercase text-[10px] font-bold">📅 Tarih Filtresi:</span>
+            <div className="inline-flex rounded-lg p-0.5 bg-bunker-950 border border-bunker-800">
+              {(["ALL", "TODAY", "24H", "7D", "CUSTOM"] as const).map((preset) => {
+                const labels: Record<string, string> = {
+                  ALL: "Tümü",
+                  TODAY: "Bugün",
+                  "24H": "Son 24s",
+                  "7D": "Son 7 Gün",
+                  CUSTOM: "Özel",
+                };
+                const isActive = dateFilter === preset;
                 return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      setDateFilter(preset);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                      isActive
+                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                        : "text-bunker-muted hover:text-white"
+                    }`}
+                  >
+                    {labels[preset]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {dateFilter === "CUSTOM" && (
+              <div className="flex items-center gap-1.5 text-[11px] ml-1">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => {
+                    setCustomStartDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="px-2 py-0.5 rounded bg-bunker-950 border border-bunker-700 text-slate-200 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                />
+                <span className="text-bunker-muted">-</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => {
+                    setCustomEndDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="px-2 py-0.5 rounded bg-bunker-950 border border-bunker-700 text-slate-200 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="text-bunker-muted text-[11px]">
+            İşlem Sayısı: <span className="font-bold text-white">{filteredHistory.length}</span>{" "}
+            <span className="text-bunker-muted/60">(Toplam: {historySignals.length})</span>
+          </div>
+        </div>
+      )}
+
+      {/* 1. SEKME: AKTİF SİNYALLER TABLOSU */}
+      {activeTab === "ACTIVE" && (
+        <div className="overflow-x-auto rounded-xl border border-bunker-800 bg-bunker-900/80">
+          <table className="w-full text-left font-mono text-xs">
+            <thead className="bg-bunker-950/80 text-bunker-muted uppercase text-[10px] border-b border-bunker-800">
+              <tr>
+                <th className="py-3 px-4">Zaman / Sembol</th>
+                <th className="py-3 px-4">TF</th>
+                <th className="py-3 px-4">Strateji</th>
+                <th className="py-3 px-4">Giriş Fiyatı</th>
+                <th className="py-3 px-4">Anlık Fiyat</th>
+                <th className="py-3 px-4">Hedef / Stop</th>
+                <th className="py-3 px-4">Net Kâr (300₺)</th>
+                <th className="py-3 px-4">Durum</th>
+                <th className="py-3 px-4 text-right">İşlem</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-bunker-800/60">
+              {loading ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-bunker-muted">
+                    Veriler yükleniyor...
+                  </td>
+                </tr>
+              ) : openSignals.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-bunker-muted">
+                    Şu an aktif takip edilen sinyal yok. Yukarıdaki &apos;Şimdi Tara&apos; butonuna basabilirsiniz.
+                  </td>
+                </tr>
+              ) : (
+                openSignals.map((s) => (
                   <tr key={s.id} className="hover:bg-bunker-800/40 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex flex-col">
@@ -520,53 +838,541 @@ export default function SpotMonitorPage() {
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      {s.status === "OPEN" ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                          AÇIK
-                        </span>
-                      ) : isWin ? (
-                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          🎯 TP ALINDI
-                        </span>
-                      ) : isLoss ? (
-                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                          🛑 STOP OLDU
-                        </span>
-                      ) : s.status === "EXPIRED" ? (
-                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/60" title="Hedefe ulaşamadan süre aşımı ile kapatıldı">
-                          ⏱️ SÜRE AŞIMI
-                        </span>
-                      ) : s.status === "MANUAL_CLOSED" ? (
-                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/80 text-blue-300 border border-blue-800/60" title="Kullanıcı tarafından manuel kapatıldı">
-                          🖐️ MANUEL
-                        </span>
-                      ) : (
-                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
-                          KAPANDI
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        AÇIK
+                      </span>
                     </td>
-                    {activeTab === "ACTIVE" && (
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleClosePosition(s.id)}
-                          disabled={closingId === s.id}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold bg-rose-500/15 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40 transition-colors disabled:opacity-50 cursor-pointer"
-                          title="Bu pozisyonu anlık piyasa fiyatından kapat"
-                        >
-                          {closingId === s.id ? "..." : "✕ Kapat"}
-                        </button>
-                      </td>
-                    )}
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleClosePosition(s.id)}
+                        disabled={closingId === s.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold bg-rose-500/15 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40 transition-colors disabled:opacity-50 cursor-pointer"
+                        title="Bu pozisyonu anlık piyasa fiyatından kapat"
+                      >
+                        {closingId === s.id ? "..." : "✕ Kapat"}
+                      </button>
+                    </td>
                   </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 2. SEKME: GEÇMİŞ & KÂR TABLOSU (Sayfalamalı ve Tarih Filtreli) */}
+      {activeTab === "HISTORY" && (
+        <div className="rounded-xl border border-bunker-800 bg-bunker-900/80 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-bunker-950/80 text-bunker-muted uppercase text-[10px] border-b border-bunker-800">
+                <tr>
+                  <th className="py-3 px-4">Zaman / Sembol</th>
+                  <th className="py-3 px-4">TF</th>
+                  <th className="py-3 px-4">Strateji</th>
+                  <th className="py-3 px-4">Giriş Fiyatı</th>
+                  <th className="py-3 px-4">Çıkış Fiyatı</th>
+                  <th className="py-3 px-4">Hedef / Stop</th>
+                  <th className="py-3 px-4">Net Kâr (300₺)</th>
+                  <th className="py-3 px-4">Sonuç Durumu</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-bunker-800/60">
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-10 text-bunker-muted">
+                      Veriler yükleniyor...
+                    </td>
+                  </tr>
+                ) : filteredHistory.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-10 text-bunker-muted">
+                      Seçilen tarih aralığında tamamlanmış işlem kaydı bulunmuyor.
+                    </td>
+                  </tr>
+                ) : (
+                  pagedHistorySignals.map((s) => {
+                    const isWin = (s.net_pnl_try || 0) > 0;
+                    return (
+                      <tr key={s.id} className="hover:bg-bunker-800/40 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedModalSignal(s)}
+                              className="text-left group flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                              title="Grafiği ve Göstergeleri Aç"
+                            >
+                              <span className="font-bold text-white group-hover:text-cyan-400 text-sm underline decoration-dotted decoration-bunker-600 underline-offset-4 cursor-pointer">
+                                {s.symbol}
+                              </span>
+                              <span className="text-xs text-cyan-400 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+                                📊
+                              </span>
+                            </button>
+                            <span className="text-[10px] text-bunker-muted">
+                              {new Date(s.detected_at).toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" })}{" "}
+                              {new Date(s.detected_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
+                            {s.timeframe}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-slate-200">{s.strategy_label}</span>
+                            {s.details?.note && (
+                              <span className="text-[10px] text-bunker-muted">{s.details.note}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-300">
+                          ₺{s.entry_price > 10 ? s.entry_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.entry_price}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`font-bold ${pnlColor(s.pnl_pct)}`}>
+                            ₺{s.current_price > 10 ? s.current_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.current_price}
+                            <span className="text-[10px] ml-1.5">
+                              ({s.pnl_pct >= 0 ? "+" : ""}{s.pnl_pct.toFixed(2)}%)
+                            </span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col text-[10px]">
+                            <span className="text-emerald-400">TP: ₺{s.target_price > 10 ? s.target_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.target_price}</span>
+                            <span className="text-rose-400">SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col">
+                            <span className={`font-bold ${pnlColor(s.net_pnl_try)}`}>
+                              {s.net_pnl_try >= 0 ? "+" : ""}₺{s.net_pnl_try.toFixed(2)}
+                            </span>
+                            <span className="text-[9px] text-bunker-muted">Net (Kom. Düşülmüş)</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          {s.status === "WIN_TP" ? (
+                            <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              🎯 TP ALINDI
+                            </span>
+                          ) : s.status === "LOSS_SL" ? (
+                            <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                              🛑 STOP OLDU
+                            </span>
+                          ) : s.status === "EXPIRED" || s.status === "EXPIRED_TIME" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/60" title="Zaman aşımıyla piyasa fiyatından kapatıldı">
+                              ⏱️ SÜRE AŞIMI
+                            </span>
+                          ) : s.status === "MANUAL_CLOSED" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/80 text-blue-300 border border-blue-800/60" title="Kullanıcı tarafından manuel kapatıldı">
+                              🖐️ MANUEL
+                            </span>
+                          ) : (
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${isWin ? "bg-emerald-950 text-emerald-300" : "bg-rose-950 text-rose-300"}`}>
+                              {s.status}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* SAYFALAMA KONTROL ÇUBUĞU */}
+          {filteredHistory.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-bunker-950/80 border-t border-bunker-800 text-xs font-mono text-bunker-muted">
+              <div className="flex items-center gap-2">
+                <span>Sayfa Başına:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-bunker-900 border border-bunker-700 text-white rounded px-2 py-1 text-xs font-mono focus:outline-none"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+                <span className="ml-2 text-slate-300">
+                  Toplam <strong className="text-white">{filteredHistory.length}</strong> işlemden{" "}
+                  <strong className="text-cyan-400">
+                    {(validCurrentPage - 1) * pageSize + 1} -{" "}
+                    {Math.min(validCurrentPage * pageSize, filteredHistory.length)}
+                  </strong>{" "}
+                  arası gösteriliyor
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={validCurrentPage <= 1}
+                  className="px-2.5 py-1 rounded bg-bunker-900 border border-bunker-800 disabled:opacity-30 hover:bg-bunker-800 text-slate-300 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  « İlk
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={validCurrentPage <= 1}
+                  className="px-2.5 py-1 rounded bg-bunker-900 border border-bunker-800 disabled:opacity-30 hover:bg-bunker-800 text-slate-300 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  ‹ Önceki
+                </button>
+                <span className="px-3 py-1 font-bold text-cyan-300 bg-cyan-950/60 rounded border border-cyan-800/50">
+                  Sayfa {validCurrentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={validCurrentPage >= totalPages}
+                  className="px-2.5 py-1 rounded bg-bunker-900 border border-bunker-800 disabled:opacity-30 hover:bg-bunker-800 text-slate-300 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Sonraki ›
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={validCurrentPage >= totalPages}
+                  className="px-2.5 py-1 rounded bg-bunker-900 border border-bunker-800 disabled:opacity-30 hover:bg-bunker-800 text-slate-300 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Son »
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. SEKME: SEMBOL BAZLI BAŞARI KARTLARI */}
+      {activeTab === "SYMBOLS" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-bunker-950/60 border border-bunker-800 text-xs font-mono">
+            <span className="text-bunker-muted">
+              🪙 Toplam <strong className="text-white">{symbolStatsList.length}</strong> aktif işlem görmüş sembol
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-bunker-muted text-[11px]">Sırala:</span>
+              <button
+                type="button"
+                onClick={() => setSymbolSort("pnl")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                  symbolSort === "pnl"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-bunker-muted hover:text-white bg-bunker-900"
+                }`}
+              >
+                💰 Net Kâr
+              </button>
+              <button
+                type="button"
+                onClick={() => setSymbolSort("winrate")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                  symbolSort === "winrate"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-bunker-muted hover:text-white bg-bunker-900"
+                }`}
+              >
+                🎯 Kazanma Oranı
+              </button>
+              <button
+                type="button"
+                onClick={() => setSymbolSort("trades")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                  symbolSort === "trades"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-bunker-muted hover:text-white bg-bunker-900"
+                }`}
+              >
+                📈 İşlem Adedi
+              </button>
+            </div>
+          </div>
+
+          {symbolStatsList.length === 0 ? (
+            <div className="p-10 text-center rounded-xl border border-bunker-800 bg-bunker-900/60 text-bunker-muted font-mono text-xs">
+              Seçilen tarih aralığında tamamlanmış sembol işlemi bulunmuyor.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+              {symbolStatsList.map((st) => {
+                const winRateColor =
+                  st.winRate >= 60
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
+                    : st.winRate >= 40
+                    ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
+                    : "text-rose-400 bg-rose-500/10 border-rose-500/30";
+
+                const latestSymSignal = (data?.signals || []).find((s) => s.symbol === st.symbol);
+
+                return (
+                  <div
+                    key={st.symbol}
+                    className="p-4 rounded-xl border border-bunker-800 bg-bunker-900/90 flex flex-col justify-between hover:border-bunker-700 transition-colors"
+                  >
+                    <div>
+                      {/* Kart Başlığı: Sembol ve WinRate */}
+                      <div className="flex items-center justify-between gap-2 border-b border-bunker-800/80 pb-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-base font-bold text-white tracking-tight">
+                            {st.symbol}
+                          </span>
+                        </div>
+                        <span className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${winRateColor}`}>
+                          %{st.winRate.toFixed(1)} Win
+                        </span>
+                      </div>
+
+                      {/* Net Kâr Büyük Alan */}
+                      <div className="mt-3">
+                        <p className="text-[10px] font-mono uppercase text-bunker-muted">Toplam Net Kâr (₺)</p>
+                        <div className="flex items-baseline gap-2 mt-0.5">
+                          <span className={`text-xl font-mono font-bold ${pnlColor(st.totalNetPnl)}`}>
+                            {st.totalNetPnl >= 0 ? "+" : ""}₺{st.totalNetPnl.toFixed(2)}
+                          </span>
+                          <span className={`text-xs font-mono ${pnlColor(st.totalPnlPct)}`}>
+                            ({st.totalPnlPct >= 0 ? "+" : ""}{st.totalPnlPct.toFixed(2)}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Mini Görsel Win / Loss Çubuğu */}
+                      <div className="mt-3">
+                        <div className="h-2 w-full rounded-full bg-bunker-950 overflow-hidden flex">
+                          <div
+                            style={{ width: `${st.winRate}%` }}
+                            className="bg-emerald-500 h-full transition-all duration-500"
+                            title={`Kazanç: %${st.winRate.toFixed(1)}`}
+                          />
+                          <div
+                            style={{ width: `${100 - st.winRate}%` }}
+                            className="bg-rose-500 h-full transition-all duration-500"
+                            title={`Kayıp: %${(100 - st.winRate).toFixed(1)}`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* İstatistik Satırları */}
+                      <div className="mt-3.5 space-y-1.5 font-mono text-[11px] border-t border-bunker-800/60 pt-3">
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>Toplam İşlem:</span>
+                          <span className="text-white font-bold">{st.totalTrades}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>Sonuç Dağılımı:</span>
+                          <span className="text-slate-300">
+                            <span className="text-emerald-400 font-bold">{st.winCount} TP</span>
+                            {" · "}
+                            <span className="text-rose-400 font-bold">{st.lossCount} SL</span>
+                            {st.expiredCount > 0 && <span className="text-amber-400 font-bold"> · {st.expiredCount} Süre</span>}
+                            {st.manualCount > 0 && <span className="text-blue-400 font-bold"> · {st.manualCount} Man.</span>}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>Ort. Kâr / İşlem:</span>
+                          <span className={pnlColor(st.avgNetPnl)}>
+                            {st.avgNetPnl >= 0 ? "+" : ""}₺{st.avgNetPnl.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-bunker-muted pt-1">
+                          <span>En İyi: <strong className="text-emerald-400">{st.bestPnl >= 0 ? "+" : ""}₺{st.bestPnl.toFixed(2)}</strong></span>
+                          <span>En Kötü: <strong className="text-rose-400">₺{st.worstPnl.toFixed(2)}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Canlı Grafik Aç Butonu */}
+                    {latestSymSignal && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedModalSignal(latestSymSignal)}
+                        className="mt-4 w-full py-1.5 rounded-lg font-mono text-xs font-semibold bg-bunker-800 hover:bg-bunker-700 text-slate-200 border border-bunker-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>📊</span> Canlı Grafiği Aç
+                      </button>
+                    )}
+                  </div>
                 );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. SEKME: STRATEJİ BAZLI BAŞARI KARTLARI */}
+      {activeTab === "STRATEGIES" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-bunker-950/60 border border-bunker-800 text-xs font-mono">
+            <span className="text-bunker-muted">
+              🔬 Toplam <strong className="text-white">{strategyStatsList.length}</strong> işlem üretmiş strateji
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-bunker-muted text-[11px]">Sırala:</span>
+              <button
+                type="button"
+                onClick={() => setStrategySort("pnl")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                  strategySort === "pnl"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-bunker-muted hover:text-white bg-bunker-900"
+                }`}
+              >
+                💰 Net Kâr
+              </button>
+              <button
+                type="button"
+                onClick={() => setStrategySort("winrate")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                  strategySort === "winrate"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-bunker-muted hover:text-white bg-bunker-900"
+                }`}
+              >
+                🎯 Kazanma Oranı
+              </button>
+              <button
+                type="button"
+                onClick={() => setStrategySort("trades")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                  strategySort === "trades"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-bunker-muted hover:text-white bg-bunker-900"
+                }`}
+              >
+                📈 İşlem Adedi
+              </button>
+            </div>
+          </div>
+
+          {strategyStatsList.length === 0 ? (
+            <div className="p-10 text-center rounded-xl border border-bunker-800 bg-bunker-900/60 text-bunker-muted font-mono text-xs">
+              Seçilen tarih aralığında tamamlanmış strateji işlemi bulunmuyor.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {strategyStatsList.map((st) => {
+                const winRateColor =
+                  st.winRate >= 60
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
+                    : st.winRate >= 40
+                    ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
+                    : "text-rose-400 bg-rose-500/10 border-rose-500/30";
+
+                const pfColor =
+                  st.profitFactor >= 1.5
+                    ? "text-emerald-400 border-emerald-500/40 bg-emerald-500/10"
+                    : st.profitFactor >= 1.0
+                    ? "text-amber-400 border-amber-500/40 bg-amber-500/10"
+                    : "text-rose-400 border-rose-500/40 bg-rose-500/10";
+
+                return (
+                  <div
+                    key={st.strategyCode}
+                    className="p-4 rounded-xl border border-bunker-800 bg-bunker-900/90 flex flex-col justify-between hover:border-bunker-700 transition-colors"
+                  >
+                    <div>
+                      {/* Kart Başlığı */}
+                      <div className="flex items-start justify-between gap-2 border-b border-bunker-800/80 pb-2.5">
+                        <div className="min-w-0">
+                          <h3 className="font-mono text-sm font-bold text-white truncate" title={st.strategyLabel}>
+                            {st.strategyLabel}
+                          </h3>
+                          <span className="inline-block mt-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted">
+                            {st.strategyCode}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${winRateColor}`}>
+                            %{st.winRate.toFixed(1)} Win
+                          </span>
+                          <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${pfColor}`}>
+                            PF {st.profitFactor.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Net Kâr Alanı */}
+                      <div className="mt-3">
+                        <p className="text-[10px] font-mono uppercase text-bunker-muted">Toplam Net Kâr (₺)</p>
+                        <div className="flex items-baseline gap-2 mt-0.5">
+                          <span className={`text-xl font-mono font-bold ${pnlColor(st.totalNetPnl)}`}>
+                            {st.totalNetPnl >= 0 ? "+" : ""}₺{st.totalNetPnl.toFixed(2)}
+                          </span>
+                          <span className={`text-xs font-mono ${pnlColor(st.totalPnlPct)}`}>
+                            ({st.totalPnlPct >= 0 ? "+" : ""}{st.totalPnlPct.toFixed(2)}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Mini Görsel Win / Loss Çubuğu */}
+                      <div className="mt-3">
+                        <div className="h-2 w-full rounded-full bg-bunker-950 overflow-hidden flex">
+                          <div
+                            style={{ width: `${st.winRate}%` }}
+                            className="bg-emerald-500 h-full transition-all duration-500"
+                            title={`Kazanç: %${st.winRate.toFixed(1)}`}
+                          />
+                          <div
+                            style={{ width: `${100 - st.winRate}%` }}
+                            className="bg-rose-500 h-full transition-all duration-500"
+                            title={`Kayıp: %${(100 - st.winRate).toFixed(1)}`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* İstatistik Satırları */}
+                      <div className="mt-3.5 space-y-1.5 font-mono text-[11px] border-t border-bunker-800/60 pt-3">
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>Toplam İşlem:</span>
+                          <span className="text-white font-bold">{st.totalTrades}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>Dağılım:</span>
+                          <span className="text-slate-300">
+                            <span className="text-emerald-400 font-bold">{st.winCount} TP</span>
+                            {" · "}
+                            <span className="text-rose-400 font-bold">{st.lossCount} SL</span>
+                            {st.expiredCount > 0 && <span className="text-amber-400 font-bold"> · {st.expiredCount} Süre</span>}
+                            {st.manualCount > 0 && <span className="text-blue-400 font-bold"> · {st.manualCount} Man.</span>}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>Ort. Getiri / İşlem:</span>
+                          <span className={pnlColor(st.avgNetPnl)}>
+                            {st.avgNetPnl >= 0 ? "+" : ""}₺{st.avgNetPnl.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-bunker-muted">
+                          <span>En İyi Sembol:</span>
+                          <span className="text-cyan-300 font-bold">
+                            {st.bestSymbol} ({st.bestSymbolPnl >= 0 ? "+" : ""}₺{st.bestSymbolPnl.toFixed(2)})
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-bunker-muted pt-1">
+                          <span>Brüt Kazanç: <strong className="text-emerald-400">₺{st.grossProfit.toFixed(2)}</strong></span>
+                          <span>Brüt Kayıp: <strong className="text-rose-400">₺{st.grossLoss.toFixed(2)}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CANLI GRAFİK & KDJ / EMA 50 AÇILIR PENCERESİ (MODAL) */}
       {selectedModalSignal && (

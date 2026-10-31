@@ -560,7 +560,7 @@ async def get_spot_monitor_dashboard():
         """)
 
         # 1. Tüm sinyaller
-        rows = await conn.fetch("SELECT * FROM spot_monitor_signals ORDER BY detected_at DESC LIMIT 100")
+        rows = await conn.fetch("SELECT * FROM spot_monitor_signals ORDER BY detected_at DESC LIMIT 500")
         
         # 2. İstatistikler
         total_signals = len(rows)
