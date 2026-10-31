@@ -5,6 +5,7 @@ import {
   createChart,
   CandlestickSeries,
   LineSeries,
+  HistogramSeries,
   ColorType,
   LineStyle,
   UTCTimestamp,
@@ -54,8 +55,22 @@ type Bar = {
   volume: number;
 };
 
+export interface ActiveIndicators {
+  // Overlay
+  ema50: boolean;
+  ema20: boolean;
+  ema200: boolean;
+  bollinger: boolean;
+  supertrend: boolean;
+  vwap: boolean;
+  // Subpanes
+  kdj: boolean;
+  rsi: boolean;
+  macd: boolean;
+}
+
 // ── Matematiksel Gösterge Hesaplayıcıları ─────────────────────────────────────
-function calcEMA(bars: Bar[], period: number = 50): { time: UTCTimestamp; value: number }[] {
+function calcEMA(bars: Bar[], period: number): { time: UTCTimestamp; value: number }[] {
   if (bars.length < period) return [];
   const k = 2 / (period + 1);
   let ema = bars.slice(0, period).reduce((acc, b) => acc + b.close, 0) / period;
@@ -67,6 +82,94 @@ function calcEMA(bars: Bar[], period: number = 50): { time: UTCTimestamp; value:
     result.push({ time: bars[i].time as UTCTimestamp, value: ema });
   }
   return result;
+}
+
+function calcBollinger(bars: Bar[], period = 20, mult = 2) {
+  const upper: { time: UTCTimestamp; value: number }[] = [];
+  const middle: { time: UTCTimestamp; value: number }[] = [];
+  const lower: { time: UTCTimestamp; value: number }[] = [];
+  for (let i = period - 1; i < bars.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < period; j++) sum += bars[i - j].close;
+    const sma = sum / period;
+    let varSum = 0;
+    for (let j = 0; j < period; j++) varSum += Math.pow(bars[i - j].close - sma, 2);
+    const std = Math.sqrt(varSum / period);
+    const t = bars[i].time as UTCTimestamp;
+    middle.push({ time: t, value: sma });
+    upper.push({ time: t, value: sma + mult * std });
+    lower.push({ time: t, value: sma - mult * std });
+  }
+  return { upper, middle, lower };
+}
+
+function calcATR(bars: Bar[], period = 14): { time: UTCTimestamp; value: number }[] {
+  if (bars.length < period + 1) return [];
+  const trs: number[] = [bars[0].high - bars[0].low];
+  for (let i = 1; i < bars.length; i++) {
+    const tr = Math.max(
+      bars[i].high - bars[i].low,
+      Math.abs(bars[i].high - bars[i - 1].close),
+      Math.abs(bars[i].low - bars[i - 1].close)
+    );
+    trs.push(tr);
+  }
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const result: { time: UTCTimestamp; value: number }[] = [
+    { time: bars[period - 1].time as UTCTimestamp, value: atr },
+  ];
+  for (let i = period; i < bars.length; i++) {
+    atr = (atr * (period - 1) + trs[i]) / period;
+    result.push({ time: bars[i].time as UTCTimestamp, value: atr });
+  }
+  return result;
+}
+
+function calcSupertrend(bars: Bar[], period = 10, mult = 3) {
+  const atrList = calcATR(bars, period);
+  if (!atrList.length) return { trend: [] };
+  const startIdx = bars.length - atrList.length;
+  const trend: { time: UTCTimestamp; value: number; color: string }[] = [];
+  let prevUp = 0;
+  let prevDn = 0;
+  let direction = 1;
+
+  for (let i = 0; i < atrList.length; i++) {
+    const bi = startIdx + i;
+    const atr = atrList[i].value;
+    const hl2 = (bars[bi].high + bars[bi].low) / 2;
+    const basicUp = hl2 - mult * atr;
+    const basicDn = hl2 + mult * atr;
+    const finalUp = i === 0 ? basicUp : basicUp > prevUp || bars[bi - 1].close < prevUp ? basicUp : prevUp;
+    const finalDn = i === 0 ? basicDn : basicDn < prevDn || bars[bi - 1].close > prevDn ? basicDn : prevDn;
+    const close = bars[bi].close;
+
+    if (direction === 1 && close < finalUp) direction = -1;
+    else if (direction === -1 && close > finalDn) direction = 1;
+
+    trend.push({
+      time: bars[bi].time as UTCTimestamp,
+      value: direction === 1 ? finalUp : finalDn,
+      color: direction === 1 ? "#10b981" : "#ef4444",
+    });
+    prevUp = finalUp;
+    prevDn = finalDn;
+  }
+  return { trend };
+}
+
+function calcVWAP(bars: Bar[]): { time: UTCTimestamp; value: number }[] {
+  let cumPV = 0;
+  let cumV = 0;
+  return bars.map((b) => {
+    const tp = (b.high + b.low + b.close) / 3;
+    cumPV += tp * b.volume;
+    cumV += b.volume;
+    return {
+      time: b.time as UTCTimestamp,
+      value: cumV === 0 ? tp : cumPV / cumV,
+    };
+  });
 }
 
 function calcKDJ(
@@ -96,7 +199,7 @@ function calcKDJ(
 
   let kVal = 50;
   let dVal = 50;
-  const alpha = 1 / signal; // 1/3 standard
+  const alpha = 1 / signal;
   const kList: { time: UTCTimestamp; value: number }[] = [];
   const dList: { time: UTCTimestamp; value: number }[] = [];
   const jList: { time: UTCTimestamp; value: number }[] = [];
@@ -115,23 +218,110 @@ function calcKDJ(
   return { k: kList, d: dList, j: jList };
 }
 
+function calcRSI(bars: Bar[], period = 14): { time: UTCTimestamp; value: number }[] {
+  if (bars.length <= period) return [];
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = bars[i].close - bars[i - 1].close;
+    if (d >= 0) gains += d;
+    else losses -= d;
+  }
+  let ag = gains / period;
+  let al = losses / period;
+  const result: { time: UTCTimestamp; value: number }[] = [
+    { time: bars[period].time as UTCTimestamp, value: 100 - 100 / (1 + (al === 0 ? 100 : ag / al)) },
+  ];
+  for (let i = period + 1; i < bars.length; i++) {
+    const d = bars[i].close - bars[i - 1].close;
+    ag = (ag * (period - 1) + (d > 0 ? d : 0)) / period;
+    al = (al * (period - 1) + (d < 0 ? -d : 0)) / period;
+    result.push({
+      time: bars[i].time as UTCTimestamp,
+      value: 100 - 100 / (1 + (al === 0 ? 100 : ag / al)),
+    });
+  }
+  return result;
+}
+
+function calcMACD(bars: Bar[], fast = 12, slow = 26, signal = 9) {
+  if (bars.length < slow + signal) return { macd: [], signal: [], histogram: [] };
+  const fEma = calcEMA(bars, fast);
+  const sEma = calcEMA(bars, slow);
+  const fMap = new Map(fEma.map((f) => [f.time, f.value]));
+
+  const macdLine: Bar[] = sEma
+    .map((s) => {
+      const fv = fMap.get(s.time);
+      return {
+        time: s.time as any,
+        open: 0,
+        high: 0,
+        low: 0,
+        close: fv != null ? fv - s.value : 0,
+        volume: 0,
+      };
+    })
+    .filter((b) => fMap.has(b.time as any));
+
+  const sigLine = calcEMA(macdLine, signal);
+  const sigMap = new Map(sigLine.map((s) => [s.time, s.value]));
+
+  const macd: { time: UTCTimestamp; value: number }[] = [];
+  const sig: { time: UTCTimestamp; value: number }[] = [];
+  const hist: { time: UTCTimestamp; value: number; color: string }[] = [];
+
+  for (const m of macdLine) {
+    const sv = sigMap.get(m.time as any);
+    if (sv != null) {
+      const h = m.close - sv;
+      const t = m.time as UTCTimestamp;
+      macd.push({ time: t, value: m.close });
+      sig.push({ time: t, value: sv });
+      hist.push({
+        time: t,
+        value: h,
+        color: h >= 0 ? "rgba(16,185,129,0.85)" : "rgba(239,68,68,0.85)",
+      });
+    }
+  }
+  return { macd, signal: sig, histogram: hist };
+}
+
 const AVAILABLE_TFS = ["1m", "3m", "5m", "15m", "1h", "4h"];
 
 export default function SpotChartModal({ signal, onClose }: SpotChartModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const kSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const dSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const jSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const activeSeriesMapRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
 
   const [interval, setIntervalTf] = useState<string>(signal.timeframe || "5m");
   const [loading, setLoading] = useState(true);
   const [wsActive, setWsActive] = useState(false);
   const [livePrice, setLivePrice] = useState<number>(signal.current_price);
-  const [liveKdj, setLiveKdj] = useState<{ k: number; d: number; j: number } | null>(null);
   const [priceChangePct, setPriceChangePct] = useState<number>(signal.pnl_pct);
+  const [showIndicatorsMenu, setShowIndicatorsMenu] = useState(false);
+
+  // Gösterge Seçimleri
+  const [indicators, setIndicators] = useState<ActiveIndicators>({
+    ema50: true,
+    ema20: false,
+    ema200: false,
+    bollinger: false,
+    supertrend: false,
+    vwap: false,
+    kdj: true,
+    rsi: false,
+    macd: false,
+  });
+
+  // Canlı HUD Değerleri
+  const [hudValues, setHudValues] = useState<{
+    kdj?: { k: number; d: number; j: number };
+    rsi?: number;
+    macd?: { macd: number; signal: number; hist: number };
+  }>({});
 
   const barsRef = useRef<Bar[]>([]);
   const wsTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -145,11 +335,10 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  // Chart initialization
+  // Chart Container Başlatma
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Önceki grafiği temizle
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
@@ -186,7 +375,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
 
     chartRef.current = chart;
 
-    // ── Pane 0: Candlesticks ──
+    // Ana Mum Serisi (Pane 0)
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#10b981",
       downColor: "#f43f5e",
@@ -195,15 +384,6 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
       wickDownColor: "#f43f5e",
     });
     candleSeriesRef.current = candleSeries;
-
-    // ── Pane 0: EMA 50 (Mavi/Camgöbeği) ──
-    const emaSeries = chart.addSeries(LineSeries, {
-      color: "#00d2ff",
-      lineWidth: 2,
-      title: "EMA 50",
-      priceLineVisible: false,
-    });
-    emaSeriesRef.current = emaSeries;
 
     // Hedef TP, SL ve Giriş çizgileri (Pane 0)
     if (signal.target_price > 0) {
@@ -237,69 +417,6 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
       });
     }
 
-    // ── Pane 1: KDJ Indicator Pane (Sub-pane) ──
-    const kSeries = chart.addSeries(
-      LineSeries,
-      {
-        color: "#f59e0b", // Amber %K
-        lineWidth: 1,
-        title: "K",
-        priceScaleId: "kdj_scale",
-        priceLineVisible: false,
-      },
-      1
-    );
-    kSeriesRef.current = kSeries;
-
-    const dSeries = chart.addSeries(
-      LineSeries,
-      {
-        color: "#3b82f6", // Mavi %D
-        lineWidth: 1,
-        title: "D",
-        priceScaleId: "kdj_scale",
-        priceLineVisible: false,
-      },
-      1
-    );
-    dSeriesRef.current = dSeries;
-
-    const jSeries = chart.addSeries(
-      LineSeries,
-      {
-        color: "#c084fc", // Mor %J
-        lineWidth: 2,
-        title: "J",
-        priceScaleId: "kdj_scale",
-        priceLineVisible: false,
-      },
-      1
-    );
-    jSeriesRef.current = jSeries;
-
-    // KDJ Aşırı Alım (80) & Aşırı Satım (20) Seviyeleri
-    kSeries.createPriceLine({
-      price: 80,
-      color: "rgba(244, 63, 94, 0.45)",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      axisLabelVisible: true,
-      title: "80 (Aşırı Alım)",
-    });
-    kSeries.createPriceLine({
-      price: 20,
-      color: "rgba(16, 185, 129, 0.45)",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      axisLabelVisible: true,
-      title: "20 (Dip / Aşırı Satım)",
-    });
-
-    chart.priceScale("kdj_scale", 1).applyOptions({
-      scaleMargins: { top: 0.1, bottom: 0.1 },
-    });
-
-    // Resize gözlemcisi
     const ro = new ResizeObserver(() => {
       if (!chartRef.current || !containerRef.current) return;
       chartRef.current.applyOptions({
@@ -314,70 +431,358 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
-      emaSeriesRef.current = null;
-      kSeriesRef.current = null;
-      dSeriesRef.current = null;
-      jSeriesRef.current = null;
+      activeSeriesMapRef.current.clear();
     };
   }, [signal.entry_price, signal.target_price, signal.stop_price]);
 
-  // Mumları ve göstergeleri güncelle
-  const applyBars = useCallback((bars: Bar[]) => {
-    barsRef.current = bars;
-    if (!bars.length || !candleSeriesRef.current) return;
+  // Göstergeleri dinamik olarak inşa et ve verileri bas
+  const rebuildAndApplyIndicators = useCallback(
+    (bars: Bar[]) => {
+      const chart = chartRef.current;
+      if (!chart || !bars.length) return;
 
-    // Mum verisi
-    candleSeriesRef.current.setData(
-      bars.map((b) => ({
-        time: b.time as UTCTimestamp,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-      }))
-    );
-
-    // Son mum ve fiyat hassasiyeti
-    const lastBar = bars[bars.length - 1];
-    if (lastBar) {
-      setLivePrice(lastBar.close);
-      const prec = pricePrecision(lastBar.close);
-      candleSeriesRef.current.applyOptions({
-        priceFormat: {
-          type: "price",
-          precision: prec,
-          minMove: 1 / Math.pow(10, prec),
-        },
+      // Önceki indikatör serilerini temizle
+      activeSeriesMapRef.current.forEach((s) => {
+        try {
+          chart.removeSeries(s);
+        } catch {}
       });
+      activeSeriesMapRef.current.clear();
 
-      if (signal.entry_price > 0) {
-        const change = ((lastBar.close - signal.entry_price) / signal.entry_price) * 100;
-        setPriceChangePct(change);
+      const newHud: typeof hudValues = {};
+
+      // ── 1. GRAFİK ÜSTÜ (OVERLAY - PANE 0) ───────────────────────────────────
+
+      // EMA 50
+      if (indicators.ema50) {
+        const d = calcEMA(bars, 50);
+        if (d.length) {
+          const s = chart.addSeries(LineSeries, {
+            color: "#00d2ff",
+            lineWidth: 2,
+            title: "EMA 50",
+            priceLineVisible: false,
+          });
+          s.setData(d);
+          activeSeriesMapRef.current.set("ema50", s);
+        }
       }
-    }
 
-    // EMA 50
-    if (emaSeriesRef.current) {
-      const emaData = calcEMA(bars, 50);
-      emaSeriesRef.current.setData(emaData);
-    }
+      // EMA 20
+      if (indicators.ema20) {
+        const d = calcEMA(bars, 20);
+        if (d.length) {
+          const s = chart.addSeries(LineSeries, {
+            color: "#f59e0b",
+            lineWidth: 1,
+            title: "EMA 20",
+            priceLineVisible: false,
+          });
+          s.setData(d);
+          activeSeriesMapRef.current.set("ema20", s);
+        }
+      }
 
-    // KDJ (9, 3)
-    if (kSeriesRef.current && dSeriesRef.current && jSeriesRef.current) {
-      const kdj = calcKDJ(bars, 9, 3);
-      kSeriesRef.current.setData(kdj.k);
-      dSeriesRef.current.setData(kdj.d);
-      jSeriesRef.current.setData(kdj.j);
+      // EMA 200
+      if (indicators.ema200) {
+        const d = calcEMA(bars, 200);
+        if (d.length) {
+          const s = chart.addSeries(LineSeries, {
+            color: "#a855f7",
+            lineWidth: 2,
+            title: "EMA 200",
+            priceLineVisible: false,
+          });
+          s.setData(d);
+          activeSeriesMapRef.current.set("ema200", s);
+        }
+      }
 
-      if (kdj.k.length > 0) {
-        setLiveKdj({
-          k: kdj.k[kdj.k.length - 1].value,
-          d: kdj.d[kdj.d.length - 1].value,
-          j: kdj.j[kdj.j.length - 1].value,
+      // Bollinger Bantları (20, 2)
+      if (indicators.bollinger) {
+        const bb = calcBollinger(bars);
+        if (bb.middle.length) {
+          const mid = chart.addSeries(LineSeries, {
+            color: "rgba(129, 140, 248, 0.6)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            title: "BB Mid",
+            priceLineVisible: false,
+          });
+          const up = chart.addSeries(LineSeries, {
+            color: "rgba(129, 140, 248, 0.9)",
+            lineWidth: 1,
+            title: "BB Up",
+            priceLineVisible: false,
+          });
+          const low = chart.addSeries(LineSeries, {
+            color: "rgba(129, 140, 248, 0.9)",
+            lineWidth: 1,
+            title: "BB Low",
+            priceLineVisible: false,
+          });
+          mid.setData(bb.middle);
+          up.setData(bb.upper);
+          low.setData(bb.lower);
+          activeSeriesMapRef.current.set("bb_mid", mid);
+          activeSeriesMapRef.current.set("bb_up", up);
+          activeSeriesMapRef.current.set("bb_low", low);
+        }
+      }
+
+      // SuperTrend (10, 3)
+      if (indicators.supertrend) {
+        const st = calcSupertrend(bars);
+        if (st.trend.length) {
+          const s = chart.addSeries(LineSeries, {
+            color: "#10b981",
+            lineWidth: 2,
+            title: "SuperTrend",
+            priceLineVisible: false,
+          });
+          s.setData(st.trend);
+          activeSeriesMapRef.current.set("supertrend", s);
+        }
+      }
+
+      // VWAP
+      if (indicators.vwap) {
+        const v = calcVWAP(bars);
+        if (v.length) {
+          const s = chart.addSeries(LineSeries, {
+            color: "#eab308",
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            title: "VWAP",
+            priceLineVisible: false,
+          });
+          s.setData(v);
+          activeSeriesMapRef.current.set("vwap", s);
+        }
+      }
+
+      // ── 2. ALT PANELLER (SUB-PANES) ─────────────────────────────────────────
+      let subpane = 1;
+
+      // KDJ (9, 3, 3)
+      if (indicators.kdj) {
+        const kdj = calcKDJ(bars, 9, 3);
+        if (kdj.k.length) {
+          const kS = chart.addSeries(
+            LineSeries,
+            {
+              color: "#f59e0b",
+              lineWidth: 1,
+              title: "K",
+              priceScaleId: "kdj_scale",
+              priceLineVisible: false,
+            },
+            subpane
+          );
+          const dS = chart.addSeries(
+            LineSeries,
+            {
+              color: "#3b82f6",
+              lineWidth: 1,
+              title: "D",
+              priceScaleId: "kdj_scale",
+              priceLineVisible: false,
+            },
+            subpane
+          );
+          const jS = chart.addSeries(
+            LineSeries,
+            {
+              color: "#c084fc",
+              lineWidth: 2,
+              title: "J",
+              priceScaleId: "kdj_scale",
+              priceLineVisible: false,
+            },
+            subpane
+          );
+
+          kS.setData(kdj.k);
+          dS.setData(kdj.d);
+          jS.setData(kdj.j);
+
+          kS.createPriceLine({
+            price: 80,
+            color: "rgba(244, 63, 94, 0.45)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: "80",
+          });
+          kS.createPriceLine({
+            price: 20,
+            color: "rgba(16, 185, 129, 0.45)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: "20",
+          });
+
+          chart.priceScale("kdj_scale", subpane).applyOptions({
+            scaleMargins: { top: 0.1, bottom: 0.1 },
+          });
+
+          activeSeriesMapRef.current.set("kdj_k", kS);
+          activeSeriesMapRef.current.set("kdj_d", dS);
+          activeSeriesMapRef.current.set("kdj_j", jS);
+
+          newHud.kdj = {
+            k: kdj.k[kdj.k.length - 1].value,
+            d: kdj.d[kdj.d.length - 1].value,
+            j: kdj.j[kdj.j.length - 1].value,
+          };
+          subpane++;
+        }
+      }
+
+      // RSI (14)
+      if (indicators.rsi) {
+        const rsiData = calcRSI(bars, 14);
+        if (rsiData.length) {
+          const rsiS = chart.addSeries(
+            LineSeries,
+            {
+              color: "#06b6d4",
+              lineWidth: 1,
+              title: "RSI 14",
+              priceScaleId: "rsi_scale",
+              priceLineVisible: false,
+            },
+            subpane
+          );
+          rsiS.setData(rsiData);
+
+          rsiS.createPriceLine({
+            price: 70,
+            color: "rgba(244, 63, 94, 0.5)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: "70",
+          });
+          rsiS.createPriceLine({
+            price: 30,
+            color: "rgba(16, 185, 129, 0.5)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: "30",
+          });
+
+          chart.priceScale("rsi_scale", subpane).applyOptions({
+            scaleMargins: { top: 0.1, bottom: 0.1 },
+          });
+
+          activeSeriesMapRef.current.set("rsi", rsiS);
+          newHud.rsi = rsiData[rsiData.length - 1].value;
+          subpane++;
+        }
+      }
+
+      // MACD (12, 26, 9)
+      if (indicators.macd) {
+        const { macd, signal: sig, histogram } = calcMACD(bars);
+        if (macd.length) {
+          const hist = chart.addSeries(
+            HistogramSeries,
+            { title: "MACD Hist", priceScaleId: "macd_scale" },
+            subpane
+          );
+          hist.setData(histogram);
+
+          const line = chart.addSeries(
+            LineSeries,
+            {
+              color: "#3b82f6",
+              lineWidth: 1,
+              title: "MACD",
+              priceScaleId: "macd_scale",
+              priceLineVisible: false,
+            },
+            subpane
+          );
+          line.setData(macd);
+
+          const sigS = chart.addSeries(
+            LineSeries,
+            {
+              color: "#f59e0b",
+              lineWidth: 1,
+              title: "Signal",
+              priceScaleId: "macd_scale",
+              priceLineVisible: false,
+            },
+            subpane
+          );
+          sigS.setData(sig);
+
+          chart.priceScale("macd_scale", subpane).applyOptions({
+            scaleMargins: { top: 0.15, bottom: 0.15 },
+          });
+
+          activeSeriesMapRef.current.set("macd_hist", hist);
+          activeSeriesMapRef.current.set("macd_line", line);
+          activeSeriesMapRef.current.set("macd_sig", sigS);
+
+          newHud.macd = {
+            macd: macd[macd.length - 1].value,
+            signal: sig[sig.length - 1].value,
+            hist: histogram[histogram.length - 1].value,
+          };
+          subpane++;
+        }
+      }
+
+      setHudValues(newHud);
+    },
+    [indicators]
+  );
+
+  // Mumları ve göstergeleri uygula
+  const applyBars = useCallback(
+    (bars: Bar[]) => {
+      barsRef.current = bars;
+      if (!bars.length || !candleSeriesRef.current) return;
+
+      // Mum verisi
+      candleSeriesRef.current.setData(
+        bars.map((b) => ({
+          time: b.time as UTCTimestamp,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        }))
+      );
+
+      // Son mum ve fiyat hassasiyeti
+      const lastBar = bars[bars.length - 1];
+      if (lastBar) {
+        setLivePrice(lastBar.close);
+        const prec = pricePrecision(lastBar.close);
+        candleSeriesRef.current.applyOptions({
+          priceFormat: {
+            type: "price",
+            precision: prec,
+            minMove: 1 / Math.pow(10, prec),
+          },
         });
+
+        if (signal.entry_price > 0) {
+          const change = ((lastBar.close - signal.entry_price) / signal.entry_price) * 100;
+          setPriceChangePct(change);
+        }
       }
-    }
-  }, [signal.entry_price]);
+
+      rebuildAndApplyIndicators(bars);
+    },
+    [signal.entry_price, rebuildAndApplyIndicators]
+  );
 
   // HTTP API ile Klines çekme
   const fetchKlines = useCallback(async () => {
@@ -408,7 +813,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
     }
   }, [signal.symbol, interval, applyBars]);
 
-  // Periyodik fetch (note_viewed canlılığını ve arka plan senkronizasyonunu sağlar)
+  // Periyodik fetch
   useEffect(() => {
     setLoading(true);
     fetchKlines();
@@ -420,7 +825,6 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
   useEffect(() => {
     const cleanSym = signal.symbol.replace(/[\/_]/g, "").toUpperCase();
 
-    // 1. Backend LiveSocket aboneliği (ws_live_candles)
     const unsubscribe = subscribeLive((msg) => {
       if (msg.type === "kline" && msg.data) {
         const d = msg.data as {
@@ -439,7 +843,6 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
           setWsActive(true);
           setLivePrice(d.close);
 
-          // WS nabız süresi
           if (wsTimerRef.current) clearTimeout(wsTimerRef.current);
           wsTimerRef.current = setTimeout(() => setWsActive(false), 8000);
 
@@ -450,13 +853,11 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
           const newBarTime = Math.floor(d.time > 10000000000 ? d.time / 1000 : d.time);
 
           if (lastBar.time === newBarTime) {
-            // Oluşan mumu güncelle
             lastBar.close = d.close;
             if (d.high != null && d.high > lastBar.high) lastBar.high = d.high;
             if (d.low != null && d.low < lastBar.low) lastBar.low = d.low;
             if (d.volume != null) lastBar.volume = d.volume;
           } else if (newBarTime > lastBar.time) {
-            // Yeni mum açıldı
             currentBars.push({
               time: newBarTime,
               open: d.open ?? d.close,
@@ -479,6 +880,15 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
     };
   }, [signal.symbol, interval, applyBars]);
 
+  // Gösterge Aç/Kapa Değişimi
+  const toggleIndicator = (key: keyof ActiveIndicators) => {
+    setIndicators((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      return next;
+    });
+  };
+
+  const activeCount = Object.values(indicators).filter(Boolean).length;
   const pnlColor = priceChangePct >= 0 ? "text-emerald-400" : "text-rose-400";
 
   return (
@@ -489,7 +899,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
       }}
     >
       <div className="relative w-full max-w-6xl h-[94vh] bg-bunker-950 rounded-2xl border border-bunker-700 shadow-2xl flex flex-col overflow-hidden">
-        {/* ÜST BAŞLIK BARI */}
+        {/* 1. ÜST BAŞLIK BARI */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-bunker-900 border-b border-bunker-800">
           <div className="flex items-center gap-3">
             <div className="flex items-baseline gap-2">
@@ -520,14 +930,257 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
             </div>
           </div>
 
-          {/* FİYAT & KÂR/ZARAR & WS ROZETİ */}
-          <div className="flex items-center gap-4 font-mono">
+          {/* SAĞ KISIM: GÖSTERGELER & FİYAT & WS & KAPAT */}
+          <div className="flex items-center gap-3 font-mono">
+            {/* Hızlı Gösterge Butonları */}
+            <div className="hidden lg:flex items-center gap-1 bg-bunker-950 p-1 rounded-lg border border-bunker-800 text-[11px]">
+              <button
+                type="button"
+                onClick={() => toggleIndicator("ema50")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.ema50
+                    ? "bg-[#00d2ff]/20 text-[#00d2ff] font-bold border border-[#00d2ff]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                EMA50
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleIndicator("ema20")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.ema20
+                    ? "bg-[#f59e0b]/20 text-[#f59e0b] font-bold border border-[#f59e0b]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                EMA20
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleIndicator("bollinger")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.bollinger
+                    ? "bg-[#818cf8]/20 text-[#818cf8] font-bold border border-[#818cf8]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                Bollinger
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleIndicator("supertrend")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.supertrend
+                    ? "bg-[#10b981]/20 text-[#10b981] font-bold border border-[#10b981]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                SuperTrend
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleIndicator("kdj")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.kdj
+                    ? "bg-[#c084fc]/20 text-[#c084fc] font-bold border border-[#c084fc]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                KDJ
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleIndicator("rsi")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.rsi
+                    ? "bg-[#06b6d4]/20 text-[#06b6d4] font-bold border border-[#06b6d4]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                RSI
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleIndicator("macd")}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  indicators.macd
+                    ? "bg-[#3b82f6]/20 text-[#3b82f6] font-bold border border-[#3b82f6]/40"
+                    : "text-bunker-muted hover:text-white"
+                }`}
+              >
+                MACD
+              </button>
+            </div>
+
+            {/* Tüm Göstergeler Açılır Menü Butonu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowIndicatorsMenu(!showIndicatorsMenu)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-bunker-800 hover:bg-bunker-750 text-slate-200 text-xs font-semibold border border-bunker-700 transition-colors"
+              >
+                <span>📐 Göstergeler ({activeCount})</span>
+                <span className="text-[10px]">▼</span>
+              </button>
+
+              {/* Açılır Panel */}
+              {showIndicatorsMenu && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-72 bg-bunker-900 border border-bunker-700 rounded-xl shadow-2xl p-3 z-50 animate-in fade-in slide-in-from-top-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
+                    <span className="text-xs font-bold text-white uppercase">Gösterge Seçimi</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowIndicatorsMenu(false)}
+                      className="text-bunker-muted hover:text-white text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="mt-2.5 space-y-3 text-xs">
+                    {/* Grafik Üstü */}
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-cyan-400 mb-1">
+                        Grafik Üzeri (Overlay)
+                      </p>
+                      <div className="space-y-1.5">
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#00d2ff]" /> EMA 50 (Destek/Direnç)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.ema50}
+                            onChange={() => toggleIndicator("ema50")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#f59e0b]" /> EMA 20 (Hızlı Trend)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.ema20}
+                            onChange={() => toggleIndicator("ema20")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#a855f7]" /> EMA 200 (Ana Trend)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.ema200}
+                            onChange={() => toggleIndicator("ema200")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#818cf8]" /> Bollinger Bantları (20,2)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.bollinger}
+                            onChange={() => toggleIndicator("bollinger")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#10b981]" /> SuperTrend (10, 3)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.supertrend}
+                            onChange={() => toggleIndicator("supertrend")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#eab308]" /> VWAP (Hacim Ağırlıklı)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.vwap}
+                            onChange={() => toggleIndicator("vwap")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Alt Paneller */}
+                    <div className="pt-2 border-t border-bunker-800">
+                      <p className="text-[10px] uppercase font-bold text-amber-400 mb-1">
+                        Alt Paneller (Osilatörler)
+                      </p>
+                      <div className="space-y-1.5">
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#c084fc]" /> KDJ (9, 3, 3 - Dip Avcısı)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.kdj}
+                            onChange={() => toggleIndicator("kdj")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#06b6d4]" /> RSI (14 - Güç Endeksi)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.rsi}
+                            onChange={() => toggleIndicator("rsi")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between cursor-pointer hover:bg-bunker-800/60 p-1.5 rounded">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-0.5 bg-[#3b82f6]" /> MACD (12, 26, 9)
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={indicators.macd}
+                            onChange={() => toggleIndicator("macd")}
+                            className="rounded bg-bunker-950 border-bunker-700 text-cyan-500 focus:ring-0"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Canlı Fiyat */}
             <div className="flex items-baseline gap-2">
               <span className="text-lg font-bold text-white">
-                ₺{livePrice > 10 ? livePrice.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : livePrice}
+                ₺
+                {livePrice > 10
+                  ? livePrice.toLocaleString("tr-TR", { minimumFractionDigits: 2 })
+                  : livePrice}
               </span>
               <span className={`text-xs font-semibold ${pnlColor}`}>
-                {priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(2)}%
+                {priceChangePct >= 0 ? "+" : ""}
+                {priceChangePct.toFixed(2)}%
               </span>
             </div>
 
@@ -547,7 +1200,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
               <span>{wsActive ? "WS CANLI" : "SENKRONİZE"}</span>
             </div>
 
-            {/* Kapat Düğmesi */}
+            {/* Kapat Butonu */}
             <button
               type="button"
               onClick={onClose}
@@ -561,7 +1214,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
           </div>
         </div>
 
-        {/* BİLGİ & SEVİYE ŞERİDİ */}
+        {/* 2. BİLGİ & CANLI GÖSTERGE DEĞERLERİ HUD */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-2 bg-bunker-900/60 border-b border-bunker-800 text-xs font-mono">
           <div className="flex items-center gap-4 text-bunker-muted">
             <span>
@@ -578,20 +1231,33 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
             </span>
           </div>
 
-          {/* KDJ Canlı Değerleri */}
-          {liveKdj && (
-            <div className="flex items-center gap-3">
-              <span className="text-amber-400 font-bold">K: {liveKdj.k.toFixed(1)}</span>
-              <span className="text-blue-400 font-bold">D: {liveKdj.d.toFixed(1)}</span>
-              <span className="text-purple-400 font-bold">J: {liveKdj.j.toFixed(1)}</span>
-              <span className="text-[10px] text-bunker-muted">
-                {liveKdj.j <= 20 ? "(Dip / Aşırı Satım)" : liveKdj.j >= 80 ? "(Aşırı Alım)" : "(Nötr)"}
-              </span>
-            </div>
-          )}
+          {/* Dinamik Canlı Değerler */}
+          <div className="flex items-center gap-4">
+            {indicators.kdj && hudValues.kdj && (
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 font-bold">K: {hudValues.kdj.k.toFixed(1)}</span>
+                <span className="text-blue-400 font-bold">D: {hudValues.kdj.d.toFixed(1)}</span>
+                <span className="text-purple-400 font-bold">J: {hudValues.kdj.j.toFixed(1)}</span>
+              </div>
+            )}
+            {indicators.rsi && hudValues.rsi != null && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-cyan-400 font-bold">RSI(14): {hudValues.rsi.toFixed(1)}</span>
+              </div>
+            )}
+            {indicators.macd && hudValues.macd && (
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="text-blue-400">MACD: {hudValues.macd.macd.toFixed(2)}</span>
+                <span className="text-amber-400">Sig: {hudValues.macd.signal.toFixed(2)}</span>
+                <span className={hudValues.macd.hist >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                  H: {hudValues.macd.hist.toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* GRAFİK ALANI */}
+        {/* 3. GRAFİK ALANI */}
         <div className="relative flex-1 w-full h-full bg-[#06090e]">
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-bunker-950/70 backdrop-blur-xs">
@@ -604,23 +1270,57 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
           <div ref={containerRef} className="w-full h-full" />
         </div>
 
-        {/* ALT AÇIKLAMA BARI */}
+        {/* 4. ALT LEJANT & BİLGİ BARI */}
         <div className="flex items-center justify-between px-4 py-2 bg-bunker-950 border-t border-bunker-800 text-[11px] font-mono text-bunker-muted">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-0.5 bg-[#00d2ff]" /> EMA 50 (Trend & Destek)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-0.5 bg-[#f59e0b]" /> %K (Hızlı)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-0.5 bg-[#3b82f6]" /> %D (Sinyal)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-0.5 bg-[#c084fc]" /> %J (Momentum Dip Çizgisi)
-            </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-slate-400 font-semibold">Aktif Göstergeler:</span>
+            {indicators.ema50 && (
+              <span className="flex items-center gap-1 text-[#00d2ff]">
+                <span className="w-2.5 h-0.5 bg-[#00d2ff]" /> EMA 50
+              </span>
+            )}
+            {indicators.ema20 && (
+              <span className="flex items-center gap-1 text-[#f59e0b]">
+                <span className="w-2.5 h-0.5 bg-[#f59e0b]" /> EMA 20
+              </span>
+            )}
+            {indicators.ema200 && (
+              <span className="flex items-center gap-1 text-[#a855f7]">
+                <span className="w-2.5 h-0.5 bg-[#a855f7]" /> EMA 200
+              </span>
+            )}
+            {indicators.bollinger && (
+              <span className="flex items-center gap-1 text-[#818cf8]">
+                <span className="w-2.5 h-0.5 bg-[#818cf8]" /> Bollinger (20,2)
+              </span>
+            )}
+            {indicators.supertrend && (
+              <span className="flex items-center gap-1 text-[#10b981]">
+                <span className="w-2.5 h-0.5 bg-[#10b981]" /> SuperTrend
+              </span>
+            )}
+            {indicators.vwap && (
+              <span className="flex items-center gap-1 text-[#eab308]">
+                <span className="w-2.5 h-0.5 bg-[#eab308]" /> VWAP
+              </span>
+            )}
+            {indicators.kdj && (
+              <span className="flex items-center gap-1 text-[#c084fc]">
+                <span className="w-2.5 h-0.5 bg-[#c084fc]" /> KDJ(9,3)
+              </span>
+            )}
+            {indicators.rsi && (
+              <span className="flex items-center gap-1 text-[#06b6d4]">
+                <span className="w-2.5 h-0.5 bg-[#06b6d4]" /> RSI(14)
+              </span>
+            )}
+            {indicators.macd && (
+              <span className="flex items-center gap-1 text-[#3b82f6]">
+                <span className="w-2.5 h-0.5 bg-[#3b82f6]" /> MACD
+              </span>
+            )}
           </div>
-          <div>Kapatmak için Esc tuşuna veya dışarıya tıklayabilirsiniz</div>
+          <div className="hidden sm:block">Kapatmak için Esc tuşuna basabilirsiniz</div>
         </div>
       </div>
     </div>
