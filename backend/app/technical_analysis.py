@@ -1121,3 +1121,95 @@ def _ema_pullback_bounce(closes: list[float], lows: list[float], period: int = 5
         "pullback_bounce": bounce,
         "dist_pct": dist_pct,
     }
+
+
+def _stc(closes: list[float], period: int = 10, fast: int = 23, slow: int = 50) -> dict | None:
+    """Schaff Trend Cycle (STC) - Kripto Döngüsel Dip ve Dönüş Göstergesi."""
+    if len(closes) < slow + period + 5:
+        return None
+    c = np.asarray(closes, dtype=float)
+    
+    def ema(arr, p):
+        k = 2.0 / (p + 1.0)
+        res = [arr[0]]
+        for v in arr[1:]:
+            res.append(v * k + res[-1] * (1.0 - k))
+        return np.array(res)
+
+    macd = ema(c, fast) - ema(c, slow)
+    
+    stoch1 = []
+    for i in range(period - 1, len(macd)):
+        window = macd[i - period + 1 : i + 1]
+        w_min = float(np.min(window))
+        w_max = float(np.max(window))
+        denom = w_max - w_min
+        stoch1.append(((macd[i] - w_min) / denom * 100.0) if denom != 0 else 50.0)
+    
+    alpha = 0.5
+    s_stoch1 = [stoch1[0]]
+    for v in stoch1[1:]:
+        s_stoch1.append(alpha * v + (1.0 - alpha) * s_stoch1[-1])
+    s_stoch1 = np.array(s_stoch1)
+
+    if len(s_stoch1) < period:
+        return None
+    stoch2 = []
+    for i in range(period - 1, len(s_stoch1)):
+        window = s_stoch1[i - period + 1 : i + 1]
+        w_min = float(np.min(window))
+        w_max = float(np.max(window))
+        denom = w_max - w_min
+        stoch2.append(((s_stoch1[i] - w_min) / denom * 100.0) if denom != 0 else 50.0)
+
+    stc_vals = [stoch2[0]]
+    for v in stoch2[1:]:
+        stc_vals.append(alpha * v + (1.0 - alpha) * stc_vals[-1])
+        
+    stc_now = float(stc_vals[-1])
+    stc_prev = float(stc_vals[-2]) if len(stc_vals) >= 2 else stc_now
+    dip_buy = bool(stc_prev <= 25.0 and stc_now > 25.0)
+    return {
+        "stc": round(stc_now, 2),
+        "stc_prev": round(stc_prev, 2),
+        "dip_buy": dip_buy,
+    }
+
+
+def _zlmacd(closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9) -> dict | None:
+    """Zero-Lag MACD (ZLMACD) - Sıfır Gecikmeli Trend & Momentum Göstergesi."""
+    if len(closes) < slow + signal + 10:
+        return None
+    c = np.asarray(closes, dtype=float)
+    
+    def zlema(arr, p):
+        lag = int((p - 1) / 2)
+        diff = arr[lag:] - arr[:-lag]
+        corrected = arr[lag:] + diff
+        k = 2.0 / (p + 1.0)
+        res = [corrected[0]]
+        for v in corrected[1:]:
+            res.append(v * k + res[-1] * (1.0 - k))
+        return np.array(res)
+        
+    zl_fast = zlema(c, fast)
+    zl_slow = zlema(c, slow)
+    min_len = min(len(zl_fast), len(zl_slow))
+    zl_macd = zl_fast[-min_len:] - zl_slow[-min_len:]
+    
+    k_sig = 2.0 / (signal + 1.0)
+    sig_vals = [zl_macd[0]]
+    for v in zl_macd[1:]:
+        sig_vals.append(v * k_sig + sig_vals[-1] * (1.0 - k_sig))
+    sig_arr = np.array(sig_vals)
+    hist = zl_macd - sig_arr
+    
+    h_now = float(hist[-1])
+    h_prev = float(hist[-2]) if len(hist) >= 2 else h_now
+    bullish_cross = bool(h_prev <= 0.0 and h_now > 0.0)
+    return {
+        "macd": round(float(zl_macd[-1]), 4),
+        "signal": round(float(sig_arr[-1]), 4),
+        "hist": round(h_now, 4),
+        "bullish_cross": bullish_cross,
+    }

@@ -113,7 +113,7 @@ export default function SpotMonitorPage() {
             <Badge tone="info" className="font-mono text-[10px]">MTF LIVE</Badge>
           </div>
           <p className="text-xs text-bunker-muted mt-1">
-            KDJ Dip + SuperTrend Boğa + EMA50 Pullback Bounce stratejilerinin anlık canlı takibi ve 5.000 TL portföy simülatörü.
+            KDJ Dip + SuperTrend + EMA50 Sekmesi + STC Döngüsü + Zero-Lag MACD canlı takibi ve 5.000 TL portföy simülatörü.
           </p>
         </div>
 
