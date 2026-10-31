@@ -181,21 +181,66 @@ def _fetch_all_prices() -> dict:
     except Exception:
         return {}
 
+KILL_TRADE_THRESHOLD = 20
+KILL_PF_THRESHOLD = 1.0
+
+
+async def get_strategy_live_stats(conn) -> dict:
+    """Strateji başına canlı (gerçekleşen) işlem istatistikleri: işlem sayısı, WR, PF, net TL.
+    skill'in kill-kriteri: ≥20 kapalı işlemde PF<1.0 ise strateji kill bayrağı alır."""
+    try:
+        rows = await conn.fetch("""
+            SELECT strategy,
+                   COUNT(*) FILTER (WHERE status = 'OPEN') AS open_count,
+                   COUNT(*) FILTER (WHERE status <> 'OPEN') AS closed,
+                   COUNT(*) FILTER (WHERE status = 'WIN_TP') AS wins,
+                   COUNT(*) FILTER (WHERE status = 'LOSS_SL') AS losses,
+                   COUNT(*) FILTER (WHERE status = 'EXPIRED') AS expired,
+                   COALESCE(SUM(CASE WHEN status <> 'OPEN' AND net_pnl_try > 0 THEN net_pnl_try END), 0) AS gain,
+                   COALESCE(SUM(CASE WHEN status <> 'OPEN' AND net_pnl_try <= 0 THEN -net_pnl_try END), 0) AS loss,
+                   COALESCE(SUM(net_pnl_try) FILTER (WHERE status <> 'OPEN'), 0) AS net_try
+            FROM spot_monitor_signals
+            GROUP BY strategy
+        """)
+    except Exception:
+        return {}
+    out = {}
+    for r in rows:
+        closed = int(r["closed"])
+        gain, loss = float(r["gain"]), float(r["loss"])
+        pf = round(gain / loss, 2) if loss > 0 else (99.9 if gain > 0 else None)
+        wr = round(100.0 * int(r["wins"]) / closed, 1) if closed else None
+        out[r["strategy"]] = {
+            "trades": closed,
+            "open": int(r["open_count"]),
+            "wins": int(r["wins"]),
+            "losses": int(r["losses"]),
+            "expired": int(r["expired"]),
+            "win_rate": wr,
+            "pf": pf,
+            "net_pnl_try": round(float(r["net_try"]), 2),
+            "kill": bool(closed >= KILL_TRADE_THRESHOLD and pf is not None and pf < KILL_PF_THRESHOLD),
+        }
+    return out
+
+
 async def get_active_strategies() -> dict:
-    """Panelden görüntülenmek üzere aktif tarama stratejilerini, açık/kapalı durumlarını ve
-    tarama parametrelerini döndürür."""
+    """Panelden görüntülenmek üzere aktif tarama stratejilerini, açık/kapalı durumlarını,
+    canlı performans istatistiklerini ve tarama parametrelerini döndürür."""
     conn = await get_db_conn()
     try:
         await _ensure_strategy_settings(conn)
+        live_stats = await get_strategy_live_stats(conn)
     finally:
         await conn.close()
     strategies = [
-        {**s, "enabled": _strategy_enabled.get(s["code"], True)}
+        {**s, "enabled": _strategy_enabled.get(s["code"], True), "live": live_stats.get(s["code"])}
         for s in ACTIVE_STRATEGIES
     ]
     return {
         "count": len(ACTIVE_STRATEGIES),
         "active_count": sum(1 for s in strategies if s["enabled"]),
+        "kill_count": sum(1 for s in strategies if s["live"] and s["live"].get("kill")),
         "symbols_count": len(CORE_SYMBOLS),
         "timeframes": [
             {"code": tf, "label": cfg["label"], "tp_pct": cfg["tp_pct"], "sl_pct": cfg["sl_pct"]}
@@ -476,7 +521,7 @@ async def update_open_signals_pnl(conn):
             net_try = gross_loss - comm_try
 
         # Süre Aşımı (24 saat geçtiyse ve kapanmadıysa anlık fiyattan realize et)
-        elif (now_utc - row["detected_at"]).total_seconds() > 86400:
+        elif (now_utc - row["detected_at"]).total_seconds() > (3600 if row["timeframe"] == "5m" else (9000 if row["timeframe"] == "15m" else 21600)):
             status = "EXPIRED"
             exit_price = curr_p
             exit_time = now_utc
@@ -522,8 +567,8 @@ async def get_spot_monitor_dashboard():
         closed_signals = [r for r in rows if r["status"] != "OPEN"]
         open_signals = [r for r in rows if r["status"] == "OPEN"]
 
-        win_count = len([r for r in closed_signals if r["status"] == "WIN_TP"])
-        loss_count = len([r for r in closed_signals if r["status"] == "LOSS_SL"])
+        win_count = len([r for r in closed_signals if (r["net_pnl_try"] or 0) > 0])
+        loss_count = len([r for r in closed_signals if (r["net_pnl_try"] or 0) <= 0])
         win_rate = (win_count / len(closed_signals) * 100.0) if closed_signals else 0.0
 
         # 3. 5.000 TL Simüle Portföy Büyüklüğü
@@ -597,6 +642,88 @@ async def get_spot_monitor_dashboard():
         }
     finally:
         await conn.close()
+
+async def close_spot_position_manual(signal_id: int) -> dict:
+    """Belirli bir açık simülatör pozisyonunu anlık piyasa fiyatından manuel kapatır."""
+    conn = await get_db_conn()
+    try:
+        row = await conn.fetchrow("SELECT * FROM spot_monitor_signals WHERE id = $1 AND status = 'OPEN'", signal_id)
+        if not row:
+            return {"success": False, "message": "Açık pozisyon bulunamadı veya zaten kapalı."}
+
+        prices = _fetch_all_prices()
+        curr_p = prices.get(row["symbol"], row["entry_price"])
+        entry_p = row["entry_price"]
+        pnl_pct = ((curr_p - entry_p) / entry_p) * 100.0
+        now_utc = datetime.now(timezone.utc)
+        comm_try = row["commission_try"] or (TRADE_SIZE_TRY * COMMISSION_RATE * 2)
+        gross_pnl = TRADE_SIZE_TRY * (pnl_pct / 100.0)
+        net_try = gross_pnl - comm_try
+
+        old_mfe = row["mfe_pct"] or 0.0
+        old_mae = row["mae_pct"] or 0.0
+        new_mfe = max(old_mfe, pnl_pct)
+        new_mae = min(old_mae, pnl_pct)
+
+        await conn.execute("""
+            UPDATE spot_monitor_signals
+            SET status = 'MANUAL_CLOSED', exit_price = $1, exit_time = $2,
+                pnl_pct = $3, mfe_pct = $4, mae_pct = $5, net_pnl_try = $6
+            WHERE id = $7
+        """, curr_p, now_utc, pnl_pct, new_mfe, new_mae, net_try, signal_id)
+
+        return {
+            "success": True,
+            "symbol": row["symbol"],
+            "exit_price": curr_p,
+            "net_pnl_try": round(net_try, 2),
+            "pnl_pct": round(pnl_pct, 2)
+        }
+    finally:
+        await conn.close()
+
+
+async def close_all_spot_positions_manual() -> dict:
+    """Tüm açık simülatör pozisyonlarını tek tuşla anlık fiyattan manuel kapatır."""
+    conn = await get_db_conn()
+    try:
+        open_rows = await conn.fetch("SELECT * FROM spot_monitor_signals WHERE status = 'OPEN'")
+        if not open_rows:
+            return {"success": True, "count": 0, "message": "Kapatılacak açık pozisyon yok."}
+
+        prices = _fetch_all_prices()
+        now_utc = datetime.now(timezone.utc)
+        closed_count = 0
+
+        for row in open_rows:
+            curr_p = prices.get(row["symbol"], row["entry_price"])
+            entry_p = row["entry_price"]
+            pnl_pct = ((curr_p - entry_p) / entry_p) * 100.0
+            comm_try = row["commission_try"] or (TRADE_SIZE_TRY * COMMISSION_RATE * 2)
+            gross_pnl = TRADE_SIZE_TRY * (pnl_pct / 100.0)
+            net_try = gross_pnl - comm_try
+
+            old_mfe = row["mfe_pct"] or 0.0
+            old_mae = row["mae_pct"] or 0.0
+            new_mfe = max(old_mfe, pnl_pct)
+            new_mae = min(old_mae, pnl_pct)
+
+            await conn.execute("""
+                UPDATE spot_monitor_signals
+                SET status = 'MANUAL_CLOSED', exit_price = $1, exit_time = $2,
+                    pnl_pct = $3, mfe_pct = $4, mae_pct = $5, net_pnl_try = $6
+                WHERE id = $7
+            """, curr_p, now_utc, pnl_pct, new_mfe, new_mae, net_try, row["id"])
+            closed_count += 1
+
+        return {
+            "success": True,
+            "count": closed_count,
+            "message": f"{closed_count} açık pozisyon anlık piyasa fiyatından kapatıldı."
+        }
+    finally:
+        await conn.close()
+
 
 async def spot_monitor_background_loop():
     """Her 60 saniyede bir çalışan arka plan tarayıcısı."""

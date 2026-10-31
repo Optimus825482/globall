@@ -28,7 +28,7 @@ export interface SignalModalData {
   stop_price: number;
   score: number;
   kdj_j: number | null;
-  status: "OPEN" | "WIN_TP" | "LOSS_SL" | "EXPIRED";
+  status: "OPEN" | "WIN_TP" | "LOSS_SL" | "EXPIRED" | "MANUAL_CLOSED" | string;
   pnl_pct: number;
   mfe_pct: number;
   net_pnl_try: number;

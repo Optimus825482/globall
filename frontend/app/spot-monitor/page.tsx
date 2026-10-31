@@ -17,7 +17,7 @@ type SignalItem = {
   stop_price: number;
   score: number;
   kdj_j: number | null;
-  status: "OPEN" | "WIN_TP" | "LOSS_SL" | "EXPIRED";
+  status: "OPEN" | "WIN_TP" | "LOSS_SL" | "EXPIRED" | "MANUAL_CLOSED" | string;
   pnl_pct: number;
   mfe_pct: number;
   net_pnl_try: number;
@@ -54,6 +54,18 @@ type DashboardData = {
   last_scan_time: number;
 };
 
+type LiveStats = {
+  trades: number;
+  open: number;
+  wins: number;
+  losses: number;
+  expired: number;
+  win_rate: number | null;
+  pf: number | null;
+  net_pnl_try: number;
+  kill: boolean;
+};
+
 type ActiveStrategy = {
   code: string;
   label: string;
@@ -63,11 +75,13 @@ type ActiveStrategy = {
   timeframes: string[];
   enabled: boolean;
   tp_sl_override?: Record<string, { tp_pct: number; sl_pct: number }>;
+  live?: LiveStats | null;
 };
 
 type StrategiesData = {
   count: number;
   active_count: number;
+  kill_count: number;
   symbols_count: number;
   timeframes: Array<{ code: string; label: string; tp_pct: number; sl_pct: number }>;
   trade_size_try: number;
@@ -84,11 +98,17 @@ export default function SpotMonitorPage() {
   const [selectedModalSignal, setSelectedModalSignal] = useState<SignalItem | null>(null);
   const [strategies, setStrategies] = useState<StrategiesData | null>(null);
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<number | null>(null);
+  const [closingAll, setClosingAll] = useState(false);
 
   useEffect(() => {
-    apiFetch("/api/spot-monitor/strategies")
-      .then((res) => setStrategies(res as StrategiesData))
-      .catch((err) => console.error("Aktif stratejiler yüklenirken hata:", err));
+    const loadStrategies = () =>
+      apiFetch("/api/spot-monitor/strategies")
+        .then((res) => setStrategies(res as StrategiesData))
+        .catch((err) => console.error("Aktif stratejiler yüklenirken hata:", err));
+    loadStrategies();
+    const interval = setInterval(loadStrategies, 60000); // canlı strateji istatistikleri 60 sn'de bir yenilenir
+    return () => clearInterval(interval);
   }, []);
 
   const toggleStrategy = async (code: string, enabled: boolean) => {
@@ -139,6 +159,33 @@ export default function SpotMonitorPage() {
     } catch (err) {
       console.error("Tarama tetikleme hatası:", err);
       setScanning(false);
+    }
+  };
+
+  const handleClosePosition = async (id: number) => {
+    setClosingId(id);
+    try {
+      await apiFetch(`/api/spot-monitor/close/${id}`, { method: "POST" });
+      await loadDashboard();
+    } catch (err) {
+      console.error("Pozisyon kapatma hatası:", err);
+    } finally {
+      setClosingId(null);
+    }
+  };
+
+  const handleCloseAllPositions = async () => {
+    if (!window.confirm("Tüm açık simülatör pozisyonlarını anlık piyasa fiyatından kapatmak istediğinize emin misiniz?")) {
+      return;
+    }
+    setClosingAll(true);
+    try {
+      await apiFetch("/api/spot-monitor/close-all", { method: "POST" });
+      await loadDashboard();
+    } catch (err) {
+      console.error("Tümünü kapatma hatası:", err);
+    } finally {
+      setClosingAll(false);
     }
   };
 
@@ -323,30 +370,44 @@ export default function SpotMonitorPage() {
       </div>
 
       {/* SEKMELER: AKTİF İŞLEMLER / TARAMA GEÇMİŞİ & BAŞARI TABLOSU */}
-      <div className="flex items-center gap-2 border-b border-bunker-800 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab("ACTIVE")}
-          className={`px-4 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-2 ${
-            activeTab === "ACTIVE"
-              ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-              : "text-bunker-muted hover:text-white hover:bg-bunker-800"
-          }`}
-        >
-          <span>🎯</span> Aktif Sinyaller ({openSignals.length})
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bunker-800 pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("ACTIVE")}
+            className={`px-4 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-2 ${
+              activeTab === "ACTIVE"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                : "text-bunker-muted hover:text-white hover:bg-bunker-800"
+            }`}
+          >
+            <span>🎯</span> Aktif Sinyaller ({openSignals.length})
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("HISTORY")}
-          className={`px-4 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-2 ${
-            activeTab === "HISTORY"
-              ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-              : "text-bunker-muted hover:text-white hover:bg-bunker-800"
-          }`}
-        >
-          <span>📊</span> Tarama Geçmişi & Kâr Tablosu ({historySignals.length})
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("HISTORY")}
+            className={`px-4 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-2 ${
+              activeTab === "HISTORY"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                : "text-bunker-muted hover:text-white hover:bg-bunker-800"
+            }`}
+          >
+            <span>📊</span> Tarama Geçmişi & Kâr Tablosu ({historySignals.length})
+          </button>
+        </div>
+
+        {activeTab === "ACTIVE" && openSignals.length > 0 && (
+          <button
+            type="button"
+            onClick={handleCloseAllPositions}
+            disabled={closingAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono text-xs font-bold bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40 transition-colors disabled:opacity-50 cursor-pointer"
+            title="Tüm açık simülatör pozisyonlarını anlık piyasa fiyatından kapat"
+          >
+            <span>{closingAll ? "⏳ Kapatılıyor..." : `⚠️ Tümünü Kapat (${openSignals.length})`}</span>
+          </button>
+        )}
       </div>
 
       {/* İÇERİK TABLOSU */}
@@ -362,18 +423,19 @@ export default function SpotMonitorPage() {
               <th className="py-3 px-4">Hedef / Stop</th>
               <th className="py-3 px-4">Net Kâr (300₺)</th>
               <th className="py-3 px-4">Durum</th>
+              {activeTab === "ACTIVE" && <th className="py-3 px-4 text-right">İşlem</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-bunker-800/60">
             {loading ? (
               <tr>
-                <td colSpan={8} className="text-center py-10 text-bunker-muted">
+                <td colSpan={activeTab === "ACTIVE" ? 9 : 8} className="text-center py-10 text-bunker-muted">
                   Veriler yükleniyor...
                 </td>
               </tr>
             ) : (activeTab === "ACTIVE" ? openSignals : historySignals).length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center py-10 text-bunker-muted">
+                <td colSpan={activeTab === "ACTIVE" ? 9 : 8} className="text-center py-10 text-bunker-muted">
                   {activeTab === "ACTIVE"
                     ? "Şu an aktif takip edilen sinyal yok. 'Şimdi Tara' butonuna basabilirsiniz."
                     : "Henüz sonuçlanmış geçmiş işlem kaydı bulunmuyor."}
@@ -457,12 +519,33 @@ export default function SpotMonitorPage() {
                         <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
                           🛑 STOP OLDU
                         </span>
+                      ) : s.status === "EXPIRED" ? (
+                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/60" title="Hedefe ulaşamadan süre aşımı ile kapatıldı">
+                          ⏱️ SÜRE AŞIMI
+                        </span>
+                      ) : s.status === "MANUAL_CLOSED" ? (
+                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/80 text-blue-300 border border-blue-800/60" title="Kullanıcı tarafından manuel kapatıldı">
+                          🖐️ MANUEL
+                        </span>
                       ) : (
                         <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
                           KAPANDI
                         </span>
                       )}
                     </td>
+                    {activeTab === "ACTIVE" && (
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleClosePosition(s.id)}
+                          disabled={closingId === s.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold bg-rose-500/15 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="Bu pozisyonu anlık piyasa fiyatından kapat"
+                        >
+                          {closingId === s.id ? "..." : "✕ Kapat"}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })

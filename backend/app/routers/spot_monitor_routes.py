@@ -39,3 +39,24 @@ async def trigger_scan(background_tasks: BackgroundTasks):
         return {"status": "ok", "message": "Anlık Binance TR spot taraması başlatıldı."}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+@router.post("/close/{signal_id}")
+async def close_position(signal_id: int):
+    """Açık bir spot simülasyon pozisyonunu manuel olarak anlık fiyattan kapatır."""
+    try:
+        res = await spot_monitor.close_spot_position_manual(signal_id)
+        if not res.get("success"):
+            raise HTTPException(status_code=400, detail=res.get("message"))
+        return res
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.post("/close-all")
+async def close_all_positions():
+    """Tüm açık spot simülasyon pozisyonlarını tek tıkla anlık fiyattan kapatır."""
+    try:
+        return await spot_monitor.close_all_spot_positions_manual()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
