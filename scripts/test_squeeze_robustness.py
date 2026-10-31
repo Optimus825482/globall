@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from test_indicator_combos_lab import (
+    fetch_klines_range,
     simulate_conservative, calc_bollinger_vwap, calc_keltner, ALL_SYMBOLS,
 )
 
@@ -44,11 +45,10 @@ def run_grid():
             pass
 
     # 1500 bar taze veri çek
-    from test_advanced_spot_strategies import fetch_binance_klines
-    data = {}
+        data = {}
     for sym in ALL_SYMBOLS:
         try:
-            data[sym] = fetch_binance_klines(sym, interval="5m", limit=1500)
+            data[sym] = fetch_klines_range(sym, interval="5m", total=1500)
         except Exception as e:
             print(f"⚠️ {sym}: {e}")
     print(f"Veri: {len(data)} coin x 1500 bar (5m)\n")

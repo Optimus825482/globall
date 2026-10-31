@@ -45,6 +45,30 @@ from test_advanced_spot_strategies import (
     calc_bollinger_vwap, calc_zlmacd, calc_stc, calc_fisher, generate_signals,
 )
 
+
+def fetch_klines_range(symbol: str, interval: str, total: int = 1500) -> pd.DataFrame:
+    """Binance /klines limit=1000 tavanını aşmak için endTime ile geriye sayfalı çeker."""
+    import urllib.request
+    df = fetch_binance_klines(symbol, interval=interval, limit=min(1000, total))
+    if len(df) >= total or len(df) < 1000:
+        return df
+    end_ms = int(df["time"].iloc[0].timestamp() * 1000) - 1
+    url = (f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}"
+           f"&limit={min(1000, total - len(df))}&endTime={end_ms}")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    older = pd.DataFrame(data, columns=[
+        "time", "open", "high", "low", "close", "volume",
+        "close_time", "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore"
+    ])
+    older["time"] = pd.to_datetime(older["time"], unit="ms")
+    for col in ["open", "high", "low", "close", "volume"]:
+        older[col] = older[col].astype(float)
+    older = older[["time", "open", "high", "low", "close", "volume"]]
+    combined = pd.concat([older, df], ignore_index=True)
+    return combined.drop_duplicates(subset="time").sort_values("time").reset_index(drop=True)
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 COMMISSION_PCT = 0.08  # round-trip spot komisyonu (%)

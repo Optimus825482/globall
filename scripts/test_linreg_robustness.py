@@ -12,8 +12,8 @@ Kabul: komşuların çoğunluğu net pozitif + baz konfigürasyonda H2 pozitif �
 import sys
 import math
 
-from test_advanced_spot_strategies import fetch_binance_klines
 from test_indicator_combos_lab import (
+    fetch_klines_range,
     simulate_conservative, calc_ema, calc_rsi, calc_chop, ALL_SYMBOLS,
 )
 from test_indicator_combos_lab_v3 import calc_linreg_slope, calc_vol_osc
@@ -39,7 +39,7 @@ def main():
     data = {}
     for sym in ALL_SYMBOLS:
         try:
-            data[sym] = fetch_binance_klines(sym, interval="5m", limit=1500)
+            data[sym] = fetch_klines_range(sym, interval="5m", total=1500)
         except Exception as e:
             print(f"⚠️ {sym}: {e}")
     print(f"Veri: {len(data)} coin x 1500 bar\n")

@@ -62,6 +62,7 @@ type ActiveStrategy = {
   evidence: string;
   timeframes: string[];
   enabled: boolean;
+  tp_sl_override?: Record<string, { tp_pct: number; sl_pct: number }>;
 };
 
 type StrategiesData = {
@@ -305,6 +306,11 @@ export default function SpotMonitorPage() {
                 </div>
               </div>
               <p className="text-[10px] text-bunker-muted mt-1.5 leading-snug">{st.description}</p>
+              {st.tp_sl_override && Object.keys(st.tp_sl_override).length > 0 && (
+                <p className="text-[9px] text-amber-300/90 mt-1 font-mono">
+                  🎯 Opt. kademe: {Object.entries(st.tp_sl_override).map(([tf, o]) => `${tf} TP %${o.tp_pct}/SL %${o.sl_pct}`).join(" · ")}
+                </p>
+              )}
               <p className="text-[9px] text-emerald-400/80 mt-1 font-mono">📈 {st.evidence}</p>
             </div>
           ))}

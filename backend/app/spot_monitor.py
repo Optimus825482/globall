@@ -45,8 +45,9 @@ ACTIVE_STRATEGIES = [
         "label": "BB-KC Sıkışma Kırılımı",
         "score": 93.0,
         "description": "Bollinger bantları Keltner kanalına sıkıştıktan sonra kapanışın üst bandı yukarı kesmesi (volatilite genişleme kırılımı).",
-        "evidence": "Lab v2 (5m): WR %56.8, PF 1.74, 13/17 coin pozitif",
+        "evidence": "Lab v2 (5m): PF 1.74; walk-forward optimize kademe OOS doğrulamalı (PF 1.47)",
         "timeframes": ["5m", "15m", "1h"],
+        "tp_sl_override": {"5m": {"tp_pct": 1.0, "sl_pct": 1.5}},
     },
     {
         "code": "stc_cycle",
@@ -91,6 +92,8 @@ ACTIVE_STRATEGIES = [
 ]
 
 ACTIVE_STRATEGY_CODES = {s["code"] for s in ACTIVE_STRATEGIES}
+# Strateji bazlı TP/SL override (walk-forward + OOS doğrulamasından geçen kademeler)
+STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE_STRATEGIES}
 
 # Otomatik tarama döngüsünde strateji açık/kapalı durumu (DB'de kalıcı, süreç içi önbellek).
 _strategy_enabled: dict[str, bool] = {}
@@ -360,6 +363,10 @@ async def run_single_scan():
                 if matched:
                     tp_pct = tf_cfg["tp_pct"]
                     sl_pct = tf_cfg["sl_pct"]
+                    override = STRATEGY_TPSL_OVERRIDE.get(strategy_code, {}).get(tf)
+                    if override:
+                        tp_pct = override["tp_pct"]
+                        sl_pct = override["sl_pct"]
                     target_p = price * (1.0 + (tp_pct / 100.0))
                     stop_p = price * (1.0 - (sl_pct / 100.0))
                     sig_key = f"{sym}-{tf}-{strategy_code}-{int(start_ts)}"
