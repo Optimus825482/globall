@@ -7,7 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 import asyncpg
 from app.config import config
-from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema
+from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze
 
 logger = logging.getLogger("scalper.spot_monitor")
 
@@ -111,6 +111,7 @@ async def run_single_scan():
                 ema = _ema_pullback_bounce(closes, lows, period=50, tolerance_pct=0.010) or {}
                 stc = _stc(closes, period=10, fast=23, slow=50) or {}
                 zl = _zlmacd(closes, fast=12, slow=26, signal=9) or {}
+                sq = _bb_kc_squeeze(highs, lows, closes) or {}
                 ema20 = _ema(closes, 20)
                 ema50 = _ema(closes, 50)
 
@@ -122,6 +123,10 @@ async def run_single_scan():
 
                 stc_dip = bool(stc.get("dip_buy"))
                 stc_val = float(stc.get("stc", 50.0))
+
+                sq_break = bool(sq.get("breakout"))
+                sq_bb_up = float(sq.get("bb_upper", 0.0))
+                sq_width = float(sq.get("bb_width_pct", 0.0))
 
                 zl_cross = bool(zl.get("bullish_cross"))
                 zl_hist = float(zl.get("hist", 0.0))
@@ -141,7 +146,16 @@ async def run_single_scan():
                     score = 94.0
                     note = f"EMA50 desteginde (%{dist_ema}), KDJ J={j_val:.1f}"
 
-                # 2. Schaff Trend Cycle (STC) Dip Dönüşü (SOL/LINK Şampiyonu WinRate %64+, PF 2.79)
+                # 2. BB-KC Sıkışma Kırılımı (Lab v2: 5m WR %56.8, PF 1.74, 13/17 coin pozitif,
+                #    26 komşu parametreden 23'ü net pozitif — sağlamlık doğrulandı)
+                elif sq_break:
+                    matched = True
+                    strategy_code = "squeeze_breakout"
+                    strategy_label = "BB-KC Sıkışma Kırılımı"
+                    score = 93.0
+                    note = f"Bollinger-Keltner sikismasi sonrasi ust bant kirilimi (BBU={sq_bb_up:.6g}, BBW=%{sq_width:.2f})"
+
+                # 3. Schaff Trend Cycle (STC) Dip Dönüşü (SOL/LINK Şampiyonu WinRate %64+, PF 2.79)
                 elif stc_dip:
                     matched = True
                     strategy_code = "stc_cycle"
@@ -149,7 +163,7 @@ async def run_single_scan():
                     score = 92.0
                     note = f"STC 25 altından yukarı kırdı (STC={stc_val:.1f})"
 
-                # 3. Zero-Lag MACD + EMA 20/50 Momentum Sıçraması (OP/AVAX Şampiyonu PF 2.17)
+                # 4. Zero-Lag MACD + EMA 20/50 Momentum Sıçraması (OP/AVAX Şampiyonu PF 2.17)
                 elif zl_cross and trend_bull:
                     matched = True
                     strategy_code = "zlmacd_momentum"
@@ -157,7 +171,7 @@ async def run_single_scan():
                     score = 90.0
                     note = f"ZLMACD sıfırı yukarı kesti (Hist={zl_hist:.4f}), EMA20>=EMA50"
 
-                # 4. SuperTrend Boğada KDJ Dip Kesişimi
+                # 5. SuperTrend Boğada KDJ Dip Kesişimi
                 elif st_bull and dip_buy:
                     matched = True
                     strategy_code = "supertrend_pullback"
@@ -165,7 +179,7 @@ async def run_single_scan():
                     score = 88.0
                     note = f"SuperTrend Boğada, KDJ J={j_val:.1f} yukarı kesti"
 
-                # 5. KDJ Ekstrem Saf Dip Dönüşü
+                # 6. KDJ Ekstrem Saf Dip Dönüşü
                 elif dip_buy and j_val <= 12.0:
                     matched = True
                     strategy_code = "kdj_pure_dip"
