@@ -3837,6 +3837,39 @@ def _compute_technical_indicators(
             hma_21 = round(float(hma_arr[-1]), 2)
             hma_21_slope = round(float(hma_arr[-1] - hma_arr[-2]), 2)
 
+    # 2026-10-31: VectorBT Optimizasyon Gostergeleri (EMA200, WaveTrend, ZL-MACD, SMC 15-Bar Sweep)
+    ema200 = float(_calc_ema(c, min(len(c), 200))[-1])
+
+    # WaveTrend (ch_len=10, avg_len=21)
+    hlc3 = (h + l + c) / 3.0
+    esa_wt = _calc_ema(hlc3, 10)
+    de_wt = _calc_ema(np.abs(hlc3 - esa_wt), 10)
+    ci_wt = (hlc3 - esa_wt) / (0.015 * np.maximum(de_wt, 1e-9))
+    wt1_series = _calc_ema(ci_wt, 21)
+    wt1 = float(wt1_series[-1])
+    wt2 = float(np.mean(wt1_series[-4:])) if len(wt1_series) >= 4 else wt1
+    wt_cross_up = bool(len(wt1_series) >= 2 and wt1_series[-2] <= wt2 and wt1 > wt2)
+
+    # ZeroLag MACD (12, 21, 9)
+    ema_f1 = _calc_ema(c, 12)
+    zl_ema_f = 2.0 * ema_f1 - _calc_ema(ema_f1, 12)
+    ema_s1 = _calc_ema(c, 21)
+    zl_ema_s = 2.0 * ema_s1 - _calc_ema(ema_s1, 21)
+    zl_macd_series = zl_ema_f - zl_ema_s
+    zl_sig_series = _calc_ema(zl_macd_series, 9)
+    zl_macd = float(zl_macd_series[-1])
+    zl_sig = float(zl_sig_series[-1])
+    zl_macd_bullish = bool(zl_macd > zl_sig)
+
+    # SMC 15-Bar Liquidity Sweep (En Dusuk Dip Avi ve Kapanis Toparlanmasi)
+    smc_sweep_bull = False
+    smc_sweep_bear = False
+    if len(l) >= 16:
+        lowest_15 = float(np.min(l[-16:-1]))
+        highest_15 = float(np.max(h[-16:-1]))
+        smc_sweep_bull = bool(l_last < lowest_15 and last_price > lowest_15)
+        smc_sweep_bear = bool(h_last > highest_15 and last_price < highest_15)
+
     return {
         "price": last_price,
         "high": float(np.max(h)),
@@ -3878,6 +3911,14 @@ def _compute_technical_indicators(
         "htf_trend": htf_trend,
         "hma_21": hma_21,
         "hma_21_slope": hma_21_slope,
+        "ema200": round(ema200, 2),
+        "wt1": round(wt1, 2),
+        "wt2": round(wt2, 2),
+        "wt_cross_up": wt_cross_up,
+        "zl_macd": round(zl_macd, 5),
+        "zl_macd_bullish": zl_macd_bullish,
+        "smc_sweep_bull": smc_sweep_bull,
+        "smc_sweep_bear": smc_sweep_bear,
         "signal_bar_time": int(bar_times[-1]) if bar_times and len(bar_times) == len(closes) else None,
         "signal_bar_confirmed": bool(bar_times and len(bar_times) == len(closes)),
         "updated_at": time.time(),
@@ -4086,6 +4127,14 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "chop_14": chop_14,
             "ker_10": ker_10,
             "atr": atr_val,
+            "ema200": tech.get("ema200") if tech else None,
+            "wt1": float(tech.get("wt1", 0.0)) if tech else 0.0,
+            "wt2": float(tech.get("wt2", 0.0)) if tech else 0.0,
+            "wt_cross_up": bool(tech.get("wt_cross_up", False)) if tech else False,
+            "zl_macd": float(tech.get("zl_macd", 0.0)) if tech else 0.0,
+            "zl_macd_bullish": bool(tech.get("zl_macd_bullish", False)) if tech else False,
+            "smc_sweep_bull": bool(tech.get("smc_sweep_bull", False)) if tech else False,
+            "smc_sweep_bear": bool(tech.get("smc_sweep_bear", False)) if tech else False,
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "source": "mt5_tick" if source == "mt5_tick" else source,
             "age_sec": None if age_sec is None else round(age_sec, 1),
@@ -6773,7 +6822,9 @@ def _gold_scan_note(gold_tick: Dict[str, Any], now_ts: float) -> str:
         reasons.append("grafik yönü sinyalle ters")
     if reasons:
         return "işlem bekliyor: " + " + ".join(reasons[:2])
-    return "✅ temel şartlar uygun — giriş değerlendiriliyor"
+    wt_val = float(gold_tick.get("wt1", 0.0))
+    zl_bull = bool(gold_tick.get("zl_macd_bullish", False))
+    return f"✅ Kombo Hibrit hazır: WT ({wt_val:+.1f}), ZL-MACD ({'Boğa' if zl_bull else 'Nötr'}) — giriş değerlendiriliyor" 
 
 
 def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
@@ -6829,7 +6880,11 @@ def _btc_scan_note(btc_tick: Dict[str, Any], now_ts: float) -> str:
         reasons.append("grafik yönü sinyalle ters")
     if reasons:
         return "işlem bekliyor: " + " + ".join(reasons[:2])
-    return "✅ temel şartlar uygun — giriş değerlendiriliyor"
+    sweep = bool(btc_tick.get("smc_sweep_bull", False))
+    wt_val = float(btc_tick.get("wt1", 0.0))
+    if sweep:
+        return f"⚡ SMC 15-bar likidite süpürmesi teyitli! (WT={wt_val:+.1f}) — giriş değerlendiriliyor"
+    return f"✅ BTC Modeli hazır: WT ({wt_val:+.1f}) — giriş değerlendiriliyor" 
 
 
 

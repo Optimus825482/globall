@@ -384,6 +384,7 @@ def calculate_adaptive_targets(
     score: float,
     atr_pct: float | None = None,
     base_target_pct: float | None = None,
+    symbol: str | None = None,
 ) -> dict:
     """Dinamik Uyarlanabilir Hedefler (Dynamic Adaptive Targets).
 
@@ -396,6 +397,25 @@ def calculate_adaptive_targets(
     """
     sc = max(0.0, min(100.0, float(score or 0.0)))
     atr = float(atr_pct) if (atr_pct is not None and float(atr_pct) > 0) else 1.4
+
+    # 2026-10-31: VectorBT Optimizasyon Motoru Varlik Uyarlamasi
+    sym_u = str(symbol or "").upper()
+    if "BTC" in sym_u:
+        # VectorBT SMC Liquidity Sweep En Iyi Model (Sharpe: 2.781, MaxDD: -%0.72): TP %2.0, SL %1.0 (R:R=2.0)
+        return {
+            "tp1_scalp_pct": 2.0,
+            "tp2_runner_pct": 3.5,
+            "breakeven_trigger_pct": 1.0,
+            "trailing_gap_pct": 0.50,
+        }
+    elif "XAU" in sym_u or "GOLD" in sym_u:
+        # VectorBT Kombo Hibrit En Iyi Model (Sharpe: 2.364, MaxDD: -%0.44): TP %1.2, SL %0.8 (R:R=1.50)
+        return {
+            "tp1_scalp_pct": 1.2,
+            "tp2_runner_pct": 2.4,
+            "breakeven_trigger_pct": 0.8,
+            "trailing_gap_pct": 0.35,
+        }
 
     # 2026-09-26 (denetim #2 düzeltmesi): TRY mikro çiftlerin ATR%'si tipik
     # 0.3-0.9 bandında; eski sabit tabanlar (TP1 ≥ 1.2, TP2 ≥ 3.0, BE ≥ 0.9)
@@ -595,6 +615,7 @@ def evaluate_master_surge(
         score=composite_index,
         atr_pct=atr_pct,
         base_target_pct=float((velocity_candidate or {}).get("target_pct") or 2.2),
+        symbol=sym,
     )
 
     min_score = float(getattr(config, "MASTER_SURGE_MIN_SCORE", 70.0))
