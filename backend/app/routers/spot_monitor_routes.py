@@ -12,6 +12,11 @@ async def get_dashboard():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+@router.get("/strategies")
+async def get_strategies():
+    """Spot Monitor'de şu an aktif olan tarama stratejilerini, skorlarını ve laboratuvar kanıtlarını döndürür."""
+    return spot_monitor.get_active_strategies()
+
 @router.post("/scan-now")
 async def trigger_scan(background_tasks: BackgroundTasks):
     """Kullanıcının panelden 'Şimdi Tara' butonuna basarak anlık tarama başlatmasını sağlar."""

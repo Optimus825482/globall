@@ -54,12 +54,38 @@ type DashboardData = {
   last_scan_time: number;
 };
 
+type ActiveStrategy = {
+  code: string;
+  label: string;
+  score: number;
+  description: string;
+  evidence: string;
+  timeframes: string[];
+};
+
+type StrategiesData = {
+  count: number;
+  symbols_count: number;
+  timeframes: Array<{ code: string; label: string; tp_pct: number; sl_pct: number }>;
+  trade_size_try: number;
+  initial_portfolio_try: number;
+  commission_rate: number;
+  strategies: ActiveStrategy[];
+};
+
 export default function SpotMonitorPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY">("ACTIVE");
   const [selectedModalSignal, setSelectedModalSignal] = useState<SignalItem | null>(null);
+  const [strategies, setStrategies] = useState<StrategiesData | null>(null);
+
+  useEffect(() => {
+    apiFetch("/api/spot-monitor/strategies")
+      .then((res) => setStrategies(res as StrategiesData))
+      .catch((err) => console.error("Aktif stratejiler yüklenirken hata:", err));
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -113,7 +139,7 @@ export default function SpotMonitorPage() {
             <Badge tone="info" className="font-mono text-[10px]">MTF LIVE</Badge>
           </div>
           <p className="text-xs text-bunker-muted mt-1">
-            KDJ Dip + SuperTrend + EMA50 Sekmesi + STC Döngüsü + Zero-Lag MACD canlı takibi ve 5.000 TL portföy simülatörü.
+            KDJ Dip + SuperTrend + EMA50 Sekmesi + BB-KC Sıkışma Kırılımı + STC Döngüsü + Zero-Lag MACD canlı takibi ve 5.000 TL portföy simülatörü.
           </p>
         </div>
 
@@ -199,6 +225,50 @@ export default function SpotMonitorPage() {
             </span>
           </div>
         </Card>
+      </div>
+
+      {/* AKTİF TARAMA STRATEJİLERİ (canlı sistemden /strategies ile senkron) */}
+      <div className="rounded-xl border border-bunker-800 bg-bunker-900/80 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <h2 className="font-mono text-xs uppercase tracking-wide text-bunker-muted">
+              🔬 Aktif Tarama Stratejileri
+            </h2>
+            <Badge tone="info" className="font-mono text-[10px]">
+              {strategies?.count ?? "..."} strateji aktif
+            </Badge>
+          </div>
+          <p className="text-[10px] font-mono text-bunker-muted">
+            {strategies?.symbols_count ?? 18} sembol × {strategies?.timeframes.length ?? 3} TF
+            {" · "}₺{strategies?.trade_size_try ?? 300}/işlem
+            {" · "}Kom. %{((strategies?.commission_rate ?? 0.0004) * 2 * 100).toFixed(2)} round-trip
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+          {strategies?.strategies.map((st, i) => (
+            <div key={st.code} className="rounded-lg border border-bunker-800 bg-bunker-950/60 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-bunker-800 text-bunker-muted">
+                    #{i + 1}
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-200 truncate" title={st.label}>
+                    {st.label}
+                  </span>
+                </div>
+                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
+                  {st.score.toFixed(0)}p
+                </span>
+              </div>
+              <p className="text-[10px] text-bunker-muted mt-1.5 leading-snug">{st.description}</p>
+              <p className="text-[9px] text-emerald-400/80 mt-1 font-mono">📈 {st.evidence}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[9px] font-mono text-bunker-muted mt-2.5">
+          Öncelik sırası yukarıdan aşağıya ilerler; aynı sembolde ilk eşleşen kural sinyal üretir.
+          Kâr/stop kademeleri: {strategies?.timeframes.map((t) => `${t.code} (TP %${t.tp_pct}/SL %${t.sl_pct})`).join(" · ")}
+        </p>
       </div>
 
       {/* SEKMELER: AKTİF İŞLEMLER / TARAMA GEÇMİŞİ & BAŞARI TABLOSU */}

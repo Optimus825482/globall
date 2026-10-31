@@ -29,6 +29,59 @@ TIMEFRAMES = {
     "1h": {"tp_pct": 4.0, "sl_pct": 2.0, "label": "1h Swing"}
 }
 
+# Aktif tarama stratejileri kaydı — run_single_scan() içindeki kurallarla senkron tutulmalı.
+# Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
+ACTIVE_STRATEGIES = [
+    {
+        "code": "ema_bounce",
+        "label": "EMA 50 Sekmesi + KDJ Dip",
+        "score": 94.0,
+        "description": "Ana trend içinde EMA50 desteğine geri çekilme + KDJ dip teyidiyle sekme girişi.",
+        "evidence": "Lab şampiyonu: WinRate %83-100",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+    {
+        "code": "squeeze_breakout",
+        "label": "BB-KC Sıkışma Kırılımı",
+        "score": 93.0,
+        "description": "Bollinger bantları Keltner kanalına sıkıştıktan sonra kapanışın üst bandı yukarı kesmesi (volatilite genişleme kırılımı).",
+        "evidence": "Lab v2 (5m): WR %56.8, PF 1.74, 13/17 coin pozitif",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+    {
+        "code": "stc_cycle",
+        "label": "Schaff Trend Cycle (STC Dip)",
+        "score": 92.0,
+        "description": "STC'nin 25 seviyesinin altından yukarı kırılmasıyla döngüsel dip dönüş girişi.",
+        "evidence": "SOL/LINK şampiyonu: WinRate %64+, PF 2.79",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+    {
+        "code": "zlmacd_momentum",
+        "label": "Zero-Lag MACD + Momentum",
+        "score": 90.0,
+        "description": "ZLMACD histogramının sıfırı yukarı kesmesi + EMA20 ≥ EMA50 trend filtresi.",
+        "evidence": "OP şampiyonu: PF 2.17",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+    {
+        "code": "supertrend_pullback",
+        "label": "SuperTrend Pullback (KDJ Dip)",
+        "score": 88.0,
+        "description": "SuperTrend boğa yönündeyken KDJ dip kesişimiyle trend içi geri çekilme girişi.",
+        "evidence": "SuperTrend(10, 3.0) dinamik ATR trend filtresi",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+    {
+        "code": "kdj_pure_dip",
+        "label": "KDJ Saf Dip (J≤12)",
+        "score": 82.0,
+        "description": "KDJ J eğrisinin ekstrem aşırı satım bölgesinden (J≤12) yukarı sıçraması.",
+        "evidence": "Ekstrem dip yakalayıcı destek kuralı",
+        "timeframes": ["5m", "15m", "1h"],
+    },
+]
+
 _monitor_running = False
 _last_scan_time = 0.0
 _cached_results = {
@@ -60,6 +113,21 @@ def _fetch_all_prices() -> dict:
             return {d["symbol"]: float(d["price"]) for d in data if d["symbol"].endswith("TRY")}
     except Exception:
         return {}
+
+def get_active_strategies() -> dict:
+    """Panelden görüntülenmek üzere aktif tarama stratejilerini ve tarama parametrelerini döndürür."""
+    return {
+        "count": len(ACTIVE_STRATEGIES),
+        "symbols_count": len(CORE_SYMBOLS),
+        "timeframes": [
+            {"code": tf, "label": cfg["label"], "tp_pct": cfg["tp_pct"], "sl_pct": cfg["sl_pct"]}
+            for tf, cfg in TIMEFRAMES.items()
+        ],
+        "trade_size_try": TRADE_SIZE_TRY,
+        "initial_portfolio_try": INITIAL_PORTFOLIO_TRY,
+        "commission_rate": COMMISSION_RATE,
+        "strategies": ACTIVE_STRATEGIES,
+    }
 
 async def run_single_scan():
     """Tüm sembollerde 3 zaman diliminde KDJ, SuperTrend ve EMA50 taraması yapar."""
