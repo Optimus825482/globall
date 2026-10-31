@@ -308,6 +308,11 @@ export default function SpotMonitorPage() {
             <Badge tone="info" className="font-mono text-[10px]">
               {strategies ? `${strategies.active_count}/${strategies.count} aktif` : "..."}
             </Badge>
+            {strategies && strategies.kill_count > 0 && (
+              <Badge tone="negative" className="font-mono text-[10px]">
+                ⚠️ {strategies.kill_count} kill kriteri
+              </Badge>
+            )}
           </div>
           <p className="text-[10px] font-mono text-bunker-muted">
             {strategies?.symbols_count ?? 18} sembol × {strategies?.timeframes.length ?? 3} TF
@@ -359,6 +364,15 @@ export default function SpotMonitorPage() {
                 </p>
               )}
               <p className="text-[9px] text-emerald-400/80 mt-1 font-mono">📈 {st.evidence}</p>
+              {st.live && st.live.trades > 0 && (
+                <p className={`text-[9px] font-mono mt-1 ${st.live.kill ? "text-rose-400 font-bold" : "text-cyan-400/80"}`}>
+                  🔴 Canlı: {st.live.trades} işlem ({st.live.open} açık) · WR %{st.live.win_rate?.toFixed(1) ?? "—"} · PF {st.live.pf?.toFixed(2) ?? "—"} ·{" "}
+                  <span className={st.live.net_pnl_try >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                    {st.live.net_pnl_try >= 0 ? "+" : ""}₺{st.live.net_pnl_try.toFixed(2)}
+                  </span>
+                  {st.live.kill && " · ⚠️ KILL KRİTERİ (PF<1.0, ≥20 işlem)"}
+                </p>
+              )}
             </div>
           ))}
         </div>
