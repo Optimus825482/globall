@@ -9114,7 +9114,7 @@ async def _forex_auto_paper_loop():
                 # SL'e volatilite nefes payı ekler (gürültü stoplarını azaltır).
                 first_target_pips = 0.0
                 if _AUTO_SETTINGS.atr_exit_enabled:
-                    if _AUTO_SETTINGS.crypto_sl_atr_mult > 0 and ("BTC" in sym or "ETH" in sym):
+                    if _AUTO_SETTINGS.crypto_sl_atr_mult > 0 and is_crypto_symbol(sym):
                         # Kripto özel stop genişliği: 1.1×ATR kriptoda dar kalıyor (2026-10-06 replay kazananı)
                         atr_levels = get_atr_exit_levels(
                             atr_pips, spec["sl_pips"], spec["tp_pips"],
@@ -9125,11 +9125,7 @@ async def _forex_auto_paper_loop():
                     tp_pips = atr_levels["tp_pips"]
                     if _AUTO_SETTINGS.partial_tp_enabled:
                         first_target_pips = atr_levels["first_target_pips"]
-                elif _AUTO_SETTINGS.crypto_sl_atr_mult > 0 and ("BTC" in sym or "ETH" in sym):
-                    # 2026-10-10 denetim P2-10: `crypto_sl_atr_mult` yalnız ATR çıkış motoru
-                    # açıkken uygulanır. Kapatılırsa BTC sessizce `spec["sl_pips"]`'e döner —
-                    # kalibre edilmiş kripto stopu kaybolur ve kimse fark etmez. Sessizliği
-                    # kaldır: ayar açıkken motor kapalıysa karar akışına uyarı düşer.
+                elif _AUTO_SETTINGS.crypto_sl_atr_mult > 0 and is_crypto_symbol(sym):
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_atr_off", 0.0) > 300.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_atr_off"] = now_ts
                         _log_auto_decision(
@@ -9141,6 +9137,12 @@ async def _forex_auto_paper_loop():
                             strategy=_c_strat,
                             strategy_label=_c_strat_lbl,
                         )
+
+                # Spread Güvenlik Tamponu: Spread stop mesafesinin %40'ından fazlasını yutuyorsa,
+                # stop mesafesi en az 2.5x spread seviyesine genişletilir (böylece normal volatilite stop patlatmaz).
+                spread_val_pips = float(cand.get("spread_pips") or (t.get("spread_pips") if isinstance(t, dict) else 0.0) or 0.0)
+                if spread_val_pips > 0 and sl_pips < spread_val_pips * 2.2:
+                    sl_pips = round(max(sl_pips, spread_val_pips * 2.5), 1)
                 if str(cand.get("entry_source", "")) == "donchian" and atr_pips > 0:
                     # Donchian modu çıkışları (replay ile birebir): SL 2×ATR, TP 4×ATR, kısmi kâr yok
                     sl_pips = round(2.0 * atr_pips, 1)

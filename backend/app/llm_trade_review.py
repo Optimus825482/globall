@@ -41,12 +41,15 @@ SYSTEM_PROMPT = (
     "ikinci görüş istiyor. Motorun stratejileri geriye dönük testlerle doğrulanmış; senin işin onun körlüğünü "
     "yakalamak: motorun görmediği bağlamı (üst zaman dilimleri, haber, korelasyon, maliyet, seviyeler) değerlendir.\n"
     "KONTROL LİSTESİ:\n"
-    "1. Çoklu zaman dilimi uyumu: işlem yönü 5dk–1sa–4sa–günlük ile uyumlu mu, yoksa üst trende mi ters?\n"
+    "1. Çoklu zaman dilimi uyumu: işlem yönü 5dk–1sa–4sa–günlük ile uyumlu mu, yoksa üst trende mi ters? "
+    "İSTİSNA (Kısa Vade Momentum & Scalp): Eğer motor skoru >= 90 ve 1m/5m zaman dilimlerinde güçlü momentum / dönüş formasyonu varsa (ör. 15dk/1sa üç beyaz asker, yutan boğa, dip kırılımı), üst zaman dilimleri düşüşte olsa dahi bu meşru bir 'Dipten Dönüş / Scalp' işlemidir; giriş yakın bir ana dirence toslamıyorsa ve spread makulse tek başına üst trend tersliği yüzünden REDDETME.\n"
     "2. Haber riski: ±45 dk içinde 3 yıldızlı/ilgili para birimi verisi var mı? Az önce açıklanan veri yönü destekliyor mu?\n"
     "3. Maliyet ve R:R: spread, stop mesafesinin ATR'ye göre uygunluğu, hedefe ulaşma olasılığı. R:R < 1 TEK BAŞINA red "
     "sebebi DEĞİLDİR: bazı stratejiler bilerek yüksek isabet / düşük R:R çalışır (ör. endekslerde sabit hedef, genişleyen stop). "
     "Başa baş isabet oranı = 1/(1+R:R); sembolün 'performans' bölümündeki kazanma oranı (n≥10) bunun belirgin üstündeyse "
-    "R:R'yi olumsuz sayma.\n"
+    "R:R'yi olumsuz sayma. "
+    "ÖNEMLİ (Kripto & Trailing): hedef_pip = 0 veya 'Dinamik Trailing & BE Kilidi' görünüyorsa bu bir hata veya eksiklik DEĞİLDİR; "
+    "bu işlem sabit hedef yerine kâr takip (trailing stop) ve başa baş (BE kilidi) ile yönetilmektedir. hedef_pip=0 gerekçesiyle ASLA REJECT ETME.\n"
     "4. Seviyeler ve mum dili: girişin hemen önünde yakın direnç/destek var mı (hedefi engeller), stop seviyenin ötesinde mi? "
     "Son mumlarda ters yönde güçlü formasyon (yutan, kayan yıldız, akşam yıldızı…) var mı?\n"
     "5. Korelasyon/yığılma: aynı yönde aynı para birimi/dolar riski taşıyan açık pozisyonlar riski şişiriyor mu?\n"
@@ -228,12 +231,15 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
         acct = acct if "acct" in locals() else None
 
     sl, tp = ctx.get("sl_pips"), ctx.get("tp_pips")
+    tp_val = float(tp) if tp is not None else 0.0
+    tp_display = tp_val if tp_val > 0 else "Dinamik Trailing & BE Kilidi (Sabit TP Yok)"
+    rr_display = round(tp_val / float(sl), 2) if (sl and tp_val > 0) else "Trailing Stop Yönetimli"
     dossier = {
         "saat_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(now)),
         "islem": {
             "sembol": sym, "yon": direction, "strateji": ctx.get("strategy_label"), "motor_skoru": _num(cand.get("score"), 1),
-            "lot": ctx.get("lots"), "giris_fiyati": ctx.get("entry_price"), "stop_pip": sl, "hedef_pip": tp,
-            "risk_odul": round(float(tp) / float(sl), 2) if sl and tp else None,
+            "lot": ctx.get("lots"), "giris_fiyati": ctx.get("entry_price"), "stop_pip": sl, "hedef_pip": tp_display,
+            "risk_odul": rr_display,
             "risk_usd": ctx.get("risk_usd"), "spread_pip": _num(cand.get("spread_pips"), 2), "atr_pip": ctx.get("atr_pips"),
             "motor_15dk_trend": cand.get("htf_trend"), "supertrend": cand.get("supertrend_dir"),
             "adx": _num(cand.get("adx"), 1), "rsi": _num(cand.get("rsi_15m"), 1), "macd_hist": _num(cand.get("macd_hist"), 5),
