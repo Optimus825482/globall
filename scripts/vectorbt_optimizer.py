@@ -922,11 +922,73 @@ def optimize_fvg_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
     return {"status": "success", "strategy": "SMC Fair Value Gap (#182)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
 
 
+
+def optimize_hybrid_crypto_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """Kripto Hibrit Fzyon Stratejisi: SMC Likidite Sprme + Fisher Transform + KDJ Osilatr."""
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+
+    # 1. SMC 15-bar Sweep
+    sw = 12
+    lowest_prev = low.shift(1).rolling(sw).min()
+    sweep_buy = (low < lowest_prev) & (close > lowest_prev)
+
+    # 2. Fisher Transform (10)
+    fish = calc_fisher(df, period=10)
+    fish_buy = (fish < -1.5) & (fish > fish.shift(1))
+
+    # 3. KDJ (9)
+    k, d, j = calc_kdj(df, period=9)
+    kdj_buy = (j.shift(1) <= 15.0) & (j > d)
+
+    # 4. WaveTrend
+    wt1, wt2 = calc_wavetrend(df, ch_len=10, avg_len=21)
+    wt_bull = wt1 > wt2
+
+    trend_emas = [50, 100, 200]
+    tp_sl_pairs = [(0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+
+    start_time = time.time()
+    all_results = []
+    print("[VectorBT - Kripto Hibrit Fzyon (SMC + Fisher + KDJ)] Optimizasyon Balyor...")
+
+    for ema_len in trend_emas:
+        ema_trend = close.ewm(span=ema_len, adjust=False).mean()
+        trend_ok = close > ema_trend
+        # En az bir tetikleyici (SMC Sweep veya Fisher Dip veya KDJ Dip) + WaveTrend + Trend EMA
+        trigger = (sweep_buy | fish_buy | kdj_buy)
+        entries = trigger & wt_bull & trend_ok
+        exits = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+
+        for tp, sl in tp_sl_pairs:
+            pf = vbt.Portfolio.from_signals(
+                close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                freq="15m" if len(df) > 500 else "1m"
+            )
+            t_count = pf.trades.count()
+            if t_count < 3:
+                continue
+            s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+            all_results.append({
+                "parameters": {"trend_ema": ema_len, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                "sharpe_ratio": round(s_val, 3),
+                "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                "trade_count": int(t_count),
+            })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "Kripto Hibrit Füzyon (SMC+Fisher+KDJ)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
 def main():
     parser = argparse.ArgumentParser(description="VectorBT Gelişmiş Çoklu-Strateji Optimizasyon Motoru")
     parser.add_argument("--symbol", default="BTCUSD", help="Analiz edilecek sembol (ör: BTCUSD, XAUUSD, US30)")
     parser.add_argument("--strategy", default="btc_master",
-                        choices=["ema", "wavetrend", "zlmacd", "kombo", "supertrend", "stochrsi", "btc_master", "stc", "tv_ultimate", "smc_sweep", "fisher", "kdj", "squeeze", "fvg"],
+                        choices=["ema", "wavetrend", "zlmacd", "kombo", "supertrend", "stochrsi", "btc_master", "stc", "tv_ultimate", "smc_sweep", "fisher", "kdj", "squeeze", "fvg", "hybrid"],
                         help="Optimizasyon stratejisi")
     parser.add_argument("--cache", default="outputs/forex_replay_21d.json", help="Bar verisi JSON önbellek yolu")
     parser.add_argument("--top", type=int, default=5, help="Raporlanacak en iyi sonuç sayısı")
@@ -942,7 +1004,9 @@ def main():
 
     df = load_candles_from_cache(args.cache, args.symbol)
 
-    if args.strategy == "fisher":
+    if args.strategy == "hybrid":
+        res = optimize_hybrid_crypto_vbt(df, top_n=args.top)
+    elif args.strategy == "fisher":
         res = optimize_fisher_vbt(df, top_n=args.top)
     elif args.strategy == "kdj":
         res = optimize_kdj_vbt(df, top_n=args.top)
