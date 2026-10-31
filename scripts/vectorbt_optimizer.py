@@ -482,11 +482,186 @@ def optimize_kombo_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
     return {"status": "success", "strategy": "Kombo (WaveTrend + ZL-MACD + EMA)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
 
 
+
+def calc_stc(close: pd.Series, fast: int = 23, slow: int = 50, cycle: int = 10, smooth: int = 3) -> pd.Series:
+    """Schaff Trend Cycle (STC) - TradingView Gelişmiş Döngü Osilatörü."""
+    macd = close.ewm(span=fast, adjust=False).mean() - close.ewm(span=slow, adjust=False).mean()
+    m_min = macd.rolling(cycle).min()
+    m_max = macd.rolling(cycle).max()
+    stoch1 = (macd - m_min) / (m_max - m_min).replace(0, np.nan) * 100.0
+    stc1 = stoch1.ewm(span=smooth, adjust=False).mean()
+    s_min = stc1.rolling(cycle).min()
+    s_max = stc1.rolling(cycle).max()
+    stoch2 = (stc1 - s_min) / (s_max - s_min).replace(0, np.nan) * 100.0
+    return stoch2.ewm(span=smooth, adjust=False).mean()
+
+
+def calc_cmf(df: pd.DataFrame, period: int = 20) -> pd.Series:
+    """Chaikin Money Flow (CMF) - Hacim ve Para Akışı."""
+    hl = df["high"] - df["low"]
+    mfm = ((df["close"] - df["low"]) - (df["high"] - df["close"])) / hl.replace(0, np.nan)
+    vol = df["volume"] if "volume" in df.columns else pd.Series(1.0, index=df.index)
+    mfv = mfm * vol
+    return mfv.rolling(period).sum() / vol.rolling(period).sum().replace(0, np.nan)
+
+
+def calc_chandelier_exit(df: pd.DataFrame, period: int = 22, mult: float = 3.0) -> pd.Series:
+    """Chandelier Exit (ATR tabanlı tavan/taban kalkanı)."""
+    tr1 = df["high"] - df["low"]
+    tr2 = (df["high"] - df["close"].shift(1)).abs()
+    tr3 = (df["low"] - df["close"].shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    highest_high = df["high"].rolling(period).max()
+    return highest_high - (mult * atr)
+
+
+def optimize_stc_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """Schaff Trend Cycle (STC) Dip Dönüşü ve Trend Optimizasyonu."""
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.012), (0.025, 0.015)]
+    cycles = [10, 12, 14]
+    trend_emas = [100, 200]
+    close = df["close"]
+
+    start_time = time.time()
+    all_results = []
+    print("\n[VectorBT - Schaff Trend Cycle] Optimizasyon Başlıyor...")
+
+    for cyc in cycles:
+        stc = calc_stc(close, cycle=cyc)
+        stc_turn_up = (stc > 20) & (stc.shift(1) <= 20)  # 20 aşırı satımdan yukarı patlama
+        stc_turn_down = (stc < 80) & (stc.shift(1) >= 80)
+
+        for ema_len in trend_emas:
+            ema_val = close.ewm(span=ema_len, adjust=False).mean()
+            entries = stc_turn_up & (close > ema_val)
+            exits = stc_turn_down
+
+            for tp, sl in tp_sl_pairs:
+                pf = vbt.Portfolio.from_signals(
+                    close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                    freq="15m" if len(df) > 500 else "1m"
+                )
+                t_count = pf.trades.count()
+                if t_count < 3:
+                    continue
+                s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+                all_results.append({
+                    "parameters": {"cycle": cyc, "trend_ema": ema_len, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                    "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                    "sharpe_ratio": round(s_val, 3),
+                    "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                    "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                    "trade_count": int(t_count),
+                })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "Schaff Trend Cycle (STC)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
+def optimize_tv_ultimate_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """TradingView Rehberi Ultimate Hibrit (STC + SuperTrend + WaveTrend + CMF)."""
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+    close = df["close"]
+
+    stc = calc_stc(close, cycle=10)
+    wt1, wt2 = calc_wavetrend(df, ch_len=10, avg_len=21)
+    st = calc_supertrend(df, period=10, multiplier=2.0)
+    cmf = calc_cmf(df, period=20)
+    ema200 = close.ewm(span=200, adjust=False).mean()
+
+    # Koşullar:
+    # 1. Ana Trend: 200 EMA üstünde ve SuperTrend yeşil
+    trend_ok = (close > ema200) & (st == 1)
+    # 2. Döngü ve Tetik: STC dip dönüşü VEYA WaveTrend dip dönüşü
+    dip_trigger = ((stc > 20) & (stc.shift(1) <= 20)) | ((wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1)) & (wt1 <= -30))
+    # 3. Para Akışı: CMF pozitif (kurumsal alış)
+    flow_ok = cmf > -0.05
+
+    entries = trend_ok & dip_trigger & flow_ok
+    exits = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+
+    start_time = time.time()
+    all_results = []
+    print("\n[VectorBT - TV Ultimate Hibrit] Optimizasyon Başlıyor...")
+
+    for tp, sl in tp_sl_pairs:
+        pf = vbt.Portfolio.from_signals(
+            close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+            freq="15m" if len(df) > 500 else "1m"
+        )
+        t_count = pf.trades.count()
+        if t_count < 2:
+            continue
+        s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+        all_results.append({
+            "parameters": {"stc_cycle": 10, "supertrend_mult": 2.0, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+            "total_return_pct": round(float(pf.total_return()) * 100, 2),
+            "sharpe_ratio": round(s_val, 3),
+            "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+            "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+            "trade_count": int(t_count),
+        })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "TradingView Ultimate (STC+ST+WT+CMF)", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
+
+def optimize_smc_sweep_vbt(df: pd.DataFrame, top_n: int = 10) -> dict:
+    """SMC Likidite Süpürme (Stop-Hunt / False Breakdown) + WaveTrend Hibriti."""
+    tp_sl_pairs = [(0.012, 0.008), (0.015, 0.010), (0.020, 0.010), (0.025, 0.012), (0.030, 0.015)]
+    sweep_windows = [10, 15, 20]
+    wt_levels = [-35, -25, -20]
+    close = df["close"]
+    low = df["low"]
+
+    wt1, wt2 = calc_wavetrend(df, ch_len=10, avg_len=21)
+    wt_bull = wt1 > wt2
+
+    start_time = time.time()
+    all_results = []
+    print("\n[VectorBT - SMC Likidite Süpürme] Optimizasyon Başlıyor...")
+
+    for sw in sweep_windows:
+        lowest_prev = low.shift(1).rolling(sw).min()
+        # Likidite süpürme: Dibe iğne atıp (low < lowest_prev), üzerinde kapatan (close > lowest_prev) bar
+        sweep_buy = (low < lowest_prev) & (close > lowest_prev)
+
+        for wt_os in wt_levels:
+            entries = sweep_buy & wt_bull & (wt1 <= wt_os)
+            exits = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+
+            for tp, sl in tp_sl_pairs:
+                pf = vbt.Portfolio.from_signals(
+                    close=close, entries=entries, exits=exits, tp_stop=tp, sl_stop=sl, fees=0.0002,
+                    freq="15m" if len(df) > 500 else "1m"
+                )
+                t_count = pf.trades.count()
+                if t_count < 3:
+                    continue
+                s_val = float(pf.sharpe_ratio()) if not np.isnan(pf.sharpe_ratio()) else 0.0
+                all_results.append({
+                    "parameters": {"sweep_window": sw, "wt_oversold": wt_os, "tp_pct": round(tp * 100, 2), "sl_pct": round(sl * 100, 2)},
+                    "total_return_pct": round(float(pf.total_return()) * 100, 2),
+                    "sharpe_ratio": round(s_val, 3),
+                    "max_drawdown_pct": round(float(pf.max_drawdown()) * 100, 2),
+                    "win_rate_pct": round(float(pf.trades.win_rate()) * 100, 2) if not np.isnan(pf.trades.win_rate()) else 0.0,
+                    "trade_count": int(t_count),
+                })
+
+    elapsed = time.time() - start_time
+    all_results.sort(key=lambda x: (x["sharpe_ratio"], x["total_return_pct"]), reverse=True)
+    return {"status": "success", "strategy": "SMC Likidite Süpürme + WaveTrend", "elapsed_sec": round(elapsed, 3), "top_results": all_results[:top_n]}
+
+
 def main():
     parser = argparse.ArgumentParser(description="VectorBT Gelişmiş Çoklu-Strateji Optimizasyon Motoru")
     parser.add_argument("--symbol", default="BTCUSD", help="Analiz edilecek sembol (ör: BTCUSD, XAUUSD, US30)")
     parser.add_argument("--strategy", default="btc_master",
-                        choices=["ema", "wavetrend", "zlmacd", "kombo", "supertrend", "stochrsi", "btc_master"],
+                        choices=["ema", "wavetrend", "zlmacd", "kombo", "supertrend", "stochrsi", "btc_master", "stc", "tv_ultimate", "smc_sweep"],
                         help="Optimizasyon stratejisi")
     parser.add_argument("--cache", default="outputs/forex_replay_21d.json", help="Bar verisi JSON önbellek yolu")
     parser.add_argument("--top", type=int, default=5, help="Raporlanacak en iyi sonuç sayısı")
@@ -502,7 +677,13 @@ def main():
 
     df = load_candles_from_cache(args.cache, args.symbol)
 
-    if args.strategy == "btc_master":
+    if args.strategy == "smc_sweep":
+        res = optimize_smc_sweep_vbt(df, top_n=args.top)
+    elif args.strategy == "tv_ultimate":
+        res = optimize_tv_ultimate_vbt(df, top_n=args.top)
+    elif args.strategy == "stc":
+        res = optimize_stc_vbt(df, top_n=args.top)
+    elif args.strategy == "btc_master":
         res = optimize_btc_master_vbt(df, top_n=args.top)
     elif args.strategy == "supertrend":
         res = optimize_supertrend_vbt(df, top_n=args.top)
