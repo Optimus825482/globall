@@ -272,7 +272,7 @@ async def init_db():
         schema_sql = ""
         for filename in ("001_pgvector_schema.sql", "002_macd_evidence_lift.sql",
                          "003_rising_signals.sql", "004_bloat_prevention.sql",
-                         "005_user_binance_keys.sql", "006_mt5_spread_profile.sql"):
+                         "005_user_binance_keys.sql", "006_mt5_spread_profile.sql", "007_spot_monitor_signals.sql"):
             path = os.path.join(migrations_dir, filename)
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as schema_file:
