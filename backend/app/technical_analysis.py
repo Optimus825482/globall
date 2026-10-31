@@ -1285,6 +1285,47 @@ def _bb_kc_squeeze(highs, lows, closes, bb_period: int = 20, bb_mult: float = 2.
         return None
 
 
+def _rvol_tod_spike(times_ms, closes, volumes, thr: float = 2.0, min_hist: int = 10,
+                    ema_n: int = 20) -> dict | None:
+    """Zaman-çapalı RVOL patlaması: bar hacmi / aynı saat-of-gün önceki barların
+    genişleyen ortalaması. RVOL > thr iken kapanış EMA'yı yukarı keserse sinyal.
+
+    Spot laboratuvar kanıtı (5m, 18 coin, walk-forward): IS WR %66.7, PF 2.61,
+    13/16 coin pozitif; 9 komşu konfigürasyonun 7'si net pozitif (plato);
+    OOS yönü pozitif (PF 1.50, örneklem ince). Sadece 5m kanıtlı.
+    """
+    try:
+        n = len(closes)
+        if n < ema_n + 2 or len(volumes) != n or len(times_ms) != n:
+            return None
+        c = np.asarray(closes, dtype=float)
+        v = np.asarray(volumes, dtype=float)
+        hours = (np.asarray(times_ms, dtype=np.int64) // 3_600_000)
+
+        rvol = np.full(n, np.nan)
+        sums: dict = {}
+        counts: dict = {}
+        for i in range(n):
+            h = hours[i]
+            if counts.get(h, 0) >= min_hist:
+                rvol[i] = v[i] / (sums[h] / counts[h])
+            sums[h] = sums.get(h, 0.0) + v[i]
+            counts[h] = counts.get(h, 0) + 1
+
+        alpha = 2.0 / (ema_n + 1.0)
+        ema = np.empty(n)
+        ema[0] = c[0]
+        for i in range(1, n):
+            ema[i] = c[i] * alpha + ema[i - 1] * (1.0 - alpha)
+
+        if np.isnan(rvol[-1]):
+            return {"signal": False, "rvol": 0.0, "covered": False}
+        signal = bool(rvol[-1] > thr and c[-1] > ema[-1] and c[-2] <= ema[-2])
+        return {"signal": signal, "rvol": round(float(rvol[-1]), 2), "covered": True}
+    except Exception:
+        return None
+
+
 def _linreg_slope_turn(closes, volumes, slope_n: int = 14, vo_fast: int = 5,
                        vo_slow: int = 10, ema_n: int = 50, vo_thr: float = 0.0) -> dict | None:
     """Doğrusal Regresyon Eğimi sıfır üstü dönüşü + Volume Oscillator teyidi + trend filtresi.

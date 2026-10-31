@@ -7,7 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 import asyncpg
 from app.config import config
-from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze, _linreg_slope_turn
+from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze, _linreg_slope_turn, _rvol_tod_spike
 
 logger = logging.getLogger("scalper.spot_monitor")
 
@@ -80,6 +80,15 @@ ACTIVE_STRATEGIES = [
         "description": "Doğrusal regresyon eğiminin sıfırın üstüne çıkması (momentum dönüşü) + Volume Oscillator > 0 (alım hacmi baskın) + EMA50 trend filtresi.",
         "evidence": "Lab v3 (5m): WR %55.8, PF 1.53, 12/18 coin; 1500 bar H2 pozitif",
         "timeframes": ["5m", "15m", "1h"],
+    },
+    {
+        "code": "rvol_tod_spike",
+        "label": "Zaman-Çapalı RVOL Patlaması",
+        "score": 84.0,
+        "description": "Bar hacmi aynı saat-of-gün ortalamasının 2 katını aşarken kapanışın EMA20'yi yukarı kesmesi (kurumsal saat hacmi + momentum).",
+        "evidence": "Lab v5 (5m, IS): WR %66.7, PF 2.61, 13/16 coin; 7/9 komşu plato pozitif; OOS ince örneklem",
+        "timeframes": ["5m"],
+        "tp_sl_override": {"5m": {"tp_pct": 2.0, "sl_pct": 1.2}},
     },
     {
         "code": "kdj_pure_dip",
@@ -238,7 +247,7 @@ async def run_single_scan():
                 if sym in open_symbols:
                     break
 
-                klines = _fetch_klines(sym, tf, limit=100)
+                klines = _fetch_klines(sym, tf, limit=500)  # RVOL saat-grubu ortalaması ve EMA200 ısınması için
                 if len(klines) < 65:
                     continue
 
@@ -246,6 +255,7 @@ async def run_single_scan():
                 lows = [float(k[3]) for k in klines]
                 closes = [float(k[4]) for k in klines]
                 volumes = [float(k[5]) for k in klines]
+                times_ms = [int(k[0]) for k in klines]
                 price = closes[-1]
                 quote_vols = [float(k[7]) for k in klines]
                 trades = [int(k[8]) for k in klines]
@@ -277,6 +287,7 @@ async def run_single_scan():
                 zl = _zlmacd(closes, fast=12, slow=26, signal=9) or {}
                 sq = _bb_kc_squeeze(highs, lows, closes) or {}
                 lr = _linreg_slope_turn(closes, volumes) or {}
+                rv = _rvol_tod_spike(times_ms, closes, volumes) or {}
                 ema20 = _ema(closes, 20)
                 ema50 = _ema(closes, 50)
 
@@ -352,7 +363,15 @@ async def run_single_scan():
                     score = 86.0
                     note = f"LinReg egim sifir ustu donus (slope={lr.get('slope', 0):.3f}), VolOsc={lr.get('vo', 0):.1f}, EMA50 ustu"
 
-                # 7. KDJ Ekstrem Saf Dip Dönüşü
+                # 7. Zaman-Çapalı RVOL Patlaması (Lab v5: sadece 5m kanıtlı, TP2.0/SL1.2)
+                elif rv.get("signal") and tf == "5m" and enabled.get("rvol_tod_spike", True):
+                    matched = True
+                    strategy_code = "rvol_tod_spike"
+                    strategy_label = "Zaman-Çapalı RVOL Patlaması"
+                    score = 84.0
+                    note = f"Saat-bazli RVOL={rv.get('rvol', 0):.1f}x patlamasi, EMA20 ustu kesisme"
+
+                # 8. KDJ Ekstrem Saf Dip Dönüşü
                 elif dip_buy and j_val <= 12.0 and enabled.get("kdj_pure_dip", True):
                     matched = True
                     strategy_code = "kdj_pure_dip"
