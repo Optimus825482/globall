@@ -32,12 +32,16 @@ type SignalItem = {
     vibe_category?: string;
     trap_warning?: string;
     is_fomo_trap?: boolean;
+    qlib_score?: number;
+    jesse_rr?: number;
   };
   octobot_consensus_pct?: number;
   octobot_signal?: string;
   vibe_category?: string;
   trap_warning?: string;
   is_fomo_trap?: boolean;
+  qlib_score?: number;
+  jesse_rr?: number;
 };
 
 type DashboardData = {
@@ -851,8 +855,13 @@ export default function SpotMonitorPage() {
                     <td className="py-3 px-4">
                       <div className="flex flex-col gap-1">
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
+                          🐙 OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
                         </span>
+                        {(s.qlib_score || s.details?.qlib_score) && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                            📊 Qlib Alpha: {s.qlib_score || s.details?.qlib_score}
+                          </span>
+                        )}
                         {s.trap_warning === "BULL_TRAP" || s.details?.trap_warning === "BULL_TRAP" ? (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
                             ⚠️ Boğa Tuzağı!

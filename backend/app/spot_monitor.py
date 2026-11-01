@@ -468,6 +468,18 @@ async def run_single_scan():
                         orderbook_depth_ratio=1.2 if vol_ratio > 1.2 else 0.9
                     ))
                     trap_warn = "BULL_TRAP" if (p_chg > 1.2 and vol_ratio < 0.85) else ("FOMO_TRAP" if v_res.is_fomo_trap else "NONE")
+                    from app.ai_trading_suite import evaluate_qlib_alpha, evaluate_jesse_risk
+                    qlib_res = evaluate_qlib_alpha(
+                        symbol=sym,
+                        price=price,
+                        indicators={"rsi": 55.0, "volume_ratio": vol_ratio, "atr": price * 0.015}
+                    )
+                    jesse_res = evaluate_jesse_risk(
+                        symbol=sym,
+                        entry_price=price,
+                        atr=price * 0.015,
+                        volatility_mode="NORMAL"
+                    )
 
                     discovered_signals.append({
                         "signal_key": sig_key,
@@ -493,7 +505,10 @@ async def run_single_scan():
                             "vibe_category": v_res.vibe_category,
                             "trap_warning": trap_warn,
                             "is_fomo_trap": v_res.is_fomo_trap,
-                            "breakout_confirmed": v_res.breakout_confirmed
+                            "breakout_confirmed": v_res.breakout_confirmed,
+                            "qlib_score": qlib_res.alpha_score,
+                            "qlib_rank": qlib_res.alpha_rank,
+                            "jesse_rr": jesse_res.risk_reward_ratio
                         },
                         "detected_at": datetime.now(timezone.utc)
                     })
@@ -693,7 +708,9 @@ async def get_spot_monitor_dashboard():
                 "octobot_signal": det.get("octobot_signal", "BUY"),
                 "vibe_category": det.get("vibe_category", "BULLISH_VIBE"),
                 "trap_warning": det.get("trap_warning", "NONE"),
-                "is_fomo_trap": det.get("is_fomo_trap", False)
+                "is_fomo_trap": det.get("is_fomo_trap", False),
+                "qlib_score": det.get("qlib_score", 72.0),
+                "jesse_rr": det.get("jesse_rr", 2.2)
             })
 
         total_portfolio_try = INITIAL_PORTFOLIO_TRY + realized_pnl + unrealized_pnl

@@ -302,7 +302,10 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
             from app.ai_trading_suite.chat_tools import execute_ai_trading_suite_evaluation
             res = await execute_ai_trading_suite_evaluation({"symbol": sym, "asset_type": "FOREX"})
             text_summary = (
-                f"10 AI Modeli: Karar={res.get('final_verdict')}, "
+                f"16 AI Modeli: Karar={res.get('final_verdict')}, "
+                f"Qlib Alpha={res.get('qlib_alpha', {}).get('alpha_score', '—')}, "
+                f"OpenBB Rejim={res.get('openbb_macro', {}).get('macro_regime', '—')}, "
+                f"Jesse R:R={res.get('jesse_risk', {}).get('risk_reward_ratio', '—')}, "
                 f"Risk Masası={ 'ONAYLANDI' if res.get('risk_chief_approved') else 'VETO' }, "
                 f"Güven=%{int(res.get('confidence_score', 0)*100)}, "
                 f"Konsey={res.get('hedge_fund_council', {}).get('consensus_decision')} "
@@ -312,7 +315,7 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
                 f"{res.get('execution_directive')}"
             )
             return text_summary, res
-        steps.append((f"ai_suite:{sym}", f"{names.get(sym, sym)} 10 AI Ticaret Mimarisi Konsensüsü", _ai_suite()))
+        steps.append((f"ai_suite:{sym}", f"{names.get(sym, sym)} 16 AI Ticaret Mimarisi Konsensüsü", _ai_suite()))
 
     cur: set = set()
     for sym in symbols:
