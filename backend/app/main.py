@@ -1178,6 +1178,12 @@ async def startup_services():
         await asyncio.sleep(0.05)
         _start_background(spot_monitor.spot_monitor_background_loop, "spot-monitor-loop")
         await asyncio.sleep(0.05)
+        # TSMOM: GÜNLÜK kanal, mevcut 5 dakikalık taramadan bağımsız.
+        # 7 yıllık doğrulamada kabul kriterlerini geçen tek yaklaşım.
+        from app import tsmom
+        tsmom_loop = tsmom.tsmom_loop
+        _start_background(tsmom_loop, "tsmom-loop")
+        await asyncio.sleep(0.05)
         # Canlı Hesap açık pozisyonları: WS fiyat + 24s hacim tick'leri (4 sn)
         _start_background(binance_price_tick_loop, "binance-price-tick")
         await asyncio.sleep(0.05)

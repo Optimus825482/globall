@@ -100,3 +100,30 @@ async def forward_test_report(frozen_id: int | None = None):
         return await ml_forward_test.forward_report(frozen_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ─── TSMOM (günlük momentum kanalı) ───────────────────────────────────────────
+
+@router.get("/tsmom")
+async def tsmom_dashboard():
+    """TSMOM günlük kanalı: rejim, hedefler, açık pozisyonlar, portföy.
+
+    Mevcut 5 dakikalık taramadan BAĞIMSIZ çalışır — farklı zaman dilimi,
+    farklı portföy. 7 yıllık doğrulamada kabul kriterlerini geçen tek
+    yaklaşım (Sharpe 1.01, maxDD -%9.31, 10/10 sembol pozitif).
+    """
+    try:
+        from app import tsmom
+        return await tsmom.get_dashboard()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/tsmom/rebalance")
+async def tsmom_rebalance(force: bool = False):
+    """TSMOM'u elle yeniden dengeler (günde bir kez; force ile zorlanır)."""
+    try:
+        from app import tsmom
+        return await tsmom.run_rebalance(force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

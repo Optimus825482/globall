@@ -152,7 +152,50 @@ export default function SpotMonitorPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY" | "SYMBOLS" | "STRATEGIES">("ACTIVE");
+  const [activeTab, setActiveTab] = useState<"ACTIVE" | "HISTORY" | "SYMBOLS" | "STRATEGIES" | "TSMOM">("ACTIVE");
+
+  type TsmomData = {
+    targets?: {
+      ok?: boolean; regime?: string;
+      btc_price?: number; btc_ma200?: number; btc_vs_ma_pct?: number;
+      symbols?: Array<{
+        symbol: string; weight: number; reason?: string;
+        price?: number; ret_30_pct?: number; realized_vol_pct?: number;
+      }>;
+    };
+    positions?: Array<{
+      symbol: string; weight: number; entry_price: number; current_price: number;
+      pnl_pct: number; size_try: number; pnl_try: number;
+      reason?: string; entry_at?: string;
+    }>;
+    closed?: Array<{ symbol: string; pnl_pct: number; reason?: string; exit_at?: string }>;
+    portfolio?: {
+      initial_capital: number; invested_try: number; realized_try: number;
+      unrealized_try: number; current_try: number; open_count: number;
+    };
+    params?: Record<string, string | number>;
+    regime?: string;
+    last_rebalance_at?: number;
+    evidence?: Record<string, string>;
+  };
+  const [tsmom, setTsmom] = useState<TsmomData | null>(null);
+  const [tsmomLoading, setTsmomLoading] = useState(false);
+
+  const loadTsmom = useCallback(async () => {
+    setTsmomLoading(true);
+    try {
+      const res = (await apiFetch("/api/spot-monitor/tsmom")) as TsmomData;
+      setTsmom(res);
+    } catch {
+      /* sessiz: TSMOM kanalı yoksa panel boş kalır */
+    } finally {
+      setTsmomLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "TSMOM" && !tsmom) loadTsmom();
+  }, [activeTab, tsmom, loadTsmom]);
   const [selectedModalSignal, setSelectedModalSignal] = useState<SignalItem | null>(null);
   const [strategies, setStrategies] = useState<StrategiesData | null>(null);
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
@@ -915,6 +958,18 @@ export default function SpotMonitorPage() {
             }`}
           >
             <span>🔬</span> Strateji Başarısı ({strategyStatsList.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("TSMOM")}
+            className={`px-3.5 py-2 rounded-lg font-mono text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "TSMOM"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                : "text-bunker-muted hover:text-white hover:bg-bunker-800"
+            }`}
+          >
+            <span>📈</span> TSMOM (Günlük)
           </button>
         </div>
 
@@ -1747,6 +1802,164 @@ export default function SpotMonitorPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "TSMOM" && (
+        <div className="space-y-4">
+          <div className="panel p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-mono text-sm font-bold text-white">TSMOM — Günlük Momentum</h2>
+                <p className="text-[11px] text-bunker-muted mt-1 max-w-[70ch]">
+                  Mevcut 5 dakikalık taramadan bağımsız kanal. Günde bir kez rebalans.
+                  7 yıllık doğrulamada kabul kriterlerini geçen tek yaklaşım.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {tsmom?.regime && (
+                  <span className={`px-2.5 py-1 rounded font-mono text-[11px] font-bold border ${
+                    tsmom.regime === "BULL"
+                      ? "bg-neon-cyan/15 text-neon-cyan border-neon-cyan/30"
+                      : "bg-neon-yellow/15 text-neon-yellow border-neon-yellow/30"
+                  }`}>
+                    REJİM: {tsmom.regime}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={loadTsmom}
+                  disabled={tsmomLoading}
+                  className="px-3 py-1.5 rounded-lg font-mono text-[11px] font-semibold bg-bunker-800 text-slate-200 hover:bg-bunker-700 disabled:opacity-50"
+                >
+                  {tsmomLoading ? "Yükleniyor…" : "Yenile"}
+                </button>
+              </div>
+            </div>
+
+            {tsmom?.targets && (
+              <div className="mt-3 flex flex-wrap gap-4 font-mono text-[11px] text-bunker-muted">
+                <span>BTC: {tsmom.targets.btc_price?.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</span>
+                <span>MA200: {tsmom.targets.btc_ma200?.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</span>
+                <span className={(tsmom.targets.btc_vs_ma_pct ?? 0) >= 0 ? "text-neon-cyan" : "text-neon-red"}>
+                  {(tsmom.targets.btc_vs_ma_pct ?? 0) >= 0 ? "+" : ""}
+                  {tsmom.targets.btc_vs_ma_pct?.toFixed(2)}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          {tsmom?.portfolio && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Başlangıç", value: `₺${tsmom.portfolio.initial_capital.toLocaleString("tr-TR")}`, tone: "text-slate-200" },
+                { label: "Güncel", value: `₺${tsmom.portfolio.current_try.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`, tone: "text-neon-cyan" },
+                { label: "Gerçekleşen", value: `${tsmom.portfolio.realized_try >= 0 ? "+" : ""}₺${tsmom.portfolio.realized_try.toFixed(2)}`, tone: tsmom.portfolio.realized_try >= 0 ? "text-neon-cyan" : "text-neon-red" },
+                { label: "Açık Pozisyon", value: String(tsmom.portfolio.open_count), tone: "text-slate-200" },
+              ].map((m) => (
+                <div key={m.label} className="panel p-3">
+                  <p className="text-[10px] font-mono uppercase text-bunker-muted">{m.label}</p>
+                  <p className={`font-mono text-lg font-bold mt-1 ${m.tone}`}>{m.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="panel p-4">
+            <h3 className="font-mono text-xs font-bold text-slate-200 mb-3">Açık Pozisyonlar</h3>
+            {!tsmom?.positions?.length ? (
+              <p className="text-[11px] text-bunker-muted">
+                Pozisyon yok — rejim BEAR ya da hiçbir sembolde 30 günlük momentum pozitif değil.
+                TSMOM&apos;da beklemede kalmak da bir pozisyondur.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] font-mono">
+                  <thead>
+                    <tr className="text-bunker-muted text-left border-b border-bunker-800">
+                      <th className="py-2 pr-3">Sembol</th>
+                      <th className="py-2 pr-3">Ağırlık</th>
+                      <th className="py-2 pr-3">Giriş</th>
+                      <th className="py-2 pr-3">Güncel</th>
+                      <th className="py-2 pr-3">PnL</th>
+                      <th className="py-2">₺</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tsmom.positions.map((pos) => (
+                      <tr key={pos.symbol} className="border-b border-bunker-800/50">
+                        <td className="py-2 pr-3 text-slate-200">{pos.symbol}</td>
+                        <td className="py-2 pr-3 text-bunker-muted">{pos.weight.toFixed(3)}</td>
+                        <td className="py-2 pr-3 text-slate-300">{pos.entry_price}</td>
+                        <td className="py-2 pr-3 text-slate-300">{pos.current_price}</td>
+                        <td className={`py-2 pr-3 font-bold ${pos.pnl_pct >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                          {pos.pnl_pct >= 0 ? "+" : ""}{pos.pnl_pct.toFixed(2)}%
+                        </td>
+                        <td className={`py-2 font-bold ${pos.pnl_try >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                          {pos.pnl_try >= 0 ? "+" : ""}{pos.pnl_try.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="panel p-4">
+            <h3 className="font-mono text-xs font-bold text-slate-200 mb-3">Sinyal Tablosu (hedef ağırlıklar)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] font-mono">
+                <thead>
+                  <tr className="text-bunker-muted text-left border-b border-bunker-800">
+                    <th className="py-2 pr-3">Sembol</th>
+                    <th className="py-2 pr-3">30g Getiri</th>
+                    <th className="py-2 pr-3">Gerçek Vol</th>
+                    <th className="py-2 pr-3">Hedef Ağırlık</th>
+                    <th className="py-2">Durum</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(tsmom?.targets?.symbols || []).map((row) => (
+                    <tr key={row.symbol} className="border-b border-bunker-800/50">
+                      <td className="py-2 pr-3 text-slate-200">{row.symbol}</td>
+                      <td className={`py-2 pr-3 ${(row.ret_30_pct ?? 0) >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                        {row.ret_30_pct != null ? `${row.ret_30_pct >= 0 ? "+" : ""}${row.ret_30_pct.toFixed(2)}%` : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-bunker-muted">
+                        {row.realized_vol_pct != null ? `${row.realized_vol_pct}%` : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-300">{row.weight.toFixed(3)}</td>
+                      <td className="py-2">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                          row.reason === "long" ? "bg-neon-cyan/10 text-neon-cyan" : "bg-bunker-800 text-bunker-muted"
+                        }`}>
+                          {row.reason === "long" ? "LONG"
+                            : row.reason === "bear_rejim" ? "REJİM BEAR"
+                            : row.reason === "momentum_yok" ? "MOMENTUM YOK"
+                            : (row.reason || "—")}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {tsmom?.evidence && (
+            <div className="panel p-4">
+              <h3 className="font-mono text-xs font-bold text-slate-200 mb-2">Kanıt</h3>
+              <dl className="space-y-1.5 text-[11px]">
+                {Object.entries(tsmom.evidence).map(([k, v]) => (
+                  <div key={k} className="flex flex-wrap gap-2">
+                    <dt className="text-bunker-muted font-mono min-w-[110px]">{k}:</dt>
+                    <dd className="text-slate-300 flex-1">{v}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           )}
         </div>
