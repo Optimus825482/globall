@@ -1914,26 +1914,31 @@ export default function SpotMonitorPage() {
               <table className="w-full text-[11px] font-mono">
                 <thead>
                   <tr className="text-bunker-muted text-left border-b border-bunker-800">
-                    <th className="py-2 pr-3">Sembol</th>
-                    <th className="py-2 pr-3">30g Getiri</th>
-                    <th className="py-2 pr-3">Gerçek Vol</th>
-                    <th className="py-2 pr-3">Hedef Ağırlık</th>
-                    <th className="py-2">Durum</th>
+                    <th className="py-2 pr-3 whitespace-nowrap">Sembol</th>
+                    <th className="py-2 pr-3 whitespace-nowrap">30g Getiri</th>
+                    <th className="py-2 pr-3 whitespace-nowrap">Gerçek Vol</th>
+                    <th className="py-2 pr-3 whitespace-nowrap">Hedef Ağırlık</th>
+                    <th className="py-2 whitespace-nowrap">Durum</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(tsmom?.targets?.symbols || []).map((row) => (
                     <tr key={row.symbol} className="border-b border-bunker-800/50">
-                      <td className="py-2 pr-3 text-slate-200">{row.symbol}</td>
-                      <td className={`py-2 pr-3 ${(row.ret_30_pct ?? 0) >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                      <td className="py-2 pr-3 text-slate-200 whitespace-nowrap">{row.symbol}</td>
+                      <td className={`py-2 pr-3 whitespace-nowrap ${(row.ret_30_pct ?? 0) >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
                         {row.ret_30_pct != null ? `${row.ret_30_pct >= 0 ? "+" : ""}${row.ret_30_pct.toFixed(2)}%` : "—"}
                       </td>
-                      <td className="py-2 pr-3 text-bunker-muted">
+                      <td className="py-2 pr-3 text-bunker-muted whitespace-nowrap">
                         {row.realized_vol_pct != null ? `${row.realized_vol_pct}%` : "—"}
                       </td>
-                      <td className="py-2 pr-3 text-slate-300">{row.weight.toFixed(3)}</td>
-                      <td className="py-2">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                      <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{row.weight.toFixed(3)}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {/* DİKKAT: `inline` span'e dikey padding verilirse
+                            satır yüksekliğini büyütmez, arka plan komşu
+                            satıra taşar ve metin üst üste biner (2026-11-02
+                            ekran görüntüsünde görüldü). `inline-block` +
+                            `whitespace-nowrap` ile kutu satır içinde kalır. */}
+                        <span className={`inline-block whitespace-nowrap px-1.5 py-[1px] rounded text-[10px] leading-tight ${
                           row.reason === "long" ? "bg-neon-cyan/10 text-neon-cyan" : "bg-bunker-800 text-bunker-muted"
                         }`}>
                           {row.reason === "long" ? "LONG"
@@ -1952,11 +1957,14 @@ export default function SpotMonitorPage() {
           {tsmom?.evidence && (
             <div className="panel p-4">
               <h3 className="font-mono text-xs font-bold text-slate-200 mb-2">Kanıt</h3>
-              <dl className="space-y-1.5 text-[11px]">
+              {/* Değerler uzun (kaynak repo adı, doğrulama cümlesi). Tek
+                  satırda zorlamak yerine alt alta sarılır; `break-words` ile
+                  uzun token'lar kutudan taşmaz. */}
+              <dl className="space-y-2 text-[11px]">
                 {Object.entries(tsmom.evidence).map(([k, v]) => (
-                  <div key={k} className="flex flex-wrap gap-2">
-                    <dt className="text-bunker-muted font-mono min-w-[110px]">{k}:</dt>
-                    <dd className="text-slate-300 flex-1">{v}</dd>
+                  <div key={k} className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-bunker-muted font-mono sm:min-w-[110px] shrink-0">{k}:</dt>
+                    <dd className="text-slate-300 flex-1 min-w-0 break-words leading-relaxed">{v}</dd>
                   </div>
                 ))}
               </dl>

@@ -114,10 +114,10 @@ def test_dashboard_exposes_live_rsi_and_adx():
 
 # ─── ÖLÇÜLMÜŞ STRATEJİ ELEMESİ (2026-11-01) ───────────────────────────────────
 
-def test_loss_making_strategies_disabled_by_default():
-    """Rastgeleden ayrışmayan stratejiler VARSAYILAN kapalı olmalı.
+def test_only_surviving_strategy_remains():
+    """7 strateji KALDIRILDI — yalnızca `kdj_pure_dip` kaldı.
 
-    60 GÜNLÜK doğrulama (40 sembol × 1.65M bar, gerçek vectorbt):
+    60 GÜNLÜK ölçüm (40 sembol × 1.65M bar, gerçek vectorbt, %0.15 maliyet):
       strateji              n      WR     PF    ort%   rastgeleye fark
       kdj_pure_dip         559   43.1%  0.91  -0.116      +0.031 ANLAMLI
       zlmacd_momentum    11826   38.6%  0.71  -0.135      +0.012 gürültü
@@ -129,45 +129,26 @@ def test_loss_making_strategies_disabled_by_default():
       ema_bounce         23118   37.7%  0.67  -0.154      -0.007 gürültü
       --- rastgele ---   52840   39.4%  0.69  -0.147      referans
 
-    Kritik: 60 günde `squeeze_breakout` (kısa pencerede PF 1.82 görünen)
-    çöktü — PF 0.70, rastgeleye farkı SIFIR. Kısa pencereye güvenilmez.
+    Kaldırılanların 7'si de rastgele girişten ayrışmıyordu. Kodda tutmak
+    yalnızca karmaşıklık ve yanlış "fırsat" algısı üretiyordu.
     """
-    for code in ("ema_bounce", "supertrend_pullback", "zlmacd_momentum",
-                 "linreg_slope_turn", "stc_cycle", "squeeze_breakout",
+    assert len(spot_monitor.ACTIVE_STRATEGIES) == 1
+    assert spot_monitor.ACTIVE_STRATEGIES[0]["code"] == "kdj_pure_dip"
+
+
+def test_removed_strategies_are_gone_from_code():
+    """Kaldırılan stratejilerin kod izi kalmamalı (tarama kuralları dahil)."""
+    src = inspect.getsource(spot_monitor.run_single_scan)
+    for code in ("squeeze_breakout", "zlmacd_momentum", "stc_cycle",
+                 "ema_bounce", "supertrend_pullback", "linreg_slope_turn",
                  "rvol_tod_spike"):
-        assert code in spot_monitor.DEFAULT_DISABLED_STRATEGIES, f"{code} kapatılmalıydı"
+        assert f'strategy_code = "{code}"' not in src, f"{code} hâlâ taramada"
 
 
-def test_watchlist_strategy_stays_enabled():
-    """Rastgeleden anlamlı ayrışan tek strateji AÇIK kalmalı (izleme listesi).
-
-    `kdj_pure_dip`: PF 0.91, 12/40 coinde pozitif, rastgeleden +0.031 puan.
-    Kârlı değil ama rastgele de değil — forward test'te izlenir.
-    """
-    assert "kdj_pure_dip" in spot_monitor.WATCHLIST_STRATEGIES
-    assert "kdj_pure_dip" not in spot_monitor.DEFAULT_DISABLED_STRATEGIES
-
-
-def test_watchlist_and_disabled_do_not_overlap():
-    """Bir strateji hem izleme hem kapatma listesinde olamaz."""
-    assert not (spot_monitor.WATCHLIST_STRATEGIES & spot_monitor.DEFAULT_DISABLED_STRATEGIES)
-
-
-def test_watchlist_is_subset_of_active():
-    assert spot_monitor.WATCHLIST_STRATEGIES <= spot_monitor.ACTIVE_STRATEGY_CODES
-
-
-def test_disabled_set_is_subset_of_active():
-    """Kapatma listesi tanımlı stratejilerden oluşmalı (yazım hatası koruması)."""
-    assert spot_monitor.DEFAULT_DISABLED_STRATEGIES <= spot_monitor.ACTIVE_STRATEGY_CODES
-
-
-def test_db_settings_override_defaults():
-    """DB'de kayıt varsa varsayılanı EZMELİ — operatör panelden açabilsin."""
-    src = inspect.getsource(spot_monitor._ensure_strategy_settings)
-    assert "DEFAULT_DISABLED_STRATEGIES" in src
-    # DB güncellemesi varsayılandan SONRA gelmeli
-    assert src.index("DEFAULT_DISABLED_STRATEGIES") < src.index("_strategy_enabled.update({r[")
+def test_disabled_and_watchlist_concepts_removed():
+    """Artık tek strateji var; kapatma/izleme listelerine gerek yok."""
+    assert not hasattr(spot_monitor, "DEFAULT_DISABLED_STRATEGIES")
+    assert not hasattr(spot_monitor, "WATCHLIST_STRATEGIES")
 
 
 def test_early_exit_dead_rule_documented_as_measured_failure():

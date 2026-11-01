@@ -100,12 +100,17 @@ def test_better_payoff_ratio_lowers_break_even_wr():
 
 # ─── SQUEEZE BREAKOUT OVERRIDE ─────────────────────────────────────────────────
 
-def test_squeeze_breakout_has_5m_override_from_optimizer():
-    """spot_tpsl_optimizer.json çıktısı koda girmiş olmalı: TP 1.0 / SL 1.5."""
-    strat = next(s for s in spot_monitor.ACTIVE_STRATEGIES if s["code"] == "squeeze_breakout")
-    override = strat["tp_sl_override"]["5m"]
-    assert override["tp_pct"] == 1.0
-    assert override["sl_pct"] == 1.5
+def test_squeeze_breakout_removed_after_60day_collapse():
+    """`squeeze_breakout` KALDIRILDI — kısa pencerede şampiyon, 60 günde çöktü.
+
+    Tarihçe: `spot_tpsl_optimizer.json` (768 konfig) ona TP 1.0 / SL 1.5
+    öneriyordu ve kısa pencerede PF 1.82 görünüyordu. 60 gün / 40 sembol /
+    1.65M bar ölçümünde PF 0.70 çıktı — rastgele girişe farkı SIFIR (+0.000).
+    Yani kısa pencere tesadüfüydü ve strateji kaldırıldı.
+
+    Bu test, birinin onu "iyi backtest" gerekçesiyle geri eklemesini engeller.
+    """
+    assert "squeeze_breakout" not in spot_monitor.ACTIVE_STRATEGY_CODES
 
 
 def _expectancy(wr: float, tp_pct: float, sl_pct: float, cost_pct: float) -> float:
@@ -154,12 +159,10 @@ def test_overridden_geometry_breaks_boundary_mixed_status():
     assert 0.0 < (66.1 - be_bnb) < 1.0
 
 
-def test_strategy_override_map_is_built_from_active_strategies():
+def test_strategy_override_map_matches_active_strategies():
     """STRATEGY_TPSL_OVERRIDE, ACTIVE_STRATEGIES ile senkron kalmalı."""
-    assert spot_monitor.STRATEGY_TPSL_OVERRIDE["squeeze_breakout"]["5m"]["tp_pct"] == 1.0
+    assert set(spot_monitor.STRATEGY_TPSL_OVERRIDE) == spot_monitor.ACTIVE_STRATEGY_CODES
 
-
-# ─── ATR TABANLI HEDEF ÖLÇEKLEME ───────────────────────────────────────────────
 
 def test_atr_percentiles_returns_nonzero_for_moving_series():
     """Hareket eden seride ATR yüzdesi SIFIRDAN BÜYÜK olmalı.

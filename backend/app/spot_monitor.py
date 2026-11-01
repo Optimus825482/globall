@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 import asyncpg
 from app.config import config
 from app.technical_analysis import (
-    _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze,
-    _linreg_slope_turn, _rvol_tod_spike, _rsi, _atr, _bollinger, _adx,
+    _kdj, _supertrend, _ema,
+    _rsi, _atr, _bollinger, _adx,
     _aroon, _mfi, _linreg_slope_pct,
 )
 from app import ml_forecast
@@ -59,84 +59,13 @@ TIMEFRAMES = {
 # Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
 ACTIVE_STRATEGIES = [
     {
-        "code": "squeeze_breakout",
-        "label": "Trend + BB Sıkışma + Hacim Patlaması",
-        "score": 98.0,
-        "description": "EMA50 ana trendi içinde Bollinger-Keltner volatilite sıkışması sonrası %125+ hacim patlamasıyla üst bant kırılımı.",
-        "evidence": "162.000 mum Lab Şampiyonu: 409 işlem, PF 1.56, +%37.15 Net Kâr (INJ PF 3.69, AVAX PF 2.65). "
-                    "5m walk-forward: TP 1.0 / SL 1.5 → WR %66.1, PF 1.47 (OOS)",
-        "timeframes": ["5m", "15m", "1h"],
-        # 5m: spot_tpsl_optimizer.json 768 konfigürasyon taraması sonucu.
-        # Canlı varsayılan (TP 1.4 / SL 0.9) basabas WR'si %42.6; geniş stop
-        # (SL 1.5) bunu %33.3'e indirip WR'yi %42.6 → %66.1'e taşıyor.
-        "tp_sl_override": {
-            "5m": {"tp_pct": 1.0, "sl_pct": 1.5},
-            "15m": {"tp_pct": 2.2, "sl_pct": 1.1},
-        },
-    },
-    {
-        "code": "zlmacd_momentum",
-        "label": "Zero-Lag MACD + Momentum + Trend",
-        "score": 94.0,
-        "description": "ZLMACD histogramının sıfırı yukarı kesmesi + EMA20 ≥ EMA50 ana trend filtresi.",
-        "evidence": "OP & Trend Şampiyonu: PF 2.17; hızlı momentum kırılımları",
-        "timeframes": ["5m", "15m", "1h"],
-    },
-    {
-        "code": "stc_cycle",
-        "label": "Schaff Trend Cycle (STC Hacimli Dip)",
-        "score": 92.0,
-        "description": "STC'nin 25 seviyesinin altından yukarı kırılmasıyla hacimli döngüsel dip dönüş girişi.",
-        "evidence": "SOL/LINK/NEAR şampiyonu: WinRate %64+, PF 2.79",
-        "timeframes": ["5m", "15m", "1h"],
-    },
-    {
-        "code": "ema_bounce",
-        "label": "EMA 50 Sekmesi + KDJ Dip",
-        "score": 90.0,
-        "description": "Ana trend içinde EMA50 desteğine geri çekilme + KDJ dip teyidiyle sekme girişi.",
-        "evidence": "Trend içi geri çekilme filtresi; güçlü boğa trendlerinde yüksek başarı",
-        "timeframes": ["5m", "15m", "1h"],
-    },
-    {
-        "code": "zlmacd_momentum",
-        "label": "Zero-Lag MACD + Momentum",
-        "score": 90.0,
-        "description": "ZLMACD histogramının sıfırı yukarı kesmesi + EMA20 ≥ EMA50 trend filtresi.",
-        "evidence": "OP şampiyonu: PF 2.17",
-        "timeframes": ["5m", "15m", "1h"],
-    },
-    {
-        "code": "supertrend_pullback",
-        "label": "SuperTrend Pullback (KDJ Dip)",
-        "score": 88.0,
-        "description": "SuperTrend boğa yönündeyken KDJ dip kesişimiyle trend içi geri çekilme girişi.",
-        "evidence": "SuperTrend(10, 3.0) dinamik ATR trend filtresi",
-        "timeframes": ["5m", "15m", "1h"],
-    },
-    {
-        "code": "linreg_slope_turn",
-        "label": "LinReg Eğim Dönüşü + Hacim",
-        "score": 86.0,
-        "description": "Doğrusal regresyon eğiminin sıfırın üstüne çıkması (momentum dönüşü) + Volume Oscillator > 0 (alım hacmi baskın) + EMA50 trend filtresi.",
-        "evidence": "Lab v3 (5m): WR %55.8, PF 1.53, 12/18 coin; 1500 bar H2 pozitif",
-        "timeframes": ["5m", "15m", "1h"],
-    },
-    {
-        "code": "rvol_tod_spike",
-        "label": "Zaman-Çapalı RVOL Patlaması",
-        "score": 84.0,
-        "description": "Bar hacmi aynı saat-of-gün ortalamasının 2 katını aşarken kapanışın EMA20'yi yukarı kesmesi (kurumsal saat hacmi + momentum).",
-        "evidence": "Lab v5 (5m, IS): WR %66.7, PF 2.61, 13/16 coin; 7/9 komşu plato pozitif; OOS ince örneklem",
-        "timeframes": ["5m"],
-        "tp_sl_override": {"5m": {"tp_pct": 2.0, "sl_pct": 1.2}},
-    },
-    {
         "code": "kdj_pure_dip",
         "label": "KDJ Saf Dip (J≤12)",
         "score": 82.0,
         "description": "KDJ J eğrisinin ekstrem aşırı satım bölgesinden (J≤12) yukarı sıçraması.",
-        "evidence": "Ekstrem dip yakalayıcı destek kuralı",
+        "evidence": "60 gün / 40 sembol / 1.65M bar: PF 0.91, WR %43.1, 12/40 coinde "
+                    "pozitif, rastgele girişe göre +0.031 puan anlamlı fark. Kârlı DEĞİL "
+                    "ama rastgele de değil — izleme listesinde tutuluyor.",
         "timeframes": ["5m", "15m", "1h"],
     },
 ]
@@ -145,29 +74,12 @@ ACTIVE_STRATEGY_CODES = {s["code"] for s in ACTIVE_STRATEGIES}
 # Strateji bazlı TP/SL override (walk-forward + OOS doğrulamasından geçen kademeler)
 STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE_STRATEGIES}
 
-# ─── ÖLÇÜLMÜŞ VARSAYILAN KAPALI STRATEJİLER ───────────────────────────────────
-# 2026-11-01 ölçümü (8 sembol × 1000 gerçek 5m bar, takipçi çıkışı, %0.15 maliyet).
-# Rastgele giriş referansı: WR %31.3, PF 0.42, ort -0.285%.
+# ─── STRATEJİ ELEMESİ (2026-11-01/02) ─────────────────────────────────────────
+# 8 strateji, 60 gün / 40 sembol / 1.65M gerçek bar üzerinde gerçek vectorbt ile
+# tek tek ölçüldü. Sonuç: 7'si rastgele girişten AYRIŞMIYOR.
 #
-#   strateji                n     WR     PF     ort%
-#   squeeze_breakout       15   46.7%  1.82   +0.226   ← TUT
-#   rvol_tod_spike          5   20.0%  1.23   +0.047   ← TUT (az örnek)
-#   --- rastgele ---      648   31.3%  0.42   -0.285   ← referans
-#   stc_cycle              62   33.9%  0.58   -0.192
-#   linreg_slope_turn      55   29.1%  0.40   -0.250
-#   zlmacd_momentum       229   25.8%  0.30   -0.367
-#   supertrend_pullback    49   24.5%  0.26   -0.374
-#   ema_bounce             44   25.0%  0.25   -0.411   ← en kötü
-#
-# Kapananların 5'i rastgeleden KÖTÜ ya da ona eşit. Bunları açık tutmak,
-# "daha çok sinyal = daha çok fırsat" yanılgısıdır: her işlem komisyon ödüyor
-# ve beklentisi negatif. Panelden tek tıkla yeniden açılabilir; burada
-# yalnızca VARSAYILAN kapatılıyor (DB'de kalıcı ayar yoksa geçerli).
-# 60 GÜNLÜK DOĞRULAMA (2026-11-01, gerçek vectorbt, 40 sembol × 1.65M bar).
-# Önceki liste kısa pencereli bir ölçüme dayanıyordu; 60 gün onu DÜZELTTİ:
-#
-#   strateji              n      WR     PF    ort%   rastgeleye göre fark
-#   kdj_pure_dip         559   43.1%  0.91  -0.116      +0.031 ✅ ANLAMLI
+#   strateji              n      WR     PF    ort%   rastgeleye fark
+#   kdj_pure_dip         559   43.1%  0.91  -0.116      +0.031 ANLAMLI
 #   zlmacd_momentum    11826   38.6%  0.71  -0.135      +0.012 gürültü
 #   rvol_tod_spike      5345   38.0%  0.74  -0.137      +0.010 gürültü
 #   stc_cycle           4877   39.2%  0.72  -0.140      +0.007 gürültü
@@ -177,27 +89,12 @@ STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE
 #   ema_bounce         23118   37.7%  0.67  -0.154      -0.007 gürültü
 #   --- rastgele ---   52840   39.4%  0.69  -0.147      referans
 #
-# 60 günde `squeeze_breakout` (kısa pencerede PF 1.82 görünen) çöktü: PF 0.70,
-# rastgeleye farkı SIFIR. `rvol_tod_spike` da aynı. Kısa pencereye güvenilmez.
+# 7 strateji KALDIRILDI (kod, kayıt ve tarama kuralları). Kısa pencerede
+# "şampiyon" görünen `squeeze_breakout` bile 60 günde rastgeleye farkı SIFIR.
+# Yalnızca `kdj_pure_dip` kaldı: PF 0.91 — kârlı değil ama rastgeleden
+# anlamlı ayrışan tek kural.
 #
-# Karar: yalnızca `kdj_pure_dip` rastgeleden ANLAMLI farklı (+0.031 puan,
-# maliyetin ~1/5'i). Kârlı DEĞİL (PF 0.91) ama rastgele de değil — İZLEME
-# listesinde tutulur. Diğer 7'si kapatılır.
-DEFAULT_DISABLED_STRATEGIES = {
-    "ema_bounce",            # PF 0.67, rastgeleden kötü
-    "supertrend_pullback",   # PF 0.70, fark +0.010 (gürültü)
-    "zlmacd_momentum",       # PF 0.71, fark +0.012 (gürültü)
-    "linreg_slope_turn",     # PF 0.70, fark +0.007 (gürültü)
-    "stc_cycle",             # PF 0.72, fark +0.007 (gürültü)
-    "squeeze_breakout",      # PF 0.70, fark +0.000 — 60 günde çöktü
-    "rvol_tod_spike",        # PF 0.74, fark +0.010 (gürültü)
-}
-
-# İzleme listesi: kapatılmaz ama kârlı da değildir. Forward test'te ayrı
-# takip edilir; PF > 1.0 görülürse terfi ettirilir, görülmezse kapatılır.
-WATCHLIST_STRATEGIES = {
-    "kdj_pure_dip",          # PF 0.91, 12/40 coinde pozitif, rastgeleden +0.031
-}
+# Kâr için gereken şey 5 dakikalık tarama değil, GÜNLÜK kanal (bkz. tsmom.py).
 
 # ─── GİRİŞ KAYIT KAPISI ────────────────────────────────────────────────────────
 # ÖNEMLİ: `ai_trading_suite` içindeki 42 modül (OctoBot, Qlib, Vibe, Jesse vb.)
@@ -723,14 +620,13 @@ async def run_single_scan():
                 if quote_vols[-1] < (avg_bar_try_vol * 0.30):
                     continue
 
+                # YALNIZCA kalan stratejinin ihtiyacı olan göstergeler.
+                # 7 strateji kaldırıldığı için STC / ZLMACD / BB-KC sıkışma /
+                # LinReg dönüş / RVOL / EMA-pullback hesapları da kaldırıldı:
+                # her bar için hesaplanıp atılıyordu (ölçümde 18 sembol × 3
+                # zaman dilimi × her tarama).
                 kdj = _kdj(highs, lows, closes, period=9, signal=3) or {}
                 st = _supertrend(highs, lows, closes, period=10, factor=3.0) or {}
-                ema = _ema_pullback_bounce(closes, lows, period=50, tolerance_pct=0.010) or {}
-                stc = _stc(closes, period=10, fast=23, slow=50) or {}
-                zl = _zlmacd(closes, fast=12, slow=26, signal=9) or {}
-                sq = _bb_kc_squeeze(highs, lows, closes) or {}
-                lr = _linreg_slope_turn(closes, volumes) or {}
-                rv = _rvol_tod_spike(times_ms, closes, volumes) or {}
                 ema20 = _ema(closes, 20)
                 ema50 = _ema(closes, 50)
 
@@ -748,18 +644,6 @@ async def run_single_scan():
                 j_val = float(kdj.get("j", 50.0))
                 dip_buy = bool(kdj.get("dip_buy"))
                 st_bull = bool(st.get("bullish"))
-                ema_bounce = bool(ema.get("pullback_bounce"))
-                dist_ema = ema.get("dist_pct")
-
-                stc_dip = bool(stc.get("dip_buy"))
-                stc_val = float(stc.get("stc", 50.0))
-
-                sq_break = bool(sq.get("breakout"))
-                sq_bb_up = float(sq.get("bb_upper", 0.0))
-                sq_width = float(sq.get("bb_width_pct", 0.0))
-
-                zl_cross = bool(zl.get("bullish_cross"))
-                zl_hist = float(zl.get("hist", 0.0))
                 trend_bull = bool(ema20 is not None and ema50 is not None and ema20 >= ema50)
 
                 matched = False
@@ -768,64 +652,12 @@ async def run_single_scan():
                 score = 70.0
                 note = ""
 
-                # 1. Trend + BB-KC Sıkışma + Hacim Patlaması (162.000 Mum Lab Şampiyonu PF 1.56, +%37.15 Net Kâr)
-                if sq_break and trend_bull and (vols[-1] >= avg_vol * 1.25) and enabled.get("squeeze_breakout", True):
-                    matched = True
-                    strategy_code = "squeeze_breakout"
-                    strategy_label = "Trend + BB Sıkışma + Hacim Patlaması"
-                    score = 98.0
-                    note = f"EMA50 ustu BB-KC sikisma kirilimi + Hacim {vols[-1]/avg_vol:.2f}x (BBU={sq_bb_up:.6g})"
-
-                # 2. Zero-Lag MACD + EMA 20/50 Momentum Sıçraması (OP/AVAX Şampiyonu PF 2.17)
-                elif zl_cross and trend_bull and enabled.get("zlmacd_momentum", True):
-                    matched = True
-                    strategy_code = "zlmacd_momentum"
-                    strategy_label = "Zero-Lag MACD + Momentum + Trend"
-                    score = 94.0
-                    note = f"ZLMACD sıfırı yukarı kesti (Hist={zl_hist:.4f}), EMA20>=EMA50"
-
-                # 3. Schaff Trend Cycle (STC) Hacimli Dip Dönüşü
-                elif stc_dip and (vols[-1] >= avg_vol * 1.15) and enabled.get("stc_cycle", True):
-                    matched = True
-                    strategy_code = "stc_cycle"
-                    strategy_label = "Schaff Trend Cycle (STC Hacimli Dip)"
-                    score = 92.0
-                    note = f"STC 25 altından yukarı kırdı (STC={stc_val:.1f}), Hacim={vols[-1]/avg_vol:.2f}x"
-
-                # 4. EMA 50 Pullback Bounce + KDJ Dip
-                elif ema_bounce and (dip_buy or j_val <= 25.0) and trend_bull and enabled.get("ema_bounce", True):
-                    matched = True
-                    strategy_code = "ema_bounce"
-                    strategy_label = "EMA 50 Sekmesi + KDJ Dip"
-                    score = 90.0
-                    note = f"EMA50 desteginde (%{dist_ema}), KDJ J={j_val:.1f}"
-
-                # 5. SuperTrend Boğada KDJ Dip Kesişimi
-                elif st_bull and dip_buy and enabled.get("supertrend_pullback", True):
-                    matched = True
-                    strategy_code = "supertrend_pullback"
-                    strategy_label = "SuperTrend Pullback (KDJ Dip)"
-                    score = 88.0
-                    note = f"SuperTrend Boğada, KDJ J={j_val:.1f} yukarı kesti"
-
-                # 6. LinReg Eğim Dönüşü + Hacim (Lab v3: 5m WR %55.8, PF 1.53, 1500 bar H2 pozitif)
-                elif lr.get("slope_turn") and enabled.get("linreg_slope_turn", True):
-                    matched = True
-                    strategy_code = "linreg_slope_turn"
-                    strategy_label = "LinReg Eğim Dönüşü + Hacim"
-                    score = 86.0
-                    note = f"LinReg egim sifir ustu donus (slope={lr.get('slope', 0):.3f}), VolOsc={lr.get('vo', 0):.1f}, EMA50 ustu"
-
-                # 7. Zaman-Çapalı RVOL Patlaması (Lab v5: sadece 5m kanıtlı, TP2.0/SL1.2)
-                elif rv.get("signal") and tf == "5m" and enabled.get("rvol_tod_spike", True):
-                    matched = True
-                    strategy_code = "rvol_tod_spike"
-                    strategy_label = "Zaman-Çapalı RVOL Patlaması"
-                    score = 84.0
-                    note = f"Saat-bazli RVOL={rv.get('rvol', 0):.1f}x patlamasi, EMA20 ustu kesisme"
-
-                # 8. KDJ Ekstrem Saf Dip Dönüşü
-                elif dip_buy and j_val <= 12.0 and enabled.get("kdj_pure_dip", True):
+                # ── TEK KALAN KURAL (2026-11-02) ──────────────────────────
+                # Diğer 7 strateji 60 günlük ölçümde rastgele girişten
+                # ayrışmadığı için KALDIRILDI (bkz. dosya başındaki not).
+                #
+                # KDJ Ekstrem Saf Dip Dönüşü
+                if dip_buy and j_val <= 12.0 and enabled.get("kdj_pure_dip", True):
                     matched = True
                     strategy_code = "kdj_pure_dip"
                     strategy_label = "KDJ Saf Dip (J<=12)"
