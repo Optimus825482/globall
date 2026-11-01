@@ -35,6 +35,7 @@ export interface SignalModalData {
   net_pnl_try: number;
   detected_at: string;
   exit_time: string | null;
+  trade_size_try?: number;
   details?: {
     note?: string;
     tp_pct?: number;
@@ -912,7 +913,6 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
               </span>
             </div>
 
-            <ChartAiScoreHeader symbol={signal.symbol} assetType="SPOT" className="hidden sm:flex mx-2" />
             {/* Timeframe Seçicileri */}
             <div className="flex items-center bg-bunker-950 rounded-lg p-0.5 border border-bunker-800">
               {AVAILABLE_TFS.map((tf) => (
@@ -1216,9 +1216,9 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
           </div>
         </div>
 
-        {/* 2. BİLGİ & CANLI GÖSTERGE DEĞERLERİ HUD */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-2 bg-bunker-900/60 border-b border-bunker-800 text-xs font-mono">
-          <div className="flex items-center gap-4 text-bunker-muted">
+        {/* 2. BİLGİ & DİNAMİK AI PUANLARI HUD */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-bunker-900/80 border-b border-bunker-800 text-xs font-mono">
+          <div className="flex flex-wrap items-center gap-3.5 text-bunker-muted">
             <span>
               Giriş: <strong className="text-slate-200">₺{formatPrice(signal.entry_price)}</strong>
             </span>
@@ -1229,8 +1229,13 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
               SL: <strong className="text-rose-400">₺{formatPrice(signal.stop_price)}</strong>
             </span>
             <span>
-              Net Kâr (300₺): <strong className={pnlColor}>₺{signal.net_pnl_try?.toFixed(2) || "0.00"}</strong>
+              Net Kâr ({signal.trade_size_try || 500}₺): <strong className={pnlColor}>₺{signal.net_pnl_try?.toFixed(2) || "0.00"}</strong>
             </span>
+          </div>
+
+          {/* DİNAMİK OCTOBOT VE QLIB ALPHA PUANLARI */}
+          <div className="flex items-center gap-2">
+            <ChartAiScoreHeader symbol={signal.symbol} assetType="SPOT" />
           </div>
 
           {/* Dinamik Canlı Değerler */}
