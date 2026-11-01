@@ -163,12 +163,40 @@ STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE
 # "daha çok sinyal = daha çok fırsat" yanılgısıdır: her işlem komisyon ödüyor
 # ve beklentisi negatif. Panelden tek tıkla yeniden açılabilir; burada
 # yalnızca VARSAYILAN kapatılıyor (DB'de kalıcı ayar yoksa geçerli).
+# 60 GÜNLÜK DOĞRULAMA (2026-11-01, gerçek vectorbt, 40 sembol × 1.65M bar).
+# Önceki liste kısa pencereli bir ölçüme dayanıyordu; 60 gün onu DÜZELTTİ:
+#
+#   strateji              n      WR     PF    ort%   rastgeleye göre fark
+#   kdj_pure_dip         559   43.1%  0.91  -0.116      +0.031 ✅ ANLAMLI
+#   zlmacd_momentum    11826   38.6%  0.71  -0.135      +0.012 gürültü
+#   rvol_tod_spike      5345   38.0%  0.74  -0.137      +0.010 gürültü
+#   stc_cycle           4877   39.2%  0.72  -0.140      +0.007 gürültü
+#   supertrend_pullback 36599  39.1%  0.70  -0.137      +0.010 gürültü
+#   linreg_slope_turn  27224   39.2%  0.70  -0.140      +0.007 gürültü
+#   squeeze_breakout    1279   37.9%  0.70  -0.147      +0.000 gürültü
+#   ema_bounce         23118   37.7%  0.67  -0.154      -0.007 gürültü
+#   --- rastgele ---   52840   39.4%  0.69  -0.147      referans
+#
+# 60 günde `squeeze_breakout` (kısa pencerede PF 1.82 görünen) çöktü: PF 0.70,
+# rastgeleye farkı SIFIR. `rvol_tod_spike` da aynı. Kısa pencereye güvenilmez.
+#
+# Karar: yalnızca `kdj_pure_dip` rastgeleden ANLAMLI farklı (+0.031 puan,
+# maliyetin ~1/5'i). Kârlı DEĞİL (PF 0.91) ama rastgele de değil — İZLEME
+# listesinde tutulur. Diğer 7'si kapatılır.
 DEFAULT_DISABLED_STRATEGIES = {
-    "ema_bounce",            # PF 0.25 — en kötü
-    "supertrend_pullback",   # PF 0.26
-    "zlmacd_momentum",       # PF 0.30
-    "linreg_slope_turn",     # PF 0.40
-    "stc_cycle",             # PF 0.58
+    "ema_bounce",            # PF 0.67, rastgeleden kötü
+    "supertrend_pullback",   # PF 0.70, fark +0.010 (gürültü)
+    "zlmacd_momentum",       # PF 0.71, fark +0.012 (gürültü)
+    "linreg_slope_turn",     # PF 0.70, fark +0.007 (gürültü)
+    "stc_cycle",             # PF 0.72, fark +0.007 (gürültü)
+    "squeeze_breakout",      # PF 0.70, fark +0.000 — 60 günde çöktü
+    "rvol_tod_spike",        # PF 0.74, fark +0.010 (gürültü)
+}
+
+# İzleme listesi: kapatılmaz ama kârlı da değildir. Forward test'te ayrı
+# takip edilir; PF > 1.0 görülürse terfi ettirilir, görülmezse kapatılır.
+WATCHLIST_STRATEGIES = {
+    "kdj_pure_dip",          # PF 0.91, 12/40 coinde pozitif, rastgeleden +0.031
 }
 
 # ─── GİRİŞ KAYIT KAPISI ────────────────────────────────────────────────────────

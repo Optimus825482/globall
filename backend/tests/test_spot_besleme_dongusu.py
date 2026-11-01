@@ -115,31 +115,46 @@ def test_dashboard_exposes_live_rsi_and_adx():
 # ─── ÖLÇÜLMÜŞ STRATEJİ ELEMESİ (2026-11-01) ───────────────────────────────────
 
 def test_loss_making_strategies_disabled_by_default():
-    """Rastgeleden kötü 5 strateji VARSAYILAN kapalı olmalı.
+    """Rastgeleden ayrışmayan stratejiler VARSAYILAN kapalı olmalı.
 
-    Ölçüm (8 sembol × 1000 gerçek 5m bar, takipçi çıkışı, %0.15 maliyet):
-      squeeze_breakout    n=15  PF 1.82  +0.226%   TUT
-      rvol_tod_spike      n=5   PF 1.23  +0.047%   TUT
-      --- rastgele ---    n=648 PF 0.42  -0.285%   referans
-      stc_cycle           n=62  PF 0.58
-      linreg_slope_turn   n=55  PF 0.40
-      zlmacd_momentum     n=229 PF 0.30
-      supertrend_pullback n=49  PF 0.26
-      ema_bounce          n=44  PF 0.25
+    60 GÜNLÜK doğrulama (40 sembol × 1.65M bar, gerçek vectorbt):
+      strateji              n      WR     PF    ort%   rastgeleye fark
+      kdj_pure_dip         559   43.1%  0.91  -0.116      +0.031 ANLAMLI
+      zlmacd_momentum    11826   38.6%  0.71  -0.135      +0.012 gürültü
+      rvol_tod_spike      5345   38.0%  0.74  -0.137      +0.010 gürültü
+      stc_cycle           4877   39.2%  0.72  -0.140      +0.007 gürültü
+      supertrend_pullback 36599  39.1%  0.70  -0.137      +0.010 gürültü
+      linreg_slope_turn  27224   39.2%  0.70  -0.140      +0.007 gürültü
+      squeeze_breakout    1279   37.9%  0.70  -0.147      +0.000 gürültü
+      ema_bounce         23118   37.7%  0.67  -0.154      -0.007 gürültü
+      --- rastgele ---   52840   39.4%  0.69  -0.147      referans
 
-    Kapalı olanların 5'i de rastgeleden KÖTÜ ya da ona eşit. Açık tutmak
-    "daha çok sinyal = daha çok fırsat" yanılgısıdır: her işlem komisyon
-    öder ve beklentisi negatiftir.
+    Kritik: 60 günde `squeeze_breakout` (kısa pencerede PF 1.82 görünen)
+    çöktü — PF 0.70, rastgeleye farkı SIFIR. Kısa pencereye güvenilmez.
     """
     for code in ("ema_bounce", "supertrend_pullback", "zlmacd_momentum",
-                 "linreg_slope_turn", "stc_cycle"):
+                 "linreg_slope_turn", "stc_cycle", "squeeze_breakout",
+                 "rvol_tod_spike"):
         assert code in spot_monitor.DEFAULT_DISABLED_STRATEGIES, f"{code} kapatılmalıydı"
 
 
-def test_profitable_strategies_stay_enabled():
-    """Ölçümde kârlı çıkan stratejiler kapatılmamalı."""
-    for code in ("squeeze_breakout", "rvol_tod_spike", "kdj_pure_dip"):
-        assert code not in spot_monitor.DEFAULT_DISABLED_STRATEGIES, f"{code} açık kalmalıydı"
+def test_watchlist_strategy_stays_enabled():
+    """Rastgeleden anlamlı ayrışan tek strateji AÇIK kalmalı (izleme listesi).
+
+    `kdj_pure_dip`: PF 0.91, 12/40 coinde pozitif, rastgeleden +0.031 puan.
+    Kârlı değil ama rastgele de değil — forward test'te izlenir.
+    """
+    assert "kdj_pure_dip" in spot_monitor.WATCHLIST_STRATEGIES
+    assert "kdj_pure_dip" not in spot_monitor.DEFAULT_DISABLED_STRATEGIES
+
+
+def test_watchlist_and_disabled_do_not_overlap():
+    """Bir strateji hem izleme hem kapatma listesinde olamaz."""
+    assert not (spot_monitor.WATCHLIST_STRATEGIES & spot_monitor.DEFAULT_DISABLED_STRATEGIES)
+
+
+def test_watchlist_is_subset_of_active():
+    assert spot_monitor.WATCHLIST_STRATEGIES <= spot_monitor.ACTIVE_STRATEGY_CODES
 
 
 def test_disabled_set_is_subset_of_active():
