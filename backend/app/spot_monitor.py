@@ -448,8 +448,8 @@ async def run_single_scan():
                     eval_indicators = [
                         IndicatorEvaluation("StrategyMatch", 1.0, 1.8),
                         IndicatorEvaluation("KDJ", 1.0 if j_val < 35 else (0.5 if j_val < 60 else -0.5), 1.2),
-                        IndicatorEvaluation("Supertrend", 1.0 if (price > st_val if "st_val" in locals() else True) else -1.0, 1.3),
-                        IndicatorEvaluation("TrendEMA", 0.9 if (price > ema50[-1] if len(ema50) else True) else -0.9, 1.1),
+                        IndicatorEvaluation("Supertrend", 1.0 if st_bull else -1.0, 1.3),
+                        IndicatorEvaluation("TrendEMA", 0.9 if (ema50 is not None and price > ema50) else -0.9, 1.1),
                     ]
                     octo_res = octo_eval.evaluate(sym, "SPOT", eval_indicators)
 
