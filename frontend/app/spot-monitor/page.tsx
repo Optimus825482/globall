@@ -30,6 +30,21 @@ type SignalItem = {
   trail_distance_pct?: number;
   trail_gap_pct?: number | null;
   locked_profit_pct?: number;
+  // ─── Canlı vs giriş karşılaştırması ───
+  // Açık pozisyonda göstergeler her panel yenilemesinde yeniden hesaplanır;
+  // `entry_scores` sinyal anındaki donmuş değerleri taşır ki ikisi
+  // karşılaştırılabilsin (sinyal bozuldu mu?).
+  entry_scores?: {
+    octobot_consensus_pct?: number | null;
+    qlib_score?: number | null;
+    vibe_category?: string | null;
+    trap_warning?: string | null;
+    rsi?: number | null;
+    adx?: number | null;
+  };
+  live_rsi?: number | null;
+  live_adx?: number | null;
+  indicators_live?: boolean;
   details: {
     note?: string;
     exit_model?: string;
@@ -1098,12 +1113,38 @@ export default function SpotMonitorPage() {
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-col gap-1">
+                        {/* CANLI değerler — açık pozisyonda her yenilemede güncellenir.
+                            Girişteki değer küçük ve soluk gösterilir ki ikisi
+                            karşılaştırılabilsin (sinyal bozuldu mu?). */}
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           🐙 OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
+                          {s.entry_scores?.octobot_consensus_pct != null &&
+                            s.entry_scores.octobot_consensus_pct !== s.octobot_consensus_pct && (
+                              <span className="text-[8px] font-normal text-bunker-muted">
+                                (giriş %{s.entry_scores.octobot_consensus_pct})
+                              </span>
+                            )}
                         </span>
                         {(s.qlib_score || s.details?.qlib_score) && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
                             📊 Qlib Alpha: {s.qlib_score || s.details?.qlib_score}
+                            {s.entry_scores?.qlib_score != null &&
+                              s.entry_scores.qlib_score !== s.qlib_score && (
+                                <span className="text-[8px] font-normal text-bunker-muted">
+                                  (giriş {s.entry_scores.qlib_score})
+                                </span>
+                              )}
+                          </span>
+                        )}
+                        {s.indicators_live && s.live_rsi != null && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-slate-300 bg-slate-500/10 border border-slate-500/20">
+                            RSI {s.live_rsi}
+                            {s.entry_scores?.rsi != null && (
+                              <span className="text-[8px] text-bunker-muted">
+                                (giriş {s.entry_scores.rsi})
+                              </span>
+                            )}
+                            {s.live_adx != null && <span>· ADX {s.live_adx}</span>}
                           </span>
                         )}
                         {s.trap_warning === "BULL_TRAP" || s.details?.trap_warning === "BULL_TRAP" ? (

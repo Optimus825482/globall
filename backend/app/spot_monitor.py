@@ -345,6 +345,21 @@ TRAIL_ACTIVATE_PCT = 1.5   # takipçinin devreye girdiği kâr eşiği (%)
 TRAIL_LOCK_PCT = 0.8       # devreye girince kilitlenen net kâr (%)
 TRAIL_DISTANCE_PCT = 0.6   # zirveden geriye takip mesafesi (%)
 
+# ─── MOMENTUM-BAZLI ERKEN ÇIKIŞ ───────────────────────────────────────────────
+# Ölçüm (2026-11-01, 33 sinyal): tutma süresi uzadıkça getiri KÖTÜLEŞİYOR.
+#   30dk -0.167% | 1sa -0.333% | 4sa -0.291% | 12sa -0.370% | 24sa -0.385%
+# Uzun beklemek sermayeyi hem bağlıyor hem kaybettiriyor. İki kural eklendi:
+#
+#  1. Kâr hiç gelmediyse: EARLY_EXIT_MINUTES sonunda momentum kontrol edilir;
+#     momentum yoksa (RSI nötr/negatif ve fiyat girişin altında) çık.
+#  2. Her durumda: MAX_HOLD_MINUTES tavanı — süresiz bekletme yok.
+#
+# Bu, "5 saat sonra çıkacaksan neden 5 saatlik riski alıyoruz" sorusunun
+# karşılığı: artık beklemiyoruz, momentum yoksa erken çıkıyoruz.
+EARLY_EXIT_MINUTES = {"5m": 30, "15m": 90, "1h": 240}
+MAX_HOLD_MINUTES = {"5m": 120, "15m": 360, "1h": 720}
+EARLY_EXIT_MIN_PROGRESS_PCT = 0.15   # bu kadar bile kâr yoksa "momentum yok" say
+
 
 def _row_get(row, key, default=None):
     """asyncpg Record için güvenli erişim — kolon henüz eklenmemişse default."""
@@ -971,6 +986,86 @@ FORWARD_MAX_SYMBOLS = 40
 _forward_offset = 0
 
 
+# Canlı gösterge önbelleği: panel yenilemesi her açık pozisyon için sembol
+# başına bir Binance isteği yapar. 10 pozisyon × saniyede bir yenileme hız
+# sınırına çarpar; 45 sn önbellek tazeliği bozmadan bunu engeller.
+_live_ind_cache: dict[str, tuple[float, dict]] = {}
+LIVE_IND_TTL_SEC = 45
+
+
+def _live_indicator_snapshot(symbol: str, entry_price: float) -> dict | None:
+    """Açık pozisyon için GÜNCEL göstergeler (giriş anındaki değil).
+
+    Neden: `details` sinyal anında donar. Panelde RSI 30'da giren bir işlem,
+    RSI 70'e çıkmış olsa bile "30" gösteriyordu — yani ölü sinyal canlı
+    sanılıyordu. Bu fonksiyon aynı sembolü yeniden ölçer.
+
+    Hata/ağ sorununda None döner; çağıran girişteki değerlere düşer.
+    """
+    now = time.time()
+    hit = _live_ind_cache.get(symbol)
+    if hit and now - hit[0] < LIVE_IND_TTL_SEC:
+        return hit[1]
+    try:
+        klines = _fetch_klines(symbol, "5m", limit=120)
+        if len(klines) < 60:
+            return None
+        highs = [float(k[2]) for k in klines]
+        lows = [float(k[3]) for k in klines]
+        closes = [float(k[4]) for k in klines]
+        volumes = [float(k[5]) for k in klines]
+        price = closes[-1]
+        rsi_val = float(_rsi(closes, 14) or 50.0)
+        atr_val = float(_atr(highs, lows, closes, 14) or (price * 0.015))
+        bb = _bollinger(closes, 20, 2.0) or {}
+        adx_val = float((_adx(highs, lows, closes, 14) or {}).get("adx", 20.0))
+        ema20 = _ema(closes, 20) or price
+        ema50 = _ema(closes, 50) or price
+        st = _supertrend(highs, lows, closes, period=10, factor=3.0) or {}
+        st_bull = bool(st.get("bullish"))
+        j_val = float((_kdj(highs, lows, closes, period=9, signal=3) or {}).get("j", 50.0))
+        avg_v = (sum(volumes[-20:]) / 20.0) if len(volumes) >= 20 and sum(volumes[-20:]) > 0 else 1.0
+        vol_ratio = (volumes[-1] / avg_v) if avg_v else 1.0
+        p_chg = ((closes[-1] - closes[-3]) / closes[-3] * 100.0) if len(closes) >= 3 else 0.0
+
+        # Aynı heuristik motorlar, GÜNCEL girdilerle
+        octo = OctoBotMatrixEvaluator(consensus_threshold=0.60).evaluate(sym_indicators := symbol, "SPOT", [
+            IndicatorEvaluation("Trend", 1.0 if ema20 >= ema50 else -1.0, 1.4),
+            IndicatorEvaluation("KDJ", 1.0 if j_val < 35 else (0.5 if j_val < 60 else -0.5), 1.2),
+            IndicatorEvaluation("Supertrend", 1.0 if st_bull else -1.0, 1.3),
+            IndicatorEvaluation("TrendEMA", 0.9 if price > ema50 else -0.9, 1.1),
+        ])
+        vibe = VibeBreakoutTracker().analyze_vibe(VibeMetric(
+            symbol=symbol, asset_type="SPOT", price_change_pct=p_chg,
+            volume_ratio=vol_ratio, social_buzz_score=0.5, sentiment_velocity=0.1,
+            orderbook_depth_ratio=1.2 if vol_ratio > 1.2 else 0.9))
+        qlib = evaluate_qlib_alpha(symbol, price, {
+            "rsi": rsi_val, "adx": adx_val, "atr": atr_val,
+            "ema_fast": ema20, "ema_slow": ema50,
+            "bb_upper": bb.get("upper") or price * 1.02,
+            "bb_lower": bb.get("lower") or price * 0.98,
+            "volume_ratio": vol_ratio,
+        })
+        trap = ("BULL_TRAP" if (p_chg > 1.2 and vol_ratio < 0.85)
+                else ("FOMO_TRAP" if vibe.is_fomo_trap else "NONE"))
+        out = {
+            "octobot_consensus_pct": int(octo.consensus_confidence * 100),
+            "octobot_signal": octo.consensus_signal,
+            "qlib_score": qlib.alpha_score,
+            "vibe_category": vibe.vibe_category,
+            "trap_warning": trap,
+            "is_fomo_trap": vibe.is_fomo_trap,
+            "rsi": round(rsi_val, 1),
+            "adx": round(adx_val, 1),
+            "pnl_since_entry_pct": round((price - entry_price) / entry_price * 100.0, 3) if entry_price else None,
+        }
+        _live_ind_cache[symbol] = (now, out)
+        return out
+    except Exception as exc:  # noqa: BLE001 - panel gösterimi işlemi durdurmaz
+        logger.info("canlı gösterge hatası %s: %s", symbol, exc)
+        return None
+
+
 async def _record_forward_predictions(signals: list[dict]) -> int:
     """Dondurulmuş model için ileri test kaydı üretir.
 
@@ -1152,15 +1247,51 @@ async def update_open_signals_pnl(conn):
             # Kilit başabaşın üstündeyse kârla kapandı
             status = "WIN_TRAILING" if fill_price > entry_p else "LOSS_SL"
 
-        # Süre Aşımı (5m için 60 dk, 15m için 150 dk, 1h için 360 dk)
-        # Takipçi devredeyse süre aşımı UYGULANMAZ — kazanan işlemi kesmemek
-        # takipçinin amacıdır. Yalnızca kâra geçmemiş pozisyonlar zamanla kapanır.
-        elif not trailing_active and (now_utc - row["detected_at"]).total_seconds() > (3600 if row["timeframe"] == "5m" else (9000 if row["timeframe"] == "15m" else 21600)):
-            exit_price = curr_p
-            exit_time = now_utc
-            gross_ret = pos_size * (pnl_pct / 100.0)
-            net_try = gross_ret - comm_try
-            status = "WIN_EXPIRED" if net_try > 0 else "EXPIRED"
+        # ─── YETERİNCE BEKLEME ─────────────────────────────────────────────
+        # Konu kısa/uzun bekleme DEĞİL, YETERİNCE bekleme:
+        #   • çok az bekleme → işlem tezine fırsat vermeden kesmek
+        #   • gereksiz uzun bekleme → sermayeyi bağlayıp kaybettirmek
+        #
+        # İki kural bunu birlikte sağlar:
+        #   1. Erken çıkış: EARLY_EXIT_MINUTES'tan sonra işlem HÂLÂ tezini
+        #      göstermiyorsa (ne kâr var ne momentum) beklemenin anlamı yok.
+        #      Yeterince bekledik; tez tutmadı.
+        #   2. Azami tutma: her durumda tavan — süresiz bekletme yok.
+        #
+        # Takipçi devredeyken (kâr kilitli, tez ÇALIŞTI) zaman baskısı yoktur;
+        # kazananı kesmemek takipçinin amacıdır.
+        elif not trailing_active:
+            tf = row["timeframe"]
+            age_min = (now_utc - row["detected_at"]).total_seconds() / 60.0
+            early_min = EARLY_EXIT_MINUTES.get(tf, 60)
+            max_min = MAX_HOLD_MINUTES.get(tf, 240)
+            # Şu anki momentum: girişteki tez hâlâ geçerli mi?
+            bars_5m = _fetch_klines(sym, "5m", limit=60)
+            rsi_now = None
+            if len(bars_5m) >= 20:
+                try:
+                    rsi_now = float(_rsi([float(b["close"]) for b in bars_5m], 14))
+                except Exception:  # noqa: BLE001
+                    rsi_now = None
+            # "Tez tutmadı" = kâr yok VE momentum yok (RSI nötr/negatif)
+            stalled = (
+                age_min >= early_min
+                and pnl_pct < EARLY_EXIT_MIN_PROGRESS_PCT
+                and (rsi_now is None or rsi_now < 50.0)
+            )
+            if stalled or age_min >= max_min:
+                exit_price = curr_p
+                exit_time = now_utc
+                net_try = (pos_size * (pnl_pct / 100.0)) - comm_try
+                if net_try > 0:
+                    status = "WIN_EXPIRED"
+                else:
+                    status = "EXPIRED" if not stalled else "STALLED"
+                logger.info(
+                    "spot çıkış #%s %s: %s (yaş %.0f dk, pnl %.2f%%, rsi %s)",
+                    row["id"], sym, "momentum_yok" if stalled else "sure_doldu",
+                    age_min, pnl_pct,
+                    f"{rsi_now:.1f}" if rsi_now is not None else "-")
 
         if status != "OPEN":
             await conn.execute("""
@@ -1333,6 +1464,15 @@ async def get_spot_monitor_dashboard():
             entry_p = float(r["entry_price"])
             trail_on = bool(_row_get(r, "trailing_active", False))
             peak_p = float(_row_get(r, "peak_price", entry_p) or entry_p)
+            # ─── DİNAMİK SKORLAR ───────────────────────────────────────────
+            # `details` giriş ANINDAKİ değerleri taşır (donmuş). Açık
+            # pozisyonda bunları yeniden hesaplamak gerekir: yoksa RSI 30'da
+            # giren bir işlem, RSI 70'e çıkmış olsa bile panelde hâlâ "30"
+            # gösterir ve ölü sinyali canlı sanırız. Yalnızca AÇIK
+            # pozisyonlar için ve sembol başına TEK istek (önbellekli).
+            live = None
+            if r["status"] == "OPEN":
+                live = _live_indicator_snapshot(r["symbol"], entry_p)
             lock_price = entry_p * (1.0 + TRAIL_LOCK_PCT / 100.0) if trail_on else None
             trail_gap_pct = ((peak_p - curr_p) / peak_p * 100.0) if trail_on and peak_p > 0 else None
             active_items.append({
@@ -1361,13 +1501,30 @@ async def get_spot_monitor_dashboard():
                 "detected_at": r["detected_at"].isoformat() if r["detected_at"] else None,
                 "exit_time": r["exit_time"].isoformat() if r["exit_time"] else None,
                 "details": det,
-                "octobot_consensus_pct": det.get("octobot_consensus_pct", 84),
-                "octobot_signal": det.get("octobot_signal", "BUY"),
-                "vibe_category": det.get("vibe_category", "BULLISH_VIBE"),
-                "trap_warning": det.get("trap_warning", "NONE"),
-                "is_fomo_trap": det.get("is_fomo_trap", False),
-                "qlib_score": det.get("qlib_score", 72.0),
-                "jesse_rr": det.get("jesse_rr", 2.2)
+                # Girişteki değerler (referans; "ne zaman ne görülmüştü")
+                "entry_scores": {
+                    "octobot_consensus_pct": det.get("octobot_consensus_pct"),
+                    "qlib_score": det.get("qlib_score"),
+                    "vibe_category": det.get("vibe_category"),
+                    "trap_warning": det.get("trap_warning"),
+                    "rsi": det.get("rsi"),
+                    "adx": det.get("adx"),
+                },
+                # CANLI değerler — açık pozisyonda her panel yenilemesinde
+                # yeniden hesaplanır. `None` ise istatistik moduna düşer.
+                "octobot_consensus_pct": (live or {}).get("octobot_consensus_pct",
+                                                          det.get("octobot_consensus_pct", 84)),
+                "octobot_signal": (live or {}).get("octobot_signal",
+                                                   det.get("octobot_signal", "BUY")),
+                "vibe_category": (live or {}).get("vibe_category",
+                                                  det.get("vibe_category", "BULLISH_VIBE")),
+                "trap_warning": (live or {}).get("trap_warning", det.get("trap_warning", "NONE")),
+                "is_fomo_trap": (live or {}).get("is_fomo_trap", det.get("is_fomo_trap", False)),
+                "qlib_score": (live or {}).get("qlib_score", det.get("qlib_score", 72.0)),
+                "jesse_rr": det.get("jesse_rr", 2.2),
+                "live_rsi": (live or {}).get("rsi"),
+                "live_adx": (live or {}).get("adx"),
+                "indicators_live": bool(live),
             })
 
         total_portfolio_try = INITIAL_PORTFOLIO_TRY + realized_pnl + unrealized_pnl
