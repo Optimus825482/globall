@@ -620,7 +620,7 @@ export default function ChartsPage() {
                     </div>
                 </div>
 
-                <ChartAiScoreHeader symbol={globalSymbol} assetType="SPOT" className="hidden lg:flex mr-2" />
+                <ChartAiScoreHeader symbol={globalSymbol} assetType="SPOT" className="flex items-center shrink-0 mr-2" />
                 {/* Sağ: yenile */}
                 <div className="flex items-center gap-2">
                     <button
