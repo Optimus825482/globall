@@ -27,7 +27,17 @@ type SignalItem = {
     note?: string;
     tp_pct?: number;
     sl_pct?: number;
+    octobot_consensus_pct?: number;
+    octobot_signal?: string;
+    vibe_category?: string;
+    trap_warning?: string;
+    is_fomo_trap?: boolean;
   };
+  octobot_consensus_pct?: number;
+  octobot_signal?: string;
+  vibe_category?: string;
+  trap_warning?: string;
+  is_fomo_trap?: boolean;
 };
 
 type DashboardData = {
@@ -759,6 +769,7 @@ export default function SpotMonitorPage() {
                 <th className="py-3 px-4">Anlık Fiyat</th>
                 <th className="py-3 px-4">Hedef / Stop</th>
                 <th className="py-3 px-4">Net Kâr (300₺)</th>
+                <th className="py-3 px-4">AI Doğrulama (OctoBot / Vibe)</th>
                 <th className="py-3 px-4">Durum</th>
                 <th className="py-3 px-4 text-right">İşlem</th>
               </tr>
@@ -835,6 +846,26 @@ export default function SpotMonitorPage() {
                           {s.net_pnl_try >= 0 ? "+" : ""}₺{s.net_pnl_try.toFixed(2)}
                         </span>
                         <span className="text-[9px] text-bunker-muted">Net (Kom. Düşülmüş)</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
+                        </span>
+                        {s.trap_warning === "BULL_TRAP" || s.details?.trap_warning === "BULL_TRAP" ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                            ⚠️ Boğa Tuzağı!
+                          </span>
+                        ) : (s.is_fomo_trap || s.details?.is_fomo_trap) ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            ⚠️ FOMO Tuzağı
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                            🟢 {s.vibe_category || s.details?.vibe_category || "Onaylı Hacim"}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-4">

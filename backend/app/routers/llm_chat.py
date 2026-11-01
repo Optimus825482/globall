@@ -20,6 +20,7 @@ from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database
 from app.state import market, analyzer
 from app.api_common import (_start_background, _fresh_public_price, _main_pg_pool, _llm_guard_block_reason)
+from app.ai_trading_suite.chat_tools import (AI_TRADING_SUITE_TOOLS, execute_ai_trading_suite_evaluation, execute_hedge_fund_council, execute_risk_chief_veto)
 from app.routers.llm_position_tools import (LLM_POSITION_CONTEXT_TOOL, LLM_UPDATE_POSITION_TOOL,
                             LLM_CLOSE_POSITION_TOOL, LLM_SET_SYMBOL_GUARD_TOOL, LLM_REMOVE_SYMBOL_GUARD_TOOL,
                             LLM_LIST_SYMBOL_GUARDS_TOOL)
@@ -1122,8 +1123,40 @@ async def _upside_scout_impl():
             lessons = await database.get_llm_forecast_lessons(symbol=sym, status="active", limit=3)
         except Exception:
             lessons = []
+        
+        # --- AI SUITE: OctoBot KonsensÃ¼s & Vibe/Tuzak Analizi ---
+        from app.ai_trading_suite import OctoBotMatrixEvaluator, IndicatorEvaluation, VibeBreakoutTracker, VibeMetric
+        octo_eval = OctoBotMatrixEvaluator(consensus_threshold=0.60)
+        rsi_val = float(best.get("rsi") or 55.0)
+        mfi_val = float(best.get("mfi") or 55.0)
+        ret3 = float(best.get("ret3_pct") or 0.0)
+        eval_inds = [
+            IndicatorEvaluation("VelocityRank", 1.0, 1.5),
+            IndicatorEvaluation("RSI", 0.8 if 45 <= rsi_val <= 68 else (-0.6 if rsi_val > 72 else 0.2), 1.2),
+            IndicatorEvaluation("MFI", 0.9 if 45 <= mfi_val <= 70 else (-0.7 if mfi_val > 75 else 0.2), 1.0),
+            IndicatorEvaluation("AroonUp", 1.0 if float(best.get("aroon_up") or 0) > 70 else -0.5, 1.1)
+        ]
+        octo_res = octo_eval.evaluate(sym, "SPOT", eval_inds)
+
+        vibe_track = VibeBreakoutTracker()
+        vol_ratio = float(best.get("rvol") or 1.6)
+        v_res = vibe_track.analyze_vibe(VibeMetric(
+            symbol=sym,
+            asset_type="SPOT",
+            price_change_pct=ret3,
+            volume_ratio=vol_ratio,
+            social_buzz_score=0.6,
+            sentiment_velocity=0.1,
+            orderbook_depth_ratio=1.2
+        ))
+        is_bull_trap = (ret3 > 1.2 and vol_ratio < 0.9) or v_res.is_fomo_trap
+        trap_warn = "BULL_TRAP" if (ret3 > 1.2 and vol_ratio < 0.9) else ("FOMO_TRAP" if v_res.is_fomo_trap else "NONE")
         candidates_ctx.append({
             "symbol": sym, "current_price": price,
+            "octobot_consensus": f"%{int(octo_res.consensus_confidence * 100)} ({octo_res.consensus_signal})",
+            "vibe_status": v_res.vibe_category,
+            "trap_warning": trap_warn,
+            "is_fomo_trap": v_res.is_fomo_trap,
             # Sentez için iki hız profili: 5dk-%2 ve 15dk-%3 ayrı ayrı.
             "profiles": profiles,
             # Öne çıkan (en yüksek upside skorlu) profil — kart/rozet gösterimi.
@@ -2847,7 +2880,7 @@ async def symbol_analysis_llm_chat(symbol: str, payload: dict = None, request: R
                   LLM_CREATE_ALERT_TOOL, LLM_UPDATE_ALERT_TOOL, LLM_REMOVE_ALERT_TOOL, LLM_LIST_ALERTS_TOOL, LLM_VALIDATE_PLAN_TOOL,
                   LLM_PATTERN_SCAN_TOOL, LLM_PATTERN_RUNS_TOOL, LLM_PATTERN_SAVE_TOOL, LLM_PATTERN_LIST_TOOL, LLM_INDICATOR_CATALOG_TOOL,
                   LLM_AUTO_PAPER_TOOL, LLM_DASHBOARD_TOOL, LLM_MONITORING_TOOL,
-                  LLM_MASTER_SURGE_TOOL, LLM_ML_FORECAST_TOOL, LLM_SURGE_BIAS_TOOL])
+                  LLM_MASTER_SURGE_TOOL, LLM_ML_FORECAST_TOOL, LLM_SURGE_BIAS_TOOL, *AI_TRADING_SUITE_TOOLS])
     tools.extend([{"type":"function","function":{"name":"get_symbol_analysis","description":"Seçili sembolün güncel teknik analizini ve istenen timeframe snapshot'ını getirir.","parameters":{"type":"object","properties":{"timeframe":{"type":"string"}},"required":[]}}}, {"type":"function","function":{"name":"get_historical_klines","description":"Binance TR public API'den seçili sembol için geçmiş mumları getirir. En fazla 1000 mum.","parameters":{"type":"object","properties":{"interval":{"type":"string","enum":["1m","5m","15m","1h","4h","1d"]},"limit":{"type":"integer"}},"required":[]}}}, {"type":"function","function":{"name":"get_symbol_trades","description":"Seçili sembolün geçmiş işlemlerini getirir.","parameters":{"type":"object","properties":{"limit":{"type":"integer"}},"required":[]}}}, LLM_DATABASE_TOOL, LLM_READONLY_SQL_TOOL, {"type":"function","function":{"name":"search_memory","description":"Seçili sembolle ilgili geçmiş konuşma, işlem ve karar hafızasını arar.","parameters":{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"required":["query"]}}}])
     # The symbol-chat route builds a second base list below; append alert and
     # research tools after that list so they are not lost when the list is
@@ -2868,6 +2901,9 @@ async def symbol_analysis_llm_chat(symbol: str, payload: dict = None, request: R
         if name == "get_orderbook_pressure": return await _get_orderbook_pressure_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_symbol_recent_outcomes": return await _get_recent_outcomes_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_crypto_news_catalysts": return await _get_crypto_news_tool({**args, "symbol": args.get("symbol") or symbol})
+        if name == "run_ai_trading_suite_evaluation": return await execute_ai_trading_suite_evaluation({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_hedge_fund_council_deliberation": return await execute_hedge_fund_council({**args, "symbol": args.get("symbol") or symbol})
+        if name == "check_risk_chief_veto": return await execute_risk_chief_veto({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_master_surge_prediction": return await _get_master_surge_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_ml_price_forecast": return await _get_ml_forecast_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_surge_learning_bias": return await _get_surge_bias_tool({**args, "symbol": args.get("symbol") or symbol})
@@ -2964,6 +3000,9 @@ def _tool_activity_summary(name: str, args: dict) -> str:
     if name == "detect_5m_upside_candidates": return "5 dk yükseliş adayları taranıyor"
     if name == "deep_analyze_symbol": return f"{symbol} derinlemesine analiz ediliyor · gösterge seti hesaplanıyor"
     if name == "get_data_quality": return f"{symbol} veri tazeliği kontrol ediliyor"
+    if name == "run_ai_trading_suite_evaluation": return f"{symbol} için 10 AI ticaret mimarisi çalıştırılıyor (OctoBot, Freqtrade, Soros/Simons...)"
+    if name == "get_hedge_fund_council_deliberation": return f"{symbol} için George Soros, Jim Simons ve Ray Dalio konseyi toplanıyor"
+    if name == "check_risk_chief_veto": return f"{symbol} için TradingAgents & Freqtrade Risk Masası denetimi yapılıyor"
     if name == "get_microstructure_snapshot": return f"{symbol} emir defteri dengesi okunuyor"
     if name == "get_regime_snapshot": return f"{symbol} piyasa rejimi belirleniyor"
     if name == "calculate_trade_economics": return f"{symbol} işlem ekonomisi hesaplanıyor · maliyet/kâr analizi"
@@ -3249,7 +3288,7 @@ def _symbol_quick_stream(quick: dict, body: dict, trace_id: str, session_id: str
                 LLM_MASTER_SURGE_TOOL, LLM_ML_FORECAST_TOOL, LLM_SURGE_BIAS_TOOL,
                 LLM_REALTIME_FLOW_TOOL,
                 LLM_DERIVATIVES_TOOL, LLM_MACRO_SENTIMENT_TOOL, LLM_ORDERBOOK_PRESSURE_TOOL,
-                LLM_RECENT_OUTCOMES_TOOL, LLM_CRYPTO_NEWS_TOOL,
+                LLM_RECENT_OUTCOMES_TOOL, LLM_CRYPTO_NEWS_TOOL, *AI_TRADING_SUITE_TOOLS,
             ]
             async def quick_executor(name, args):
                 sym = str(args.get("symbol") or quick.get("symbol") or "")
@@ -3478,6 +3517,9 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
     failed_tool_calls = set()
 
     async def _dispatch_tool(name, args):
+        if name == "run_ai_trading_suite_evaluation": return await execute_ai_trading_suite_evaluation(args)
+        if name == "get_hedge_fund_council_deliberation": return await execute_hedge_fund_council(args)
+        if name == "check_risk_chief_veto": return await execute_risk_chief_veto(args)
         if name == "get_derivatives_intel": return await _get_derivatives_tool(args)
         if name == "get_macro_market_sentiment": return await _get_macro_sentiment_tool(args)
         if name == "get_orderbook_pressure": return await _get_orderbook_pressure_tool(args)

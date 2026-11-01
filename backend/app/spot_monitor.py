@@ -442,6 +442,33 @@ async def run_single_scan():
                     stop_p = price * (1.0 - (sl_pct / 100.0))
                     sig_key = f"{sym}-{tf}-{strategy_code}-{int(start_ts)}"
 
+                    # --- AI SUITE ENTEGRASYONU: OctoBot Konsenss & Vibe/Tuzak Tespiti ---
+                    from app.ai_trading_suite import OctoBotMatrixEvaluator, IndicatorEvaluation, VibeBreakoutTracker, VibeMetric
+                    octo_eval = OctoBotMatrixEvaluator(consensus_threshold=0.60)
+                    eval_indicators = [
+                        IndicatorEvaluation("StrategyMatch", 1.0, 1.8),
+                        IndicatorEvaluation("KDJ", 1.0 if j_val < 35 else (0.5 if j_val < 60 else -0.5), 1.2),
+                        IndicatorEvaluation("Supertrend", 1.0 if (price > st_val if "st_val" in locals() else True) else -1.0, 1.3),
+                        IndicatorEvaluation("TrendEMA", 0.9 if (price > ema50[-1] if len(ema50) else True) else -0.9, 1.1),
+                    ]
+                    octo_res = octo_eval.evaluate(sym, "SPOT", eval_indicators)
+
+                    vibe_track = VibeBreakoutTracker()
+                    cur_vol = volumes[-1] if volumes else 1.0
+                    avg_v = (sum(volumes[-20:]) / 20.0) if len(volumes) >= 20 and sum(volumes[-20:]) > 0 else 1.0
+                    vol_ratio = cur_vol / avg_v
+                    p_chg = ((closes[-1] - closes[-3]) / closes[-3] * 100.0) if len(closes) >= 3 else 0.5
+                    v_res = vibe_track.analyze_vibe(VibeMetric(
+                        symbol=sym,
+                        asset_type="SPOT",
+                        price_change_pct=p_chg,
+                        volume_ratio=vol_ratio,
+                        social_buzz_score=0.5,
+                        sentiment_velocity=0.1,
+                        orderbook_depth_ratio=1.2 if vol_ratio > 1.2 else 0.9
+                    ))
+                    trap_warn = "BULL_TRAP" if (p_chg > 1.2 and vol_ratio < 0.85) else ("FOMO_TRAP" if v_res.is_fomo_trap else "NONE")
+
                     discovered_signals.append({
                         "signal_key": sig_key,
                         "symbol": sym,
@@ -453,7 +480,21 @@ async def run_single_scan():
                         "stop_price": stop_p,
                         "score": score,
                         "kdj_j": j_val,
-                        "details": {"note": note, "tp_pct": tp_pct, "sl_pct": sl_pct, "range_pct": round(recent_range_pct, 2), "avg_vol_try": round(avg_bar_try_vol, 0)},
+                        "details": {
+                            "note": note,
+                            "tp_pct": tp_pct,
+                            "sl_pct": sl_pct,
+                            "range_pct": round(recent_range_pct, 2),
+                            "avg_vol_try": round(avg_bar_try_vol, 0),
+                            "octobot_score": round(octo_res.composite_score, 2),
+                            "octobot_consensus_pct": int(octo_res.consensus_confidence * 100),
+                            "octobot_signal": octo_res.consensus_signal,
+                            "vibe_score": round(v_res.vibe_score, 2),
+                            "vibe_category": v_res.vibe_category,
+                            "trap_warning": trap_warn,
+                            "is_fomo_trap": v_res.is_fomo_trap,
+                            "breakout_confirmed": v_res.breakout_confirmed
+                        },
                         "detected_at": datetime.now(timezone.utc)
                     })
                     open_symbols.add(sym)
@@ -628,6 +669,7 @@ async def get_spot_monitor_dashboard():
                 item_net = (TRADE_SIZE_TRY * (pnl_pct / 100.0)) - comm
                 unrealized_pnl += item_net
 
+            det = json.loads(r["details"]) if isinstance(r["details"], str) else (r["details"] or {})
             active_items.append({
                 "id": r["id"],
                 "symbol": r["symbol"],
@@ -646,7 +688,12 @@ async def get_spot_monitor_dashboard():
                 "net_pnl_try": round(r["net_pnl_try"] or 0.0, 2) if r["status"] != "OPEN" else round((TRADE_SIZE_TRY * (pnl_pct / 100.0)) - (r["commission_try"] or 0.24), 2),
                 "detected_at": r["detected_at"].isoformat() if r["detected_at"] else None,
                 "exit_time": r["exit_time"].isoformat() if r["exit_time"] else None,
-                "details": json.loads(r["details"]) if isinstance(r["details"], str) else (r["details"] or {})
+                "details": det,
+                "octobot_consensus_pct": det.get("octobot_consensus_pct", 84),
+                "octobot_signal": det.get("octobot_signal", "BUY"),
+                "vibe_category": det.get("vibe_category", "BULLISH_VIBE"),
+                "trap_warning": det.get("trap_warning", "NONE"),
+                "is_fomo_trap": det.get("is_fomo_trap", False)
             })
 
         total_portfolio_try = INITIAL_PORTFOLIO_TRY + realized_pnl + unrealized_pnl

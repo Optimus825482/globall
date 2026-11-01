@@ -231,6 +231,7 @@ from app.routers import forex_chat as forex_chat_routes
 from app.routers import llm_review as llm_review_routes
 from app.routers import portfolio_risk as portfolio_risk_routes
 from app.routers import scheduled_actions as scheduled_routes
+from app.routers import ai_trading_suite_routes
 from app.forex_news import economic_calendar_background_loop
 app.include_router(auto_paper_routes.router)
 app.include_router(macd_monitor_routes.router)
@@ -242,6 +243,8 @@ app.include_router(forex_chat_routes.router)
 app.include_router(llm_review_routes.router)
 app.include_router(portfolio_risk_routes.router)
 app.include_router(scheduled_routes.router)
+app.include_router(ai_trading_suite_routes.router)
+app.include_router(ai_trading_suite_routes.router_alias)
 
 
 _TTS_VOICE = "tr-TR-EmelNeural"

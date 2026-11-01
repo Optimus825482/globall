@@ -297,6 +297,23 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
             return forex_research.describe_tradingview(sym, tv), {"sembol": sym, "genel": tv["summary"], "dilimler": tv["words"]}
         steps.append((f"tv:{sym}", f"{names.get(sym, sym)} TradingView özeti", _tv()))
 
+    for sym in symbols:
+        async def _ai_suite(sym=sym):
+            from app.ai_trading_suite.chat_tools import execute_ai_trading_suite_evaluation
+            res = await execute_ai_trading_suite_evaluation({"symbol": sym, "asset_type": "FOREX"})
+            text_summary = (
+                f"10 AI Modeli: Karar={res.get('final_verdict')}, "
+                f"Risk Masası={ 'ONAYLANDI' if res.get('risk_chief_approved') else 'VETO' }, "
+                f"Güven=%{int(res.get('confidence_score', 0)*100)}, "
+                f"Konsey={res.get('hedge_fund_council', {}).get('consensus_decision')} "
+                f"(Soros:{res.get('hedge_fund_council', {}).get('soros_vote', {}).get('vote')}, "
+                f"Simons:{res.get('hedge_fund_council', {}).get('simons_vote', {}).get('vote')}, "
+                f"Dalio:{res.get('hedge_fund_council', {}).get('dalio_vote', {}).get('vote')}). "
+                f"{res.get('execution_directive')}"
+            )
+            return text_summary, res
+        steps.append((f"ai_suite:{sym}", f"{names.get(sym, sym)} 10 AI Ticaret Mimarisi Konsensüsü", _ai_suite()))
+
     cur: set = set()
     for sym in symbols:
         cur |= forex_research.currencies_for(sym)

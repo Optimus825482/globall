@@ -110,6 +110,13 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
         if float(scan_row.get("agreement", 0)) < MIN_AGREEMENT or abs(float(scan_row.get("average", 0))) < MIN_TV_AVG:
             return {"ok": False, "reason": "zaman dilimleri yeterince hemfikir değil"}
     scan_row = scan_row or {}
+    
+    # --- AI SUITE KAPISI: OctoBot & Vibe BoÄa TuzaÄÄ± Denetimi ---
+    score_val = float(analysis.get("score") or 0.0)
+    # Hacim zayÄ±fken aÅÄ±rÄ± yÃ¼kseliÅ veya uyumsuzluk boÄa tuzaÄÄ±dÄ±r
+    if bias == "BUY" and score_val > 88.0 and float(analysis.get("agreement") or 0.8) < 0.60:
+        return {"ok": False, "reason": "AI Tuzak Tespiti: Ä°ndikatÃ¶r uzlaÅÄ±sÄ± dÃ¼ÅÃ¼k, BoÄa TuzaÄÄ± (Bull Trap) riski"}
+    
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}
     atr = (analysis.get("frames", {}).get("1h") or {}).get("atr") or analysis.get("atr")
