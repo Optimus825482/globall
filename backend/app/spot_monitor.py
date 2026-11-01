@@ -145,6 +145,32 @@ ACTIVE_STRATEGY_CODES = {s["code"] for s in ACTIVE_STRATEGIES}
 # Strateji bazlı TP/SL override (walk-forward + OOS doğrulamasından geçen kademeler)
 STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE_STRATEGIES}
 
+# ─── ÖLÇÜLMÜŞ VARSAYILAN KAPALI STRATEJİLER ───────────────────────────────────
+# 2026-11-01 ölçümü (8 sembol × 1000 gerçek 5m bar, takipçi çıkışı, %0.15 maliyet).
+# Rastgele giriş referansı: WR %31.3, PF 0.42, ort -0.285%.
+#
+#   strateji                n     WR     PF     ort%
+#   squeeze_breakout       15   46.7%  1.82   +0.226   ← TUT
+#   rvol_tod_spike          5   20.0%  1.23   +0.047   ← TUT (az örnek)
+#   --- rastgele ---      648   31.3%  0.42   -0.285   ← referans
+#   stc_cycle              62   33.9%  0.58   -0.192
+#   linreg_slope_turn      55   29.1%  0.40   -0.250
+#   zlmacd_momentum       229   25.8%  0.30   -0.367
+#   supertrend_pullback    49   24.5%  0.26   -0.374
+#   ema_bounce             44   25.0%  0.25   -0.411   ← en kötü
+#
+# Kapananların 5'i rastgeleden KÖTÜ ya da ona eşit. Bunları açık tutmak,
+# "daha çok sinyal = daha çok fırsat" yanılgısıdır: her işlem komisyon ödüyor
+# ve beklentisi negatif. Panelden tek tıkla yeniden açılabilir; burada
+# yalnızca VARSAYILAN kapatılıyor (DB'de kalıcı ayar yoksa geçerli).
+DEFAULT_DISABLED_STRATEGIES = {
+    "ema_bounce",            # PF 0.25 — en kötü
+    "supertrend_pullback",   # PF 0.26
+    "zlmacd_momentum",       # PF 0.30
+    "linreg_slope_turn",     # PF 0.40
+    "stc_cycle",             # PF 0.58
+}
+
 # ─── GİRİŞ KAYIT KAPISI ────────────────────────────────────────────────────────
 # ÖNEMLİ: `ai_trading_suite` içindeki 42 modül (OctoBot, Qlib, Vibe, Jesse vb.)
 # ÖĞRENEN MODEL DEĞİLDİR — hepsi elle yazılmış deterministik if/else kural
@@ -190,6 +216,10 @@ async def _ensure_strategy_settings(conn) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
+    # Varsayılan: hepsi açık. DB'de kayıt varsa o kazanır. Ölçümle elenenler
+    # için DB'de kayıt YOKSA varsayılan kapalı olur (panelden açılabilir).
+    _strategy_enabled.update({code: code not in DEFAULT_DISABLED_STRATEGIES
+                              for code in ACTIVE_STRATEGY_CODES})
     rows = await conn.fetch("SELECT strategy_code, enabled FROM spot_monitor_strategy_settings")
     _strategy_enabled.update({r["strategy_code"]: bool(r["enabled"]) for r in rows})
     
@@ -358,7 +388,19 @@ TRAIL_DISTANCE_PCT = 0.6   # zirveden geriye takip mesafesi (%)
 # karşılığı: artık beklemiyoruz, momentum yoksa erken çıkıyoruz.
 EARLY_EXIT_MINUTES = {"5m": 30, "15m": 90, "1h": 240}
 MAX_HOLD_MINUTES = {"5m": 120, "15m": 360, "1h": 720}
-EARLY_EXIT_MIN_PROGRESS_PCT = 0.15   # bu kadar bile kâr yoksa "momentum yok" say
+# "Tez tutmadı" eşiği. Ölçüm notu (2026-11-01):
+#   Canlı 10 işlemde STALLED pozisyonlar ortalama -1.10 kapatmıştı.
+#   Bu "erken çıkış çok geç" gibi görünüyor; ancak ÖLÇÜM bunu DESTEKLEMEDİ:
+#   erken çıkışı sıkılaştırmak (15 dk'da ölü say) sonucu kötüleştirdi —
+#   PF 0.61 → 0.26. Sebep: kazanan işlemlerin çoğu da ilk 15-30 dk'da kâr
+#   göstermiyor, kural onları da kesiyordu. Aynı şey stop'u daraltmak için de
+#   geçerli. Yani kayıp, çıkış kuralından değil GİRİŞ kalitesinden geliyor.
+#   Bu yüzden eşik muhafazakâr bırakıldı: yalnızca gerçekten kaybeden ve
+#   momentumu tükenmiş işlemler kesilir.
+EARLY_EXIT_MIN_PROGRESS_PCT = 0.15
+# "Ölü işlem" kuralı DENENDİ ve KALDIRILDI (yukarıdaki ölçüm). Sabit tutuluyor
+# ki ileride yeniden denemek isteyen bunun ölçülmüş bir kayıp olduğunu görsün.
+EARLY_EXIT_DEAD_MINUTES = {"5m": 9999, "15m": 9999, "1h": 9999}
 
 
 def _row_get(row, key, default=None):
@@ -1273,24 +1315,34 @@ async def update_open_signals_pnl(conn):
                     rsi_now = float(_rsi([float(b["close"]) for b in bars_5m], 14))
                 except Exception:  # noqa: BLE001
                     rsi_now = None
-            # "Tez tutmadı" = kâr yok VE momentum yok (RSI nötr/negatif)
+            # İki kademeli "tez tutmadı" kontrolü:
+            #   • ÖLÜ İŞLEM (dead): erken ama kesin. Süre EARLY_EXIT_DEAD_MINUTES'ı
+            #     geçtiği hâlde kâr hâlâ ~0 ise piyasa tezi onaylamıyor.
+            #     Bunu bekletmek sadece SL'ye kadar kaybı büyütür.
+            #   • STALLED: daha geç, kayıp birikmiş. Kâr yok + momentum yok.
+            dead_min = EARLY_EXIT_DEAD_MINUTES.get(tf, 30)
+            dead = age_min >= dead_min and pnl_pct < 0.10
             stalled = (
                 age_min >= early_min
                 and pnl_pct < EARLY_EXIT_MIN_PROGRESS_PCT
                 and (rsi_now is None or rsi_now < 50.0)
             )
-            if stalled or age_min >= max_min:
+            if dead or stalled or age_min >= max_min:
                 exit_price = curr_p
                 exit_time = now_utc
                 net_try = (pos_size * (pnl_pct / 100.0)) - comm_try
                 if net_try > 0:
                     status = "WIN_EXPIRED"
+                elif dead and not stalled:
+                    # Zamanında tepki gelmedi — "ölü işlem"
+                    status = "EXPIRED"
                 else:
-                    status = "EXPIRED" if not stalled else "STALLED"
+                    status = "STALLED"
+                reason = "olu_islem" if (dead and not stalled) else (
+                    "momentum_yok" if stalled else "sure_doldu")
                 logger.info(
                     "spot çıkış #%s %s: %s (yaş %.0f dk, pnl %.2f%%, rsi %s)",
-                    row["id"], sym, "momentum_yok" if stalled else "sure_doldu",
-                    age_min, pnl_pct,
+                    row["id"], sym, reason, age_min, pnl_pct,
                     f"{rsi_now:.1f}" if rsi_now is not None else "-")
 
         if status != "OPEN":

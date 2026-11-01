@@ -537,9 +537,12 @@ export default function SpotMonitorPage() {
     return list;
   }, [filteredHistory, strategySort]);
 
+  // Palet içi + yüksek kontrast. `emerald-400`/`rose-400` koyu lacivert
+  // zeminde soluk kalıyordu; ürünün kendi neon tokenları hem daha okunur
+  // hem DESIGN.md'de tanımlı.
   const pnlColor = (val: number) => {
-    if (val > 0) return "text-emerald-400";
-    if (val < 0) return "text-rose-400";
+    if (val > 0) return "text-neon-cyan";
+    if (val < 0) return "text-neon-red";
     return "text-slate-300";
   };
 
@@ -1093,11 +1096,14 @@ export default function SpotMonitorPage() {
                           </>
                         ) : (
                           <>
-                            <span className="text-bunker-muted">
-                              Kâr %{s.details?.trail_activate_pct ?? 1.5}te takipçi devreye girer
+                            {/* Okunurluk: 10px + soluk lacivert (#93a7c6 üzeri
+                                #0c1322) kontrastı düşük kalıyordu. 11px ve
+                                palet metin rengiyle netleştirildi. */}
+                            <span className="text-[11px] text-bunker-muted leading-snug">
+                              Takipçi %{s.details?.trail_activate_pct ?? 1.5} kârda devreye girer
                             </span>
-                            <span className="text-rose-400">
-                              SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}
+                            <span className="font-mono text-[11px] text-neon-red">
+                              SL ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}
                             </span>
                           </>
                         )}
@@ -1108,58 +1114,66 @@ export default function SpotMonitorPage() {
                         <span className={`font-bold ${pnlColor(s.net_pnl_try)}`}>
                           {s.net_pnl_try >= 0 ? "+" : ""}₺{s.net_pnl_try.toFixed(2)}
                         </span>
-                        <span className="text-[9px] text-bunker-muted">Net (Kom. Düşülmüş)</span>
+                        <span className="text-[10px] text-bunker-muted">Net (komisyon düşülmüş)</span>
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex flex-col gap-1">
-                        {/* CANLI değerler — açık pozisyonda her yenilemede güncellenir.
-                            Girişteki değer küçük ve soluk gösterilir ki ikisi
-                            karşılaştırılabilsin (sinyal bozuldu mu?). */}
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          🐙 OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
-                          {s.entry_scores?.octobot_consensus_pct != null &&
-                            s.entry_scores.octobot_consensus_pct !== s.octobot_consensus_pct && (
-                              <span className="text-[8px] font-normal text-bunker-muted">
-                                (giriş %{s.entry_scores.octobot_consensus_pct})
-                              </span>
-                            )}
-                        </span>
-                        {(s.qlib_score || s.details?.qlib_score) && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                            📊 Qlib Alpha: {s.qlib_score || s.details?.qlib_score}
-                            {s.entry_scores?.qlib_score != null &&
-                              s.entry_scores.qlib_score !== s.qlib_score && (
-                                <span className="text-[8px] font-normal text-bunker-muted">
-                                  (giriş {s.entry_scores.qlib_score})
-                                </span>
-                              )}
+                      <div className="flex flex-col gap-1.5">
+                        {/* CANLI sinyal durumu — açık pozisyonda her yenilemede
+                            yeniden hesaplanır. Tek satır, okunur boyut (11px),
+                            palet içi renk. Giriş değerleri kaldırıldı: iki
+                            rakamı yan yana koymak rozeti gürültüye çeviriyordu
+                            ve operatör zaten net PnL kolonuna bakıyor. */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-bunker-800 text-slate-100">
+                            OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
                           </span>
-                        )}
+                          {(s.qlib_score || s.details?.qlib_score) && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-bunker-800 text-neon-cyan">
+                              Qlib {s.qlib_score || s.details?.qlib_score}
+                            </span>
+                          )}
+                        </div>
+
                         {s.indicators_live && s.live_rsi != null && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-slate-300 bg-slate-500/10 border border-slate-500/20">
+                          <span className="font-mono text-[11px] text-bunker-muted">
                             RSI {s.live_rsi}
-                            {s.entry_scores?.rsi != null && (
-                              <span className="text-[8px] text-bunker-muted">
-                                (giriş {s.entry_scores.rsi})
+                            {s.live_adx != null && ` · ADX ${s.live_adx}`}
+                          </span>
+                        )}
+
+                        {/* Vibe/tuzak: renk ANLAMI taşımalı.
+                            Önceden her durumda yeşil nokta vardı ve
+                            "BEARISH_VIBE" yeşil görünüyordu — renk yalan
+                            söylüyordu. Artık yön → renk eşleşmesi doğru:
+                            boğa cyan, ayı sarı, nötr soluk, tuzak kırmızı. */}
+                        {(() => {
+                          const trap = s.trap_warning || s.details?.trap_warning;
+                          if (trap === "BULL_TRAP" || s.is_fomo_trap || s.details?.is_fomo_trap) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-neon-red/15 text-neon-red border border-neon-red/30 w-fit">
+                                {trap === "BULL_TRAP" ? "Boğa Tuzağı" : "FOMO Tuzağı"}
                               </span>
-                            )}
-                            {s.live_adx != null && <span>· ADX {s.live_adx}</span>}
-                          </span>
-                        )}
-                        {s.trap_warning === "BULL_TRAP" || s.details?.trap_warning === "BULL_TRAP" ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
-                            ⚠️ Boğa Tuzağı!
-                          </span>
-                        ) : (s.is_fomo_trap || s.details?.is_fomo_trap) ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                            ⚠️ FOMO Tuzağı
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                            🟢 {s.vibe_category || s.details?.vibe_category || "Onaylı Hacim"}
-                          </span>
-                        )}
+                            );
+                          }
+                          const v = s.vibe_category || s.details?.vibe_category || "";
+                          const up = v.includes("BULLISH");
+                          const down = v.includes("BEARISH") || v.includes("PANIC");
+                          const tone = up
+                            ? "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/25"
+                            : down
+                            ? "bg-neon-yellow/10 text-neon-yellow border border-neon-yellow/25"
+                            : "bg-bunker-800 text-bunker-muted border border-bunker-700";
+                          // Yön metni her zaman yazıyla da verilir (renk tek
+                          // sinyal değil — WCAG AA kuralı).
+                          const arrow = up ? "▲" : down ? "▼" : "◆";
+                          return (
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium w-fit ${tone}`}>
+                              <span aria-hidden="true">{arrow}</span>
+                              {v || "Nötr"}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="py-3 px-4">
@@ -1309,7 +1323,7 @@ export default function SpotMonitorPage() {
                             <span className={`font-bold ${pnlColor(s.net_pnl_try)}`}>
                               {s.net_pnl_try >= 0 ? "+" : ""}₺{s.net_pnl_try.toFixed(2)}
                             </span>
-                            <span className="text-[9px] text-bunker-muted">Net (Kom. Düşülmüş)</span>
+                            <span className="text-[10px] text-bunker-muted">Net (komisyon düşülmüş)</span>
                           </div>
                         </td>
                         <td className="py-3 px-4">

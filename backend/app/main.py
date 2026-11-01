@@ -490,12 +490,20 @@ async def auth_login(payload: dict, response: Response, request: Request):
         # için thread'e atılır (giriş denemesi başına tüm API'yi dondurmaz).
         matched = bool(user.get("is_active")) and await asyncio.to_thread(
             _verify_password, password, user.get("password_hash") or "")
-        if user.get("is_active") and not matched:
-            matched = False
-    elif username == "admin":
-        # Henüz DB'ye tohumlanmamış admin: env şifresiyle eşleşirse geçici kabul.
-        matched = security.password_matches(password)
-        if matched:
+    # KURTARMA YOLU — düzeltme (2026-11-01):
+    # Eskiden `elif` zinciri yüzünden DB'de `admin` satırı VARSA env şifresi
+    # HİÇ denenmiyordu. Sonuç: DB hash'i env'deki şifreyle eşleşmediğinde
+    # operatörün elindeki tek belgelenmiş kimlik bilgisi (.env'deki
+    # SCALPER_ADMIN_PASSWORD) işe yaramıyor ve panele giriş imkânsız hale
+    # geliyordu — env değiştirmek de çözmüyordu çünkü koda hiç girmiyordu.
+    # Bu aynı zamanda kilitlenme riskiydi: DB satırı bozulsa kurtarma yoktu.
+    #
+    # `security.password_matches` yalnızca SCALPER_ADMIN_PASSWORD TANIMLIYSA
+    # True döner (boş env ile eşleşmez), yani env yoksa davranış değişmez.
+    # DB hash'i doğruysa ilk dal zaten geçerli olur ve buraya gerek kalmaz.
+    if not matched and username == "admin" and security.password_matches(password):
+        matched = True
+        if user is None:
             user = {"username": "admin", "role": "admin", "is_active": True}
     security.record_login_result(client_key, matched)
     if not matched or user is None:

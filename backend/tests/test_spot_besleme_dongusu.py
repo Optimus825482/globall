@@ -110,3 +110,59 @@ def test_dashboard_exposes_live_rsi_and_adx():
     src = inspect.getsource(spot_monitor.get_spot_monitor_dashboard)
     assert '"live_rsi"' in src
     assert '"live_adx"' in src
+
+
+# ─── ÖLÇÜLMÜŞ STRATEJİ ELEMESİ (2026-11-01) ───────────────────────────────────
+
+def test_loss_making_strategies_disabled_by_default():
+    """Rastgeleden kötü 5 strateji VARSAYILAN kapalı olmalı.
+
+    Ölçüm (8 sembol × 1000 gerçek 5m bar, takipçi çıkışı, %0.15 maliyet):
+      squeeze_breakout    n=15  PF 1.82  +0.226%   TUT
+      rvol_tod_spike      n=5   PF 1.23  +0.047%   TUT
+      --- rastgele ---    n=648 PF 0.42  -0.285%   referans
+      stc_cycle           n=62  PF 0.58
+      linreg_slope_turn   n=55  PF 0.40
+      zlmacd_momentum     n=229 PF 0.30
+      supertrend_pullback n=49  PF 0.26
+      ema_bounce          n=44  PF 0.25
+
+    Kapalı olanların 5'i de rastgeleden KÖTÜ ya da ona eşit. Açık tutmak
+    "daha çok sinyal = daha çok fırsat" yanılgısıdır: her işlem komisyon
+    öder ve beklentisi negatiftir.
+    """
+    for code in ("ema_bounce", "supertrend_pullback", "zlmacd_momentum",
+                 "linreg_slope_turn", "stc_cycle"):
+        assert code in spot_monitor.DEFAULT_DISABLED_STRATEGIES, f"{code} kapatılmalıydı"
+
+
+def test_profitable_strategies_stay_enabled():
+    """Ölçümde kârlı çıkan stratejiler kapatılmamalı."""
+    for code in ("squeeze_breakout", "rvol_tod_spike", "kdj_pure_dip"):
+        assert code not in spot_monitor.DEFAULT_DISABLED_STRATEGIES, f"{code} açık kalmalıydı"
+
+
+def test_disabled_set_is_subset_of_active():
+    """Kapatma listesi tanımlı stratejilerden oluşmalı (yazım hatası koruması)."""
+    assert spot_monitor.DEFAULT_DISABLED_STRATEGIES <= spot_monitor.ACTIVE_STRATEGY_CODES
+
+
+def test_db_settings_override_defaults():
+    """DB'de kayıt varsa varsayılanı EZMELİ — operatör panelden açabilsin."""
+    src = inspect.getsource(spot_monitor._ensure_strategy_settings)
+    assert "DEFAULT_DISABLED_STRATEGIES" in src
+    # DB güncellemesi varsayılandan SONRA gelmeli
+    assert src.index("DEFAULT_DISABLED_STRATEGIES") < src.index("_strategy_enabled.update({r[")
+
+
+def test_early_exit_dead_rule_documented_as_measured_failure():
+    """'Ölü işlem' kuralı denendi ve KAYBETTİRDİ — kod bunu belgelemeli.
+
+    Ölçüm: erken çıkışı 15 dk'da sıkılaştırmak PF 0.61 → 0.26 yaptı, çünkü
+    kazanan işlemlerin çoğu da ilk 15-30 dk'da kâr göstermiyor. Eşik bu yüzden
+    etkisiz (9999) bırakıldı. Test, birinin bunu "unutulmuş ayar" sanıp
+    'düzeltmesini' engeller.
+    """
+    assert all(v >= 9999 for v in spot_monitor.EARLY_EXIT_DEAD_MINUTES.values())
+    src = inspect.getsource(spot_monitor)
+    assert "DENENDİ ve KALDIRILDI" in src or "kötüleştirdi" in src
