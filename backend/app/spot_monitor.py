@@ -8,6 +8,14 @@ from datetime import datetime, timezone
 import asyncpg
 from app.config import config
 from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze, _linreg_slope_turn, _rvol_tod_spike
+from app.ai_trading_suite import (
+    OctoBotMatrixEvaluator,
+    IndicatorEvaluation,
+    VibeBreakoutTracker,
+    VibeMetric,
+    evaluate_qlib_alpha,
+    evaluate_jesse_risk
+)
 
 logger = logging.getLogger("scalper.spot_monitor")
 
@@ -308,6 +316,8 @@ async def run_single_scan():
                 lows = [float(k[3]) for k in klines]
                 closes = [float(k[4]) for k in klines]
                 volumes = [float(k[5]) for k in klines]
+                vols = volumes
+                avg_vol = (sum(volumes[-20:]) / 20.0) if len(volumes) >= 20 and sum(volumes[-20:]) > 0 else (volumes[-1] if volumes else 1.0)
                 times_ms = [int(k[0]) for k in klines]
                 price = closes[-1]
                 quote_vols = [float(k[7]) for k in klines]
@@ -443,7 +453,6 @@ async def run_single_scan():
                     sig_key = f"{sym}-{tf}-{strategy_code}-{int(start_ts)}"
 
                     # --- AI SUITE ENTEGRASYONU: OctoBot Konsenss & Vibe/Tuzak Tespiti ---
-                    from app.ai_trading_suite import OctoBotMatrixEvaluator, IndicatorEvaluation, VibeBreakoutTracker, VibeMetric
                     octo_eval = OctoBotMatrixEvaluator(consensus_threshold=0.60)
                     eval_indicators = [
                         IndicatorEvaluation("StrategyMatch", 1.0, 1.8),
@@ -468,7 +477,6 @@ async def run_single_scan():
                         orderbook_depth_ratio=1.2 if vol_ratio > 1.2 else 0.9
                     ))
                     trap_warn = "BULL_TRAP" if (p_chg > 1.2 and vol_ratio < 0.85) else ("FOMO_TRAP" if v_res.is_fomo_trap else "NONE")
-                    from app.ai_trading_suite import evaluate_qlib_alpha, evaluate_jesse_risk
                     qlib_res = evaluate_qlib_alpha(
                         symbol=sym,
                         price=price,
