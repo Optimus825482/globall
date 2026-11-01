@@ -23,10 +23,21 @@ type SignalItem = {
   net_pnl_try: number;
   detected_at: string;
   exit_time: string | null;
+  // ─── Zirve takipçi (TP yok) ───
+  trailing_active?: boolean;
+  peak_price?: number;
+  lock_price?: number | null;
+  trail_distance_pct?: number;
+  trail_gap_pct?: number | null;
+  locked_profit_pct?: number;
   details: {
     note?: string;
+    exit_model?: string;
     tp_pct?: number;
     sl_pct?: number;
+    trail_activate_pct?: number;
+    trail_lock_pct?: number;
+    trail_distance_pct?: number;
     octobot_consensus_pct?: number;
     octobot_signal?: string;
     vibe_category?: string;
@@ -34,6 +45,20 @@ type SignalItem = {
     is_fomo_trap?: boolean;
     qlib_score?: number;
     jesse_rr?: number;
+    // ─── Gerçek ML + LLM ikinci görüş (kayıt amaçlı) ───
+    ml_hit_probability?: number | null;
+    ml_target_pct?: number | null;
+    ml_trained_at?: string | null;
+    ai_gate_mode?: string;
+    heuristic_flags?: string[];
+    llm_review?: {
+      verdict?: "ONAY" | "TEMKIN" | "KARSI" | string;
+      confidence?: number | null;
+      gerekce?: string;
+      risk?: string;
+      model?: string;
+      at?: number;
+    } | null;
   };
   octobot_consensus_pct?: number;
   octobot_signal?: string;
@@ -966,7 +991,7 @@ export default function SpotMonitorPage() {
                 <th className="py-3 px-4">Strateji</th>
                 <th className="py-3 px-4">Giriş Fiyatı</th>
                 <th className="py-3 px-4">Anlık Fiyat</th>
-                <th className="py-3 px-4">Hedef / Stop</th>
+                <th className="py-3 px-4">Çıkış / Takipçi</th>
                 <th className="py-3 px-4">Net Kâr (300₺)</th>
                 <th className="py-3 px-4">AI Doğrulama (OctoBot / Vibe)</th>
                 <th className="py-3 px-4">Durum</th>
@@ -1034,9 +1059,33 @@ export default function SpotMonitorPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex flex-col text-[10px]">
-                        <span className="text-emerald-400">TP: ₺{s.target_price > 10 ? s.target_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.target_price}</span>
-                        <span className="text-rose-400">SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}</span>
+                      <div className="flex flex-col text-[10px] gap-0.5">
+                        {s.trailing_active ? (
+                          <>
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 w-fit">
+                              🎯 TAKİPÇİ AKTİF
+                            </span>
+                            <span className="text-rose-400">
+                              SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}
+                              <span className="text-emerald-400 ml-1">
+                                (%{(s.locked_profit_pct ?? 0).toFixed(2)} kilitli)
+                              </span>
+                            </span>
+                            <span className="text-bunker-muted">
+                              Zirve: ₺{s.peak_price && s.peak_price > 10 ? s.peak_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.peak_price}
+                              {s.trail_gap_pct != null && ` · zirveden %${s.trail_gap_pct.toFixed(2)}`}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-bunker-muted">
+                              Kâr %{s.details?.trail_activate_pct ?? 1.5}te takipçi devreye girer
+                            </span>
+                            <span className="text-rose-400">
+                              SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-4">
@@ -1109,7 +1158,7 @@ export default function SpotMonitorPage() {
                   <th className="py-3 px-4">Strateji</th>
                   <th className="py-3 px-4">Giriş Fiyatı</th>
                   <th className="py-3 px-4">Çıkış Fiyatı</th>
-                  <th className="py-3 px-4">Hedef / Stop</th>
+                  <th className="py-3 px-4">Çıkış / Takipçi</th>
                   <th className="py-3 px-4">Net Kâr (300₺)</th>
                   <th className="py-3 px-4">Sonuç Durumu</th>
                 </tr>
@@ -1159,10 +1208,34 @@ export default function SpotMonitorPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex flex-col">
+                          <div className="flex flex-col gap-0.5">
                             <span className="font-medium text-slate-200">{s.strategy_label}</span>
                             {s.details?.note && (
                               <span className="text-[10px] text-bunker-muted">{s.details.note}</span>
+                            )}
+                            {/* LLM ikinci görüşü — yalnızca kayıt amaçlı, işlemi engellemez */}
+                            {s.details?.llm_review?.verdict && (
+                              <span
+                                className={`text-[10px] ${
+                                  s.details.llm_review.verdict === "ONAY"
+                                    ? "text-emerald-400"
+                                    : s.details.llm_review.verdict === "KARSI"
+                                    ? "text-rose-400"
+                                    : "text-amber-400"
+                                }`}
+                                title={s.details.llm_review.gerekce || undefined}
+                              >
+                                🧠 LLM: {s.details.llm_review.verdict}
+                                {s.details.llm_review.confidence != null &&
+                                  ` (%${Math.round(s.details.llm_review.confidence * 100)})`}
+                                {s.details.llm_review.gerekce && ` — ${s.details.llm_review.gerekce}`}
+                              </span>
+                            )}
+                            {/* Gerçek ML modeli (artifact eğitilmişse) */}
+                            {s.details?.ml_hit_probability != null && (
+                              <span className="text-[10px] text-cyan-400">
+                                📈 ML dokunma olasılığı: %{Math.round(s.details.ml_hit_probability * 100)}
+                              </span>
                             )}
                           </div>
                         </td>
@@ -1178,9 +1251,16 @@ export default function SpotMonitorPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex flex-col text-[10px]">
-                            <span className="text-emerald-400">TP: ₺{s.target_price > 10 ? s.target_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.target_price}</span>
-                            <span className="text-rose-400">SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}</span>
+                          <div className="flex flex-col text-[10px] gap-0.5">
+                            {s.trailing_active && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 w-fit">
+                                🎯 TAKİPÇİ
+                              </span>
+                            )}
+                            <span className="text-rose-400">
+                              SL: ₺{s.stop_price > 10 ? s.stop_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : s.stop_price}
+                            </span>
+                            <span className="text-bunker-muted">TP yok · zirve takibi</span>
                           </div>
                         </td>
                         <td className="py-3 px-4">

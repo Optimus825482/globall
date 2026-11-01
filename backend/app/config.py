@@ -278,8 +278,14 @@ class Config:
     # ML fiyat-tahmin modeli (Faz 1: gecelik eğitim + artifact).
     ML_MODELS_DIR = os.getenv("ML_MODELS_DIR", "/data/ml_models")
     ML_TRAIN_INTERVAL_HOURS = max(1, int(os.getenv("ML_TRAIN_INTERVAL_HOURS", "12")))
-    ML_TRAIN_LOOKBACK_DAYS = max(2, int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "10")))
-    ML_MAX_BARS_PER_SYMBOL = max(500, int(os.getenv("ML_MAX_BARS_PER_SYMBOL", "3000")))
+    # 10 gün → 60 gün (2026-11-01). Ölçüm: DB'de 222 sembol × ~9.150 bar (5m)
+    # mevcut ve 41.9 günü kapsıyor; 10 günlük pencere bunun yalnızca dörtte
+    # birini kullanıyordu. Daha uzun pencere, sembol başına bar sınırı
+    # yükseltildiğinde farklı rejimleri de kapsar.
+    ML_TRAIN_LOOKBACK_DAYS = max(2, int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "60")))
+    # 3000 → 12000: 41.9 günün TAMAMINI alır (41.9 × 288 ≈ 12.070 bar/sembol).
+    # Eski sınırla sembol başına yalnızca son ~10 gün eğitime giriyordu.
+    ML_MAX_BARS_PER_SYMBOL = max(500, int(os.getenv("ML_MAX_BARS_PER_SYMBOL", "12000")))
     ML_TARGET_QUANTILE = min(0.95, max(0.5, float(os.getenv("ML_TARGET_QUANTILE", "0.65"))))
     # ML hedef tahmini dinamik hedefe hangi güvenle uygulanır. Düşük güvenli
     # tahminler yukarı/aşağı sallantı yaratır; yalnızca güçlü tahminler aktif olsun.
@@ -290,6 +296,35 @@ class Config:
     ML_TARGET_HIGH_PROB = min(0.95, max(ML_TARGET_MIN_PROB, float(os.getenv("ML_TARGET_HIGH_PROB", "0.8"))))
     ML_JOURNAL_SAMPLE_WEIGHT = max(1.0, float(os.getenv("ML_JOURNAL_SAMPLE_WEIGHT", "3.0")))
     ML_HIT_TARGET_PCT = {5: 0.02, 15: 0.03}  # ufuk -> sınıflandırıcı hedefi (kesir)
+    # Spot paper-trade geri beslemesi: kapanmış simülatör işlemleri eğitime girer.
+    # Az örnekle öğrenmek aşırı uyum üretir; eşiğin altında kaynak tamamen
+    # atlanır (boş döner) — cılız bir kaynağın modeli saptırmasına izin vermek
+    # hiç öğrenmemekten kötüdür.
+    ML_SPOT_SAMPLE_MIN = max(20, int(os.getenv("ML_SPOT_SAMPLE_MIN", "200")))
+    # Journal'dan düşük: journal ölçülmüş LLM tahminidir (pekiştirme), spot
+    # satırı ise stratejinin gerçekleşen sonucudur ama tek gözlemdir.
+    ML_SPOT_SAMPLE_WEIGHT = max(1.0, float(os.getenv("ML_SPOT_SAMPLE_WEIGHT", "2.0")))
+    # Sınıflandırıcı etiketi için spot'a ÖZEL eşik. Journal eşiği (5dk -> %2.0)
+    # spot geometrisiyle uyuşmuyor: spot kâr %1.5'te takipçiyi devreye sokup
+    # %0.8'i kilitliyor, yani işlemlerin çoğu %2.0'a ulaşmadan kapanır ve
+    # etiket daima 0 olur. Eşik = spot_monitor.TRAIL_ACTIVATE_PCT ile
+    # hizalanmalı; ikisi ayrı modüllerde olduğu için burada açıkça belgelenir.
+    ML_SPOT_HIT_TARGET_PCT = max(0.002, float(os.getenv("ML_SPOT_HIT_TARGET_PCT", "0.015")))
+    # ML kapısının olasılık eşiği.
+    #
+    # Ölçüm (2026-11-01, 220 sembol / 741.666 bar, dondurulmuş model):
+    #   esik  secim/gun(220 sembol)  isabet  lift
+    #   0.30        40.2             %38    19x
+    #   0.40        27.6             %48    23x
+    #   0.50        13.1             %54    27x
+    #   0.55         7.2             %60    29x
+    #   0.60         5.2             %44    ~15x   <- tepe nokta 0.50-0.55
+    #
+    # 0.50 seçildi: isabet %54 (0.55'in %60'ına yakın) ama seçim 1.8 KAT fazla.
+    # Forward testte daha çok örnek = daha hızlı kanıt. Tek parametre
+    # değişikliği; 0.55 de savunulabilir, tercih örneklem hızından yana.
+    ML_MIN_HIT_PROBABILITY = min(0.95, max(0.05, float(
+        os.getenv("ML_MIN_HIT_PROBABILITY", "0.50"))))
     LLM_FORECAST_LESSON_MIN_SAMPLES = max(8, int(os.getenv("LLM_FORECAST_LESSON_MIN_SAMPLES", "12")))
     # Desen madenciliği minimum destek sayısı (koşula uyan ölçülmüş tahmin).
     LLM_PATTERN_MIN_SUPPORT = max(5, int(os.getenv("LLM_PATTERN_MIN_SUPPORT", "8")))

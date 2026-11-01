@@ -7,7 +7,12 @@ import urllib.request
 from datetime import datetime, timezone
 import asyncpg
 from app.config import config
-from app.technical_analysis import _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze, _linreg_slope_turn, _rvol_tod_spike
+from app.technical_analysis import (
+    _kdj, _supertrend, _ema_pullback_bounce, _stc, _zlmacd, _ema, _bb_kc_squeeze,
+    _linreg_slope_turn, _rvol_tod_spike, _rsi, _atr, _bollinger, _adx,
+    _aroon, _mfi, _linreg_slope_pct,
+)
+from app import ml_forecast
 from app.ai_trading_suite import (
     OctoBotMatrixEvaluator,
     IndicatorEvaluation,
@@ -24,7 +29,18 @@ INITIAL_PORTFOLIO_TRY = 5000.0
 TRADE_SIZE_TRY = 500.0
 _next_scan_time = 0.0
 _scan_interval_sec = 60
-COMMISSION_RATE = 0.0004 # %0.04 Maker/Taker
+COMMISSION_RATE = 0.0004 # %0.04 tek yön (Maker/Taker)
+
+# Ücret senaryoları — BNB indirimi kullanımına göre gerçek round-trip maliyet.
+#   bnb:  BNB ile ödeme (Binance %25 indirim) → %0.075 × 2
+#   base: kayıtlı kullanıcı standart            → %0.100 × 2
+# Lab/backtest sonuçları %0.08 varsayımıyla üretildi; canlı sonuçlar yalnızca
+# gerçek ödenen ücretle karşılaştırılabilir.
+COMMISSION_SCHEDULES = {
+    "bnb":  {"one_way": 0.00075, "label": "BNB indirimli (%0.15 round-trip)"},
+    "base": {"one_way": 0.00100, "label": "Standart (%0.20 round-trip)"},
+}
+FEE_MODE = "bnb"
 
 # Taranacak ana ve hacimli semboller
 CORE_SYMBOLS = [
@@ -47,9 +63,16 @@ ACTIVE_STRATEGIES = [
         "label": "Trend + BB Sıkışma + Hacim Patlaması",
         "score": 98.0,
         "description": "EMA50 ana trendi içinde Bollinger-Keltner volatilite sıkışması sonrası %125+ hacim patlamasıyla üst bant kırılımı.",
-        "evidence": "162.000 mum Lab Şampiyonu: 409 işlem, PF 1.56, +%37.15 Net Kâr (INJ PF 3.69, AVAX PF 2.65)",
+        "evidence": "162.000 mum Lab Şampiyonu: 409 işlem, PF 1.56, +%37.15 Net Kâr (INJ PF 3.69, AVAX PF 2.65). "
+                    "5m walk-forward: TP 1.0 / SL 1.5 → WR %66.1, PF 1.47 (OOS)",
         "timeframes": ["5m", "15m", "1h"],
-        "tp_sl_override": {"15m": {"tp_pct": 2.2, "sl_pct": 1.1}},
+        # 5m: spot_tpsl_optimizer.json 768 konfigürasyon taraması sonucu.
+        # Canlı varsayılan (TP 1.4 / SL 0.9) basabas WR'si %42.6; geniş stop
+        # (SL 1.5) bunu %33.3'e indirip WR'yi %42.6 → %66.1'e taşıyor.
+        "tp_sl_override": {
+            "5m": {"tp_pct": 1.0, "sl_pct": 1.5},
+            "15m": {"tp_pct": 2.2, "sl_pct": 1.1},
+        },
     },
     {
         "code": "zlmacd_momentum",
@@ -122,6 +145,34 @@ ACTIVE_STRATEGY_CODES = {s["code"] for s in ACTIVE_STRATEGIES}
 # Strateji bazlı TP/SL override (walk-forward + OOS doğrulamasından geçen kademeler)
 STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE_STRATEGIES}
 
+# ─── GİRİŞ KAYIT KAPISI ────────────────────────────────────────────────────────
+# ÖNEMLİ: `ai_trading_suite` içindeki 42 modül (OctoBot, Qlib, Vibe, Jesse vb.)
+# ÖĞRENEN MODEL DEĞİLDİR — hepsi elle yazılmış deterministik if/else kural
+# motorlarıdır. Hiçbiri torch/tf/sklearn/lightgbm import etmez ve projede
+# eğitilmiş ağırlık dosyası yoktur. "AI skoru" adı altında çalıştırmak
+# yanıltıcıdır; bu yüzden skorlar HESAPLANMAYA DEVAM EDER (panelde görünür,
+# insan değerlendirmesi için) ama KARAR VERMEZ.
+#
+# Tek gerçek öğrenen bileşen `ml_forecast`: 5m kapanmış barlardan Aroon/MFI/
+# vol-Z özellikleri türetir, 5dk ileri MFE'yi regres eder + "hedefe dokunma
+# olasılığı" sınıflandırır. Artifact (upside_v3.joblib) yoksa sessizce devre
+# dışı kalır — uydurma değer üretmez.
+AI_GATE = {
+    # "shadow"  : skorlar hesaplanır/kaydedilir, işlemi ENGELLEMEZ (varsayılan)
+    # "enforce" : aşağıdaki eşikler işlemi engeller
+    "mode": "shadow",
+    # Yalnızca GERÇEK model: ML "hedefe dokunma" olasılığı alt sınırı.
+    # Eğitimli artifact yoksa bu kapı uygulanmaz (uydurma engel olmasın).
+    "min_ml_hit_probability": 0.55,
+    # Aşağıdakiler heuristik skorlardır — "enforce" modunda kullanılabilir ama
+    # önce walk-forward ile doğrulanmaları gerekir. Şimdilik yalnız kaydedilir.
+    "min_octobot_consensus_pct": 50,
+    "block_fomo_trap": True,
+    "block_q_none": True,
+    "min_qlib_alpha": 45.0,
+    "require_jesse_rr": 1.40,
+}
+
 # Otomatik tarama döngüsünde strateji açık/kapalı durumu (DB'de kalıcı, süreç içi önbellek).
 _strategy_enabled: dict[str, bool] = {}
 _strategy_settings_loaded = False
@@ -149,6 +200,7 @@ async def _ensure_strategy_settings(conn) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
+    await _ensure_spot_schema(conn)
     ts_row = await conn.fetchrow("SELECT setting_value FROM spot_monitor_general_settings WHERE setting_key = 'trade_size_try'")
     if ts_row:
         try:
@@ -156,7 +208,40 @@ async def _ensure_strategy_settings(conn) -> None:
             TRADE_SIZE_TRY = float(ts_row["setting_value"])
         except Exception:
             pass
+    fm_row = await conn.fetchrow("SELECT setting_value FROM spot_monitor_general_settings WHERE setting_key = 'fee_mode'")
+    if fm_row and fm_row["setting_value"] in COMMISSION_SCHEDULES:
+        global FEE_MODE
+        FEE_MODE = fm_row["setting_value"]
     _strategy_settings_loaded = True
+
+
+async def set_fee_mode(mode: str) -> dict:
+    """Ücret senaryosunu (bnb / base) değiştirir ve kalıcılaştırır.
+
+    Simülatörün gerçekçiliği buna bağlı: %0.08 ile %0.20 round-trip arasındaki
+    fark, 5m stratejilerinin çoğunu kârlıdan kârsıza çevirir.
+    """
+    global FEE_MODE
+    if mode not in COMMISSION_SCHEDULES:
+        raise ValueError(f"Bilinmeyen ücret modu: {mode}")
+    FEE_MODE = mode
+    conn = await get_db_conn()
+    try:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS spot_monitor_general_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            INSERT INTO spot_monitor_general_settings (setting_key, setting_value, updated_at)
+            VALUES ('fee_mode', $1, now())
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = now()
+        """, mode)
+    finally:
+        await conn.close()
+    return {"success": True, "fee_mode": FEE_MODE, "round_trip_pct": _round_trip_cost_pct()}
 
 
 async def set_strategy_enabled(code: str, enabled: bool) -> dict:
@@ -213,6 +298,10 @@ _cached_results = {
     "summary": {},
     "portfolio": {}
 }
+# AI kapıları tarafından reddedilen sinyaller (son tarama). Panelde gösterilir ve
+# shadow-tracking için saklanır: reddedilen sinyalin gerçekte ne yapacağını görmek,
+# kapıların değerini kanıtlamanın tek yoludur.
+_rejected_signals: list[dict] = []
 
 async def get_db_conn():
     import os
@@ -240,6 +329,165 @@ def _fetch_all_prices() -> dict:
 
 KILL_TRADE_THRESHOLD = 20
 KILL_PF_THRESHOLD = 1.0
+
+
+# ─── ÇIKIŞ MODELİ: SAF ZİRVE TAKİPÇİ STOP (TP YOK) ─────────────────────────────
+# TP hedefi kaldırıldı. Kâr sınırsız büyür, kayıp tanımlı kalır:
+#   • Kâr %1.5'e ulaşınca takip devreye girer
+#   • Devreye girdiği anda stop, maliyet + %0.8'e çekilir (işlem kaybedemez)
+#   • Sonrasında stop, zirvenin %0.6 gerisinden gelir
+#
+# Gerekçe: Freqle liginde #1 olan NotAnotherSMAOffsetStrategyHO (WR %80.7,
+# maxDD -%3.51) ve #3 E0V1E (PF 7.37) sabit TP kullanmaz — geniş stop +
+# kademeli kilit + takipçi ile kazananı koşturur. Sabit TP, kazanan işlemi
+# erken keser.
+TRAIL_ACTIVATE_PCT = 1.5   # takipçinin devreye girdiği kâr eşiği (%)
+TRAIL_LOCK_PCT = 0.8       # devreye girince kilitlenen net kâr (%)
+TRAIL_DISTANCE_PCT = 0.6   # zirveden geriye takip mesafesi (%)
+
+
+def _row_get(row, key, default=None):
+    """asyncpg Record için güvenli erişim — kolon henüz eklenmemişse default."""
+    try:
+        val = row[key]
+    except (KeyError, IndexError):
+        return default
+    return default if val is None else val
+
+
+async def _ensure_spot_schema(conn) -> None:
+    """Zirve takipçi kolonlarını ekler (idempotent).
+
+    Ayrı bir fonksiyon çünkü panel ve PnL güncellemesi, tarama hiç çalışmadan
+    da çağrılabilir; kolonların orada da var olması gerekir.
+    """
+    await conn.execute("""
+        ALTER TABLE spot_monitor_signals
+            ADD COLUMN IF NOT EXISTS trailing_active BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS peak_price DOUBLE PRECISION
+    """)
+
+
+def _one_way_fee() -> float:
+    """Tek yön komisyon oranı — seçili ücret senaryosuna göre."""
+    return COMMISSION_SCHEDULES.get(FEE_MODE, COMMISSION_SCHEDULES["bnb"])["one_way"]
+
+
+def _round_trip_cost_pct() -> float:
+    """Round-trip maliyetin yüzde karşılığı (ör. 0.15 veya 0.20)."""
+    return _one_way_fee() * 2.0 * 100.0
+
+
+def _break_even_wr(tp_pct: float, sl_pct: float, cost_pct: float | None = None) -> float:
+    """Basabas kazanma oranı (%). Kazançlar TP−maliyet, kayıplar SL+maliyet.
+
+    Yüksek kazanma oranı tek başına kâr değildir: TP/SL asimetrisi eşiği
+    belirler. Örn. 5m TP1.4/SL0.9 → %0.20 maliyette %47.8 basabas.
+    """
+    cost = _round_trip_cost_pct() if cost_pct is None else cost_pct
+    net_tp = max(tp_pct - cost, 0.01)
+    net_sl = sl_pct + cost
+    return (net_sl / (net_tp + net_sl)) * 100.0
+
+
+def _order_barriers(curr: float, target: float, stop: float) -> tuple[bool, bool]:
+    """Bariyer temaslarını döndürür (hit_tp, hit_sl).
+
+    MUHAFAZAKÂR KURAL (SKILL.md §1.3): "Tek barda aynı anda hem TP hem SL
+    seviyesi görülmüşse muhafazakâr olarak SL kabul edilir." Çağıran taraf
+    hit_sl'i hit_tp'den ÖNCE değerlendirir.
+
+    NOT (dürüstlük): uzun (long) pozisyonda stop yalnızca yukarı hareket eder
+    ve hedefin üstüne yalnızca MFE ≥ %1.8'den sonra çıkabilir — o noktada
+    fiyat hedefi zaten geçmiştir, yani pozisyon kapanmış olurdu. Bu yüzden
+    açık bir pozisyonda iki bariyer AYNI ANDA vurulamaz ve dalların sırası
+    pratikte sonucu değiştirmez. Bu kural bir güvenlik ağıdır (gelecekte
+    short/trailing-üstü hedef eklenirse doğru davranışı korur), mevcut bir
+    hatanın düzeltmesi değildir.
+    """
+    return (curr >= target), (curr <= stop)
+
+
+def _atr_percentiles(closes: list) -> tuple[float, float]:
+    """Kapanışların ATR yüzdesi dağılımından (medyan, p75) döndürür.
+
+    Amaç: sabit TP/SL yerine, sembolün KENDİ volatilitesine göre ölçekleme.
+    BTC ile PEPE aynı yüzdeyi almamalı.
+
+    Not: basit ardışık |Δclose| ortalaması kullanılır (TrueRange değil) —
+    elimizde yalnızca kapanış serisi olduğu için, ve amaç mutlak ATR değil
+    sembolün kendi dağılımında göreli konumunu bulmak.
+    """
+    if len(closes) < 15:
+        return 0.0, 0.0
+    atr_pcts = []
+    for i in range(14, len(closes)):
+        window = closes[i - 14:i + 1]
+        # Ardışık farklar: window[j+1] - window[j]
+        diffs = [abs(window[j + 1] - window[j]) for j in range(len(window) - 1)]
+        atr = sum(diffs) / len(diffs) if diffs else 0.0
+        if window[-1] > 0:
+            atr_pcts.append(atr / window[-1])
+    if not atr_pcts:
+        return 0.0, 0.0
+    atr_pcts.sort()
+    median = atr_pcts[len(atr_pcts) // 2]
+    p75 = atr_pcts[min(int(len(atr_pcts) * 0.75), len(atr_pcts) - 1)]
+    return median, p75
+
+
+# ─── ATR TABANLI HEDEF KISITI — VARSAYILAN OLARAK KAPALI ───────────────────────
+# Bu mekanizma VALİDE EDİLMEDİ. Canlı veriyle denendiğinde 8 sembolün 7'sinde
+# tetiklendi (piyasa kendi 500-barlık normunun ~2 katı volatilken), yani
+# "nadir güvenlik ağı" değil, sürekli aktif bir TP/SL değiştiricisi gibi
+# davrandı. Parametreleri tahmin edilerek seçildi — walk-forward/OOS testi yok.
+#
+# Araştırma raporunun kendi uyarısı: parametre eklemek in-sample performansı
+# geri satın alır ve bedelini gerçekte öder. Bu yüzden kod ve testler burada
+# duruyor ama CANLI TARAMADA KAPALI. Açmak için True yapın ve önce
+# walk-forward ile doğrulayın.
+ATR_CLAMP_ENABLED = False
+ATR_CLAMP_TRIGGER_MULT = 1.5   # yalnızca şimdiki ATR, p75'in 1.5 KATINI aşarsa
+ATR_CLAMP_MIN_RATIO = 0.75     # en fazla %25 daraltma
+
+
+def _clamp_with_atr(tp_pct: float, sl_pct: float, atr_pct_now: float,
+                    atr_median: float, atr_p75: float,
+                    enabled: bool | None = None) -> tuple[float, float, str]:
+    """TP/SL'yi sembolün kendi ATR dağılımına göre kısar (varsayılan: KAPALI).
+
+    `ATR_CLAMP_ENABLED = False` iken her zaman no-op'tur; parametre `enabled`
+    testlerde açıkça geçilebilir.
+
+    Açıkken iki sınır uygular:
+
+    1. **Tetik eşiği:** şimdiki ATR, p75'in `ATR_CLAMP_TRIGGER_MULT` katını
+       aşmalı.
+    2. **Taban oran:** daraltma `ATR_CLAMP_MIN_RATIO` (%75) ile sınırlı.
+       Ölçeksiz oran kullanmak TP'yi 1.40'tan 0.72'ye indirip hedefi komisyon
+       gürültüsünün içine sokuyordu.
+
+    Yalnızca YUKARI volatilite kısıtlanır. Kısıt uygulanmadıysa boş string döner.
+    """
+    if enabled is None:
+        enabled = ATR_CLAMP_ENABLED
+    if not enabled:
+        return tp_pct, sl_pct, ""
+    if atr_median <= 0 or atr_p75 <= 0 or atr_pct_now <= 0:
+        return tp_pct, sl_pct, ""
+    if atr_pct_now <= atr_p75 * ATR_CLAMP_TRIGGER_MULT:
+        return tp_pct, sl_pct, ""
+
+    ratio = max(ATR_CLAMP_MIN_RATIO, min(1.0, atr_p75 / atr_pct_now))
+    if ratio >= 0.999:
+        return tp_pct, sl_pct, ""
+    new_tp = max(round(tp_pct * ratio, 2), 0.3)
+    new_sl = max(round(sl_pct * ratio, 2), 0.2)
+    return new_tp, new_sl, (
+        f"ATR-kisit: TP {tp_pct:.2f}->{new_tp:.2f}, SL {sl_pct:.2f}->{new_sl:.2f} "
+        f"(atr {atr_pct_now * 100:.2f}% > {ATR_CLAMP_TRIGGER_MULT}x p75 "
+        f"{atr_p75 * 100:.2f}%, oran {ratio:.2f})"
+    )
 
 
 async def get_strategy_live_stats(conn) -> dict:
@@ -305,7 +553,10 @@ async def get_active_strategies() -> dict:
         ],
         "trade_size_try": TRADE_SIZE_TRY,
         "initial_portfolio_try": INITIAL_PORTFOLIO_TRY,
-        "commission_rate": COMMISSION_RATE,
+        "commission_rate": _one_way_fee(),
+        "commission_round_trip_pct": _round_trip_cost_pct(),
+        "fee_mode": FEE_MODE,
+        "fee_schedules": {k: v["label"] for k, v in COMMISSION_SCHEDULES.items()},
         "strategies": strategies,
     }
 
@@ -314,6 +565,9 @@ async def run_single_scan():
     global _cached_results, _last_scan_time, _next_scan_time
     start_ts = time.time()
     discovered_signals = []
+    # Her taramada reddedilenleri sıfırla — liste "son taramanın" kapı redlerini
+    # gösterir, geçmiş birikimi değil.
+    _rejected_signals.clear()
 
     conn = await get_db_conn()
     try:
@@ -394,6 +648,17 @@ async def run_single_scan():
                 rv = _rvol_tod_spike(times_ms, closes, volumes) or {}
                 ema20 = _ema(closes, 20)
                 ema50 = _ema(closes, 50)
+
+                # Gerçek RSI / ATR / BB / ADX — AI katmanına ve ATR-kısıtına girer.
+                # Önceden qlib/ATR sabit varsayımlarla (rsi=55.0, atr=price*0.015)
+                # çağrılıyordu; skorlar bilgi taşımıyordu.
+                rsi_val = float(_rsi(closes, 14) or 50.0)
+                atr_val = float(_atr(highs, lows, closes, 14) or (price * 0.015))
+                atr_pct_now = (atr_val / price) if price > 0 else 0.0
+                bb = _bollinger(closes, 20, 2.0) or {}
+                adx_res = _adx(highs, lows, closes, 14) or {}
+                adx_val = float(adx_res.get("adx", 20.0))
+                atr_median, atr_p75 = _atr_percentiles(closes)
 
                 j_val = float(kdj.get("j", 50.0))
                 dip_buy = bool(kdj.get("dip_buy"))
@@ -483,13 +748,19 @@ async def run_single_scan():
                     note = f"Ekstrem aşırı satım sıçraması J={j_val:.1f}"
 
                 if matched:
-                    tp_pct = tf_cfg["tp_pct"]
                     sl_pct = tf_cfg["sl_pct"]
                     override = STRATEGY_TPSL_OVERRIDE.get(strategy_code, {}).get(tf)
                     if override:
-                        tp_pct = override["tp_pct"]
                         sl_pct = override["sl_pct"]
-                    target_p = price * (1.0 + (tp_pct / 100.0))
+                    # ATR-kısıtı (varsayılan kapalı) — yalnızca ilk stop'u ölçekler.
+                    # TP kaldırıldı; kâr zirve takipçisiyle yönetilir.
+                    _tp_ignored, sl_pct, atr_note = _clamp_with_atr(
+                        100.0, sl_pct, atr_pct_now, atr_median, atr_p75
+                    )
+                    if atr_note:
+                        note = f"{note} | {atr_note}"
+                    # TP YOK: kâr hedefi yerine zirve takipçisi çalışır.
+                    target_p = None
                     stop_p = price * (1.0 - (sl_pct / 100.0))
                     sig_key = f"{sym}-{tf}-{strategy_code}-{int(start_ts)}"
 
@@ -518,17 +789,90 @@ async def run_single_scan():
                         orderbook_depth_ratio=1.2 if vol_ratio > 1.2 else 0.9
                     ))
                     trap_warn = "BULL_TRAP" if (p_chg > 1.2 and vol_ratio < 0.85) else ("FOMO_TRAP" if v_res.is_fomo_trap else "NONE")
+                    # Gerçek RSI/ATR/BB — sabit 55.0 / price*0.015 değil
                     qlib_res = evaluate_qlib_alpha(
                         symbol=sym,
                         price=price,
-                        indicators={"rsi": 55.0, "volume_ratio": vol_ratio, "atr": price * 0.015}
+                        indicators={
+                            "rsi": rsi_val,
+                            "adx": adx_val,
+                            "atr": atr_val,
+                            "ema_fast": ema20 or price,
+                            "ema_slow": ema50 or price,
+                            "bb_upper": bb.get("upper") or (price * 1.02),
+                            "bb_lower": bb.get("lower") or (price * 0.98),
+                            "volume_ratio": vol_ratio,
+                        }
                     )
                     jesse_res = evaluate_jesse_risk(
                         symbol=sym,
                         entry_price=price,
-                        atr=price * 0.015,
-                        volatility_mode="NORMAL"
+                        atr=atr_val,
+                        volatility_mode="HIGH" if atr_pct_now > atr_p75 else "NORMAL"
                     )
+
+                    # ─── GERÇEK ML TAHMİNİ (öğrenen tek bileşen) ───────────────
+                    # ml_forecast: 5m kapanmış barlardan özellik üretir, 5dk
+                    # ileri MFE regresyonu + "hedefe dokunma" olasılığı verir.
+                    # Artifact yoksa None döner → kapı uygulanmaz.
+                    ml_pred = None
+                    try:
+                        ar = _aroon(highs, lows, 25) or {}
+                        # Özellik anlık görüntüsü SINYAL ANINDA kaydedilir.
+                        # Geri besleme eğitimi bu snapshot'a dayanır: işlem
+                        # kapandığında bar verisi çoktan kaymış olur, o yüzden
+                        # özellikler o an yakalanmazsa örnek kurtarılamaz.
+                        ml_features = {
+                            "timestamp": times_ms[-1],
+                            "ret1_pct": ((closes[-1] - closes[-2]) / closes[-2] * 100.0) if len(closes) >= 2 else None,
+                            "ret3_pct": ((closes[-1] - closes[-4]) / closes[-4] * 100.0) if len(closes) >= 4 else None,
+                            "ret5_pct": ((closes[-1] - closes[-6]) / closes[-6] * 100.0) if len(closes) >= 6 else None,
+                            "atr_pct": atr_pct_now * 100.0,
+                            "bb_width_pct": (bb.get("width_pct") or 0.0) * 100.0,
+                            "rsi": rsi_val,
+                            "mfi": _mfi(highs, lows, closes, volumes, 14),
+                            "vol_z": (vol_ratio - 1.0),
+                            "linreg_slope10_pct": _linreg_slope_pct(closes, 10),
+                            "aroon_up": ar.get("up"), "aroon_down": ar.get("down"),
+                        }
+                        ml_pred = ml_forecast.predict_target(sym, ml_features, horizon=5)
+                    except Exception as exc:
+                        ml_features = None
+                        logger.warning("spot ML tahmini başarısız %s: %s", sym, exc)
+
+                    # ─── GİRİŞ KAYIT KAPISI ────────────────────────────────────
+                    # Heuristik skorlar KAYDEDİLİR; karar yalnızca gerçek ML
+                    # modeli varsa ona bağlanır (mode="enforce").
+                    consensus_pct = int(octo_res.consensus_confidence * 100)
+                    heuristic_flags = []
+                    if consensus_pct < AI_GATE["min_octobot_consensus_pct"]:
+                        heuristic_flags.append(f"octobot<{AI_GATE['min_octobot_consensus_pct']}")
+                    if v_res.is_fomo_trap:
+                        heuristic_flags.append("fomo_trap")
+                    if trap_warn != "NONE":
+                        heuristic_flags.append(trap_warn)
+                    if qlib_res.alpha_score < AI_GATE["min_qlib_alpha"]:
+                        heuristic_flags.append(f"qlib<{AI_GATE['min_qlib_alpha']}")
+                    if jesse_res.risk_reward_ratio < AI_GATE["require_jesse_rr"]:
+                        heuristic_flags.append(f"jesse_rr<{AI_GATE['require_jesse_rr']}")
+
+                    gate_reasons = []
+                    if AI_GATE["mode"] == "enforce" and ml_pred is not None:
+                        if ml_pred["hit_probability"] < AI_GATE["min_ml_hit_probability"]:
+                            gate_reasons.append(
+                                f"ml_hit_prob {ml_pred['hit_probability']}"
+                                f"<{AI_GATE['min_ml_hit_probability']}")
+
+                    if gate_reasons:
+                        _rejected_signals.append({
+                            "symbol": sym, "timeframe": tf, "strategy": strategy_code,
+                            "entry_price": price, "reasons": gate_reasons,
+                            "ml_hit_probability": ml_pred["hit_probability"] if ml_pred else None,
+                            "heuristic_flags": heuristic_flags,
+                            "p_chg": round(p_chg, 2), "vol_ratio": round(vol_ratio, 2),
+                            "at": datetime.now(timezone.utc).isoformat()
+                        })
+                        continue  # bu sembolde pozisyon açılmadı → döngü devam
 
                     discovered_signals.append({
                         "signal_key": sig_key,
@@ -543,12 +887,20 @@ async def run_single_scan():
                         "kdj_j": j_val,
                         "details": {
                             "note": note,
-                            "tp_pct": tp_pct,
+                            "exit_model": "peak_trailing",
                             "sl_pct": sl_pct,
+                            "trail_activate_pct": TRAIL_ACTIVATE_PCT,
+                            "trail_lock_pct": TRAIL_LOCK_PCT,
+                            "trail_distance_pct": TRAIL_DISTANCE_PCT,
                             "range_pct": round(recent_range_pct, 2),
                             "avg_vol_try": round(avg_bar_try_vol, 0),
+                            "rsi": round(rsi_val, 1),
+                            "atr_pct": round(atr_pct_now * 100, 2),
+                            "adx": round(adx_val, 1),
+                            "break_even_wr": round(_break_even_wr(1.0, sl_pct), 1),
+                            "fee_mode": FEE_MODE,
                             "octobot_score": round(octo_res.composite_score, 2),
-                            "octobot_consensus_pct": int(octo_res.consensus_confidence * 100),
+                            "octobot_consensus_pct": consensus_pct,
                             "octobot_signal": octo_res.consensus_signal,
                             "vibe_score": round(v_res.vibe_score, 2),
                             "vibe_category": v_res.vibe_category,
@@ -557,7 +909,16 @@ async def run_single_scan():
                             "breakout_confirmed": v_res.breakout_confirmed,
                             "qlib_score": qlib_res.alpha_score,
                             "qlib_rank": qlib_res.alpha_rank,
-                            "jesse_rr": jesse_res.risk_reward_ratio
+                            "jesse_rr": jesse_res.risk_reward_ratio,
+                            "ai_gate_mode": AI_GATE["mode"],
+                            "heuristic_flags": heuristic_flags,
+                            # Gerçek öğrenen model — artifact yoksa None
+                            "ml_hit_probability": ml_pred["hit_probability"] if ml_pred else None,
+                            "ml_target_pct": ml_pred["target_pct"] if ml_pred else None,
+                            "ml_trained_at": ml_pred["trained_at"] if ml_pred else None,
+                            # Sinyal anının özellik vektörü — geri besleme
+                            # eğitiminin tek kaynağı (bkz. ml_forecast.prepare_spot_samples)
+                            "ml_features": ml_features,
                         },
                         "detected_at": datetime.now(timezone.utc)
                     })
@@ -573,11 +934,25 @@ async def run_single_scan():
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 ON CONFLICT (signal_key) DO NOTHING
             """, s["signal_key"], s["symbol"], s["timeframe"], s["strategy"], s["strategy_label"],
-               s["entry_price"], s["target_price"], s["stop_price"], s["score"], s["kdj_j"],
-               json.dumps(s["details"]), TRADE_SIZE_TRY, (TRADE_SIZE_TRY * COMMISSION_RATE * 2))
+               s["entry_price"], s["target_price"] or s["entry_price"], s["stop_price"], s["score"], s["kdj_j"],
+               json.dumps(s["details"]), TRADE_SIZE_TRY, (TRADE_SIZE_TRY * _one_way_fee() * 2))
+
+        # ─── DONDURULMUŞ MODEL İLERİ TESTİ ────────────────────────────────
+        # Modelin kendi sinyalinden BAĞIMSIZ kayıt: eşik üstü HER ML tahmini
+        # yazılır (strateji eşleşmese de). Amaç "model işe yarıyor mu" sorusunu
+        # hiçbir ayar yapmadan, ileriye dönük ölçmek. Karar vermez, engellemez.
+        try:
+            await _record_forward_predictions(discovered_signals)
+        except Exception as exc:  # noqa: BLE001 - kayıt hatası taramayı durdurmaz
+            logger.info("ileri test kaydı atlandı: %s", exc)
 
         # Açık pozisyonların güncel kâr/zarar ve kapanış takibini yap
-        await update_open_signals_pnl(conn)
+        closed_ids = await update_open_signals_pnl(conn)
+        if closed_ids:
+            # Kapanan pozisyonlar LLM inceleme KUYRUĞUNA girer; burada yalnızca
+            # kaydedilir. İnceleme bir sonraki taramaların boşluğunda, tarama
+            # döngüsünü bloke etmeden yapılır (bkz. _pending_reviews notu).
+            _queue_llm_reviews(closed_ids)
     finally:
         await conn.close()
 
@@ -585,14 +960,136 @@ async def run_single_scan():
     _next_scan_time = _last_scan_time + _scan_interval_sec
     return len(discovered_signals)
 
+# İleri testte her taramada örneklenecek sembol sayısı.
+#
+# ROTASYON — düzeltme (2026-11-01): eskiden evrenin İLK 40 sembolü sabit
+# kullanılıyordu. Ölçüm: eşik 0.55 için 220 sembolde günde ~7.2 seçim var;
+# 40 sembolle bu ~1.3'e düşüyor. Sabit ilk-40 ile haftalar boyunca birkaç
+# örnek birikir ve test anlamsız kalır. Artık her turda sıradaki dilim alınır;
+# 6 turda tüm 222 sembol taranır ve dakikada ~40 tahmin üretilir.
+FORWARD_MAX_SYMBOLS = 40
+_forward_offset = 0
+
+
+async def _record_forward_predictions(signals: list[dict]) -> int:
+    """Dondurulmuş model için ileri test kaydı üretir.
+
+    ÖNEMLİ: kayıt, stratejinin sinyal üretip üretmemesine BAĞLI DEĞİLDİR.
+    Yalnızca `discovered_signals` (strateji eşleşenler) yazılsaydı, ölçüm
+    "model + strateji" karışımı olurdu ve modelin kendi katkısı ölçülemezdi.
+    Bu yüzden ayrı ve bağımsız bir örnekleme yapılır: eşiği geçen her tahmin.
+
+    Model dondurulmadıysa sessizce çıkar — dondurma bilinçli bir karardır.
+    """
+    from app import ml_forward_test
+    frozen = await ml_forward_test.get_active_frozen()
+    if not frozen:
+        return 0
+    model = ml_forward_test.load_frozen_model(frozen)
+    if model is None:
+        return 0
+    bundle = (model.get("horizons") or {}).get("5")
+    if not bundle or bundle.get("clf") is None:
+        return 0
+    clf = bundle["clf"]
+    reg = bundle.get("reg")
+    gate = float(frozen.get("gate_probability") or 0.55)
+    sym_codes = model.get("symbol_codes") or {}
+
+    # EVREN UYUŞMAZLIĞI — dikkat: tarayıcı Binance TR listesini (BTCTRY,
+    # ETHTRY …) tarar, model ise USDT pariteleriyle eğitildi. İki listenin
+    # kesişimi BOŞTUR. İleri test, modelin GÖRDÜĞÜ evrende çalışmak zorunda;
+    # aksi halde hiç tahmin üretilmez (ve üretilse de anlamsız olurdu).
+    global _forward_offset
+    full_universe = sorted(sym_codes)
+    if not full_universe:
+        return 0
+    # Dönen dilim: 6 turda tüm evren. Tek bir sembol patolojik olarak çok
+    # seçilse bile kayıt tek sembole sıkışmaz.
+    span = min(FORWARD_MAX_SYMBOLS, len(full_universe))
+    start = _forward_offset % len(full_universe)
+    universe = [full_universe[(start + i) % len(full_universe)] for i in range(span)]
+    _forward_offset = (start + span) % len(full_universe)
+
+    rows: list[dict] = []
+    now_ms = int(time.time() * 1000)
+    for sym in universe:
+        try:
+            klines = _fetch_klines(sym, "5m", limit=200)
+        except Exception:
+            continue
+        if len(klines) < 61:
+            continue
+        # SON KAPANMIŞ BARI kullan — oluşan bar DEĞİL.
+        # ML-01 sözleşmesi: "Model 5m kapanış barlarıyla eğitilir; çıkarım da
+        # 5m kapanış barlardan özellik üretmelidir." Oluşan barı kullanmak
+        # hem eğitim dağılımının dışına çıkar hem de aynı bar için kaydı
+        # tekrarlar (bar kapanana dek özellikler sürekli değişir).
+        klines = klines[:-1]
+        highs = [float(k[2]) for k in klines]
+        lows = [float(k[3]) for k in klines]
+        closes = [float(k[4]) for k in klines]
+        volumes = [float(k[5]) for k in klines]
+        price = closes[-1]
+        try:
+            rsi_val = float(_rsi(closes, 14) or 50.0)
+            atr_val = float(_atr(highs, lows, closes, 14) or (price * 0.015))
+            bb = _bollinger(closes, 20, 2.0) or {}
+            ar = _aroon(highs, lows, 25) or {}
+            avg_v = (sum(volumes[-20:]) / 20.0) if len(volumes) >= 20 else (volumes[-1] or 1.0)
+            vol_ratio = (volumes[-1] / avg_v) if avg_v else 1.0
+            feats = {
+                "ret1_pct": ((closes[-1] - closes[-2]) / closes[-2] * 100.0) if len(closes) >= 2 else None,
+                "ret3_pct": ((closes[-1] - closes[-4]) / closes[-4] * 100.0) if len(closes) >= 4 else None,
+                "ret5_pct": ((closes[-1] - closes[-6]) / closes[-6] * 100.0) if len(closes) >= 6 else None,
+                "atr_pct": (atr_val / price * 100.0) if price else None,
+                "bb_width_pct": (bb.get("width_pct") or 0.0) * 100.0,
+                "rsi": rsi_val,
+                "mfi": _mfi(highs, lows, closes, volumes, 14),
+                "vol_z": (vol_ratio - 1.0),
+                "linreg_slope10_pct": _linreg_slope_pct(closes, 10),
+                "aroon_up": ar.get("up"), "aroon_down": ar.get("down"),
+                "timestamp": int(klines[-1][0]),
+            }
+            pred = ml_forecast.predict_from_artifact(model, sym, feats, horizon=5)
+        except Exception:
+            continue
+        if pred is None:
+            continue
+        # KARAR ANI = barın KAPANIŞI, duvar saati değil.
+        # Tarama 60 sn'de bir çalışır ama bar 5 dakikadır: duvar saatini
+        # kullanmak aynı barı 5 kez kaydeder, örneklemi şişirir ve
+        # örnekleri birbirine bağımlı kılar (istatistiği bozar).
+        # Karar bar kapanışında verilir; ufuk penceresi de oradan başlamalı.
+        bar_close_s = (int(klines[-1][0]) / 1000.0) + 300.0
+        if bar_close_s > now_ms / 1000.0 + 60:
+            continue                      # kapanmamış bar
+        rows.append({
+            "frozen_id": frozen["id"],
+            "predicted_at": bar_close_s,
+            "horizon_minutes": 5,
+            "symbol": sym,
+            "entry_price": price,
+            "hit_probability": pred["hit_probability"],
+            "target_pct": pred["target_pct"],
+            "gate_passed": bool(pred["hit_probability"] >= gate),
+            "features": feats,
+        })
+    if not rows:
+        return 0
+    return await ml_forward_test.record_shadow(rows)
+
+
 async def update_open_signals_pnl(conn):
     """Açık pozisyonları anlık fiyatlarla denetler, Dinamik Takipçi Stop (Dynamic Exit Architect) ile kârı kilitler ve kapatır."""
+    await _ensure_spot_schema(conn)
     open_rows = await conn.fetch("SELECT * FROM spot_monitor_signals WHERE status = 'OPEN'")
     if not open_rows:
-        return
+        return []
 
     prices = _fetch_all_prices()
     now_utc = datetime.now(timezone.utc)
+    closed_ids: list[int] = []
 
     for row in open_rows:
         sym = row["symbol"]
@@ -601,7 +1098,6 @@ async def update_open_signals_pnl(conn):
             continue
 
         entry_p = row["entry_price"]
-        target_p = row["target_price"]
         stop_p = row["stop_price"]
         pnl_pct = ((curr_p - entry_p) / entry_p) * 100.0
 
@@ -611,88 +1107,184 @@ async def update_open_signals_pnl(conn):
         new_mfe = max(old_mfe, pnl_pct)
         new_mae = min(old_mae, pnl_pct)
 
-        # ----------------------------------------------------
-        # DYNAMIC EXIT ARCHITECT: Kademeli Kâr Kilidi & Takipçi Stop
-        # ----------------------------------------------------
-        # 1. Dinamik Kâr Nefes Alanı ve Başabaş Kilidi:
-        # Kâr %1.10'a ulaştığında stop seviyesini maliyet + %0.20 net kâr seviyesine çek (erken stopu önler)
-        if new_mfe >= 1.10:
-            be_level = entry_p * 1.0020
-            if be_level > stop_p:
-                stop_p = be_level
+        # ─── ZİRVE TAKİPÇİ STOP (TP YOK) ───────────────────────────────────
+        # TP hedefi kaldırıldı. Çıkış tek bir kurala bağlı: zirveyi takip eden
+        # stop. Kâr sınırsız büyüyebilir, kayıp tanımlı kalır.
+        #
+        #   1. Kâr %TRAIL_ACTIVATE_PCT'e (1.5) ulaşınca takip DEVREDE.
+        #   2. Devreye girdiği anda stop, maliyet + %TRAIL_LOCK_PCT (0.8) seviyesine
+        #      çekilir → işlem artık kaybettiremez.
+        #   3. Sonrasında stop, zirvenin %TRAIL_DISTANCE_PCT (0.6) gerisinden gelir.
+        #
+        # Kilit seviyesi bir TABAN'dır: zirve başlangıçta düşükse stop kilidin
+        # altına inmesin. Takipçi yalnızca yukarı hareket eder.
+        peak_p = max(float(_row_get(row, "peak_price", entry_p) or entry_p), entry_p * (1.0 + new_mfe / 100.0))
+        was_trailing = bool(_row_get(row, "trailing_active", False))
+        trailing_active = was_trailing or new_mfe >= TRAIL_ACTIVATE_PCT
 
-        # 2. Kademeli Kâr Kilidi (Profit Ratchet):
-        # Kâr %1.50'ye ulaştığında stop seviyesini en az maliyet + %0.80 net kâr seviyesine yükselt
-        if new_mfe >= 1.50:
-            lock_level_1 = entry_p * 1.0080
-            if lock_level_1 > stop_p:
-                stop_p = lock_level_1
-
-        # 3. Zirve Takipçi Stop (Peak Trailing Stop):
-        # Kâr %1.80'i geçerse, stop'u zirveden geriye %0.50 mesafede sıkı takip ettir
-        if new_mfe >= 1.80:
-            peak_price = entry_p * (1.0 + new_mfe / 100.0)
-            trail_level_2 = peak_price * 0.9950
-            if trail_level_2 > stop_p:
-                stop_p = trail_level_2
+        if trailing_active:
+            lock_level = entry_p * (1.0 + TRAIL_LOCK_PCT / 100.0)
+            trail_level = peak_p * (1.0 - TRAIL_DISTANCE_PCT / 100.0)
+            # Başabaş altındaki kilit anlamsız: takipçi başabaşın altına inmesin
+            new_stop = max(stop_p, lock_level, trail_level)
+            if was_trailing:
+                # Takipçi aktifken stop ASLA geri gitmez
+                new_stop = max(stop_p, new_stop)
+            stop_p = new_stop
 
         status = "OPEN"
         exit_price = None
         exit_time = None
         net_try = 0.0
         pos_size = float(row["trade_size_try"] or TRADE_SIZE_TRY)
-        comm_try = row["commission_try"] or (pos_size * COMMISSION_RATE * 2)
+        comm_try = row["commission_try"] or (pos_size * _one_way_fee() * 2)
 
-        # TP Hedefine Ulaştı mı?
-        if curr_p >= target_p:
-            status = "WIN_TP"
-            exit_price = target_p
+        # Stop seviyesine indi mi? (TP kaldırıldı → tek fiyat bariyeri stop)
+        if curr_p <= stop_p:
+            # Gap-down modeli: fiyat stop'un ALTINDA açıldıysa gerçek dolum
+            # stop fiyatından DEĞİL, o anki (daha kötü) fiyattan olur. Aksi
+            # halde %0.9'luk stop, %2'lik kayba rağmen -%0.9 gösterirdi.
+            fill_price = min(stop_p, curr_p)
+            exit_price = fill_price
             exit_time = now_utc
-            gross_profit = pos_size * ((target_p - entry_p) / entry_p)
-            net_try = gross_profit - comm_try
-
-        # Stop-Loss veya Takipçi Kâr Stop Seviyesine İndi mi?
-        elif curr_p <= stop_p:
-            exit_price = stop_p
-            exit_time = now_utc
-            gross_diff = pos_size * ((stop_p - entry_p) / entry_p)
+            gross_diff = pos_size * ((fill_price - entry_p) / entry_p)
             net_try = gross_diff - comm_try
-            if stop_p > entry_p:
-                status = "WIN_TRAILING"  # Kârla / Başabaşla kapandı
-            else:
-                status = "LOSS_SL"  # Başlangıç zararıyla stop oldu
+            # Kilit başabaşın üstündeyse kârla kapandı
+            status = "WIN_TRAILING" if fill_price > entry_p else "LOSS_SL"
 
         # Süre Aşımı (5m için 60 dk, 15m için 150 dk, 1h için 360 dk)
-        elif (now_utc - row["detected_at"]).total_seconds() > (3600 if row["timeframe"] == "5m" else (9000 if row["timeframe"] == "15m" else 21600)):
+        # Takipçi devredeyse süre aşımı UYGULANMAZ — kazanan işlemi kesmemek
+        # takipçinin amacıdır. Yalnızca kâra geçmemiş pozisyonlar zamanla kapanır.
+        elif not trailing_active and (now_utc - row["detected_at"]).total_seconds() > (3600 if row["timeframe"] == "5m" else (9000 if row["timeframe"] == "15m" else 21600)):
             exit_price = curr_p
             exit_time = now_utc
             gross_ret = pos_size * (pnl_pct / 100.0)
             net_try = gross_ret - comm_try
-            if net_try > 0:
-                status = "WIN_EXPIRED"
-            else:
-                status = "EXPIRED"
+            status = "WIN_EXPIRED" if net_try > 0 else "EXPIRED"
 
         if status != "OPEN":
             await conn.execute("""
                 UPDATE spot_monitor_signals
                 SET status = $1, exit_price = $2, exit_time = $3,
                     pnl_pct = $4, mfe_pct = $5, mae_pct = $6, net_pnl_try = $7,
-                    stop_price = $8
-                WHERE id = $9
-            """, status, exit_price, exit_time, pnl_pct, new_mfe, new_mae, net_try, stop_p, row["id"])
+                    stop_price = $8, trailing_active = $9, peak_price = $10
+                WHERE id = $11
+            """, status, exit_price, exit_time, pnl_pct, new_mfe, new_mae, net_try,
+               stop_p, trailing_active, peak_p, row["id"])
+            closed_ids.append(int(row["id"]))
         else:
             # Açık durumu anlık metriklerle ve güncellenmiş stop_price ile kaydet
             await conn.execute("""
                 UPDATE spot_monitor_signals
-                SET pnl_pct = $1, mfe_pct = $2, mae_pct = $3, stop_price = $4
-                WHERE id = $5
-            """, pnl_pct, new_mfe, new_mae, stop_p, row["id"])
+                SET pnl_pct = $1, mfe_pct = $2, mae_pct = $3, stop_price = $4,
+                    trailing_active = $5, peak_price = $6
+                WHERE id = $7
+            """, pnl_pct, new_mfe, new_mae, stop_p, trailing_active, peak_p, row["id"])
+
+    return closed_ids
+
+
+# İnceleme kuyruğu: kapanan pozisyonlar buraya girer, her tarama döngüsü
+# sınırlı sayıda boşaltır. Neden kuyruk: LLM çağrısı 12 sn'ye kadar sürebilir
+# ve tarama döngüsü 60 sn'de bir çalışır. Aynı anda 5 pozisyon kapanırsa seri
+# inceleme tek başına döngüyü doldurur ve tarama gecikir — fiyat takibi
+# (asıl iş) bundan zarar görür. Kuyruk, incelemeyi yavaşlatmadan tamamlar.
+_pending_reviews: list[int] = []
+SPOT_LLM_MAX_REVIEWS_PER_SCAN = 3
+
+
+def _queue_llm_reviews(signal_ids: list[int]) -> None:
+    """Kapanan pozisyonları inceleme kuyruğuna ekler (tekrarsız)."""
+    for sid in signal_ids:
+        if sid not in _pending_reviews:
+            _pending_reviews.append(sid)
+
+
+async def _attach_llm_reviews(signal_ids: list[int] | None = None) -> int:
+    """Kuyruktan sınırlı sayıda pozisyon için LLM ikinci görüşü ekler (kayıt amaçlı).
+
+    Bilinçli olarak İŞLEM ENGELLEMEZ: yalnızca `details.llm_review` alanı
+    yazılır. Doğrulanmamış bir yargıcı işlem akışına bağlamak, ölçülmüş
+    kanıta aykırı (22 özellikli AI kapı walk-forward'da bazı yenemedi).
+    Önce gölge kayıt toplanır; kapı kararı ancak karşılaştırmadan sonra verilir.
+
+    Ağ hatası/LLM yapılandırılmamış olması normal karşılanır: incelemesiz
+    kalan sinyal sorun değil, yalnızca daha az veri demektir.
+    """
+    if signal_ids:
+        _queue_llm_reviews(signal_ids)
+    if not _pending_reviews:
+        return 0
+    batch = _pending_reviews[:SPOT_LLM_MAX_REVIEWS_PER_SCAN]
+    del _pending_reviews[:len(batch)]
+
+    written = 0
+    try:
+        from app import spot_llm_review
+    except Exception as exc:  # noqa: BLE001
+        logger.info("spot LLM inceleme modülü yüklenemedi: %s", exc)
+        return 0
+
+    conn = await get_db_conn()
+    try:
+        rows = await conn.fetch(
+            "SELECT * FROM spot_monitor_signals WHERE id = ANY($1::int[])", batch)
+        for row in rows:
+            details = row["details"]
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except (ValueError, TypeError):
+                    details = {}
+            details = details or {}
+            # Zaten incelenmişse tekrar çağrı yapma (maliyet)
+            if details.get("llm_review"):
+                continue
+            ctx = {
+                "symbol": row["symbol"], "timeframe": row["timeframe"],
+                "strategy": row["strategy"], "strategy_label": row["strategy_label"],
+                "entry_price": row["entry_price"], "stop_price": row["stop_price"],
+                "sl_pct": details.get("sl_pct"),
+                "break_even_wr": details.get("break_even_wr"),
+                "rsi": details.get("rsi"), "atr_pct": details.get("atr_pct"),
+                "adx": details.get("adx"), "range_pct": details.get("range_pct"),
+                "avg_vol_try": details.get("avg_vol_try"), "note": details.get("note"),
+                "vol_z": (details.get("ml_features") or {}).get("vol_z"),
+                "mfi": (details.get("ml_features") or {}).get("mfi"),
+                "bb_width_pct": (details.get("ml_features") or {}).get("bb_width_pct"),
+                "ml_hit_probability": details.get("ml_hit_probability"),
+                "ml_target_pct": details.get("ml_target_pct"),
+                "heuristic_flags": details.get("heuristic_flags"),
+                "fee_mode": details.get("fee_mode"),
+                "round_trip_pct": _round_trip_cost_pct(),
+                "recent_results": {
+                    "sonuc": row["status"],
+                    "net_pnl_try": round(float(row["net_pnl_try"] or 0.0), 2),
+                    "pnl_pct": round(float(row["pnl_pct"] or 0.0), 2),
+                    "mfe_pct": round(float(row["mfe_pct"] or 0.0), 2),
+                },
+            }
+            try:
+                review = await spot_llm_review.review_signal(ctx, timeout=12.0)
+            except Exception as exc:  # noqa: BLE001
+                logger.info("spot LLM inceleme hatası #%s: %s", row["id"], exc)
+                continue
+            if not review:
+                continue
+            details["llm_review"] = review
+            await conn.execute(
+                "UPDATE spot_monitor_signals SET details = $1 WHERE id = $2",
+                json.dumps(details), row["id"])
+            written += 1
+    finally:
+        await conn.close()
+    return written
 
 async def get_spot_monitor_dashboard():
     """Frontend arayüzü için anlık sinyalleri, geçmişi, başarı oranını ve 5.000 TL portföy simülasyonunu döndürür."""
     conn = await get_db_conn()
     try:
+        await _ensure_spot_schema(conn)
         # Eski mükerrer açık kayıtları temizle (aynı sembolde birden fazla OPEN varsa en eskisini tut, fazlalıkları sil)
         await conn.execute("""
             DELETE FROM spot_monitor_signals
@@ -732,11 +1324,17 @@ async def get_spot_monitor_dashboard():
             
             pos_sz = float(r["trade_size_try"] or TRADE_SIZE_TRY)
             if r["status"] == "OPEN":
-                comm = r["commission_try"] or (pos_sz * COMMISSION_RATE * 2)
+                comm = r["commission_try"] or (pos_sz * _one_way_fee() * 2)
                 item_net = (pos_sz * (pnl_pct / 100.0)) - comm
                 unrealized_pnl += item_net
 
             det = json.loads(r["details"]) if isinstance(r["details"], str) else (r["details"] or {})
+            # Takipçi durumu: devrede mi, zirve nerede, kilit ne kadar uzakta
+            entry_p = float(r["entry_price"])
+            trail_on = bool(_row_get(r, "trailing_active", False))
+            peak_p = float(_row_get(r, "peak_price", entry_p) or entry_p)
+            lock_price = entry_p * (1.0 + TRAIL_LOCK_PCT / 100.0) if trail_on else None
+            trail_gap_pct = ((peak_p - curr_p) / peak_p * 100.0) if trail_on and peak_p > 0 else None
             active_items.append({
                 "id": r["id"],
                 "symbol": r["symbol"],
@@ -752,7 +1350,14 @@ async def get_spot_monitor_dashboard():
                 "status": r["status"],
                 "pnl_pct": round(pnl_pct, 2),
                 "mfe_pct": round(r["mfe_pct"] or 0.0, 2),
-                "net_pnl_try": round(r["net_pnl_try"] or 0.0, 2) if r["status"] != "OPEN" else round((pos_sz * (pnl_pct / 100.0)) - (r["commission_try"] or (pos_sz * COMMISSION_RATE * 2)), 2),
+                # ─── Zirve takipçi (TP yok) ───
+                "trailing_active": trail_on,
+                "peak_price": round(peak_p, 8),
+                "lock_price": round(lock_price, 8) if lock_price else None,
+                "trail_distance_pct": TRAIL_DISTANCE_PCT,
+                "trail_gap_pct": round(trail_gap_pct, 2) if trail_gap_pct is not None else None,
+                "locked_profit_pct": round(((float(r["stop_price"]) - entry_p) / entry_p) * 100.0, 2),
+                "net_pnl_try": round(r["net_pnl_try"] or 0.0, 2) if r["status"] != "OPEN" else round((pos_sz * (pnl_pct / 100.0)) - (r["commission_try"] or (pos_sz * _one_way_fee() * 2)), 2),
                 "detected_at": r["detected_at"].isoformat() if r["detected_at"] else None,
                 "exit_time": r["exit_time"].isoformat() if r["exit_time"] else None,
                 "details": det,
@@ -795,6 +1400,17 @@ async def get_spot_monitor_dashboard():
                 "win_rate_pct": round(win_rate, 1)
             },
             "signals": active_items,
+            # AI kapıları tarafından reddedilen sinyaller — eşiklerin değerini
+            # ölçmenin tek yolu bu listeyi ileri yürütüp karşılaştırmaktır.
+            "rejected_signals": _rejected_signals[-50:],
+            "rejected_count": len(_rejected_signals),
+            "fees": {
+                "mode": FEE_MODE,
+                "one_way": _one_way_fee(),
+                "round_trip_pct": round(_round_trip_cost_pct(), 3),
+                "schedules": {k: v["label"] for k, v in COMMISSION_SCHEDULES.items()},
+            },
+            "ai_gate": AI_GATE,
             "last_scan_time": _last_scan_time,
             "next_scan_time": next_ts,
             "scan_interval_sec": _scan_interval_sec
@@ -815,7 +1431,7 @@ async def close_spot_position_manual(signal_id: int) -> dict:
         entry_p = row["entry_price"]
         pnl_pct = ((curr_p - entry_p) / entry_p) * 100.0
         now_utc = datetime.now(timezone.utc)
-        comm_try = row["commission_try"] or (TRADE_SIZE_TRY * COMMISSION_RATE * 2)
+        comm_try = row["commission_try"] or (TRADE_SIZE_TRY * _one_way_fee() * 2)
         gross_pnl = TRADE_SIZE_TRY * (pnl_pct / 100.0)
         net_try = gross_pnl - comm_try
 
@@ -858,7 +1474,7 @@ async def close_all_spot_positions_manual() -> dict:
             curr_p = prices.get(row["symbol"], row["entry_price"])
             entry_p = row["entry_price"]
             pnl_pct = ((curr_p - entry_p) / entry_p) * 100.0
-            comm_try = row["commission_try"] or (TRADE_SIZE_TRY * COMMISSION_RATE * 2)
+            comm_try = row["commission_try"] or (TRADE_SIZE_TRY * _one_way_fee() * 2)
             gross_pnl = TRADE_SIZE_TRY * (pnl_pct / 100.0)
             net_try = gross_pnl - comm_try
 
@@ -889,7 +1505,8 @@ async def spot_monitor_background_loop():
     global _monitor_running
     _monitor_running = True
     logger.info("Spot Monitor arka plan tarayıcısı başlatıldı.")
-    
+    _last_forward_eval = 0.0
+
     while _monitor_running:
         try:
             await run_single_scan()
@@ -897,6 +1514,29 @@ async def spot_monitor_background_loop():
             break
         except Exception as exc:
             logger.error("Spot monitor döngü hatası: %s", exc)
+        # Kapanan pozisyonların LLM incelemeleri burada, tarama bittikten
+        # SONRA boşaltılır: fiyat takibi (asıl iş) LLM gecikmesinden etkilenmez.
+        try:
+            written = await _attach_llm_reviews()
+            if written:
+                logger.info("spot LLM incelemesi yazıldı: %s", written)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.error("spot LLM inceleme döngü hatası: %s", exc)
+        # Dondurulmuş model ileri testi: ufku dolmuş tahminlerin sonucu
+        # gerçek mumlardan ölçülür (10 dakikada bir yeterli).
+        if time.time() - _last_forward_eval > 600:
+            _last_forward_eval = time.time()
+            try:
+                from app import ml_forward_test
+                res = await ml_forward_test.evaluate_pending(limit=300)
+                if res.get("evaluated") or res.get("expired"):
+                    logger.info("ileri test değerlendirme: %s", res)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("ileri test değerlendirme hatası: %s", exc)
         await asyncio.sleep(60)
 
 def start_spot_monitor_loop():

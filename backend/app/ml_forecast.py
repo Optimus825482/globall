@@ -432,8 +432,122 @@ def prepare_journal_samples(rows: list[dict], symbol_codes: dict[str, int]):
             np.asarray(ts_list, dtype=np.float64))
 
 
+def prepare_spot_samples(rows: list[dict], symbol_codes: dict[str, int],
+                         min_samples: int | None = None):
+    """Spot Monitor paper-trade sonuçları: kapanmış işlemler → eğitim örnekleri.
+
+    Neden ayrı bir kaynak: journal (`llm_forecasts`) LLM tahminlerini taşır —
+    modelin KENDİ önerileri. Spot simülatörünün kapalı işlemleri ise
+    stratejinin gerçekten ürettiği sonuçlardır; bu kaynak olmadan sistem
+    hangi stratejisinin çalıştığını öğrenemez.
+
+    Özellikler `spot_monitor_signals.details.ml_features` snapshot'ından gelir
+    (sinyal ANINDA yakalanır — işlem kapanınca bar verisi kaymış olur).
+    Etiket, işlemin gerçek sonucudur: `pnl_pct` brüt getiri, maliyet eğitim
+    hedefine karışmasın diye komisyon düşülmemiş hâliyle alınır.
+
+    `min_samples` eşiği: az örnekle öğrenmek aşırı uyum üretir. Eşiğin
+    altındaysa BOŞ döner — tek bir cılız kaynağın modeli saptırmasına izin
+    vermek, hiç öğrenmemekten kötüdür.
+
+    Çift sayım koruması: `mfe_pct` genelde `pnl_pct`'ten büyük olduğu için,
+    stop'ta kapanan bir işlem "yüksek MFE gördüm" gibi görünüp modelin
+    "hedefe dokunur" demesine yol açar. Gerçekleşen getiri amaca daha yakın
+    olduğundan `pnl_pct` kullanılır.
+    """
+    threshold = config.ML_SPOT_SAMPLE_MIN if min_samples is None else int(min_samples)
+    X, y_min, y_hit, hid, weights, ts_list = [], [], [], [], [], []
+    seen_keys: set[str] = set()
+
+    for row in rows or []:
+        status = str(row.get("status") or "")
+        if status == "OPEN":
+            continue
+        if row.get("pnl_pct") is None:
+            continue
+        sym = str(row.get("symbol") or "").upper()
+        if sym not in symbol_codes:
+            continue
+        # Aynı sinyal anahtarı birden fazla satır üretirse tekrarlamayı önle
+        key = str(row.get("signal_key") or row.get("id") or "")
+        if key and key in seen_keys:
+            continue
+        if key:
+            seen_keys.add(key)
+
+        details = row.get("details") or {}
+        if isinstance(details, str):
+            try:
+                details = json.loads(details)
+            except (ValueError, TypeError):
+                continue
+        snap = details.get("ml_features") if isinstance(details, dict) else None
+        # Snapshot olmadan örnek kurulamaz; sıfır uydurmak gürültü ekler
+        if not isinstance(snap, dict):
+            continue
+        # Çekirdek özellik: en az biri dolu olmalı (journal yolundaki ML-09 kuralı)
+        core_present = any(snap.get(k) is not None
+                           for k in ("atr_pct", "ret3_pct", "rsi", "aroon_up"))
+        if not core_present:
+            continue
+
+        ts = details.get("ml_features", {}).get("timestamp")
+        if not isinstance(ts, (int, float)):
+            ts = row.get("detected_at")
+            if hasattr(ts, "timestamp"):
+                ts = ts.timestamp() * 1000
+            elif isinstance(ts, (int, float)) and ts < 1e11:
+                ts = ts * 1000
+        if not isinstance(ts, (int, float)):
+            ts = time.time() * 1000
+        if ts < 1e11:
+            ts = ts * 1000
+
+        hour = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).hour
+        hour = (hour + 3) % 24
+        day_quarter = hour // 6
+
+        snap_atr_ratio = _ratio_from_pct(snap.get("atr_pct"))
+        snap_ret3_ratio = _ratio_from_pct(snap.get("ret3_pct"))
+        vp = velocity_proxy_value(snap_atr_ratio, snap_ret3_ratio)
+
+        realized = float(row["pnl_pct"]) / 100.0          # yüzde → kesir
+        horizon = 5                                       # spot taraması 5m
+        X.append([_ratio_from_pct(snap.get("ret1_pct")),
+                  snap_ret3_ratio,
+                  _ratio_from_pct(snap.get("ret5_pct")),
+                  snap_atr_ratio,
+                  (_ratio_from_pct(snap.get("bb_width_pct")) if snap.get("bb_width_pct") is not None else None),
+                  snap.get("rsi"), snap.get("mfi"), snap.get("vol_z"),
+                  (_ratio_from_pct(snap.get("linreg_slope10_pct")) if snap.get("linreg_slope10_pct") is not None else None),
+                  snap.get("aroon_up"), snap.get("aroon_down"),
+                  float(hour), float(day_quarter), float(vp), float(symbol_codes[sym])])
+        y_min.append(realized)
+        # Eşik spot geometrisinden gelir, journal'dan ÖDÜNÇ ALINMAZ.
+        # Journal eşiği %2.0; spot ise kâr %1.5'te takipçiyi devreye sokup
+        # %0.8'i kilitliyor. %2.0 kullanılsaydı hemen her spot işlemi eşiğin
+        # altında kapanır ve sınıflandırıcı etiketi DAİMA 0 olurdu — model
+        # hiçbir ayrım öğrenemezdi (sessiz no-signal).
+        y_hit.append(1.0 if realized >= config.ML_SPOT_HIT_TARGET_PCT else 0.0)
+        hid.append(HORIZONS.index(horizon))
+        weights.append(config.ML_SPOT_SAMPLE_WEIGHT)
+        ts_list.append(float(ts))
+
+    if len(X) < threshold:
+        logger.info("[ML] spot geri besleme atlandı: %s örnek < %s eşik",
+                    len(X), threshold)
+        empty = np.empty((0, len(FEATURE_NAMES)), dtype=np.float32)
+        return (empty, np.empty(0, dtype=np.float32), np.empty(0), np.empty(0),
+                np.empty(0, dtype=np.float32), np.empty(0, dtype=np.float64))
+
+    return (np.asarray(X, dtype=np.float32), np.asarray(y_min, dtype=np.float32),
+            np.asarray(y_hit), np.asarray(hid), np.asarray(weights, dtype=np.float32),
+            np.asarray(ts_list, dtype=np.float64))
+
+
 def train(candles: dict[str, dict[str, np.ndarray]], journal_rows: list[dict],
-          previous_codes: dict | None = None) -> dict[str, Any]:
+          previous_codes: dict | None = None,
+          spot_rows: list[dict] | None = None) -> dict[str, Any]:
     """Eğitim: 5m candle verisi + journal örnekleri -> artifact + metrics sözlüğü.
 
     Saf/senkron fonksiyon; DB okuma ve artifact kaydı çağıran tarafta async
@@ -461,6 +575,10 @@ def train(candles: dict[str, dict[str, np.ndarray]], journal_rows: list[dict],
     symbol_codes = _merge_symbol_codes(symbols, previous_codes)
     (journal_X, journal_mfe, journal_hit, journal_h, journal_w,
      journal_ts) = prepare_journal_samples(journal_rows, symbol_codes)
+    # Spot paper-trade geri beslemesi: kapanmış işlemler modelin KENDİ
+    # strateji sonuçlarıdır. Yeterli örnek yoksa boş döner (aşırı uyum kapısı).
+    (spot_X, spot_y, spot_hit, spot_h, spot_w,
+     spot_ts) = prepare_spot_samples(spot_rows or [], symbol_codes)
 
     xs, mfe_by_h, times_by_h = {h: [] for h in HORIZONS}, {h: [] for h in HORIZONS}, {h: [] for h in HORIZONS}
     for sym, arrays in candles.items():
@@ -492,6 +610,7 @@ def train(candles: dict[str, dict[str, np.ndarray]], journal_rows: list[dict],
     artifact = {"feature_version": FEATURE_VERSION, "feature_names": FEATURE_NAMES,
                 "symbol_codes": symbol_codes, "horizons": {}, "trained_at": time.time(),
                 "journal_sample_count": int(len(journal_X)),
+                "spot_sample_count": int(len(spot_X)),
                 "training_bar_minutes": TRAINING_BAR_MINUTES}
     metrics: dict[str, Any] = {"per_horizon": {}}
 
@@ -512,12 +631,19 @@ def train(candles: dict[str, dict[str, np.ndarray]], journal_rows: list[dict],
         # Eskiden hepsi eğitime giriyordu → holdout metriği iyimserdi.
         train_cutoff_ms = float(times[split - 1]) if split > 0 else float("-inf")
         in_split_ts = h_mask & (journal_ts <= train_cutoff_ms) if split > 0 else h_mask
-        X_train = np.vstack([X[:split], journal_X[in_split_ts]])
-        y_train = np.concatenate([y[:split], journal_mfe[in_split_ts]])
-        weights = np.concatenate([np.ones(split, dtype=np.float32), journal_w[in_split_ts]])
+        # Spot geri beslemesi aynı kronolojik kurala tabidir: yalnızca split
+        # noktasından ÖNCE kapanan işlemler eğitime girer. Holdout'a hiç
+        # dokunulmaz — aksi halde modelin ölçümü kendi eğitim verisini görür.
+        spot_mask = spot_h == HORIZONS.index(horizon)
+        if split > 0:
+            spot_mask = spot_mask & (spot_ts <= train_cutoff_ms)
+        X_train = np.vstack([X[:split], journal_X[in_split_ts], spot_X[spot_mask]])
+        y_train = np.concatenate([y[:split], journal_mfe[in_split_ts], spot_y[spot_mask]])
+        weights = np.concatenate([np.ones(split, dtype=np.float32),
+                                  journal_w[in_split_ts], spot_w[spot_mask]])
         hit_train = np.concatenate([
             (y[:split] >= config.ML_HIT_TARGET_PCT.get(horizon, 0.02)).astype(np.float64),
-            journal_hit[in_split_ts]])
+            journal_hit[in_split_ts], spot_hit[spot_mask]])
 
         reg = HistGradientBoostingRegressor(loss="quantile", quantile=config.ML_TARGET_QUANTILE,
                                             max_iter=300, learning_rate=0.06, max_leaf_nodes=31,
@@ -531,21 +657,49 @@ def train(candles: dict[str, dict[str, np.ndarray]], journal_rows: list[dict],
         pred = reg.predict(X_hold)
         actual_hit = (y_hold >= config.ML_HIT_TARGET_PCT.get(horizon, 0.02)).astype(np.int64)
         hit_rate = float(np.mean(actual_hit))
-        # Model-level holdout metrics (the classifier's own accuracy), so the
-        # readout reflects model quality rather than just the dataset hit-rate.
+        # Sınıflandırıcı kalitesi — ACCURACY DEĞİL, AUC + seçicilik.
+        #
+        # Ölçüm (2026-11-01, 740k bar): hedef oranı yalnızca %3-4. Bu kadar
+        # dengesiz bir veride accuracy işe yaramaz — "daima 0" demek %96
+        # doğruluk verir, ki model bunu yapıyordu (acc=0.9965). Accuracy
+        # okununca "model bozuk" sanılıyordu; oysa AUC 0.78-0.85.
+        # Doğru okuma: kaç tane seçti, seçtiklerinin kaçı tuttu, baz orana
+        # göre kaç kat iyileştirme (lift).
+        model_hit_accuracy = None
+        model_auc = None
+        precision_at_gate = None
+        lift_at_gate = None
+        selected_count = 0
         try:
+            from sklearn.metrics import roc_auc_score
             clf_pred = clf.predict(X_hold).astype(np.int64)
             model_hit_accuracy = float(np.mean(clf_pred == actual_hit))
+            if len(np.unique(actual_hit)) > 1:
+                prob = clf.predict_proba(X_hold)[:, 1]
+                model_auc = float(roc_auc_score(actual_hit, prob))
+                sel = prob >= config.ML_MIN_HIT_PROBABILITY
+                selected_count = int(sel.sum())
+                if selected_count > 0:
+                    precision_at_gate = float(np.mean(actual_hit[sel]))
+                    if hit_rate > 0:
+                        lift_at_gate = float(precision_at_gate / hit_rate)
         except Exception:
-            model_hit_accuracy = None
+            pass
         metrics["per_horizon"][str(horizon)] = {
             "samples": int(len(X)), "holdout": int(len(X_hold)),
             "mae_mfe_pct": round(float(np.mean(np.abs(pred - y_hold))) * 100, 4),
             "pred_p65_pct_mean": round(float((pred * 100).mean()), 3),
             "actual_mfe_pct_mean": round(float((y_hold * 100).mean()), 3),
             "dataset_hit_rate": round(hit_rate, 4),
+            # model_hit_accuracy: dengesiz veride YANILTICI, yalnız kayıt için
             "model_hit_accuracy": (round(model_hit_accuracy, 4) if model_hit_accuracy is not None else None),
+            "model_auc": (round(model_auc, 4) if model_auc is not None else None),
+            "gate_probability": config.ML_MIN_HIT_PROBABILITY,
+            "selected_at_gate": selected_count,
+            "precision_at_gate": (round(precision_at_gate, 4) if precision_at_gate is not None else None),
+            "lift_at_gate": (round(lift_at_gate, 2) if lift_at_gate is not None else None),
             "journal_samples": int(h_mask.sum()),
+            "spot_samples": int(spot_mask.sum()),
         }
         artifact["horizons"][str(horizon)] = {"reg": reg, "clf": clf}
 
@@ -558,7 +712,8 @@ def train(candles: dict[str, dict[str, np.ndarray]], journal_rows: list[dict],
     total = sum(int(m.get("samples") or 0) for m in metrics["per_horizon"].values())
     logger.info("[ML] eğitim tamam: %s örnek, %s sembol -> %s", total, len(symbol_codes), path)
     return {"created_at": time.time(), "horizons": list(HORIZONS), "sample_count": int(total),
-            "journal_sample_count": artifact["journal_sample_count"], "symbol_count": len(symbol_codes),
+            "journal_sample_count": artifact["journal_sample_count"],
+            "spot_sample_count": artifact["spot_sample_count"], "symbol_count": len(symbol_codes),
             "metrics": metrics, "artifact_path": path, "feature_version": FEATURE_VERSION, "status": "ready"}
 
 
@@ -618,10 +773,15 @@ def load_model(max_age_seconds: int = 86400) -> dict[str, Any] | None:
     return _MODEL_CACHE["artifact"]
 
 
-def predict_target(symbol: str, features: dict[str, Any], horizon: int = 5) -> dict[str, Any] | None:
-    """Tek nokta tahmin (Faz 2 gölge modda kullanılacak)."""
-    artifact = load_model()
-    if not artifact or str(horizon) not in artifact["horizons"]:
+def predict_from_artifact(artifact: dict[str, Any] | None, symbol: str,
+                          features: dict[str, Any], horizon: int = 5) -> dict[str, Any] | None:
+    """Verilen artifact ile tahmin — CANLI modeli okumaz.
+
+    `predict_target` canlı dosyayı okur; dondurulmuş ileri testin ise elindeki
+    kopyayla tahmin üretmesi gerekir, aksi halde 12 saatlik eğitim döngüsü
+    onun üzerine yazar ve ölçülen model ile öngören model farklılaşır.
+    """
+    if not artifact or str(horizon) not in (artifact.get("horizons") or {}):
         return None
     sym = str(symbol).upper()
     if sym not in artifact["symbol_codes"]:
@@ -673,3 +833,13 @@ def predict_target(symbol: str, features: dict[str, Any], horizon: int = 5) -> d
     return {"target_pct": round(float(bundle["reg"].predict(X)[0]) * 100, 3),
             "hit_probability": round(float(bundle["clf"].predict_proba(X)[0][1]), 4),
             "quantile": config.ML_TARGET_QUANTILE, "trained_at": artifact["trained_at"]}
+
+
+def predict_target(symbol: str, features: dict[str, Any], horizon: int = 5) -> dict[str, Any] | None:
+    """Tek nokta tahmin — CANLI model ile.
+
+    Dondurulmuş ileri test için `predict_from_artifact` kullanılır: bu fonksiyon
+    canlı dosyayı okuduğu için eğitim onun üzerine yazdığında "öngören" model
+    değişir.
+    """
+    return predict_from_artifact(load_model(), symbol, features, horizon)

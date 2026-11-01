@@ -272,7 +272,8 @@ async def init_db():
         schema_sql = ""
         for filename in ("001_pgvector_schema.sql", "002_macd_evidence_lift.sql",
                          "003_rising_signals.sql", "004_bloat_prevention.sql",
-                         "005_user_binance_keys.sql", "006_mt5_spread_profile.sql", "007_spot_monitor_signals.sql"):
+                         "005_user_binance_keys.sql", "006_mt5_spread_profile.sql", "007_spot_monitor_signals.sql",
+                         "013_ml_forward_test.sql"):
             path = os.path.join(migrations_dir, filename)
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as schema_file:
@@ -3149,6 +3150,56 @@ async def get_ml_training_candles(cutoff_ms: int, max_bars_per_symbol: int = 300
             bucket["close"].append(float(row["close"]))
             bucket["volume"].append(float(row["volume"]))
         return data
+    return await _run_db(op)
+
+
+async def get_spot_training_samples(limit: int = 2000):
+    """Spot Monitor'ün KAPANMIŞ paper işlemleri — ML geri besleme kaynağı.
+
+    Yalnızca gerçekten sonuçlanmış satırlar döner (status != 'OPEN');
+    `pnl_pct` (brüt getiri) ve `details.ml_features` (sinyal anının özellik
+    vektörü) etiket + girdi olarak kullanılır.
+
+    `ml_features` snapshot'ı olmayan satırlar da döner ama `prepare_spot_samples`
+    onları eler — filtreyi burada tekrarlamamak için JSON ayrıştırma orada
+    yapılır. Sıralama eskiden yeniye: kronolojik holdout ayrımı buna dayanır.
+    """
+    def op(conn):
+        rows = conn.execute(
+            """SELECT id, signal_key, symbol, timeframe, strategy, status,
+                      pnl_pct, mfe_pct, mae_pct, net_pnl_try, details,
+                      detected_at, exit_time
+                 FROM spot_monitor_signals
+                WHERE status <> 'OPEN'
+                  AND pnl_pct IS NOT NULL
+                ORDER BY detected_at ASC
+                LIMIT ?""", (max(1, min(int(limit), 20000)),)).fetchall()
+        out = []
+        for row in rows:
+            details = row["details"]
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except (ValueError, TypeError):
+                    details = {}
+            detected = row["detected_at"]
+            out.append({
+                "id": row["id"],
+                "signal_key": row["signal_key"],
+                "symbol": row["symbol"],
+                "timeframe": row["timeframe"],
+                "strategy": row["strategy"],
+                "status": row["status"],
+                "pnl_pct": row["pnl_pct"],
+                "mfe_pct": row["mfe_pct"],
+                "mae_pct": row["mae_pct"],
+                "net_pnl_try": row["net_pnl_try"],
+                "details": details or {},
+                "detected_at": detected.isoformat() if hasattr(detected, "isoformat") else detected,
+                "exit_time": (row["exit_time"].isoformat()
+                              if hasattr(row["exit_time"], "isoformat") else row["exit_time"]),
+            })
+        return out
     return await _run_db(op)
 
 
@@ -6842,3 +6893,189 @@ async def sched_reschedule(job_id: int, due_ts: float, params: Dict[str, Any], r
         conn.commit()
 
     await _run_db(op)
+
+
+# ─── DONDURULMUŞ MODEL İLERİ TESTİ ────────────────────────────────────────────
+
+async def save_frozen_model(meta: dict):
+    """Dondurulmuş modeli kaydeder ve id'sini döndürür."""
+    def op(conn):
+        row = conn.execute("""INSERT INTO ml_frozen_models
+            (frozen_at, artifact_path, artifact_sha256, feature_version, trained_at,
+             horizons, symbol_count, gate_probability, note)
+            VALUES (?,?,?,?,?,?,?,?,?) RETURNING id""",
+            (float(meta["frozen_at"]), meta["artifact_path"], meta["artifact_sha256"],
+             meta["feature_version"], meta.get("trained_at"),
+             meta.get("horizons") or "[]", int(meta.get("symbol_count") or 0),
+             meta.get("gate_probability"), meta.get("note"))).fetchone()
+        conn.commit()
+        return int(dict(row)["id"]) if row else None
+    return await _run_db(op)
+
+
+async def get_frozen_models(active_only: bool = True):
+    def op(conn):
+        where = " WHERE retired_at IS NULL" if active_only else ""
+        rows = conn.execute(
+            f"SELECT * FROM ml_frozen_models{where} ORDER BY frozen_at DESC LIMIT 20").fetchall()
+        return [dict(r) for r in rows]
+    return await _run_db(op)
+
+
+async def get_frozen_model(frozen_id: int):
+    def op(conn):
+        row = conn.execute("SELECT * FROM ml_frozen_models WHERE id=?", (int(frozen_id),)).fetchone()
+        return dict(row) if row else None
+    return await _run_db(op)
+
+
+async def retire_frozen_model(frozen_id: int):
+    """Modeli emekliye ayırır (yeni tahmin yazılmaz, geçmiş korunur)."""
+    def op(conn):
+        n = conn.execute("UPDATE ml_frozen_models SET retired_at=? WHERE id=? AND retired_at IS NULL",
+                         (time.time(), int(frozen_id))).rowcount
+        conn.commit()
+        return n or 0
+    return await _run_db(op)
+
+
+async def insert_shadow_predictions(rows: list):
+    """Ölçülen tahminleri yazar. Aynı bar/sembol tekrar ederse atlanır."""
+    def op(conn):
+        written = 0
+        for r in rows:
+            try:
+                # rowcount, ON CONFLICT DO NOTHING çakışmasında 0 döner;
+                # böylece "kaç YENİ satır" raporlanır (denenen değil).
+                res = conn.execute("""INSERT INTO ml_shadow_predictions
+                    (frozen_id, predicted_at, horizon_minutes, symbol, entry_price,
+                     hit_probability, target_pct, gate_passed, features)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT (frozen_id, symbol, predicted_at, horizon_minutes) DO NOTHING""",
+                    (int(r["frozen_id"]), float(r["predicted_at"]), int(r["horizon_minutes"]),
+                     str(r["symbol"]).upper(), float(r["entry_price"]),
+                     r.get("hit_probability"), r.get("target_pct"), bool(r.get("gate_passed")),
+                     json.dumps(r.get("features") or {}, ensure_ascii=False, default=str)))
+                written += int(getattr(res, "rowcount", 0) or 0)
+            except Exception:
+                continue
+        conn.commit()
+        return written
+    return await _run_db(op)
+
+
+async def get_pending_shadow_predictions(limit: int = 500):
+    def op(conn):
+        rows = conn.execute("""SELECT * FROM ml_shadow_predictions
+            WHERE status='pending' ORDER BY predicted_at ASC LIMIT ?""",
+            (max(1, min(int(limit), 5000)),)).fetchall()
+        return [dict(r) for r in rows]
+    return await _run_db(op)
+
+
+async def mark_shadow_expired(pred_id: int):
+    def op(conn):
+        conn.execute("UPDATE ml_shadow_predictions SET status='expired' WHERE id=?", (int(pred_id),))
+        conn.commit()
+    return await _run_db(op)
+
+
+async def save_shadow_outcome(pred_id: int, outcome: dict):
+    def op(conn):
+        conn.execute("""UPDATE ml_shadow_predictions SET
+                status='evaluated', evaluated_at=?,
+                max_favorable_pct=?, max_adverse_pct=?, exit_pct=?,
+                hit_target=?, bars_held=?
+            WHERE id=?""",
+            (time.time(), outcome.get("max_favorable_pct"), outcome.get("max_adverse_pct"),
+             outcome.get("exit_pct"), bool(outcome.get("hit_target")),
+             outcome.get("bars_held"), int(pred_id)))
+        conn.commit()
+    return await _run_db(op)
+
+
+async def get_candles_after(symbol: str, timeframe: str, after_ms: int, limit: int = 40):
+    """Belirli bir andan SONRAKİ mumlar (forward test ölçümü için).
+
+    Yalnızca tahmin anından sonrasını döndürür: geçmişe bakıp "keşke" ölçümü
+    yapılmaz, sızıntı olmaz.
+    """
+    def op(conn):
+        rows = conn.execute("""SELECT open_time, high, low, close FROM historical_candles
+            WHERE symbol=? AND timeframe=? AND open_time > ?
+            ORDER BY open_time ASC LIMIT ?""",
+            (str(symbol).upper(), timeframe, int(after_ms), max(1, min(int(limit), 500)))).fetchall()
+        return [dict(r) for r in rows]
+    return await _run_db(op)
+
+
+async def shadow_summary(frozen_id: int):
+    """İleri test karnesi: kapı geçen/geçmeyen tahminlerin gerçek sonucu."""
+    def op(conn):
+        rows = conn.execute("""SELECT gate_passed, hit_target, exit_pct, hit_probability
+            FROM ml_shadow_predictions
+            WHERE frozen_id=? AND status='evaluated'""", (int(frozen_id),)).fetchall()
+        data = [dict(r) for r in rows]
+        pending = conn.execute("""SELECT count(*) AS n FROM ml_shadow_predictions
+            WHERE frozen_id=? AND status='pending'""", (int(frozen_id),)).fetchone()
+        total = conn.execute("""SELECT count(*) AS n, count(DISTINCT symbol) AS syms
+            FROM ml_shadow_predictions WHERE frozen_id=?""", (int(frozen_id),)).fetchone()
+
+        def stats(items):
+            n = len(items)
+            if not n:
+                return {"n": 0}
+            wins = [i for i in items if (i.get("exit_pct") or 0) > 0]
+            ex = [float(i.get("exit_pct") or 0) for i in items]
+            gain = sum(e for e in ex if e > 0)
+            loss = -sum(e for e in ex if e <= 0)
+            return {
+                "n": n,
+                "hit_rate": round(sum(1 for i in items if i.get("hit_target")) / n, 4),
+                "win_rate": round(len(wins) / n, 4),
+                "avg_exit_pct": round(sum(ex) / n, 4),
+                "total_pct": round(sum(ex), 2),
+                "profit_factor": round(gain / loss, 3) if loss > 0 else None,
+            }
+
+        gated = [d for d in data if d.get("gate_passed")]
+        passed = [d for d in data if not d.get("gate_passed")]
+
+        # EŞİK EĞRİSİ — tek eşiğe kilitlenmek örneklemi boşa harcar.
+        # Tüm tahminler zaten kaydedildiği için, hangi eşiğin işe yaradığı
+        # SONRADAN veriden okunabilir. `hit_probability` + sonuç birlikte
+        # saklanır; burada her eşik için isabet ve lift hesaplanır.
+        curve = []
+        with_prob = [d for d in data if d.get("hit_probability") is not None]
+        base = (sum(1 for d in with_prob if d.get("hit_target")) / len(with_prob)
+                if with_prob else 0.0)
+        for th in (0.20, 0.30, 0.40, 0.50, 0.55, 0.60, 0.70):
+            sel = [d for d in with_prob if float(d["hit_probability"]) >= th]
+            if not sel:
+                curve.append({"threshold": th, "n": 0})
+                continue
+            hits = sum(1 for d in sel if d.get("hit_target"))
+            prec = hits / len(sel)
+            ex = [float(d.get("exit_pct") or 0) for d in sel]
+            gain = sum(e for e in ex if e > 0)
+            loss = -sum(e for e in ex if e <= 0)
+            curve.append({
+                "threshold": th,
+                "n": len(sel),
+                "precision": round(prec, 4),
+                "lift": round(prec / base, 2) if base > 0 else None,
+                "avg_exit_pct": round(sum(ex) / len(ex), 4),
+                "profit_factor": round(gain / loss, 3) if loss > 0 else None,
+            })
+
+        return {
+            "status": "ok",
+            "total_predictions": int(dict(total)["n"]) if total else 0,
+            "symbols": int(dict(total)["syms"]) if total else 0,
+            "pending": int(dict(pending)["n"]) if pending else 0,
+            "base_hit_rate": round(base, 4),
+            "threshold_curve": curve,
+            "gate_passed": stats(gated),
+            "gate_skipped": stats(passed),
+        }
+    return await _run_db(op)

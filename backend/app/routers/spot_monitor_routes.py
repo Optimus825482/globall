@@ -44,6 +44,18 @@ async def update_trade_size(size: float):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+@router.post("/fee-mode")
+async def update_fee_mode(mode: str):
+    """Ücret senaryosunu değiştirir: 'bnb' (%0.15 round-trip) veya 'base' (%0.20).
+
+    Simülatörün gerçekçiliği buna bağlı; lab sonuçları %0.08 varsayımıyla üretildi."""
+    try:
+        return await spot_monitor.set_fee_mode(mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
 @router.post("/scan-now")
 async def trigger_scan(background_tasks: BackgroundTasks):
     """Kullanıcının panelden 'Şimdi Tara' butonuna basarak anlık tarama başlatmasını sağlar."""
@@ -71,5 +83,20 @@ async def close_all_positions():
     """Tüm açık spot simülasyon pozisyonlarını tek tıkla anlık fiyattan kapatır."""
     try:
         return await spot_monitor.close_all_spot_positions_manual()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/forward-test")
+async def forward_test_report(frozen_id: int | None = None):
+    """Dondurulmuş modelin İLERİ test karnesi (salt okuma).
+
+    Model dondurulduktan sonra üretilen, hiç görülmemiş tahminlerin gerçek
+    sonuçları. Kapıyı geçenler ve geçmeyenler AYRI raporlanır; hiçbir parametre
+    ayarlanmaz. Bu bir kanıt aracıdır, optimizasyon aracı değil.
+    """
+    try:
+        from app import ml_forward_test
+        return await ml_forward_test.forward_report(frozen_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

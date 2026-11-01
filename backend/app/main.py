@@ -938,23 +938,34 @@ _ml_train_lock = asyncio.Lock()
 
 
 async def run_ml_training(trigger: str = "scheduled"):
-    """ML modelini yeniden eğitir: candle + journal örnekleri -> artifact.
+    """ML modelini yeniden eğitir: candle + journal + spot geri beslemesi.
 
-    Journal satırları (doğrulanmış canlı tahmin sonuçları) ağırlıklı örnekle
-    eğitime girer -> model kendi hatalarından/başarılarından pekişir.
+    Üç örnek kaynağı:
+      • ham 5m mumlar (temel dağılım),
+      • journal (doğrulanmış canlı LLM tahminleri, pekiştirme ağırlıklı),
+      • spot paper-trade kapanmış işlemleri — modelin KENDİ strateji
+        sonuçları; bu olmadan sistem hangi stratejisinin çalıştığını öğrenemez.
     """
     async with _ml_train_lock:
         cutoff_ms = int((time.time() - config.ML_TRAIN_LOOKBACK_DAYS * 86400) * 1000)
         candles = await database.get_ml_training_candles(
             cutoff_ms, max_bars_per_symbol=config.ML_MAX_BARS_PER_SYMBOL)
         journal = await database.get_llm_forecasts(status="evaluated", limit=5000)
+        try:
+            spot_rows = await database.get_spot_training_samples(limit=5000)
+        except Exception as exc:
+            # Spot tablosu yoksa/okunamazsa eğitim durmasın — diğer iki kaynak yeter
+            print(f"[ML] spot geri besleme okunamadı, atlanıyor: {exc}", flush=True)
+            spot_rows = []
         # ML-07: önceki artifact'ın sembol kodları devralınır (cache'li
         # `load_model()` çağrısı; diskte yenilenen model görülür).
         previous_codes = (ml_forecast.load_model() or {}).get("symbol_codes")
-        meta = await asyncio.to_thread(ml_forecast.train, candles, journal, previous_codes)
+        meta = await asyncio.to_thread(
+            ml_forecast.train, candles, journal, previous_codes, spot_rows)
         await database.save_ml_model_artifact(meta)
         print(f"[ML] eğitim ({trigger}): {meta['sample_count']} örnek, "
-              f"{meta['symbol_count']} sembol, {meta['journal_sample_count']} journal örneği", flush=True)
+              f"{meta['symbol_count']} sembol, {meta['journal_sample_count']} journal, "
+              f"{meta.get('spot_sample_count', 0)} spot örneği", flush=True)
         return meta
 
 
