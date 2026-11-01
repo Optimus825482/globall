@@ -1,4 +1,5 @@
 "use client";
+import ChartAiScoreHeader from "../components/ChartAiScoreHeader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BİRLEŞİK GRAFİK SAYFASI (2026-10-14, kullanıcı isteği)
@@ -619,6 +620,7 @@ export default function ChartsPage() {
                     </div>
                 </div>
 
+                <ChartAiScoreHeader symbol={globalSymbol} assetType="SPOT" className="hidden lg:flex mr-2" />
                 {/* Sağ: yenile */}
                 <div className="flex items-center gap-2">
                     <button

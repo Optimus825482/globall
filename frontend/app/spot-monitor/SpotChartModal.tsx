@@ -1,4 +1,5 @@
 "use client";
+import ChartAiScoreHeader from "../components/ChartAiScoreHeader";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
@@ -911,6 +912,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
               </span>
             </div>
 
+            <ChartAiScoreHeader symbol={signal.symbol} assetType="SPOT" className="hidden sm:flex mx-2" />
             {/* Timeframe Seçicileri */}
             <div className="flex items-center bg-bunker-950 rounded-lg p-0.5 border border-bunker-800">
               {AVAILABLE_TFS.map((tf) => (

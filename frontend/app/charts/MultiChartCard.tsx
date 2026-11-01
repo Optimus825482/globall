@@ -1,4 +1,5 @@
 "use client";
+import ChartAiScoreHeader from "../components/ChartAiScoreHeader";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -896,6 +897,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${priceData.changePct >= 0 ? "bg-neon-green/15 text-neon-green border border-neon-green/30" : "bg-neon-red/15 text-neon-red border border-neon-red/30"}`}>
                                 {priceData.changePct >= 0 ? "+" : ""}{priceData.changePct.toFixed(2)}%
                             </span>
+                            <ChartAiScoreHeader symbol={config.symbol} assetType={forexMode ? "FOREX" : "SPOT"} compact className="hidden md:flex ml-1.5" />
                             {/* RSI-14 / ADX-14 (KULLANICI İSTEĞİ 2026-10-14: her zaman görünür; 2026-10-30: grafik üstündeki şerit yerine fiyatın yanında) */}
                             {momentum?.rsi14 != null && (
                                 <span className="text-[10px] text-bunker-muted whitespace-nowrap">RSI <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>

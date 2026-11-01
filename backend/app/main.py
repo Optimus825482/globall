@@ -331,6 +331,8 @@ async def require_admin_session(request: Request, call_next):
         "/api/forex/klines",
         "/api/v1/ai-trading-suite/status",
         "/api/ai-trading-suite/status",
+        "/api/v1/ai-trading-suite/chart-score",
+        "/api/ai-trading-suite/chart-score",
     }
     if request.method == "OPTIONS" or request.url.path in public_paths:
         return await call_next(request)
