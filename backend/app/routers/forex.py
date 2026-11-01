@@ -4888,6 +4888,22 @@ def _evaluate_signal_gate(
     if data_reason and data_reason not in reasons:
         reasons.append(data_reason)
 
+    # FinCon Episodik Negatif Hafıza & Boğa Tuzağı Kalkanı (XAUUSD, BTC, Forex):
+    try:
+        from app.ai_trading_suite import evaluate_trap_shield
+        _trap_res = evaluate_trap_shield(
+            symbol=sym_u,
+            indicators={
+                "rsi": float(cand.get("rsi") or 50.0),
+                "volume_ratio": float(cand.get("volume_ratio") or 1.0),
+                "adx": float(cand.get("adx") or 20.0),
+            }
+        )
+        if _trap_res.protective_veto:
+            reasons.append("fincon_trap_shield")
+    except Exception:
+        pass
+
     if news_bias and _AUTO_SETTINGS.news_bias_block_opposing:
         nb_dir = int(news_bias.get("dir", 0) or 0)
         if nb_dir != 0:

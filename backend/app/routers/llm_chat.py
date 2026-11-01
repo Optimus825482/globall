@@ -31,6 +31,12 @@ from app.ai_trading_suite.chat_tools import (
     execute_liquidation_radar,
     execute_fincon_trap_shield,
     execute_vectorbt_optimal_params,
+    execute_ofi_scalper,
+    execute_stat_arb_pairs,
+    execute_vwap_scalper,
+    execute_ttm_squeeze,
+    execute_avellaneda_stoikov,
+    execute_ppo_policy,
 )
 from app.routers.llm_position_tools import (LLM_POSITION_CONTEXT_TOOL, LLM_UPDATE_POSITION_TOOL,
                             LLM_CLOSE_POSITION_TOOL, LLM_SET_SYMBOL_GUARD_TOOL, LLM_REMOVE_SYMBOL_GUARD_TOOL,
@@ -2921,6 +2927,12 @@ async def symbol_analysis_llm_chat(symbol: str, payload: dict = None, request: R
         if name == "get_liquidation_radar": return await execute_liquidation_radar({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_fincon_trap_shield": return await execute_fincon_trap_shield({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_vectorbt_optimal_params": return await execute_vectorbt_optimal_params({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_ofi_scalper": return await execute_ofi_scalper({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_stat_arb_pairs": return await execute_stat_arb_pairs(args)
+        if name == "get_vwap_scalper": return await execute_vwap_scalper({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_ttm_squeeze": return await execute_ttm_squeeze({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_avellaneda_stoikov": return await execute_avellaneda_stoikov({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_ppo_policy": return await execute_ppo_policy({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_master_surge_prediction": return await _get_master_surge_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_ml_price_forecast": return await _get_ml_forecast_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_surge_learning_bias": return await _get_surge_bias_tool({**args, "symbol": args.get("symbol") or symbol})
@@ -3026,6 +3038,12 @@ def _tool_activity_summary(name: str, args: dict) -> str:
     if name == "get_liquidation_radar": return f"{symbol} için 25x/50x/100x likidasyon ve stop avı radarı taranıyor"
     if name == "get_fincon_trap_shield": return f"{symbol} için FinCon negatif epizodik hafıza ve tuzak kalkanı denetleniyor"
     if name == "get_vectorbt_optimal_params": return f"{symbol} için VectorBT hızlı parametre simülasyonu yapılıyor"
+    if name == "get_ofi_scalper": return f"{symbol} için Emir Defteri Dengesizliği (OFI) ve mikro-scalp taranıyor"
+    if name == "get_stat_arb_pairs": return "İstatistiki Arbitraj ve eşbütünleşme (Z-Skor) hesaplanıyor"
+    if name == "get_vwap_scalper": return f"{symbol} için Rolling VWAP standart sapma bantları taranıyor"
+    if name == "get_ttm_squeeze": return f"{symbol} için TTM Squeeze volatilite sıkışması ve kırılım taranıyor"
+    if name == "get_avellaneda_stoikov": return f"{symbol} için Avellaneda-Stoikov Pure Market Making kotasyonları hesaplanıyor"
+    if name == "get_ppo_policy": return f"{symbol} için PPO Reinforcement Learning dinamik TP/SL politikası optimize ediliyor"
     if name == "get_microstructure_snapshot": return f"{symbol} emir defteri dengesi okunuyor"
     if name == "get_regime_snapshot": return f"{symbol} piyasa rejimi belirleniyor"
     if name == "calculate_trade_economics": return f"{symbol} işlem ekonomisi hesaplanıyor · maliyet/kâr analizi"
@@ -3557,6 +3575,12 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
         if name == "get_liquidation_radar": return await execute_liquidation_radar(args)
         if name == "get_fincon_trap_shield": return await execute_fincon_trap_shield(args)
         if name == "get_vectorbt_optimal_params": return await execute_vectorbt_optimal_params(args)
+        if name == "get_ofi_scalper": return await execute_ofi_scalper(args)
+        if name == "get_stat_arb_pairs": return await execute_stat_arb_pairs(args)
+        if name == "get_vwap_scalper": return await execute_vwap_scalper(args)
+        if name == "get_ttm_squeeze": return await execute_ttm_squeeze(args)
+        if name == "get_avellaneda_stoikov": return await execute_avellaneda_stoikov(args)
+        if name == "get_ppo_policy": return await execute_ppo_policy(args)
         if name == "get_derivatives_intel": return await _get_derivatives_tool(args)
         if name == "get_macro_market_sentiment": return await _get_macro_sentiment_tool(args)
         if name == "get_orderbook_pressure": return await _get_orderbook_pressure_tool(args)
