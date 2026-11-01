@@ -329,6 +329,8 @@ async def require_admin_session(request: Request, call_next):
         "/api/forex/auto-paper/gate-snapshot/XAUUSD",
         "/api/forex/tickers",
         "/api/forex/klines",
+        "/api/v1/ai-trading-suite/status",
+        "/api/ai-trading-suite/status",
     }
     if request.method == "OPTIONS" or request.url.path in public_paths:
         return await call_next(request)
