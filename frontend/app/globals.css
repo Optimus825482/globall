@@ -976,14 +976,16 @@ html.light [class*="text-fuchsia-"] {
 
 /* 5. CANLI VE TEMİZ ROZETLER (BADGES) */
 html.light [class*="bg-emerald-500/"],
-html.light [class*="bg-emerald-400/"] {
+html.light [class*="bg-emerald-400/"],
+html.light [class*="bg-emerald-950"] {
   background-color: #ecfdf5 !important; /* açık zümrüt zemin */
   color: #047857 !important;            /* koyu zümrüt yazı */
   border-color: #a7f3d0 !important;     /* açık zümrüt kenarlık */
 }
 
 html.light [class*="bg-rose-500/"],
-html.light [class*="bg-rose-600/"] {
+html.light [class*="bg-rose-600/"],
+html.light [class*="bg-rose-950"] {
   background-color: #fef2f2 !important; /* açık kırmızı zemin */
   color: #b91c1c !important;            /* koyu kırmızı yazı */
   border-color: #fecaca !important;
