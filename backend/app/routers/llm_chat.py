@@ -20,7 +20,18 @@ from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database
 from app.state import market, analyzer
 from app.api_common import (_start_background, _fresh_public_price, _main_pg_pool, _llm_guard_block_reason)
-from app.ai_trading_suite.chat_tools import (AI_TRADING_SUITE_TOOLS, execute_ai_trading_suite_evaluation, execute_hedge_fund_council, execute_risk_chief_veto)
+from app.ai_trading_suite.chat_tools import (
+    AI_TRADING_SUITE_TOOLS,
+    execute_ai_trading_suite_evaluation,
+    execute_hedge_fund_council,
+    execute_risk_chief_veto,
+    execute_bull_bear_debate,
+    execute_riskfolio_allocation,
+    execute_freqai_drift,
+    execute_liquidation_radar,
+    execute_fincon_trap_shield,
+    execute_vectorbt_optimal_params,
+)
 from app.routers.llm_position_tools import (LLM_POSITION_CONTEXT_TOOL, LLM_UPDATE_POSITION_TOOL,
                             LLM_CLOSE_POSITION_TOOL, LLM_SET_SYMBOL_GUARD_TOOL, LLM_REMOVE_SYMBOL_GUARD_TOOL,
                             LLM_LIST_SYMBOL_GUARDS_TOOL)
@@ -2904,6 +2915,12 @@ async def symbol_analysis_llm_chat(symbol: str, payload: dict = None, request: R
         if name == "run_ai_trading_suite_evaluation": return await execute_ai_trading_suite_evaluation({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_hedge_fund_council_deliberation": return await execute_hedge_fund_council({**args, "symbol": args.get("symbol") or symbol})
         if name == "check_risk_chief_veto": return await execute_risk_chief_veto({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_bull_bear_debate": return await execute_bull_bear_debate({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_riskfolio_allocation": return await execute_riskfolio_allocation(args)
+        if name == "get_freqai_drift": return await execute_freqai_drift({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_liquidation_radar": return await execute_liquidation_radar({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_fincon_trap_shield": return await execute_fincon_trap_shield({**args, "symbol": args.get("symbol") or symbol})
+        if name == "get_vectorbt_optimal_params": return await execute_vectorbt_optimal_params({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_master_surge_prediction": return await _get_master_surge_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_ml_price_forecast": return await _get_ml_forecast_tool({**args, "symbol": args.get("symbol") or symbol})
         if name == "get_surge_learning_bias": return await _get_surge_bias_tool({**args, "symbol": args.get("symbol") or symbol})
@@ -3003,6 +3020,12 @@ def _tool_activity_summary(name: str, args: dict) -> str:
     if name == "run_ai_trading_suite_evaluation": return f"{symbol} için 10 AI ticaret mimarisi çalıştırılıyor (OctoBot, Freqtrade, Soros/Simons...)"
     if name == "get_hedge_fund_council_deliberation": return f"{symbol} için George Soros, Jim Simons ve Ray Dalio konseyi toplanıyor"
     if name == "check_risk_chief_veto": return f"{symbol} için TradingAgents & Freqtrade Risk Masası denetimi yapılıyor"
+    if name == "get_bull_bear_debate": return f"{symbol} için Boğa vs Ayı münazara protokolü yürütülüyor"
+    if name == "get_riskfolio_allocation": return "Riskfolio HRP ve CVaR portföy optimizasyonu hesaplanıyor"
+    if name == "get_freqai_drift": return f"{symbol} için FreqAI konsept kayması ve anomali taranıyor"
+    if name == "get_liquidation_radar": return f"{symbol} için 25x/50x/100x likidasyon ve stop avı radarı taranıyor"
+    if name == "get_fincon_trap_shield": return f"{symbol} için FinCon negatif epizodik hafıza ve tuzak kalkanı denetleniyor"
+    if name == "get_vectorbt_optimal_params": return f"{symbol} için VectorBT hızlı parametre simülasyonu yapılıyor"
     if name == "get_microstructure_snapshot": return f"{symbol} emir defteri dengesi okunuyor"
     if name == "get_regime_snapshot": return f"{symbol} piyasa rejimi belirleniyor"
     if name == "calculate_trade_economics": return f"{symbol} işlem ekonomisi hesaplanıyor · maliyet/kâr analizi"
@@ -3528,6 +3551,12 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
         if name == "run_ai_trading_suite_evaluation": return await execute_ai_trading_suite_evaluation(args)
         if name == "get_hedge_fund_council_deliberation": return await execute_hedge_fund_council(args)
         if name == "check_risk_chief_veto": return await execute_risk_chief_veto(args)
+        if name == "get_bull_bear_debate": return await execute_bull_bear_debate(args)
+        if name == "get_riskfolio_allocation": return await execute_riskfolio_allocation(args)
+        if name == "get_freqai_drift": return await execute_freqai_drift(args)
+        if name == "get_liquidation_radar": return await execute_liquidation_radar(args)
+        if name == "get_fincon_trap_shield": return await execute_fincon_trap_shield(args)
+        if name == "get_vectorbt_optimal_params": return await execute_vectorbt_optimal_params(args)
         if name == "get_derivatives_intel": return await _get_derivatives_tool(args)
         if name == "get_macro_market_sentiment": return await _get_macro_sentiment_tool(args)
         if name == "get_orderbook_pressure": return await _get_orderbook_pressure_tool(args)

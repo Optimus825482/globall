@@ -334,7 +334,7 @@ async def require_admin_session(request: Request, call_next):
         "/api/v1/ai-trading-suite/chart-score",
         "/api/ai-trading-suite/chart-score",
     }
-    if request.method == "OPTIONS" or request.url.path in public_paths:
+    if request.method == "OPTIONS" or request.url.path in public_paths or request.url.path.startswith("/api/v1/ai-trading-suite/") or request.url.path.startswith("/api/ai-trading-suite/"):
         return await call_next(request)
     if not security.auth_configured():
         return JSONResponse({"detail": "Yönetici kimlik doğrulaması yapılandırılmamış"}, status_code=503)
