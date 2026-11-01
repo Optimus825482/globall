@@ -66,7 +66,11 @@ type DashboardData = {
   };
   signals: SignalItem[];
   last_scan_time: number;
+  next_scan_time?: number;
+  scan_interval_sec?: number;
 };
+
+const TRADE_SIZE_PRESETS = [100, 200, 250, 300, 400, 500, 600, 750, 1000, 1250, 1500, 2000, 2500, 3000];
 
 type LiveStats = {
   trades: number;
@@ -114,6 +118,65 @@ export default function SpotMonitorPage() {
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<number | null>(null);
   const [closingAll, setClosingAll] = useState(false);
+
+  // İşlem Büyüklüğü (Alım Tutarı) Durumu
+  const [tradeSize, setTradeSize] = useState<number>(500);
+  const [isUpdatingSize, setIsUpdatingSize] = useState<boolean>(false);
+  const [sizeUpdatedMsg, setSizeUpdatedMsg] = useState<string | null>(null);
+
+  // Otomatik Tarama Geri Sayım Sayacı (60s döngü)
+  const [countdown, setCountdown] = useState<number>(60);
+
+  useEffect(() => {
+    if (data?.portfolio?.trade_size_try) {
+      setTradeSize(data.portfolio.trade_size_try);
+    }
+  }, [data?.portfolio?.trade_size_try]);
+
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now() / 1000;
+      if (data?.next_scan_time && data.next_scan_time > 0) {
+        const diff = Math.max(0, Math.floor(data.next_scan_time - now));
+        setCountdown(diff);
+      } else if (data?.last_scan_time && data.last_scan_time > 0) {
+        const next = data.last_scan_time + (data.scan_interval_sec || 60);
+        const diff = Math.max(0, Math.floor(next - now));
+        setCountdown(diff);
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [data?.next_scan_time, data?.last_scan_time, data?.scan_interval_sec]);
+
+  const handleTradeSizeChange = async (newSize: number) => {
+    const valid = Math.max(50, Math.min(50000, newSize));
+    setTradeSize(valid);
+    setIsUpdatingSize(true);
+    try {
+      await apiFetch(`/api/spot-monitor/trade-size?size=${valid}`, { method: "POST" });
+      setSizeUpdatedMsg(`İşlem tutarı ₺${valid.toLocaleString("tr-TR")} olarak ayarlandı.`);
+      setTimeout(() => setSizeUpdatedMsg(null), 3500);
+      await loadDashboard();
+    } catch (err) {
+      console.error("Alım tutarı güncelleme hatası:", err);
+    } finally {
+      setIsUpdatingSize(false);
+    }
+  };
+
+  const formatClock = (epochSec: number | undefined) => {
+    if (!epochSec || epochSec <= 0) return "--:--:--";
+    const d = new Date(epochSec * 1000);
+    return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  const formatCountdown = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
 
   // Tarih Filtresi
   type DatePreset = "ALL" | "TODAY" | "24H" | "7D" | "CUSTOM";
@@ -442,8 +505,8 @@ export default function SpotMonitorPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-8 max-w-7xl mx-auto">
-      {/* BAŞLIK & ŞİMDİ TARA KOKPİTİ */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-bunker-800 pb-5">
+      {/* BAŞLIK, GERİ SAYIM SAYACI & ŞİMDİ TARA KOKPİTİ */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-bunker-800 pb-5">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl md:text-2xl font-mono font-bold text-white tracking-tight">
@@ -456,7 +519,41 @@ export default function SpotMonitorPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* OTOMATİK TARAMA GERİ SAYIM SAYACI & KONTROL PANELİ */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Son ve Sonraki Tarama Saati */}
+          <div className="flex items-center gap-2.5 bg-bunker-900/90 border border-bunker-800 rounded-lg px-3 py-1.5 font-mono text-xs shadow-inner">
+            <div className="flex flex-col text-[10px] leading-tight">
+              <span className="text-bunker-muted">Son Tarama:</span>
+              <span className="text-slate-200 font-semibold">{formatClock(data?.last_scan_time)}</span>
+            </div>
+            <div className="h-6 w-px bg-bunker-800 mx-1" />
+            <div className="flex flex-col text-[10px] leading-tight">
+              <span className="text-bunker-muted">Sonraki Tarama:</span>
+              <span className="text-cyan-400 font-semibold">{formatClock(data?.next_scan_time)}</span>
+            </div>
+          </div>
+
+          {/* Geri Sayım Rozeti */}
+          <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border font-mono text-xs transition-colors ${
+            countdown <= 5 || scanning
+              ? "bg-amber-500/15 border-amber-500/40 text-amber-300 animate-pulse"
+              : countdown <= 15
+              ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
+              : "bg-bunker-900 border-bunker-800 text-slate-300"
+          }`}>
+            <span className={`inline-block w-2 h-2 rounded-full ${
+              countdown <= 5 || scanning ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"
+            }`} />
+            <span className="text-[11px] font-bold">
+              {scanning ? "⚡ Taranıyor..." : countdown <= 0 ? "⚡ Taranıyor..." : `⏱️ ${formatCountdown(countdown)}`}
+            </span>
+            <span className="text-[10px] text-bunker-muted hidden sm:inline">
+              (60s döngü)
+            </span>
+          </div>
+
+          {/* Şimdi Tara Butonu */}
           <Button
             variant="primary"
             onClick={handleScanNow}
@@ -525,19 +622,117 @@ export default function SpotMonitorPage() {
 
         {/* 4. İŞLEM BÜYÜKLÜĞÜ & POZİSYONDAKİ TUTAR */}
         <Card className="p-4 bg-bunker-900/90 border-bunker-800">
-          <p className="text-[11px] font-mono uppercase text-bunker-muted">İşlem Büyüklüğü</p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-mono uppercase text-bunker-muted">İşlem Büyüklüğü</p>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono">
+              ₺{(tradeSize || 500).toLocaleString("tr-TR")} Ayarlı
+            </span>
+          </div>
           <div className="flex items-baseline gap-2 mt-1.5">
             <span className="text-2xl font-bold font-mono text-amber-400">
-              ₺300,00
+              ₺{(tradeSize || 500).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-2 pt-2 border-t border-bunker-800/80 flex items-center justify-between text-[11px] font-mono">
             <span className="text-bunker-muted">Pozisyondaki:</span>
             <span className="text-amber-300 font-medium">
-              {data?.portfolio.open_positions_count || 0} Aktif (₺{(data?.portfolio.in_positions_try ?? ((data?.portfolio.open_positions_count || 0) * 300)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })})
+              {data?.portfolio.open_positions_count || 0} Aktif (₺{(data?.portfolio.in_positions_try ?? ((data?.portfolio.open_positions_count || 0) * tradeSize)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })})
             </span>
           </div>
         </Card>
+      </div>
+
+      {/* İŞLEM / ALIM TUTARI AYARLAYICI (YATAY SCROLL & RANGE SLIDER) */}
+      <div className="rounded-xl border border-bunker-800 bg-gradient-to-r from-bunker-900/90 via-bunker-900/70 to-bunker-950 p-4 shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-bunker-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-base font-bold">
+              ₺
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-semibold text-white tracking-wide">
+                  Spot Taramalarda Alım Büyüklüğü
+                </span>
+                <Badge tone="warning" className="font-mono text-[10px]">
+                  Aktif: ₺{(tradeSize || 500).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+                </Badge>
+                {sizeUpdatedMsg && (
+                  <span className="text-[11px] font-mono text-emerald-400 animate-pulse font-medium">
+                    ✓ {sizeUpdatedMsg}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-bunker-muted mt-0.5">
+                Her yeni sinyal için tahsis edilecek simülasyon sermayesi. 5.000 ₺ kasa ile maks{" "}
+                <span className="text-amber-300 font-bold">{Math.floor(5000 / Math.max(1, tradeSize))}</span> eşzamanlı pozisyon açılabilir.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <span className="text-xs font-mono text-bunker-muted">Özel Tutar:</span>
+            <div className="relative">
+              <input
+                type="number"
+                min="50"
+                max="5000"
+                step="50"
+                value={tradeSize}
+                onChange={(e) => handleTradeSizeChange(Math.max(50, Number(e.target.value)))}
+                className="w-24 pl-5 pr-2 py-1 bg-bunker-950 border border-bunker-700 rounded text-right font-mono text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500"
+              />
+              <span className="absolute left-2 top-1 text-xs text-bunker-muted font-mono">₺</span>
+            </div>
+          </div>
+        </div>
+
+        {/* YATAY SLIDER VE HIZLI SEÇİM BUTONLARI (YATAY SCROLLABLE STRIP) */}
+        <div className="pt-3 space-y-3">
+          {/* Range Slider */}
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-bunker-muted">₺100</span>
+            <input
+              type="range"
+              min="100"
+              max="2500"
+              step="50"
+              value={tradeSize}
+              onChange={(e) => handleTradeSizeChange(Number(e.target.value))}
+              disabled={isUpdatingSize}
+              className="flex-1 h-2 bg-bunker-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+            />
+            <span className="text-[10px] font-mono text-bunker-muted">₺2.500</span>
+          </div>
+
+          {/* Yatay Scrollable Buton Şeridi */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-bunker-800 scrollbar-track-transparent">
+            <span className="text-[11px] font-mono text-bunker-muted whitespace-nowrap mr-1">
+              Hızlı Seçim:
+            </span>
+            {TRADE_SIZE_PRESETS.map((sz) => {
+              const isSelected = Math.abs(tradeSize - sz) < 1;
+              const isRecommended = sz === 500;
+              return (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => handleTradeSizeChange(sz)}
+                  className={`px-2.5 py-1 rounded text-xs font-mono whitespace-nowrap transition-all border ${
+                    isSelected
+                      ? "bg-amber-500 text-bunker-950 border-amber-400 font-bold shadow-sm shadow-amber-500/20"
+                      : isRecommended
+                      ? "bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20"
+                      : "bg-bunker-800/80 text-bunker-muted border-bunker-700/60 hover:text-white hover:border-bunker-600"
+                  }`}
+                >
+                  ₺{sz.toLocaleString("tr-TR")}
+                  {isRecommended && <span className="ml-1 text-[9px] opacity-80">(Önerilen)</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* AKTİF TARAMA STRATEJİLERİ (canlı sistemden /strategies ile senkron) */}
@@ -558,7 +753,7 @@ export default function SpotMonitorPage() {
           </div>
           <p className="text-[10px] font-mono text-bunker-muted">
             {strategies?.symbols_count ?? 18} sembol × {strategies?.timeframes.length ?? 3} TF
-            {" · "}₺{strategies?.trade_size_try ?? 300}/işlem
+            {" · "}₺{tradeSize ?? strategies?.trade_size_try ?? 500}/işlem
             {" · "}Kom. %{((strategies?.commission_rate ?? 0.0004) * 2 * 100).toFixed(2)} round-trip
           </p>
         </div>

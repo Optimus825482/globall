@@ -1,12 +1,17 @@
 """API endpoints for Binance TR Spot Monitor & Simulator."""
 from fastapi import APIRouter, HTTPException, BackgroundTasks
+from pydantic import BaseModel, Field
+from typing import Optional
 from app import spot_monitor
 
 router = APIRouter(prefix="/api/spot-monitor", tags=["spot-monitor"])
 
+class TradeSizePayload(BaseModel):
+    size: float = Field(..., ge=50.0, le=50000.0, description="Alım/işlem büyüklüğü (TRY)")
+
 @router.get("/dashboard")
 async def get_dashboard():
-    """Anlık spot sinyalleri, başarı yüzdeleri ve 5.000 TL portföy simülasyonunu döndürür."""
+    """Anlık spot sinyalleri, başarı yüzdeleri ve portföy simülasyonunu döndürür."""
     try:
         return await spot_monitor.get_spot_monitor_dashboard()
     except Exception as exc:
@@ -28,6 +33,14 @@ async def toggle_strategy(code: str, enabled: bool):
         return await spot_monitor.set_strategy_enabled(code, enabled)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.post("/trade-size")
+async def update_trade_size(size: float):
+    """Spot Monitor alım/işlem büyüklüğünü (TRY) günceller."""
+    try:
+        return await spot_monitor.set_trade_size(size)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

@@ -21,7 +21,9 @@ logger = logging.getLogger("scalper.spot_monitor")
 
 # Simülasyon Sabitleri
 INITIAL_PORTFOLIO_TRY = 5000.0
-TRADE_SIZE_TRY = 300.0
+TRADE_SIZE_TRY = 500.0
+_next_scan_time = 0.0
+_scan_interval_sec = 60
 COMMISSION_RATE = 0.0004 # %0.04 Maker/Taker
 
 # Taranacak ana ve hacimli semboller
@@ -139,6 +141,21 @@ async def _ensure_strategy_settings(conn) -> None:
     """)
     rows = await conn.fetch("SELECT strategy_code, enabled FROM spot_monitor_strategy_settings")
     _strategy_enabled.update({r["strategy_code"]: bool(r["enabled"]) for r in rows})
+    
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS spot_monitor_general_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    ts_row = await conn.fetchrow("SELECT setting_value FROM spot_monitor_general_settings WHERE setting_key = 'trade_size_try'")
+    if ts_row:
+        try:
+            global TRADE_SIZE_TRY
+            TRADE_SIZE_TRY = float(ts_row["setting_value"])
+        except Exception:
+            pass
     _strategy_settings_loaded = True
 
 
@@ -164,6 +181,30 @@ async def set_strategy_enabled(code: str, enabled: bool) -> dict:
         await conn.close()
     _strategy_enabled[code] = enabled
     return {"strategy_code": code, "enabled": enabled}
+
+
+async def set_trade_size(amount: float) -> dict:
+    """Spot Monitor işlem/alım büyüklüğünü (TRY) günceller ve kalıcı kaydeder."""
+    global TRADE_SIZE_TRY
+    val = round(max(50.0, min(50000.0, float(amount))), 2)
+    TRADE_SIZE_TRY = val
+    conn = await get_db_conn()
+    try:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS spot_monitor_general_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            INSERT INTO spot_monitor_general_settings (setting_key, setting_value, updated_at)
+            VALUES ('trade_size_try', $1, now())
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = now()
+        """, str(val))
+    finally:
+        await conn.close()
+    return {"success": True, "trade_size_try": TRADE_SIZE_TRY}
 
 _monitor_running = False
 _last_scan_time = 0.0
@@ -270,7 +311,7 @@ async def get_active_strategies() -> dict:
 
 async def run_single_scan():
     """Tüm sembollerde 3 zaman diliminde KDJ, SuperTrend ve EMA50 taraması yapar."""
-    global _cached_results, _last_scan_time
+    global _cached_results, _last_scan_time, _next_scan_time
     start_ts = time.time()
     discovered_signals = []
 
@@ -541,6 +582,7 @@ async def run_single_scan():
         await conn.close()
 
     _last_scan_time = time.time()
+    _next_scan_time = _last_scan_time + _scan_interval_sec
     return len(discovered_signals)
 
 async def update_open_signals_pnl(conn):
@@ -598,21 +640,22 @@ async def update_open_signals_pnl(conn):
         exit_price = None
         exit_time = None
         net_try = 0.0
-        comm_try = row["commission_try"] or (TRADE_SIZE_TRY * COMMISSION_RATE * 2)
+        pos_size = float(row["trade_size_try"] or TRADE_SIZE_TRY)
+        comm_try = row["commission_try"] or (pos_size * COMMISSION_RATE * 2)
 
         # TP Hedefine Ulaştı mı?
         if curr_p >= target_p:
             status = "WIN_TP"
             exit_price = target_p
             exit_time = now_utc
-            gross_profit = TRADE_SIZE_TRY * ((target_p - entry_p) / entry_p)
+            gross_profit = pos_size * ((target_p - entry_p) / entry_p)
             net_try = gross_profit - comm_try
 
         # Stop-Loss veya Takipçi Kâr Stop Seviyesine İndi mi?
         elif curr_p <= stop_p:
             exit_price = stop_p
             exit_time = now_utc
-            gross_diff = TRADE_SIZE_TRY * ((stop_p - entry_p) / entry_p)
+            gross_diff = pos_size * ((stop_p - entry_p) / entry_p)
             net_try = gross_diff - comm_try
             if stop_p > entry_p:
                 status = "WIN_TRAILING"  # Kârla / Başabaşla kapandı
@@ -623,7 +666,7 @@ async def update_open_signals_pnl(conn):
         elif (now_utc - row["detected_at"]).total_seconds() > (3600 if row["timeframe"] == "5m" else (9000 if row["timeframe"] == "15m" else 21600)):
             exit_price = curr_p
             exit_time = now_utc
-            gross_ret = TRADE_SIZE_TRY * (pnl_pct / 100.0)
+            gross_ret = pos_size * (pnl_pct / 100.0)
             net_try = gross_ret - comm_try
             if net_try > 0:
                 status = "WIN_EXPIRED"
@@ -687,9 +730,10 @@ async def get_spot_monitor_dashboard():
             curr_p = prices.get(r["symbol"], r["entry_price"])
             pnl_pct = ((curr_p - r["entry_price"]) / r["entry_price"]) * 100.0 if r["status"] == "OPEN" else (r["pnl_pct"] or 0.0)
             
+            pos_sz = float(r["trade_size_try"] or TRADE_SIZE_TRY)
             if r["status"] == "OPEN":
-                comm = r["commission_try"] or (TRADE_SIZE_TRY * COMMISSION_RATE * 2)
-                item_net = (TRADE_SIZE_TRY * (pnl_pct / 100.0)) - comm
+                comm = r["commission_try"] or (pos_sz * COMMISSION_RATE * 2)
+                item_net = (pos_sz * (pnl_pct / 100.0)) - comm
                 unrealized_pnl += item_net
 
             det = json.loads(r["details"]) if isinstance(r["details"], str) else (r["details"] or {})
@@ -708,7 +752,7 @@ async def get_spot_monitor_dashboard():
                 "status": r["status"],
                 "pnl_pct": round(pnl_pct, 2),
                 "mfe_pct": round(r["mfe_pct"] or 0.0, 2),
-                "net_pnl_try": round(r["net_pnl_try"] or 0.0, 2) if r["status"] != "OPEN" else round((TRADE_SIZE_TRY * (pnl_pct / 100.0)) - (r["commission_try"] or 0.24), 2),
+                "net_pnl_try": round(r["net_pnl_try"] or 0.0, 2) if r["status"] != "OPEN" else round((pos_sz * (pnl_pct / 100.0)) - (r["commission_try"] or (pos_sz * COMMISSION_RATE * 2)), 2),
                 "detected_at": r["detected_at"].isoformat() if r["detected_at"] else None,
                 "exit_time": r["exit_time"].isoformat() if r["exit_time"] else None,
                 "details": det,
@@ -725,8 +769,10 @@ async def get_spot_monitor_dashboard():
         portfolio_growth_pct = ((total_portfolio_try - INITIAL_PORTFOLIO_TRY) / INITIAL_PORTFOLIO_TRY) * 100.0
 
         open_positions_count = len(open_signals)
-        in_positions_try = open_positions_count * TRADE_SIZE_TRY
+        in_positions_try = sum(float(r["trade_size_try"] or TRADE_SIZE_TRY) for r in open_signals)
         free_balance_try = max(0.0, (INITIAL_PORTFOLIO_TRY + realized_pnl) - in_positions_try)
+        now_ts = time.time()
+        next_ts = _next_scan_time if _next_scan_time > now_ts else (_last_scan_time + _scan_interval_sec if _last_scan_time > 0 else now_ts + _scan_interval_sec)
 
         return {
             "portfolio": {
@@ -749,7 +795,9 @@ async def get_spot_monitor_dashboard():
                 "win_rate_pct": round(win_rate, 1)
             },
             "signals": active_items,
-            "last_scan_time": _last_scan_time
+            "last_scan_time": _last_scan_time,
+            "next_scan_time": next_ts,
+            "scan_interval_sec": _scan_interval_sec
         }
     finally:
         await conn.close()
