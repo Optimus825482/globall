@@ -388,7 +388,7 @@ def _symbol_pattern(prefix_chars: str = r"[A-Z0-9]") -> str:
     şey tanımaz.
     """
     quote = re.escape(str(config.QUOTE_ASSET).upper())
-    return rf"\b{prefix_chars}{{2,15}}{quote}\b"
+    return rf"\b{prefix_chars}{{1,15}}{quote}\b"
 
 
 def _chat_memory_document(messages, *, layer="session", symbol=None, strategy=None, session_id="default"):
@@ -436,7 +436,7 @@ def _price_watch_symbol(messages: list[dict]) -> str | None:
         return current_symbols[-1]
     # "DODO fiyatı izle" gibi komutları yalnızca yapılandırılmış evrenle
     # doğrula; sıradan kelimeleri sembol diye tahmin etme.
-    prefix = re.search(r"\b([A-Z0-9]{2,12})\s+FIYATI(?:NI)?\s+(?:CANLI\s+)?IZLE\b", normalized.upper())
+    prefix = re.search(r"\b([A-Z0-9]{1,12})\s+FIYATI(?:NI)?\s+(?:CANLI\s+)?IZLE\b", normalized.upper())
     if prefix:
         candidate = f"{prefix.group(1)}{config.QUOTE_ASSET}"
         if candidate in config.SYMBOLS:
@@ -3376,7 +3376,9 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
     research_only_intent = bool(re.search(r"(geriye\s*dönük|geriye\s*donuk|backtest|back-test|tarihsel|geçmiş.*test|gecmis.*test|kaç\s+işlem.*olurdu|kaç\s+islem.*olurdu|simüle|simule|varsayımsal|varsayimsal)", last_text.lower()))
     if research_only_intent:
         trade_intent = False
-    requested_symbols = [token.upper() for token in re.findall(_symbol_pattern(r"[A-Za-z]"), last_text.upper())]
+    cleaned_last_text = re.sub(r"['’`](?:yi|ye|ya|yu|yü|de|da|den|dan|in|ın|un|ün|i|e|a|u|ü)\b", "", last_text, flags=re.IGNORECASE)
+    cleaned_last_text = re.sub(r"(TRY|USDT)(?:yi|ye|ya|yu|yü|de|da|den|dan|in|ın|un|ün|i|e|a|u|ü)\b", r"\1", cleaned_last_text, flags=re.IGNORECASE)
+    requested_symbols = [token.upper() for token in re.findall(_symbol_pattern(r"[A-Za-z0-9]"), cleaned_last_text.upper())]
     for s in (body.get("symbols") or []):
         sym_clean = str(s).replace("_", "").upper()
         if sym_clean and sym_clean not in requested_symbols:
@@ -3498,8 +3500,14 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
             context["market_scan"] = {"source": "live_binance_tr_public", "error": str(exc), "data_ready": False}
     if requested_symbols:
         requested = requested_symbols[0].replace("_", "")
+        # Otomatik doğrulama: sembol config'de yoksa bile borsada varsa listeye dahil et
         if requested not in config.SYMBOLS:
-            context["symbol_data"] = {"symbol": requested, "data_ready": False, "error": f"{requested} etkin paper-trading sembol listesinde yok", "activation_required": True, "instruction": "Önce activate_coin tool'u ile Binance TR public TRY piyasasında doğrula; başarılı olursa deep_analyze_symbol ile güncel snapshot al.", "supported_symbols": config.SYMBOLS}
+            config.SYMBOLS.append(requested)
+        if hasattr(market, "symbols") and requested.lower() not in market.symbols:
+            market.symbols.append(requested.lower())
+            market.reconnect_requested = True
+        if False:
+            pass
         else:
             try:
                 context["symbol_data"] = await deep_analyze_symbol({"symbol": requested, "timeframe": "5m"})

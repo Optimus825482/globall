@@ -178,7 +178,7 @@ class Config:
             "LINKTRY", "NEARTRY", "APTTRY", # Güçlü Projeler (Kırılım avcıları)
             "ARBTRY", "OPTRY", "SUITRY",    # Yeni Nesil L2'ler (Hızlı Hareket)
             "DOGETRY", "LTCTRY", "BNBTRY",  # Memecoinler (Hacim Patlaması Kralları)
-            "INJTRY", "WLDTRY", "DOTTRY",   # Yüksek Volatilite (Agresif Skalp)
+            "INJTRY", "WLDTRY", "DOTTRY", "GTRY",   # Yüksek Volatilite (Agresif Skalp)
         ],
         # Global'de aynı 18 majör, TRY → USDT. Taban varlıklar birebir aynı
         # seçildi ki iki örnek arasındaki davranış farkı yalnız borsada
@@ -189,7 +189,7 @@ class Config:
             "LINKUSDT", "NEARUSDT", "APTUSDT",
             "ARBUSDT", "OPUSDT", "SUIUSDT",
             "DOGEUSDT", "LTCUSDT", "BNBUSDT",
-            "INJUSDT", "WLDUSDT", "DOTUSDT",
+            "INJUSDT", "WLDUSDT", "DOTUSDT", "GUSDT",
         ],
     }
     _env_symbols = [s.strip().upper() for s in os.getenv("SYMBOLS", "").split(",") if s.strip()]
