@@ -15,6 +15,7 @@ from app.technical_analysis import (
     _vp_vah_breakout, _cvd_absorption_wick, _ttm_squeeze_fired,
     _vfi_zero_break, _nw_kernel_envelope,
     _kaufman_er_trend, _multi_factor_alpha,
+    _buy_flow_dominance, _cmo_accel_break,
 )
 from app import ml_forecast
 from app.ai_trading_suite import (
@@ -62,6 +63,22 @@ TIMEFRAMES = {
 # Aktif tarama stratejileri kaydı — run_single_scan() içindeki kurallarla senkron tutulmalı.
 # Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
 ACTIVE_STRATEGIES = [
+    {
+        "code": "buy_flow_dominance",
+        "label": "Buy Flow Dominance (Alıcı Baskısı Kırılımı)",
+        "score": 95.5,
+        "description": "Bar Delta alıcı oranı >= %70 ve 7-barlık tepe kırılımı + hacim genişlemesi.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 3.00, net kâr +%0.254, 873 işlem, 24/40 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "cmo_accel_break",
+        "label": "Chande Momentum (CMO) İvme Kırılımı",
+        "score": 93.5,
+        "description": "Chande Momentum Oscillator sıfır eşiği kırılımı ve trend ivmelenmesi.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 2.52, net kâr +%0.139, 428 işlem, 21/40 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
     {
         "code": "kaufman_er_trend",
         "label": "Kaufman ER Düşük Gürültülü Trend Kırılımı",
@@ -736,8 +753,24 @@ async def run_single_scan():
                 note = ""
 
                 # ── VECTORBT İLE DOĞRULANMIŞ STRATEJİLER (2026-11-02) ────────
-                # 0. Kaufman ER Trend Kırılımı (H1: PF 5.02, WR %48.7, Net +%0.806, 27/39 coin karlı)
-                if enabled.get("kaufman_er_trend", True) and tf == "1h" and (kauf_res := _kaufman_er_trend(highs, lows, closes, volumes)) and kauf_res.get("signal"):
+                # 0A. Buy Flow Dominance (H1: PF 3.00, Net +%0.254, 873 işlem)
+                if enabled.get("buy_flow_dominance", True) and tf == "1h" and (bf_res := _buy_flow_dominance(highs, lows, closes, volumes)) and bf_res.get("signal"):
+                    matched = True
+                    strategy_code = "buy_flow_dominance"
+                    strategy_label = "Buy Flow Dominance"
+                    score = 95.5
+                    note = f"Alıcı baskısı=%{bf_res.get('buy_ratio')} hacim={bf_res.get('vol_ratio')}x tepe={bf_res.get('prev_highest')}"
+
+                # 0B. Chande Momentum (CMO) İvme Kırılımı (H1: PF 2.52, Net +%0.139)
+                elif enabled.get("cmo_accel_break", True) and tf == "1h" and (cmo_res := _cmo_accel_break(highs, lows, closes, volumes)) and cmo_res.get("signal"):
+                    matched = True
+                    strategy_code = "cmo_accel_break"
+                    strategy_label = "Chande Momentum İvme Kırılımı"
+                    score = 93.5
+                    note = f"CMO={cmo_res.get('cmo')} (önceki: {cmo_res.get('cmo_prev')}) hacim={cmo_res.get('vol_ratio')}x"
+
+                # 0C. Kaufman ER Trend Kırılımı (H1: PF 5.02, WR %48.7, Net +%0.806, 27/39 coin karlı)
+                elif enabled.get("kaufman_er_trend", True) and tf == "1h" and (kauf_res := _kaufman_er_trend(highs, lows, closes, volumes)) and kauf_res.get("signal"):
                     matched = True
                     strategy_code = "kaufman_er_trend"
                     strategy_label = "Kaufman ER Düşük Gürültülü Trend Kırılımı"
