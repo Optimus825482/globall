@@ -15,8 +15,8 @@ export default {
           muted: "#93a7c6"
         },
         neon: {
-          green: "#00f0ff",
-          greenHover: "#38bdf8",
+          green: "#00e676",
+          greenHover: "#10b981",
           red: "#ff3366",
           yellow: "#f0b90b",
           cyan: "#00f0ff",

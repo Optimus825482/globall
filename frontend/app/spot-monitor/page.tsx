@@ -584,8 +584,8 @@ export default function SpotMonitorPage() {
   // zeminde soluk kalıyordu; ürünün kendi neon tokenları hem daha okunur
   // hem DESIGN.md'de tanımlı.
   const pnlColor = (val: number) => {
-    if (val > 0) return "text-neon-cyan";
-    if (val < 0) return "text-neon-red";
+    if (val > 0) return "text-emerald-400";
+    if (val < 0) return "text-rose-400";
     return "text-slate-300";
   };
 
@@ -1184,7 +1184,7 @@ export default function SpotMonitorPage() {
                             OctoBot %{s.octobot_consensus_pct || s.details?.octobot_consensus_pct || 85}
                           </span>
                           {(s.qlib_score || s.details?.qlib_score) && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-bunker-800 text-neon-cyan">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-bunker-800 text-emerald-400 border border-emerald-800/40">
                               Qlib {s.qlib_score || s.details?.qlib_score}
                             </span>
                           )}
@@ -1215,7 +1215,7 @@ export default function SpotMonitorPage() {
                           const up = v.includes("BULLISH");
                           const down = v.includes("BEARISH") || v.includes("PANIC");
                           const tone = up
-                            ? "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/25"
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold"
                             : down
                             ? "bg-neon-yellow/10 text-neon-yellow border border-neon-yellow/25"
                             : "bg-bunker-800 text-bunker-muted border border-bunker-700";
@@ -1232,10 +1232,17 @@ export default function SpotMonitorPage() {
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        AÇIK
-                      </span>
+                      {s.pnl_pct > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          KÂRDA (%{s.pnl_pct.toFixed(2)})
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          AÇIK
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <button
@@ -1894,10 +1901,10 @@ export default function SpotMonitorPage() {
                         <td className="py-2 pr-3 text-bunker-muted">{pos.weight.toFixed(3)}</td>
                         <td className="py-2 pr-3 text-slate-300">{pos.entry_price}</td>
                         <td className="py-2 pr-3 text-slate-300">{pos.current_price}</td>
-                        <td className={`py-2 pr-3 font-bold ${pos.pnl_pct >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                        <td className={`py-2 pr-3 font-bold ${pos.pnl_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {pos.pnl_pct >= 0 ? "+" : ""}{pos.pnl_pct.toFixed(2)}%
                         </td>
-                        <td className={`py-2 font-bold ${pos.pnl_try >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                        <td className={`py-2 font-bold ${pos.pnl_try >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {pos.pnl_try >= 0 ? "+" : ""}{pos.pnl_try.toFixed(2)}
                         </td>
                       </tr>
@@ -1925,7 +1932,7 @@ export default function SpotMonitorPage() {
                   {(tsmom?.targets?.symbols || []).map((row) => (
                     <tr key={row.symbol} className="border-b border-bunker-800/50">
                       <td className="py-2 pr-3 text-slate-200 whitespace-nowrap">{row.symbol}</td>
-                      <td className={`py-2 pr-3 whitespace-nowrap ${(row.ret_30_pct ?? 0) >= 0 ? "text-neon-cyan" : "text-neon-red"}`}>
+                      <td className={`py-2 pr-3 whitespace-nowrap ${(row.ret_30_pct ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                         {row.ret_30_pct != null ? `${row.ret_30_pct >= 0 ? "+" : ""}${row.ret_30_pct.toFixed(2)}%` : "—"}
                       </td>
                       <td className="py-2 pr-3 text-bunker-muted whitespace-nowrap">
