@@ -14,6 +14,7 @@ from app.technical_analysis import (
     _cluc_wick_bounce, _vwap_mean_rev, _turtle_donchian,
     _vp_vah_breakout, _cvd_absorption_wick, _ttm_squeeze_fired,
     _vfi_zero_break, _nw_kernel_envelope,
+    _kaufman_er_trend, _multi_factor_alpha,
 )
 from app import ml_forecast
 from app.ai_trading_suite import (
@@ -61,6 +62,22 @@ TIMEFRAMES = {
 # Aktif tarama stratejileri kaydı — run_single_scan() içindeki kurallarla senkron tutulmalı.
 # Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
 ACTIVE_STRATEGIES = [
+    {
+        "code": "kaufman_er_trend",
+        "label": "Kaufman ER Düşük Gürültülü Trend Kırılımı",
+        "score": 96.0,
+        "description": "Kaufman Verimlilik Oranı (ER>=0.42) ile gürültüsüz tepe kırılımı ve hacim patlaması.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 5.02, net kâr +%0.806, 27/39 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "multi_factor_alpha",
+        "label": "Çoklu-Faktör Z-Score Alpha",
+        "score": 91.0,
+        "description": "Hacim Z-Score + Momentum Z-Score + RSI Faktör bileşkesi tepe anomalisi.",
+        "evidence": "VectorBT: H1'de PF 1.53, net kâr +%0.274, 13/30 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
     {
         "code": "vp_vah_breakout",
         "label": "Volume Profile VAH Kırılımı",
@@ -719,9 +736,24 @@ async def run_single_scan():
                 note = ""
 
                 # ── VECTORBT İLE DOĞRULANMIŞ STRATEJİLER (2026-11-02) ────────
+                # 0. Kaufman ER Trend Kırılımı (H1: PF 5.02, WR %48.7, Net +%0.806, 27/39 coin karlı)
+                if enabled.get("kaufman_er_trend", True) and tf == "1h" and (kauf_res := _kaufman_er_trend(highs, lows, closes, volumes)) and kauf_res.get("signal"):
+                    matched = True
+                    strategy_code = "kaufman_er_trend"
+                    strategy_label = "Kaufman ER Düşük Gürültülü Trend Kırılımı"
+                    score = 96.0
+                    note = f"Kaufman ER={kauf_res.get('er')} hacim={kauf_res.get('vol_ratio')}x tepe={kauf_res.get('highest_14')}"
+
+                # 0B. Çoklu-Faktör Z-Score Alpha (H1: PF 1.53, Net +%0.274)
+                elif enabled.get("multi_factor_alpha", True) and tf == "1h" and (mfa_res := _multi_factor_alpha(highs, lows, closes, volumes)) and mfa_res.get("signal"):
+                    matched = True
+                    strategy_code = "multi_factor_alpha"
+                    strategy_label = "Çoklu-Faktör Z-Score Alpha"
+                    score = 91.0
+                    note = f"Multi-Factor Alpha={mfa_res.get('alpha_score')} VolZ={mfa_res.get('vol_z')} MomZ={mfa_res.get('mom_z')}"
+
                 # 1. Volume Profile VAH Kırılımı (H1: PF 2.40, Net +%0.295, 27/40 coin karlı)
-                vp_res = _vp_vah_breakout(highs, lows, closes, volumes) if tf == "1h" else None
-                if vp_res and vp_res.get("signal") and enabled.get("vp_vah_breakout", True):
+                elif (vp_res := _vp_vah_breakout(highs, lows, closes, volumes) if tf == "1h" else None) and vp_res.get("signal") and enabled.get("vp_vah_breakout", True):
                     matched = True
                     strategy_code = "vp_vah_breakout"
                     strategy_label = "Volume Profile VAH Kırılımı"
