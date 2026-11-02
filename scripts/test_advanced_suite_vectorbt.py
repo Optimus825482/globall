@@ -290,6 +290,7 @@ async def load_candles(symbols: int, days: int, timeframe: str = "1h", min_vol: 
         if len(res_df) < 100:
             continue
         resampled[sym] = {
+            "O": res_df["open"].to_numpy(),
             "H": res_df["high"].to_numpy(),
             "L": res_df["low"].to_numpy(),
             "C": res_df["close"].to_numpy(),

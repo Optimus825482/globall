@@ -16,6 +16,7 @@ from app.technical_analysis import (
     _vfi_zero_break, _nw_kernel_envelope,
     _kaufman_er_trend, _multi_factor_alpha,
     _buy_flow_dominance, _cmo_accel_break,
+    _dual_vol_break, _gk_vol_expansion,
 )
 from app import ml_forecast
 from app.ai_trading_suite import (
@@ -63,6 +64,22 @@ TIMEFRAMES = {
 # Aktif tarama stratejileri kaydı — run_single_scan() içindeki kurallarla senkron tutulmalı.
 # Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
 ACTIVE_STRATEGIES = [
+    {
+        "code": "dual_vol_break",
+        "label": "Dual Volatilite (GK+Parkinson) Patlama Kırılımı",
+        "score": 97.0,
+        "description": "Garman-Klass ve Parkinson oynaklığının eşzamanlı >%20 fırlaması ve 10-bar tepe kırılımı.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 7.60, WR %55.2, net kâr +%1.925, 20/33 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "gk_vol_expansion",
+        "label": "Garman-Klass Sıkışma Sonrası Tepe Kırılımı",
+        "score": 92.5,
+        "description": "GK oynaklık taban sıkışması (<%30 persentil) ardından 15-bar tepe kırılımı ve hacim artışı.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 1.89, net kâr +%0.206, 18/39 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
     {
         "code": "buy_flow_dominance",
         "label": "Buy Flow Dominance (Alıcı Baskısı Kırılımı)",
@@ -753,8 +770,24 @@ async def run_single_scan():
                 note = ""
 
                 # ── VECTORBT İLE DOĞRULANMIŞ STRATEJİLER (2026-11-02) ────────
+                # 00. Dual Volatilite Patlama Kırılımı (H1: PF 7.60, WR %55.2, Net +%1.925)
+                if enabled.get("dual_vol_break", True) and tf == "1h" and (dv_res := _dual_vol_break(opens, highs, lows, closes)) and dv_res.get("signal"):
+                    matched = True
+                    strategy_code = "dual_vol_break"
+                    strategy_label = "Dual Volatilite Patlama Kırılımı"
+                    score = 97.0
+                    note = f"Dual Vol GK={dv_res.get('gk_vol')} Park={dv_res.get('p_vol')} tepe={dv_res.get('highest_10')}"
+
+                # 00B. Garman-Klass Sıkışma Tepe Kırılımı (H1: PF 1.89, Net +%0.206)
+                elif enabled.get("gk_vol_expansion", True) and tf == "1h" and (gk_res := _gk_vol_expansion(opens, highs, lows, closes, volumes)) and gk_res.get("signal"):
+                    matched = True
+                    strategy_code = "gk_vol_expansion"
+                    strategy_label = "Garman-Klass Sıkışma Tepe Kırılımı"
+                    score = 92.5
+                    note = f"GK Sıkışma Kırılımı GK={gk_res.get('gk_vol')} hacim={gk_res.get('vol_ratio')}x tepe={gk_res.get('highest_15')}"
+
                 # 0A. Buy Flow Dominance (H1: PF 3.00, Net +%0.254, 873 işlem)
-                if enabled.get("buy_flow_dominance", True) and tf == "1h" and (bf_res := _buy_flow_dominance(highs, lows, closes, volumes)) and bf_res.get("signal"):
+                elif enabled.get("buy_flow_dominance", True) and tf == "1h" and (bf_res := _buy_flow_dominance(highs, lows, closes, volumes)) and bf_res.get("signal"):
                     matched = True
                     strategy_code = "buy_flow_dominance"
                     strategy_label = "Buy Flow Dominance"
