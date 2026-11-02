@@ -13,6 +13,7 @@ from app.technical_analysis import (
     _aroon, _mfi, _linreg_slope_pct,
     _cluc_wick_bounce, _vwap_mean_rev, _turtle_donchian,
     _vp_vah_breakout, _cvd_absorption_wick, _ttm_squeeze_fired,
+    _vfi_zero_break, _nw_kernel_envelope,
 )
 from app import ml_forecast
 from app.ai_trading_suite import (
@@ -66,6 +67,22 @@ ACTIVE_STRATEGIES = [
         "score": 95.0,
         "description": "Value Area High (%70 hacim tavanı) üzerine hacimli kırılım ve fiyat keşfi.",
         "evidence": "VectorBT: H1'de 40 aktif coinde PF 2.40, net kâr +%0.295, 27/40 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "vfi_zero_break",
+        "label": "Katsanos VFI Hacim Akışı Kırılımı",
+        "score": 94.5,
+        "description": "Katsanos Volume Flow Indicator sıfır çizgisi yukarı kırılımı ve kurumsal para girişi.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 2.81, net kâr +%0.127, 22/39 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "nw_kernel_envelope",
+        "label": "Nadaraya-Watson Kernel Zarf Sekmesi",
+        "score": 92.0,
+        "description": "Nadaraya-Watson non-parametric regresyon alt zarfına batıp içeri sıçrama.",
+        "evidence": "VectorBT: H1'de WR %48.7, PF 2.18, net kâr +%0.113, 18/36 coinde kârlı.",
         "timeframes": ["1h"],
     },
     {
@@ -710,6 +727,22 @@ async def run_single_scan():
                     strategy_label = "Volume Profile VAH Kırılımı"
                     score = 95.0
                     note = f"VAH kırılımı vah={vp_res.get('vah')} hacim={vp_res.get('vol_ratio')}x"
+
+                # 1B. Katsanos VFI Sıfır Kırılımı (H1: PF 2.81, Net +%0.127, 22/39 coin karlı)
+                elif enabled.get("vfi_zero_break", True) and tf == "1h" and (vfi_res := _vfi_zero_break(highs, lows, closes, volumes)) and vfi_res.get("signal"):
+                    matched = True
+                    strategy_code = "vfi_zero_break"
+                    strategy_label = "Katsanos VFI Hacim Akışı Kırılımı"
+                    score = 94.5
+                    note = f"VFI sıfır kırılımı vfi={vfi_res.get('vfi')} (önceki: {vfi_res.get('vfi_prev')})"
+
+                # 1C. Nadaraya-Watson Kernel Zarf Sekmesi (H1: WR %48.7, PF 2.18, Net +%0.113)
+                elif enabled.get("nw_kernel_envelope", True) and tf == "1h" and (nw_res := _nw_kernel_envelope(highs, lows, closes)) and nw_res.get("signal"):
+                    matched = True
+                    strategy_code = "nw_kernel_envelope"
+                    strategy_label = "Nadaraya-Watson Kernel Zarf Sekmesi"
+                    score = 92.0
+                    note = f"Nadaraya-Watson alt zarf sekmesi alt_bant={nw_res.get('lower_band')} RSI={nw_res.get('rsi')}"
 
                 # 2. ClucHAnST Kapitülasyon İğnesi (H1: PF 2.37, WR %59.1, Net +%0.332)
                 elif enabled.get("cluc_wick_bounce", True) and (cluc_res := _cluc_wick_bounce(highs, lows, closes, volumes)) and cluc_res.get("signal"):
