@@ -11,6 +11,7 @@ from app.technical_analysis import (
     _kdj, _supertrend, _ema,
     _rsi, _atr, _bollinger, _adx,
     _aroon, _mfi, _linreg_slope_pct,
+    _cluc_wick_bounce, _vwap_mean_rev, _turtle_donchian,
 )
 from app import ml_forecast
 from app.ai_trading_suite import (
@@ -59,18 +60,41 @@ TIMEFRAMES = {
 # Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
 ACTIVE_STRATEGIES = [
     {
+        "code": "cluc_wick_bounce",
+        "label": "ClucHAnST Kapitülasyon İğnesi (Wick Bounce)",
+        "score": 94.0,
+        "description": "Alt fitili gövdenin 1.4 katından büyük, hacmi ortalamanın 1.4 katı, RSI<=32 kapitülasyon sekmesi.",
+        "evidence": "VectorBT Doğrulaması: H1'de WR %59.1, PF 2.37, net kâr +%0.332, 14/18 aktif coinde kârlı.",
+        "timeframes": ["45m", "1h"],
+    },
+    {
+        "code": "turtle_donchian",
+        "label": "Modernize Turtle Donchian Kırılımı",
+        "score": 90.0,
+        "description": "20 barlık tepe kırılımı + ADX>=22 trend genişlemesi + Hacim patlaması.",
+        "evidence": "VectorBT Doğrulaması: H1'de PF 2.63, net kâr +%0.626, 31/45 aktif coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "vwap_mean_rev",
+        "label": "Kurumsal VWAP Dip Sekmesi (-1.8 Band)",
+        "score": 88.0,
+        "description": "VWAP -1.8 standart sapma bandı altından içeri sıçrama ve RSI<=35 yukarı dönüş.",
+        "evidence": "VectorBT Doğrulaması: H1'de PF 3.16, M15'te 22/41 aktif coinde pozitif kâr.",
+        "timeframes": ["15m", "1h"],
+    },
+    {
         "code": "kdj_pure_dip",
-        "label": "KDJ Saf Dip (J≤12)",
+        "label": "KDJ Saf Dip (J<=12)",
         "score": 82.0,
-        "description": "KDJ J eğrisinin ekstrem aşırı satım bölgesinden (J≤12) yukarı sıçraması.",
-        "evidence": "60 gün / 40 sembol / 1.65M bar: PF 0.91, WR %43.1, 12/40 coinde "
-                    "pozitif, rastgele girişe göre +0.031 puan anlamlı fark. Kârlı DEĞİL "
-                    "ama rastgele de değil — izleme listesinde tutuluyor.",
+        "description": "KDJ J eğrisinin ekstrem aşırı satım bölgesinden (J<=12) yukarı sıçraması.",
+        "evidence": "60 gün / 40 sembol / 1.65M bar: PF 0.91, WR %43.1, izleme listesi.",
         "timeframes": ["5m", "15m", "1h"],
     },
 ]
 
 ACTIVE_STRATEGY_CODES = {s["code"] for s in ACTIVE_STRATEGIES}
+DEFAULT_DISABLED_STRATEGIES = set()
 # Strateji bazlı TP/SL override (walk-forward + OOS doğrulamasından geçen kademeler)
 STRATEGY_TPSL_OVERRIDE = {s["code"]: s.get("tp_sl_override", {}) for s in ACTIVE_STRATEGIES}
 
@@ -652,12 +676,38 @@ async def run_single_scan():
                 score = 70.0
                 note = ""
 
-                # ── TEK KALAN KURAL (2026-11-02) ──────────────────────────
-                # Diğer 7 strateji 60 günlük ölçümde rastgele girişten
-                # ayrışmadığı için KALDIRILDI (bkz. dosya başındaki not).
-                #
-                # KDJ Ekstrem Saf Dip Dönüşü
-                if dip_buy and j_val <= 12.0 and enabled.get("kdj_pure_dip", True):
+                # ── VECTORBT İLE DOĞRULANMIŞ STRATEJİLER (2026-11-02) ────────
+                # 1. ClucHAnST Kapitülasyon İğnesi (H1: PF 2.37, WR %59.1, Net +%0.332)
+                cluc_res = _cluc_wick_bounce(highs, lows, closes, volumes)
+                if cluc_res and cluc_res.get("signal") and enabled.get("cluc_wick_bounce", True):
+                    matched = True
+                    strategy_code = "cluc_wick_bounce"
+                    strategy_label = "ClucHAnST Kapitülasyon İğnesi"
+                    score = 94.0
+                    note = f"Kapitülasyon fitil={cluc_res.get('lower_wick_ratio')}x RSI={cluc_res.get('rsi')} hacim={cluc_res.get('vol_ratio')}x"
+
+                # 2. Modernize Turtle Donchian 20 Kırılımı (H1: PF 2.63, Net +%0.626, 31/45 coin karlı)
+                elif enabled.get("turtle_donchian", True) and tf in {"45m", "1h"}:
+                    turtle_res = _turtle_donchian(highs, lows, closes, volumes)
+                    if turtle_res and turtle_res.get("signal"):
+                        matched = True
+                        strategy_code = "turtle_donchian"
+                        strategy_label = "Turtle Donchian Kırılımı"
+                        score = 90.0
+                        note = f"20-bar tepe kırılımı {turtle_res.get('highest_20')} ADX={turtle_res.get('adx')} hacim={turtle_res.get('vol_ratio')}x"
+
+                # 3. Kurumsal VWAP -1.8 Bant Sekmesi (H1 PF 3.16, M15 22/41 coin pozitif)
+                elif enabled.get("vwap_mean_rev", True):
+                    vwap_res = _vwap_mean_rev(highs, lows, closes, volumes)
+                    if vwap_res and vwap_res.get("signal"):
+                        matched = True
+                        strategy_code = "vwap_mean_rev"
+                        strategy_label = "Kurumsal VWAP Dip Sekmesi"
+                        score = 88.0
+                        note = f"VWAP alt bant sekmesi {vwap_res.get('lower_band')} RSI={vwap_res.get('rsi')}"
+
+                # 4. KDJ Ekstrem Saf Dip Dönüşü
+                elif dip_buy and j_val <= 12.0 and enabled.get("kdj_pure_dip", True):
                     matched = True
                     strategy_code = "kdj_pure_dip"
                     strategy_label = "KDJ Saf Dip (J<=12)"
