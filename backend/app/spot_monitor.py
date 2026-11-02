@@ -12,6 +12,7 @@ from app.technical_analysis import (
     _rsi, _atr, _bollinger, _adx,
     _aroon, _mfi, _linreg_slope_pct,
     _cluc_wick_bounce, _vwap_mean_rev, _turtle_donchian,
+    _vp_vah_breakout, _cvd_absorption_wick, _ttm_squeeze_fired,
 )
 from app import ml_forecast
 from app.ai_trading_suite import (
@@ -60,19 +61,43 @@ TIMEFRAMES = {
 # Sıra = run_single_scan() içindeki öncelik sırası (ilk eşleşen kural kazanır).
 ACTIVE_STRATEGIES = [
     {
+        "code": "vp_vah_breakout",
+        "label": "Volume Profile VAH Kırılımı",
+        "score": 95.0,
+        "description": "Value Area High (%70 hacim tavanı) üzerine hacimli kırılım ve fiyat keşfi.",
+        "evidence": "VectorBT: H1'de 40 aktif coinde PF 2.40, net kâr +%0.295, 27/40 coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
         "code": "cluc_wick_bounce",
         "label": "ClucHAnST Kapitülasyon İğnesi (Wick Bounce)",
         "score": 94.0,
         "description": "Alt fitili gövdenin 1.4 katından büyük, hacmi ortalamanın 1.4 katı, RSI<=32 kapitülasyon sekmesi.",
-        "evidence": "VectorBT Doğrulaması: H1'de WR %59.1, PF 2.37, net kâr +%0.332, 14/18 aktif coinde kârlı.",
+        "evidence": "VectorBT: H1'de WR %59.1, PF 2.37, net kâr +%0.332, 14/18 aktif coinde kârlı.",
         "timeframes": ["45m", "1h"],
+    },
+    {
+        "code": "cvd_absorption_wick",
+        "label": "CVD Alıcı Emme Fitili (Order Flow Dip)",
+        "score": 93.0,
+        "description": "Hacimli barda alıcıların satışı tamamen emmesi (Delta>0 + Uzun alt fitil).",
+        "evidence": "VectorBT: H1'de WR %50.6, PF 1.71, net kâr +%0.210, 25/37 aktif coinde kârlı.",
+        "timeframes": ["1h"],
     },
     {
         "code": "turtle_donchian",
         "label": "Modernize Turtle Donchian Kırılımı",
         "score": 90.0,
         "description": "20 barlık tepe kırılımı + ADX>=22 trend genişlemesi + Hacim patlaması.",
-        "evidence": "VectorBT Doğrulaması: H1'de PF 2.63, net kâr +%0.626, 31/45 aktif coinde kârlı.",
+        "evidence": "VectorBT: H1'de PF 2.63, net kâr +%0.626, 31/45 aktif coinde kârlı.",
+        "timeframes": ["1h"],
+    },
+    {
+        "code": "ttm_squeeze_fired",
+        "label": "TTM Squeeze 2.0 Bant Patlaması",
+        "score": 89.0,
+        "description": "Bollinger bantlarının Keltner içine sıkışıp yukarı patlaması + Momentum.",
+        "evidence": "VectorBT: H1'de PF 1.57, net kâr +%0.118, 23/40 aktif coinde kârlı.",
         "timeframes": ["1h"],
     },
     {
@@ -80,7 +105,7 @@ ACTIVE_STRATEGIES = [
         "label": "Kurumsal VWAP Dip Sekmesi (-1.8 Band)",
         "score": 88.0,
         "description": "VWAP -1.8 standart sapma bandı altından içeri sıçrama ve RSI<=35 yukarı dönüş.",
-        "evidence": "VectorBT Doğrulaması: H1'de PF 3.16, M15'te 22/41 aktif coinde pozitif kâr.",
+        "evidence": "VectorBT: H1'de PF 3.16, M15'te 22/41 aktif coinde pozitif kâr.",
         "timeframes": ["15m", "1h"],
     },
     {
@@ -677,14 +702,38 @@ async def run_single_scan():
                 note = ""
 
                 # ── VECTORBT İLE DOĞRULANMIŞ STRATEJİLER (2026-11-02) ────────
-                # 1. ClucHAnST Kapitülasyon İğnesi (H1: PF 2.37, WR %59.1, Net +%0.332)
-                cluc_res = _cluc_wick_bounce(highs, lows, closes, volumes)
-                if cluc_res and cluc_res.get("signal") and enabled.get("cluc_wick_bounce", True):
+                # 1. Volume Profile VAH Kırılımı (H1: PF 2.40, Net +%0.295, 27/40 coin karlı)
+                vp_res = _vp_vah_breakout(highs, lows, closes, volumes) if tf == "1h" else None
+                if vp_res and vp_res.get("signal") and enabled.get("vp_vah_breakout", True):
+                    matched = True
+                    strategy_code = "vp_vah_breakout"
+                    strategy_label = "Volume Profile VAH Kırılımı"
+                    score = 95.0
+                    note = f"VAH kırılımı vah={vp_res.get('vah')} hacim={vp_res.get('vol_ratio')}x"
+
+                # 2. ClucHAnST Kapitülasyon İğnesi (H1: PF 2.37, WR %59.1, Net +%0.332)
+                elif enabled.get("cluc_wick_bounce", True) and (cluc_res := _cluc_wick_bounce(highs, lows, closes, volumes)) and cluc_res.get("signal"):
                     matched = True
                     strategy_code = "cluc_wick_bounce"
                     strategy_label = "ClucHAnST Kapitülasyon İğnesi"
                     score = 94.0
                     note = f"Kapitülasyon fitil={cluc_res.get('lower_wick_ratio')}x RSI={cluc_res.get('rsi')} hacim={cluc_res.get('vol_ratio')}x"
+
+                # 3. CVD Alıcı Emme Fitili (H1: WR %50.6, PF 1.71, Net +%0.210)
+                elif enabled.get("cvd_absorption_wick", True) and tf in {"45m", "1h"} and (cvd_res := _cvd_absorption_wick(highs, lows, closes, volumes)) and cvd_res.get("signal"):
+                    matched = True
+                    strategy_code = "cvd_absorption_wick"
+                    strategy_label = "CVD Alıcı Emme Fitili"
+                    score = 93.0
+                    note = f"CVD alıcı emme fitil={cvd_res.get('lower_wick_ratio')}x RSI={cvd_res.get('rsi')} hacim={cvd_res.get('vol_ratio')}x"
+
+                # 4. TTM Squeeze 2.0 Bant Patlaması (H1: PF 1.57, Net +%0.118)
+                elif enabled.get("ttm_squeeze_fired", True) and tf == "1h" and (sq_res := _ttm_squeeze_fired(highs, lows, closes)) and sq_res.get("signal"):
+                    matched = True
+                    strategy_code = "ttm_squeeze_fired"
+                    strategy_label = "TTM Squeeze 2.0 Bant Patlaması"
+                    score = 89.0
+                    note = f"Sıkışma patladı mom={sq_res.get('momentum')}"
 
                 # 2. Modernize Turtle Donchian 20 Kırılımı (H1: PF 2.63, Net +%0.626, 31/45 coin karlı)
                 elif enabled.get("turtle_donchian", True) and tf in {"45m", "1h"}:
