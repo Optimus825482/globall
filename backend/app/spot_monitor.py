@@ -706,6 +706,14 @@ async def run_single_scan():
                 if len(klines) < 65:
                     continue
 
+                # Kline dizini (Binance): [0]=açılış_ms, [1]=open, [2]=high, [3]=low, [4]=close,
+                # [5]=volume, [7]=quote_volume, [8]=trade sayısı.
+                # `opens`: Dual Volatilite (GK+Parkinson) ve Garman-Klass sıkışma stratejileri
+                # GK volatilitesinde close/open log oranını kullanır. Eski 7 strateji silinirken
+                # bu satır da gitmişti; 2bec23a2 entegrasyonu çağrılarda `opens` geçiyordu ama
+                # tanımı unutulmuştu → her tarama NameError ile çöküyor, last_scan_time hiç
+                # güncellenmiyordu (kullanıcı raporu 2026-11-04: "tarama yapmıyor").
+                opens = [float(k[1]) for k in klines]
                 highs = [float(k[2]) for k in klines]
                 lows = [float(k[3]) for k in klines]
                 closes = [float(k[4]) for k in klines]

@@ -112,28 +112,40 @@ def test_dashboard_exposes_live_rsi_and_adx():
     assert '"live_adx"' in src
 
 
-# ─── ÖLÇÜLMÜŞ STRATEJİ ELEMESİ (2026-11-01) ───────────────────────────────────
+# ─── ÖLÇÜLMÜŞ STRATEJİ ELEMESİ (2026-11-01) + VBT DOĞRULAMALI GENİŞLEME ──────
 
-def test_only_surviving_strategy_remains():
-    """7 strateji KALDIRILDI — yalnızca `kdj_pure_dip` kaldı.
+def test_measured_out_strategies_stay_out():
+    """7 strateji 60 günlük ölçümle KALDIRILDI ve geri gelmemeli.
 
     60 GÜNLÜK ölçüm (40 sembol × 1.65M bar, gerçek vectorbt, %0.15 maliyet):
       strateji              n      WR     PF    ort%   rastgeleye fark
       kdj_pure_dip         559   43.1%  0.91  -0.116      +0.031 ANLAMLI
       zlmacd_momentum    11826   38.6%  0.71  -0.135      +0.012 gürültü
       rvol_tod_spike      5345   38.0%  0.74  -0.137      +0.010 gürültü
-      stc_cycle           4877   39.2%  0.72  -0.140      +0.007 gürültü
+      stc_cycle           4877   39.0%  0.72  -0.140      +0.007 gürültü
       supertrend_pullback 36599  39.1%  0.70  -0.137      +0.010 gürültü
       linreg_slope_turn  27224   39.2%  0.70  -0.140      +0.007 gürültü
       squeeze_breakout    1279   37.9%  0.70  -0.147      +0.000 gürültü
       ema_bounce         23118   37.7%  0.67  -0.154      -0.007 gürültü
       --- rastgele ---   52840   39.4%  0.69  -0.147      referans
 
-    Kaldırılanların 7'si de rastgele girişten ayrışmıyordu. Kodda tutmak
-    yalnızca karmaşıklık ve yanlış "fırsat" algısı üretiyordu.
+    Kaldırılanların 7'si de rastgele girişten ayrışmıyordu. Sonrasında (2026-11-02+
+    VBT doğrulamalı entegrasyonlarla) 15 stratejiye genişletildi; bu 7 hâlâ dışarıda.
     """
-    assert len(spot_monitor.ACTIVE_STRATEGIES) == 1
-    assert spot_monitor.ACTIVE_STRATEGIES[0]["code"] == "kdj_pure_dip"
+    codes = {s["code"] for s in spot_monitor.ACTIVE_STRATEGIES}
+    for gone in ("squeeze_breakout", "zlmacd_momentum", "stc_cycle", "supertrend_pullback",
+                 "linreg_slope_turn", "rvol_tod_spike", "ema_bounce"):
+        assert gone not in codes, f"{gone} ölçümle elenmişti, geri gelmiş"
+    assert "kdj_pure_dip" in codes
+
+
+def test_active_strategy_roster_is_integrated_set():
+    """VBT doğrulaması geçen 15 strateji kayıtlı olmalı (2026-11-03 itibarıyla)."""
+    expected = {"dual_vol_break", "gk_vol_expansion", "buy_flow_dominance", "cmo_accel_break",
+                "kaufman_er_trend", "multi_factor_alpha", "vp_vah_breakout", "vfi_zero_break",
+                "nw_kernel_envelope", "cluc_wick_bounce", "cvd_absorption_wick", "turtle_donchian",
+                "ttm_squeeze_fired", "vwap_mean_rev", "kdj_pure_dip"}
+    assert {s["code"] for s in spot_monitor.ACTIVE_STRATEGIES} == expected
 
 
 def test_removed_strategies_are_gone_from_code():
@@ -145,10 +157,59 @@ def test_removed_strategies_are_gone_from_code():
         assert f'strategy_code = "{code}"' not in src, f"{code} hâlâ taramada"
 
 
-def test_disabled_and_watchlist_concepts_removed():
-    """Artık tek strateji var; kapatma/izleme listelerine gerek yok."""
-    assert not hasattr(spot_monitor, "DEFAULT_DISABLED_STRATEGIES")
+def test_strategy_toggle_defaults_all_enabled():
+    """AKTİF/PASİF anahtarları (kalıcı) geri geldi: hiçbiri varsayılan pasif olmamalı.
+
+    Paneldeki aç/kapa düğmeleri `set_strategy_enabled` ile DB'ye yazılır; koda
+    gömülü varsayılan her strateji için AKTİF'tir (kullanıcı raporu 2026-11-04:
+    "tarama yapmıyor" — kapatma listesi değil, NameError'dı; bu test yalnızca
+    varsayılanın doğru olduğunu kilitler).
+    """
+    assert spot_monitor.DEFAULT_DISABLED_STRATEGIES == set()
     assert not hasattr(spot_monitor, "WATCHLIST_STRATEGIES")
+
+
+def test_run_single_scan_defines_opens_before_dual_vol():
+    """2026-11-04 NameError regresyonu: 2bec23a2 `_dual_vol_break(opens, ...)` ve
+    `_gk_vol_expansion(opens, ...)` çağrılarını ekledi ama klines paketleme bloğunda
+    `opens` tanımını unuttu → her tarama NameError ile çöküyor, last_scan_time hiç
+    güncellenmiyordu (kullanıcı raporu: "Spot Monitor tarama yapmıyor"). Tanım,
+    ilk kullanımdan ÖNCE bulunmalı."""
+    src = inspect.getsource(spot_monitor.run_single_scan)
+    idx_def = src.find("opens = [float(k[1])")
+    idx_use = src.find("_dual_vol_break(opens")
+    assert idx_def != -1, "run_single_scan içinde opens tanımı yok — tarama NameError ile çöker"
+    assert idx_use != -1, "_dual_vol_break çağrısı kaybolmuş"
+    assert idx_def < idx_use, "opens tanımı kullanımından sonra geliyor"
+
+
+def test_dual_vol_and_gk_strategies_run_on_synthetic_klines():
+    """Strateji fonksiyonları opens/highs/lows/closes ile beslenmeli; sorunsuz dönmeli.
+
+    Her iki fonksiyon içte try/except ile None döner — bu test argüman sırasının
+    yanlış geçilmesini (None) yakalar; NameError ise çağrı yerinde oluştuğu için
+    yukarıdaki kaynak testi kilitler.
+    """
+    import random
+
+    from app.technical_analysis import _dual_vol_break, _gk_vol_expansion
+
+    rng = random.Random(7)
+    n = 120
+    opens_, highs, lows, closes, volumes = [], [], [], [], []
+    px = 100.0
+    for i in range(n):
+        drift = 0.0 if i < n - 5 else 1.5   # son barlarda kırılım
+        o = px
+        c = px + drift + rng.uniform(-0.2, 0.2)
+        h = max(o, c) + rng.uniform(0.05, 0.4)
+        l = min(o, c) - rng.uniform(0.05, 0.4)
+        opens_.append(o); highs.append(h); lows.append(l); closes.append(c); volumes.append(rng.uniform(100, 200))
+        px = c
+    dv = _dual_vol_break(opens_, highs, lows, closes)
+    gk = _gk_vol_expansion(opens_, highs, lows, closes, volumes)
+    assert isinstance(dv, dict) and "signal" in dv, "dual_vol_break None döndü (opens sırası bozuk olabilir)"
+    assert isinstance(gk, dict) and "signal" in gk, "gk_vol_expansion None döndü (opens sırası bozuk olabilir)"
 
 
 def test_early_exit_dead_rule_documented_as_measured_failure():
