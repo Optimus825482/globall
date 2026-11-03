@@ -137,3 +137,22 @@ def test_altcoin_aliases_resolve_to_app_symbols():
     assert fc._mentioned_symbols("chainlink ve solanaya bak") == ["LNKUSD"]       # 'solanaya' ek almış kelime: tam sözcük değil
     assert fc._mentioned_symbols("sol taraftaki link çalışmıyor") == []           # Türkçe sıradan sözcükler sembol sayılmaz
     assert fc._mentioned_symbols("ETHUSDT") == ["ETHUSD"]
+
+
+def test_continuation_request_detected_only_as_whole_message():
+    """'devam et' kesilen yanıtı tamamlama isteğidir (2026-11-04); serbest metinde geçmesi yetmez."""
+    assert forex_chat.is_continuation_request("devam et")
+    assert forex_chat.is_continuation_request("Devam Et.")
+    assert forex_chat.is_continuation_request("devam")
+    assert forex_chat.is_continuation_request("lütfen devam edin")
+    assert forex_chat.is_continuation_request("kaldığın yerden devam et")
+    assert forex_chat.is_continuation_request("devamını yaz")
+    assert forex_chat.is_continuation_request("tamamla")
+    assert forex_chat.is_continuation_request("sürdür")
+    # Bunlar yeni sorudur: araştırma turu başlatmalı.
+    assert not forex_chat.is_continuation_request("devam etmeden önce altına bak")
+    assert not forex_chat.is_continuation_request("BTC için devam et")
+    assert not forex_chat.is_continuation_request("devam eder misin")
+    assert not forex_chat.is_continuation_request("Şimdi devam et ve EURUSD analiz et")
+    assert not forex_chat.is_continuation_request("")
+    assert not forex_chat.is_continuation_request(None)

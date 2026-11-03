@@ -200,6 +200,27 @@ def _message_text(message):
     return None
 
 
+def response_data(value):
+    """Normalize compatible gateway wrappers and JSON-string data fields.
+
+    Eskiden `chat()` içinde iç içe tanımlıydı; akış yolundaki kesilme koruması
+    (otomatik devam turu, 2026-11-04) da aynı normalizasyona ihtiyaç duyduğu için
+    modül seviyesine alındı. Davranış aynı: en çok 3 adet JSON-string unwrap + `data`
+    anahtarı sarmalama çözümü.
+    """
+    current = value
+    for _ in range(3):
+        if isinstance(current, str):
+            try: current = json.loads(current)
+            except json.JSONDecodeError: return current
+        if isinstance(current, dict) and isinstance(current.get("data"), (dict, list, str)):
+            current = current["data"]
+            continue
+        return current
+    return current
+
+
+
 def _stream_delta_text(delta, choice=None):
     """Akış parçasının metni — BOŞLUKLARI KORUR.
 
@@ -704,18 +725,6 @@ async def chat(snapshot, messages, tools=None, tool_executor=None, active_skills
                 last_error = exc
                 if attempt == 0: await asyncio.sleep(0.4)
         raise RuntimeError(f"LLM gateway yanıt vermedi: {last_error}") from last_error
-    def response_data(value):
-        """Normalize compatible gateway wrappers and JSON-string data fields."""
-        current = value
-        for _ in range(3):
-            if isinstance(current, str):
-                try: current = json.loads(current)
-                except json.JSONDecodeError: return current
-            if isinstance(current, dict) and isinstance(current.get("data"), (dict, list, str)):
-                current = current["data"]
-                continue
-            return current
-        return current
     try:
         result = None
         try:
@@ -1043,6 +1052,7 @@ async def _stream_chat_once(snapshot, messages, tools=None, tool_executor=None, 
         reader = asyncio.create_task(read_stream())
         emitted = False
         reasoning_parts: list[str] = []
+        answer_parts: list[str] = []   # kesilme koruması: akıştaki içerik deltaları biriktirilir
         stream_deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
         first_deadline = time.monotonic() + FIRST_TOKEN_TIMEOUT
         truncated = False
@@ -1102,6 +1112,7 @@ async def _stream_chat_once(snapshot, messages, tools=None, tool_executor=None, 
             text = _stream_delta_text(delta, choices[0] if choices else None)
             if text:
                 emitted = True
+                answer_parts.append(text)
                 yield {"event": "delta", "data": {"text": text}}
         await reader
         if not emitted:
@@ -1130,10 +1141,43 @@ async def _stream_chat_once(snapshot, messages, tools=None, tool_executor=None, 
                 yield {"event": "error", "data": {"status": "error",
                        "error": "Sağlayıcı yanıtı boş döndü; mesajı tekrar gönderin veya LLM sağlayıcı ayarlarını kontrol edin"}}
                 return
+        auto_continued = False
         if truncated and emitted and not accept_reasoning:
-            # Jeton sınırı yanıtı ortadan kesti: sessiz yarım bırakma, kullanıcıya göster.
-            yield {"event": "delta", "data": {"text": "\n\n_(Yanıt uzunluk sınırında kesildi; devamı için «devam et» yazın.)_"}}
-        yield {"event": "done", "data": {"status": "ok", "model": cfg["model"]["name"], "generated_at": time.time(), "provider_stream": True, "emitted": emitted, "truncated": truncated}}
+            # KESİLME KORUMASI (akış, 2026-11-04): tamponlu `chat()` yolundaki tek-turlu
+            # otomatik devamın aynısı — akışta bundan YOKTU: jeton sınırı yanıtı ortadan
+            # kesince yalnızca «devam et» notu düşüyordu; kullanıcı elle "devam et" yazınca
+            # forex sohbeti yeni bir araştırma turu başlatıyor ve model "veri gelmedi"
+            # özrününe düşüyordu (kullanıcı raporu 2026-11-04). Artık akış da kendisi
+            # bir devam turu kurar; başarısızsa eski not gösterilir.
+            partial = "".join(answer_parts)
+            if partial.strip():
+                try:
+                    continue_messages = list(conversation)
+                    continue_messages.append({"role": "assistant", "content": partial})
+                    continue_messages.append({"role": "user", "content": "Kaldığın yerden kaldığın cümleyi kesintisiz kapatıp devam et. Ara monolog ekleme; sadece final yanıtı tamamla."})
+                    continue_payload = {**payload, "stream": False, "messages": continue_messages}
+                    cont_req = Request(url, data=json.dumps(continue_payload).encode(),
+                                       headers={"Content-Type": "application/json",
+                                                "Authorization": "Bearer " + decrypt_key(cfg["provider"]["api_key_encrypted"])},
+                                       method="POST")
+                    cont_response = await safe_provider_open(cont_req, timeout=60)
+                    cont_data = response_data(_decode_provider_response(cont_response.read()))
+                    cont_choices = cont_data.get("choices", []) if isinstance(cont_data, dict) else []
+                    cont_text = _message_text(cont_choices[0].get("message") if cont_choices else None) or (cont_data.get("output_text") if isinstance(cont_data, dict) else None)
+                    if cont_text:
+                        yield {"event": "delta", "data": {"text": cont_text}}
+                        auto_continued = True
+                        logger.warning("kesilme koruması (akış): otomatik devam turu uygulandı (+%d karakter)", len(cont_text))
+                except Exception as cont_exc:
+                    logger.warning("kesilme koruması (akış): devam turu başarısız — «devam et» notu gösterilecek (%s: %s)",
+                                   type(cont_exc).__name__, cont_exc)
+            if not auto_continued:
+                # Jeton sınırı yanıtı ortadan kesti ve otomatik devam kurulamadı: sessiz yarım
+                # bırakma yerine kullanıcıya elle devam yolunu göster.
+                yield {"event": "delta", "data": {"text": "\n\n_(Yanıt uzunluk sınırında kesildi; devamı için «devam et» yazın.)_"}}
+        yield {"event": "done", "data": {"status": "ok", "model": cfg["model"]["name"], "generated_at": time.time(),
+                                         "provider_stream": True, "emitted": emitted, "truncated": truncated,
+                                         "auto_continued": auto_continued}}
     except Exception as exc:
         yield {"event": "error", "data": {"status": "error", "error": str(exc)}}
     finally:

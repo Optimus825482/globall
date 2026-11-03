@@ -267,6 +267,19 @@ def wants_scan(text: str) -> bool:
     return bool(_SCAN_INTENT.search(text or "")) and not _mentioned_symbols(text)
 
 
+# "devam et" yalnızca kesilen yanıtı tamamlama isteğidir; serbest metinde kelime geçmesi yetmez
+# (mesajın TAMAMI bu kalıplardan biri olmalı).
+_CONTINUATION_RE = re.compile(
+    r"^(?:lütfen\s+)?(?:devam(?:\s+(?:et|edin|ediniz))?|devamını\s+(?:yaz|et|getir)|"
+    r"kaldığın(?:ki)?\s+yerden\s+(?:devam(?:\s+et)?|sürdür)|tamamla|sürdür)\s*[.!…]*\s*$",
+    re.IGNORECASE)
+
+
+def is_continuation_request(text: str) -> bool:
+    """Mesaj tam olarak bir 'devam et' isteği mi? (kesilen yanıtı araştırmadan tamamlamak için)"""
+    return bool(_CONTINUATION_RE.match((text or "").strip()))
+
+
 def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step]:
     """Soruya göre araştırma adımları (ağ/CPU işi thread'de)."""
     symbols = symbols or _mentioned_symbols(user_text) or DEFAULT_SYMBOLS
@@ -426,6 +439,30 @@ async def forex_chat(payload: dict, request: Request):
     async def events():
         started = time.perf_counter()
         try:
+            # "devam et" (2026-11-04): akışta kesilen yanıtın tamamlanması isteniyordu ama burası
+            # onu YENİ SORU gibi işleyip varsayılan sembolleri (XAUUSD/BTCUSD/EURUSD) araştırıyordu;
+            # model yeni snapshot'ta tarama verisini görmeyip "veri gelmedi" diye özür diliyordu
+            # (kullanıcı raporu: "Düzeltme — Önceki listede hata yaptım..."). Doğru davranış:
+            # araştırma YOK, geçmişteki yarım yanıt esas alınır.
+            if is_continuation_request(last_text) and any(m.get("role") == "assistant" for m in trimmed[:-1]):
+                partial: Optional[Dict[str, Any]] = None
+                for m in reversed(messages[:-1]):
+                    if m.get("role") == "assistant":
+                        partial = m
+                        break
+                if partial is not None:
+                    ctx = {"saat_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime()),
+                           "not": ("Devam isteği: önceki yanıt uzunluk sınırında kesildi. Yeni araştırma/snapshot YOK; "
+                                   "aşağıdaki yarım yanıttaki verileri esas al, kaldığın yerden kesintisiz tamamla. "
+                                   "Yeni başlık açma, baştan başlama; bitmemiş cümleyi ve kalan bölümleri bitir.")}
+                    yield _sse("step", {"id": "answer", "label": "Yanıt tamamlanıyor", "status": "running"})
+                    async for event in llm_analysis.stream_chat(
+                        ctx, [{"role": "assistant", "content": str(partial.get("content") or "")[:20000]},
+                              {"role": "user", "content": last_text}],
+                        max_tokens=MAX_ANSWER_TOKENS, system_override=SYSTEM_PROMPT,
+                    ):
+                        yield _sse(event["event"], event["data"])
+                    return
             findings: Dict[str, Any] = {}
             picked: Optional[List[str]] = None
             opp = mode == "opportunity_scan"
