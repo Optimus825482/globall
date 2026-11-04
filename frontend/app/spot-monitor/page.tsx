@@ -84,6 +84,19 @@ type SignalItem = {
   jesse_rr?: number;
 };
 
+type RejectedSignal = {
+  symbol: string;
+  timeframe: string;
+  strategy: string;
+  entry_price: number;
+  reasons: string[];
+  ml_hit_probability?: number | null;
+  heuristic_flags?: string[];
+  p_chg?: number;
+  vol_ratio?: number;
+  at: string;
+};
+
 type DashboardData = {
   portfolio: {
     initial_balance_try: number;
@@ -105,6 +118,8 @@ type DashboardData = {
     win_rate_pct: number;
   };
   signals: SignalItem[];
+  rejected_signals?: RejectedSignal[];
+  rejected_count?: number;
   last_scan_time: number;
   next_scan_time?: number;
   scan_interval_sec?: number;
@@ -210,6 +225,13 @@ export default function SpotMonitorPage() {
   // Otomatik Tarama Geri Sayım Sayacı (60s döngü)
   const [countdown, setCountdown] = useState<number>(60);
 
+  // Strateji şeridi katlanabilir: 15 kart sekmelerin üstünde sayfayı çok
+  // uzatıyordu; varsayılan kapalı, kullanıcı açarsa seçim hatırlanır.
+  const [strategiesOpen, setStrategiesOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return localStorage.getItem("spotmon:strategies-open") === "1"; } catch { return false; }
+  });
+
   useEffect(() => {
     if (data?.portfolio?.trade_size_try) {
       setTradeSize(data.portfolio.trade_size_try);
@@ -259,6 +281,25 @@ export default function SpotMonitorPage() {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
+  /** Açık pozisyonun tutulduğu dakika (panel 15 sn'de bir yenilendiği için güncel kalır). */
+  const holdMinutes = (iso: string) =>
+    Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+
+  /** Güncel fiyatın stop↔hedef bandındaki konumu (%0-100). Veri eksikse null. */
+  const pricePosPct = (s: SignalItem) => {
+    const lo = s.stop_price;
+    const hi = s.target_price;
+    if (!lo || !hi || !s.current_price || hi <= lo) return null;
+    return Math.min(100, Math.max(0, ((s.current_price - lo) / (hi - lo)) * 100));
+  };
+
+  const entryPosPct = (s: SignalItem) => {
+    const lo = s.stop_price;
+    const hi = s.target_price;
+    if (!lo || !hi || !s.entry_price || hi <= lo) return null;
+    return Math.min(100, Math.max(0, ((s.entry_price - lo) / (hi - lo)) * 100));
   };
 
   // Tarih Filtresi
@@ -394,6 +435,22 @@ export default function SpotMonitorPage() {
       return d >= startTs && d <= endTs;
     });
   }, [historySignals, dateFilter, customStartDate, customEndDate]);
+
+  // Tarih filtresine uyan geçmişin özeti: operatör filtre değiştirince sonucun
+  // ne olduğunu tabloya bakmadan üstte görsün.
+  const historySummary = useMemo(() => {
+    const wins = filteredHistory.filter((s) => (s.net_pnl_try || 0) > 0);
+    const grossProfit = wins.reduce((a, s) => a + (s.net_pnl_try || 0), 0);
+    const grossLoss = Math.abs(
+      filteredHistory.filter((s) => (s.net_pnl_try || 0) < 0).reduce((a, s) => a + (s.net_pnl_try || 0), 0)
+    );
+    return {
+      n: filteredHistory.length,
+      net: filteredHistory.reduce((a, s) => a + (s.net_pnl_try || 0), 0),
+      wr: filteredHistory.length ? (wins.length / filteredHistory.length) * 100 : 0,
+      pf: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 99.9 : 0,
+    };
+  }, [filteredHistory]);
 
   const totalPages = Math.max(1, Math.ceil(filteredHistory.length / pageSize));
   const validCurrentPage = Math.min(currentPage, totalPages);
@@ -601,7 +658,9 @@ export default function SpotMonitorPage() {
             <Badge tone="info" className="font-mono text-[10px]">MTF LIVE</Badge>
           </div>
           <p className="text-xs text-bunker-muted mt-1">
-            KDJ Dip + SuperTrend + EMA50 Sekmesi + BB-KC Sıkışma Kırılımı + STC Döngüsü + Zero-Lag MACD canlı takibi ve 5.000 TL portföy simülatörü.
+            {strategies?.count ?? 15} vectorbt doğrulamalı strateji · {strategies?.symbols_count ?? 18} Binance TR
+            sembolü × {strategies?.timeframes.length ?? 3} zaman dilimi canlı tarama · zirve takipçi çıkış modeli ·
+            5.000 ₺ portföy simülatörü
           </p>
         </div>
 
@@ -821,11 +880,24 @@ export default function SpotMonitorPage() {
         </div>
       </div>
 
-      {/* AKTİF TARAMA STRATEJİLERİ (canlı sistemden /strategies ile senkron) */}
-      <div className="rounded-xl border border-bunker-800 bg-bunker-900/80 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+      {/* AKTİF TARAMA STRATEJİLERİ — katlanabilir (canlı sistemden /strategies ile senkron).
+          15 kart sekmelerin üstünde sayfayı çok uzatıyordu; varsayılan KAPALI, özet satırı
+          aktif/kill sayısını taşır. Kullanıcının aç/kapa seçimi localStorage'da hatırlanır. */}
+      <details
+        open={strategiesOpen}
+        onToggle={(e) => {
+          const v = (e.target as HTMLDetailsElement).open;
+          if (v !== strategiesOpen) {
+            setStrategiesOpen(v);
+            try { localStorage.setItem("spotmon:strategies-open", v ? "1" : "0"); } catch { /* yoksay */ }
+          }
+        }}
+        className="rounded-xl border border-bunker-800 bg-bunker-900/80 p-4 group"
+      >
+        <summary className="flex flex-wrap items-center justify-between gap-2 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
           <div className="flex items-center gap-2">
-            <h2 className="font-mono text-xs uppercase tracking-wide text-bunker-muted">
+            <span className="text-[10px] text-bunker-muted transition-transform group-open:rotate-90" aria-hidden="true">▶</span>
+            <h2 className="font-mono text-xs uppercase tracking-wide text-slate-200">
               🔬 Tarama Stratejileri
             </h2>
             <Badge tone="info" className="font-mono text-[10px]">
@@ -836,14 +908,19 @@ export default function SpotMonitorPage() {
                 ⚠️ {strategies.kill_count} kill kriteri
               </Badge>
             )}
+            {!strategiesOpen && (
+              <span className="text-[10px] font-mono text-bunker-muted hidden sm:inline">
+                (aç/kapat için tıkla)
+              </span>
+            )}
           </div>
           <p className="text-[10px] font-mono text-bunker-muted">
             {strategies?.symbols_count ?? 18} sembol × {strategies?.timeframes.length ?? 3} TF
             {" · "}₺{tradeSize ?? strategies?.trade_size_try ?? 500}/işlem
             {" · "}Kom. %{((strategies?.commission_rate ?? 0.0004) * 2 * 100).toFixed(2)} round-trip
           </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+        </summary>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 mt-3">
           {strategies?.strategies.map((st, i) => (
             <div
               key={st.code}
@@ -904,7 +981,7 @@ export default function SpotMonitorPage() {
           Pasif (PASİF) durumdaki stratejiler otomatik tarama döngüsünde devre dışıdır ve ayar kalıcıdır.
           Kâr/stop kademeleri: {strategies?.timeframes.map((t) => `${t.code} (TP %${t.tp_pct}/SL %${t.sl_pct})`).join(" · ")}
         </p>
-      </div>
+      </details>
 
       {/* SEKMELER: AKTİF İŞLEMLER / TARAMA GEÇMİŞİ / SEMBOL BAŞARISI / STRATEJİ BAŞARISI */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bunker-800 pb-2">
@@ -1046,15 +1123,48 @@ export default function SpotMonitorPage() {
             )}
           </div>
 
-          <div className="text-bunker-muted text-[11px]">
-            İşlem Sayısı: <span className="font-bold text-white">{filteredHistory.length}</span>{" "}
-            <span className="text-bunker-muted/60">(Toplam: {historySignals.length})</span>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="text-bunker-muted">
+              İşlem Sayısı: <span className="font-bold text-white">{filteredHistory.length}</span>{" "}
+              <span className="text-bunker-muted/60">(Toplam: {historySignals.length})</span>
+            </span>
+            {/* Filtrelenmiş aralığın özeti: tabloya sayfalama ile bakmadan sonucun
+                ne olduğunu üst şeritten oku (tarih filtresiyle birlikte güncellenir). */}
+            {historySummary.n > 0 && (
+              <>
+                <span className="w-px h-4 bg-bunker-800" aria-hidden="true" />
+                <span className="text-bunker-muted">
+                  Net:{" "}
+                  <strong className={pnlColor(historySummary.net)}>
+                    {historySummary.net >= 0 ? "+" : ""}₺{historySummary.net.toFixed(2)}
+                  </strong>
+                </span>
+                <span className="text-bunker-muted">
+                  WR: <strong className="text-cyan-300">%{historySummary.wr.toFixed(1)}</strong>
+                </span>
+                <span className="text-bunker-muted">
+                  PF:{" "}
+                  <strong
+                    className={
+                      historySummary.pf >= 1.5
+                        ? "text-emerald-400"
+                        : historySummary.pf >= 1.0
+                        ? "text-amber-400"
+                        : "text-rose-400"
+                    }
+                  >
+                    {historySummary.pf >= 99.9 ? "99.9+" : historySummary.pf.toFixed(2)}
+                  </strong>
+                </span>
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* 1. SEKME: AKTİF SİNYALLER TABLOSU */}
+      {/* 1. SEKME: AKTİF SİNYALLER TABLOSU (+ Reddedilen Adaylar paneli) */}
       {activeTab === "ACTIVE" && (
+        <>
         <div className="overflow-x-auto rounded-xl border border-bunker-800 bg-bunker-900/80">
           <table className="w-full text-left font-mono text-xs">
             <thead className="bg-bunker-950/80 text-bunker-muted uppercase text-[10px] border-b border-bunker-800">
@@ -1074,14 +1184,23 @@ export default function SpotMonitorPage() {
             <tbody className="divide-y divide-bunker-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-bunker-muted">
+                  <td colSpan={10} className="text-center py-10 text-bunker-muted">
                     Veriler yükleniyor...
                   </td>
                 </tr>
               ) : openSignals.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-bunker-muted">
-                    Şu an aktif takip edilen sinyal yok. Yukarıdaki &apos;Şimdi Tara&apos; butonuna basabilirsiniz.
+                  <td colSpan={10} className="text-center py-10">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span className="text-2xl" aria-hidden="true">📡</span>
+                      <span className="text-bunker-muted text-xs">
+                        Şu an aktif takip edilen sinyal yok — otomatik tarama her ~60 saniyede bir devam ediyor.
+                      </span>
+                      <span className="text-bunker-muted/70 text-[11px]">
+                        Kapılardan geçen bir kurulum bulununca burada görünür; geçen adayları
+                        aşağıdaki &quot;Reddedilen Adaylar&quot; panelinde görebilirsin.
+                      </span>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -1104,6 +1223,9 @@ export default function SpotMonitorPage() {
                         </button>
                         <span className="text-[10px] text-bunker-muted">
                           {new Date(s.detected_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="text-[10px] text-cyan-300/70">
+                          {holdMinutes(s.detected_at)} dk açık
                         </span>
                       </div>
                     </td>
@@ -1130,6 +1252,32 @@ export default function SpotMonitorPage() {
                           ({s.pnl_pct >= 0 ? "+" : ""}{s.pnl_pct.toFixed(2)}%)
                         </span>
                       </span>
+                      {/* Fiyat konum çubuğu: güncel fiyatın stop↔hedef bandındaki yeri.
+                          Rakamları okumadan "stop'a yakın mı, hedefe yaklaşmış mı" görünür;
+                          girişte çentik, zirve takipçisi aktifse takip noktası gösterilir. */}
+                      {pricePosPct(s) != null && (
+                        <div className="relative mt-1.5 h-1.5 w-28 rounded-full bg-gradient-to-r from-rose-500/60 via-bunker-700 to-emerald-500/60">
+                          {entryPosPct(s) != null && (
+                            <span
+                              className="absolute top-[-2px] h-[10px] w-[2px] rounded bg-slate-300/70"
+                              style={{ left: `${entryPosPct(s)}%` }}
+                              title={`Giriş: ₺${s.entry_price}`}
+                            />
+                          )}
+                          {s.trailing_active && s.peak_price && s.target_price > s.stop_price && (
+                            <span
+                              className="absolute top-[-2px] h-[10px] w-[2px] rounded bg-amber-400"
+                              style={{ left: `${Math.min(100, Math.max(0, ((s.peak_price - s.stop_price) / (s.target_price - s.stop_price)) * 100))}%` }}
+                              title={`Zirve: ₺${s.peak_price}`}
+                            />
+                          )}
+                          <span
+                            className="absolute top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full bg-white shadow ring-1 ring-bunker-950"
+                            style={{ left: `calc(${pricePosPct(s)}% - 5px)` }}
+                            title="Güncel fiyat"
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-col text-[10px] gap-0.5">
@@ -1261,6 +1409,51 @@ export default function SpotMonitorPage() {
             </tbody>
           </table>
         </div>
+
+        {/* REDDEDİLEN ADAYLAR: taramanın kapılardan (hacim, ölü tahta, AI kapısı…)
+            geçiremediği kurulumlar. Backend bunu zaten raporluyordu; artık
+            "neden işlem açılmadı" sorusu buradan cevaplanır. Son taramanın
+            reddedilenleri, en yenisi en üstte. */}
+        {(data?.rejected_signals?.length || 0) > 0 && (
+          <details className="rounded-xl border border-bunker-800 bg-bunker-900/70 group">
+            <summary className="flex flex-wrap items-center gap-2 px-4 py-2.5 cursor-pointer list-none select-none font-mono text-xs [&::-webkit-details-marker]:hidden">
+              <span className="text-[10px] text-bunker-muted transition-transform group-open:rotate-90" aria-hidden="true">▶</span>
+              <span className="text-slate-300 font-semibold">🚫 Reddedilen Adaylar</span>
+              <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-bunker-800 text-bunker-muted">
+                {data?.rejected_signals?.length}
+              </span>
+              <span className="text-[10px] text-bunker-muted">
+                son taramada kapılardan geçemeyen kurulumlar (neden işlem açılmadı?)
+              </span>
+            </summary>
+            <div className="px-4 pb-3 divide-y divide-bunker-800/50">
+              {(data?.rejected_signals || []).slice(-12).reverse().map((r, i) => (
+                <div
+                  key={`${r.symbol}-${r.timeframe}-${r.at}-${i}`}
+                  className="py-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]"
+                >
+                  <span className="font-bold text-white w-24 shrink-0">{r.symbol}</span>
+                  <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
+                    {r.timeframe}
+                  </span>
+                  <span className="text-cyan-300/90 w-44 truncate" title={r.strategy}>
+                    {r.strategy}
+                  </span>
+                  <span
+                    className="text-amber-300/90 flex-1 min-w-[240px] truncate"
+                    title={r.reasons?.join(" · ")}
+                  >
+                    {r.reasons?.join(" · ")}
+                  </span>
+                  {r.ml_hit_probability != null && (
+                    <span className="text-bunker-muted shrink-0">ML %{Math.round(r.ml_hit_probability * 100)}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </>
       )}
 
       {/* 2. SEKME: GEÇMİŞ & KÂR TABLOSU (Sayfalamalı ve Tarih Filtreli) */}
