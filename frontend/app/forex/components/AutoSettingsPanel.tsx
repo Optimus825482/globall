@@ -111,23 +111,17 @@ export const ALL_31_SYMBOLS: SymbolDef[] = [
   { sym: "USDCAD", label: "USD/CAD", group: "Majörler" },
   { sym: "NZDUSD", label: "NZD/USD", group: "Majörler" },
 
-  // Emtia, Kripto ve Endeksler (4)
+  // Emtia & Endeksler (3)
   { sym: "XAUUSD", label: "Ons Altın (XAU)", group: "Emtia & Endeks" },
-  { sym: "BTCUSD", label: "Bitcoin (BTC)", group: "Emtia & Endeks" },
   { sym: "NAS100", label: "Nasdaq 100 (USTEC)", group: "Emtia & Endeks" },
   { sym: "US30", label: "Dow Jones (US30)", group: "Emtia & Endeks" },
 
-  // 7/24 Hafta Sonu Kriptoları (10)
+  // 7/24 Hafta Sonu Kriptoları (3) — ÜRÜN KURALI (2026-11-09): yalnız BTC/ETH/XRP.
+  // Diğer tabanlar backend'de (`config.CRYPTO_ALLOWED_BASES`) eleniyor; burada
+  // seçilebilir kalsalardı "açtım ama işlem gelmiyor" yanılsaması yaratırlardı.
+  { sym: "BTCUSD", label: "Bitcoin (BTC)", group: "Kripto (7/24)" },
   { sym: "ETHUSD", label: "Ethereum (ETH)", group: "Kripto (7/24)" },
-  { sym: "SOLUSD", label: "Solana (SOL)", group: "Kripto (7/24)" },
-  { sym: "BNBUSD", label: "Binance Coin (BNB)", group: "Kripto (7/24)" },
   { sym: "XRPUSD", label: "Ripple (XRP)", group: "Kripto (7/24)" },
-  { sym: "LNKUSD", label: "Chainlink (LNK)", group: "Kripto (7/24)" },
-  { sym: "UNIUSD", label: "Uniswap (UNI)", group: "Kripto (7/24)" },
-  { sym: "AVXUSD", label: "Avalanche (AVAX)", group: "Kripto (7/24)" },
-  { sym: "ADAUSD", label: "Cardano (ADA)", group: "Kripto (7/24)" },
-  { sym: "XTZUSD", label: "Tezos (XTZ)", group: "Kripto (7/24)" },
-  { sym: "DATAUSD", label: "Streamr (DATA)", group: "Kripto (7/24)" },
 
   // JPY Krosları (6)
   { sym: "GBPJPY", label: "GBP/JPY", group: "JPY Krosları" },
@@ -299,7 +293,7 @@ export default function AutoSettingsPanel({
     ...appliedSettings,
     allowed_symbols: appliedSettings?.allowed_symbols?.length ? appliedSettings.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "NAS100", "AUDCAD"],
     fvg_pullback_enabled: appliedSettings?.fvg_pullback_enabled ?? true,
-    fvg_symbols: appliedSettings?.fvg_symbols?.length ? appliedSettings.fvg_symbols : ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
+    fvg_symbols: appliedSettings?.fvg_symbols?.length ? appliedSettings.fvg_symbols : ["BTCUSD", "ETHUSD", "XRPUSD"],
     fvg_tp_r: appliedSettings?.fvg_tp_r ?? 1.8,
   }));
   const [isSaving, setIsSaving] = useState(false);
@@ -326,7 +320,7 @@ export default function AutoSettingsPanel({
         ...appliedSettings,
         allowed_symbols: appliedSettings?.allowed_symbols?.length ? appliedSettings.allowed_symbols : ["XAUUSD", "BTCUSD", "US30", "NAS100", "AUDCAD"],
         fvg_pullback_enabled: appliedSettings?.fvg_pullback_enabled ?? true,
-        fvg_symbols: appliedSettings?.fvg_symbols?.length ? appliedSettings.fvg_symbols : ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
+        fvg_symbols: appliedSettings?.fvg_symbols?.length ? appliedSettings.fvg_symbols : ["BTCUSD", "ETHUSD", "XRPUSD"],
         fvg_tp_r: appliedSettings?.fvg_tp_r ?? 1.8,
       });
       setSaveMsg(null);
@@ -402,7 +396,7 @@ export default function AutoSettingsPanel({
         s3_symbols_15m: form.s3_symbols_15m || ["XAUUSD", "BTCUSD", "US30", "GBPUSD"],
         squeeze_kc_symbols: form.squeeze_kc_symbols || ["XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF"],
         fvg_pullback_enabled: Boolean(form.fvg_pullback_enabled),
-        fvg_symbols: form.fvg_symbols || ["SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BTCUSD", "BNBUSD", "AVXUSD", "ETHUSD", "ADAUSD", "DATAUSD"],
+        fvg_symbols: form.fvg_symbols || ["BTCUSD", "ETHUSD", "XRPUSD"],
         fvg_tp_r: num(form.fvg_tp_r, 1.8),
         // Combo3 (M5) paper-ölçüm kolu — 2026-10-28
         combo3_enabled: form.combo3_enabled ?? false,

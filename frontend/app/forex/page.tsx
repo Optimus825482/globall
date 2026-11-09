@@ -464,7 +464,7 @@ export default function ForexRadarPage() {
       if (directionFilter !== "ALL" && c.action !== directionFilter) return false;
       if (categoryFilter !== "ALL") {
         if (categoryFilter === "crypto") {
-          const isCrypto = c.category === "crypto" || ["BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD"].includes(c.symbol);
+          const isCrypto = c.category === "crypto" || ["BTCUSD", "ETHUSD", "XRPUSD"].includes(c.symbol);
           if (!isCrypto) return false;
         } else if (categoryFilter === "commodity") {
           if (c.category !== "commodity" && !c.symbol.includes("XAU")) return false;

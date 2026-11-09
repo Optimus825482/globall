@@ -137,19 +137,14 @@ interface MT5State {
 
 type TabKey = "portfolio" | "xauusd" | "forex_tech" | "crypto_tech";
 
-// 7/24 Hafta sonu kripto portföyü sembolleri
+// 7/24 Hafta sonu kripto portföyü sembolleri.
+// ÜRÜN KURALI (2026-11-09): yalnız BTC/ETH/XRP. Backend `config.CRYPTO_ALLOWED_BASES`
+// diğer tüm kripto tabanlarını eler; burada kalsalardı veri hiç gelmeyen ölü
+// kartlar olarak görünürlerdi (SOL/BNB/LNK/UNI/AVX/ADA/XTZ/DATA).
 const CRYPTO_SYMBOLS = [
   { sym: "BTCUSD", name: "Bitcoin", icon: "₿", digits: 2 },
   { sym: "ETHUSD", name: "Ethereum", icon: "Ξ", digits: 2 },
-  { sym: "SOLUSD", name: "Solana", icon: "◎", digits: 4 },
-  { sym: "BNBUSD", name: "Binance Coin", icon: "🔶", digits: 3 },
   { sym: "XRPUSD", name: "Ripple", icon: "✕", digits: 4 },
-  { sym: "LNKUSD", name: "Chainlink", icon: "🔗", digits: 3 },
-  { sym: "UNIUSD", name: "Uniswap", icon: "🦄", digits: 4 },
-  { sym: "AVXUSD", name: "Avalanche", icon: "🔺", digits: 4 },
-  { sym: "ADAUSD", name: "Cardano", icon: "₳", digits: 5 },
-  { sym: "XTZUSD", name: "Tezos", icon: "ꜩ", digits: 5 },
-  { sym: "DATAUSD", name: "Streamr", icon: "📡", digits: 4 },
 ];
 
 export default function ForexPortfolioPage({ symbols, title }: { symbols?: string[]; title?: string } = {}) {
@@ -468,7 +463,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     });
   }, [radarCandidates, forexCategoryFilter, forexSearchQuery]);
 
-  // Kripto Pariteleri (10'lu hafta sonu portföyü)
+  // Kripto Pariteleri (7/24 hafta sonu portföyü — BTC/ETH/XRP)
   const cryptoCandidatesList = useMemo(() => {
     return CRYPTO_SYMBOLS.map((def) => {
       const cand = radarCandidates.find((c) => c.symbol === def.sym) || null;
@@ -574,7 +569,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             <li><strong>Portföy &amp; İşlemler:</strong> Hesap bakiyesi, kâr/zarar, sembol başarı kartları ve anlık açık pozisyonları izleyip yönetebilirsiniz.</li>
             <li><strong>XAUUSD Komuta Merkezi:</strong> Altın paritesi için 18-kapılı filtre durumunu, teknik göstergeleri ve sistemin tüm karar loglarını saniye saniye denetler.</li>
             <li><strong>Forex Çiftleri:</strong> Tüm majör ve çapraz paritelerin anlık trendini, skorunu ve RSI seviyelerini tek ızgarada sunar.</li>
-            <li><strong>Kripto Çiftleri (7/24):</strong> Hafta sonları Forex kapalıyken devrede olan 10 IC Markets kripto varlığında FVG ve S3 durumunu gösterir.</li>
+            <li><strong>Kripto Çiftleri (7/24):</strong> Hafta sonları Forex kapalıyken devrede olan IC Markets kripto varlıklarında (BTC/ETH/XRP) FVG ve S3 durumunu gösterir.</li>
           </ol>
         </div>
       )}
@@ -585,7 +580,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           { id: "portfolio", label: "Portföy & İşlemler", badge: `${mt5.open_positions?.length || 0} Açık` },
           { id: "xauusd", label: "XAUUSD Komuta & Loglar", badge: xauCandidate ? `Skor ${xauCandidate.score}` : "Canlı" },
           { id: "forex_tech", label: "Forex Çiftleri Teknik Analiz", badge: `${filteredForexCandidates.length} Parite` },
-          { id: "crypto_tech", label: "Kripto Çiftleri (7/24)", badge: "10 Varlık" },
+          { id: "crypto_tech", label: "Kripto Çiftleri (7/24)", badge: `${CRYPTO_SYMBOLS.length} Varlık` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1390,7 +1385,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
 
             <input
               type="text"
-              placeholder="Kripto ara (SOL, ETH, BTC...)"
+              placeholder="Kripto ara (BTC, ETH, XRP...)"
               value={cryptoSearchQuery}
               onChange={(e) => setCryptoSearchQuery(e.target.value)}
               className="bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white placeholder-bunker-600 outline-none focus:border-purple-400 w-52"
