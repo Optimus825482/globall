@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 
 from .config import config
+from . import ml_shadow
 
 logger = logging.getLogger("scalper.ml")
 
@@ -842,4 +843,15 @@ def predict_target(symbol: str, features: dict[str, Any], horizon: int = 5) -> d
     canlı dosyayı okuduğu için eğitim onun üzerine yazdığında "öngören" model
     değişir.
     """
-    return predict_from_artifact(load_model(), symbol, features, horizon)
+    result = predict_from_artifact(load_model(), symbol, features, horizon)
+    if result:
+        # GÖLGE KALİBRASYON (2026-11-09): karar DEĞİŞMEZ — yalnız
+        # "kalibre olsaydı çekimser kalır mıydı?" gözlemi loglanır/sayılır.
+        # `observe()` asla istisna fırlatmaz; tahmin yolu ölçüm yüzünden düşmez.
+        ml_shadow.observe(
+            raw_probability=result.get("hit_probability"),
+            symbol=symbol,
+            strategy=(features or {}).get("strategy"),
+            horizon=horizon,
+        )
+    return result

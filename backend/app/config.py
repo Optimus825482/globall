@@ -325,6 +325,26 @@ class Config:
     # değişikliği; 0.55 de savunulabilir, tercih örneklem hızından yana.
     ML_MIN_HIT_PROBABILITY = min(0.95, max(0.05, float(
         os.getenv("ML_MIN_HIT_PROBABILITY", "0.50"))))
+
+    # --- Olasılık kalibrasyonu GÖLGE modu (2026-11-09) ------------------------
+    # `app/ml_probability.py` + `scripts/report_probability_calibration.py`
+    # ham `predict_proba`'nın kalibre olup olmadığını ölçer. Gölge mod, karar
+    # DEĞİŞTİRMEDEN yalnız "kalibre olsaydı çekimser kalır mıydı?" sorusunu
+    # loglar/sayar. Bu, eşiği kanıtla seçmek için gereken veriyi toplar;
+    # doğrudan eşik değiştirmek ölçümsüz bir müdahale olurdu.
+    # Kapatmak için: ML_CALIBRATION_SHADOW_ENABLED=0
+    ML_CALIBRATION_SHADOW_ENABLED = os.getenv(
+        "ML_CALIBRATION_SHADOW_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+    #: Kalibrasyon eğrisi artefaktı. Yoksa gölge mod ham olasılıkla çalışır
+    #: (`calibrated=False`) ve bunu logda açıkça işaretler — sessizce "düzeltmiş
+    #: gibi" davranmaz.
+    ML_CALIBRATION_ARTIFACT = os.getenv(
+        "ML_CALIBRATION_ARTIFACT",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "artifacts", "ml_calibration.json"))
+    #: Çekimserlik eşiğini türeten ödül/risk oranı (başabaş p = 1/(1+RR)).
+    ML_CALIBRATION_REWARD_RISK = max(0.1, float(
+        os.getenv("ML_CALIBRATION_REWARD_RISK", "1.5")))
     LLM_FORECAST_LESSON_MIN_SAMPLES = max(8, int(os.getenv("LLM_FORECAST_LESSON_MIN_SAMPLES", "12")))
     # Desen madenciliği minimum destek sayısı (koşula uyan ölçülmüş tahmin).
     LLM_PATTERN_MIN_SUPPORT = max(5, int(os.getenv("LLM_PATTERN_MIN_SUPPORT", "8")))

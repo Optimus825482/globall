@@ -309,3 +309,57 @@ Araştırmanın P1 maddeleri koda döküldü. **Her araç bilinen cevaplı sente
 | BGE reranker (P1-7) | Model ağırlığı indirmesi + servis bağımlılığı gerektirir; canlı arama yolunu değiştirir. Ölçüm yapılmadan açmak riskli |
 | `instructor` (P1-6) | **Gereksiz çıktı**: aynı garanti `pydantic` + `validate_verdict` ile sağlandı, yeni bağımlılık eklenmedi |
 | P2/P3 maddeleri (COT, talipp, SMC, seans, GARCH, Kelly, alphalens, mlflow, DVC, river, litellm) | Bu turun kapsamı P1'di; her biri ayrı entegrasyon ve doğrulama turu istiyor |
+
+---
+
+## 10. GÖLGE (SHADOW) KALİBRASYON — canlı ölçüm, sıfır karar değişikliği (2026-11-09)
+
+`ml_probability` modülü hazırdı ama **canlı giriş kapısına bağlanmadı** — bilinçli: eşiği ölçümsüz açmak, `calibration.py`'nin kendi docstring'inin uyardığı hatanın aynısı olurdu. Bunun yerine **gölge mod** eklendi.
+
+### 10.1 Ne yapar
+
+Her canlı ML tahmininde (`ml_forecast.predict_target` → tek giriş noktası):
+
+```
+ham olasılık → kalibre olasılık → çekimserlik hükmü   (SADECE LOG + SAYAÇ)
+```
+
+Karar **değişmez**. Amaç 1-2 hafta sonra `velocity_candidates` sonuçlarıyla karşılaştırıp **eşiği kanıtla** açmak.
+
+| Dosya | İş |
+|---|---|
+| `app/ml_shadow.py` | `observe()` / `counters()` / `reset_counters()`; artefakt **mtime kontrollü** okunur (yeni artefakt restart gerektirmez) |
+| `app/config.py` | `ML_CALIBRATION_SHADOW_ENABLED` (varsayılan **açık**), `ML_CALIBRATION_ARTIFACT`, `ML_CALIBRATION_REWARD_RISK` (varsayılan 1.5) |
+| `app/ml_forecast.py` | `predict_target()` içine tek kanca — dönen sözlük **aynen** korunur |
+| `app/routers/system.py` | `/api/system/health` yanıtına `ml_calibration` bloğu (gözlem, çekimser oranı, ort. ham/kalibre, `artifact_loaded`) |
+| `tests/test_ml_shadow.py` | 8 test |
+
+### 10.2 Testlerin kilitlediği davranış
+
+1. Gölge kapalıyken hiçbir iş yapılmaz (`observe → None`).
+2. Artefakt yokken **ham olasılık korunur**, `calibrated=False` işaretlenir ("düzeltmiş gibi" davranmaz).
+3. Artefakt varken kalibre değer uygulanır; çekimserlik eşiğin altında **yakalanır** (0.90 → kalibre 0.10 < eşik 0.40).
+4. **`predict_target` gölge açıkken de kapalıyken de AYNI sözlüğü döndürür** — en önemli kilit (mock'lu test).
+5. `observe()` hata durumunda **istisna fırlatmaz** (bozuk artefakt testi dahil) — tahmin yolu ölçüm yüzünden asla düşmez.
+6. RR değişince eşik değişir (RR=3.0 → p*=0.25).
+7. Sayaçlar doğru; `reset_counters` sıfırlar.
+
+### 10.3 Uygulama sırasında yakalanan 2 hata
+
+1. **`config` modül mü nesne mi?** Proje `from .config import config` ile **nesneyi** kullanıyor. `ml_shadow`'ta `from app import config` yazmıştım → `ML_CALIBRATION_ARTIFACT` bulunamadı, gölge mod sessizce `artifact: ''` ile çalıştı. Düzeltildi + yorumla kilitlendi.
+2. **Uzun dict literal'ine gömülü atama** — `/api/system/health` yanıtı tek satırlık dev bir dict; yeni anahtarı eklerken atama cümlesi dict'in ortasına düştü ve dosya sözdizimi hatası verdi. Bölge bütün olarak yeniden yazıldı (import sonrası doğrulandı).
+
+### 10.4 Nasıl açılır (kanıt toplandıktan sonra)
+
+```bash
+# 1) artefaktı üret (haftalık/aylık)
+python -m scripts.report_probability_calibration --save artifacts/ml_calibration.json --rr 1.5
+# 2) health'te sayacı izle
+curl -s localhost:8000/api/system/health | jq .ml_calibration
+# 3) çekimser oranı mantıklıysa VE test kümesinde Brier/ECE iyileştiyse:
+#    eşiği canlı kapıya bağla (ayrı, ölçülmüş bir değişiklik)
+```
+
+Sağlık bloğu: `enabled`, `artifact_loaded`, `artifact_samples`, `observations`, `calibrated_observations`, `would_abstain`, `abstain_rate_pct`, `mean_raw`, `mean_calibrated`.
+
+**Tüm backend testleri:** `1949 passed, 2 failed` (2 kırmızı önceden var).
