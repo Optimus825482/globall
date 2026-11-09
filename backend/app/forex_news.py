@@ -69,6 +69,17 @@ CALENDAR_REFRESH_INTERVAL_SEC = 3 * 3600  # 3 saatte bir arka planda kontrol ve 
 # dolduğunda yoğun yoklama durur. Sağlayıcıları dövmemek için alt sınır var.
 RELEASE_CHASE_INTERVAL_SEC = 45.0
 RELEASE_CHASE_WINDOW_SEC = 90 * 60   # saatinden sonra en fazla 90 dk kovala
+#: TradingView `actual` değerini GECİKMELİ yayınlar. 2026-11-09 ölçümü: olay yaşı
+#: 0-6 saat → actual doluluğu %0; 2+ gün → %92. Eski geri-bakış penceresi 1 GÜNDÜ,
+#: yani yayınlanan değer pencere DIŞINDA kalıyor ve satır kalıcı olarak '—'
+#: kalıyordu (kullanıcı şikâyeti: "takvim güncellenmiyor"). Pencere gecikmeyi
+#: kapsamalı. NOT: ForexFactory haftalık JSON'unda `actual` ALANI YOKTUR (0/101),
+#: aynı gün değeri yalnız Investing.com'dan gelebilir.
+TV_LOOKBACK_DAYS = 5
+#: Yazma tavanı (CALENDAR_MAX_EVENTS) içinde yakın geçmişe ayrılan kota: gecikmeli
+#: gelen `actual` değerlerinin DB'ye yazılabilmesi için geçmiş ayak da saklanmalı,
+#: ama gelecek olayları dışarı İTMEMELİ.
+CALENDAR_PAST_QUOTA = 60
 RELEASE_CHASE_LEAD_SEC = 30.0        # saatinden 30 sn önce de hazırlan
 
 # Takvimde tutulacak en fazla olay. DB okuma limiti
@@ -1159,7 +1170,8 @@ async def fetch_tradingview_events() -> List[Dict[str, Any]]:
         try:
             now = datetime.datetime.now(datetime.timezone.utc)
             # Dün ile önümüzdeki 7 gün arasındaki kritik veriler
-            from_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%dT00:00:00.000Z")
+            # Gecikmeli yayınlanan `actual` değerleri pencere içinde kalsın.
+            from_str = (now - datetime.timedelta(days=TV_LOOKBACK_DAYS)).strftime("%Y-%m-%dT00:00:00.000Z")
             to_str = (now + datetime.timedelta(days=7)).strftime("%Y-%m-%dT23:59:59.000Z")
             url = f"https://economic-calendar.tradingview.com/events?from={from_str}&to={to_str}&countries=US,EU,GB,JP,CA,AU,CH,DE,FR"
             req = urllib.request.Request(
@@ -1892,7 +1904,17 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
         return (passed, stars_priority, date_sort)
 
     filtered_items.sort(key=sort_key)
-    final_items = filtered_items[:CALENDAR_MAX_EVENTS]
+    # KOTA (2026-11-09): pencere 5 güne çıkınca "geçmiş önce" sıralaması tavanı
+    # doldurup GELECEK olayları dışarı itebiliyordu (panel ve LLM tam da onları
+    # ister). Geçmiş ayağa ayrı bir kota verilir; gelecek olaylar korunur.
+    _is_past = [(x.get("is_passed", False) or x.get("status") == "Açıklandı") for x in filtered_items]
+    _upcoming = [x for x, is_past in zip(filtered_items, _is_past) if not is_past]
+    _past = [x for x, is_past in zip(filtered_items, _is_past) if is_past]
+    _upcoming.sort(key=sort_key)
+    # Geçmiş ayağın EN YENİLERİ tutulur (gecikmeli gelen değerler oradadır).
+    _past.sort(key=lambda ev: ev.get("date_iso") or "", reverse=True)
+    final_items = _upcoming[: max(0, CALENDAR_MAX_EVENTS - CALENDAR_PAST_QUOTA)] + _past[:CALENDAR_PAST_QUOTA]
+    final_items.sort(key=sort_key)
 
     # Bellek ve disk önbelleğini güncelle
     _CALENDAR_CACHE["timestamp"] = now
@@ -1900,8 +1922,14 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     if len(final_items) >= 4:
         _save_disk_cache(final_items)
 
-    # Veritabanına kaydet
-    if database and final_items:
+    # Veritabanına kaydet — YALNIZ gerçek sağlayıcı verisiyle.
+    #
+    # `FALLBACK_EVENTS` tarihleri SABİTTİR (Ekim 2026). Sağlayıcılar çöktüğünde
+    # bu sahte satırları DB'ye yazmak, panelde aylar öncesinin olaylarını
+    # "takvim" diye göstermek demekti. Sağlayıcı yoksa hiç yazmayız; okuma yolu
+    # eldeki taze satırları sunmaya devam eder.
+    provider_ok = bool(tv_items or inv_items)
+    if database and final_items and provider_ok:
         try:
             saved_cnt = await database.save_economic_calendar_events(final_items)
             logger.info("[EconomicCalendar] %d adet takvim olayı veritabanına başarıyla kaydedildi.", saved_cnt)
@@ -1916,7 +1944,6 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     # zaman tabanlıdır: `save_economic_calendar_events` hayatta kalan her satırın
     # `updated_at`'ini tazeler, dolayısıyla başarısız bir çekim görmediği iyi
     # satırı asla silemez.
-    provider_ok = bool(tv_items or inv_items)
     if database and provider_ok and len(final_items) >= database.CALENDAR_PRUNE_FLOOR:
         try:
             pruned = await database.prune_economic_calendar_events(fresh_count=len(final_items))
@@ -1924,6 +1951,16 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
                 logger.info("[EconomicCalendar] %d adet bayat takvim satırı temizlendi.", pruned)
         except Exception as exc:
             logger.warning("[EconomicCalendar] Bayat satır temizleme hatası: %s", exc)
+        # Eski hash-kimlikli kopyalar: aynı olayın '—' değerli ikinci satırı
+        # panelde görünüyordu (2026-11-09). Yalnız gerçek kimlikli kardeşi olan
+        # hash satırları silinir.
+        try:
+            cleanup = await database.cleanup_legacy_calendar_duplicates()
+            if cleanup.get("deleted"):
+                logger.info("[EconomicCalendar] %d adet eski kimlikli yinelenen satır silindi "
+                            "(toplam eski kimlik: %d).", cleanup["deleted"], cleanup.get("legacy_total"))
+        except Exception as exc:
+            logger.warning("[EconomicCalendar] Eski kimlik temizliği hatası: %s", exc)
 
     _update_event_dynamic_fields(final_items)
     if database:

@@ -6165,36 +6165,165 @@ async def save_economic_calendar_events(events: List[Dict[str, Any]]) -> int:
 
 
 async def get_economic_calendar_events(min_stars: int = 2, limit: int = 50) -> List[Dict[str, Any]]:
-    """Veritabanından önbelleklenmiş ekonomik takvim olaylarını getirir.
+    """Önbelleklenmiş ekonomik takvim olaylarını **ŞİMDİ'nin etrafındaki** pencereden getirir.
 
-    `limit` varsayılanı 50'dir ve **değişmemiştir** — mevcut çağrılar aynı davranışı
-    görür. `forex_news` bunu `CALENDAR_MAX_EVENTS` (60) ile geçer; yazma tarafındaki
-    tavan ile okuma tavanı böylece hizalanır, aksi halde kaydedilen olayların bir
-    kısmı hiç okunamazdı.
+    2026-11-09 KÖK NEDEN DÜZELTMESİ — "takvim güncellenmiyor" şikâyeti:
+    Eski sorgu `ORDER BY date_iso ASC LIMIT ?` ile EN ESKİ satırları döndürüyordu.
+    Tablo yazma tarafında 150 satıra kadar birikebildiği için (ölçüm: 195 satır)
+    limit doluyor ve **EN YENİ olaylar hiç dönmüyordu** — 2026-11-09'da
+    doğrulandı: limit 150 ile dönen en yeni satır 2026-11-06, bugüne ait olay
+    sayısı 0. Panel de, LLM'in ekonomik takvim bağlamı da bu kesilmiş listeyi
+    görüyordu.
+
+    İki şey birden düzeltildi:
+      1. **Pencere**: `CALENDAR_READ_LOOKBACK_DAYS` gün geriye + tüm gelecek.
+         Eski satırlar DB'de kalabilir; artık okunmaz.
+      2. **Sıralama Python'da**: `date_iso` TEXT'tir ve geçmişte iki farklı
+         biçimde yazıldı (`…T07:00:00Z` ve `…T07:00:00.000Z`); metin
+         karşılaştırması bu iki biçimi yanlış sıralıyordu. Ayrıştırıp
+         karşılaştırıyoruz ve dönen kaydın `date_iso`'su KANONİK biçime
+         çevrilir → aşağı akıştaki tüm karşılaştırmalar tek biçim görür.
+
+    Yinelenen satır temizliği: aynı (zaman, başlık) için birden fazla kayıt
+    varsa EN İYİSİ seçilir (gerçek kimlik > değeri bilinen > en yeni yazım).
+    Eski sürüm kimliği hash tabanlıydı (`cal-tv-403335`) ve bu satırlar '—'
+    değerleriyle panelde görünebiliyordu.
     """
     def op(conn):
         _ensure_economic_calendar_schema(conn)
         rows = conn.execute(
-            """
-            SELECT raw_data FROM economic_calendar
-            WHERE stars >= ?
-            ORDER BY date_iso ASC
-            LIMIT ?
-            """,
-            (min_stars, limit)
+            "SELECT id, raw_data, date_iso, original_title, title, actual, updated_at "
+            "FROM economic_calendar WHERE stars >= ?",
+            (min_stars,)
         ).fetchall()
-        items = []
+        now_ts = time.time()
+        cutoff = now_ts - CALENDAR_READ_LOOKBACK_DAYS * 86400.0
+        best: Dict[tuple, tuple] = {}
         for r in rows:
+            raw_str = _cal_cell(r, 1, "raw_data")
+            if not raw_str:
+                continue
             try:
-                raw_str = r[0] if isinstance(r, (list, tuple)) else r["raw_data"]
-                if raw_str:
-                    item = json.loads(raw_str)
-                    items.append(item)
+                item = json.loads(raw_str)
             except Exception:
                 continue
-        return items
+            if not isinstance(item, dict):
+                continue
+            iso = _cal_cell(r, 2, "date_iso") or item.get("date_iso")
+            dt = _parse_cal_ts(iso)
+            if dt is None or dt.timestamp() < cutoff:
+                continue
+            # Kimlik: gerçek kimlik > hash tabanlı eski kimlik
+            rid = str(_cal_cell(r, 0, "id") or "")
+            is_real_id = bool(rid) and not LEGACY_CALENDAR_ID_RE.match(rid)
+            act = str(_cal_cell(r, 5, "actual") or "")
+            has_actual = bool(act.strip()) and act.strip() != "—"
+            try:
+                upd = float(_cal_cell(r, 6, "updated_at") or 0.0)
+            except (TypeError, ValueError):
+                upd = 0.0
+            key = (dt.isoformat(), str(_cal_cell(r, 3, "original_title")
+                                       or _cal_cell(r, 4, "title") or "").strip().lower())
+            rank = (0 if is_real_id else 1, 0 if has_actual else 1, -upd)
+            prev = best.get(key)
+            if prev is None or rank < prev[0]:
+                item["date_iso"] = _canon_cal_iso(dt)      # tek biçim garantisi
+                best[key] = (rank, item, dt)
+        items = sorted(best.values(), key=lambda v: v[2])
+        # KOTA: gelecek olaylar KESİLMEMELİ (panel/LLM onları ister), ama yakın
+        # geçmiş de gerekir — yayınlanan değerler kaynaktan gecikmeli geldiği için.
+        past = [v for v in items if v[2].timestamp() < now_ts]
+        upcoming = [v for v in items if v[2].timestamp() >= now_ts]
+        past_quota = max(1, int(limit) // 3)
+        merged = past[-past_quota:] + upcoming[: max(0, int(limit) - past_quota)]
+        merged.sort(key=lambda v: v[2])
+        return [v[1] for v in merged]
 
     return await _run_db(op)
+
+
+#: Okuma penceresi: bundan eski olaylar DB'de dursa da OKUNMAZ. Hem panel hem
+#: LLM bağlamı "şimdi + yakın geçmiş + gelecek" ister; eski satırlar gürültüdür
+#: ve eski sorgu tam da onları döndürüp yenileri kesiyordu.
+CALENDAR_READ_LOOKBACK_DAYS = 3.0
+
+#: Eski sürümün hash tabanlı kimlikleri (`cal-tv-403335`). Gerçek TradingView
+#: kimlikleri 13 hanelidir; bu 7 haneye kadar olanlar kararsız/eski kayıtlardır.
+LEGACY_CALENDAR_ID_RE = re.compile(r"^cal-(?:tv|inv|ff)-\d{1,7}$")
+
+
+def _cal_cell(row, idx: int, name: str):
+    """sqlite3 satırı tuple da olabilir sözlük-benzeri de — ikisini de oku."""
+    if isinstance(row, (list, tuple)):
+        return row[idx] if idx < len(row) else None
+    try:
+        return row[name]
+    except Exception:
+        try:
+            return row[idx]
+        except Exception:
+            return None
+
+
+def _parse_cal_ts(value) -> Optional[datetime]:
+    """Takvim zaman damgasını UTC `datetime`'a çevirir; çevrilemezse `None`."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _canon_cal_iso(dt: datetime) -> str:
+    """Kanoni̇k damga: `YYYY-MM-DDTHH:MM:SS.000Z` (tek biçim, sıralanabilir)."""
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+async def cleanup_legacy_calendar_duplicates() -> Dict[str, int]:
+    """Eski hash-id'li, yeni kopyası olan takvim satırlarını SİLER.
+
+    NEDEN: kimlik üretimi bir dönem `abs(hash(...)) % 1000000` idi (Python'da
+    süreç başına rastgele). Kod gerçek kimliğe geçtikten sonra aynı olay iki
+    satır olarak kaldı: gerçek kimlikli (güncel değerlerle) + hash kimlikli
+    (donmuş, `actual='—'`). Panel ikinciyi de gösteriyordu → "değer gelmiyor"
+    görüntüsü. Bu fonksiyon YALNIZ hash kimlikli VE aynı (zaman, başlık) için
+    gerçek kimlikli bir kardeşi olan satırları siler; başka hiçbir satıra
+    dokunmaz (aşırı silme riski yok).
+    """
+    def op(conn):
+        _ensure_economic_calendar_schema(conn)
+        rows = conn.execute(
+            "SELECT id, original_title, title, date_iso FROM economic_calendar"
+        ).fetchall()
+        real_keys = set()
+        legacy = []
+        for r in rows:
+            rid = str(_cal_cell(r, 0, "id") or "")
+            title = str(_cal_cell(r, 1, "original_title") or _cal_cell(r, 2, "title") or "").strip().lower()
+            dt = _parse_cal_ts(_cal_cell(r, 3, "date_iso"))
+            if dt is None or not title:
+                continue
+            key = (dt.isoformat(), title)
+            if LEGACY_CALENDAR_ID_RE.match(rid):
+                legacy.append((rid, key))
+            else:
+                real_keys.add(key)
+        drop = [rid for rid, key in legacy if key in real_keys]
+        if drop:
+            for chunk_start in range(0, len(drop), 200):
+                chunk = drop[chunk_start:chunk_start + 200]
+                conn.execute(
+                    f"DELETE FROM economic_calendar WHERE id IN ({','.join('?' * len(chunk))})",
+                    tuple(chunk),
+                )
+            conn.commit()
+        return {"deleted": len(drop), "legacy_total": len(legacy)}
+
+    return await _run_db(op)
+
 
 
 # Bayat takvim satırı temizliği (aşağıdaki iki fonksiyon).

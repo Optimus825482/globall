@@ -18,6 +18,8 @@ interface CalendarEvent {
   impact?: string;
   affected_symbols?: string[];
   is_within_5m?: boolean;
+  /** Backend `_update_event_dynamic_fields`: saat geçti mi (okuma anında hesaplanır). */
+  is_passed?: boolean;
   bias_direction?: "BUY" | "SELL" | "NEUTRAL";
   bias_confidence?: number;
   bias_explanation?: string;
@@ -128,6 +130,7 @@ export default function ForexCalendarPage() {
     try {
       const data = await apiFetch(forceRefresh ? "/api/forex/news?refresh=1" : "/api/forex/news");
       setEvents(Array.isArray(data?.news) ? data.news : []);
+      setLastSyncTs(typeof data?.last_sync_ts === "number" && data.last_sync_ts > 0 ? data.last_sync_ts : null);
       setLastUpdated(new Date());
       setError("");
     } catch (e) {
@@ -140,6 +143,10 @@ export default function ForexCalendarPage() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // VERİ TAZELİĞİ (2026-11-09): "Güncellendi" etiketi YALNIZ tarayıcının çekim
+  // saatini gösteriyordu — veri iki gün bayat olsa bile saat her zaman "şimdi"
+  // görünüyordu. Artık sunucunun GERÇEK kaynak senkronu da gösterilir.
+  const [lastSyncTs, setLastSyncTs] = useState<number | null>(null);
   const refreshSource = async () => {
     setRefreshing(true);
     try {
@@ -182,6 +189,17 @@ export default function ForexCalendarPage() {
     : visible;
 
   const isReleased = (e: CalendarEvent) => !!e.actual && e.actual !== "—";
+  // Kaynak senkronu 3,5 saatten eskiyse (arka plan döngüsü 3 saatte bir) etiket
+  // amber'e döner: veri gerçekten bayat demektir. Ayrıca kaynağın `actual`
+  // değerini GECİKMELİ yayınladığı ayrı bir gerçektir (ölçüm: aynı gün %0).
+  const syncAgeMin = lastSyncTs ? Math.max(0, (Date.now() / 1000 - lastSyncTs) / 60) : null;
+  const syncStale = syncAgeMin == null || syncAgeMin > 210;
+  const syncLabel = syncAgeMin == null
+    ? (lastUpdated ? `Güncellendi ${lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Yükleniyor…")
+    : syncAgeMin < 90
+      ? `Veri taze (${Math.round(syncAgeMin)} dk önce çekildi)`
+      : `Veri ${(syncAgeMin / 60).toFixed(1)} saat önce çekildi`;
+
   const releasedCount = filtered.filter(isReleased).length;
   const pendingCount = filtered.length - releasedCount;
   const tabbed = filtered.filter((e) => (tab === "released") === isReleased(e));
@@ -266,9 +284,13 @@ export default function ForexCalendarPage() {
         </div>
 
         <div className="flex items-center gap-3 font-mono text-xs text-bunker-muted">
-          <span className="flex items-center gap-1.5" aria-live="polite">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden />
-            {lastUpdated ? `Güncellendi ${lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Yükleniyor…"}
+          <span className="flex items-center gap-1.5" aria-live="polite" title={
+            lastSyncTs
+              ? `Kaynak senkronu: ${new Date(lastSyncTs * 1000).toLocaleString("tr-TR")}`
+              : "Kaynak senkronu bilinmiyor"
+          }>
+            <span className={`w-1.5 h-1.5 rounded-full ${syncStale ? "bg-amber-400" : "bg-emerald-400"}`} aria-hidden />
+            {syncLabel}
           </span>
           <button
             type="button"
@@ -484,7 +506,13 @@ export default function ForexCalendarPage() {
                               <span className="text-white/70 font-bold">{formatUtc3Time(ev.date_iso)}</span>
                               <span>Önceki: {ev.previous || "—"}</span>
                               <span>Beklenti: {ev.forecast || "—"}</span>
-                              {released && <span className="text-white font-bold">Açıklanan: {ev.actual}</span>}
+                              {released ? (
+                                <span className="text-white font-bold">Açıklanan: {ev.actual}</span>
+                              ) : ev.is_passed ? (
+                                <span className="text-amber-300/90" title="Kaynak, açıklanan değeri aynı gün yayınlamıyor; genellikle 1-2 gün sonra gelir ve otomatik dolar.">
+                                  Açıklanan: gecikmeli
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </div>

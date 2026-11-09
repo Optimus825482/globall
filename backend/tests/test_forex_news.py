@@ -59,6 +59,81 @@ def test_turkish_comment_resolution():
     assert "piyasa katılımcıları" in c3
 
 
+def _iso_in_hours(hours: float) -> str:
+    """ŞİMDİ'ye göre kanonik takvim damgası (`….000Z`)."""
+    import datetime as _dt
+    ts = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=hours)
+    return ts.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def test_economic_calendar_read_window_excludes_ancient_rows():
+    """KÖK NEDEN KİLİDİ (2026-11-09): okuma penceresi ŞİMDİ'nin etrafında olmalı.
+
+    Eski sorgu `ORDER BY date_iso ASC LIMIT ?` ile EN ESKİ satırları döndürüyordu;
+    tablo 150 satırı aşınca en yeni olaylar hiç dönmüyordu (ölçüm: bugüne ait 0
+    olay, dönen en yeni satır 4 gün öncesi) → "takvim güncellenmiyor".
+    """
+    from app import database
+
+    old_row = dict(_sample_event_for_window())
+    old_row.update({"id": "test-window-old", "date_iso": _iso_in_hours(-24 * 30)})
+    fresh_row = dict(_sample_event_for_window())
+    fresh_row.update({"id": "test-window-fresh", "date_iso": _iso_in_hours(3)})
+    asyncio.run(database.save_economic_calendar_events([old_row, fresh_row]))
+
+    loaded = asyncio.run(database.get_economic_calendar_events(min_stars=2, limit=150))
+    ids = {x.get("id") for x in loaded}
+    assert "test-window-fresh" in ids, "gelecek olay okunmalı"
+    assert "test-window-old" not in ids, "30 gün önceki olay artık okunmamalı"
+
+
+def test_economic_calendar_read_dedupes_and_prefers_real_values():
+    """Aynı olay iki satırsa (eski hash kimliği + yeni gerçek kimlik) TEK satır dönmeli."""
+    from app import database
+
+    iso = _iso_in_hours(4)
+    legacy = dict(_sample_event_for_window())
+    legacy.update({"id": "cal-tv-123456", "date_iso": iso, "actual": "—"})
+    real = dict(_sample_event_for_window())
+    real.update({"id": "cal-tv-1001999000111", "date_iso": iso, "actual": "5.25%"})
+    asyncio.run(database.save_economic_calendar_events([legacy, real]))
+
+    loaded = asyncio.run(database.get_economic_calendar_events(min_stars=2, limit=150))
+    same = [x for x in loaded if x.get("date_iso") == iso]
+    assert len(same) == 1, "aynı (zaman, başlık) için tek satır dönmeli"
+    assert same[0].get("actual") == "5.25%", "değeri BİLİNEN kopya seçilmeli"
+
+
+def test_legacy_duplicate_cleanup_only_removes_superseded_rows():
+    """Temizlik yalnız gerçek kimlikli kardeşi OLAN eski hash satırını siler."""
+    from app import database
+
+    iso_a = _iso_in_hours(5)
+    iso_b = _iso_in_hours(6)
+    legacy_twin = dict(_sample_event_for_window()); legacy_twin.update({"id": "cal-tv-222222", "date_iso": iso_a})
+    real = dict(_sample_event_for_window()); real.update({"id": "cal-tv-1001222333444", "date_iso": iso_a})
+    lonely_legacy = dict(_sample_event_for_window()); lonely_legacy.update(
+        {"id": "cal-tv-333333", "date_iso": iso_b, "original_title": "Yalniz Eski Kayit", "title": "Yalnız Eski Kayıt"})
+    asyncio.run(database.save_economic_calendar_events([legacy_twin, real, lonely_legacy]))
+
+    res = asyncio.run(database.cleanup_legacy_calendar_duplicates())
+    assert res["deleted"] >= 1
+    loaded = asyncio.run(database.get_economic_calendar_events(min_stars=2, limit=150))
+    ids = {x.get("id") for x in loaded}
+    assert "cal-tv-222222" not in ids, "gerçek kardeşi olan eski satır silinmeli"
+    assert "cal-tv-333333" in ids, "kardeşi olmayan eski satır KORUNMALI (aşırı silme yok)"
+
+
+def _sample_event_for_window() -> dict:
+    return {
+        "id": "test-window", "title": "Pencere Testi", "original_title": "Window Test",
+        "country": "USD", "currency": "USD", "country_name": "ABD", "flag": "🇺🇸",
+        "date_str": "Test", "date_iso": _iso_in_hours(1), "impact": "High", "stars": 3,
+        "stars_str": "⭐⭐⭐", "impact_label": "YÜKSEK", "forecast": "1.0%", "previous": "0.9%",
+        "actual": "—", "status": "Bekleniyor", "affected_symbols": ["XAUUSD"], "scenario": {},
+    }
+
+
 def test_economic_calendar_db_persistence():
     from app import database
     from app.forex_news import sync_economic_calendar_to_db, _CALENDAR_CACHE
@@ -74,7 +149,11 @@ def test_economic_calendar_db_persistence():
             "country_name": "ABD",
             "flag": "🇺🇸",
             "date_str": "Bugün 21:00",
-            "date_iso": "2026-10-08T18:00:00Z",
+            # 2026-11-09: tarih ŞİMDİ'ye göre üretilir. Eski test sabit bir
+            # Ekim tarihi kullanıyordu ve "kaydedilen her olay sonsuza kadar
+            # okunur" davranışını kilitliyordu — kök neden tam buydu:
+            # okuma penceresi ŞİMDİ'nin etrafında olmalı.
+            "date_iso": _iso_in_hours(2),
             "impact": "High",
             "stars": 3,
             "stars_str": "⭐⭐⭐",
