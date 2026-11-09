@@ -256,6 +256,8 @@ Araştırmanın P1 maddeleri koda döküldü. **Her araç bilinen cevaplı sente
 | `backend/scripts/report_probability_calibration.py` | DB'den (`velocity_candidates`: `ml_hit_probability` → `touched_target`) eğri kurar, eğitim/test ayrı raporlar, artefakt yazar | OPS |
 | `backend/app/llm_second_eye.py` | **Pydantic şema kapısı**: `SecondEyeVerdict` + `validate_verdict()`; çıktıya `schema_ok` / `schema_issues` ölçüm alanları | **ÜRETİM** (pydantic zaten var) |
 | `backend/tests/test_llm_second_eye_schema.py` | 13 test: şema normalizasyonu, geçersiz rejim/tp/sl temizliği, eş anlamlı eşleme, kurtarma bayrağı, geriye dönük alan uyumu | test |
+| `backend/scripts/baseline_and_multiple_testing.py` | (a) **baseline**: model vs `always_long`/`persistence`/`coin` + binom testi — "ML aptal kuralı yeniyor mu?" (b) **multitest**: BH/Holm/Bonferroni düzeltmesi | ARAŞTIRMA (`statsmodels`+`scipy`) |
+| `backend/scripts/create_hnsw_index.py` | `memory_embeddings` HNSW index bakım işi: durumu ölçer, `CONCURRENTLY` ile kurar (canlı yazmayı bloklamaz), boş tabloda kurmaz | OPS |
 | `backend/requirements-research.txt` | `arch==8.0.0`, `purgedcv==0.1.12`, `statsmodels==0.15.0` + neden/gerekçe | meta |
 
 ### 9.2 Doğrulama kanıtları
@@ -276,6 +278,18 @@ Araştırmanın P1 maddeleri koda döküldü. **Her araç bilinen cevaplı sente
 
 **`test_ml_probability.py`**: 22/22 geçti. Ölçülen örnek — ham olasılık %85-95 diyen ama gerçek isabet %60 olan 400 gözlemde izotonik eğri Brier'i **düşürdü** ve ECE'yi iyileştirdi; kalibre değer 0.90'dan <0.80'e indi (aşırı güven düzeltildi).
 
+**`baseline_and_multiple_testing.py`**:
+
+| Senaryo | Beklenen | Ölçülen |
+|---|---|---|
+| `baseline --demo noise` | model baseline'ı geçmemeli | isabet 0.498, p(vs yazı-tura)**=0.562** → "KANIT YOK" ✓ |
+| `baseline --demo edge` | anlamlı iyi | isabet 0.592, p**=0.000** → "BASELINE'DAN ANLAMLI İYİ" ✓ |
+| `multitest --method fdr_bh` (p = .001/.02/.04/.2/.6) | ilk ikisi geçer, üçüncüsü elenir | adj = .005/.050/**.0667** → hayatta kalan 2 ✓ (elle hesap birebir) |
+| `--method holm` | yalnız birincisi | adj = .005/**.080**/**.120** → 1 ✓ |
+| `--method bonferroni` | yalnız birincisi | adj = .005/**.100**/**.200** → 1 ✓ |
+
+**`create_hnsw_index.py --dry-run`** (gerçek yerel Postgres): `pgvector=VAR`, `memory_embeddings=VAR (0 satır)`, `HNSW index=YOK` → boş tabloda index **kurmadı**, doğru uyarıyı verdi ✓ (migration'ın "backfill'den sonra kur" notuna uygun).
+
 **`test_llm_second_eye_schema.py`** + mevcut `test_llm_second_eye.py`: 43/43 geçti — şema kapısı **hiçbir mevcut davranışı bozmadı**.
 
 **Tüm backend paketi:** `1941 passed, 2 failed`. İki kırmızı **önceden vardı** (`test_forex_enhancements.py::test_gold_dynamic_atr_buffer`, `::test_btcusd_integration_and_specs` — ATR tampon değer kayması, temiz HEAD'de de kırmızı).
@@ -290,8 +304,8 @@ Araştırmanın P1 maddeleri koda döküldü. **Her araç bilinen cevaplı sente
 
 | Madde | Neden |
 |---|---|
-| `statsforecast` baseline (P1-4) | `numba`/LLVM derleme zinciri getiriyor; araştırma ortamı için ağır. **Yerine `statsmodels` ile ARIMA/naif baseline yeterli** (statsmodels artık kurulu) |
-| HNSW index (P1-7) | `001_pgvector_schema.sql:195-203` yorumu **bilinçli**: "ilk embedding backfill'inden sonra kontrollü bakım işinde oluştur". Startup migration'a `CREATE INDEX CONCURRENTLY` koymak transaction kısıtına takılır. **Ayrı bakım betiği olarak yapılmalı**, migration olarak değil |
+| `statsforecast` baseline (P1-4) | **`baseline_and_multiple_testing.py` ile karşılandı** — naif kurallar (always_long / persistence / coin) + tek taraflı binom testi. `statsforecast`'ın `numba`/LLVM derleme zinciri bu ihtiyaç için gereğinden ağır |
+| HNSW index (P1-7) | **YAPILDI ama migration olarak DEĞİL**: `scripts/create_hnsw_index.py`. `CREATE INDEX CONCURRENTLY` transaction içinde çalışamaz; migration koşucusu tek transaction kullanıyor. Betik gerçek DB'de dry-run ile doğrulandı. **Çalıştırılması gerekiyor:** embedding backfill'inden sonra `python scripts/create_hnsw_index.py` |
 | BGE reranker (P1-7) | Model ağırlığı indirmesi + servis bağımlılığı gerektirir; canlı arama yolunu değiştirir. Ölçüm yapılmadan açmak riskli |
 | `instructor` (P1-6) | **Gereksiz çıktı**: aynı garanti `pydantic` + `validate_verdict` ile sağlandı, yeni bağımlılık eklenmedi |
 | P2/P3 maddeleri (COT, talipp, SMC, seans, GARCH, Kelly, alphalens, mlflow, DVC, river, litellm) | Bu turun kapsamı P1'di; her biri ayrı entegrasyon ve doğrulama turu istiyor |
