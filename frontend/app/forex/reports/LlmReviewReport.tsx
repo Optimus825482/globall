@@ -106,9 +106,9 @@ const fmtTime = (ts: number) =>
 function Kpi({ label, value, sub, tone = "text-white" }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: string }) {
   return (
     <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3">
-      <p className="text-[10px] uppercase tracking-wider text-bunker-muted font-mono">{label}</p>
+      <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">{label}</p>
       <p className={`mt-1 text-xl font-black font-mono tabular-nums ${tone}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] text-bunker-muted">{sub}</p>}
+      {sub && <p className="mt-0.5 text-2xs text-bunker-muted">{sub}</p>}
     </div>
   );
 }
@@ -123,7 +123,7 @@ function DecisionBadge({ d }: { d: Decision }) {
         ? "bg-rose-500/15 text-rose-300 border-rose-500/40"
         : "bg-amber-500/15 text-amber-300 border-amber-500/40";
   const label = lowConf ? "DÜŞÜK GÜVEN" : d.decision === "APPROVE" ? "ONAY" : d.decision === "REJECT" ? "RED" : "HATA";
-  return <span className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-bold font-mono ${cls}`}>{label}</span>;
+  return <span className={`inline-flex rounded border px-2 py-0.5 text-2xs font-bold font-mono ${cls}`}>{label}</span>;
 }
 
 /** Raporlar > LLM Kararları: işlem öncesi LLM incelemesinin kararları ve gölge sonuçları. */
@@ -287,7 +287,7 @@ export default function LlmReviewReport() {
             <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 space-y-1">
               <p className="text-xs font-bold text-white">LLM vetosu rastgele vetodan iyi mi?</p>
               <p className="text-xs text-slate-300">{summary.veto_value.verdict}</p>
-              <p className="font-mono text-[11px] text-bunker-muted">
+              <p className="font-mono text-2xs text-bunker-muted">
                 LLM: geçenler {fmtR(summary.veto_value.llm.passed_mean_pips)} R (n={summary.veto_value.llm.passed_n}) − veto edilenler {fmtR(summary.veto_value.llm.vetoed_mean_pips)} R (n={summary.veto_value.llm.vetoed_n}) = fark {fmtR(summary.veto_value.llm.edge_pips)}
                 {" · "}Rastgele kontrol farkı {fmtR(summary.veto_value.random_control.edge_pips)}
                 {" · "}Kontrollü keşif: {summary.veto_value.exploration.n} işlem, ort. {fmtR(summary.veto_value.exploration.mean_pips)} R
@@ -300,12 +300,12 @@ export default function LlmReviewReport() {
               <p className="text-xs font-bold text-white">Güven puanı kalibrasyonu (Brier / AUC)</p>
               <p className={`text-xs ${summary.calibration_deep.usable ? "text-emerald-300" : "text-amber-300"}`}>{summary.calibration_deep.note}</p>
               {summary.calibration_deep.brier != null && (
-                <p className="font-mono text-[11px] text-bunker-muted">
+                <p className="font-mono text-2xs text-bunker-muted">
                   n={summary.calibration_deep.n} · Brier {summary.calibration_deep.brier} (taban {summary.calibration_deep.brier_baseline}) · skill {summary.calibration_deep.brier_skill ?? "—"} · AUC {summary.calibration_deep.auc ?? "—"}
                 </p>
               )}
               {summary.calibration_deep.reliability && summary.calibration_deep.reliability.length > 0 && (
-                <div className="flex flex-wrap gap-2 font-mono text-[11px]">
+                <div className="flex flex-wrap gap-2 font-mono text-2xs">
                   {summary.calibration_deep.reliability.map((b) => (
                     <span key={b.bin} className="rounded border border-bunker-700 px-2 py-1 text-bunker-muted">
                       {b.bin}: öngörülen %{(b.predicted * 100).toFixed(0)} / gerçekleşen %{(b.observed * 100).toFixed(0)} (n={b.n})
@@ -324,7 +324,7 @@ export default function LlmReviewReport() {
           )}
 
           {summary.latency && summary.latency.n > 0 && (
-            <p className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 font-mono text-[11px] text-bunker-muted">
+            <p className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 font-mono text-2xs text-bunker-muted">
               LLM gecikmesi: medyan {((summary.latency.p50_ms ?? 0) / 1000).toFixed(1)} sn · %90 {((summary.latency.p90_ms ?? 0) / 1000).toFixed(1)} sn · %99 {((summary.latency.p99_ms ?? 0) / 1000).toFixed(1)} sn ·
               zaman aşımı {summary.latency.timeouts} (%{((summary.latency.timeout_rate ?? 0) * 100).toFixed(0)}). Motor bu süre kadar bekler; tarama döngüsü gecikir.{" "}
               <a className="text-cyan-300 underline" href="/api/llm-review/features.csv" download>Veri setini indir (CSV)</a>
@@ -334,10 +334,10 @@ export default function LlmReviewReport() {
           {ab && ab.n > 0 && (
             <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3 space-y-1">
               <p className="text-xs font-bold text-white">Çıkış kuralı A/B (kayıtlı gölge yolu, {ab.n} karar)</p>
-              <p className="font-mono text-[11px] text-slate-300">
+              <p className="font-mono text-2xs text-slate-300">
                 {Object.entries(ab.means_pips).map(([k, v]) => `${k}: ${v > 0 ? "+" : ""}${v} R${k !== "baseline" && ab.vs_baseline[k] !== undefined ? ` (${ab.vs_baseline[k] > 0 ? "+" : ""}${ab.vs_baseline[k]})` : ""}`).join(" · ")}
               </p>
-              <p className={`text-[11px] ${ab.decisive ? "text-emerald-300" : "text-amber-300"}`}>{ab.note}</p>
+              <p className={`text-2xs ${ab.decisive ? "text-emerald-300" : "text-amber-300"}`}>{ab.note}</p>
             </div>
           )}
 
@@ -345,7 +345,7 @@ export default function LlmReviewReport() {
             <div className="overflow-x-auto rounded-xl border border-bunker-800 bg-bunker-950/60">
               <table className="w-full text-xs font-mono tabular-nums">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-wider text-bunker-muted">
+                  <tr className="text-2xs uppercase tracking-wider text-bunker-muted">
                     <th scope="col" className="px-3 py-2 text-left font-medium">Sembol</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Onay</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Onaylananın R</th>
@@ -379,16 +379,16 @@ export default function LlmReviewReport() {
                     aria-expanded={openId === d.id}
                     className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left hover:bg-bunker-800/40 sm:grid-cols-[7.5rem_9rem_5rem_1fr_9rem]"
                   >
-                    <span className="font-mono text-[11px] text-bunker-muted">{fmtTime(d.created_at)}</span>
+                    <span className="font-mono text-2xs text-bunker-muted">{fmtTime(d.created_at)}</span>
                     <span className="flex items-center gap-2 font-mono text-xs font-bold text-white">
                       {d.symbol} <DirectionBadge direction={d.direction} />
                     </span>
                     <span className="flex items-center gap-1.5">
                       <DecisionBadge d={d} />
-                      <span className="font-mono text-[11px] text-bunker-muted">{d.confidence != null ? `%${d.confidence}` : ""}</span>
+                      <span className="font-mono text-2xs text-bunker-muted">{d.confidence != null ? `%${d.confidence}` : ""}</span>
                     </span>
                     <span className="col-span-3 min-w-0 truncate text-xs text-slate-300 sm:col-span-1">{d.summary || APPLIED_TR[d.applied] || d.applied}</span>
-                    <span className="col-span-3 text-right font-mono text-[11px] sm:col-span-1">
+                    <span className="col-span-3 text-right font-mono text-2xs sm:col-span-1">
                       <span className="text-bunker-muted">{SHADOW_TR[d.shadow_status ?? ""] ?? d.shadow_status ?? "—"}</span>{" "}
                       <span className={pipTone(d.shadow_pips)}>{d.shadow_status === "IZLENIYOR" && d.shadow_pips == null ? "" : fmtPips(d.shadow_pips)}</span>
                     </span>
@@ -416,7 +416,7 @@ export default function LlmReviewReport() {
                       {d.checks && Object.keys(d.checks).length > 0 && (
                         <p className="flex flex-wrap gap-2">
                           {Object.entries(d.checks).map(([k, v]) => (
-                            <span key={k} className={`rounded border px-2 py-0.5 font-mono text-[10px] ${v === "olumlu" ? "border-emerald-500/40 text-emerald-300" : v === "olumsuz" ? "border-rose-500/40 text-rose-300" : "border-bunker-700 text-bunker-muted"}`}>
+                            <span key={k} className={`rounded border px-2 py-0.5 font-mono text-2xs ${v === "olumlu" ? "border-emerald-500/40 text-emerald-300" : v === "olumsuz" ? "border-rose-500/40 text-rose-300" : "border-bunker-700 text-bunker-muted"}`}>
                               {k}: {v}
                             </span>
                           ))}
@@ -429,8 +429,8 @@ export default function LlmReviewReport() {
                       )}
                       {detail?.id === d.id && detail.dossier && (
                         <details className="rounded border border-bunker-800">
-                          <summary className="cursor-pointer px-2 py-1 font-mono text-[11px] text-cyan-300">LLM&apos;e verilen veri (dosya)</summary>
-                          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words p-2 font-mono text-[10px] text-bunker-muted">{detail.dossier}</pre>
+                          <summary className="cursor-pointer px-2 py-1 font-mono text-2xs text-cyan-300">LLM&apos;e verilen veri (dosya)</summary>
+                          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words p-2 font-mono text-2xs text-bunker-muted">{detail.dossier}</pre>
                         </details>
                       )}
                     </div>

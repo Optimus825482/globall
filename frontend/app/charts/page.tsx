@@ -395,7 +395,7 @@ export default function ChartsPage() {
             className={`flex flex-col bg-bunker-950 ${
                 isPageFullscreen
                     ? "fixed inset-0 z-[9998] overflow-hidden"
-                    : "min-h-[calc(100dvh-4rem)] md:h-[calc(100vh-4rem)]"
+                    : "min-h-[calc(100dvh-4rem)] md:h-[calc(100dvh-4rem)]"
             }`}
         >
             {/* ── Komut Çubuğu ────────────────────────────────────────────── */}
@@ -433,7 +433,7 @@ export default function ChartsPage() {
                     <div className="hidden sm:block">
                         <h1 className="font-mono text-sm font-bold text-white flex items-center gap-2">
                             GRAFİK
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neon-green/15 text-neon-green border border-neon-green/30">
+                            <span className="text-2xs font-mono px-2 py-0.5 rounded-full bg-neon-green/15 text-neon-green border border-neon-green/30">
                                 {count === 1 ? "TEKLİ" : `${count}'LÜ`}
                             </span>
                         </h1>
@@ -485,7 +485,7 @@ export default function ChartsPage() {
                         {globalSearchOpen && (
                             <div className="absolute left-0 top-full mt-1.5 z-50 w-64 bg-bunker-900 border border-bunker-700 rounded-xl shadow-2xl p-2 max-h-72 overflow-y-auto">
                                 <div className="flex items-center justify-between pb-1 mb-1.5 border-b border-bunker-800">
-                                    <span className="text-[10px] font-mono text-bunker-muted font-bold">
+                                    <span className="text-2xs font-mono text-bunker-muted font-bold">
                                         Sembol Seç ({availableSymbols.length} adet)
                                     </span>
                                     <button type="button" onClick={() => setGlobalSearchOpen(false)} className="text-bunker-muted hover:text-white text-xs">✕</button>
@@ -507,11 +507,11 @@ export default function ChartsPage() {
                                         className="w-full text-left px-2 py-1 rounded text-xs font-mono text-bunker-muted hover:bg-bunker-800 hover:text-white transition-colors flex items-center justify-between"
                                     >
                                         <span>{s}</span>
-                                        {globalSymbol === s && <span className="text-neon-green text-[10px]">Aktif</span>}
+                                        {globalSymbol === s && <span className="text-neon-green text-2xs">Aktif</span>}
                                     </button>
                                 ))}
                                 {filteredSymbols.length === 0 && (
-                                    <p className="text-center text-[11px] text-bunker-muted py-2 font-mono">Sembol listesinde bulunamadı</p>
+                                    <p className="text-center text-2xs text-bunker-muted py-2 font-mono">Sembol listesinde bulunamadı</p>
                                 )}
                             </div>
                         )}
@@ -519,7 +519,7 @@ export default function ChartsPage() {
 
                     {/* Global TF → TÜM grafikler */}
                     <div className="flex items-center bg-bunker-950 rounded-lg border border-bunker-700 overflow-hidden" title="Tüm grafiklerin zaman dilimi">
-                        <span className="px-2 py-1 font-mono text-[10px] text-bunker-muted border-r border-bunker-800">TF</span>
+                        <span className="px-2 py-1 font-mono text-2xs text-bunker-muted border-r border-bunker-800">TF</span>
                         <select
                             value={globalInterval}
                             onChange={(e) => applyGlobalInterval(e.target.value)}
@@ -557,7 +557,7 @@ export default function ChartsPage() {
                         >
                             <span>fx</span>
                             <span className="hidden sm:inline">TÜMÜNE İNDİKATÖR</span>
-                            <span className="bg-bunker-700 text-white font-bold rounded-full w-4 h-4 text-[9px] flex items-center justify-center">
+                            <span className="bg-bunker-700 text-white font-bold rounded-full w-4 h-4 text-2xs flex items-center justify-center">
                                 {activeIndicatorCount}
                             </span>
                         </button>
@@ -565,7 +565,7 @@ export default function ChartsPage() {
                         {globalIndOpen && (
                             <div className="absolute left-0 top-full mt-1.5 z-50 w-80 bg-bunker-900 border border-bunker-700 rounded-xl shadow-2xl p-3">
                                 <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-bunker-800">
-                                    <span className="font-mono text-[11px] font-bold text-white">Tüm Grafiklere Uygula</span>
+                                    <span className="font-mono text-2xs font-bold text-white">Tüm Grafiklere Uygula</span>
                                     <button type="button" onClick={() => setGlobalIndOpen(false)} className="text-bunker-muted hover:text-white text-xs">✕</button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-1">
@@ -576,30 +576,30 @@ export default function ChartsPage() {
                                                 key={key}
                                                 type="button"
                                                 onClick={() => toggleGlobalIndicator(key)}
-                                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border font-mono text-[11px] transition-colors text-left ${
+                                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border font-mono text-2xs transition-colors text-left ${
                                                     active
                                                         ? "bg-neon-green/15 border-neon-green/40 text-neon-green font-bold"
                                                         : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white hover:bg-bunker-800"
                                                 }`}
                                             >
                                                 <span>{key}</span>
-                                                {active && <span className="ml-auto text-neon-green text-[9px]">✓</span>}
+                                                {active && <span className="ml-auto text-neon-green text-2xs">✓</span>}
                                             </button>
                                         );
                                     })}
                                 </div>
                                 <div className="mt-2 pt-2 border-t border-bunker-800 flex flex-wrap gap-1.5">
-                                    <span className="text-[10px] font-mono text-bunker-muted self-center">Preset:</span>
+                                    <span className="text-2xs font-mono text-bunker-muted self-center">Preset:</span>
                                     <button
                                         type="button"
                                         onClick={() => setGlobalIndicators({ ma7: true, ma20: true, ma99: true, macd: true })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
                                         title="MA7/MA20/MA99 + MACD (sayfa varsayılanı)"
                                     >Varsayılan</button>
                                     <button
                                         type="button"
                                         onClick={() => setGlobalIndicators({ ma7: true, ma20: true, ma99: true, macd: true, rsi: true, volume: true })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
                                     >Orta</button>
                                     <button
                                         type="button"
@@ -607,12 +607,12 @@ export default function ChartsPage() {
                                             ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, ema50: true,
                                             bollinger: true, vwap: true, volume: true, rsi: true, macd: true,
                                         })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors"
                                     >Pro</button>
                                     <button
                                         type="button"
                                         onClick={clearAllIndicators}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-neon-red/10 hover:bg-neon-red/20 border border-neon-red/30 text-neon-red transition-colors"
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-neon-red/10 hover:bg-neon-red/20 border border-neon-red/30 text-neon-red transition-colors"
                                     >Temizle</button>
                                 </div>
                             </div>

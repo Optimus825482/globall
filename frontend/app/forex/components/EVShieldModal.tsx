@@ -205,7 +205,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                   Sembol EV Kalkanı & Muafiyet Listesi
                 </h2>
                 <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                  className={`px-2 py-0.5 rounded text-2xs font-bold uppercase tracking-wider ${
                     data?.enabled
                       ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40"
                       : "bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/40"
@@ -269,7 +269,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
+              <span className={`text-2xs font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Dinlenmede (Bloke)
               </span>
             </div>
@@ -287,7 +287,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               >
                 {data?.blocked_count ?? 0}
               </span>
-              <span className={`text-[11px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>sembol</span>
+              <span className={`text-2xs font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>sembol</span>
             </div>
           </div>
 
@@ -304,7 +304,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
+              <span className={`text-2xs font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Muaf Tutulanlar
               </span>
             </div>
@@ -322,7 +322,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               >
                 {data?.overridden_count ?? 0}
               </span>
-              <span className={`text-[11px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>sembol</span>
+              <span className={`text-2xs font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>sembol</span>
             </div>
           </div>
 
@@ -333,7 +333,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
+              <span className={`text-2xs font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Toplam Sembol
               </span>
             </div>
@@ -341,7 +341,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               <span className={`text-2xl font-black ${isLight ? "text-slate-900" : "text-white"}`}>
                 {data?.symbols?.length ?? 0}
               </span>
-              <span className={`text-[11px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>sembol</span>
+              <span className={`text-2xs font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>sembol</span>
             </div>
           </div>
 
@@ -352,11 +352,11 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
+              <span className={`text-2xs font-bold uppercase tracking-wider ${isLight ? "text-slate-700" : "text-slate-400"}`}>
                 Kural Kriteri
               </span>
             </div>
-            <div className="mt-1 space-y-0.5 text-[11px] font-semibold">
+            <div className="mt-1 space-y-0.5 text-2xs font-semibold">
               <div className="flex justify-between">
                 <span className={isLight ? "text-slate-600" : "text-slate-400"}>Pencere:</span>
                 <span>{data?.window_hours ?? 24}s</span>
@@ -432,7 +432,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               }`}
             >
               <span>🛑 Dinlenmede</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20">
+              <span className="px-1.5 py-0.2 rounded-full text-2xs bg-black/20">
                 {data?.blocked_count ?? 0}
               </span>
             </button>
@@ -450,7 +450,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               }`}
             >
               <span>⚡ Muaf</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20">
+              <span className="px-1.5 py-0.2 rounded-full text-2xs bg-black/20">
                 {data?.overridden_count ?? 0}
               </span>
             </button>
@@ -465,14 +465,14 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
               className={`w-full px-3 py-1.5 pl-8 rounded-xl text-xs font-medium border transition-colors outline-none ${
                 isLight
                   ? "bg-white text-slate-900 border-slate-300 focus:border-blue-500 placeholder:text-slate-400"
-                  : "bg-slate-900 text-slate-100 border-slate-700 focus:border-blue-400 placeholder:text-slate-500"
+                  : "bg-slate-900 text-slate-100 border-slate-700 focus:border-blue-400 placeholder:text-slate-400"
               }`}
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600"
+                className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-200"
               >
                 ✕
               </button>
@@ -531,26 +531,26 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                         >
                           {item.display}
                         </span>
-                        <span className={`text-[11px] font-bold ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                        <span className={`text-2xs font-bold ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                           ({item.symbol})
                         </span>
 
                         {/* Durum Rozeti */}
                         {item.is_blocked ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 animate-pulse">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-black uppercase bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 animate-pulse">
                             <span className="w-2 h-2 rounded-full bg-rose-500" />
                             DİNLENMEDE (BLOKE)
                           </span>
                         ) : item.is_overridden ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/40">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-black uppercase bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/40">
                             BUGÜN MUAF (İZİNLİ)
                           </span>
                         ) : item.is_exempt_symbol ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
                             KALICI MUAF
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold uppercase bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40">
                             İŞLEME AÇIK
                           </span>
                         )}
@@ -577,7 +577,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
 
                       {/* Muafiyet Süresi (varsa) */}
                       {item.is_overridden && item.override_until_str && (
-                        <div className="flex items-center gap-2 text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                        <div className="flex items-center gap-2 text-2xs font-bold text-blue-600 dark:text-blue-400">
                           <span>⏰ Muafiyet Bitişi: {item.override_until_str}</span>
                           {item.override_remaining_sec && (
                             <span>
@@ -595,19 +595,19 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                       }`}
                     >
                       <div className="min-w-[65px]">
-                        <div className={`text-[10px] font-bold uppercase ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                        <div className={`text-2xs font-bold uppercase ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                           İşlem
                         </div>
                         <div className={`text-xs font-black mt-0.5 ${isLight ? "text-slate-900" : "text-white"}`}>
                           {item.n}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-medium">
+                        <div className="text-2xs text-slate-500 font-medium">
                           {item.wins}K / {item.losses}Z
                         </div>
                       </div>
 
                       <div className="min-w-[65px]">
-                        <div className={`text-[10px] font-bold uppercase ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                        <div className={`text-2xs font-bold uppercase ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                           Win Rate
                         </div>
                         <div
@@ -619,11 +619,11 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                         >
                           %{item.win_rate.toFixed(0)}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-medium">Hedef: %35</div>
+                        <div className="text-2xs text-slate-500 font-medium">Hedef: %35</div>
                       </div>
 
                       <div className="min-w-[75px]">
-                        <div className={`text-[10px] font-bold uppercase ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                        <div className={`text-2xs font-bold uppercase ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                           Net K/Z (24s)
                         </div>
                         <div
@@ -639,7 +639,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                         >
                           ${item.net_usd > 0 ? `+${item.net_usd.toFixed(2)}` : item.net_usd.toFixed(2)}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-medium">USD</div>
+                        <div className="text-2xs text-slate-500 font-medium">USD</div>
                       </div>
                     </div>
 
@@ -666,7 +666,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                               type="button"
                               onClick={() => handleAction(item.symbol, "bypass_24h")}
                               disabled={isActionBusy}
-                              className={`flex-1 px-2 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                              className={`flex-1 px-2 py-1 rounded-lg text-2xs font-bold border transition-colors ${
                                 isLight
                                   ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
                                   : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
@@ -679,7 +679,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                               type="button"
                               onClick={() => handleAction(item.symbol, "reset_history")}
                               disabled={isActionBusy}
-                              className={`flex-1 px-2 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                              className={`flex-1 px-2 py-1 rounded-lg text-2xs font-bold border transition-colors ${
                                 isLight
                                   ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
                                   : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
@@ -710,7 +710,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             type="button"
                             onClick={() => handleAction(item.symbol, "reset_history")}
                             disabled={isActionBusy}
-                            className={`w-full px-2 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                            className={`w-full px-2 py-1 rounded-lg text-2xs font-bold border transition-colors ${
                               isLight
                                 ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
                                 : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
@@ -726,7 +726,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             type="button"
                             onClick={() => handleAction(item.symbol, "bypass_today")}
                             disabled={isActionBusy}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                            className={`px-2.5 py-1 rounded-lg text-2xs font-bold border transition-colors ${
                               isLight
                                 ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
                                 : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
@@ -739,7 +739,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
                             type="button"
                             onClick={() => handleAction(item.symbol, "reset_history")}
                             disabled={isActionBusy}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                            className={`px-2.5 py-1 rounded-lg text-2xs font-bold border transition-colors ${
                               isLight
                                 ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
                                 : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
@@ -764,7 +764,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
             isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/90 border-slate-800"
           }`}
         >
-          <div className="text-[11px] leading-tight font-medium max-w-xl text-slate-600 dark:text-slate-400">
+          <div className="text-2xs leading-tight font-medium max-w-xl text-slate-600 dark:text-slate-400">
             💡 <strong className={isLight ? "text-slate-800" : "text-slate-200"}>EV Kalkanı Mantığı:</strong> Bir sembol son 24 saatte arka arkaya veya akut kayıp (örn. 3x risk bütçesi) üretirse, sermayeyi korumak için geçici dinlenmeye alınır. <span className="underline font-bold">Bugün İzin Ver</span> derseniz, gün sonuna (23:59 UTC+3) kadar bu kural esnetilir ve sembole yeni scalper pozisyonları açılabilir.
           </div>
 

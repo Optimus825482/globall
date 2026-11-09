@@ -109,12 +109,12 @@ function GateRow({ gate }: { gate: GateInfo }) {
       <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${st.dot} ${gate.status === "block" ? "animate-pulse" : ""}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="text-[11px] font-bold text-white">{gate.label}</span>
-          <span className={`text-[9px] font-black tracking-wider ${st.text}`}>
+          <span className="text-2xs font-bold text-white">{gate.label}</span>
+          <span className={`text-2xs font-black tracking-wider ${st.text}`}>
             {st.icon} {st.title}
           </span>
         </div>
-        <p className="text-[10px] leading-relaxed text-bunker-300 mt-0.5 select-text">{gate.detail}</p>
+        <p className="text-2xs leading-relaxed text-bunker-muted mt-0.5 select-text">{gate.detail}</p>
       </div>
     </div>
   );
@@ -143,14 +143,14 @@ export default function GateSnapshotCard({
   if (!snapshot && loading) {
     return (
       <div className="p-4 rounded-2xl border border-bunker-800 bg-bunker-950/60 text-center">
-        <p className="text-[11px] text-bunker-muted animate-pulse">Kapı zinciri okunuyor…</p>
+        <p className="text-2xs text-bunker-muted animate-pulse">Kapı zinciri okunuyor…</p>
       </div>
     );
   }
   if (!snapshot) {
     return (
       <div className="p-4 rounded-2xl border border-bunker-800 bg-bunker-950/60 text-center">
-        <p className="text-[11px] text-bunker-muted">Kapı verisi alınamadı (backend erişilemez).</p>
+        <p className="text-2xs text-bunker-muted">Kapı verisi alınamadı (backend erişilemez).</p>
       </div>
     );
   }
@@ -176,21 +176,21 @@ export default function GateSnapshotCard({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <span
-              className={`text-[10px] text-bunker-muted transition-transform duration-200 ${
+              className={`text-2xs text-bunker-muted transition-transform duration-200 ${
                 expanded ? "rotate-90" : ""
               }`}
             >
               ▶
             </span>
-            <h4 className="text-[11px] font-black text-white uppercase tracking-wider">
+            <h4 className="text-2xs font-black text-white uppercase tracking-wider">
               Giriş Kapısı Zinciri — Neden İşlem Açmıyor?
             </h4>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[9px] text-bunker-muted font-mono">
+            <span className="text-2xs text-bunker-muted font-mono">
               {passedCount} geçti · {blockedCount} engel · {offCount} devre dışı{naCount ? ` · ${naCount} beklemede` : ""}
             </span>
-            <span className="text-[9px] font-bold text-bunker-muted border border-bunker-700 rounded px-1.5 py-0.5">
+            <span className="text-2xs font-bold text-bunker-muted border border-bunker-700 rounded px-1.5 py-0.5">
               {expanded ? "Kapat ▲" : "Detayı Aç ▼"}
             </span>
           </div>
@@ -198,7 +198,7 @@ export default function GateSnapshotCard({
         {/* Tek cümlelik verdict — akordeon kapalıyken de görünür */}
         <div className={`mt-2 px-3 py-2 rounded-xl border ${v.border} ${v.bg} flex items-start gap-2`}>
           <span className="text-xs leading-none mt-0.5">{v.icon}</span>
-          <p className={`text-[11px] font-bold leading-relaxed ${v.text} select-text`}>{snapshot.verdict}</p>
+          <p className={`text-2xs font-bold leading-relaxed ${v.text} select-text`}>{snapshot.verdict}</p>
         </div>
       </button>
 

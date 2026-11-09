@@ -317,7 +317,7 @@ export default function IndicatorPicker({ onSelect, onClose }: Props) {
                             <button
                                 key={c}
                                 onClick={() => setCat(c)}
-                                className={`px-2.5 py-1 rounded-full border font-mono text-[11px] transition-colors ${cat === c
+                                className={`px-2.5 py-1 rounded-full border font-mono text-2xs transition-colors ${cat === c
                                     ? "bg-neon-green/15 border-neon-green/40 text-neon-green"
                                     : "border-bunker-700 text-bunker-muted hover:text-white"
                                     }`}
@@ -338,7 +338,7 @@ export default function IndicatorPicker({ onSelect, onClose }: Props) {
                                 <p className="font-mono text-sm text-white">{i.shortName}</p>
                                 <p className="text-xs text-bunker-muted truncate">{i.name}</p>
                             </div>
-                            <span className={`shrink-0 text-[10px] font-mono px-2 py-0.5 rounded-full border ${i.overlay ? "text-neon-yellow border-neon-yellow/30" : "text-neon-green border-neon-green/30"}`}>
+                            <span className={`shrink-0 text-2xs font-mono px-2 py-0.5 rounded-full border ${i.overlay ? "text-neon-yellow border-neon-yellow/30" : "text-neon-green border-neon-green/30"}`}>
                                 {i.overlay ? "GRAFİK" : "PANE"}
                             </span>
                         </button>

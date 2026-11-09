@@ -155,10 +155,10 @@ export default function IndicatorSettings({ entry, initialParams, initialStyle, 
                 <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto flex-1">
                     {/* GİRİŞLER */}
                     <div className="space-y-3">
-                        <p className="eyebrow !text-[10px]">GİRİŞLER</p>
+                        <p className="eyebrow !text-2xs">GİRİŞLER</p>
                         {entry.inputConfig.map((c) => (
                             <div key={c.id}>
-                                <p className="font-mono text-[11px] text-bunker-muted mb-1">{c.title}</p>
+                                <p className="font-mono text-2xs text-bunker-muted mb-1">{c.title}</p>
                                 <ParamInput cfg={c} value={params[c.id]} onChange={(v) => setParams((p) => ({ ...p, [c.id]: v }))} />
                             </div>
                         ))}
@@ -166,17 +166,17 @@ export default function IndicatorSettings({ entry, initialParams, initialStyle, 
 
                     {/* STİL */}
                     <div className="border-t border-bunker-800 pt-4 space-y-3">
-                        <p className="eyebrow !text-[10px]">STİL</p>
+                        <p className="eyebrow !text-2xs">STİL</p>
 
                         {/* çizgi bazlı renk + kalınlık: her çizgi kendi kutusunda */}
                         <div className="space-y-2">
                             {Array.from({ length: lineCount }, (_, li) => (
                                 <div key={li} className="rounded-lg border border-bunker-800 bg-bunker-950/60 p-2.5 space-y-1.5">
-                                    <p className="font-mono text-[11px] font-bold text-neon-green">
+                                    <p className="font-mono text-2xs font-bold text-neon-green">
                                         {plotCount > 1 ? `ÇİZGİ ${li + 1}` : entry.shortName.toUpperCase()}
                                     </p>
                                     <div>
-                                        <p className="font-mono text-[11px] text-bunker-muted mb-1">Renk</p>
+                                        <p className="font-mono text-2xs text-bunker-muted mb-1">Renk</p>
                                         <div className="flex flex-wrap items-center gap-1.5">
                                             {SWATCHES.map((c) => (
                                                 <button
@@ -198,7 +198,7 @@ export default function IndicatorSettings({ entry, initialParams, initialStyle, 
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
-                                        <p className="font-mono text-[11px] text-bunker-muted">Kalınlık</p>
+                                        <p className="font-mono text-2xs text-bunker-muted">Kalınlık</p>
                                         <select
                                             value={String(style.lineWidths?.[li] ?? style.lineWidth)}
                                             onChange={(e) => setWidth(li, Number(e.target.value))}
@@ -212,18 +212,18 @@ export default function IndicatorSettings({ entry, initialParams, initialStyle, 
                         </div>
 
                         <div className="flex justify-between items-center">
-                            <p className="font-mono text-[11px] text-bunker-muted">Fiyat Çizgisi</p>
+                            <p className="font-mono text-2xs text-bunker-muted">Fiyat Çizgisi</p>
                             <Toggle value={style.showPriceLine} onChange={(v) => setStyle((s) => ({ ...s, showPriceLine: v }))} />
                         </div>
 
                         <div className="flex justify-between items-center">
-                            <p className="font-mono text-[11px] text-bunker-muted">Min / Max Bantları</p>
+                            <p className="font-mono text-2xs text-bunker-muted">Min / Max Bantları</p>
                             <Toggle value={style.showBounds} onChange={(v) => setStyle((s) => ({ ...s, showBounds: v }))} />
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <p className="font-mono text-[11px] text-bunker-muted mb-1">Min değer</p>
+                                <p className="font-mono text-2xs text-bunker-muted mb-1">Min değer</p>
                                 <input
                                     type="number"
                                     value={style.minValue ?? ""}
@@ -232,7 +232,7 @@ export default function IndicatorSettings({ entry, initialParams, initialStyle, 
                                 />
                             </div>
                             <div>
-                                <p className="font-mono text-[11px] text-bunker-muted mb-1">Max değer</p>
+                                <p className="font-mono text-2xs text-bunker-muted mb-1">Max değer</p>
                                 <input
                                     type="number"
                                     value={style.maxValue ?? ""}

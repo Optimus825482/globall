@@ -201,7 +201,7 @@ export default function BridgeSettingsPanel() {
                 <span
                   className={`w-2 h-2 rounded-full ${
                     !data?.enabled
-                      ? "bg-bunker-500"
+                      ? "bg-bunker-600"
                       : isHealthy
                       ? "bg-neon-green animate-pulse"
                       : "bg-neon-red"
@@ -258,26 +258,26 @@ export default function BridgeSettingsPanel() {
               <div className="font-bold flex items-center gap-2">
                 {pingResult.ok ? "✓ BAĞLANTI BAŞARILI (PONG ALINDI)" : "✕ BAĞLANTI BAŞARISIZ"}
                 {pingResult.status_code && (
-                  <span className="px-1.5 py-0.5 rounded bg-black/40 text-[11px]">
+                  <span className="px-1.5 py-0.5 rounded bg-black/40 text-2xs">
                     HTTP {pingResult.status_code}
                   </span>
                 )}
                 {pingResult.latency_ms !== undefined && (
-                  <span className="px-1.5 py-0.5 rounded bg-black/40 text-[11px]">
+                  <span className="px-1.5 py-0.5 rounded bg-black/40 text-2xs">
                     ⏱ {pingResult.latency_ms} ms
                   </span>
                 )}
               </div>
-              <p className="text-white/80 break-all text-[11px]">
+              <p className="text-white/80 break-all text-2xs">
                 Hedef: {pingResult.target_url || data?.url}
               </p>
               {pingResult.response && (
-                <p className="text-white/90 bg-black/30 p-2 rounded text-[11px] mt-1 font-mono">
+                <p className="text-white/90 bg-black/30 p-2 rounded text-2xs mt-1 font-mono">
                   Yanıt: {pingResult.response}
                 </p>
               )}
               {pingResult.error && (
-                <p className="text-neon-red/90 bg-black/30 p-2 rounded text-[11px] mt-1">
+                <p className="text-neon-red/90 bg-black/30 p-2 rounded text-2xs mt-1">
                   Hata detayı: {pingResult.error}
                 </p>
               )}
@@ -295,43 +295,43 @@ export default function BridgeSettingsPanel() {
       {/* 2. CANLI İSTATİSTİK SAYAÇLARI */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="card bg-bunker-950 border border-bunker-800 p-4">
-          <p className="text-[11px] font-mono text-bunker-muted uppercase">Toplam İletilen</p>
+          <p className="text-2xs font-mono text-bunker-muted uppercase">Toplam İletilen</p>
           <p className="text-2xl font-mono font-bold text-white mt-1">
             {data?.stats.total_dispatched ?? 0}
           </p>
-          <span className="text-[10px] text-bunker-muted">Tüm sinyal tetiklemeleri</span>
+          <span className="text-2xs text-bunker-muted">Tüm sinyal tetiklemeleri</span>
         </div>
 
         <div className="card bg-bunker-950 border border-bunker-800 p-4">
-          <p className="text-[11px] font-mono text-neon-green uppercase">Başarılı İletim</p>
+          <p className="text-2xs font-mono text-neon-green uppercase">Başarılı İletim</p>
           <p className="text-2xl font-mono font-bold text-neon-green mt-1">
             {data?.stats.total_success ?? 0}
           </p>
-          <span className="text-[10px] text-bunker-muted">HTTP 200 teslim</span>
+          <span className="text-2xs text-bunker-muted">HTTP 200 teslim</span>
         </div>
 
         <div className="card bg-bunker-950 border border-bunker-800 p-4">
-          <p className="text-[11px] font-mono text-neon-red uppercase">Hata / Başarısız</p>
+          <p className="text-2xs font-mono text-neon-red uppercase">Hata / Başarısız</p>
           <p className="text-2xl font-mono font-bold text-neon-red mt-1">
             {data?.stats.total_failed ?? 0}
           </p>
-          <span className="text-[10px] text-bunker-muted">Ulaşılamayan / Reddedilen</span>
+          <span className="text-2xs text-bunker-muted">Ulaşılamayan / Reddedilen</span>
         </div>
 
         <div className="card bg-bunker-950 border border-bunker-800 p-4">
-          <p className="text-[11px] font-mono text-amber-400 uppercase">Cooldown Filtresi</p>
+          <p className="text-2xs font-mono text-amber-400 uppercase">Cooldown Filtresi</p>
           <p className="text-2xl font-mono font-bold text-amber-400 mt-1">
             {data?.stats.total_skipped_cooldown ?? 0}
           </p>
-          <span className="text-[10px] text-bunker-muted">Spam/mükerrer engeli</span>
+          <span className="text-2xs text-bunker-muted">Spam/mükerrer engeli</span>
         </div>
 
         <div className="card bg-bunker-950 border border-bunker-800 p-4 col-span-2 md:col-span-1">
-          <p className="text-[11px] font-mono text-bunker-muted uppercase">Son İletim Saati</p>
+          <p className="text-2xs font-mono text-bunker-muted uppercase">Son İletim Saati</p>
           <p className="text-lg font-mono font-bold text-white mt-1.5">
             {formatTimestamp(data?.stats.last_dispatched_at ?? null)}
           </p>
-          <span className="text-[10px] text-bunker-muted">
+          <span className="text-2xs text-bunker-muted">
             {data?.stats.last_success_at ? "Son başarı: " + formatTimestamp(data.stats.last_success_at) : "Henüz işlem yok"}
           </span>
         </div>
@@ -363,7 +363,7 @@ export default function BridgeSettingsPanel() {
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs border-collapse">
               <thead>
-                <tr className="border-b border-bunker-800 text-[11px] text-bunker-muted bg-bunker-900/40">
+                <tr className="border-b border-bunker-800 text-2xs text-bunker-muted bg-bunker-900/40">
                   <th className="py-2.5 px-3">Zaman</th>
                   <th className="py-2.5 px-3">Global Sembol</th>
                   <th className="py-2.5 px-3">➔ TR Karşılığı</th>
@@ -386,13 +386,13 @@ export default function BridgeSettingsPanel() {
                       {item.tr_symbol}
                     </td>
                     <td className="py-2 px-3">
-                      <span className="px-2 py-0.5 rounded bg-bunker-900 border border-bunker-700 text-[11px] text-white/90">
+                      <span className="px-2 py-0.5 rounded bg-bunker-900 border border-bunker-700 text-2xs text-white/90">
                         {item.signal_type}
                       </span>
                     </td>
                     <td className="py-2 px-3 text-white/90">
                       {item.score !== null ? `${Number(item.score).toFixed(1)}p` : "—"}{" "}
-                      {item.price ? <span className="text-bunker-muted text-[11px]">(${Number(item.price).toFixed(2)})</span> : null}
+                      {item.price ? <span className="text-bunker-muted text-2xs">(${Number(item.price).toFixed(2)})</span> : null}
                     </td>
                     <td className="py-2 px-3 text-bunker-muted">
                       {item.latency_ms} ms
@@ -434,7 +434,7 @@ export default function BridgeSettingsPanel() {
               <label className="text-xs font-mono font-bold text-white block">
                 Sinyal Köprüsünü Etkinleştir
               </label>
-              <span className="text-[11px] text-bunker-muted">
+              <span className="text-2xs text-bunker-muted">
                 Kapatılırsa Global alarmları ve sinyalleri Binance TR'ye iletilmez.
               </span>
             </div>
@@ -458,7 +458,7 @@ export default function BridgeSettingsPanel() {
               placeholder="https://scalper.erkanerdem.online/api/bridge/global-signal veya http://gateway/api/bridge/global-signal"
               className="w-full bg-bunker-900 border border-bunker-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-neon-green/60"
             />
-            <span className="text-[10px] text-bunker-muted block">
+            <span className="text-2xs text-bunker-muted block">
               Örnek: Sunucu içi Docker ağında <code>http://gateway:80/api/bridge/global-signal</code> veya dış alan adı <code>https://scalper.erkanerdem.online/api/bridge/global-signal</code>
             </span>
           </div>
@@ -469,7 +469,7 @@ export default function BridgeSettingsPanel() {
               <label className="text-xs font-mono text-bunker-muted block">
                 Köprü Doğrulama Anahtarı (X-Bridge-Secret):
               </label>
-              <span className="text-[10px] font-mono text-bunker-muted">
+              <span className="text-2xs font-mono text-bunker-muted">
                 Mevcut: {data?.secret_configured ? <span className="text-neon-green">Tanımlı ({data.masked_secret})</span> : <span className="text-amber-400">Tanımsız</span>}
               </span>
             </div>
@@ -484,7 +484,7 @@ export default function BridgeSettingsPanel() {
               <button
                 type="button"
                 onClick={() => setShowSecret(!showSecret)}
-                className="absolute right-2 top-2 text-[10px] font-mono text-bunker-muted hover:text-white px-1.5 py-0.5 rounded bg-bunker-800"
+                className="absolute right-2 top-2 text-2xs font-mono text-bunker-muted hover:text-white px-1.5 py-0.5 rounded bg-bunker-800"
               >
                 {showSecret ? "Gizle" : "Göster"}
               </button>
@@ -506,7 +506,7 @@ export default function BridgeSettingsPanel() {
                 onChange={(e) => setMinScore(e.target.value)}
                 className="w-full bg-bunker-900 border border-bunker-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-neon-green/60"
               />
-              <span className="text-[10px] text-bunker-muted block">
+              <span className="text-2xs text-bunker-muted block">
                 0 verilirse puanına bakılmaksızın tüm onaylı sinyaller iletilir.
               </span>
             </div>
@@ -525,7 +525,7 @@ export default function BridgeSettingsPanel() {
                 onChange={(e) => setCooldownSec(e.target.value)}
                 className="w-full bg-bunker-900 border border-bunker-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-neon-green/60"
               />
-              <span className="text-[10px] text-bunker-muted block">
+              <span className="text-2xs text-bunker-muted block">
                 Aynı coinin peş peşe iletilerek TR tarafında spam oluşturmasını engeller (varsayılan: 10sn).
               </span>
             </div>
@@ -545,7 +545,7 @@ export default function BridgeSettingsPanel() {
                       handlePing(sym);
                     }}
                     disabled={pinging}
-                    className="px-2 py-1 rounded bg-bunker-900 border border-bunker-700 hover:border-neon-green text-[11px] font-mono text-white"
+                    className="px-2 py-1 rounded bg-bunker-900 border border-bunker-700 hover:border-neon-green text-2xs font-mono text-white"
                   >
                     {sym}
                   </button>

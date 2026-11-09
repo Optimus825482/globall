@@ -263,11 +263,11 @@ export default function ForexCalendarAlertModal() {
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-              <span className="px-2 py-0.5 rounded text-[10px] font-black tracking-wider uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40">
+              <span className="px-2 py-0.5 rounded text-2xs font-black tracking-wider uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40">
                 ⏰ 5 DAKİKA KALDI
               </span>
               <span
-                className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                className={`px-2 py-0.5 rounded text-2xs font-black uppercase ${
                   is3Stars
                     ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
                     : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
@@ -283,7 +283,7 @@ export default function ForexCalendarAlertModal() {
             </h2>
 
             {activeAlert.original_title && activeAlert.original_title !== activeAlert.title && (
-              <p className="text-[11px] text-bunker-muted">
+              <p className="text-2xs text-bunker-muted">
                 Orijinal: {activeAlert.original_title} ({activeAlert.country_name || activeAlert.country})
               </p>
             )}
@@ -302,10 +302,10 @@ export default function ForexCalendarAlertModal() {
         {/* 🎯 ETKİLENECEK PARİTELER (ÇOK BELİRGİN KUTU) */}
         <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-950/40 via-cyan-950/30 to-bunker-900/60 border border-cyan-500/40 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-black text-cyan-300 flex items-center gap-1.5 tracking-wider">
+            <span className="text-2xs uppercase font-black text-cyan-300 flex items-center gap-1.5 tracking-wider">
               <span>🎯</span> ETKİLENECEK PARİTELER ({activeAlert.affected_symbols.length})
             </span>
-            <span className="text-[10px] text-bunker-muted font-bold">
+            <span className="text-2xs text-bunker-muted font-bold">
               Yüksek Spread &amp; Oynaklık Uyarısı
             </span>
           </div>
@@ -326,40 +326,40 @@ export default function ForexCalendarAlertModal() {
         {/* Rakamlar & Beklenti */}
         <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-bunker-900/70 border border-bunker-800 text-xs">
           <div>
-            <span className="text-[10px] text-bunker-muted block font-bold">Piyasa Beklentisi:</span>
+            <span className="text-2xs text-bunker-muted block font-bold">Piyasa Beklentisi:</span>
             <strong className="text-cyan-300 text-sm font-black">{activeAlert.forecast || "—"}</strong>
           </div>
           <div>
-            <span className="text-[10px] text-bunker-muted block font-bold">Önceki Veri:</span>
+            <span className="text-2xs text-bunker-muted block font-bold">Önceki Veri:</span>
             <strong className="text-slate-300 text-sm font-black">{activeAlert.previous || "—"}</strong>
           </div>
         </div>
 
         {/* ⚡ HANGİ DURUMDA NASIL ETKİLENİR? (ÖZET SENARYO) */}
         <div className="space-y-2 text-xs">
-          <span className="text-[11px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1">
+          <span className="text-2xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1">
             <span>⚡</span> Hangi Durumda Nasıl Etkilenir?
           </span>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {/* Beklenti Üzeri */}
             <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
-              <div className="font-bold text-emerald-400 text-[10px] flex items-center gap-1">
+              <div className="font-bold text-emerald-400 text-2xs flex items-center gap-1">
                 <span>🟢</span>
                 <span>{activeAlert.scenario?.bullish_trigger || "Beklenti Üzeri Gelirse:"}</span>
               </div>
-              <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+              <p className="text-2xs text-emerald-200/90 leading-relaxed">
                 {activeAlert.scenario?.bullish_outcome}
               </p>
             </div>
 
             {/* Beklenti Altı */}
             <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1">
-              <div className="font-bold text-rose-400 text-[10px] flex items-center gap-1">
+              <div className="font-bold text-rose-400 text-2xs flex items-center gap-1">
                 <span>🔴</span>
                 <span>{activeAlert.scenario?.bearish_trigger || "Beklenti Altı Kalırsa:"}</span>
               </div>
-              <p className="text-[11px] text-rose-200/90 leading-relaxed">
+              <p className="text-2xs text-rose-200/90 leading-relaxed">
                 {activeAlert.scenario?.bearish_outcome}
               </p>
             </div>
@@ -367,7 +367,7 @@ export default function ForexCalendarAlertModal() {
         </div>
 
         {/* Scalper Güvenlik Uyarısı */}
-        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200/90 flex items-start gap-2">
+        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-2xs text-amber-200/90 flex items-start gap-2">
           <span className="text-base leading-none">⚠️</span>
           <p className="leading-snug">
             <strong>Scalper Uyarısı:</strong> Veri açıklanma dakikasında (±3 dk) broker spreadleri genişleyebilir ve sahte kırılımlar (fitiller) oluşabilir. Açık pozisyonlarınızın SL seviyelerini kontrol edin.

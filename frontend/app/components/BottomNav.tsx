@@ -18,7 +18,7 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden items-center justify-around border-t border-bunker-800/90 bg-bunker-950/95 backdrop-blur-xl px-1.5 py-1 text-[11px] font-mono shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
+      className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden items-center justify-around border-t border-bunker-800/90 bg-bunker-950/95 backdrop-blur-xl px-1.5 py-1 text-2xs font-mono shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
       style={{ paddingBottom: "max(0.45rem, env(safe-area-inset-bottom, 0px))" }}
       aria-label="Mobil Hızlı Gezinme"
     >
@@ -35,7 +35,7 @@ export default function BottomNav() {
             }`}
           >
             <NavIcon name={item.icon} className="w-5 h-5 mb-1" />
-            <span className="truncate tracking-tight text-[10px]">{item.label}</span>
+            <span className="truncate tracking-tight text-2xs">{item.label}</span>
           </Link>
         );
       })}
@@ -47,7 +47,7 @@ export default function BottomNav() {
         aria-label="Tüm Menüyü Aç"
       >
         <NavIcon name="menu" className="w-5 h-5 mb-1" />
-        <span className="truncate tracking-tight text-[10px]">Menü</span>
+        <span className="truncate tracking-tight text-2xs">Menü</span>
       </button>
     </nav>
   );

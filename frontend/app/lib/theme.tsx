@@ -47,8 +47,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setThemeState(stored as Theme);
         applyTheme(stored as Theme);
       } else {
-        // Varsayılan dark
-        applyTheme("dark");
+        // 2026-11-09: Depolanmış tercih yoksa işletim sistemi tercihi okunur.
+        // Önceden koşulsuz `dark` uygulanıyordu; OS'u açık temada olan ilk
+        // ziyaretçi tercihine rağmen koyu tema görüyordu. `layout.tsx` içindeki
+        // FOUC önleyici senkron script ile aynı kuralı uygular.
+        const prefersLight =
+          typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: light)").matches;
+        const initial: Theme = prefersLight ? "light" : "dark";
+        setThemeState(initial);
+        applyTheme(initial);
       }
     } catch {
       applyTheme("dark");

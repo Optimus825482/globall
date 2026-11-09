@@ -174,7 +174,7 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
                 <button type="button" onClick={browserWarnOk} className="ui-button ui-button-primary">DEVAM ET</button>
               </div>
               <div className="text-center">
-                <button type="button" onClick={dismissForever} className="font-mono text-[11px] text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline">
+                <button type="button" onClick={dismissForever} className="font-mono text-2xs text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline">
                   BİR DAHA GÖSTERME
                 </button>
               </div>
@@ -223,7 +223,7 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
                 )}
               </div>
               <div className="text-center">
-                <button type="button" onClick={dismissForever} className="font-mono text-[11px] text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline">
+                <button type="button" onClick={dismissForever} className="font-mono text-2xs text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline">
                   BİR DAHA GÖSTERME
                 </button>
               </div>
@@ -252,7 +252,7 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
                 </button>
               </div>
               <div className="text-center">
-                <button type="button" onClick={dismissForever} className="font-mono text-[11px] text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline">
+                <button type="button" onClick={dismissForever} className="font-mono text-2xs text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline">
                   BİR DAHA GÖSTERME
                 </button>
               </div>

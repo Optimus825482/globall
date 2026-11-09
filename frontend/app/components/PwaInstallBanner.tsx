@@ -57,7 +57,7 @@ export default function PwaInstallBanner() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1">
                 <h4 className="font-mono text-xs font-bold text-white tracking-wide flex items-center gap-1.5">
-                  SCALPER GLOBAL <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">PWA</span>
+                  SCALPER GLOBAL <span className="text-2xs px-1.5 py-0.2 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">PWA</span>
                 </h4>
                 <button
                   type="button"
@@ -68,7 +68,7 @@ export default function PwaInstallBanner() {
                   ✕
                 </button>
               </div>
-              <p className="mt-0.5 text-[11px] text-slate-300 font-mono leading-tight">
+              <p className="mt-0.5 text-2xs text-slate-300 font-mono leading-tight">
                 Tarayıcı çubukları olmadan, tam ekran ve yüksek hızda yerel mobil deneyimi yaşayın.
               </p>
 
@@ -84,7 +84,7 @@ export default function PwaInstallBanner() {
                 <button
                   type="button"
                   onClick={handleDismiss}
-                  className="py-1.5 px-2.5 rounded-lg border border-bunker-800 bg-bunker-900/80 text-bunker-muted hover:text-white font-mono text-[11px] transition-colors"
+                  className="py-1.5 px-2.5 rounded-lg border border-bunker-800 bg-bunker-900/80 text-bunker-muted hover:text-white font-mono text-2xs transition-colors"
                 >
                   Daha Sonra
                 </button>
@@ -124,7 +124,7 @@ export default function PwaInstallBanner() {
             </div>
 
             <div className="space-y-3 font-mono text-xs text-slate-300">
-              <p className="text-[11px] text-cyan-300">
+              <p className="text-2xs text-cyan-300">
                 Scalper Global terminalini App Store uygulaması gibi tam ekran kullanmak için 2 basit adım:
               </p>
 
@@ -134,7 +134,7 @@ export default function PwaInstallBanner() {
                 </span>
                 <div>
                   <p className="font-bold text-white">Paylaş Butonuna Dokunun</p>
-                  <p className="text-[10px] text-bunker-muted mt-0.5">
+                  <p className="text-2xs text-bunker-muted mt-0.5">
                     Safari ekranının altındaki veya üstündeki <span className="text-cyan-400 font-bold">Paylaş (Share ⎋ / [↑])</span> ikonuna basın.
                   </p>
                 </div>
@@ -146,13 +146,13 @@ export default function PwaInstallBanner() {
                 </span>
                 <div>
                   <p className="font-bold text-white">&quot;Ana Ekrana Ekle&quot; Seçeneğini Seçin</p>
-                  <p className="text-[10px] text-bunker-muted mt-0.5">
+                  <p className="text-2xs text-bunker-muted mt-0.5">
                     Açılan menüyü aşağı kaydırıp <span className="text-emerald-400 font-bold">&quot;Ana Ekrana Ekle (Add to Home Screen ⊞)&quot;</span> butonuna dokunun ve &quot;Ekle&quot;ye basın.
                   </p>
                 </div>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-[10px] text-cyan-300">
+              <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-2xs text-cyan-300">
                 ✓ Artık terminal ana ekranınızda özel simgesiyle hazır! Bildirimler ve gerçek zamanlı WebSocket akışı kusursuz çalışır.
               </div>
             </div>

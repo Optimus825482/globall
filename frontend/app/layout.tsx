@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import "./globals.css";
 import AuthGate from "./components/AuthGate";
@@ -7,13 +7,17 @@ import { PwaProvider } from "./lib/pwa";
 import { ThemeProvider } from "./lib/theme";
 import PwaInstallBanner from "./components/PwaInstallBanner";
 import OfflineBanner from "./components/OfflineBanner";
+import { fontVariables } from "./fonts";
 
 export const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
 
+// 2026-11-09: Sekme başlığında marka ÖNE alındı. Önceden "🌐 GLOBAL ($) ·
+// SCALPER AGENT" idi; tarayıcı sekmesinde ilk 55–60 karakter okunur, emoji ve
+// "($)" önce geldiği için sekmeler arasında tanınırlık düşüyordu.
 export const metadata: Metadata = {
   title: {
-    default: "🌐 GLOBAL ($) · SCALPER AGENT",
-    template: "%s · 🌐 GLOBAL ($)"
+    default: "SCALPER GLOBAL · Forex & Altın Terminali",
+    template: "%s · SCALPER GLOBAL"
   },
   description: "Binance Global & Forex gerçek zamanlı piyasa analizi, radar ve otonom scalping PWA terminali ($)",
   applicationName: "SCALPER GLOBAL",
@@ -37,12 +41,19 @@ export const metadata: Metadata = {
   }
 };
 
-export const viewport = {
+export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // 2026-11-09: maximumScale 5 KORUNDU — `user-scalable=no` / `maximumScale=1`
+  // zoom'u engeller ve WCAG 1.4.4'ü ihlal eder. Bilinçli olarak dokunulmadı.
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#070b14"
+  // İki şema için ayrı tema rengi: açık temada tarayıcı çubuğu koyu kalıp
+  // sayfayla çelişmiyordu (görsel sıçrama). Şema başına bir değer bildirilir.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+    { media: "(prefers-color-scheme: dark)", color: "#070b14" },
+  ]
 };
 
 export default function RootLayout({
@@ -51,15 +62,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className="dark" suppressHydrationWarning data-build-id={BUILD_ID}>
+    <html lang="tr" className={`${fontVariables} dark`} suppressHydrationWarning data-build-id={BUILD_ID}>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="build-id" content={BUILD_ID} />
+        {/* Tema belirleme — FOUC önleyici, boyamadan ÖNCE senkron çalışır.
+            2026-11-09: `prefers-color-scheme` eklendi. Önceden depolanmış tema
+            yoksa koşulsuz koyu uygulanıyordu; işletim sistemi açık temada olan
+            ilk ziyaretçi tercihine rağmen koyu görüyordu. Artık OS tercihi
+            okunur, kullanıcının açık seçimi (localStorage) her zaman kazanır. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("theme")||localStorage.getItem("forex_theme_preference");if(t==="light"){document.documentElement.classList.remove("dark");document.documentElement.classList.add("light");document.documentElement.setAttribute("data-theme","light");document.documentElement.style.colorScheme="light";}else{document.documentElement.classList.remove("light");document.documentElement.classList.add("dark");document.documentElement.setAttribute("data-theme","dark");document.documentElement.style.colorScheme="dark";}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("theme")||localStorage.getItem("forex_theme_preference");if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}var r=document.documentElement;if(t==="light"){r.classList.remove("dark");r.classList.add("light");r.setAttribute("data-theme","light");r.style.colorScheme="light";}else{r.classList.remove("light");r.classList.add("dark");r.setAttribute("data-theme","dark");r.style.colorScheme="dark";}}catch(e){}})()`,
           }}
         />
       </head>

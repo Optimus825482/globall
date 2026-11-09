@@ -342,7 +342,7 @@ function SettingsPageInner() {
                 <span className={inAppNotif.enabled ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
                   {inAppNotif.enabled ? "AÇIK (Radar popupları aktif)" : "KAPALI (Popuplar susturuldu)"}
                 </span>
-                <span className="text-[11px] text-bunker-muted block mt-0.5">
+                <span className="text-2xs text-bunker-muted block mt-0.5">
                   {inAppNotif.soundEnabled ? "Ses: Açık" : "Ses: Kapalı"} · Otomatik Kapanma: {inAppNotif.autoCloseSec > 0 ? `${inAppNotif.autoCloseSec} sn` : "Manuel"}
                 </span>
               </div>
@@ -351,7 +351,7 @@ function SettingsPageInner() {
               <button
                 type="button"
                 onClick={() => updateInAppNotif({ enabled: !inAppNotif.enabled })}
-                className={`px-3.5 py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all shadow-sm ${
+                className={`px-3.5 py-1.5 rounded-lg font-mono text-2xs font-bold transition-all shadow-sm ${
                   inAppNotif.enabled
                     ? "bg-rose-950/60 border border-rose-500/40 text-rose-300 hover:bg-rose-900/60"
                     : "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60"
@@ -362,7 +362,7 @@ function SettingsPageInner() {
               <button
                 type="button"
                 onClick={() => selectTab("app")}
-                className="px-3 py-1.5 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 font-mono text-[11px]"
+                className="px-3 py-1.5 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 font-mono text-2xs"
               >
                 Ses &amp; Süre
               </button>
@@ -398,7 +398,7 @@ function SettingsPageInner() {
                     Temiz Sayfa (Sembol Kalkanlarını Sıfırla)
                   </h3>
                 </div>
-                <p className="text-[11px] text-bunker-muted mt-1.5 leading-relaxed">
+                <p className="text-2xs text-bunker-muted mt-1.5 leading-relaxed">
                   Kesim öncesindeki tüm kapalı işlemler arşive alınır; EV kalkanı ve seri-SL sayaçları sıfırlanır,
                   rapor/KPI/CSV sıfırdan saymaya başlar. Bakiyeye dokunulmaz.
                 </p>
@@ -425,7 +425,7 @@ function SettingsPageInner() {
                   )}
                 </div>
                 {resetResult.note && (
-                  <div className="text-[11px] text-bunker-300 leading-relaxed">{resetResult.note}</div>
+                  <div className="text-2xs text-bunker-muted leading-relaxed">{resetResult.note}</div>
                 )}
               </div>
             )}
@@ -459,9 +459,21 @@ function SettingsPageInner() {
             <p className="eyebrow mb-3">LLM PROVIDER EKLE</p>
             <p className="text-xs text-bunker-muted mb-3">Yalnızca teknik yorum üretir; emir veya pozisyon kararı vermez.</p>
             <div className="grid md:grid-cols-2 gap-3">
-              <input placeholder="Provider adı" value={llmForm.name} onChange={e => setLlmForm({...llmForm,name:e.target.value})} className="input" />
-              <input placeholder="Base URL (https://.../v1)" value={llmForm.base_url} onChange={e => setLlmForm({...llmForm,base_url:e.target.value})} className="input" />
-              <input type="password" placeholder="API key" value={llmForm.api_key} onChange={e => setLlmForm({...llmForm,api_key:e.target.value})} className="input" />
+              {/* 2026-11-09 denetimi: placeholder tek başına etiket DEĞİLDİR
+                  (WCAG 3.3.2). Görünür etiket eklendi; placeholder örnek değere
+                  indirildi, yazmaya başlayınca bağlam kaybolmuyor. */}
+              <label className="block">
+                <span className="eyebrow">PROVIDER ADI</span>
+                <input placeholder="ör. OpenAI" value={llmForm.name} onChange={e => setLlmForm({...llmForm,name:e.target.value})} className="input mt-2 w-full" />
+              </label>
+              <label className="block">
+                <span className="eyebrow">BASE URL</span>
+                <input placeholder="https://.../v1" value={llmForm.base_url} onChange={e => setLlmForm({...llmForm,base_url:e.target.value})} className="input mt-2 w-full" />
+              </label>
+              <label className="block">
+                <span className="eyebrow">API KEY</span>
+                <input type="password" placeholder="sunucuda şifrelenerek saklanır" autoComplete="off" value={llmForm.api_key} onChange={e => setLlmForm({...llmForm,api_key:e.target.value})} className="input mt-2 w-full" />
+              </label>
               <button onClick={saveLlmProvider} disabled={!llm.encryption_configured || !llmForm.name.trim() || !llmForm.base_url.trim() || !llmForm.api_key.trim()} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs disabled:opacity-40 disabled:cursor-not-allowed">
                 PROVIDER KAYDET
               </button>
@@ -474,17 +486,29 @@ function SettingsPageInner() {
           <div className="card bg-bunker-950">
             <p className="eyebrow mb-3">MODEL / UZMANLIK</p>
             <div className="grid md:grid-cols-2 gap-3">
-              <select value={llmForm.provider_id} onChange={e => setLlmForm({...llmForm,provider_id:e.target.value})} className="input">
-                <option value="">Provider seç</option>
-                {(llm.providers ?? []).map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <input placeholder="Model adı" value={llmForm.model} onChange={e => setLlmForm({...llmForm,model:e.target.value})} className="input" />
-              <select value={llmForm.model_type} onChange={e => setLlmForm({...llmForm,model_type:e.target.value})} className="input">
-                <option value="chat">Chat modeli</option>
-                <option value="embedding">Embedding modeli</option>
-              </select>
+              <label className="block">
+                <span className="eyebrow">PROVIDER</span>
+                <select value={llmForm.provider_id} onChange={e => setLlmForm({...llmForm,provider_id:e.target.value})} className="input mt-2 w-full">
+                  <option value="">Provider seç</option>
+                  {(llm.providers ?? []).map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="eyebrow">MODEL ADI</span>
+                <input placeholder="ör. gpt-4o-mini" value={llmForm.model} onChange={e => setLlmForm({...llmForm,model:e.target.value})} className="input mt-2 w-full" />
+              </label>
+              <label className="block">
+                <span className="eyebrow">MODEL TİPİ</span>
+                <select value={llmForm.model_type} onChange={e => setLlmForm({...llmForm,model_type:e.target.value})} className="input mt-2 w-full">
+                  <option value="chat">Chat modeli</option>
+                  <option value="embedding">Embedding modeli</option>
+                </select>
+              </label>
               {llmForm.model_type === "embedding" && (
-                <input type="number" min="1" placeholder="Embedding dimension" value={llmForm.dimensions} onChange={e => setLlmForm({...llmForm,dimensions:e.target.value})} className="input" />
+                <label className="block">
+                  <span className="eyebrow">EMBEDDING DIMENSION</span>
+                  <input type="number" min="1" placeholder="ör. 1536" value={llmForm.dimensions} onChange={e => setLlmForm({...llmForm,dimensions:e.target.value})} className="input mt-2 w-full" />
+                </label>
               )}
               <button onClick={() => llmRequest(`${API_BASE}/api/llm/models`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider_id:Number(llmForm.provider_id),name:llmForm.model,model_type:llmForm.model_type,dimensions:llmForm.dimensions ? Number(llmForm.dimensions) : undefined})}, "Model kaydedildi")} className="px-3 py-2 border border-sky-400/40 text-sky-300 rounded-lg font-mono text-xs">
                 MODEL EKLE
@@ -494,8 +518,14 @@ function SettingsPageInner() {
                   EMBEDDING TEST ET
                 </button>
               )}
-              <input placeholder="Uzmanlık adı" value={llmForm.skill} onChange={e => setLlmForm({...llmForm,skill:e.target.value})} className="input" />
-              <textarea placeholder="Uzmanlık talimatları" value={llmForm.instructions} onChange={e => setLlmForm({...llmForm,instructions:e.target.value})} className="input min-h-24" />
+              <label className="block">
+                <span className="eyebrow">UZMANLIK ADI</span>
+                <input placeholder="ör. Risk Yöneticisi" value={llmForm.skill} onChange={e => setLlmForm({...llmForm,skill:e.target.value})} className="input mt-2 w-full" />
+              </label>
+              <label className="block">
+                <span className="eyebrow">UZMANLIK TALİMATLARI</span>
+                <textarea placeholder="Bu uzmanlığın modele verdiği kalıcı talimatlar" value={llmForm.instructions} onChange={e => setLlmForm({...llmForm,instructions:e.target.value})} className="input mt-2 w-full min-h-24" />
+              </label>
               <button onClick={() => llmRequest(`${API_BASE}/api/llm/skills`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:llmForm.skill,instructions:llmForm.instructions})}, "Uzmanlık kaydedildi")} className="px-3 py-2 border border-sky-400/40 text-sky-300 rounded-lg font-mono text-xs">
                 UZMANLIK EKLE
               </button>
@@ -561,7 +591,7 @@ function SettingsPageInner() {
                 <div className="flex items-center gap-2">
                   <p className="eyebrow text-cyan-300">UYGULAMA İÇİ BİLDİRİMLER</p>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    className={`px-2 py-0.5 rounded text-2xs font-bold ${
                       inAppNotif.enabled
                         ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
                         : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
@@ -610,7 +640,7 @@ function SettingsPageInner() {
                     <span>{inAppNotif.soundEnabled ? "🔊" : "🔇"}</span>
                     <span>Radar Uyarı Sesi</span>
                   </div>
-                  <p className="text-[11px] text-bunker-muted mt-0.5">
+                  <p className="text-2xs text-bunker-muted mt-0.5">
                     Güçlü sinyal yakalandığında çift tonlu ses çal
                   </p>
                 </div>
@@ -635,7 +665,7 @@ function SettingsPageInner() {
                     <span>⏱️</span>
                     <span>Otomatik Kapanma Süresi</span>
                   </div>
-                  <p className="text-[11px] text-bunker-muted mt-0.5">
+                  <p className="text-2xs text-bunker-muted mt-0.5">
                     Ekranda açık kalma süresi
                   </p>
                 </div>

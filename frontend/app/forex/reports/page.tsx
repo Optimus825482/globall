@@ -443,7 +443,7 @@ export default function ForexReportsPage() {
         <>
           {/* Kartların kapsamı: hangi sembol + dönem özetlendiği. */}
           <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="flex flex-wrap items-center gap-2 text-2xs">
               <span className="font-bold text-bunker-muted uppercase tracking-wider">
                 KPI Kapsamı:
               </span>
@@ -470,23 +470,23 @@ export default function ForexReportsPage() {
                   : ""}
               </span>
             </div>
-            <span className="text-[10px] text-bunker-muted italic">
+            <span className="text-2xs text-bunker-muted italic">
               Sonuç / çıkış tipi / arama filtreleri yalnız tabloyu süzer, bu kartları etkilemez.
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Toplam İşlem */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Toplam İşlem</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-semibold">Toplam İşlem</span>
             <span className="text-xl font-black text-white">{kpi.total_trades}</span>
-            <span className="text-[10px] text-bunker-muted block mt-0.5">
+            <span className="text-2xs text-bunker-muted block mt-0.5">
               Hacim: {kpi.total_lots} Lot
             </span>
           </div>
 
           {/* Kazanma Oranı */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Kazanma Oranı (WR)</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-semibold">Kazanma Oranı (WR)</span>
             <span
               className={`text-xl font-black ${
                 kpi.total_trades === 0 ? "text-white" : kpi.win_rate >= 50 ? "text-emerald-400" : kpi.win_rate > 0 ? "text-rose-400" : "text-white"
@@ -494,14 +494,14 @@ export default function ForexReportsPage() {
             >
               %{kpi.win_rate.toFixed(1)}
             </span>
-            <span className="text-[10px] text-bunker-muted block mt-0.5">
+            <span className="text-2xs text-bunker-muted block mt-0.5">
               {kpi.wins} Kazan / {kpi.losses} Kayıp
             </span>
           </div>
 
           {/* Net Getiri (USD & Pips) */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Net Realize Kâr</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-semibold">Net Realize Kâr</span>
             <span
               className={`text-xl font-black ${
                 kpi.total_trades === 0 ? "text-white" : kpi.total_pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"
@@ -510,7 +510,7 @@ export default function ForexReportsPage() {
               {kpi.total_pnl_usd >= 0 ? "+" : ""}${kpi.total_pnl_usd.toFixed(2)}
             </span>
             <span
-              className="text-[10px] text-bunker-muted block mt-0.5 font-bold"
+              className="text-2xs text-bunker-muted block mt-0.5 font-bold"
               title={kpi.pnl_pips_mixed_scale ? "Farklı sembollerin pip ölçekleri toplandı (≈ karışık birim)" : undefined}
             >
               {kpi.pnl_pips_mixed_scale ? "≈ " : ""}
@@ -520,7 +520,7 @@ export default function ForexReportsPage() {
 
           {/* Kâr Faktörü */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Kâr Faktörü (PF)</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-semibold">Kâr Faktörü (PF)</span>
             <span
               className={`text-xl font-black ${
                 kpi.total_trades === 0 ? "text-white" : kpi.profit_factor >= 1.5 ? "text-emerald-400" : kpi.profit_factor >= 1.0 ? "text-yellow-400" : "text-rose-400"
@@ -528,14 +528,14 @@ export default function ForexReportsPage() {
             >
               {kpi.profit_factor_infinite || kpi.profit_factor >= 999 ? "∞" : kpi.profit_factor.toFixed(2)}
             </span>
-            <span className="text-[10px] text-bunker-muted block mt-0.5 truncate">
+            <span className="text-2xs text-bunker-muted block mt-0.5 truncate">
               Kâr: ${kpi.gross_profit_usd} | Z: ${kpi.gross_loss_usd}
             </span>
           </div>
 
           {/* Ortalama İşlem Getirisi */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Ortalama İşlem</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-semibold">Ortalama İşlem</span>
             <span
               className={`text-xl font-black ${
                 kpi.total_trades === 0 ? "text-white" : kpi.avg_trade_usd >= 0 ? "text-emerald-400" : "text-rose-400"
@@ -543,16 +543,16 @@ export default function ForexReportsPage() {
             >
               {kpi.avg_trade_usd >= 0 ? "+" : ""}${kpi.avg_trade_usd.toFixed(2)}
             </span>
-            <span className="text-[10px] text-bunker-muted block mt-0.5">
+            <span className="text-2xs text-bunker-muted block mt-0.5">
               Ort. Kâr: +${kpi.avg_win_usd}
             </span>
           </div>
 
           {/* Bakiye & Özsermaye */}
           <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-semibold">Nakit Bakiye / Özsermaye</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-semibold">Nakit Bakiye / Özsermaye</span>
             <span className="text-xl font-black text-white">${kpi.balance.toFixed(2)}</span>
-            <span className="text-[10px] text-emerald-400 block mt-0.5">
+            <span className="text-2xs text-emerald-400 block mt-0.5">
               Equity: ${kpi.equity.toFixed(2)}
             </span>
           </div>
@@ -584,7 +584,7 @@ export default function ForexReportsPage() {
             </span>
             <Link
               href="/forex/portfolio"
-              className="px-2.5 py-1 rounded-lg bg-blue-600/30 text-blue-300 border border-blue-400/40 hover:bg-blue-600/50 text-[11px] font-bold transition-all"
+              className="px-2.5 py-1 rounded-lg bg-blue-600/30 text-blue-300 border border-blue-400/40 hover:bg-blue-600/50 text-2xs font-bold transition-all"
             >
               Canlı Pozisyonları Yönet →
             </Link>
@@ -595,7 +595,7 @@ export default function ForexReportsPage() {
       {/* DÖNEM FİLTRESİ — sabit dilimler + tarih aralığı */}
       <div className="p-4 rounded-2xl bg-bunker-900/70 border border-bunker-800 space-y-3 shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-bunker-muted font-semibold uppercase tracking-wider mr-1">
+          <span className="text-2xs text-bunker-muted font-semibold uppercase tracking-wider mr-1">
             Dönem:
           </span>
           {PERIOD_PRESETS.map((item) => {
@@ -621,7 +621,7 @@ export default function ForexReportsPage() {
         {isSingleDate && (
           <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-bunker-800 text-xs">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] text-cyan-300 font-bold uppercase tracking-wider">
+              <span className="text-2xs text-cyan-300 font-bold uppercase tracking-wider">
                 İncelenecek Gün:
               </span>
               <div className="flex items-center gap-1.5">
@@ -659,7 +659,7 @@ export default function ForexReportsPage() {
                 </button>
               </div>
             </div>
-            <div className="text-[11px] text-bunker-muted">
+            <div className="text-2xs text-bunker-muted">
               Seçilen Gün: <strong className="text-white font-mono">{selectedSingleDate}</strong> (00:00 – 23:59 UTC+3 arası otonom işlemler ve başarı karnesi)
             </div>
           </div>
@@ -668,7 +668,7 @@ export default function ForexReportsPage() {
         {isCustomPeriod && (
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-bunker-800 text-xs">
             <label className="flex items-center gap-2">
-              <span className="text-[11px] text-bunker-muted font-semibold">Başlangıç:</span>
+              <span className="text-2xs text-bunker-muted font-semibold">Başlangıç:</span>
               <input
                 type="date"
                 value={dateFrom}
@@ -678,7 +678,7 @@ export default function ForexReportsPage() {
               />
             </label>
             <label className="flex items-center gap-2">
-              <span className="text-[11px] text-bunker-muted font-semibold">Bitiş:</span>
+              <span className="text-2xs text-bunker-muted font-semibold">Bitiş:</span>
               <input
                 type="date"
                 value={dateTo}
@@ -688,11 +688,11 @@ export default function ForexReportsPage() {
               />
             </label>
             {!customRangeReady && (
-              <span className="text-[11px] text-amber-300 font-semibold">
+              <span className="text-2xs text-amber-300 font-semibold">
                 ⚠️ Aralığın uygulanması için iki tarihi de seçin.
               </span>
             )}
-            <span className="text-[11px] text-bunker-muted">
+            <span className="text-2xs text-bunker-muted">
               Saatler UTC+3; bitiş günü <strong className="text-white">dahil</strong>.
             </span>
           </div>
@@ -704,7 +704,7 @@ export default function ForexReportsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
           {/* Arama */}
           <div>
-            <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
+            <label className="text-2xs text-bunker-muted block mb-1 font-semibold">
               Bilet No veya Sembol Ara:
             </label>
             <input
@@ -718,7 +718,7 @@ export default function ForexReportsPage() {
 
           {/* Parite Seçici */}
           <div>
-            <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
+            <label className="text-2xs text-bunker-muted block mb-1 font-semibold">
               Parite Filtresi:
             </label>
             <select
@@ -736,7 +736,7 @@ export default function ForexReportsPage() {
 
           {/* Strateji Filtresi */}
           <div>
-            <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
+            <label className="text-2xs text-bunker-muted block mb-1 font-semibold">
               Strateji Filtresi:
             </label>
             <select
@@ -760,7 +760,7 @@ export default function ForexReportsPage() {
 
           {/* Sonuç Filtresi */}
           <div>
-            <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
+            <label className="text-2xs text-bunker-muted block mb-1 font-semibold">
               Sonuç Filtresi:
             </label>
             <select
@@ -776,7 +776,7 @@ export default function ForexReportsPage() {
 
           {/* Çıkış Nedeni Filtresi */}
           <div>
-            <label className="text-[11px] text-bunker-muted block mb-1 font-semibold">
+            <label className="text-2xs text-bunker-muted block mb-1 font-semibold">
               Çıkış Türü:
             </label>
             <select
@@ -796,7 +796,7 @@ export default function ForexReportsPage() {
 
         {/* Hızlı Filtre Temizle */}
         {(selectedSymbol !== "ALL" || selectedStrategy !== "ALL" || selectedOutcome !== "ALL" || selectedReason !== "ALL" || searchQuery || period !== "all") && (
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-bunker-800 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-bunker-800 text-2xs">
             <span className="text-bunker-muted">Aktif filtreler uygulanıyor ({trades.length} işlem listelendi)</span>
             <button
               type="button"
@@ -874,7 +874,7 @@ export default function ForexReportsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-bunker-950/80 text-bunker-muted border-b border-bunker-800 uppercase text-[10px] tracking-wider">
+              <thead className="bg-bunker-950/80 text-bunker-muted border-b border-bunker-800 uppercase text-2xs tracking-wider">
                 <tr>
                   <th className="py-3 px-3">Bilet ID</th>
                   <th className="py-3 px-3">Parite</th>
@@ -900,19 +900,19 @@ export default function ForexReportsPage() {
                   return (
                     <tr key={tr.id ?? tr.ticket ?? `rep-${idx}`} className="hover:bg-bunker-800/40 transition-colors">
                       {/* Bilet ID */}
-                      <td className="py-3 px-3 text-bunker-muted text-[11px] font-bold">
+                      <td className="py-3 px-3 text-bunker-muted text-2xs font-bold">
                         {tr.id ?? tr.ticket ?? "-"}
                       </td>
 
                       {/* Parite & Display */}
                       <td className="py-3 px-3">
                         <span className="font-bold text-white text-xs block">{tr.display || tr.symbol}</span>
-                        <span className="text-[10px] text-bunker-muted">{tr.symbol}</span>
+                        <span className="text-2xs text-bunker-muted">{tr.symbol}</span>
                       </td>
 
                       {/* Strateji */}
                       <td className="py-3 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
+                        <span className={`px-2 py-0.5 rounded text-2xs font-bold whitespace-nowrap ${
                           tr.strategy === "EMA_ADX_PULLBACK_M5" || tr.strategy === "EMA_ADX_PULLBACK"
                             ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
                             : tr.strategy === "S3_SUPERTREND_RSI" || String(tr.strategy).startsWith("S3")
@@ -936,7 +936,7 @@ export default function ForexReportsPage() {
                       {/* Yön */}
                       <td className="py-3 px-2">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-2 py-0.5 rounded text-2xs font-bold ${
                             tr.direction === "BUY"
                               ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                               : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
@@ -959,17 +959,17 @@ export default function ForexReportsPage() {
                       {/* Giriş */}
                       <td className="py-3 px-3">
                         <span className="text-white font-bold block">{tr.entry_price ?? "-"}</span>
-                        <span className="text-[10px] text-bunker-muted">{formatUtc3(tr.open_time)}</span>
+                        <span className="text-2xs text-bunker-muted">{formatUtc3(tr.open_time)}</span>
                       </td>
 
                       {/* Çıkış */}
                       <td className="py-3 px-3">
                         <span className="text-white font-bold block">{tr.exit_price ?? "-"}</span>
-                        <span className="text-[10px] text-bunker-muted">{formatUtc3(tr.exit_time)}</span>
+                        <span className="text-2xs text-bunker-muted">{formatUtc3(tr.exit_time)}</span>
                       </td>
 
                       {/* Süre */}
-                      <td className="py-3 px-2 text-bunker-muted text-[11px] whitespace-nowrap">
+                      <td className="py-3 px-2 text-bunker-muted text-2xs whitespace-nowrap">
                         {tr.duration_human || (tr.duration_sec ? `${tr.duration_sec} sn` : "-")}
                       </td>
 
@@ -980,7 +980,7 @@ export default function ForexReportsPage() {
                           return (
                             <span
                               title={tr.exit_reason_title || tr.exit_reason || undefined}
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${exit.cls}`}
+                              className={`px-2 py-0.5 rounded text-2xs font-bold whitespace-nowrap border ${exit.cls}`}
                             >
                               {exit.label}
                             </span>

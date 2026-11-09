@@ -190,13 +190,13 @@ export default function ForexCalendarPage() {
   const biasBadge = (dir?: string, conf?: number) => {
     if (dir === "BUY")
       return (
-        <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold">
+        <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-2xs font-bold">
           BUY {conf ? `· %${Math.round(conf * 100)}` : ""}
         </span>
       );
     if (dir === "SELL")
       return (
-        <span className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-400/40 text-rose-300 font-mono text-[10px] font-bold">
+        <span className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-400/40 text-rose-300 font-mono text-2xs font-bold">
           SELL {conf ? `· %${Math.round(conf * 100)}` : ""}
         </span>
       );
@@ -207,18 +207,18 @@ export default function ForexCalendarPage() {
     const s = stars || (impact === "High" ? 3 : 2);
     if (s >= 3)
       return (
-        <span className="px-1 py-0.5 rounded bg-red-500/20 border border-red-400/40 text-red-300 font-mono text-[10px] font-bold">
+        <span className="px-1 py-0.5 rounded bg-red-500/20 border border-red-400/40 text-red-300 font-mono text-2xs font-bold">
           ⭐⭐⭐
         </span>
       );
     if (s === 2)
       return (
-        <span className="px-1 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-[10px] font-bold">
+        <span className="px-1 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-2xs font-bold">
           ⭐⭐
         </span>
       );
     return (
-      <span className="px-1 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted font-mono text-[10px]">
+      <span className="px-1 py-0.5 rounded bg-bunker-800 border border-bunker-700 text-bunker-muted font-mono text-2xs">
         ⭐
       </span>
     );
@@ -229,7 +229,7 @@ export default function ForexCalendarPage() {
     o: CalendarEvent["outcome"],
     cur: string
   ) => {
-    const base = "px-2 py-0.5 rounded border font-mono text-[10px] font-bold whitespace-nowrap";
+    const base = "px-2 py-0.5 rounded border font-mono text-2xs font-bold whitespace-nowrap";
     if (!released)
       return <span className={`${base} bg-bunker-800 border-bunker-700 text-bunker-muted`}>BEKLENİYOR</span>;
     if (!o)
@@ -255,7 +255,7 @@ export default function ForexCalendarPage() {
               <h1 className="text-xl font-bold font-mono text-white tracking-tight">
                 KÜRESEL EKONOMİK TAKVİM
               </h1>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
+              <span className="px-2 py-0.5 rounded text-2xs font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
                 BIAS AKTİF
               </span>
             </div>
@@ -357,7 +357,7 @@ export default function ForexCalendarPage() {
         >
           Tüm günler
         </button>
-        <span className="ml-auto text-[11px] text-bunker-muted font-mono">
+        <span className="ml-auto text-2xs text-bunker-muted font-mono">
           {tabbed.length} olay
         </span>
       </div>
@@ -470,17 +470,17 @@ export default function ForexCalendarPage() {
                               <span className="font-mono text-sm font-bold text-white">{ev.title}</span>
                               {starsBadge(ev.stars, ev.impact)}
                               {ev.is_within_5m && (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-[10px] font-bold animate-pulse">
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-2xs font-bold animate-pulse">
                                   ⏳ 5 DK
                                 </span>
                               )}
                               {released && (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-2xs font-bold">
                                   ✓ AÇIKLANDI
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-x-3 gap-y-1 text-[11px] text-bunker-muted font-mono mt-1 flex-wrap">
+                            <div className="flex items-center gap-x-3 gap-y-1 text-2xs text-bunker-muted font-mono mt-1 flex-wrap">
                               <span className="text-white/70 font-bold">{formatUtc3Time(ev.date_iso)}</span>
                               <span>Önceki: {ev.previous || "—"}</span>
                               <span>Beklenti: {ev.forecast || "—"}</span>
@@ -519,7 +519,7 @@ export default function ForexCalendarPage() {
                                     {pairs.map((pr) => (
                                       <span
                                         key={pr.symbol}
-                                        className={`px-2 py-1 rounded border text-[11px] font-bold ${
+                                        className={`px-2 py-1 rounded border text-2xs font-bold ${
                                           pr.direction > 0
                                             ? "bg-emerald-500/15 border-emerald-400/40 text-emerald-300"
                                             : pr.direction < 0
@@ -533,7 +533,7 @@ export default function ForexCalendarPage() {
                                   </div>
                                 </div>
                               )}
-                              <p className="text-[10px] text-bunker-muted">
+                              <p className="text-2xs text-bunker-muted">
                                 Kıyas tabanı: {o.basis === "forecast" ? "beklenti" : "önceki değer"}. Bilgi amaçlıdır, işlem emri değildir.
                               </p>
                             </>
@@ -571,7 +571,7 @@ export default function ForexCalendarPage() {
                             <p className="text-blue-300">İşlem motoru: {ev.bias_explanation}</p>
                           )}
                           {ev.affected_symbols && ev.affected_symbols.length > 0 && (
-                            <div className="text-[11px] text-bunker-muted">
+                            <div className="text-2xs text-bunker-muted">
                               Etkilenen semboller: {ev.affected_symbols.join(", ")}
                             </div>
                           )}

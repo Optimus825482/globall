@@ -274,7 +274,7 @@ export default function ForexRadarModal() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                <span className="text-2xs font-black uppercase tracking-wider text-cyan-300">
                   UYGULAMA İÇİ RADAR SİNYALİ
                 </span>
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
@@ -303,23 +303,23 @@ export default function ForexRadarModal() {
                 {activeSignal.display || activeSignal.symbol}
               </span>
               {activeSignal.category && (
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-bunker-800 text-bunker-300 uppercase">
+                <span className="px-1.5 py-0.5 rounded text-2xs font-bold bg-bunker-800 text-bunker-muted uppercase">
                   {activeSignal.category}
                 </span>
               )}
               {activeSignal.dss_tier === "A+" && (
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse">
+                <span className="px-2 py-0.5 rounded-full text-2xs font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse">
                   👑 A+ KURUMSAL
                 </span>
               )}
               {activeSignal.csm_diff != null && activeSignal.csm_diff !== 0 && (
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${activeSignal.csm_diff > 0 ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300" : "bg-rose-950/40 border-rose-500/40 text-rose-300"}`}>
+                <span className={`px-1.5 py-0.5 rounded text-2xs font-bold border ${activeSignal.csm_diff > 0 ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300" : "bg-rose-950/40 border-rose-500/40 text-rose-300"}`}>
                   CSM: {activeSignal.csm_diff > 0 ? `+${activeSignal.csm_diff}` : activeSignal.csm_diff}
                 </span>
               )}
             </div>
             {activeSignal.name && (
-              <span className="text-[11px] text-bunker-muted block mt-0.5">
+              <span className="text-2xs text-bunker-muted block mt-0.5">
                 {activeSignal.name}
               </span>
             )}
@@ -356,7 +356,7 @@ export default function ForexRadarModal() {
               </span>
             </div>
             {activeSignal.news_info.remaining_min != null && (
-              <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-black/50 text-white/90 border border-white/10 shrink-0">
+              <span className="text-2xs uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-black/50 text-white/90 border border-white/10 shrink-0">
                 {activeSignal.news_info.remaining_min.toFixed(0)} dk aktif
               </span>
             )}
@@ -366,32 +366,32 @@ export default function ForexRadarModal() {
         {/* Metrikler (Skor, TP, SL, R/R) */}
         <div className="grid grid-cols-3 gap-2.5 text-center">
           <div className="p-2.5 rounded-xl bg-bunker-900/60 border border-bunker-800">
-            <span className="text-[10px] text-bunker-muted uppercase block font-bold">Skor</span>
+            <span className="text-2xs text-bunker-muted uppercase block font-bold">Skor</span>
             <span className="text-lg font-black text-cyan-300">{activeSignal.score.toFixed(1)}</span>
-            <span className="text-[9px] text-bunker-muted block">eşik {threshold ?? "—"}</span>
+            <span className="text-2xs text-bunker-muted block">eşik {threshold ?? "—"}</span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-            <span className="text-[10px] text-emerald-400 uppercase block font-bold">Hedef (TP)</span>
+            <span className="text-2xs text-emerald-400 uppercase block font-bold">Hedef (TP)</span>
             <span className="text-lg font-black text-emerald-300">
               {tp == null ? "—" : `+${tp}p`}
             </span>
-            <span className="text-[9px] text-emerald-400/80 block">
+            <span className="text-2xs text-emerald-400/80 block">
               R/R {rrText}
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
-            <span className="text-[10px] text-rose-400 uppercase block font-bold">Stop (SL)</span>
+            <span className="text-2xs text-rose-400 uppercase block font-bold">Stop (SL)</span>
             <span className="text-lg font-black text-rose-300">
               {sl == null ? "—" : `-${sl}p`}
             </span>
-            <span className="text-[9px] text-rose-400/80 block">Korumalı</span>
+            <span className="text-2xs text-rose-400/80 block">Korumalı</span>
           </div>
         </div>
 
         {/* Teknik İndikatörler */}
-        <div className="flex items-center justify-between text-[11px] text-bunker-300 px-1 py-1 border-t border-bunker-800/60">
+        <div className="flex items-center justify-between text-2xs text-bunker-muted px-1 py-1 border-t border-bunker-800/60">
           <span>
             ADX: <strong className="text-white">{optNum(activeSignal.adx)?.toFixed(0) ?? "—"}</strong>
           </span>
@@ -449,7 +449,7 @@ export default function ForexRadarModal() {
         </div>
 
         {/* Ayarlar linki & otomatik kapanma bilgisi */}
-        <div className="flex items-center justify-between text-[10px] text-bunker-400 pt-1">
+        <div className="flex items-center justify-between text-2xs text-bunker-muted pt-1">
           <span>
             {notifSettings.autoCloseSec > 0
               ? `⏱️ ${notifSettings.autoCloseSec} sn sonra otomatik kapanır`

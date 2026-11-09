@@ -154,19 +154,19 @@ export default function ApiLatencyPanel() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 font-mono">
         <div className="rounded-lg border border-bunker-800 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-bunker-muted">Veritabanı gidiş-dönüş</p>
+          <p className="text-2xs uppercase tracking-wider text-bunker-muted">Veritabanı gidiş-dönüş</p>
           <p className="mt-1 text-lg font-bold tabular-nums">{data?.db_ping_ms != null ? fmtMs(data.db_ping_ms) : "—"}</p>
         </div>
         <div className="rounded-lg border border-bunker-800 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-bunker-muted">Ölçülen uç nokta</p>
+          <p className="text-2xs uppercase tracking-wider text-bunker-muted">Ölçülen uç nokta</p>
           <p className="mt-1 text-lg font-bold tabular-nums">{routes.length}</p>
         </div>
         <div className="rounded-lg border border-bunker-800 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-bunker-muted">Yavaş (p95 ≥ 1 sn)</p>
+          <p className="text-2xs uppercase tracking-wider text-bunker-muted">Yavaş (p95 ≥ 1 sn)</p>
           <p className={`mt-1 text-lg font-bold tabular-nums ${slowCount > 0 ? "text-rose-400" : ""}`}>{slowCount}</p>
         </div>
         <div className="rounded-lg border border-bunker-800 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-bunker-muted">Ölçüm süresi</p>
+          <p className="text-2xs uppercase tracking-wider text-bunker-muted">Ölçüm süresi</p>
           <p className="mt-1 text-lg font-bold tabular-nums">{data ? fmtUptime(data.uptime_sec) : "—"}</p>
         </div>
       </div>
@@ -177,7 +177,7 @@ export default function ApiLatencyPanel() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs tabular-nums font-mono">
             <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-bunker-muted">
+              <tr className="text-2xs uppercase tracking-wider text-bunker-muted">
                 <th scope="col" className="text-left font-medium py-2 pr-3">Uç nokta</th>
                 <th scope="col" className="text-right font-medium py-2 px-2">İstek</th>
                 <th scope="col" className="text-right font-medium py-2 px-2">Ort.</th>
@@ -217,7 +217,7 @@ export default function ApiLatencyPanel() {
 
       {data && data.slow_requests.length > 0 && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-bunker-muted mb-2 font-mono">
+          <p className="text-2xs uppercase tracking-wider text-bunker-muted mb-2 font-mono">
             Son yavaş istekler (≥ {fmtMs(data.slow_threshold_ms)})
           </p>
           <ul className="space-y-1 font-mono text-xs tabular-nums">

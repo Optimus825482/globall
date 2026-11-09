@@ -207,16 +207,16 @@ function SymbolMultiSelector({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bunker-800/80 pb-2">
         <div className="flex items-center gap-2">
           <span className={`text-xs font-bold ${accentClass}`}>{title}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-bunker-800 text-bunker-muted font-bold">
+          <span className="text-2xs px-2 py-0.5 rounded-full bg-bunker-800 text-bunker-muted font-bold">
             {selected.length} / {ALL_31_SYMBOLS.length} Seçili
           </span>
           {badgeLabel && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+            <span className="text-2xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
               {badgeLabel}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 text-[10px]">
+        <div className="flex items-center gap-1.5 text-2xs">
           <button
             type="button"
             onClick={() => handleSelectGroup(filterGroup)}
@@ -241,10 +241,10 @@ function SymbolMultiSelector({
             key={grp}
             type="button"
             onClick={() => setFilterGroup(grp)}
-            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+            className={`px-2 py-0.5 rounded text-2xs font-semibold transition-all ${
               filterGroup === grp
                 ? "bg-bunker-800 text-white border border-bunker-600 shadow-sm"
-                : "text-bunker-muted hover:text-bunker-300 bg-transparent"
+                : "text-bunker-muted hover:text-white bg-transparent"
             }`}
           >
             {grp}
@@ -261,14 +261,14 @@ function SymbolMultiSelector({
               key={item.sym}
               type="button"
               onClick={() => handleToggle(item.sym)}
-              className={`px-2 py-1.5 rounded-lg text-left text-[11px] font-bold border transition-all flex items-center justify-between ${
+              className={`px-2 py-1.5 rounded-lg text-left text-2xs font-bold border transition-all flex items-center justify-between ${
                 active
                   ? chipActiveClass
                   : "bg-bunker-900/50 text-bunker-muted border-bunker-800/80 hover:border-bunker-700 hover:text-white"
               }`}
             >
               <span className="truncate">{item.label}</span>
-              <span className="text-[10px] ml-1 opacity-80">{active ? "✓" : "+"}</span>
+              <span className="text-2xs ml-1 opacity-80">{active ? "✓" : "+"}</span>
             </button>
           );
         })}
@@ -439,7 +439,7 @@ export default function AutoSettingsPanel({
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
               Forex Çoklu Algoritma &amp; 31 Sembol Risk Yönetimi
             </h3>
-            <span className="text-[10px] text-bunker-muted">
+            <span className="text-2xs text-bunker-muted">
               IC Markets MT5 canlı veri hattı ve bağımsız kârlılık strateji motorları
             </span>
           </div>
@@ -495,17 +495,17 @@ export default function AutoSettingsPanel({
           <div className="p-3 rounded-xl bg-bunker-950/80 border border-amber-500/30 space-y-2.5">
             <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
               <span className="text-xs font-bold text-amber-300">Portföy Risk Kapısı &amp; Pozisyon Gözetimi</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${form.risk_kill_switch ? "bg-rose-500/15 text-rose-300 border-rose-500/40" : "bg-bunker-800 text-bunker-muted border-bunker-700"}`}>
+              <span className={`text-2xs px-2 py-0.5 rounded border font-bold ${form.risk_kill_switch ? "bg-rose-500/15 text-rose-300 border-rose-500/40" : "bg-bunker-800 text-bunker-muted border-bunker-700"}`}>
                 {form.risk_kill_switch ? "KILL SWITCH AÇIK" : (form.risk_gate_mode ?? "shadow") === "enforce" ? "UYGULANIYOR" : (form.risk_gate_mode ?? "shadow") === "off" ? "KAPALI" : "GÖLGE"}
               </span>
             </div>
-            <p className="text-[10px] text-bunker-muted">
+            <p className="text-2xs text-bunker-muted">
               Isı, net USD riski, günlük/haftalık kayıp, drawdown merdiveni (%3→×0.75, %5→×0.5, %8→×0.25), maliyet-R/spread ve kaybedene ekleme yasağı.
               <b> Gölge</b> modda yalnızca &quot;engellerdi&quot; diye günlüğe yazar (Raporlar &gt; Portföy &amp; Risk); motoru değiştirmez. Eşikler kaynaksız başlangıç değerleridir.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Kapı modu:</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Kapı modu:</label>
                 <select value={form.risk_gate_mode ?? "shadow"} onChange={(e) => setField("risk_gate_mode", e.target.value)} className={`${inputCls}`}>
                   <option value="shadow">Gölge: yalnız günlüğe yaz (önerilen başlangıç)</option>
                   <option value="enforce">Uygula: engelle + lotu küçült</option>
@@ -517,7 +517,7 @@ export default function AutoSettingsPanel({
                        className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`} />
                 <span>
                   <span className="text-white font-semibold block">KILL SWITCH: yeni giriş yok</span>
-                  <span className="text-[10px] text-bunker-muted">Motor ve fırsat taraması yeni işlem açmaz; açık pozisyonlara dokunmaz.</span>
+                  <span className="text-2xs text-bunker-muted">Motor ve fırsat taraması yeni işlem açmaz; açık pozisyonlara dokunmaz.</span>
                 </span>
               </label>
               {([
@@ -530,7 +530,7 @@ export default function AutoSettingsPanel({
                 ["risk_stop_spread_mult", "Stop en az × spread", 8],
               ] as const).map(([key, label, def]) => (
                 <div key={key}>
-                  <label className="text-[11px] text-bunker-muted block mb-1">{label}:</label>
+                  <label className="text-2xs text-bunker-muted block mb-1">{label}:</label>
                   <input type="number" step="0.05" value={(form[key] as number | undefined) ?? def}
                          onChange={(e) => setNumField(key, e.target.value)} className={`${inputCls} text-amber-300`} />
                 </div>
@@ -540,11 +540,11 @@ export default function AutoSettingsPanel({
                        className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`} />
                 <span>
                   <span className="text-white font-semibold block">Kaybedene ekleme yasak</span>
-                  <span className="text-[10px] text-bunker-muted">Zarardaki aynı yönlü pozisyona yeni işlem eklenmez (ortalama düşürme).</span>
+                  <span className="text-2xs text-bunker-muted">Zarardaki aynı yönlü pozisyona yeni işlem eklenmez (ortalama düşürme).</span>
                 </span>
               </label>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Pozisyon gözetimi:</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Pozisyon gözetimi:</label>
                 <select value={form.position_supervisor_mode ?? "log"} onChange={(e) => setField("position_supervisor_mode", e.target.value)} className={`${inputCls}`}>
                   <option value="log">Öneri günlüğü (önerilen başlangıç)</option>
                   <option value="act">Komut ver: başabaş stop / hafta sonu kapama</option>
@@ -552,12 +552,12 @@ export default function AutoSettingsPanel({
                 </select>
               </div>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Olay öncesi pencere (dk):</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Olay öncesi pencere (dk):</label>
                 <input type="number" min="1" max="60" value={form.position_event_window_min ?? 10}
                        onChange={(e) => setNumField("position_event_window_min", e.target.value)} className={`${inputCls} text-amber-300`} />
               </div>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Hafta sonu öncesi işaretleme (dk):</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Hafta sonu öncesi işaretleme (dk):</label>
                 <input type="number" min="5" max="240" value={form.position_flat_before_close_min ?? 30}
                        onChange={(e) => setNumField("position_flat_before_close_min", e.target.value)} className={`${inputCls} text-amber-300`} />
               </div>
@@ -568,7 +568,7 @@ export default function AutoSettingsPanel({
           <div className="p-3 rounded-xl bg-bunker-950/80 border border-cyan-500/30 space-y-2.5">
             <div className="flex items-center justify-between border-b border-bunker-800/80 pb-2">
               <span className="text-xs font-bold text-cyan-300">LLM Trader İncelemesi (işlem açılmadan önce)</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${form.llm_review_enabled !== false ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : "bg-bunker-800 text-bunker-muted border-bunker-700"}`}>
+              <span className={`text-2xs px-2 py-0.5 rounded border font-bold ${form.llm_review_enabled !== false ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : "bg-bunker-800 text-bunker-muted border-bunker-700"}`}>
                 {form.llm_review_enabled !== false ? "AÇIK" : "KAPALI"}
               </span>
             </div>
@@ -581,7 +581,7 @@ export default function AutoSettingsPanel({
               />
               <span>
                 <span className="text-white font-semibold block">Açılmadan önce LLM değerlendirsin</span>
-                <span className="text-[10px] text-bunker-muted">
+                <span className="text-2xs text-bunker-muted">
                   Motor bir işlemi açmadan önce deneyimli trader istemiyle LLM: çok zaman dilimli analiz, mum formasyonları, destek/direnç,
                   ekonomik takvim, haberler, dolar ve açık pozisyon yığılmasına bakıp ONAY/RED verir. Her karar kaydedilir; sonuçları
                   Raporlar &gt; LLM Kararları sekmesinde.
@@ -590,7 +590,7 @@ export default function AutoSettingsPanel({
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Çalışma modu:</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Çalışma modu:</label>
                 <select
                   value={form.llm_review_mode ?? "veto"}
                   onChange={(e) => setField("llm_review_mode", e.target.value)}
@@ -601,7 +601,7 @@ export default function AutoSettingsPanel({
                 </select>
               </div>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Onay için min. güven (0-100):</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Onay için min. güven (0-100):</label>
                 <input
                   type="number" min="0" max="100"
                   value={form.llm_review_min_confidence ?? 55}
@@ -610,7 +610,7 @@ export default function AutoSettingsPanel({
                 />
               </div>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">En fazla bekleme (sn, 3-90):</label>
+                <label className="text-2xs text-bunker-muted block mb-1">En fazla bekleme (sn, 3-90):</label>
                 <input
                   type="number" min="3" max="90" step="1"
                   value={form.llm_review_timeout_sec ?? 45}
@@ -619,14 +619,14 @@ export default function AutoSettingsPanel({
                 />
               </div>
               <div>
-                <label className="text-[11px] text-bunker-muted block mb-1">Kontrollü keşif (% veto edilenin açılması):</label>
+                <label className="text-2xs text-bunker-muted block mb-1">Kontrollü keşif (% veto edilenin açılması):</label>
                 <input
                   type="number" min="0" max="50" step="1"
                   value={form.llm_review_explore_pct ?? 5}
                   onChange={(e) => setNumField("llm_review_explore_pct", e.target.value)}
                   className={`${inputCls} text-cyan-300`}
                 />
-                <span className="text-[10px] text-bunker-muted">Vetonun gerçek değerini ölçmek için küçük bir pay yine açılır (0 = kapalı).</span>
+                <span className="text-2xs text-bunker-muted">Vetonun gerçek değerini ölçmek için küçük bir pay yine açılır (0 = kapalı).</span>
               </div>
               <label className="inline-flex items-start gap-2 cursor-pointer self-end">
                 <input
@@ -637,7 +637,7 @@ export default function AutoSettingsPanel({
                 />
                 <span>
                   <span className="text-white font-semibold block">LLM yanıt vermezse işlem yine açılsın</span>
-                  <span className="text-[10px] text-bunker-muted">Kapalıysa LLM yokken/yavaşken hiçbir işlem açılmaz.</span>
+                  <span className="text-2xs text-bunker-muted">Kapalıysa LLM yokken/yavaşken hiçbir işlem açılmaz.</span>
                 </span>
               </label>
             </div>
@@ -645,125 +645,125 @@ export default function AutoSettingsPanel({
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Forex Riski (% Bakiye):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Forex Riski (% Bakiye):</label>
               <input
                 type="number" step="0.5" min="0.1" max="30.0"
                 value={form.risk_per_trade_pct ?? ""}
                 onChange={(e) => setNumField("risk_per_trade_pct", e.target.value)}
                 className={`${inputCls} text-blue-400 font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">Varsayılan: %15.0</span>
+              <span className="text-2xs text-bunker-muted">Varsayılan: %15.0</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Altın (XAUUSD) Riski (%):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Altın (XAUUSD) Riski (%):</label>
               <input
                 type="number" step="0.5" min="0.1" max="25.0"
                 value={form.risk_gold_pct ?? ""}
                 onChange={(e) => setNumField("risk_gold_pct", e.target.value)}
                 className={`${inputCls} text-amber-400 font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">Varsayılan: %7.0</span>
+              <span className="text-2xs text-bunker-muted">Varsayılan: %7.0</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">BTC / US30 / USTEC (%):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">BTC / US30 / USTEC (%):</label>
               <input
                 type="number" step="0.5" min="0.1" max="20.0"
                 value={form.risk_crypto_index_pct ?? ""}
                 onChange={(e) => setNumField("risk_crypto_index_pct", e.target.value)}
                 className={`${inputCls} text-purple-400 font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">Varsayılan: %2.0</span>
+              <span className="text-2xs text-bunker-muted">Varsayılan: %2.0</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Dinamik BE Kâr Kilidi (R):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Dinamik BE Kâr Kilidi (R):</label>
               <input
                 type="number" step="0.05" min="0" max="2.0"
                 value={form.be_trigger_r_mult ?? 0.40}
                 onChange={(e) => setNumField("be_trigger_r_mult", e.target.value)}
                 className={`${inputCls} text-cyan-400 font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">0 = Kapalı (Varsayılan: 0.40R)</span>
+              <span className="text-2xs text-bunker-muted">0 = Kapalı (Varsayılan: 0.40R)</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Kâr Al (TP Pips):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Kâr Al (TP Pips):</label>
               <input
                 type="number" min="5" max="120"
                 value={form.tp_pips ?? ""}
                 onChange={(e) => setNumField("tp_pips", e.target.value)}
                 className={`${inputCls} text-emerald-400`}
               />
-              <span className="text-[10px] text-bunker-muted">Klasik hedef scalp kârı</span>
+              <span className="text-2xs text-bunker-muted">Klasik hedef scalp kârı</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Zarar Durdur (SL Pips):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Zarar Durdur (SL Pips):</label>
               <input
                 type="number" min="4" max="60"
                 value={form.sl_pips ?? ""}
                 onChange={(e) => setNumField("sl_pips", e.target.value)}
                 className={`${inputCls} text-rose-400`}
               />
-              <span className="text-[10px] text-bunker-muted">Sıkı Scalper SL</span>
+              <span className="text-2xs text-bunker-muted">Sıkı Scalper SL</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Başabaş (BE Pips):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Başabaş (BE Pips):</label>
               <input
                 type="number" min="0" max="50"
                 value={form.breakeven_pips ?? ""}
                 onChange={(e) => setNumField("breakeven_pips", e.target.value)}
                 className={`${inputCls} text-cyan-300`}
               />
-              <span className="text-[10px] text-bunker-muted">0 = Kapalı (Stopu girişe çeker)</span>
+              <span className="text-2xs text-bunker-muted">0 = Kapalı (Stopu girişe çeker)</span>
             </div>
 
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">İz Süren Stop (Trail Pips):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">İz Süren Stop (Trail Pips):</label>
               <input
                 type="number" min="4" max="60"
                 value={form.trailing_stop_pips ?? ""}
                 onChange={(e) => setNumField("trailing_stop_pips", e.target.value)}
                 className={`${inputCls} text-yellow-300`}
               />
-              <span className="text-[10px] text-bunker-muted">Adım adım takip</span>
+              <span className="text-2xs text-bunker-muted">Adım adım takip</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Maksimum Spread (Pip):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Maksimum Spread (Pip):</label>
               <input
                 type="number" step="0.5" min="0.5" max="50"
                 value={form.max_spread_pips ?? ""}
                 onChange={(e) => setNumField("max_spread_pips", e.target.value)}
                 className={`${inputCls} text-white`}
               />
-              <span className="text-[10px] text-bunker-muted">Spread filtresi</span>
+              <span className="text-2xs text-bunker-muted">Spread filtresi</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Maksimum Açık İşlem:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Maksimum Açık İşlem:</label>
               <input
                 type="number" min="1" max="99"
                 value={form.max_open_positions ?? 20}
                 onChange={(e) => setIntField("max_open_positions", e.target.value)}
                 className={`${inputCls} text-white font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">Tüm semboller toplamı</span>
+              <span className="text-2xs text-bunker-muted">Tüm semboller toplamı</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Sembol Başına İşlem (Piramit):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Sembol Başına İşlem (Piramit):</label>
               <input
                 type="number" min="1" max="5"
                 value={form.max_positions_per_symbol ?? 2}
                 onChange={(e) => setIntField("max_positions_per_symbol", e.target.value)}
                 className={`${inputCls} text-emerald-400 font-semibold`}
               />
-              <span className="text-[10px] text-bunker-muted">Aynı sembolde max işlem (1: Tek, 2-5: Kârlı ekleme)</span>
+              <span className="text-2xs text-bunker-muted">Aynı sembolde max işlem (1: Tek, 2-5: Kârlı ekleme)</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Altın Soğuma (sn):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Altın Soğuma (sn):</label>
               <input
                 type="number" min="60" max="900" step="10"
                 value={form.gold_cooldown_sec ?? 60}
                 onChange={(e) => setNumField("gold_cooldown_sec", e.target.value)}
                 className={`${inputCls} text-amber-300`}
               />
-              <span className="text-[10px] text-bunker-muted">XAUUSD bekleme</span>
+              <span className="text-2xs text-bunker-muted">XAUUSD bekleme</span>
             </div>
           </div>
 
@@ -778,7 +778,7 @@ export default function AutoSettingsPanel({
               />
               <span>
                 <span className="text-white font-semibold block">DXY Rejim Filtresi</span>
-                <span className="text-[10px] text-bunker-muted">Dolar yönüyle çelişen girişleri engeller</span>
+                <span className="text-2xs text-bunker-muted">Dolar yönüyle çelişen girişleri engeller</span>
               </span>
             </label>
             <label className="inline-flex items-start gap-2 cursor-pointer">
@@ -790,7 +790,7 @@ export default function AutoSettingsPanel({
               />
               <span>
                 <span className="text-white font-semibold block">Korelasyon Kalkanı</span>
-                <span className="text-[10px] text-bunker-muted">Yüksek korelasyonlu yığılmaları sınırlar</span>
+                <span className="text-2xs text-bunker-muted">Yüksek korelasyonlu yığılmaları sınırlar</span>
               </span>
             </label>
             <label className="inline-flex items-start gap-2 cursor-pointer">
@@ -802,7 +802,7 @@ export default function AutoSettingsPanel({
               />
               <span>
                 <span className="text-white font-semibold block">Seans Filtresi</span>
-                <span className="text-[10px] text-bunker-muted">Asya seansı chop saatlerinde kısıtlar</span>
+                <span className="text-2xs text-bunker-muted">Asya seansı chop saatlerinde kısıtlar</span>
               </span>
             </label>
           </div>
@@ -814,24 +814,24 @@ export default function AutoSettingsPanel({
         <div className="space-y-3 animate-in fade-in duration-150">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Min. Radar Skoru (50-98):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Min. Radar Skoru (50-98):</label>
               <input
                 type="number" min="50" max="98"
                 value={form.min_score ?? 75}
                 onChange={(e) => setNumField("min_score", e.target.value)}
                 className={`${inputCls} text-amber-300`}
               />
-              <span className="text-[10px] text-bunker-muted">Tüm pariteler için teyit eşiği (Varsayılan 75)</span>
+              <span className="text-2xs text-bunker-muted">Tüm pariteler için teyit eşiği (Varsayılan 75)</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">₿ BTC Min. Skor (0-98):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">₿ BTC Min. Skor (0-98):</label>
               <input
                 type="number" min="0" max="98"
                 value={form.btc_min_score ?? 76}
                 onChange={(e) => setNumField("btc_min_score", e.target.value)}
                 className={`${inputCls} text-orange-400`}
               />
-              <span className="text-[10px] text-bunker-muted">BTCUSD özel eşiği (Varsayılan 76)</span>
+              <span className="text-2xs text-bunker-muted">BTCUSD özel eşiği (Varsayılan 76)</span>
             </div>
           </div>
 
@@ -841,7 +841,7 @@ export default function AutoSettingsPanel({
               <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                 <span>Ekonomik Takvim Yön Desteği (30 Dk Momentum & Kalkan)</span>
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
+              <span className="text-2xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
                 Haber Besleyicisi
               </span>
             </div>
@@ -855,7 +855,7 @@ export default function AutoSettingsPanel({
                 />
                 <span>
                   <span className="text-white font-semibold block">Haber Yönü Besleyicisi</span>
-                  <span className="text-[10px] text-bunker-muted">
+                  <span className="text-2xs text-bunker-muted">
                     Açıklanan verileri 30 dk boyunca radar taramasına ve otonom girişe yön desteği olarak besler
                   </span>
                 </span>
@@ -870,7 +870,7 @@ export default function AutoSettingsPanel({
                 />
                 <span>
                   <span className="text-white font-semibold block">Karşıt Yön Koruması</span>
-                  <span className="text-[10px] text-bunker-muted">
+                  <span className="text-2xs text-bunker-muted">
                     Ekonomik verinin zıttı yöndeki sahte kırılımları ve ters sinyalleri 30 dk engeller
                   </span>
                 </span>
@@ -902,14 +902,14 @@ export default function AutoSettingsPanel({
               />
               <div>
                 <span className="text-white font-semibold block">FVG Pullback Motorunu Etkinleştir</span>
-                <span className="text-[10px] text-bunker-muted">
+                <span className="text-2xs text-bunker-muted">
                   IC Markets 5M kurumsal likidite boşluklarında (Fair Value Gap) pullback ve retest yakalar (Hafta sonu 7/24 kripto destekli)
                 </span>
               </div>
             </label>
 
             <div className="flex items-center gap-2">
-              <label className="text-[11px] text-bunker-muted whitespace-nowrap">TP Çarpanı (R):</label>
+              <label className="text-2xs text-bunker-muted whitespace-nowrap">TP Çarpanı (R):</label>
               <input
                 type="number"
                 step="0.1"
@@ -938,24 +938,24 @@ export default function AutoSettingsPanel({
         <div className="space-y-3 animate-in fade-in duration-150">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Donchian ADX Eşiği:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Donchian ADX Eşiği:</label>
               <input
                 type="number" min="0" max="60" step="1"
                 value={form.donchian_adx_min ?? 18}
                 onChange={(e) => setNumField("donchian_adx_min", e.target.value)}
                 className={`${inputCls} text-cyan-300`}
               />
-              <span className="text-[10px] text-bunker-muted">Trend gücü filtresi (Varsayılan: 18)</span>
+              <span className="text-2xs text-bunker-muted">Trend gücü filtresi (Varsayılan: 18)</span>
             </div>
             <div>
-              <label className="text-[11px] text-bunker-muted block mb-1">Yön Başına Günde Maksimum Giriş:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Yön Başına Günde Maksimum Giriş:</label>
               <input
                 type="number" min="0" max="20" step="1"
                 value={form.donchian_max_per_day ?? 2}
                 onChange={(e) => setIntField("donchian_max_per_day", e.target.value)}
                 className={`${inputCls} text-white`}
               />
-              <span className="text-[10px] text-bunker-muted">Aşırı işlem engeli (0 = sınırsız)</span>
+              <span className="text-2xs text-bunker-muted">Aşırı işlem engeli (0 = sınırsız)</span>
             </div>
           </div>
 
@@ -985,7 +985,7 @@ export default function AutoSettingsPanel({
           <div className="flex items-center justify-between p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
             <div>
               <span className="text-xs font-bold text-amber-300 block">EMA8/21/50 Dizilimi + EMA21 Geri Çekilme (M5)</span>
-              <span className="text-[10px] text-bunker-muted">Trend yönünde EMA21 desteğine dokunuş ve onay barı</span>
+              <span className="text-2xs text-bunker-muted">Trend yönünde EMA21 desteğine dokunuş ve onay barı</span>
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -1000,7 +1000,7 @@ export default function AutoSettingsPanel({
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">ADX Eşiği:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">ADX Eşiği:</label>
               <input
                 type="number" min="0" max="60"
                 value={form.ema_adx_adx_min ?? 25}
@@ -1009,7 +1009,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">SL (×ATR):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">SL (×ATR):</label>
               <input
                 type="number" min="0.5" max="5" step="0.1"
                 value={form.ema_adx_sl_atr ?? 1.5}
@@ -1018,7 +1018,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">TP (×ATR):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">TP (×ATR):</label>
               <input
                 type="number" min="0" max="6" step="0.1"
                 value={form.ema_adx_tp_atr ?? 2.0}
@@ -1027,7 +1027,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">EMA21 Temas (×ATR):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">EMA21 Temas (×ATR):</label>
               <input
                 type="number" min="0" max="2" step="0.05"
                 value={form.ema_adx_touch_atr ?? 0.3}
@@ -1036,7 +1036,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Günde Max Giriş:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Günde Max Giriş:</label>
               <input
                 type="number" min="0" max="20"
                 value={form.ema_adx_max_per_day ?? 0}
@@ -1063,7 +1063,7 @@ export default function AutoSettingsPanel({
           <div className="flex items-center justify-between p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
             <div>
               <span className="text-xs font-bold text-indigo-300 block">Asya Kutusu (00:00 - 07:00 UTC) Kırılım Motoru</span>
-              <span className="text-[10px] text-bunker-muted">Londra açılışında Asya kutusu high/low kırılımına yönlü tek giriş</span>
+              <span className="text-2xs text-bunker-muted">Londra açılışında Asya kutusu high/low kırılımına yönlü tek giriş</span>
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -1078,7 +1078,7 @@ export default function AutoSettingsPanel({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Kutu Bitiş Saati (UTC):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Kutu Bitiş Saati (UTC):</label>
               <input
                 type="number" min="0" max="12"
                 value={form.lb_box_end_utc ?? 7}
@@ -1087,7 +1087,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Tetik Bitiş Saati (UTC):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Tetik Bitiş Saati (UTC):</label>
               <input
                 type="number" min="1" max="18"
                 value={form.lb_entry_end_utc ?? 11}
@@ -1096,7 +1096,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">SL = Kutu Boyu Oranı:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">SL = Kutu Boyu Oranı:</label>
               <input
                 type="number" min="0.1" max="1.0" step="0.05"
                 value={form.lb_sl_box_frac ?? 0.5}
@@ -1105,7 +1105,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">TP = SL × R Katı:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">TP = SL × R Katı:</label>
               <input
                 type="number" min="0.5" max="5.0" step="0.1"
                 value={form.lb_tp_r ?? 1.5}
@@ -1132,7 +1132,7 @@ export default function AutoSettingsPanel({
           <div className="flex items-center justify-between p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
             <div>
               <span className="text-xs font-bold text-teal-300 block">SuperTrend + Wilder RSI Pullback (5M &amp; 15M)</span>
-              <span className="text-[10px] text-bunker-muted">ST(10,3) + EMA200 yönünde RSI 40-50 / 50-60 geri çekilme kırılımı</span>
+              <span className="text-2xs text-bunker-muted">ST(10,3) + EMA200 yönünde RSI 40-50 / 50-60 geri çekilme kırılımı</span>
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -1147,7 +1147,7 @@ export default function AutoSettingsPanel({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">ADX Eşiği:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">ADX Eşiği:</label>
               <input
                 type="number" min="0" max="60"
                 value={form.s3_adx_min ?? 25}
@@ -1156,7 +1156,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">RSI Alt Sınır (40-50):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">RSI Alt Sınır (40-50):</label>
               <input
                 type="number" min="30" max="50"
                 value={form.s3_rsi_lo ?? 40}
@@ -1165,7 +1165,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">SL (×ATR):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">SL (×ATR):</label>
               <input
                 type="number" min="0.5" max="5.0" step="0.1"
                 value={form.s3_sl_atr ?? 1.5}
@@ -1174,7 +1174,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">15M TP (×ATR):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">15M TP (×ATR):</label>
               <input
                 type="number" min="0.5" max="6.0" step="0.1"
                 value={form.s3_tp_atr_15m ?? 2.0}
@@ -1209,12 +1209,12 @@ export default function AutoSettingsPanel({
         <div className="space-y-3 animate-in fade-in duration-150">
           <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
             <span className="text-xs font-bold text-fuchsia-300 block">John Carter TTM Keltner Squeeze (M15)</span>
-            <span className="text-[10px] text-bunker-muted">Bollinger bantlarının Keltner kanalı içine sıkışması ve yönlü patlama kırılımı</span>
+            <span className="text-2xs text-bunker-muted">Bollinger bantlarının Keltner kanalı içine sıkışması ve yönlü patlama kırılımı</span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Periyot:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Periyot:</label>
               <input
                 type="number" min="5" max="100"
                 value={form.squeeze_kc_period ?? 20}
@@ -1223,7 +1223,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">BB Std-Dev Çarpanı:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">BB Std-Dev Çarpanı:</label>
               <input
                 type="number" min="0.5" max="4.0" step="0.1"
                 value={form.squeeze_kc_bb_mult ?? 2.0}
@@ -1232,7 +1232,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Keltner ATR Çarpanı:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Keltner ATR Çarpanı:</label>
               <input
                 type="number" min="0.5" max="4.0" step="0.1"
                 value={form.squeeze_kc_mult ?? 1.5}
@@ -1241,7 +1241,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">TP = SL × R Katı:</label>
+              <label className="text-2xs text-bunker-muted block mb-1">TP = SL × R Katı:</label>
               <input
                 type="number" min="0.0" max="6.0" step="0.1"
                 value={form.squeeze_kc_tp_r ?? 2.0}
@@ -1267,7 +1267,7 @@ export default function AutoSettingsPanel({
         <div className="space-y-3 animate-in fade-in duration-150">
           <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
             <span className="text-xs font-bold text-rose-300 block">Combo3 — UT Bot ∪ Donchian+Vortex ∪ Vortex Kesişimi (M5)</span>
-            <span className="text-[10px] text-bunker-muted">
+            <span className="text-2xs text-bunker-muted">
               Replay: yalnız XAUUSD, risk %20&apos;de 14 haftada 83 günün 33&apos;ü ≥ +%50; ancak 2 pip kaymada PF 1.81→1.09.
               Bu yüzden düşük riskle koşar ve gerçek kayma ölçülür (GET /api/forex/slippage?tag=CMB3).
             </span>
@@ -1281,12 +1281,12 @@ export default function AutoSettingsPanel({
               className="accent-rose-500"
             />
             <span className="font-bold text-rose-300">Combo3 kolu aktif</span>
-            <span className="text-[10px] text-bunker-muted">(kapatınca yalnız bu kol durur; kayma defteri diğer emirler için çalışmaya devam eder)</span>
+            <span className="text-2xs text-bunker-muted">(kapatınca yalnız bu kol durur; kayma defteri diğer emirler için çalışmaya devam eder)</span>
           </label>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Risk (% bakiye, yalnız bu kol):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Risk (% bakiye, yalnız bu kol):</label>
               <input
                 type="number" min="0.1" max="25" step="0.1"
                 value={form.combo3_risk_pct ?? 1.0}
@@ -1295,7 +1295,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">SL = ATR(14) × :</label>
+              <label className="text-2xs text-bunker-muted block mb-1">SL = ATR(14) × :</label>
               <input
                 type="number" min="0.5" max="5" step="0.1"
                 value={form.combo3_sl_atr ?? 1.5}
@@ -1304,7 +1304,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">TP = SL × R Katı (0 = TP yok):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">TP = SL × R Katı (0 = TP yok):</label>
               <input
                 type="number" min="0" max="6" step="0.1"
                 value={form.combo3_tp_r ?? 2.0}
@@ -1313,7 +1313,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Günlük azami giriş / yön (0 = sınırsız):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Günlük azami giriş / yön (0 = sınırsız):</label>
               <input
                 type="number" min="0" max="50"
                 value={form.combo3_max_per_day ?? 0}
@@ -1339,7 +1339,7 @@ export default function AutoSettingsPanel({
         <div className="space-y-3 animate-in fade-in duration-150">
           <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800">
             <span className="text-xs font-bold text-fuchsia-300 block">Kombo XAU — kombo_1 / kombo_4 / kombo_9 (M5, yalnız XAUUSD)</span>
-            <span className="text-[10px] text-bunker-muted">
+            <span className="text-2xs text-bunker-muted">
               Kombinasyon taramasında 5 ölçütü geçip temiz holdout&apos;ta tutunan üç kombo. Amaç kazanç değil ölçüm:
               BE/SL dolum kalitesi (GET /api/forex/slippage?tag=KMB1|KMB4|KMB9) ve replay sinyal paritesi
               (GET /api/forex/kombo/signals). Geçme ölçütü: maliyet sonrası PF ≥ 1.3; durma: 20 işlem sonrası PF &lt; 1.0.
@@ -1355,12 +1355,12 @@ export default function AutoSettingsPanel({
               className="accent-fuchsia-500"
             />
             <span className="font-bold text-fuchsia-300">Kombo kolu aktif</span>
-            <span className="text-[10px] text-bunker-muted">(üç kombo birlikte; her biri kendi KMBx etiketiyle ayrı ölçülür)</span>
+            <span className="text-2xs text-bunker-muted">(üç kombo birlikte; her biri kendi KMBx etiketiyle ayrı ölçülür)</span>
           </label>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Risk (% bakiye, yalnız bu kol; rapor §9: %2):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Risk (% bakiye, yalnız bu kol; rapor §9: %2):</label>
               <input
                 type="number" min="0.1" max="25" step="0.1"
                 value={form.kombo_risk_pct ?? 2.0}
@@ -1369,7 +1369,7 @@ export default function AutoSettingsPanel({
               />
             </div>
             <div>
-              <label className="text-[10px] text-bunker-muted block mb-1">Günlük azami giriş / kombo+yön (0 = sınırsız):</label>
+              <label className="text-2xs text-bunker-muted block mb-1">Günlük azami giriş / kombo+yön (0 = sınırsız):</label>
               <input
                 type="number" min="0" max="50"
                 value={form.kombo_max_per_day ?? 0}
@@ -1379,7 +1379,7 @@ export default function AutoSettingsPanel({
             </div>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800 text-[10px] text-bunker-muted space-y-1">
+          <div className="p-2.5 rounded-xl bg-bunker-950 border border-bunker-800 text-2xs text-bunker-muted space-y-1">
             <div className="text-xs font-bold text-fuchsia-300">Tanımlar (sunucu varsayılanı; SL/TP tanımdan, BE/trailing motorun)</div>
             {(form.kombo_tanimlar && form.kombo_tanimlar.length
               ? form.kombo_tanimlar
@@ -1409,7 +1409,7 @@ export default function AutoSettingsPanel({
 
       {/* Footer Actions */}
       <div className="flex items-center justify-between pt-3 border-t border-bunker-800">
-        <div className="text-[11px] text-bunker-muted">
+        <div className="text-2xs text-bunker-muted">
           Seçilen algoritmalar ve semboller anında kaydedilip canlı motora uygulanır.
         </div>
         <div className="flex items-center gap-2">

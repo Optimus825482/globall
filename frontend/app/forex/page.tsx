@@ -524,7 +524,7 @@ export default function ForexRadarPage() {
             >
               <span aria-hidden>{s.flag}</span>
               <span className="font-bold">{s.name}</span>
-              <span className="text-[10px]">{s.active ? "açık" : "kapalı"}</span>
+              <span className="text-2xs">{s.active ? "açık" : "kapalı"}</span>
             </div>
           ))}
         </div>
@@ -566,12 +566,12 @@ export default function ForexRadarPage() {
               <span className="font-mono text-sm font-bold text-emerald-300">
                 Tüm Tarama Sistemleri — {scanNowResult.candidates_count}/{scanNowResult.total_rows} kol canlı aday üretti
               </span>
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 KENDİLİĞİNDEN TARANIYOR
               </span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap font-mono text-[11px]">
+            <div className="flex items-center gap-2 flex-wrap font-mono text-2xs">
               <span className="text-bunker-muted">{scanNowResult.scanned_at}</span>
               {scanNowResult.motor_enabled ? (
                 <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold">MOTOR AÇIK</span>
@@ -597,7 +597,7 @@ export default function ForexRadarPage() {
             <button
               type="button"
               onClick={() => setArmFilter("ALL")}
-              className={`px-2 py-1 rounded-lg border font-mono text-[10px] font-bold transition-all ${
+              className={`px-2 py-1 rounded-lg border font-mono text-2xs font-bold transition-all ${
                 armFilter === "ALL"
                   ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
                   : "bg-bunker-800/80 border-bunker-700 text-bunker-muted hover:text-white"
@@ -613,7 +613,7 @@ export default function ForexRadarPage() {
                   key={a.strategy}
                   type="button"
                   onClick={() => setArmFilter(on ? "ALL" : a.strategy)}
-                  className={`px-2 py-1 rounded-lg border font-mono text-[10px] font-bold transition-all ${
+                  className={`px-2 py-1 rounded-lg border font-mono text-2xs font-bold transition-all ${
                     on
                       ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
                       : a.candidates > 0
@@ -643,7 +643,7 @@ export default function ForexRadarPage() {
                       : "bg-bunker-900/60 border-bunker-800"
                   }`}
                 >
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 border ${meta.medal}`}>
+                  <span className={`px-1.5 py-0.5 rounded text-2xs font-bold shrink-0 border ${meta.medal}`}>
                     {meta.label}
                   </span>
                   <span className="font-bold text-white shrink-0">{r.display}</span>
@@ -655,7 +655,7 @@ export default function ForexRadarPage() {
                   <span className={r.action ? "text-emerald-200/90" : "text-bunker-muted"}>{r.status}</span>
                   {!r.panel_kapsaminda && r.symbol !== "—" && (
                     <span
-                      className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/10 border border-yellow-500/30 text-yellow-300"
+                      className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-2xs bg-yellow-500/10 border border-yellow-500/30 text-yellow-300"
                       title="Bu sembol allowed_symbols dışında — sinyal olsa bile motor işlem açamaz"
                     >
                       panel kapsamı dışı
@@ -708,16 +708,16 @@ export default function ForexRadarPage() {
                     ? `${strongSignals.length} GÜÇLÜ SİNYAL`
                     : "GÜÇLÜ SİNYAL BEKLENİYOR"}
                 </span>
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   TARAMA AKTİF
                 </span>
               </div>
-              <p className="text-[11px] text-bunker-muted font-mono mt-0.5">{scanNote}</p>
+              <p className="text-2xs text-bunker-muted font-mono mt-0.5">{scanNote}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] font-mono">
+          <div className="flex items-center gap-2 text-2xs font-mono">
             {TIER_ORDER.map((t) => (
               <span
                 key={t}
@@ -737,7 +737,7 @@ export default function ForexRadarPage() {
 
         {/* Eşik şeffaflığı: "güçlü" derken hangi ölçüt kullanılıyor? */}
         {thresholds && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-bunker-800/60 text-[10px] font-mono text-bunker-muted">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-bunker-800/60 text-2xs font-mono text-bunker-muted">
             <span>Min Skor: <strong className="text-white">{thresholds.min_score}</strong></span>
             <span>Emtia: <strong className="text-white">{thresholds.commodity_min_score}</strong></span>
             <span>BTC: <strong className="text-white">{thresholds.btc_min_score}</strong></span>
@@ -771,11 +771,11 @@ export default function ForexRadarPage() {
               <span className="text-xs font-bold text-white uppercase tracking-wider">
                 Para Birimi Güç Matrisi (CSM - Currency Strength Meter)
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30">
+              <span className="text-2xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30">
                 8 Para Birimi · Kurumsal Akış Sıralaması
               </span>
             </div>
-            <div className="text-[11px] text-bunker-muted flex items-center gap-3">
+            <div className="text-2xs text-bunker-muted flex items-center gap-3">
               <span>Lider: <strong className="text-emerald-400">#{csm.ranks?.[csm.strongest] ?? 1} {csm.strongest}</strong></span>
               <span>En Zayıf: <strong className="text-rose-400">#{csm.ranks?.[csm.weakest] ?? 8} {csm.weakest}</strong></span>
             </div>
@@ -796,7 +796,7 @@ export default function ForexRadarPage() {
                       : "bg-bunker-950/50 border-bunker-800"
                   }`}
                 >
-                  <div className="flex items-center justify-between text-[10px] text-bunker-muted mb-0.5">
+                  <div className="flex items-center justify-between text-2xs text-bunker-muted mb-0.5">
                     <span>#{idx + 1}</span>
                     {isTop ? <span className="text-emerald-400 font-bold">LİDER</span> : isBottom ? <span className="text-rose-400 font-bold">DİP</span> : null}
                   </div>
@@ -820,7 +820,7 @@ export default function ForexRadarPage() {
                 Algoritmanın Onayladığı Güçlü İşlem Sinyalleri
               </h2>
             </div>
-            <span className="font-mono text-[11px] text-bunker-muted">
+            <span className="font-mono text-2xs text-bunker-muted">
               Tüm giriş kapıları açık · motor bu sinyalle işlem açabilir
             </span>
           </div>
@@ -842,24 +842,24 @@ export default function ForexRadarPage() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-white text-base">{c.display}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
+                        <span className="text-2xs px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
                           {c.category}
                         </span>
                         {c.dss_tier === "A+" && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.3)]">
+                          <span className="text-2xs px-2 py-0.5 rounded-full font-black bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-200 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.3)]">
                             A+ KURUMSAL
                           </span>
                         )}
                         {c.dss_tier === "B" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-500/20 border border-blue-400/40 text-blue-300">
+                          <span className="text-2xs px-1.5 py-0.5 rounded font-bold bg-blue-500/20 border border-blue-400/40 text-blue-300">
                             B KURULUM
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-bunker-muted truncate">{c.name}</div>
+                      <div className="text-2xs text-bunker-muted truncate">{c.name}</div>
                     </div>
                     <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap ${
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-bold whitespace-nowrap ${
                         isBuy
                           ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/50"
                           : "bg-rose-500/20 text-rose-300 border border-rose-400/50"
@@ -883,7 +883,7 @@ export default function ForexRadarPage() {
                         <span className="truncate">{c.news_info.badge || c.news_info.event_title}</span>
                       </div>
                       {c.news_info.remaining_min != null && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/40 text-white/90 shrink-0">
+                        <span className="text-2xs font-mono px-1.5 py-0.5 rounded bg-black/40 text-white/90 shrink-0">
                           {c.news_info.remaining_min.toFixed(0)} dk
                         </span>
                       )}
@@ -893,24 +893,24 @@ export default function ForexRadarPage() {
                   {/* Skor + hedef/stop */}
                   <div className="grid grid-cols-3 gap-2 p-2 rounded-lg bg-bunker-950/60 border border-bunker-800/80">
                     <div>
-                      <span className="text-[10px] text-bunker-muted block">SKOR</span>
+                      <span className="text-2xs text-bunker-muted block">SKOR</span>
                       <span className="text-lg font-black text-emerald-400">{c.score.toFixed(1)}</span>
-                      <span className="text-[10px] text-bunker-muted block">eşik {optNum(c.required_score) ?? "—"}</span>
+                      <span className="text-2xs text-bunker-muted block">eşik {optNum(c.required_score) ?? "—"}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-bunker-muted block">HEDEF (TP)</span>
+                      <span className="text-2xs text-bunker-muted block">HEDEF (TP)</span>
                       <span className="text-sm font-bold text-emerald-400">{fmtTp(c.pip_target)}</span>
-                      <span className="text-[10px] text-bunker-muted block">R/R {fmtRr(c.risk_reward)}</span>
+                      <span className="text-2xs text-bunker-muted block">R/R {fmtRr(c.risk_reward)}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-bunker-muted block">STOP (SL)</span>
+                      <span className="text-2xs text-bunker-muted block">STOP (SL)</span>
                       <span className="text-sm font-bold text-rose-400">{fmtSl(c.stop_loss_pips)}</span>
-                      <span className="text-[10px] text-bunker-muted block">ATR {c.atr_pips}p</span>
+                      <span className="text-2xs text-bunker-muted block">ATR {c.atr_pips}p</span>
                     </div>
                   </div>
 
                   {/* Gösterge teyit satırı */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs">
                     <span className={adxTone(c.adx)}>ADX {c.adx.toFixed(0)}</span>
                     <span className={st.tone}>ST {st.text}</span>
                     <span className="text-bunker-muted">RSI (5 dk) {fmtRsi(c)}</span>
@@ -925,7 +925,7 @@ export default function ForexRadarPage() {
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
+                  <div className="flex items-center justify-between text-2xs pt-1 border-t border-bunker-800/60">
                     <span className={`font-bold ${radarQuote(c).failed ? "text-rose-300" : "text-white"}`}>
                       {radarQuote(c).text}
                     </span>
@@ -1055,7 +1055,7 @@ export default function ForexRadarPage() {
             {/* Masaüstü Tablo Görünümü */}
             <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-left font-mono text-xs">
-                <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px] tracking-wider">
+                <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-2xs tracking-wider">
                   <tr>
                     <th className="py-3 px-4">Parite / Varlık</th>
                     <th className="py-3 px-3">Kademe</th>
@@ -1089,16 +1089,16 @@ export default function ForexRadarPage() {
                             <span className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">
                               {c.display}
                             </span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
+                            <span className="text-2xs px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
                               {c.category}
                             </span>
                           </div>
-                          <div className="text-[10px] text-bunker-muted truncate max-w-[140px]">
+                          <div className="text-2xs text-bunker-muted truncate max-w-[140px]">
                             {c.name}
                           </div>
                           {c.news_info?.has_active_news && (
                             <span
-                              className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                              className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-2xs font-bold border ${
                                 c.news_info.alignment === "SUPPORTIVE"
                                   ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
                                   : "bg-rose-500/15 text-rose-300 border-rose-500/30"
@@ -1112,7 +1112,7 @@ export default function ForexRadarPage() {
 
                         <td className="py-3.5 px-3">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap border ${meta.badge}`}
+                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs font-bold whitespace-nowrap border ${meta.badge}`}
                             title={meta.hint}
                           >
                             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
@@ -1123,7 +1123,7 @@ export default function ForexRadarPage() {
                         <td className="py-3.5 px-3">
                           {isBuy || isSell ? (
                             <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-bold ${
                                 isBuy
                                   ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                                   : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
@@ -1132,13 +1132,13 @@ export default function ForexRadarPage() {
                               {isBuy ? "▲ BUY" : "▼ SELL"}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">
                               ⏸ BEKLE
                             </span>
                           )}
                         </td>
 
-                        <td className={`py-3.5 px-3 font-semibold text-[11px] whitespace-nowrap ${radarQuote(c).failed ? "text-rose-300" : "text-white"}`}>
+                        <td className={`py-3.5 px-3 font-semibold text-2xs whitespace-nowrap ${radarQuote(c).failed ? "text-rose-300" : "text-white"}`}>
                           {radarQuote(c).text}
                         </td>
 
@@ -1162,7 +1162,7 @@ export default function ForexRadarPage() {
                           <span className="text-emerald-400 font-bold">{fmtTp(c.pip_target)}</span>
                           <span className="text-bunker-600"> / </span>
                           <span className="text-rose-400 font-bold">{fmtSl(c.stop_loss_pips)}</span>
-                          <div className="text-[10px] text-bunker-muted">R/R {fmtRr(c.risk_reward)}</div>
+                          <div className="text-2xs text-bunker-muted">R/R {fmtRr(c.risk_reward)}</div>
                         </td>
 
                         <td className="py-3.5 px-3">
@@ -1179,19 +1179,19 @@ export default function ForexRadarPage() {
                               {c.score.toFixed(1)}
                             </span>
                           </div>
-                          <div className="text-[10px] text-bunker-muted">eşik {optNum(c.required_score) ?? "—"}</div>
+                          <div className="text-2xs text-bunker-muted">eşik {optNum(c.required_score) ?? "—"}</div>
                         </td>
 
                         <td className="py-3.5 px-3">
                           {c.primary_blocker ? (
                             <div
-                              className="text-[10px] text-amber-300/90 max-w-[190px] leading-snug"
+                              className="text-2xs text-amber-300/90 max-w-[190px] leading-snug"
                               title={(c.blocked_by || []).join(" · ")}
                             >
                               {c.blocker_text}
                             </div>
                           ) : (
-                            <span className="text-[10px] text-emerald-400 font-bold">
+                            <span className="text-2xs text-emerald-400 font-bold">
                               Tüm kapılar açık
                             </span>
                           )}
@@ -1201,7 +1201,7 @@ export default function ForexRadarPage() {
                           <button
                             type="button"
                             onClick={() => setChartModalCandidate(c)}
-                            className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/25 hover:text-white transition-all font-bold text-[11px] inline-flex items-center gap-1 shadow-sm"
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-400/20 hover:bg-blue-500/25 hover:text-white transition-all font-bold text-2xs inline-flex items-center gap-1 shadow-sm"
                             title="Profesyonel Mum Grafiğini Aç"
                           >
                             <span>Grafik</span>
@@ -1233,12 +1233,12 @@ export default function ForexRadarPage() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white text-base">{c.display}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
+                        <span className="text-2xs px-1.5 py-0.2 rounded bg-bunker-800 text-bunker-muted uppercase">
                           {c.category}
                         </span>
                       </div>
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold border ${meta.badge}`}
+                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs font-bold border ${meta.badge}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
                         {meta.label.replace(/^\S+\s/, "")}
@@ -1248,7 +1248,7 @@ export default function ForexRadarPage() {
                     <div className="flex items-center gap-2">
                       {isBuy || isSell ? (
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-bold ${
                             isBuy
                               ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                               : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
@@ -1257,7 +1257,7 @@ export default function ForexRadarPage() {
                           {isBuy ? "▲ BUY" : "▼ SELL"}
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">
+                        <span className="px-2.5 py-1 rounded-md text-2xs font-bold bg-bunker-800 text-bunker-muted border border-bunker-700">
                           ⏸ BEKLE
                         </span>
                       )}
@@ -1269,45 +1269,45 @@ export default function ForexRadarPage() {
 
                     <div className="grid grid-cols-4 gap-2 text-xs p-2 rounded-xl bg-bunker-950/70 border border-bunker-800/80">
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">SKOR</span>
+                        <span className="text-2xs text-bunker-muted block">SKOR</span>
                         <span className={`font-bold ${scoreTone(c.score, optNum(c.required_score), scorePassed(c))}`}>
                           {c.score.toFixed(1)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">ADX</span>
+                        <span className="text-2xs text-bunker-muted block">ADX</span>
                         <span className={`font-bold ${adxTone(c.adx)}`}>{c.adx.toFixed(0)}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">S.TREND</span>
+                        <span className="text-2xs text-bunker-muted block">S.TREND</span>
                         <span className={`font-bold ${st.tone}`}>
                           {c.supertrend_dir > 0 ? "BOĞA" : c.supertrend_dir < 0 ? "AYI" : "—"}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">RSI (5 dk)</span>
+                        <span className="text-2xs text-bunker-muted block">RSI (5 dk)</span>
                         <span className="font-bold text-bunker-muted">{fmtRsi(c)}</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">Hedef (TP)</span>
+                        <span className="text-2xs text-bunker-muted block">Hedef (TP)</span>
                         <span className="text-emerald-400 font-bold">{fmtTp(c.pip_target)}</span>
                       </div>
                       <div className="text-right">
-                        <span className="text-[10px] text-bunker-muted block">Stop (SL)</span>
+                        <span className="text-2xs text-bunker-muted block">Stop (SL)</span>
                         <span className="text-rose-400 font-bold">{fmtSl(c.stop_loss_pips)}</span>
                       </div>
                     </div>
 
                     {c.primary_blocker && (
-                      <div className="text-[10px] text-amber-300/90 p-2 rounded-lg bg-amber-950/20 border border-amber-500/20 leading-snug">
+                      <div className="text-2xs text-amber-300/90 p-2 rounded-lg bg-amber-950/20 border border-amber-500/20 leading-snug">
                         ⚠️ {c.blocker_text}
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-bunker-800/60">
+                    <div className="flex items-center justify-between text-2xs pt-1 border-t border-bunker-800/60">
                       <span className="text-bunker-muted">R/R {fmtRr(c.risk_reward)}</span>
                       <button
                         type="button"
@@ -1339,7 +1339,7 @@ export default function ForexRadarPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-[11px] font-mono text-bunker-muted mb-1">
+            <label className="block text-2xs font-mono text-bunker-muted mb-1">
               Hesap Bakiyesi ($ USD):
             </label>
             <input
@@ -1351,7 +1351,7 @@ export default function ForexRadarPage() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-mono text-bunker-muted mb-1">
+            <label className="block text-2xs font-mono text-bunker-muted mb-1">
               Pozisyon Hacmi Riski (% Bakiye):
             </label>
             <input
@@ -1362,14 +1362,14 @@ export default function ForexRadarPage() {
               className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:border-blue-400 outline-none"
             />
             {calcRiskPct >= 10 && (
-              <p className="mt-1 text-[10px] font-mono text-amber-300">
+              <p className="mt-1 text-2xs font-mono text-amber-300">
                 Varsayılan risk %10. Tek işlemde bakiyenin büyük kısmı riske girer.
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-[11px] font-mono text-bunker-muted mb-1">
+            <label className="block text-2xs font-mono text-bunker-muted mb-1">
               Stop Loss Mesafesi (Pips):
             </label>
             <input
@@ -1381,7 +1381,7 @@ export default function ForexRadarPage() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-mono text-bunker-muted mb-1">
+            <label className="block text-2xs font-mono text-bunker-muted mb-1">
               Parite:
             </label>
             <select
@@ -1414,25 +1414,25 @@ export default function ForexRadarPage() {
         {calcResult && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-xl bg-bunker-950/70 border border-bunker-800/80 font-mono text-xs">
             <div>
-              <span className="text-bunker-muted text-[10px] block">RİSKE EDİLEN TUTAR:</span>
+              <span className="text-bunker-muted text-2xs block">RİSKE EDİLEN TUTAR:</span>
               <span className="text-base font-bold text-rose-400">
                 ${calcResult.risk_amount_usd?.toFixed(2)}
               </span>
             </div>
             <div>
-              <span className="text-bunker-muted text-[10px] block">STANDART LOT (100k):</span>
+              <span className="text-bunker-muted text-2xs block">STANDART LOT (100k):</span>
               <span className="text-base font-bold text-cyan-300">
                 {calcResult.standard_lots} Lot
               </span>
             </div>
             <div>
-              <span className="text-bunker-muted text-[10px] block">MİNİ LOT (10k):</span>
+              <span className="text-bunker-muted text-2xs block">MİNİ LOT (10k):</span>
               <span className="text-base font-bold text-white">
                 {calcResult.mini_lots} Mini
               </span>
             </div>
             <div>
-              <span className="text-bunker-muted text-[10px] block">MİKRO LOT (1k):</span>
+              <span className="text-bunker-muted text-2xs block">MİKRO LOT (1k):</span>
               <span className="text-base font-bold text-white">
                 {calcResult.micro_lots} Mikro
               </span>

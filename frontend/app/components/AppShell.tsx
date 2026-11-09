@@ -65,8 +65,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ExchangeContext.Provider value={exchange}>
       <div className="flex min-h-screen">
+        {/* KLAVYE/SR KISAYOLU (2026-11-09 denetimi): Sidebar tek bir <nav>
+            içinde ~19 bağlantı taşıyor. Atla bağlantısı olmadan klavye veya
+            ekran okuyucu kullanıcısı HER sayfa geçişinde bu 19 bağlantıyı
+            Tab'layarak geçmek zorundaydı (WCAG 2.4.1 "Bypass Blocks").
+            Görsel olarak gizli, yalnız odaklanınca görünür. */}
+        <a href="#main-content" className="skip-link">İçeriğe atla</a>
         <div data-sidebar><Sidebar /></div>
-        <main className="flex-1 min-w-0 min-h-screen overflow-y-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 min-h-screen overflow-y-auto">
           <div data-topbar><TopBar /></div>
           <div className="content-shell">{children}</div>
         </main>

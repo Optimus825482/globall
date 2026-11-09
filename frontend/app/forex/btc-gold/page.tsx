@@ -243,7 +243,7 @@ function SemiCircleGauge({
   return (
     <div className="flex flex-col items-center justify-between p-3.5 rounded-2xl bg-gradient-to-b from-bunker-900/90 to-bunker-950/90 border border-bunker-800/90 hover:border-bunker-700 shadow-xl transition-all h-full">
       {/* Kadran Başlığı */}
-      <div className="text-[11px] font-black tracking-wider uppercase text-bunker-muted mb-1 text-center">
+      <div className="text-2xs font-black tracking-wider uppercase text-bunker-muted mb-1 text-center">
         {label}
       </div>
 
@@ -320,10 +320,10 @@ function SemiCircleGauge({
           <circle cx={cx} cy={cy} r={3} fill={activeColor} />
 
           {/* Min & Max Küçük Skala Etiketleri */}
-          <text x={cx - radius - 2} y={cy + 11} fill="#64748b" fontSize="8" fontWeight="bold" textAnchor="middle">
+          <text x={cx - radius - 2} y={cy + 11} fill="#93a7c6" fontSize="11" fontWeight="bold" textAnchor="middle">
             {min}
           </text>
-          <text x={cx + radius + 2} y={cy + 11} fill="#64748b" fontSize="8" fontWeight="bold" textAnchor="middle">
+          <text x={cx + radius + 2} y={cy + 11} fill="#93a7c6" fontSize="11" fontWeight="bold" textAnchor="middle">
             {max}
           </text>
         </svg>
@@ -335,12 +335,12 @@ function SemiCircleGauge({
           <span className="text-xl font-black font-mono tracking-tight text-white drop-shadow-md">
             {missing ? "veri yok" : clamped.toFixed(1)}
           </span>
-          {unit && !missing && <span className="text-[10px] text-bunker-muted font-bold font-mono">{unit}</span>}
+          {unit && !missing && <span className="text-2xs text-bunker-muted font-bold font-mono">{unit}</span>}
         </div>
 
         {/* Durum Rozeti */}
         <span
-          className="mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border tracking-wider transition-colors shadow-sm"
+          className="mt-1 px-2.5 py-0.5 rounded-full text-2xs font-black border tracking-wider transition-colors shadow-sm"
           style={{
             backgroundColor: `${activeColor}20`,
             borderColor: `${activeColor}50`,
@@ -392,12 +392,12 @@ function DirectionBar({
   return (
     <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800/80">
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-[10px] font-black text-bunker-muted uppercase tracking-wider">
+        <span className="text-2xs font-black text-bunker-muted uppercase tracking-wider">
           🎯 Yön Göstergesi — Dinamik Momentum
         </span>
         <span className="flex items-center gap-2">
-          <span className={`text-[10px] font-black font-mono ${tone}`}>{valueText}</span>
-          <span className={`text-[10px] font-black tracking-wide ${tone} flex items-center gap-1`}>
+          <span className={`text-2xs font-black font-mono ${tone}`}>{valueText}</span>
+          <span className={`text-2xs font-black tracking-wide ${tone} flex items-center gap-1`}>
             <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
             {verdict}
           </span>
@@ -436,12 +436,12 @@ function DirectionBar({
         <div className="bar-needle" style={{ left: `${posPct}%` }} />
       </div>
 
-      <div className="flex items-center justify-between text-[9px] font-mono mt-1.5">
+      <div className="flex items-center justify-between text-2xs font-mono mt-1.5">
         <span className="text-rose-300/80 font-bold">◀ SELL −1</span>
         <span className="text-slate-400 font-bold">0 · NÖTR</span>
         <span className="text-emerald-300/80 font-bold">+1 BUY ▶</span>
       </div>
-      <p className="text-[10px] text-bunker-300 mt-1.5 text-center">{detail}</p>
+      <p className="text-2xs text-bunker-muted mt-1.5 text-center">{detail}</p>
     </div>
   );
 }
@@ -474,15 +474,15 @@ function WinRateBlock({
   return (
     <div className="p-2.5 rounded-xl bg-bunker-950/80 border border-bunker-800/80">
       <div className="flex items-center justify-between gap-2">
-        <span className={`text-[9px] font-black uppercase tracking-wider ${accent}`}>{title}</span>
+        <span className={`text-2xs font-black uppercase tracking-wider ${accent}`}>{title}</span>
         <span className={`text-sm font-black font-mono ${tone}`}>
           {hasTrades ? `%${rate.toFixed(1)}` : "—"}
         </span>
       </div>
-      <div className="text-[9px] text-bunker-muted font-mono mt-0.5">
+      <div className="text-2xs text-bunker-muted font-mono mt-0.5">
         {hasTrades ? `${wins}K / ${losses}Z (${trades} İşlem)` : "Kapanan işlem yok"}
       </div>
-      <div className="text-[9px] font-mono mt-1 flex items-center gap-1.5">
+      <div className="text-2xs font-mono mt-1 flex items-center gap-1.5">
         <span className="text-bunker-muted">NET KÂRLILIK</span>
         {hasTrades ? (
           <>
@@ -575,9 +575,9 @@ function DivergingBar({
       </div>
 
       {/* Ölçek alt etiketleri: sol uç / orta 0 / sağ uç */}
-      <div className="flex items-center justify-between text-[10px] text-bunker-muted mt-1 font-mono">
+      <div className="flex items-center justify-between text-2xs text-bunker-muted mt-1 font-mono">
         <span>{scaleLeft}</span>
-        <span className="font-black text-bunker-300">
+        <span className="font-black text-bunker-muted">
           {midLineLabel ? `${scaleMid} · ${midLineLabel}` : scaleMid}
         </span>
         <span>{scaleRight}</span>
@@ -585,12 +585,12 @@ function DivergingBar({
 
       {valueLabel && (
         <div className="text-center mt-0.5">
-          <span className="font-mono text-[10px] font-black text-bunker-200">{valueLabel}</span>
+          <span className="font-mono text-2xs font-black text-bunker-200">{valueLabel}</span>
         </div>
       )}
 
       {endLabels && (
-        <div className="flex items-center justify-between text-[9px] font-mono mt-0.5">
+        <div className="flex items-center justify-between text-2xs font-mono mt-0.5">
           <span className="text-rose-300/80 font-bold">{endLabels.left}</span>
           <span className="text-emerald-300/80 font-bold">{endLabels.right}</span>
         </div>
@@ -651,7 +651,7 @@ function ProgressBarCard({
   return (
     <div className="p-3.5 rounded-xl bg-bunker-950/80 border border-bunker-800/80 hover:border-bunker-700 transition-all flex flex-col justify-between shadow-sm">
       <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-[11px] font-bold text-bunker-muted uppercase tracking-wider flex items-center gap-1.5">
+        <span className="text-2xs font-bold text-bunker-muted uppercase tracking-wider flex items-center gap-1.5">
           {icon && <span className="text-xs">{icon}</span>}
           <span>{title}</span>
         </span>
@@ -688,14 +688,14 @@ function ProgressBarCard({
           (DivergingBar) çizilir; burada TEKRAR yazılmaz (çift etiket olurdu). */}
       {diverging ? (
         subText && (
-          <div className="text-[10px] font-sans font-semibold text-bunker-300 text-center mt-0.5">
+          <div className="text-2xs font-sans font-semibold text-bunker-muted text-center mt-0.5">
             {subText}
           </div>
         )
       ) : (
-        <div className="flex items-center justify-between text-[10px] text-bunker-muted mt-0.5 font-mono">
+        <div className="flex items-center justify-between text-2xs text-bunker-muted mt-0.5 font-mono">
           <span>{leftLabel || "0%"}</span>
-          {subText && <span className="font-sans font-semibold text-bunker-300">{subText}</span>}
+          {subText && <span className="font-sans font-semibold text-bunker-muted">{subText}</span>}
           <span>{rightLabel || "100%"}</span>
         </div>
       )}
@@ -759,11 +759,11 @@ function DxyProgressPanel({ dxy }: { dxy: DxyPanelData }) {
   return (
     <div className="p-3 rounded-xl bg-bunker-950/80 border border-bunker-800 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[10px] font-black text-bunker-muted uppercase tracking-wider flex items-center gap-1.5">
+        <span className="text-2xs font-black text-bunker-muted uppercase tracking-wider flex items-center gap-1.5">
           <span>💵</span>
           <span>DXY — ABD Dolar Endeksi</span>
         </span>
-        <span className={`text-[10px] font-black tracking-wide ${toneText}`}>● {regimeLabel}</span>
+        <span className={`text-2xs font-black tracking-wide ${toneText}`}>● {regimeLabel}</span>
       </div>
 
       <div className="flex items-end justify-between gap-3 flex-wrap">
@@ -776,7 +776,7 @@ function DxyProgressPanel({ dxy }: { dxy: DxyPanelData }) {
             {changePct.toFixed(2)}%
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono text-bunker-muted">
+        <div className="flex items-center gap-3 text-2xs font-mono text-bunker-muted">
           <span>
             RSI <span className="text-bunker-200 font-bold">{rsi.toFixed(1)}</span>
           </span>
@@ -1218,7 +1218,7 @@ export default function BtcGoldForexPage() {
                 <span className="text-amber-400 font-bold text-sm">· ODAKLI İZLEME KOKPİTİ</span>
               </h1>
               <span
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${
+                className={`px-2.5 py-0.5 rounded-full text-2xs font-bold border transition-all ${
                   autoEnabled
                     ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse"
                     : "bg-bunker-800 text-bunker-muted border-bunker-700"
@@ -1227,7 +1227,7 @@ export default function BtcGoldForexPage() {
                 {autoEnabled ? "● OTONOM AKTİF" : "○ DURDURULDU"}
               </span>
               <span
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                className={`px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
                   mt5.connected
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
                     : "bg-rose-500/20 text-rose-300 border-rose-500/40"
@@ -1302,30 +1302,30 @@ export default function BtcGoldForexPage() {
       {/* HESAP METRİKLERİ KARTLARI */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-          <span className="text-[10px] text-bunker-muted uppercase block">IC Markets Bakiye</span>
+          <span className="text-2xs text-bunker-muted uppercase block">IC Markets Bakiye</span>
           <span className="text-lg font-bold text-emerald-400 font-mono">
             {liveBal == null ? "—" : `$${liveBal.toFixed(2)}`}
             {liveBal != null && mt5.account?.currency ? (
               <span className="text-xs font-normal text-bunker-muted"> {mt5.account.currency}</span>
             ) : null}
           </span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
+          <span className="text-2xs text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-          <span className="text-[10px] text-bunker-muted uppercase block">Özsermaye (Equity)</span>
+          <span className="text-2xs text-bunker-muted uppercase block">Özsermaye (Equity)</span>
           <span className={`text-lg font-bold font-mono ${liveEq != null && liveBal != null && liveEq >= liveBal ? "text-cyan-300" : liveEq == null ? "text-bunker-muted" : "text-rose-400"}`}>
             {liveEq == null ? "—" : `$${liveEq.toFixed(2)}`}
           </span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
+          <span className="text-2xs text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-          <span className="text-[10px] text-bunker-muted uppercase block">Açık PnL (Anlık)</span>
+          <span className="text-2xs text-bunker-muted uppercase block">Açık PnL (Anlık)</span>
           <span className={`text-lg font-bold font-mono ${totalOpenPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
             {totalOpenPnl >= 0 ? "+" : ""}${totalOpenPnl.toFixed(2)}
           </span>
-          <span className="text-[9px] text-bunker-muted block mt-0.5">
+          <span className="text-2xs text-bunker-muted block mt-0.5">
             {totalOpenCount} açık MT5 işlemi
           </span>
         </div>
@@ -1336,21 +1336,21 @@ export default function BtcGoldForexPage() {
             tanımı UTC gece yarısıdır (rapor ekranının UTC+3'ünden farklı). */}
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] text-bunker-muted uppercase block">Başarı Oranı</span>
-            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-400/30">
+            <span className="text-2xs text-bunker-muted uppercase block">Başarı Oranı</span>
+            <span className="text-2xs font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-400/30">
               BUGÜN / TÜM Z.
             </span>
           </div>
 
           <div className="mt-1 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[9px] font-bold text-bunker-muted uppercase shrink-0">Bugün</span>
+              <span className="text-2xs font-bold text-bunker-muted uppercase shrink-0">Bugün</span>
               <span className="text-sm font-bold text-yellow-400 font-mono">%{dailyWinRate.toFixed(1)}</span>
             </div>
-            <div className="text-[9px] text-bunker-muted font-mono leading-tight">
+            <div className="text-2xs text-bunker-muted font-mono leading-tight">
               {dailyWins}K / {dailyLosses}Z ({dailyTrades} İşlem)
             </div>
-            <div className="text-[9px] font-mono leading-tight">
+            <div className="text-2xs font-mono leading-tight">
               <span className="text-bunker-muted">Net: </span>
               <span className={dailyPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {dailyPnlUsd >= 0 ? "+" : ""}${dailyPnlUsd.toFixed(2)}
@@ -1364,13 +1364,13 @@ export default function BtcGoldForexPage() {
 
           <div className="mt-2 pt-2 border-t border-bunker-800 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[9px] font-bold text-bunker-muted uppercase shrink-0">Tüm Zamanlar</span>
+              <span className="text-2xs font-bold text-bunker-muted uppercase shrink-0">Tüm Zamanlar</span>
               <span className="text-sm font-bold text-cyan-300 font-mono">%{winRate.toFixed(1)}</span>
             </div>
-            <div className="text-[9px] text-bunker-muted font-mono leading-tight">
+            <div className="text-2xs text-bunker-muted font-mono leading-tight">
               {wins}K / {losses}Z ({totalTrades} İşlem)
             </div>
-            <div className="text-[9px] font-mono leading-tight">
+            <div className="text-2xs font-mono leading-tight">
               <span className="text-bunker-muted">Net: </span>
               <span className={realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {realizedPnlUsd >= 0 ? "+" : ""}${realizedPnlUsd.toFixed(2)}
@@ -1388,19 +1388,19 @@ export default function BtcGoldForexPage() {
             portföy sayfasında zaten var, bu sayfada tekrar değeri yoktu. */}
 
         <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-          <span className="text-[10px] text-bunker-muted uppercase block">Aktif Seanslar</span>
+          <span className="text-2xs text-bunker-muted uppercase block">Aktif Seanslar</span>
           <div className="flex items-center gap-1 mt-1 overflow-x-auto">
             {activeSessions.length > 0 ? (
               activeSessions.map((s) => (
                 <span
                   key={s.name}
-                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap"
+                  className="px-1.5 py-0.5 rounded text-2xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap"
                 >
                   {s.flag} {s.name}
                 </span>
               ))
             ) : (
-              <span className="text-[11px] text-bunker-muted">24/5 Açık</span>
+              <span className="text-2xs text-bunker-muted">24/5 Açık</span>
             )}
           </div>
         </div>
@@ -1414,7 +1414,7 @@ export default function BtcGoldForexPage() {
             <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <span>Açık IC Markets MT5 Pozisyonları ({totalOpenCount})</span>
             </h2>
-            <span className="text-[10px] text-amber-400 font-bold px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30">
+            <span className="text-2xs text-amber-400 font-bold px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30">
               {totalOpenCount} Aktif MT5 Pozisyonu
             </span>
           </div>
@@ -1447,7 +1447,7 @@ export default function BtcGoldForexPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[10px]">
+              <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-2xs">
                 <tr>
                   <th className="py-3 px-4">Bilet No</th>
                   <th className="py-3 px-3">Sembol</th>
@@ -1471,7 +1471,7 @@ export default function BtcGoldForexPage() {
 
                   return (
                     <tr key={`mt5-${p.ticket}`} className="hover:bg-bunker-800/40 transition-colors">
-                      <td className="py-3 px-4 text-[11px] text-cyan-300 font-bold">
+                      <td className="py-3 px-4 text-2xs text-cyan-300 font-bold">
                         #{p.ticket}
                       </td>
                       <td className="py-3 px-3 font-bold text-white text-sm">
@@ -1482,7 +1482,7 @@ export default function BtcGoldForexPage() {
                       </td>
                       <td className="py-3 px-3">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-2 py-0.5 rounded text-2xs font-bold ${
                             p.direction === "BUY"
                               ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                               : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
@@ -1493,15 +1493,15 @@ export default function BtcGoldForexPage() {
                       </td>
                       <td className="py-3 px-3 font-sans">
                         {isTrailing ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 animate-pulse">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 animate-pulse">
                             <span>TRAILING STOP</span>
                           </span>
                         ) : isBE ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
                             <span>BAŞABAŞ (BE)</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-bunker-muted bg-bunker-800 border border-bunker-700">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs text-bunker-muted bg-bunker-800 border border-bunker-700">
                             <span>Sabit SL</span>
                           </span>
                         )}
@@ -1520,7 +1520,7 @@ export default function BtcGoldForexPage() {
                           {isProfit ? "+" : ""}${pnlVal.toFixed(2)}
                         </div>
                         {p.pnl_pips != null && (
-                          <div className="text-[10px] font-semibold">
+                          <div className="text-2xs font-semibold">
                             {Number(p.pnl_pips) >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)} p
                           </div>
                         )}
@@ -1529,7 +1529,7 @@ export default function BtcGoldForexPage() {
                         <button
                           type="button"
                           onClick={() => closeMt5Ticket(p.ticket)}
-                          className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-[11px]"
+                          className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all font-bold text-2xs"
                         >
                           Kapat ✕
                         </button>
@@ -1568,7 +1568,7 @@ export default function BtcGoldForexPage() {
         {autoComment?.market_note && (
           <div className="p-2.5 rounded-xl bg-bunker-950/80 border border-bunker-800 flex items-start gap-2">
             <span className="text-sm leading-none mt-0.5">🌍</span>
-            <p className="text-[11px] leading-relaxed text-bunker-300">{autoComment.market_note}</p>
+            <p className="text-2xs leading-relaxed text-bunker-muted">{autoComment.market_note}</p>
           </div>
         )}
 
@@ -1690,11 +1690,11 @@ export default function BtcGoldForexPage() {
                           <h3 className="text-base font-black text-white tracking-wide">
                             {isGold ? "ONS ALTIN / USD" : "BITCOIN / USD"}
                           </h3>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black border ${accentText} bg-bunker-950`}>
+                          <span className={`px-2 py-0.5 rounded text-2xs font-black border ${accentText} bg-bunker-950`}>
                             {sym}
                           </span>
                         </div>
-                        <span className="text-[11px] text-bunker-muted">
+                        <span className="text-2xs text-bunker-muted">
                           {isGold ? "Kıymetli Maden & Güvenli Liman (Commodity)" : "Kripto Öncüsü & Dijital Altın (Crypto)"}
                         </span>
                       </div>
@@ -1722,7 +1722,7 @@ export default function BtcGoldForexPage() {
                         {gate ? (
                           <span
                             title={gate.verdict}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black border tracking-wide ${
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-black border tracking-wide ${
                               gateReady
                                 ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/40"
                                 : gateHalted
@@ -1737,21 +1737,21 @@ export default function BtcGoldForexPage() {
                               : "⏸ SİNYAL YOK — BEKLEMEDE"}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-bunker-700 bg-bunker-950 text-bunker-muted">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold border border-bunker-700 bg-bunker-950 text-bunker-muted">
                             ◦ Kapı durumu okunuyor…
                           </span>
                         )}
                         {/* Veri tazeliği: bayat/kopuk veride sayılar canlı sanılmasın */}
                         {!hasLive ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300">
                             ⚠ CANLI VERİ YOK — değerler örnek varsayılan
                           </span>
                         ) : dataStale ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300">
                             🕐 VERİ {tickAgeSec}sn ESKİ
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
                             ● CANLI ({tickAgeSec !== null ? `${tickAgeSec}sn` : "taze"})
                           </span>
                         )}
@@ -1766,7 +1766,7 @@ export default function BtcGoldForexPage() {
                     }`}
                   >
                     <div>
-                      <span className="text-[10px] text-bunker-muted uppercase block">Canlı Piyasa Fiyatı</span>
+                      <span className="text-2xs text-bunker-muted uppercase block">Canlı Piyasa Fiyatı</span>
                       <div className="flex items-baseline gap-2">
                         <span className="text-2xl font-black font-mono text-white tracking-tight drop-shadow">
                           {curPrice == null
@@ -1788,17 +1788,17 @@ export default function BtcGoldForexPage() {
 
                     <div className="flex items-center gap-4 text-xs font-mono">
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">BID</span>
+                        <span className="text-2xs text-bunker-muted block">BID</span>
                         <span className="text-emerald-400 font-bold">{bidPrice == null ? "veri yok" : bidPrice}</span>
                       </div>
                       <div className="text-bunker-700">|</div>
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">ASK</span>
+                        <span className="text-2xs text-bunker-muted block">ASK</span>
                         <span className="text-rose-400 font-bold">{askPrice == null ? "veri yok" : askPrice}</span>
                       </div>
                       <div className="text-bunker-700">|</div>
                       <div>
-                        <span className="text-[10px] text-bunker-muted block">SPREAD</span>
+                        <span className="text-2xs text-bunker-muted block">SPREAD</span>
                         <span className="text-cyan-300 font-bold">{spreadPips == null ? "veri yok" : `${spreadPips} p`}</span>
                       </div>
                     </div>
@@ -1877,10 +1877,10 @@ export default function BtcGoldForexPage() {
                             key={c.k}
                             className="flex-1 min-w-0 px-1.5 py-1.5 rounded-lg bg-bunker-950/70 border border-bunker-800"
                           >
-                            <span className="block text-[8px] text-bunker-muted uppercase tracking-wider truncate">
+                            <span className="block text-2xs text-bunker-muted uppercase tracking-wider truncate">
                               {c.label}
                             </span>
-                            <span className={`block text-[11px] font-black font-mono ${c.tone}`}>{c.value}</span>
+                            <span className={`block text-2xs font-black font-mono ${c.tone}`}>{c.value}</span>
                           </div>
                         ));
                       })()}
@@ -1896,7 +1896,7 @@ export default function BtcGoldForexPage() {
                     hasLive && !dataStale ? "" : "opacity-60"
                   }`}
                 >
-                  <div className="text-[11px] font-bold text-white uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <div className="text-2xs font-bold text-white uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
                     <span>🧭</span>
                     <span>Hassas İbreli Göstergeler (Cockpit Gauges)</span>
                   </div>
@@ -1955,7 +1955,7 @@ export default function BtcGoldForexPage() {
 
                 {/* 3. PROGRESS BARLI RAKAMSAL KARTLAR */}
                 <div className="p-4 space-y-3">
-                  <div className="text-[11px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <div className="text-2xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                     <span>📊</span>
                     <span>Rakamsal Parametre Barları (Progress Bars)</span>
                   </div>
@@ -2001,7 +2001,7 @@ export default function BtcGoldForexPage() {
                     ayrı gösterilir. Kaynak backend `per_symbol_today` /
                     `per_symbol_all_time`; ikisi aynı defterden → tutarlı. */}
                 <div className="px-4 pb-1">
-                  <div className="text-[11px] font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <div className="text-2xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <span>🏆</span>
                     <span>{sym} Başarı Oranı</span>
                   </div>
@@ -2022,13 +2022,13 @@ export default function BtcGoldForexPage() {
                 {/* 4. HIZLI EMİR & LOT BUTONLARI (Kullanıcı Dostu Tek Tıkla Scalp) */}
                 <div className="p-4 bg-bunker-950/80 border-t border-bunker-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-bunker-muted font-bold">Hızlı Lot:</span>
+                    <span className="text-2xs text-bunker-muted font-bold">Hızlı Lot:</span>
                     {[0.05, 0.1, 0.25, 0.5, 1.0].map((lt) => (
                       <button
                         key={lt}
                         type="button"
                         onClick={() => setQuickLots({ ...quickLots, [sym]: lt })}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                        className={`px-2 py-0.5 rounded text-2xs font-bold border transition-all ${
                           quickLots[sym] === lt
                             ? "bg-amber-500/25 text-amber-300 border-amber-400"
                             : "bg-bunker-900 text-bunker-muted border-bunker-800 hover:text-white"
@@ -2046,7 +2046,7 @@ export default function BtcGoldForexPage() {
                       className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-[0_0_12px_rgba(16,185,129,0.2)]"
                     >
                       <span>▲ HIZLI BUY</span>
-                      <span className="text-[10px] opacity-80 font-mono">({quickLots[sym] || 0.1} Lot)</span>
+                      <span className="text-2xs opacity-80 font-mono">({quickLots[sym] || 0.1} Lot)</span>
                     </button>
 
                     <button
@@ -2055,7 +2055,7 @@ export default function BtcGoldForexPage() {
                       className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-[0_0_12px_rgba(244,63,94,0.2)]"
                     >
                       <span>▼ HIZLI SELL</span>
-                      <span className="text-[10px] opacity-80 font-mono">({quickLots[sym] || 0.1} Lot)</span>
+                      <span className="text-2xs opacity-80 font-mono">({quickLots[sym] || 0.1} Lot)</span>
                     </button>
                   </div>
                 </div>
@@ -2088,24 +2088,24 @@ export default function BtcGoldForexPage() {
                       <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                         <div className="flex items-center gap-2">
                           <span className="text-sm leading-none">🤖</span>
-                          <span className="text-[10px] font-black uppercase tracking-wider text-bunker-300">
+                          <span className="text-2xs font-black uppercase tracking-wider text-bunker-muted">
                             Otomatik Yorum
                           </span>
                           {hasSignal && (
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${badgeCls}`}>
+                            <span className={`px-1.5 py-0.5 rounded text-2xs font-black border ${badgeCls}`}>
                               {c?.action}
                             </span>
                           )}
                         </div>
-                        <span className="text-[9px] text-bunker-muted">60 sn'de bir yenilenir</span>
+                        <span className="text-2xs text-bunker-muted">60 sn'de bir yenilenir</span>
                       </div>
 
-                      <p className="text-[13px] font-bold text-white leading-snug">{summary}</p>
-                      <p className="text-[12px] leading-relaxed text-bunker-300 select-text mt-1">
+                      <p className="text-[0.8125rem] font-bold text-white leading-snug">{summary}</p>
+                      <p className="text-xs leading-relaxed text-bunker-muted select-text mt-1">
                         {c?.comment || "Yorum hazırlanıyor…"}
                       </p>
                       {typeof c?.score === "number" && c.score > 0 && (
-                        <p className="text-[10px] text-bunker-muted mt-1.5 font-mono">
+                        <p className="text-2xs text-bunker-muted mt-1.5 font-mono">
                           Güç: {c.strength_label} ({c.score}/100)
                         </p>
                       )}
@@ -2133,19 +2133,19 @@ export default function BtcGoldForexPage() {
               </span>
               <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
                 <span>CANLI LOG &amp; KARAR AKIŞI</span>
-                <span className="text-[10px] text-amber-400 font-normal">· XAUUSD &amp; BTCUSD</span>
+                <span className="text-2xs text-amber-400 font-normal">· XAUUSD &amp; BTCUSD</span>
               </h3>
             </div>
 
             <div className="flex items-center gap-3">
               <Link
                 href="/forex/reports"
-                className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
+                className="text-2xs font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
               >
                 <span>Kapanan İşlem Raporları</span>
                 <span>→</span>
               </Link>
-              <label className="text-[10px] text-bunker-muted flex items-center gap-1.5 cursor-pointer select-none">
+              <label className="text-2xs text-bunker-muted flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={autoScroll}
@@ -2154,12 +2154,12 @@ export default function BtcGoldForexPage() {
                 />
                 <span>Oto-Kaydır</span>
               </label>
-              <span className="text-[10px] text-bunker-muted">({decisionLogs.length} Kayıt)</span>
+              <span className="text-2xs text-bunker-muted">({decisionLogs.length} Kayıt)</span>
             </div>
           </div>
 
           {/* Filtre Butonları */}
-          <div className="flex items-center justify-between flex-wrap gap-2 pb-2 mb-2 border-b border-bunker-800/60 text-[10px]">
+          <div className="flex items-center justify-between flex-wrap gap-2 pb-2 mb-2 border-b border-bunker-800/60 text-2xs">
             {/* Kategori Filtresi */}
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
               {[
@@ -2193,7 +2193,7 @@ export default function BtcGoldForexPage() {
                   key={sym}
                   type="button"
                   onClick={() => setLogSymbolFilter(sym)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                  className={`px-2 py-0.5 rounded text-2xs font-bold border transition-all ${
                     logSymbolFilter === sym
                       ? "bg-blue-600/30 text-blue-300 border-blue-400/50"
                       : "bg-bunker-900 text-bunker-muted border-bunker-800 hover:text-white"
@@ -2208,7 +2208,7 @@ export default function BtcGoldForexPage() {
           {/* Log Listesi (Terminal) */}
           <div
             ref={logContainerRef}
-            className="flex-1 overflow-y-auto space-y-1.5 pr-1 font-mono text-[11px] select-text"
+            className="flex-1 overflow-y-auto space-y-1.5 pr-1 font-mono text-2xs select-text"
           >
             {(() => {
               let filtered = decisionLogs;
@@ -2253,12 +2253,12 @@ export default function BtcGoldForexPage() {
                     className="p-2 rounded-lg bg-bunker-900/60 border border-bunker-800/80 hover:border-bunker-700 transition-colors flex items-start justify-between gap-2"
                   >
                     <div className="flex items-start gap-2 flex-1">
-                      <span className="text-bunker-muted text-[10px] whitespace-nowrap opacity-75 mt-0.5">
+                      <span className="text-bunker-muted text-2xs whitespace-nowrap opacity-75 mt-0.5">
                         {formatUtc3(log.time)}
                       </span>
 
                       <span
-                        className={`px-1.5 py-0.2 rounded text-[9px] uppercase border tracking-wider whitespace-nowrap ${
+                        className={`px-1.5 py-0.2 rounded text-2xs uppercase border tracking-wider whitespace-nowrap ${
                           catBadgeStyles[log.category] || "text-bunker-muted bg-bunker-900 border-bunker-800"
                         }`}
                       >
@@ -2267,7 +2267,7 @@ export default function BtcGoldForexPage() {
 
                       {log.symbol && (
                         <span
-                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold border whitespace-nowrap ${
+                          className={`px-1.5 py-0.2 rounded text-2xs font-bold border whitespace-nowrap ${
                             isGold
                               ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
                               : isBtc

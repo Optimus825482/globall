@@ -285,7 +285,7 @@ function ChatPageInner() {
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-2 border-b border-bunker-800">
             <div>
               <h1 className="font-mono text-sm font-bold text-white tracking-wide">FOREX ASİSTANI</h1>
-              <p className="text-[11px] text-bunker-muted">
+              <p className="text-2xs text-bunker-muted">
                 {username ? `${username} · ` : ""}Altın, Bitcoin ve Forex · demo hesap
               </p>
             </div>
@@ -303,7 +303,7 @@ function ChatPageInner() {
                 <div key={index} className={`chat-message group flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[92%] sm:max-w-[85%] flex flex-col ${isUser ? "items-end" : "items-start"}`}>
                     {message.time && (
-                      <span className="mb-1 px-1 text-[11px] font-mono text-bunker-muted">{message.time}</span>
+                      <span className="mb-1 px-1 text-2xs font-mono text-bunker-muted">{message.time}</span>
                     )}
                     <div
                       className={`chat-bubble rounded-2xl px-4 py-3 text-sm leading-relaxed ${
@@ -392,7 +392,7 @@ function ChatPageInner() {
               </div>
             </form>
             {error && <p role="alert" className="mt-2 text-xs text-neon-red font-mono bg-red-950/20 border border-red-500/30 p-2 rounded">{error}</p>}
-            <p className="mt-1.5 px-1 text-[10px] text-bunker-muted">
+            <p className="mt-1.5 px-1 text-2xs text-bunker-muted">
               Yorumlar canlı fiyat verisi, ekonomik takvim ve haber başlıklarına dayanır; yatırım tavsiyesi değildir.
             </p>
           </div>
@@ -473,7 +473,7 @@ function ScheduledJobs() {
     <div className="shrink-0 rounded-lg border border-bunker-700/80 bg-bunker-900/80 px-2.5 py-1.5" aria-label="Zamanlanmış işler">
       <ul className="max-h-[4.5rem] space-y-1 overflow-y-auto">
         {visible.map((j) => (
-          <li key={j.id} className="flex items-center justify-between gap-2 text-[11px]">
+          <li key={j.id} className="flex items-center justify-between gap-2 text-2xs">
             <div className="min-w-0 flex-1">
               <p className="truncate text-slate-200" title={`${j.summary}${j.result ? ` — ${j.result}` : ""}`}>
                 <span aria-hidden="true">🕒 </span>
@@ -482,14 +482,14 @@ function ScheduledJobs() {
                 </span>{" "}
                 · {j.kind === "watch" ? "" : `${j.due_label} · `}{j.summary}
               </p>
-              {j.result && <p className="truncate text-[10px] text-bunker-muted" title={j.result}>{j.result}</p>}
+              {j.result && <p className="truncate text-2xs text-bunker-muted" title={j.result}>{j.result}</p>}
             </div>
             {j.status === "pending" ? (
-              <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/10">
+              <button type="button" onClick={() => void cancel(j.id)} className="shrink-0 rounded-md border border-rose-400/40 px-2 py-0.5 text-2xs text-rose-300 hover:bg-rose-500/10">
                 {j.kind === "watch" ? "Durdur" : "İptal"}
               </button>
             ) : (
-              <button type="button" onClick={() => dismiss(j.id)} aria-label="Kapat" title="Kapat" className="shrink-0 rounded-md border border-bunker-700 px-2 py-0.5 text-[10px] text-bunker-muted hover:text-white">
+              <button type="button" onClick={() => dismiss(j.id)} aria-label="Kapat" title="Kapat" className="shrink-0 rounded-md border border-bunker-700 px-2 py-0.5 text-2xs text-bunker-muted hover:text-white">
                 ✕
               </button>
             )}

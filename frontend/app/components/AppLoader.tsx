@@ -124,7 +124,7 @@ export default function AppLoader({
 
       {/* Label and Subtitle */}
       <div className="text-center space-y-2 max-w-md">
-        <div className="inline-flex items-center gap-2 rounded-full border border-neon-green/30 bg-neon-green/10 px-3 py-1 font-mono text-[10px] font-bold text-neon-green uppercase tracking-wider">
+        <div className="inline-flex items-center gap-2 rounded-full border border-neon-green/30 bg-neon-green/10 px-3 py-1 font-mono text-2xs font-bold text-neon-green uppercase tracking-wider">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse" />
           CANLI SİSTEM TELEMETRİSİ
         </div>
@@ -141,7 +141,7 @@ export default function AppLoader({
 
         {/* Telemetry Ticker */}
         <div className="pt-2">
-          <p className="font-mono text-[11px] text-cyan-400/80 bg-bunker-900/60 border border-bunker-800 rounded-lg px-3 py-1.5 inline-block tracking-wider">
+          <p className="font-mono text-2xs text-cyan-400/80 bg-bunker-900/60 border border-bunker-800 rounded-lg px-3 py-1.5 inline-block tracking-wider">
             {telemetryLines[telemetryIndex]}
           </p>
         </div>

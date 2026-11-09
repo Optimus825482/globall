@@ -500,7 +500,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 {title || "FOREX PORTFÖY & ALGORİTMA KOMUTA"}
               </h1>
               <span
-                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                className={`px-2 py-0.5 rounded text-2xs font-mono font-bold border ${
                   mt5.connected
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
                     : "bg-rose-500/20 text-rose-300 border-rose-400/40"
@@ -570,7 +570,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           <div className="font-bold text-white flex items-center gap-1.5">
             <span>IC Markets MT5 ve 4 Sekmeli Komuta Merkezi Nasıl Çalışır?</span>
           </div>
-          <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
+          <ol className="list-decimal list-inside space-y-1.5 text-2xs leading-relaxed">
             <li><strong>Portföy &amp; İşlemler:</strong> Hesap bakiyesi, kâr/zarar, sembol başarı kartları ve anlık açık pozisyonları izleyip yönetebilirsiniz.</li>
             <li><strong>XAUUSD Komuta Merkezi:</strong> Altın paritesi için 18-kapılı filtre durumunu, teknik göstergeleri ve sistemin tüm karar loglarını saniye saniye denetler.</li>
             <li><strong>Forex Çiftleri:</strong> Tüm majör ve çapraz paritelerin anlık trendini, skorunu ve RSI seviyelerini tek ızgarada sunar.</li>
@@ -599,7 +599,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           >
             <span>{tab.label}</span>
             <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+              className={`text-2xs px-2 py-0.5 rounded-full font-mono font-bold ${
                 activeTab === tab.id
                   ? "bg-blue-500/30 text-blue-200"
                   : "bg-bunker-800 text-bunker-muted"
@@ -628,59 +628,59 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             return (
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">IC Markets Bakiye</span>
+                  <span className="text-2xs font-bold text-bunker-muted uppercase block">IC Markets Bakiye</span>
                   <span className="text-lg font-black text-emerald-400 font-mono">
                     {liveBal == null ? "—" : `$${liveBal.toFixed(2)}`} <span className="text-xs font-normal text-bunker-muted">{mt5.account?.currency || "USD"}</span>
                   </span>
-                  <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
+                  <span className="text-2xs font-semibold text-bunker-muted block mt-0.5">Kapanan net bakiye</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Özsermaye (Equity)</span>
+                  <span className="text-2xs font-bold text-bunker-muted uppercase block">Özsermaye (Equity)</span>
                   <span className={`text-lg font-black font-mono ${liveEq != null && liveBal != null && liveEq >= liveBal ? "text-cyan-300" : "text-rose-400"}`}>
                     {liveEq == null ? "—" : `$${liveEq.toFixed(2)}`}
                   </span>
-                  <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
+                  <span className="text-2xs font-semibold text-bunker-muted block mt-0.5">Serbest: {liveMargin == null ? "—" : `$${liveMargin.toFixed(2)}`}</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Açık PnL (Anlık)</span>
+                  <span className="text-2xs font-bold text-bunker-muted uppercase block">Açık PnL (Anlık)</span>
                   <span className={`text-lg font-black font-mono ${livePnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                     {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
                   </span>
-                  <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">{mt5.open_positions?.length || 0} açık işlem</span>
+                  <span className="text-2xs font-semibold text-bunker-muted block mt-0.5">{mt5.open_positions?.length || 0} açık işlem</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Hesap / Sunucu</span>
+                  <span className="text-2xs font-bold text-bunker-muted uppercase block">Hesap / Sunucu</span>
                   <span className="text-base font-black text-white tracking-wide">
                     {mt5.account?.login ?? "—"}
                   </span>
-                  <span className="text-[10px] font-bold text-emerald-400 block mt-0.5 truncate">{mt5.account?.server ?? "—"}</span>
+                  <span className="text-2xs font-bold text-emerald-400 block mt-0.5 truncate">{mt5.account?.server ?? "—"}</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Kaldıraç &amp; Sahip</span>
+                  <span className="text-2xs font-bold text-bunker-muted uppercase block">Kaldıraç &amp; Sahip</span>
                   <span className="text-base font-black text-yellow-300">
                     {mt5.account?.leverage != null ? `1:${mt5.account.leverage}` : "—"}
                   </span>
-                  <span className="text-[10px] font-bold text-bunker-muted block mt-0.5 truncate">{mt5.account?.name ?? "—"}</span>
+                  <span className="text-2xs font-bold text-bunker-muted block mt-0.5 truncate">{mt5.account?.name ?? "—"}</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
-                  <span className="text-[11px] font-bold text-bunker-muted uppercase block">Aktif Seanslar</span>
+                  <span className="text-2xs font-bold text-bunker-muted uppercase block">Aktif Seanslar</span>
                   <div className="flex items-center gap-1 mt-1 overflow-x-auto">
                     {activeSessions.length > 0 ? (
                       activeSessions.map((s) => (
                         <span
                           key={s.name}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap"
+                          className="px-1.5 py-0.5 rounded text-2xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap"
                         >
                           {s.flag} {s.name}
                         </span>
                       ))
                     ) : (
-                      <span className="text-[11px] font-semibold text-bunker-muted">7/24 Açık</span>
+                      <span className="text-2xs font-semibold text-bunker-muted">7/24 Açık</span>
                     )}
                   </div>
                 </div>
@@ -723,8 +723,8 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               return (
                 <div key={b.title} className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold text-bunker-muted uppercase">{b.title}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${b.badgeCls}`}>
+                    <span className="text-2xs font-bold text-bunker-muted uppercase">{b.title}</span>
+                    <span className={`text-2xs font-bold px-2 py-0.5 rounded-full border ${b.badgeCls}`}>
                       {b.badge}
                     </span>
                   </div>
@@ -732,11 +732,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     <span className={`text-2xl font-black font-mono ${rateTone}`}>
                       {hasTrades ? `%${b.rate.toFixed(1)}` : "—"}
                     </span>
-                    <span className="text-[11px] font-semibold text-bunker-muted font-mono">
+                    <span className="text-2xs font-semibold text-bunker-muted font-mono">
                       {hasTrades ? `${b.w}K / ${b.l}Z (${b.n} İşlem)` : "Kapanan işlem yok"}
                     </span>
                   </div>
-                  <div className="mt-1.5 pt-1.5 border-t border-bunker-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                  <div className="mt-1.5 pt-1.5 border-t border-bunker-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs">
                     <span className="font-bold text-bunker-muted">NET KÂRLILIK</span>
                     <span className={`font-mono font-black ${b.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                       {b.pnlUsd >= 0 ? "+" : ""}${b.pnlUsd.toFixed(2)}
@@ -757,7 +757,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                 <h2 className="text-sm font-black text-white uppercase tracking-wider">
                   Sembol Bazlı Başarı Kartları
                 </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-400/30">
+                <span className="text-2xs font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-400/30">
                   Bugün &amp; Tüm Zamanlar
                 </span>
               </div>
@@ -781,13 +781,13 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   return (
                     <div key={k.symbol} className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
                       <div className="flex items-start justify-between gap-1.5">
-                        <span className="text-[11px] font-bold text-white uppercase block truncate">{k.symbol}</span>
+                        <span className="text-2xs font-bold text-white uppercase block truncate">{k.symbol}</span>
                         {hasOpen ? (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                          <span className="px-1.5 py-0.5 rounded text-2xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
                             ⚡ {k.open_count} AÇIK
                           </span>
                         ) : hasTrades ? (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-bunker-800 text-bunker-muted border border-bunker-700">
+                          <span className="px-1.5 py-0.5 rounded text-2xs font-black bg-bunker-800 text-bunker-muted border border-bunker-700">
                             {k.trades} İŞLEM
                           </span>
                         ) : null}
@@ -797,12 +797,12 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                         {hasTrades ? `${k.pnl_usd >= 0 ? "+" : ""}$${k.pnl_usd.toFixed(2)}` : hasOpen ? `${k.open_pnl_usd >= 0 ? "+" : ""}$${k.open_pnl_usd.toFixed(2)}` : "—"}
                       </span>
 
-                      <span className="text-[10px] font-semibold text-bunker-muted block mt-0.5">
+                      <span className="text-2xs font-semibold text-bunker-muted block mt-0.5">
                         {hasTrades ? `${k.pnl_pips >= 0 ? "+" : ""}${k.pnl_pips} pip · ${k.wins}K/${k.losses}Z` : "İşlem yok"}
                       </span>
 
                       {all && (
-                        <div className="mt-1.5 pt-1.5 border-t border-bunker-800/70 text-[9px]">
+                        <div className="mt-1.5 pt-1.5 border-t border-bunker-800/70 text-2xs">
                           <div className="flex justify-between items-center text-bunker-muted">
                             <span>Tüm Zamanlar</span>
                             <span className={all.win_rate >= 50 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
@@ -846,7 +846,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-[11px] font-black">
+                  <thead className="bg-bunker-950/80 text-bunker-muted uppercase border-b border-bunker-800 text-2xs font-black">
                     <tr>
                       <th className="py-3 px-4">Bilet</th>
                       <th className="py-3 px-3">Parite</th>
@@ -873,14 +873,14 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                           <td className="py-3 px-3">
                             <span className="font-black text-white text-sm">{p.symbol}</span>
                             {(p.strategy_label || p.strategy) && (
-                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-2xs font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
                                 {p.strategy_label || p.strategy}
                               </span>
                             )}
                           </td>
                           <td className="py-3 px-3">
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                              className={`px-2 py-0.5 rounded text-2xs font-black ${
                                 p.direction === "BUY"
                                   ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                                   : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
@@ -891,15 +891,15 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                           </td>
                           <td className="py-3 px-3">
                             {isTrailing ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                              <span className="px-2 py-0.5 rounded text-2xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
                                 TRAILING STOP
                               </span>
                             ) : isBE ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                              <span className="px-2 py-0.5 rounded text-2xs font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
                                 BAŞABAŞ (BE)
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-bunker-800 text-bunker-muted">
+                              <span className="px-2 py-0.5 rounded text-2xs font-bold bg-bunker-800 text-bunker-muted">
                                 Sabit SL
                               </span>
                             )}
@@ -914,7 +914,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                           <td className={`py-3 px-3 ${isProfit ? "text-emerald-400" : "text-rose-400"} font-black`}>
                             <div>{isProfit ? "+" : ""}${pnlVal.toFixed(2)}</div>
                             {p.pnl_pips != null && (
-                              <div className="text-[10px] font-normal">{Number(p.pnl_pips) >= 0 ? "+" : ""}{p.pnl_pips} p</div>
+                              <div className="text-2xs font-normal">{Number(p.pnl_pips) >= 0 ? "+" : ""}{p.pnl_pips} p</div>
                             )}
                           </td>
                           <td className="py-3 px-4 text-right">
@@ -968,13 +968,13 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-black text-white">{tr.symbol}</span>
-                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${tr.direction === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
+                          <span className={`px-1.5 py-0.2 rounded text-2xs font-black ${tr.direction === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
                             {tr.direction}
                           </span>
-                          <span className="text-bunker-muted text-[10px]">{tr.lots} Lot</span>
-                          <span className="text-bunker-muted text-[10px]">({tr.exit_reason || "MT5 Kapanış"})</span>
+                          <span className="text-bunker-muted text-2xs">{tr.lots} Lot</span>
+                          <span className="text-bunker-muted text-2xs">({tr.exit_reason || "MT5 Kapanış"})</span>
                         </div>
-                        <div className="text-[10px] text-bunker-muted mt-0.5">
+                        <div className="text-2xs text-bunker-muted mt-0.5">
                           {tr.entry_price} → {tr.exit_price} ({formatUtc3(tr.exit_time)})
                         </div>
                       </div>
@@ -1001,7 +1001,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-black text-white">XAUUSD — ONS ALTIN KOMUTA MERKEZİ</h2>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                  <span className="px-2 py-0.5 rounded text-2xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
                     SPOT / MT5
                   </span>
                 </div>
@@ -1046,51 +1046,51 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           {/* XAUUSD 6'lı Teknik İndikatör Kartları */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 font-mono">
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-              <span className="text-[10px] text-bunker-muted uppercase block">RSI (5M / 15M)</span>
+              <span className="text-2xs text-bunker-muted uppercase block">RSI (5M / 15M)</span>
               <span className="text-lg font-black text-cyan-300 block mt-1">
                 {xauCandidate?.rsi_5m ? xauCandidate.rsi_5m.toFixed(1) : "—"}
               </span>
-              <span className="text-[10px] text-bunker-muted">15M: {xauCandidate?.rsi_15m ? xauCandidate.rsi_15m.toFixed(1) : "—"}</span>
+              <span className="text-2xs text-bunker-muted">15M: {xauCandidate?.rsi_15m ? xauCandidate.rsi_15m.toFixed(1) : "—"}</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-              <span className="text-[10px] text-bunker-muted uppercase block">SuperTrend Yönü</span>
+              <span className="text-2xs text-bunker-muted uppercase block">SuperTrend Yönü</span>
               <span className={`text-lg font-black block mt-1 ${xauCandidate?.supertrend_dir && xauCandidate.supertrend_dir > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                 {xauCandidate?.supertrend_dir && xauCandidate.supertrend_dir > 0 ? "▲ BOĞA" : "▼ AYI"}
               </span>
-              <span className="text-[10px] text-bunker-muted">M5 Teyitli</span>
+              <span className="text-2xs text-bunker-muted">M5 Teyitli</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-              <span className="text-[10px] text-bunker-muted uppercase block">ADX Trend Gücü</span>
+              <span className="text-2xs text-bunker-muted uppercase block">ADX Trend Gücü</span>
               <span className={`text-lg font-black block mt-1 ${xauCandidate?.adx && xauCandidate.adx >= 25 ? "text-emerald-400" : "text-yellow-400"}`}>
                 {xauCandidate?.adx ? xauCandidate.adx.toFixed(1) : "—"}
               </span>
-              <span className="text-[10px] text-bunker-muted">{xauCandidate?.adx && xauCandidate.adx >= 25 ? "Güçlü Trend" : "Yatay / Chop"}</span>
+              <span className="text-2xs text-bunker-muted">{xauCandidate?.adx && xauCandidate.adx >= 25 ? "Güçlü Trend" : "Yatay / Chop"}</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-              <span className="text-[10px] text-bunker-muted uppercase block">ATR Volatilite</span>
+              <span className="text-2xs text-bunker-muted uppercase block">ATR Volatilite</span>
               <span className="text-lg font-black text-amber-300 block mt-1">
                 {xauCandidate?.atr_pips ? `${xauCandidate.atr_pips} p` : "—"}
               </span>
-              <span className="text-[10px] text-bunker-muted">Dinamik Stop Çarpanı</span>
+              <span className="text-2xs text-bunker-muted">Dinamik Stop Çarpanı</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-              <span className="text-[10px] text-bunker-muted uppercase block">Radar Skoru</span>
+              <span className="text-2xs text-bunker-muted uppercase block">Radar Skoru</span>
               <span className="text-lg font-black text-purple-300 block mt-1">
                 {xauCandidate?.score ? `${xauCandidate.score}/100` : "—"}
               </span>
-              <span className="text-[10px] text-bunker-muted">Eşik: 75.0</span>
+              <span className="text-2xs text-bunker-muted">Eşik: 75.0</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800">
-              <span className="text-[10px] text-bunker-muted uppercase block">CSM Dolar Farkı</span>
+              <span className="text-2xs text-bunker-muted uppercase block">CSM Dolar Farkı</span>
               <span className={`text-lg font-black block mt-1 ${xauCandidate?.csm_diff && xauCandidate.csm_diff > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                 {xauCandidate?.csm_diff ? `${xauCandidate.csm_diff > 0 ? "+" : ""}${xauCandidate.csm_diff.toFixed(1)}` : "—"}
               </span>
-              <span className="text-[10px] text-bunker-muted">Altın vs USD Akışı</span>
+              <span className="text-2xs text-bunker-muted">Altın vs USD Akışı</span>
             </div>
           </div>
 
@@ -1120,7 +1120,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     key={cat}
                     type="button"
                     onClick={() => setLogFilter(cat)}
-                    className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${
+                    className={`px-2 py-1 rounded text-2xs font-bold transition-all border ${
                       logFilter === cat
                         ? "bg-blue-600 text-white border-blue-400"
                         : "bg-bunker-950 text-bunker-muted border-bunker-800 hover:text-white"
@@ -1149,7 +1149,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   key={st.id}
                   type="button"
                   onClick={() => setStrategyFilter(st.id)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all border ${
+                  className={`px-2 py-0.5 rounded text-2xs font-mono font-bold transition-all border ${
                     strategyFilter === st.id
                       ? "bg-purple-600/30 text-purple-300 border-purple-400"
                       : "bg-bunker-950/60 text-bunker-muted border-bunker-800 hover:text-white"
@@ -1193,29 +1193,29 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   return (
                     <div
                       key={log.id}
-                      className={`p-2.5 rounded-lg border text-[11px] leading-relaxed flex items-start justify-between gap-2 transition-all ${
+                      className={`p-2.5 rounded-lg border text-2xs leading-relaxed flex items-start justify-between gap-2 transition-all ${
                         catColors[log.category] || "border-bunker-800 bg-bunker-900"
                       }`}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          <span className="font-bold uppercase tracking-wider text-[10px]">
+                          <span className="font-bold uppercase tracking-wider text-2xs">
                             [{log.category}]
                           </span>
                           {log.symbol && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-bunker-800 text-slate-200 border border-bunker-700">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-mono font-bold bg-bunker-800 text-slate-200 border border-bunker-700">
                               {log.symbol}
                             </span>
                           )}
                           {log.strategy_label && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
                               {log.strategy_label}
                             </span>
                           )}
                         </div>
                         <div className="text-slate-200 font-medium">{log.message}</div>
                       </div>
-                      <span className="text-[10px] opacity-70 whitespace-nowrap font-mono">{formatUtc3(log.time)}</span>
+                      <span className="text-2xs opacity-70 whitespace-nowrap font-mono">{formatUtc3(log.time)}</span>
                     </div>
                   );
                 });
@@ -1284,18 +1284,18 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-base font-black text-white">{c.display || c.symbol}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
+                        <span className="text-2xs px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
                           {c.category}
                         </span>
                       </div>
-                      <span className="text-[11px] text-bunker-muted block">{c.name}</span>
+                      <span className="text-2xs text-bunker-muted block">{c.name}</span>
                     </div>
 
                     <div className="text-right">
                       <span className="text-sm font-black text-white font-mono block">
                         {c.price || tick?.bid || "—"}
                       </span>
-                      <span className="text-[10px] text-cyan-400 font-mono font-bold block">
+                      <span className="text-2xs text-cyan-400 font-mono font-bold block">
                         {c.spread_pips ?? tick?.spread_pips ?? "—"}p spread
                       </span>
                     </div>
@@ -1305,7 +1305,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   <div className="p-2 rounded-lg bg-bunker-950/70 border border-bunker-800 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                        className={`px-2 py-0.5 rounded text-2xs font-black ${
                           isBuy
                             ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
                             : isSell
@@ -1315,7 +1315,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       >
                         {isBuy ? "▲ BUY" : isSell ? "▼ SELL" : "BEKLE"}
                       </span>
-                      <span className="text-bunker-muted font-mono text-[11px] font-bold">
+                      <span className="text-bunker-muted font-mono text-2xs font-bold">
                         Skor: {c.score}/100
                       </span>
                     </div>
@@ -1323,14 +1323,14 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     <button
                       type="button"
                       onClick={() => setChartModalCandidate(c)}
-                      className="px-2.5 py-1 rounded bg-blue-600/30 text-blue-300 border border-blue-400/40 text-[11px] font-bold hover:bg-blue-600/50 transition-all flex items-center gap-1"
+                      className="px-2.5 py-1 rounded bg-blue-600/30 text-blue-300 border border-blue-400/40 text-2xs font-bold hover:bg-blue-600/50 transition-all flex items-center gap-1"
                     >
                       <span>Grafik</span>
                     </button>
                   </div>
 
                   {/* İndikatör Grid */}
-                  <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-mono">
+                  <div className="grid grid-cols-4 gap-1.5 text-center text-2xs font-mono">
                     <div className="p-1.5 rounded bg-bunker-950 border border-bunker-800/80">
                       <span className="text-bunker-muted block">RSI 5M</span>
                       <span className={`font-bold ${rsi && (rsi >= 70 || rsi <= 30) ? "text-amber-300" : "text-white"}`}>
@@ -1356,7 +1356,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   </div>
 
                   {/* Hedef ve Stop Seviyeleri */}
-                  <div className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-bunker-800/60">
+                  <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-bunker-800/60">
                     <span className="text-emerald-400 font-bold">Hedef TP: {c.pip_target ? `+${c.pip_target}p` : "—"}</span>
                     <span className="text-rose-400 font-bold">Stop: {c.stop_loss_pips ? `-${c.stop_loss_pips}p` : "—"}</span>
                   </div>
@@ -1378,7 +1378,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-black text-white">IC MARKETS 7/24 KRİPTO PORTFÖYÜ</h2>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                  <span className="px-2 py-0.5 rounded text-2xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-400/40">
                     HAFTA SONU KESİNTİSİZ
                   </span>
                 </div>
@@ -1419,11 +1419,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       <div>
                         <div className="flex items-center gap-1.5">
                           <span className="font-black text-white text-base">{item.sym}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/30 text-purple-300 font-bold border border-purple-600/40">
+                          <span className="text-2xs px-1.5 py-0.5 rounded bg-purple-900/30 text-purple-300 font-bold border border-purple-600/40">
                             7/24
                           </span>
                         </div>
-                        <span className="text-[11px] text-bunker-muted">{item.name}</span>
+                        <span className="text-2xs text-bunker-muted">{item.name}</span>
                       </div>
                     </div>
 
@@ -1431,7 +1431,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       <span className="text-base font-black text-white block">
                         ${priceVal > 0 ? priceVal.toFixed(item.digits) : "—"}
                       </span>
-                      <span className="text-[10px] text-purple-300 font-bold block">
+                      <span className="text-2xs text-purple-300 font-bold block">
                         {spreadVal}p spread
                       </span>
                     </div>
@@ -1463,7 +1463,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   <div className="flex items-center justify-between text-xs pt-1">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
+                        className={`px-2 py-0.5 rounded text-2xs font-black font-mono ${
                           isBuy
                             ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
                             : isSell
@@ -1473,7 +1473,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       >
                         {isBuy ? "▲ BUY" : isSell ? "▼ SELL" : "BEKLE"}
                       </span>
-                      <span className="text-bunker-muted font-mono text-[11px] font-bold">
+                      <span className="text-bunker-muted font-mono text-2xs font-bold">
                         Skor: {c?.score || 75}/100
                       </span>
                     </div>
@@ -1482,7 +1482,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       <button
                         type="button"
                         onClick={() => setChartModalCandidate(c)}
-                        className="px-2.5 py-1 rounded bg-purple-600/30 text-purple-300 border border-purple-400/40 text-[11px] font-bold hover:bg-purple-600/50 transition-all flex items-center gap-1"
+                        className="px-2.5 py-1 rounded bg-purple-600/30 text-purple-300 border border-purple-400/40 text-2xs font-bold hover:bg-purple-600/50 transition-all flex items-center gap-1"
                       >
                         <span>Grafik</span>
                       </button>

@@ -935,7 +935,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
           {/* SAĞ KISIM: GÖSTERGELER & FİYAT & WS & KAPAT */}
           <div className="flex items-center gap-3 font-mono">
             {/* Hızlı Gösterge Butonları */}
-            <div className="hidden lg:flex items-center gap-1 bg-bunker-950 p-1 rounded-lg border border-bunker-800 text-[11px]">
+            <div className="hidden lg:flex items-center gap-1 bg-bunker-950 p-1 rounded-lg border border-bunker-800 text-2xs">
               <button
                 type="button"
                 onClick={() => toggleIndicator("ema50")}
@@ -1020,10 +1020,10 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
               <button
                 type="button"
                 onClick={() => setShowIndicatorsMenu(!showIndicatorsMenu)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-bunker-800 hover:bg-bunker-750 text-slate-200 text-xs font-semibold border border-bunker-700 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-bunker-800 hover:bg-bunker-700 text-slate-200 text-xs font-semibold border border-bunker-700 transition-colors"
               >
                 <span>📐 Göstergeler ({activeCount})</span>
-                <span className="text-[10px]">▼</span>
+                <span className="text-2xs">▼</span>
               </button>
 
               {/* Açılır Panel */}
@@ -1046,7 +1046,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
                   <div className="mt-2.5 space-y-3 text-xs">
                     {/* Grafik Üstü */}
                     <div>
-                      <p className="text-[10px] uppercase font-bold text-cyan-400 mb-1">
+                      <p className="text-2xs uppercase font-bold text-cyan-400 mb-1">
                         Grafik Üzeri (Overlay)
                       </p>
                       <div className="space-y-1.5">
@@ -1126,7 +1126,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
 
                     {/* Alt Paneller */}
                     <div className="pt-2 border-t border-bunker-800">
-                      <p className="text-[10px] uppercase font-bold text-amber-400 mb-1">
+                      <p className="text-2xs uppercase font-bold text-amber-400 mb-1">
                         Alt Paneller (Osilatörler)
                       </p>
                       <div className="space-y-1.5">
@@ -1188,10 +1188,10 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
 
             {/* WS Durum Rozeti */}
             <div
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-semibold border ${
                 wsActive
                   ? "bg-emerald-950/80 text-emerald-400 border-emerald-700/60"
-                  : "bg-bunker-800/80 text-slate-400 border-bunker-750"
+                  : "bg-bunker-800/80 text-slate-400 border-bunker-700"
               }`}
             >
               <span
@@ -1253,7 +1253,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
               </div>
             )}
             {indicators.macd && hudValues.macd && (
-              <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-2 text-2xs">
                 <span className="text-blue-400">MACD: {hudValues.macd.macd.toFixed(2)}</span>
                 <span className="text-amber-400">Sig: {hudValues.macd.signal.toFixed(2)}</span>
                 <span className={hudValues.macd.hist >= 0 ? "text-emerald-400" : "text-rose-400"}>
@@ -1278,7 +1278,7 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
         </div>
 
         {/* 4. ALT LEJANT & BİLGİ BARI */}
-        <div className="flex items-center justify-between px-4 py-2 bg-bunker-950 border-t border-bunker-800 text-[11px] font-mono text-bunker-muted">
+        <div className="flex items-center justify-between px-4 py-2 bg-bunker-950 border-t border-bunker-800 text-2xs font-mono text-bunker-muted">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-slate-400 font-semibold">Aktif Göstergeler:</span>
             {indicators.ema50 && (

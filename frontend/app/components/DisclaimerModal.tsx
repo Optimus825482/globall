@@ -97,7 +97,7 @@ export default function DisclaimerModal() {
             <button
               type="button"
               onClick={dismissForever}
-              className="font-mono text-[11px] text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline"
+              className="font-mono text-2xs text-bunker-muted/70 underline-offset-2 hover:text-bunker-muted hover:underline"
             >
               BİR DAHA GÖSTERME
             </button>

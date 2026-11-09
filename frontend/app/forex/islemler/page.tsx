@@ -459,7 +459,7 @@ export default function ForexIslemlerPage() {
         cardBg: "bg-white border-slate-200/90 shadow-sm",
         headerBg: "border-transparent",
         kpiCard: "bg-white border-slate-200/90 shadow-sm text-slate-900",
-        tableHeader: "bg-slate-100/90 text-slate-600 border-slate-200 text-[11px]",
+        tableHeader: "bg-slate-100/90 text-slate-600 border-slate-200 text-2xs",
         tableRow: "hover:bg-slate-50 transition-colors border-slate-100",
         textPrimary: "text-slate-900 font-bold",
         textSecondary: "text-slate-500",
@@ -476,16 +476,16 @@ export default function ForexIslemlerPage() {
       cardBg: "bg-bunker-900/90 border-bunker-800 shadow-xl",
       headerBg: "border-transparent",
       kpiCard: "bg-bunker-900/80 border-bunker-800 shadow-lg text-white",
-      tableHeader: "bg-bunker-950/80 text-bunker-muted border-bunker-800 text-[11px]",
+      tableHeader: "bg-bunker-950/80 text-bunker-muted border-bunker-800 text-2xs",
       tableRow: "hover:bg-bunker-800/40 transition-colors border-bunker-800/60",
       textPrimary: "text-white font-bold",
       textSecondary: "text-bunker-muted",
-      badgeBg: "bg-bunker-800 text-bunker-300 border-bunker-700",
+      badgeBg: "bg-bunker-800 text-bunker-muted border-bunker-700",
       accentBorder: "border-bunker-800",
       profitBg: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-bold",
       lossBg: "bg-rose-500/15 text-rose-400 border-rose-500/30 font-bold",
       pageActive: "bg-blue-600 text-white border-blue-500",
-      pageInactive: "bg-bunker-800 text-bunker-300 border-bunker-700 hover:bg-bunker-750",
+      pageInactive: "bg-bunker-800 text-bunker-muted border-bunker-700 hover:bg-bunker-700",
     };
   }, [isLightMode]);
 
@@ -500,7 +500,7 @@ export default function ForexIslemlerPage() {
               <h1 className="text-base sm:text-lg font-black tracking-tight">
                 FOREX CANLI İŞLEM İZLEME
               </h1>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 CANLI AKIŞ
               </span>
@@ -521,13 +521,13 @@ export default function ForexIslemlerPage() {
                 ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/50 ring-2 ring-rose-500/40 animate-pulse"
                 : isLightMode
                 ? "bg-white text-slate-800 border-slate-300 hover:bg-slate-50"
-                : "bg-bunker-800 text-white border-bunker-700 hover:bg-bunker-750"
+                : "bg-bunker-800 text-white border-bunker-700 hover:bg-bunker-700"
             }`}
             title="Sembol EV Kalkanı ve Muafiyet Listesi"
           >
             <span>EV Kalkanı</span>
             {(evShieldStatus?.blocked_count ?? 0) > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-black">
+              <span className="px-1.5 py-0.2 rounded-full text-2xs bg-rose-600 text-white font-black">
                 {evShieldStatus?.blocked_count}
               </span>
             )}
@@ -541,7 +541,7 @@ export default function ForexIslemlerPage() {
             className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition-all shadow-sm ${
               isLightMode
                 ? "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                : "bg-bunker-800 text-white border-bunker-700 hover:bg-bunker-750"
+                : "bg-bunker-800 text-white border-bunker-700 hover:bg-bunker-700"
             }`}
           >
             <span className={refreshing ? "animate-spin" : ""}>↻</span>
@@ -549,7 +549,7 @@ export default function ForexIslemlerPage() {
           </button>
 
           {lastUpdated && (
-            <span className={`text-[10px] hidden md:inline ml-1 ${theme.textSecondary}`}>
+            <span className={`text-2xs hidden md:inline ml-1 ${theme.textSecondary}`}>
               {lastUpdated.toLocaleTimeString("tr-TR")}
             </span>
           )}
@@ -599,7 +599,7 @@ export default function ForexIslemlerPage() {
           <h2 className={`text-sm font-bold uppercase tracking-wider ${theme.textPrimary}`}>
             Günün Başarı Metrikleri
           </h2>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-semibold">
+          <span className="text-2xs px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-semibold">
             Günün İşlemleri (00:01 Sonrası) · Canlı Akış (UTC+3)
           </span>
         </div>
@@ -617,7 +617,7 @@ export default function ForexIslemlerPage() {
         {/* KART 1: GÜNÜN BAŞARI ORANI (%) */}
         <div className={`p-4 rounded-2xl border ${theme.kpiCard}`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
+            <span className={`text-2xs font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Günün Başarı Oranı
             </span>
           </div>
@@ -635,7 +635,7 @@ export default function ForexIslemlerPage() {
               style={{ width: `${Math.min(100, Math.max(0, kpi.win_rate))}%` }}
             />
           </div>
-          <div className={`mt-1.5 text-[10px] flex justify-between ${theme.textSecondary}`}>
+          <div className={`mt-1.5 text-2xs flex justify-between ${theme.textSecondary}`}>
             <span>{kpi.total_trades} Toplam İşlem</span>
             <span>{kpi.wins} Başarılı Kapanış</span>
           </div>
@@ -644,7 +644,7 @@ export default function ForexIslemlerPage() {
         {/* KART 2: GÜNLÜK NET KÂRLILIK DURUMU */}
         <div className={`p-4 rounded-2xl border ${theme.kpiCard}`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
+            <span className={`text-2xs font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Bugünkü Net K/Z
             </span>
           </div>
@@ -660,11 +660,11 @@ export default function ForexIslemlerPage() {
             </span>
           </div>
           <div className="mt-2.5 flex items-center justify-between text-xs">
-            <span className={`text-[11px] ${theme.textSecondary}`}>
+            <span className={`text-2xs ${theme.textSecondary}`}>
               Gerçekleşen Günlük Bilanço
             </span>
             <span
-              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+              className={`px-2 py-0.5 rounded text-2xs font-bold ${
                 kpi.total_pnl_usd >= 0 ? theme.profitBg : theme.lossBg
               }`}
             >
@@ -676,7 +676,7 @@ export default function ForexIslemlerPage() {
         {/* KART 3: ÖZKAYNAK & HESAP BAKİYESİ (Kullanıcı İsteği: Büyük Olan Özkaynak) */}
         <div className={`p-4 rounded-2xl border ${theme.kpiCard}`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
+            <span className={`text-2xs font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Özkaynak (Equity)
             </span>
           </div>
@@ -686,7 +686,7 @@ export default function ForexIslemlerPage() {
             </span>
           </div>
           <div className="mt-2.5 flex items-center justify-between text-xs">
-            <span className={`text-[11px] ${theme.textSecondary}`}>
+            <span className={`text-2xs ${theme.textSecondary}`}>
               Hesap Bakiyesi:
             </span>
             <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
@@ -694,14 +694,14 @@ export default function ForexIslemlerPage() {
             </span>
           </div>
           {dataError && (
-            <p role="alert" className="mt-2 text-[11px] font-bold text-rose-500">{dataError}</p>
+            <p role="alert" className="mt-2 text-2xs font-bold text-rose-500">{dataError}</p>
           )}
         </div>
 
         {/* KART 4: TOPLAM AÇIK İŞLEMLERİN PnL'İ */}
         <div className={`p-4 rounded-2xl border ${theme.kpiCard}`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${theme.textSecondary}`}>
+            <span className={`text-2xs font-bold uppercase tracking-wider ${theme.textSecondary}`}>
               Açık İşlemler PnL
             </span>
           </div>
@@ -726,10 +726,10 @@ export default function ForexIslemlerPage() {
             </span>
           </div>
           <div className="mt-2.5 flex items-center justify-between text-xs">
-            <span className={`text-[11px] ${theme.textSecondary}`}>
+            <span className={`text-2xs ${theme.textSecondary}`}>
               {openSummary.count} Aktif Açık Pozisyon
             </span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-400/30">
+            <span className="px-2 py-0.5 rounded text-2xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-400/30">
               YÜZEN K/Z
             </span>
           </div>
@@ -753,7 +753,7 @@ export default function ForexIslemlerPage() {
           >
             <span>Açık Pozisyonlar</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+              className={`px-2 py-0.5 rounded-full text-2xs font-black ${
                 activeTab === "OPEN"
                   ? "bg-white/20 text-white"
                   : isLightMode
@@ -778,7 +778,7 @@ export default function ForexIslemlerPage() {
           >
             <span>Kapanan İşlemler</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+              className={`px-2 py-0.5 rounded-full text-2xs font-black ${
                 activeTab === "CLOSED"
                   ? "bg-white/20 text-white"
                   : isLightMode
@@ -890,13 +890,13 @@ export default function ForexIslemlerPage() {
                               {p.display || p.symbol}
                             </span>
                             {p.category && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-bunker-800 text-slate-500 dark:text-bunker-muted uppercase">
+                              <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-bunker-800 text-slate-500 dark:text-bunker-muted uppercase">
                                 {p.category}
                               </span>
                             )}
                           </div>
                           {p.open_time && (
-                            <div className={`text-[10px] ${theme.textSecondary}`}>
+                            <div className={`text-2xs ${theme.textSecondary}`}>
                               {formatClockTime(p.open_time)}
                             </div>
                           )}
@@ -904,7 +904,7 @@ export default function ForexIslemlerPage() {
 
                         {/* Strateji */}
                         <td className="py-3.5 px-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-2xs font-bold whitespace-nowrap border ${
                             p.strategy === "EMA_ADX_PULLBACK_M5" || p.strategy === "EMA_ADX_PULLBACK"
                               ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
                               : p.strategy === "S3_SUPERTREND_RSI" || String(p.strategy).startsWith("S3")
@@ -924,7 +924,7 @@ export default function ForexIslemlerPage() {
                         {/* İşlem Tipi: BUY / SELL */}
                         <td className="py-3.5 px-3">
                           <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-bold ${
                               isBuy
                                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
                                 : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
@@ -935,7 +935,7 @@ export default function ForexIslemlerPage() {
                         </td>
 
                         <td className="py-3.5 px-3 font-bold text-sm">
-                          {p.lots.toFixed(2)} <span className="text-[11px] font-normal">Lot</span>
+                          {p.lots.toFixed(2)} <span className="text-2xs font-normal">Lot</span>
                         </td>
 
                         <td className="py-3.5 px-3 font-semibold">
@@ -959,7 +959,7 @@ export default function ForexIslemlerPage() {
                           </div>
                         </td>
 
-                        <td className="py-3.5 px-4 text-right whitespace-nowrap text-[11px]">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap text-2xs">
                           <div>TP: <strong className="text-emerald-600 dark:text-emerald-400">{formatPrice(p.tp_price, p.symbol)}</strong></div>
                           <div>SL: <strong className="text-rose-600 dark:text-rose-400">{formatPrice(p.sl_price, p.symbol)}</strong></div>
                         </td>
@@ -988,7 +988,7 @@ export default function ForexIslemlerPage() {
                           {p.display || p.symbol}
                         </span>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-2 py-0.5 rounded text-2xs font-bold ${
                             isBuy
                               ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
                               : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
@@ -1004,11 +1004,11 @@ export default function ForexIslemlerPage() {
 
                     <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200 dark:border-bunker-800/80">
                       <div>
-                        <span className={`text-[10px] block ${theme.textSecondary}`}>GİRİŞ</span>
+                        <span className={`text-2xs block ${theme.textSecondary}`}>GİRİŞ</span>
                         <span className="font-semibold">{formatPrice(p.entry_price, p.symbol)}</span>
                       </div>
                       <div className="text-right">
-                        <span className={`text-[10px] block ${theme.textSecondary}`}>GÜNCEL</span>
+                        <span className={`text-2xs block ${theme.textSecondary}`}>GÜNCEL</span>
                         <span className="font-bold">{formatPrice(p.current_price, p.symbol)}</span>
                       </div>
                     </div>
@@ -1021,7 +1021,7 @@ export default function ForexIslemlerPage() {
                       >
                         {isProfitable ? "+" : ""}${Number(p.pnl_usd).toFixed(2)} ({p.pnl_pips >= 0 ? "+" : ""}{Number(p.pnl_pips).toFixed(1)}p)
                       </div>
-                      <div className="text-right text-[11px] leading-tight">
+                      <div className="text-right text-2xs leading-tight">
                         <span className="text-emerald-600 dark:text-emerald-400 font-bold block">TP {formatPrice(p.tp_price, p.symbol)}</span>
                         <span className="text-rose-600 dark:text-rose-400 font-bold block">SL {formatPrice(p.sl_price, p.symbol)}</span>
                       </div>
@@ -1042,7 +1042,7 @@ export default function ForexIslemlerPage() {
               <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>
                 Günün İşlem Gören Sembolleri &amp; Başarı Oranları
               </h2>
-              <p className={`text-[11px] ${theme.textSecondary}`}>
+              <p className={`text-2xs ${theme.textSecondary}`}>
                 Bugün saat 00:01'den sonra en çok işlem gören sembolden azalan sıraya göre başarı ve kârlılık oranları (İşlem açılmamış semboller gizlenir)
               </p>
             </div>
@@ -1082,20 +1082,20 @@ export default function ForexIslemlerPage() {
                   {/* Başlık ve Kategori */}
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-bunker-800/80">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black flex items-center justify-center border border-blue-500/20 shrink-0">
+                      <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-2xs font-black flex items-center justify-center border border-blue-500/20 shrink-0">
                         #{idx + 1}
                       </span>
                       <span className="font-bold text-sm tracking-wide">
                         {item.display || item.symbol}
                       </span>
                       {item.category && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-bunker-800 text-slate-600 dark:text-bunker-muted font-bold uppercase">
+                        <span className="text-2xs px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-bunker-800 text-slate-600 dark:text-bunker-muted font-bold uppercase">
                           {item.category}
                         </span>
                       )}
                     </div>
                     {item.openTrades > 0 && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-400/30">
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-400/30">
                         {item.openTrades} Açık
                       </span>
                     )}
@@ -1104,7 +1104,7 @@ export default function ForexIslemlerPage() {
                   {/* Başarı Yüzdesi & Kârlılık */}
                   <div className="grid grid-cols-2 gap-2 py-2.5">
                     <div>
-                      <span className={`text-[10px] block font-bold ${theme.textSecondary}`}>
+                      <span className={`text-2xs block font-bold ${theme.textSecondary}`}>
                         BAŞARI ORANI
                       </span>
                       <div className="flex items-baseline gap-1 mt-0.5">
@@ -1112,13 +1112,13 @@ export default function ForexIslemlerPage() {
                           %{item.winRate.toFixed(1)}
                         </span>
                       </div>
-                      <span className={`text-[10px] block mt-0.5 ${theme.textSecondary}`}>
+                      <span className={`text-2xs block mt-0.5 ${theme.textSecondary}`}>
                         {item.wins}K / {item.losses}Z ({item.totalTrades} İşlem)
                       </span>
                     </div>
 
                     <div className="text-right">
-                      <span className={`text-[10px] block font-bold ${theme.textSecondary}`}>
+                      <span className={`text-2xs block font-bold ${theme.textSecondary}`}>
                         NET KÂRLILIK
                       </span>
                       <div className="flex items-baseline justify-end gap-1 mt-0.5">
@@ -1130,7 +1130,7 @@ export default function ForexIslemlerPage() {
                           {isNetProfitable ? "+" : ""}${item.netPnlUsd.toFixed(2)}
                         </span>
                       </div>
-                      <span className={`text-[10px] font-bold block mt-0.5 ${isNetProfitable ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                      <span className={`text-2xs font-bold block mt-0.5 ${isNetProfitable ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                         {item.totalPips >= 0 ? "+" : ""}{item.totalPips.toFixed(1)} pip
                       </span>
                     </div>
@@ -1273,7 +1273,7 @@ export default function ForexIslemlerPage() {
                         </td>
 
                         <td className="py-3.5 px-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border ${
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-2xs font-bold whitespace-nowrap border ${
                             t.strategy === "EMA_ADX_PULLBACK_M5" || t.strategy === "EMA_ADX_PULLBACK"
                               ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
                               : t.strategy === "S3_SUPERTREND_RSI" || String(t.strategy).startsWith("S3")
@@ -1292,7 +1292,7 @@ export default function ForexIslemlerPage() {
 
                         <td className="py-3.5 px-3">
                           <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold ${
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-2xs font-bold ${
                               isBuy
                                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
                                 : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
@@ -1328,7 +1328,7 @@ export default function ForexIslemlerPage() {
 
                         <td className="py-3.5 px-4 text-right">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            className={`px-2 py-0.5 rounded text-2xs font-bold uppercase ${
                               isProfitable
                                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                                 : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
@@ -1360,15 +1360,15 @@ export default function ForexIslemlerPage() {
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-sm">{t.display || t.symbol}</span>
                         <span
-                          className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                          className={`px-1.5 py-0.2 rounded text-2xs font-bold ${
                             isBuy ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                           }`}
                         >
                           {isBuy ? "BUY" : "SELL"}
                         </span>
-                        <span className={`text-[11px] ${theme.textSecondary}`}>{t.lots.toFixed(2)}L</span>
+                        <span className={`text-2xs ${theme.textSecondary}`}>{t.lots.toFixed(2)}L</span>
                       </div>
-                      <div className={`text-[10px] mt-0.5 ${theme.textSecondary}`}>
+                      <div className={`text-2xs mt-0.5 ${theme.textSecondary}`}>
                         {formatClockTime(t.close_time || t.exit_time || t.time, t.closed_at_ts)} · {t.exit_reason_title || (isProfitable ? "TP" : "SL")}
                       </div>
                     </div>
@@ -1381,7 +1381,7 @@ export default function ForexIslemlerPage() {
                       >
                         {isProfitable ? "+" : ""}${Number(t.pnl_usd).toFixed(2)}
                       </div>
-                      <div className="text-[10px] font-bold opacity-80 mt-0.5">
+                      <div className="text-2xs font-bold opacity-80 mt-0.5">
                         {t.pnl_pips >= 0 ? "+" : ""}{Number(t.pnl_pips).toFixed(1)}p
                       </div>
                     </div>

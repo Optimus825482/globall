@@ -130,14 +130,14 @@ export default function ChartAiScoreHeader({
 
   if (compact) {
     return (
-      <div className={`flex items-center gap-1.5 font-mono text-[10px] ${className}`}>
+      <div className={`flex items-center gap-1.5 font-mono text-2xs ${className}`}>
         <span
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${octoToneClass}`}
           title={`OctoBot Matris Konsensüsü: %${displayData.octobot.consensus_pct} ${displayData.octobot.signal_label} (${displayData.octobot.score} Puan)`}
         >
           <span className="font-bold text-white">🤖 Octo:</span>
           <span className="font-bold text-emerald-300">%{displayData.octobot.consensus_pct}</span>
-          <span className="text-[9px] text-emerald-100 font-bold bg-black/40 px-1 rounded">({displayData.octobot.score})</span>
+          <span className="text-2xs text-emerald-100 font-bold bg-black/40 px-1 rounded">({displayData.octobot.score})</span>
         </span>
 
         <span
@@ -146,7 +146,7 @@ export default function ChartAiScoreHeader({
         >
           <span className="font-bold text-white">📊 Qlib:</span>
           <span className="font-bold text-cyan-300">{displayData.qlib.score}</span>
-          <span className="text-[9px] text-cyan-100 font-bold bg-black/40 px-1 rounded">{displayData.qlib.rank.replace("_ALPHA", "")}</span>
+          <span className="text-2xs text-cyan-100 font-bold bg-black/40 px-1 rounded">{displayData.qlib.rank.replace("_ALPHA", "")}</span>
         </span>
       </div>
     );
@@ -159,10 +159,10 @@ export default function ChartAiScoreHeader({
         className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border shadow-sm transition-all ${octoToneClass}`}
         title="OctoBot: 10 göstergenin ortak matris konsensüsü ve uzlaşı oranı"
       >
-        <span className="text-[12px]">🤖</span>
+        <span className="text-xs">🤖</span>
         <span className="font-bold text-white tracking-wide">OctoBot:</span>
         <span className="font-bold text-emerald-300">%{displayData.octobot.consensus_pct} {displayData.octobot.signal_label}</span>
-        <span className="text-[11px] font-bold text-emerald-100 bg-emerald-900/80 px-1.5 py-0.5 rounded border border-emerald-500/40">({displayData.octobot.score} Puan)</span>
+        <span className="text-2xs font-bold text-emerald-100 bg-emerald-900/80 px-1.5 py-0.5 rounded border border-emerald-500/40">({displayData.octobot.score} Puan)</span>
       </div>
 
       {/* Microsoft Qlib Alpha Rozeti */}
@@ -170,16 +170,16 @@ export default function ChartAiScoreHeader({
         className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border shadow-sm transition-all ${qlibToneClass}`}
         title="Microsoft Qlib: Alpha158/Alpha360 çok faktörlü nicel alfa puanı"
       >
-        <span className="text-[12px]">📊</span>
+        <span className="text-xs">📊</span>
         <span className="font-bold text-white tracking-wide">Qlib Alpha:</span>
         <span className="font-bold text-cyan-300">{displayData.qlib.score}</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/50 text-white font-bold border border-cyan-500/30">
+        <span className="text-2xs px-1.5 py-0.5 rounded bg-black/50 text-white font-bold border border-cyan-500/30">
           {displayData.qlib.rank_label}
         </span>
       </div>
 
       {/* Canlı AI Göstergesi */}
-      <span className="hidden sm:flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-medium">
+      <span className="hidden sm:flex items-center gap-1 text-2xs text-emerald-400 font-mono font-medium">
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
         <span>Canlı AI</span>
       </span>

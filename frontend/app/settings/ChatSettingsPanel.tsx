@@ -64,10 +64,10 @@ export default function ChatSettingsPanel() {
         <div className="flex flex-wrap gap-2">
           {TOOL_GROUPS.map(([group, names]) => (
             <div key={group} className="rounded-lg border border-bunker-700 bg-bunker-900 p-2">
-              <p className="font-mono text-[10px] text-bunker-muted mb-1">{group}</p>
+              <p className="font-mono text-2xs text-bunker-muted mb-1">{group}</p>
               <div className="flex flex-wrap gap-1">
                 {names.map(name => (
-                  <button key={name} onClick={() => toggle(name)} className={`rounded px-2 py-1 font-mono text-[10px] border ${activeTools.includes(name) ? "border-neon-green/50 bg-neon-green/10 text-neon-green" : "border-bunker-700 text-bunker-muted"}`}>{name}</button>
+                  <button key={name} onClick={() => toggle(name)} className={`rounded px-2 py-1 font-mono text-2xs border ${activeTools.includes(name) ? "border-neon-green/50 bg-neon-green/10 text-neon-green" : "border-bunker-700 text-bunker-muted"}`}>{name}</button>
                 ))}
               </div>
             </div>
@@ -79,7 +79,7 @@ export default function ChatSettingsPanel() {
         {enabledSkills.length ? (
           <div className="flex flex-wrap gap-2">
             {enabledSkills.map(s => (
-              <button key={s.id} onClick={() => toggleSkill(String(s.id))} className={`rounded px-2 py-1 font-mono text-[10px] border ${activeSkills.includes(String(s.id)) ? "border-sky-400/50 bg-sky-400/10 text-sky-300" : "border-bunker-700 text-bunker-muted"}`}>{s.name}</button>
+              <button key={s.id} onClick={() => toggleSkill(String(s.id))} className={`rounded px-2 py-1 font-mono text-2xs border ${activeSkills.includes(String(s.id)) ? "border-sky-400/50 bg-sky-400/10 text-sky-300" : "border-bunker-700 text-bunker-muted"}`}>{s.name}</button>
             ))}
           </div>
         ) : <p className="text-xs text-bunker-muted">Aktif skill yok; LLM / Provider sekmesinden ekleyebilirsin.</p>}
@@ -87,7 +87,7 @@ export default function ChatSettingsPanel() {
       <div>
         <p className="eyebrow mb-2">SES (EDGE TTS · Emel)</p>
         {ttsPersistent === false && (
-          <p role="status" className="mb-2 rounded-lg border border-yellow-400/40 bg-yellow-400/10 px-3 py-2 text-[11px] leading-snug text-yellow-300">
+          <p role="status" className="mb-2 rounded-lg border border-yellow-400/40 bg-yellow-400/10 px-3 py-2 text-2xs leading-snug text-yellow-300">
             ⚠ {TTS_PERSIST_WARNING}
           </p>
         )}

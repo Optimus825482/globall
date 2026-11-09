@@ -434,13 +434,13 @@ export default function MetaMobilePage() {
             </Link>
             <span className={`w-2 h-2 rounded-full ${account.is_connected ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" : "bg-rose-400"}`} />
             <div className="leading-tight">
-              <div className="text-[12px] font-bold text-slate-100 flex items-center gap-1.5">
+              <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
                 <span>{account.is_connected ? (account.server_name || "bağlı") : "bağlantı yok"}</span>
-                <span className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">
+                <span className="text-2xs px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">
                   {account.is_connected && account.leverage ? account.leverage : "—"}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-400 font-mono">
+              <div className="text-2xs text-slate-400 font-mono">
                 {account.is_connected && account.account_id ? `#${account.account_id}` : "veri yok"}
                 {account.is_connected && account.ping_ms ? ` · ${account.ping_ms} ms` : ""}
               </div>
@@ -453,7 +453,7 @@ export default function MetaMobilePage() {
               <button
                 type="button"
                 onClick={() => setQuotesMode((m) => (m === "ADVANCED" ? "SIMPLE" : "ADVANCED"))}
-                className="px-2 py-0.5 rounded text-[10px] font-bold bg-bunker-800 text-slate-300 border border-bunker-700 hover:text-white"
+                className="px-2 py-0.5 rounded text-2xs font-bold bg-bunker-800 text-slate-300 border border-bunker-700 hover:text-white"
               >
                 {quotesMode === "ADVANCED" ? "Gelişmiş" : "Basit"}
               </button>
@@ -476,7 +476,7 @@ export default function MetaMobilePage() {
         {/* 3. İÇERİK ALANI (TAB VIEW CONTENT) */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-bunker-950">
           {linkError && (
-            <div role="alert" className="px-3 py-2 bg-rose-950/80 border-b border-rose-500/40 text-rose-200 text-[11px] font-bold">
+            <div role="alert" className="px-3 py-2 bg-rose-950/80 border-b border-rose-500/40 text-rose-200 text-2xs font-bold">
               {linkError}
             </div>
           )}
@@ -487,7 +487,7 @@ export default function MetaMobilePage() {
           {activeTab === "QUOTES" && (
             <div className="divide-y divide-slate-800/60 pb-16">
               {/* Başlık Başlığı */}
-              <div className="p-2.5 bg-bunker-900 flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="p-2.5 bg-bunker-900 flex items-center justify-between text-2xs font-bold text-slate-400 uppercase tracking-wider">
                 <span>Sembol / Spread</span>
                 <div className="flex items-center gap-12 mr-2">
                   <span>Bid (Sat)</span>
@@ -517,28 +517,28 @@ export default function MetaMobilePage() {
                     {/* Sol Bilgiler: Sembol, Saat, Spread */}
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-[14px] text-white tracking-wide">
+                        <span className="font-bold text-sm text-white tracking-wide">
                           {q.symbol}
                         </span>
                         {q.category === "commodity" && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 font-bold">
+                          <span className="text-2xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 font-bold">
                             EMTİA
                           </span>
                         )}
                         {q.category === "crypto" && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/15 text-indigo-400 font-bold">
+                          <span className="text-2xs px-1 py-0.2 rounded bg-indigo-500/15 text-indigo-400 font-bold">
                             KRİPTO
                           </span>
                         )}
                       </div>
 
-                      <div className="text-[10px] text-slate-400 flex items-center gap-2 font-mono">
+                      <div className="text-2xs text-slate-400 flex items-center gap-2 font-mono">
                         <span>{q.time}</span>
                         <span>Spread: {q.spread_pips.toFixed(1)}</span>
                       </div>
 
                       {quotesMode === "ADVANCED" && (
-                        <div className="text-[9px] text-slate-400 flex items-center gap-2 font-mono pt-0.5">
+                        <div className="text-2xs text-slate-400 flex items-center gap-2 font-mono pt-0.5">
                           <span>D: {formatPrice(q.low, q.symbol)}</span>
                           <span>Y: {formatPrice(q.high, q.symbol)}</span>
                         </div>
@@ -559,7 +559,7 @@ export default function MetaMobilePage() {
                       >
                         <span className="text-xs text-slate-400">{bidSplit.main}</span>
                         <span className="text-lg font-black">{bidSplit.big}</span>
-                        <span className="text-[10px] align-super font-bold">{bidSplit.sub}</span>
+                        <span className="text-2xs align-super font-bold">{bidSplit.sub}</span>
                       </div>
 
                       {/* ASK KUTUSU */}
@@ -574,7 +574,7 @@ export default function MetaMobilePage() {
                       >
                         <span className="text-xs text-slate-400">{askSplit.main}</span>
                         <span className="text-lg font-black">{askSplit.big}</span>
-                        <span className="text-[10px] align-super font-bold">{askSplit.sub}</span>
+                        <span className="text-2xs align-super font-bold">{askSplit.sub}</span>
                       </div>
                     </div>
                   </div>
@@ -608,7 +608,7 @@ export default function MetaMobilePage() {
                   </select>
 
                   {/* Zaman Dilimleri (MT5 mobil periyotları) */}
-                  <div className="flex items-center gap-0.5 font-mono text-[10px] overflow-x-auto">
+                  <div className="flex items-center gap-0.5 font-mono text-2xs overflow-x-auto">
                     {Object.keys(METAMOBIL_TF).map((tf) => (
                       <button
                         key={tf}
@@ -632,7 +632,7 @@ export default function MetaMobilePage() {
                     setNewOrderSymbol(selectedSymbol);
                     setNewOrderModalOpen(true);
                   }}
-                  className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px]"
+                  className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-2xs"
                 >
                   ⚡ İşlem
                 </button>
@@ -646,13 +646,13 @@ export default function MetaMobilePage() {
                   onClick={() => handleExecuteOrder("SELL")}
                   className="py-1.5 px-2 rounded bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-300 font-bold flex flex-col items-center justify-center transition-transform active:scale-95"
                 >
-                  <span className="text-[10px] font-black uppercase tracking-wider text-rose-400">SELL</span>
+                  <span className="text-2xs font-black uppercase tracking-wider text-rose-400">SELL</span>
                   <span className="font-mono text-xs">{formatPrice(activeQuote.bid, activeQuote.symbol)}</span>
                 </button>
 
                 {/* Lot Seçici */}
                 <div className="flex flex-col items-center justify-center bg-bunker-950 rounded border border-bunker-800 py-1">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase">HIZLI LOT</span>
+                  <span className="text-2xs text-slate-400 font-bold uppercase">HIZLI LOT</span>
                   <div className="flex items-center gap-1 font-mono font-bold text-white text-xs">
                     <button
                       type="button"
@@ -678,7 +678,7 @@ export default function MetaMobilePage() {
                   onClick={() => handleExecuteOrder("BUY")}
                   className="py-1.5 px-2 rounded bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold flex flex-col items-center justify-center transition-transform active:scale-95"
                 >
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">BUY</span>
+                  <span className="text-2xs font-black uppercase tracking-wider text-emerald-400">BUY</span>
                   <span className="font-mono text-xs">{formatPrice(activeQuote.ask, activeQuote.symbol)}</span>
                 </button>
               </div>
@@ -741,9 +741,9 @@ export default function MetaMobilePage() {
               </div>
 
               {/* Pozisyonlar Bölüm Başlığı */}
-              <div className="p-2.5 bg-bunker-950 flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="p-2.5 bg-bunker-950 flex items-center justify-between text-2xs font-bold text-slate-400 uppercase tracking-wider">
                 <span>Pozisyonlar ({openPositions.length})</span>
-                <span className="text-[10px] text-blue-400 font-sans font-semibold">Tıklayarak Yönet</span>
+                <span className="text-2xs text-blue-400 font-sans font-semibold">Tıklayarak Yönet</span>
               </div>
 
               {/* Açık Pozisyon Listesi */}
@@ -779,7 +779,7 @@ export default function MetaMobilePage() {
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm text-white">{pos.symbol}</span>
                           <span
-                            className={`text-[10px] font-black uppercase px-1.5 py-0.2 rounded ${
+                            className={`text-2xs font-black uppercase px-1.5 py-0.2 rounded ${
                               isBuy
                                 ? "bg-blue-500/20 text-blue-400"
                                 : "bg-rose-500/20 text-rose-400"
@@ -789,13 +789,13 @@ export default function MetaMobilePage() {
                           </span>
                         </div>
 
-                        <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
+                        <div className="text-2xs font-mono text-slate-400 flex items-center gap-1.5">
                           <span>{formatPrice(pos.entry_price, pos.symbol)}</span>
                           <span>→</span>
                           <span className="text-white font-bold">{formatPrice(pos.current_price, pos.symbol)}</span>
                         </div>
 
-                        <div className="text-[10px] font-mono text-slate-500 flex items-center gap-2">
+                        <div className="text-2xs font-mono text-slate-500 flex items-center gap-2">
                           {pos.sl_price && <span>SL: {formatPrice(pos.sl_price, pos.symbol)}</span>}
                           {pos.tp_price && <span>TP: {formatPrice(pos.tp_price, pos.symbol)}</span>}
                         </div>
@@ -810,7 +810,7 @@ export default function MetaMobilePage() {
                         >
                           {isProfit ? "+" : ""}${Number(pos.pnl_usd).toFixed(2)}
                         </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
+                        <div className="text-2xs text-slate-400 font-mono">
                           {pos.pnl_pips >= 0 ? "+" : ""}{pos.pnl_pips.toFixed(1)} pip
                         </div>
                       </div>
@@ -847,7 +847,7 @@ export default function MetaMobilePage() {
               {/* MT5 Geçmiş Özet Şeridi */}
               <div className="p-3 bg-bunker-800 grid grid-cols-2 gap-2 text-xs font-mono">
                 <div>
-                  <span className="text-slate-400 block text-[10px]">KÂR / ZARAR:</span>
+                  <span className="text-slate-400 block text-2xs">KÂR / ZARAR:</span>
                   <span
                     className={`font-black text-sm ${
                       historyProfitTotal >= 0 ? "text-emerald-400" : "text-rose-400"
@@ -857,7 +857,7 @@ export default function MetaMobilePage() {
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="text-slate-400 block text-[10px]">DEPOZİTO:</span>
+                  <span className="text-slate-400 block text-2xs">DEPOZİTO:</span>
                   <span className="font-bold text-white">$10,000.00</span>
                 </div>
               </div>
@@ -879,17 +879,17 @@ export default function MetaMobilePage() {
                         <div className="flex items-center gap-1.5">
                           <span className="font-bold text-white">{t.symbol}</span>
                           <span
-                            className={`text-[10px] font-bold ${
+                            className={`text-2xs font-bold ${
                               t.direction === "BUY" ? "text-blue-400" : "text-rose-400"
                             }`}
                           >
                             {t.direction.toLowerCase()} {t.lots.toFixed(2)}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
+                        <div className="text-2xs text-slate-400 font-mono">
                           {formatPrice(t.entry_price, t.symbol)} → {formatPrice(t.exit_price || t.close_price, t.symbol)}
                         </div>
-                        <div className="text-[9px] text-slate-400 font-mono">
+                        <div className="text-2xs text-slate-400 font-mono">
                           {t.close_time || t.exit_time || "—"}
                         </div>
                       </div>
@@ -902,7 +902,7 @@ export default function MetaMobilePage() {
                         >
                           {isProfit ? "+" : ""}${Number(t.pnl_usd).toFixed(2)}
                         </span>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-2xs text-slate-400">
                           {t.pnl_pips >= 0 ? "+" : ""}{Number(t.pnl_pips).toFixed(1)} pip
                         </div>
                       </div>
@@ -922,25 +922,25 @@ export default function MetaMobilePage() {
               <div className="p-3.5 rounded-xl bg-bunker-900 border border-bunker-800 space-y-2">
                 <div className="flex items-center justify-between pb-2 border-b border-bunker-800">
                   <div className="font-bold text-white text-sm">Hesap Bilgileri</div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${account.is_connected ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-300"}`}>
+                  <span className={`px-2 py-0.5 rounded text-2xs font-bold ${account.is_connected ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-300"}`}>
                     {account.is_connected ? "BAĞLI" : "BAĞLANTI YOK"}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-slate-300 font-mono">
                   <div>
-                    <span className="text-slate-400 block text-[10px]">HESAP NO</span>
+                    <span className="text-slate-400 block text-2xs">HESAP NO</span>
                     {account.is_connected && account.account_id ? `#${account.account_id}` : "—"}
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px]">SUNUCU</span>
+                    <span className="text-slate-400 block text-2xs">SUNUCU</span>
                     {account.is_connected ? (account.server_name || "—") : "bağlantı yok"}
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px]">KALDIRAÇ</span>
+                    <span className="text-slate-400 block text-2xs">KALDIRAÇ</span>
                     {account.is_connected && account.leverage ? account.leverage : "—"}
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px]">GECİKME (PING)</span>
+                    <span className="text-slate-400 block text-2xs">GECİKME (PING)</span>
                     {account.is_connected ? `${account.ping_ms} ms` : "—"}
                   </div>
                 </div>
@@ -949,7 +949,7 @@ export default function MetaMobilePage() {
               {/* Otonom Bot Durumu */}
               <div className="p-3.5 rounded-xl bg-bunker-900 border border-bunker-800 space-y-2">
                 <div className="font-bold text-white text-sm">Otonom Bot Entegrasyonu</div>
-                <p className="text-slate-400 text-[11px]">
+                <p className="text-slate-400 text-2xs">
                   MetaMobil arayüzü doğrudan canlı otonom motor ve MT5 köprüsü ile eşzamanlı çalışır. Açılan işlemler otonom motora aktarılır.
                 </p>
                 <div className="pt-2">
@@ -1001,7 +1001,7 @@ export default function MetaMobilePage() {
             }`}
           >
             <span className="text-lg">📊</span>
-            <span className="text-[10px] font-bold mt-0.5">Kotasyonlar</span>
+            <span className="text-2xs font-bold mt-0.5">Kotasyonlar</span>
           </button>
 
           {/* TAB 2: GRAFİK */}
@@ -1016,7 +1016,7 @@ export default function MetaMobilePage() {
             }`}
           >
             <span className="text-lg">📈</span>
-            <span className="text-[10px] font-bold mt-0.5">Grafik</span>
+            <span className="text-2xs font-bold mt-0.5">Grafik</span>
           </button>
 
           {/* TAB 3: TİCARET */}
@@ -1031,7 +1031,7 @@ export default function MetaMobilePage() {
             }`}
           >
             <span className="text-lg">💼</span>
-            <span className="text-[10px] font-bold mt-0.5">Ticaret</span>
+            <span className="text-2xs font-bold mt-0.5">Ticaret</span>
           </button>
 
           {/* TAB 4: GEÇMİŞ */}
@@ -1046,7 +1046,7 @@ export default function MetaMobilePage() {
             }`}
           >
             <span className="text-lg">📜</span>
-            <span className="text-[10px] font-bold mt-0.5">Geçmiş</span>
+            <span className="text-2xs font-bold mt-0.5">Geçmiş</span>
           </button>
 
           {/* TAB 5: AYARLAR */}
@@ -1061,7 +1061,7 @@ export default function MetaMobilePage() {
             }`}
           >
             <span className="text-lg">⚙️</span>
-            <span className="text-[10px] font-bold mt-0.5">Ayarlar</span>
+            <span className="text-2xs font-bold mt-0.5">Ayarlar</span>
           </button>
         </nav>
 
@@ -1135,11 +1135,11 @@ export default function MetaMobilePage() {
                 <div>
                   <div className="font-bold text-base text-white flex items-center gap-2">
                     <span>{newOrderSymbol}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">
+                    <span className="text-2xs px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">
                       Piyasa İcrası
                     </span>
                   </div>
-                  <div className="text-[10px] text-slate-400">Piyasa Fiyatından Anında Emir</div>
+                  <div className="text-2xs text-slate-400">Piyasa Fiyatından Anında Emir</div>
                 </div>
                 <button
                   type="button"
@@ -1152,7 +1152,7 @@ export default function MetaMobilePage() {
 
               {/* Lot Seçim Çubuğu */}
               <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">İşlem Hacmi (Lot)</span>
+                <span className="text-2xs font-bold text-slate-400 uppercase">İşlem Hacmi (Lot)</span>
                 <div className="flex items-center justify-between bg-bunker-950 rounded-xl p-1.5 border border-bunker-800">
                   <button
                     type="button"
@@ -1191,13 +1191,13 @@ export default function MetaMobilePage() {
               {/* Büyük Çift Fiyat Göstergesi */}
               <div className="grid grid-cols-2 gap-2 text-center py-1">
                 <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
-                  <span className="text-[10px] font-bold text-rose-400 block uppercase">BID (SELL)</span>
+                  <span className="text-2xs font-bold text-rose-400 block uppercase">BID (SELL)</span>
                   <span className="text-xl font-black font-mono text-rose-300">
                     {formatPrice(orderQuote.bid, orderQuote.symbol)}
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-                  <span className="text-[10px] font-bold text-emerald-400 block uppercase">ASK (BUY)</span>
+                  <span className="text-2xs font-bold text-emerald-400 block uppercase">ASK (BUY)</span>
                   <span className="text-xl font-black font-mono text-emerald-300">
                     {formatPrice(orderQuote.ask, orderQuote.symbol)}
                   </span>
@@ -1207,7 +1207,7 @@ export default function MetaMobilePage() {
               {/* SL ve TP Alanları */}
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-rose-400 block">ZARAR DURDUR (SL)</span>
+                  <span className="text-2xs font-bold text-rose-400 block">ZARAR DURDUR (SL)</span>
                   <input
                     type="number"
                     step="any"
@@ -1218,7 +1218,7 @@ export default function MetaMobilePage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-emerald-400 block">KÂR AL (TP)</span>
+                  <span className="text-2xs font-bold text-emerald-400 block">KÂR AL (TP)</span>
                   <input
                     type="number"
                     step="any"
@@ -1245,7 +1245,7 @@ export default function MetaMobilePage() {
                   className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm flex flex-col items-center justify-center shadow-lg shadow-rose-600/30 transition-transform active:scale-95"
                 >
                   <span>SELL</span>
-                  <span className="text-[10px] font-mono opacity-80">PİYASA FİYATINDAN</span>
+                  <span className="text-2xs font-mono opacity-80">PİYASA FİYATINDAN</span>
                 </button>
 
                 <button
@@ -1254,7 +1254,7 @@ export default function MetaMobilePage() {
                   className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm flex flex-col items-center justify-center shadow-lg shadow-blue-600/30 transition-transform active:scale-95"
                 >
                   <span>BUY</span>
-                  <span className="text-[10px] font-mono opacity-80">PİYASA FİYATINDAN</span>
+                  <span className="text-2xs font-mono opacity-80">PİYASA FİYATINDAN</span>
                 </button>
               </div>
             </div>

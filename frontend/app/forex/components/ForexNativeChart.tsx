@@ -723,7 +723,7 @@ export default function ForexNativeChart({
       layout: {
         background: { color: "#080c14" },
         textColor: "#94a3b8",
-        fontFamily: "'JetBrains Mono', monospace, ui-monospace, sans-serif",
+        fontFamily: "var(--font-mono, ui-monospace), monospace",
       },
       grid: {
         vertLines: { color: "rgba(30, 41, 59, 0.45)" },
@@ -905,22 +905,22 @@ export default function ForexNativeChart({
               {displayName || symbol}
             </span>
             {category && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-bunker-800 text-bunker-400 border border-bunker-700">
+              <span className="px-1.5 py-0.5 rounded text-2xs font-bold uppercase bg-bunker-800 text-bunker-muted border border-bunker-700">
                 {category}
               </span>
             )}
             {tier === "STRONG" && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 animate-pulse">
+              <span className="px-2 py-0.5 rounded text-2xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 animate-pulse">
                 ⚡ GÜÇLÜ SİNYAL
               </span>
             )}
             {action === "BUY" && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <span className="px-2 py-0.5 rounded text-2xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 ▲ BUY
               </span>
             )}
             {action === "SELL" && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+              <span className="px-2 py-0.5 rounded text-2xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
                 ▼ SELL
               </span>
             )}
@@ -939,12 +939,12 @@ export default function ForexNativeChart({
             </span>
             )}
             {liveBid != null && liveAsk != null && (
-              <span className="text-[11px] text-bunker-muted hidden md:inline">
+              <span className="text-2xs text-bunker-muted hidden md:inline">
                 ({formatPriceBySymbol(liveBid, symbol)} / {formatPriceBySymbol(liveAsk, symbol)})
               </span>
             )}
             {liveSpread != null && (
-              <span className="text-[11px] text-cyan-400 font-bold border-l border-bunker-800 pl-2">
+              <span className="text-2xs text-cyan-400 font-bold border-l border-bunker-800 pl-2">
                 {liveSpread}p
               </span>
             )}
@@ -966,7 +966,7 @@ export default function ForexNativeChart({
             <Link
               href={separatePageHref}
               target="_blank"
-              className="px-2.5 py-1 rounded-lg bg-bunker-800 border border-bunker-700 text-bunker-300 text-xs font-bold hover:text-white hover:border-bunker-600 transition-all hidden sm:inline-flex items-center gap-1"
+              className="px-2.5 py-1 rounded-lg bg-bunker-800 border border-bunker-700 text-bunker-muted text-xs font-bold hover:text-white hover:border-bunker-600 transition-all hidden sm:inline-flex items-center gap-1"
               title="Ayrı Sayfada Aç"
             >
               <span>Ayrı Sayfa</span>
@@ -977,7 +977,7 @@ export default function ForexNativeChart({
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-bunker-800 text-bunker-300 hover:text-white hover:bg-rose-900/60 transition-colors flex items-center justify-center font-bold text-base"
+              className="w-8 h-8 rounded-lg bg-bunker-800 text-bunker-muted hover:text-white hover:bg-rose-900/60 transition-colors flex items-center justify-center font-bold text-base"
               title="Kapat"
             >
               ✕
@@ -991,7 +991,7 @@ export default function ForexNativeChart({
       <div className="px-3 py-1.5 bg-bunker-950/90 border-b border-bunker-800/80 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
         <div className="flex items-center gap-1">
           {/* Kompakt modda periyot seçici gizli: MetaMobil araç çubuğunda zaten var. */}
-          {!compact && <span className="text-[10px] text-bunker-muted mr-1">Periyot:</span>}
+          {!compact && <span className="text-2xs text-bunker-muted mr-1">Periyot:</span>}
           {!compact && (["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"] as Timeframe[]).map((tf) => (
             <button
               key={tf}
@@ -1018,7 +1018,7 @@ export default function ForexNativeChart({
                 const entry = findIndicatorEntry(inst.registryId);
                 if (entry) setEditTarget({ entry, editUid: inst.uid });
               }}
-              className={`group shrink-0 px-2 py-0.5 rounded text-[11px] font-bold border transition-all whitespace-nowrap ${
+              className={`group shrink-0 px-2 py-0.5 rounded text-2xs font-bold border transition-all whitespace-nowrap ${
                 inst.overlay
                   ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/40"
                   : "bg-emerald-500/15 text-emerald-300 border-emerald-400/40"
@@ -1040,7 +1040,7 @@ export default function ForexNativeChart({
           <button
             type="button"
             onClick={() => setPicking(true)}
-            className="shrink-0 px-2.5 py-0.5 rounded text-[11px] font-bold border border-emerald-400/50 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-all whitespace-nowrap"
+            className="shrink-0 px-2.5 py-0.5 rounded text-2xs font-bold border border-emerald-400/50 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-all whitespace-nowrap"
             title="MT5 tarzı indikatör ekle (arama + kategori + ayarlar)"
           >
             ＋ İndikatör
@@ -1048,7 +1048,7 @@ export default function ForexNativeChart({
           <button
             type="button"
             onClick={() => setVolumeVisible((v) => !v)}
-            className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-bold border transition-all whitespace-nowrap ${
+            className={`shrink-0 px-2 py-0.5 rounded text-2xs font-bold border transition-all whitespace-nowrap ${
               volumeVisible
                 ? "bg-amber-500/20 text-amber-300 border-amber-400/50"
                 : "bg-bunker-900 text-bunker-muted border-bunker-800 opacity-60"
@@ -1086,7 +1086,7 @@ export default function ForexNativeChart({
                 Chand(9):{" "}
                 <strong className={latestChandelier.dir === 1 ? "text-emerald-400" : "text-rose-400"}>
                   {formatPriceBySymbol(latestChandelier.stop, symbol)}{" "}
-                  <span className="text-[10px]">{latestChandelier.dir === 1 ? "▲" : "▼"}</span>
+                  <span className="text-2xs">{latestChandelier.dir === 1 ? "▲" : "▼"}</span>
                 </strong>
               </span>
             )}
@@ -1104,7 +1104,7 @@ export default function ForexNativeChart({
           </div>
           <div className="flex items-center gap-1.5 bg-bunker-900 px-2 py-0.5 rounded border border-bunker-800">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-[10px] text-bunker-muted">Kapanış:</span>
+            <span className="text-2xs text-bunker-muted">Kapanış:</span>
             <span className="font-bold text-white tabular-nums">
               {formatCountdown(countdown)}
             </span>
@@ -1113,7 +1113,7 @@ export default function ForexNativeChart({
       </div>
 
       {/* İNDİKATÖR CANLI LEJANTI — ekli indikatörlerin son değerleri */}
-      <div className="px-3 py-1 bg-bunker-950/95 border-b border-bunker-900 text-[11px] flex flex-wrap items-center gap-x-4 gap-y-0.5 text-bunker-muted shrink-0">
+      <div className="px-3 py-1 bg-bunker-950/95 border-b border-bunker-900 text-2xs flex flex-wrap items-center gap-x-4 gap-y-0.5 text-bunker-muted shrink-0">
         {indicators.map((inst) => {
           const live = liveValues.find((v) => v.uid === inst.uid);
           if (!live) return null;
@@ -1212,7 +1212,7 @@ export default function ForexNativeChart({
             )}
           </div>
           {macdVerdict && (
-            <div className="text-[11px] text-bunker-muted">
+            <div className="text-2xs text-bunker-muted">
               {macdVerdict}
             </div>
           )}

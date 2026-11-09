@@ -41,9 +41,9 @@ const fmtTime = (ts: number) => new Date(ts * 1000).toLocaleString("tr-TR", { da
 function Kpi({ label, value, sub, tone = "text-white" }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: string }) {
   return (
     <div className="rounded-xl border border-bunker-800 bg-bunker-950/60 p-3">
-      <p className="text-[10px] uppercase tracking-wider text-bunker-muted font-mono">{label}</p>
+      <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">{label}</p>
       <p className={`mt-1 text-xl font-black font-mono tabular-nums ${tone}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] text-bunker-muted">{sub}</p>}
+      {sub && <p className="mt-0.5 text-2xs text-bunker-muted">{sub}</p>}
     </div>
   );
 }
@@ -110,7 +110,7 @@ export default function PortfolioRiskReport() {
   const dd = snap?.drawdown;
   const ddTone = !dd ? "text-white" : dd.kill ? "text-rose-400" : dd.level > 0 ? "text-amber-300" : "text-emerald-400";
   const card = "rounded-xl border border-bunker-800 bg-bunker-950/60 p-3";
-  const th = "px-3 py-2 text-left font-medium text-[10px] uppercase tracking-wider text-bunker-muted";
+  const th = "px-3 py-2 text-left font-medium text-2xs uppercase tracking-wider text-bunker-muted";
 
   return (
     <section className="space-y-4" aria-label="Portföy ve risk raporu">
@@ -155,12 +155,12 @@ export default function PortfolioRiskReport() {
                   ))}
                 </ul>
               )}
-              <p className="mt-2 text-[11px] text-bunker-muted">
+              <p className="mt-2 text-2xs text-bunker-muted">
                 Net USD riski {pct(snap.heat.usd_net_risk_pct)} (limit {pct(snap.gate.limits.usd_net_limit_pct, 0)}).
                 {snap.exposure.missing_prices.length > 0 && ` Fiyatı eksik: ${snap.exposure.missing_prices.join(", ")}.`}
               </p>
               {snap.heat.no_sl_tickets.length > 0 && (
-                <p className="mt-1 text-[11px] text-rose-300">{snap.heat.no_sl_tickets.length} pozisyonda stop yok: sınırsız risk.</p>
+                <p className="mt-1 text-2xs text-rose-300">{snap.heat.no_sl_tickets.length} pozisyonda stop yok: sınırsız risk.</p>
               )}
             </div>
             <div className={card}>
@@ -175,13 +175,13 @@ export default function PortfolioRiskReport() {
                 </p>
               )}
               {gate && Object.keys(gate.summary.by_reason).length > 0 && (
-                <ul className="mt-2 flex flex-wrap gap-2 font-mono text-[11px]">
+                <ul className="mt-2 flex flex-wrap gap-2 font-mono text-2xs">
                   {Object.entries(gate.summary.by_reason).map(([k, v]) => (
                     <li key={k} className="rounded border border-bunker-700 px-2 py-0.5 text-bunker-muted">{k}: <span className="text-white">{v}</span></li>
                   ))}
                 </ul>
               )}
-              <p className="mt-2 text-[11px] text-bunker-muted">
+              <p className="mt-2 text-2xs text-bunker-muted">
                 Limitler: ısı {pct(snap.gate.limits.heat_limit_pct, 0)} · günlük −{pct(snap.gate.limits.daily_loss_pct, 0)} · haftalık −{pct(snap.gate.limits.weekly_loss_pct, 0)} · kill {pct(snap.gate.limits.kill_dd_pct, 0)} ·
                 maliyet ≤ {snap.gate.limits.cost_r_max}R
               </p>
@@ -205,7 +205,7 @@ export default function PortfolioRiskReport() {
                   ))}
                 </tbody>
               </table>
-              <p className="p-3 text-[11px] text-bunker-muted">Şok büyüklükleri ve eşikler (−%5 özsermaye, marj %300) tasarım örneğidir; brokerınızın stop-out seviyesini doğrulayın.</p>
+              <p className="p-3 text-2xs text-bunker-muted">Şok büyüklükleri ve eşikler (−%5 özsermaye, marj %300) tasarım örneğidir; brokerınızın stop-out seviyesini doğrulayın.</p>
             </div>
           )}
 
@@ -234,7 +234,7 @@ export default function PortfolioRiskReport() {
                     {enb.n} pozisyon ≈ <b>{enb.enb}</b> bağımsız bahis · ort. işaretli korelasyon {enb.avg_signed_corr ?? "—"}
                     {enb.warning ? " · UYARI: pozisyonlar fiilen tek tema gibi davranıyor" : ""}
                   </p>
-                  {enb.clusters.length > 0 && <p className="mt-1 font-mono text-[11px] text-bunker-muted">Kümeler (ρ &gt; 0,7): {enb.clusters.map((c) => c.join(" + ")).join(" · ")}</p>}
+                  {enb.clusters.length > 0 && <p className="mt-1 font-mono text-2xs text-bunker-muted">Kümeler (ρ &gt; 0,7): {enb.clusters.map((c) => c.join(" + ")).join(" · ")}</p>}
                 </>
               )}
             </div>
@@ -264,7 +264,7 @@ export default function PortfolioRiskReport() {
                   </table>
                 </div>
               )}
-              <p className="mt-1 text-[11px] text-bunker-muted">{cells.note ?? "Çoklu dilimleme sahte keşif üretir; alt sınır havuz oranını aşmayan hücre kanıtlı sayılmaz."}</p>
+              <p className="mt-1 text-2xs text-bunker-muted">{cells.note ?? "Çoklu dilimleme sahte keşif üretir; alt sınır havuz oranını aşmayan hücre kanıtlı sayılmaz."}</p>
             </div>
           )}
 
@@ -278,7 +278,7 @@ export default function PortfolioRiskReport() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-[11px] text-bunker-muted">{alloc.note}</p>
+              <p className="mt-1 text-2xs text-bunker-muted">{alloc.note}</p>
             </div>
           )}
 
@@ -321,7 +321,7 @@ export default function PortfolioRiskReport() {
             ) : (
               <p className="text-xs text-bunker-muted">Henüz kapanmış, örneklenmiş pozisyon yok. Gözetim açık pozisyonları 30 sn&apos;de bir örnekler.</p>
             )}
-            {exc && <p className="mt-1 text-[11px] text-bunker-muted">{exc.hint}</p>}
+            {exc && <p className="mt-1 text-2xs text-bunker-muted">{exc.hint}</p>}
             {proposals && (
               <div className="mt-3 space-y-1 rounded-lg border border-bunker-800 bg-black/20 p-3 text-xs">
                 <p className="font-bold text-cyan-200">LLM önerileri (UYGULANMAZ)</p>
@@ -347,7 +347,7 @@ export default function PortfolioRiskReport() {
                     <span className="font-mono text-bunker-muted">{fmtTime(e.ts)}</span>
                     <span className="font-mono text-white">{e.symbol} #{e.ticket}</span>
                     <span className="col-span-2 text-slate-300 sm:col-span-1"><b>{KIND_TR[e.kind] ?? e.kind}:</b> {e.detail}</span>
-                    <span className="col-span-2 text-right font-mono text-[11px] text-bunker-muted sm:col-span-1">{e.action} · {MODE_TR[e.mode] ?? e.mode}</span>
+                    <span className="col-span-2 text-right font-mono text-2xs text-bunker-muted sm:col-span-1">{e.action} · {MODE_TR[e.mode] ?? e.mode}</span>
                   </li>
                 ))}
               </ul>

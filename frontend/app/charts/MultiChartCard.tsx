@@ -345,7 +345,7 @@ function CardCandleCountdown({ intervalMs }: { intervalMs: number }) {
         return () => clearInterval(t);
     }, [intervalMs]);
     const m = Math.floor(rem / 60000), s = Math.floor((rem % 60000) / 1000);
-    return <span className="font-mono text-[11px] text-neon-green/90 font-semibold tabular-nums" title="Mum Kapanış Sayacı">⏱ {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}</span>;
+    return <span className="font-mono text-2xs text-neon-green/90 font-semibold tabular-nums" title="Mum Kapanış Sayacı">⏱ {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}</span>;
 }
 
 // ─── Indicator Groups for UI ──────────────────────────────────────────────────
@@ -830,16 +830,16 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                 <div className="flex items-center gap-2 flex-wrap min-w-0 max-w-full">
                     {/* Sıra numarası: çok grafikte 1'den başlar (slot id'si değil,
                         GÖRÜNEN sıra — 2 grafik seçilince 1·2, 4 grafikte 1·2·3·4). */}
-                    <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-neon-green/15 text-neon-green border border-neon-green/30 shrink-0">{ordinal}</span>
+                    <span className="font-mono text-2xs font-bold px-1.5 py-0.5 rounded bg-neon-green/15 text-neon-green border border-neon-green/30 shrink-0">{ordinal}</span>
                     <div className="relative">
                         <button type="button" onClick={() => { setSymbolSearchOpen(v => !v); setIndicatorMenuOpen(false); }}
                             className="flex items-center gap-1 px-2 py-1 rounded-md bg-bunker-800/80 hover:bg-bunker-700/80 border border-bunker-700 text-white font-mono font-bold text-xs transition-colors">
-                            {config.symbol} <span className="text-[9px] text-bunker-muted">▼</span>
+                            {config.symbol} <span className="text-2xs text-bunker-muted">▼</span>
                         </button>
                         {symbolSearchOpen && (
                             <div className="absolute left-0 top-full mt-1.5 z-50 w-64 bg-bunker-900 border border-bunker-700 rounded-xl shadow-2xl p-2.5">
                                 <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-bunker-800">
-                                    <span className="font-mono text-[11px] font-bold text-white">Sembol Seç ({availableSymbols.length})</span>
+                                    <span className="font-mono text-2xs font-bold text-white">Sembol Seç ({availableSymbols.length})</span>
                                     <button type="button" onClick={() => setSymbolSearchOpen(false)} className="text-bunker-muted hover:text-white text-xs">✕</button>
                                 </div>
                                 <input
@@ -858,13 +858,13 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                         }
                                     }}
                                     placeholder="Ara (örn. SAGA)..."
-                                    className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-xs text-white placeholder-bunker-500 focus:border-neon-green/50 outline-none mb-2"
+                                    className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-xs text-white placeholder-bunker-600 focus:border-neon-green/50 outline-none mb-2"
                                 />
                                 {searchFilter.trim() && (
                                     <button
                                         type="button"
                                         onClick={() => handleSelectSymbol(searchFilter)}
-                                        className="w-full text-left px-2 py-1 mb-2 rounded text-[11px] font-mono bg-neon-green/15 text-neon-green hover:bg-neon-green/25 font-bold border border-neon-green/30 transition-colors"
+                                        className="w-full text-left px-2 py-1 mb-2 rounded text-2xs font-mono bg-neon-green/15 text-neon-green hover:bg-neon-green/25 font-bold border border-neon-green/30 transition-colors"
                                     >
                                         ⚡ {resolveSymbol(searchFilter) || searchFilter.trim().toUpperCase()} Aç
                                     </button>
@@ -873,7 +873,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                 <div className="flex flex-wrap gap-1 mb-2">
                                     {["BTCTRY","ETHTRY","SOLTRY","AVAXTRY","PEPETRY","XRPTRY"].map(s => (
                                         <button key={s} type="button" onClick={() => handleSelectSymbol(s)}
-                                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${config.symbol === s ? "bg-neon-green/20 border-neon-green/50 text-neon-green font-bold" : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white"}`}>
+                                            className={`px-1.5 py-0.5 rounded text-2xs font-mono border transition-colors ${config.symbol === s ? "bg-neon-green/20 border-neon-green/50 text-neon-green font-bold" : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white"}`}>
                                             {s.replace("TRY","")}
                                         </button>
                                     ))}
@@ -886,7 +886,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                             <span>{s}</span>{config.symbol === s && <span>✓</span>}
                                         </button>
                                     ))}
-                                    {!filteredSymbols.length && <p className="text-center text-[11px] text-bunker-muted py-3 font-mono">Sonuç bulunamadı</p>}
+                                    {!filteredSymbols.length && <p className="text-center text-2xs text-bunker-muted py-3 font-mono">Sonuç bulunamadı</p>}
                                 </div>
                             </div>
                         )}
@@ -894,15 +894,15 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                     {priceData && (
                         <div className="flex items-center gap-1.5 font-mono">
                             <span className="text-white font-bold text-xs">{forexMode ? "" : "₺"}{formatPrice(priceData.last)}</span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${priceData.changePct >= 0 ? "bg-neon-green/15 text-neon-green border border-neon-green/30" : "bg-neon-red/15 text-neon-red border border-neon-red/30"}`}>
+                            <span className={`text-2xs font-bold px-1.5 py-0.5 rounded ${priceData.changePct >= 0 ? "bg-neon-green/15 text-neon-green border border-neon-green/30" : "bg-neon-red/15 text-neon-red border border-neon-red/30"}`}>
                                 {priceData.changePct >= 0 ? "+" : ""}{priceData.changePct.toFixed(2)}%
                             </span>
                                                         {/* RSI-14 / ADX-14 (KULLANICI İSTEĞİ 2026-10-14: her zaman görünür; 2026-10-30: grafik üstündeki şerit yerine fiyatın yanında) */}
                             {momentum?.rsi14 != null && (
-                                <span className="text-[10px] text-bunker-muted whitespace-nowrap">RSI <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>
+                                <span className="text-2xs text-bunker-muted whitespace-nowrap">RSI <strong className={momentum.rsi14 >= 50 ? "text-neon-green" : "text-neon-red"}>{momentum.rsi14.toFixed(1)}</strong></span>
                             )}
                             {momentum?.adx14 != null && (
-                                <span className="text-[10px] text-bunker-muted whitespace-nowrap">ADX <strong className={momentum.adx14 >= 25 ? "text-neon-green" : momentum.adx14 >= 20 ? "text-yellow-300" : "text-bunker-muted"}>{momentum.adx14.toFixed(1)}</strong></span>
+                                <span className="text-2xs text-bunker-muted whitespace-nowrap">ADX <strong className={momentum.adx14 >= 25 ? "text-neon-green" : momentum.adx14 >= 20 ? "text-yellow-300" : "text-bunker-muted"}>{momentum.adx14.toFixed(1)}</strong></span>
                             )}
                         </div>
                     )}
@@ -912,7 +912,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                 <div className="flex items-center gap-0.5 bg-bunker-950/80 p-0.5 rounded-lg border border-bunker-800 max-w-full overflow-x-auto order-last sm:order-none w-full sm:w-auto [scrollbar-width:none]">
                     {INTERVALS.map(int => (
                         <button key={int.v} type="button" onClick={() => onUpdateConfig({ interval: int.v })}
-                            className={`px-2 sm:px-1.5 py-1 sm:py-0.5 rounded text-[11px] sm:text-[10px] font-mono font-medium transition-colors shrink-0 flex-1 sm:flex-none ${config.interval === int.v ? "bg-neon-green text-bunker-950 font-bold" : "text-bunker-muted hover:text-white hover:bg-bunker-800/60"}`}>
+                            className={`px-2 sm:px-1.5 py-1 sm:py-0.5 rounded text-2xs sm:text-2xs font-mono font-medium transition-colors shrink-0 flex-1 sm:flex-none ${config.interval === int.v ? "bg-neon-green text-bunker-950 font-bold" : "text-bunker-muted hover:text-white hover:bg-bunker-800/60"}`}>
                             {int.l}
                         </button>
                     ))}
@@ -925,23 +925,23 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                     {/* Indicator dropdown */}
                     <div className="relative">
                         <button type="button" onClick={() => { setIndicatorMenuOpen(v => !v); setSymbolSearchOpen(false); }}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-md border font-mono text-[11px] transition-colors ${activeCount > 0 ? "bg-neon-green/10 border-neon-green/40 text-neon-green font-bold" : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white"}`}>
+                            className={`flex items-center gap-1 px-2 py-1 rounded-md border font-mono text-2xs transition-colors ${activeCount > 0 ? "bg-neon-green/10 border-neon-green/40 text-neon-green font-bold" : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white"}`}>
                             <span className="hidden sm:inline">fx İndikatör</span><span className="sm:hidden">fx</span>
-                            <span className="bg-bunker-700 text-white font-bold rounded-full w-4 h-4 text-[9px] flex items-center justify-center">{activeCount}</span>
-                            <span className="text-[9px]">▼</span>
+                            <span className="bg-bunker-700 text-white font-bold rounded-full w-4 h-4 text-2xs flex items-center justify-center">{activeCount}</span>
+                            <span className="text-2xs">▼</span>
                         </button>
 
                         {indicatorMenuOpen && (
                             <div className="absolute right-0 top-full mt-1.5 z-50 w-72 bg-bunker-900 border border-bunker-700 rounded-xl shadow-2xl p-2.5">
                                 <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-bunker-800">
-                                    <span className="font-mono text-[11px] font-bold text-white">İndikatörler ({activeCount} aktif)</span>
+                                    <span className="font-mono text-2xs font-bold text-white">İndikatörler ({activeCount} aktif)</span>
                                     <button type="button" onClick={() => setIndicatorMenuOpen(false)} className="text-bunker-muted hover:text-white text-xs">✕</button>
                                 </div>
                                 {/* Category Tabs */}
                                 <div className="flex flex-wrap gap-1 mb-2.5">
                                     {cats.map(c => (
                                         <button key={c} type="button" onClick={() => setIndicatorCat(c)}
-                                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono border transition-colors ${indicatorCat === c ? "bg-neon-green/20 border-neon-green/50 text-neon-green font-bold" : "border-bunker-700 text-bunker-muted hover:text-white"}`}>
+                                            className={`px-2 py-0.5 rounded-full text-2xs font-mono border transition-colors ${indicatorCat === c ? "bg-neon-green/20 border-neon-green/50 text-neon-green font-bold" : "border-bunker-700 text-bunker-muted hover:text-white"}`}>
                                             {c}
                                         </button>
                                     ))}
@@ -949,10 +949,10 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                 <div className="space-y-0.5 max-h-72 overflow-y-auto">
                                     {visibleDefs.map(def => (
                                         <label key={def.key} className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-bunker-800/60 cursor-pointer group">
-                                            <span className={`flex items-center gap-1.5 font-mono text-[11px] ${def.color}`}>
+                                            <span className={`flex items-center gap-1.5 font-mono text-2xs ${def.color}`}>
                                                 <span className={`w-2 h-2 rounded-full ${def.dotColor} inline-block shrink-0`} />
                                                 <span>{def.label}</span>
-                                                <span className={`text-[9px] px-1 py-0.5 rounded border ${def.overlay ? "border-yellow-500/30 text-yellow-400" : "border-green-500/30 text-green-400"}`}>
+                                                <span className={`text-2xs px-1 py-0.5 rounded border ${def.overlay ? "border-yellow-500/30 text-yellow-400" : "border-green-500/30 text-green-400"}`}>
                                                     {def.overlay ? "GRAFİK" : "PANE"}
                                                 </span>
                                             </span>
@@ -964,13 +964,13 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                 {/* Quick Presets */}
                                 <div className="mt-2 pt-2 border-t border-bunker-800 flex flex-wrap gap-1.5">
                                     <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, volume: true } })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Temel</button>
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Temel</button>
                                     <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, ema50: true, bollinger: true, rsi: true, volume: true } })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Orta</button>
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Orta</button>
                                     <button type="button" onClick={() => onUpdateConfig({ indicators: { ...Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any, ma7: true, ma20: true, ma99: true, ema9: true, ema21: true, ema50: true, ema200: true, bollinger: true, vwap: true, volume: true, rsi: true, macd: true } })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Pro</button>
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-bunker-800 hover:bg-bunker-700 border border-bunker-700 text-bunker-muted hover:text-white transition-colors">Pro</button>
                                     <button type="button" onClick={() => onUpdateConfig({ indicators: Object.fromEntries(Object.keys(config.indicators).map(k => [k, false])) as any })}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-neon-red/10 hover:bg-neon-red/20 border border-neon-red/30 text-neon-red transition-colors">Temizle</button>
+                                        className="px-2 py-0.5 rounded text-2xs font-mono bg-neon-red/10 hover:bg-neon-red/20 border border-neon-red/30 text-neon-red transition-colors">Temizle</button>
                                 </div>
                             </div>
                         )}

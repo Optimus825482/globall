@@ -63,7 +63,7 @@ export default function Sidebar() {
                             <span className="font-mono text-sm font-bold tracking-tight text-white flex items-center gap-1">
                                 SCALPER <span className="text-neon-green">GLOBAL</span>
                             </span>
-                            <span className="font-mono text-[9px] font-bold text-cyan-400/80 tracking-widest uppercase">
+                            <span className="font-mono text-2xs font-bold text-cyan-400/80 tracking-widest uppercase">
                                 $ TERMINAL
                             </span>
                         </div>
@@ -88,7 +88,7 @@ export default function Sidebar() {
                     const open = openGroups[group.id] ?? isFlat;
                     return (
                         <div key={group.id} className="space-y-1">
-                            <p className="px-3 pt-1 font-mono text-[10px] font-bold tracking-[0.14em] text-bunker-muted/70">
+                            <p className="px-3 pt-1 font-mono text-2xs font-bold tracking-[0.14em] text-bunker-muted/70">
                                 {group.label}
                             </p>
                             {(open || isFlat) && group.items.map((m) => {
@@ -136,7 +136,7 @@ export default function Sidebar() {
                                         <span className="font-mono text-xs font-bold text-white group-hover:text-cyan-300 transition-colors truncate">
                                             {username}
                                         </span>
-                                        <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold uppercase ${
+                                        <span className={`text-2xs font-mono px-1 py-0.2 rounded font-bold uppercase ${
                                             isAdmin
                                                 ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
                                                 : "bg-bunker-800 text-bunker-muted border border-bunker-700"
@@ -150,9 +150,10 @@ export default function Sidebar() {
                                 <Link
                                     href={isAdmin ? "/settings?tab=profile" : "/settings"}
                                     title="Ayarlar"
+                                    aria-label="Ayarlar"
                                     className="p-1.5 rounded-lg text-bunker-muted hover:text-cyan-300 hover:bg-cyan-950/40 transition-colors"
                                 >
-                                    <span className="text-xs">⚙</span>
+                                    <NavIcon name="settings" className="w-4 h-4" />
                                 </Link>
                                 <button
                                     type="button"
@@ -162,9 +163,10 @@ export default function Sidebar() {
                                     }}
                                     disabled={busyLogout}
                                     title="Oturumu kapat ve giriş ekranına dön"
+                                    aria-label="Oturumu kapat"
                                     className="p-1.5 rounded-lg text-bunker-muted hover:text-neon-red hover:bg-neon-red/10 transition-colors disabled:opacity-50"
                                 >
-                                    <span className="text-xs font-bold">{busyLogout ? "…" : "⏻"}</span>
+                                    <NavIcon name="power" className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
@@ -174,7 +176,7 @@ export default function Sidebar() {
                         <button
                             type="button"
                             onClick={openInstallDialog}
-                            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg border border-cyan-400/40 bg-cyan-950/40 text-cyan-300 font-mono text-[10px] font-bold tracking-wide hover:bg-cyan-900/50 hover:border-cyan-400 transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95 touch-target"
+                            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg border border-cyan-400/40 bg-cyan-950/40 text-cyan-300 font-mono text-2xs font-bold tracking-wide hover:bg-cyan-900/50 hover:border-cyan-400 transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95 touch-target"
                         >
                             <span>📲</span> UYGULAMAYI YÜKLE
                         </button>
@@ -197,20 +199,20 @@ export default function Sidebar() {
                                     : "bg-yellow-300"
                             }`} />
                             <div className="flex flex-col">
-                                <span className="font-mono text-[10px] font-bold tracking-wider text-bunker-muted group-hover:text-white transition-colors">
+                                <span className="font-mono text-2xs font-bold tracking-wider text-bunker-muted group-hover:text-white transition-colors">
                                     SİSTEM SAĞLIĞI
                                 </span>
-                                <span className="font-mono text-[9px] text-cyan-400/80">
+                                <span className="font-mono text-2xs text-cyan-400/80">
                                     {health ? `${String(health.status || "bilinmiyor").toUpperCase()} · WS ${liveStatus === "open" ? "BAĞLI" : "KAPALI"}` : "BAĞLANTI BEKLENİYOR"}
                                 </span>
                             </div>
                         </div>
-                        <span className="font-mono text-[10px] text-bunker-muted group-hover:text-cyan-300 transition-colors ml-1">
+                        <span className="font-mono text-2xs text-bunker-muted group-hover:text-cyan-300 transition-colors ml-1">
                             →
                         </span>
                     </Link>
 
-                    <div className="flex items-center justify-between px-1 text-[9px] font-mono text-bunker-muted/50">
+                    <div className="flex items-center justify-between px-1 text-2xs font-mono text-bunker-muted/50">
                         <span className="flex items-center gap-1" title="Build ID">
                             <span className="w-1 h-1 rounded-full bg-cyan-400/50" />
                             v{typeof window !== "undefined" ? (document.documentElement.dataset.buildId || process.env.NEXT_PUBLIC_BUILD_ID || "dev") : (process.env.NEXT_PUBLIC_BUILD_ID || "dev")}

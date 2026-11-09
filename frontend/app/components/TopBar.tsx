@@ -70,7 +70,7 @@ export default function TopBar() {
           <div className="flex flex-col min-w-0">
             <p className="topbar-title truncate text-sm sm:text-base font-bold text-white font-mono flex items-center gap-2">
               <span className="truncate">{currentTitle}</span>
-              <span className="hidden sm:inline-flex shrink-0 rounded border border-amber-400/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-amber-200">DEMO</span>
+              <span className="hidden sm:inline-flex shrink-0 rounded border border-amber-400/40 bg-amber-500/10 px-1.5 py-0.5 text-2xs font-bold tracking-wider text-amber-200">DEMO</span>
             </p>
           </div>
         </div>
@@ -81,7 +81,7 @@ export default function TopBar() {
           <button
             type="button"
             onClick={toggleTheme}
-            className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-slate-300 dark:border-bunker-700 bg-white/80 dark:bg-bunker-900/90 hover:bg-slate-100 dark:hover:bg-bunker-800 text-slate-800 dark:text-cyan-300 font-mono text-[10px] sm:text-xs font-bold transition-all touch-target active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-slate-300 dark:border-bunker-700 bg-white/80 dark:bg-bunker-900/90 hover:bg-slate-100 dark:hover:bg-bunker-800 text-slate-800 dark:text-cyan-300 font-mono text-2xs sm:text-xs font-bold transition-all touch-target active:scale-95 shadow-sm"
             title={isLight ? "Karanlık Moda Geç (Dark Mode)" : "Aydınlık Moda Geç (Light Mode)"}
             aria-label={isLight ? "Karanlık Moda Geç" : "Aydınlık Moda Geç"}
           >
@@ -93,7 +93,7 @@ export default function TopBar() {
             <button
               type="button"
               onClick={openInstallDialog}
-              className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-cyan-400/50 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900/80 hover:to-blue-900/80 text-cyan-300 font-mono text-[10px] sm:text-xs font-bold tracking-wide shadow-[0_0_10px_rgba(0,240,255,0.2)] transition-all touch-target active:scale-95"
+              className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-cyan-400/50 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900/80 hover:to-blue-900/80 text-cyan-300 font-mono text-2xs sm:text-xs font-bold tracking-wide shadow-[0_0_10px_rgba(0,240,255,0.2)] transition-all touch-target active:scale-95"
               title="Scalper Global uygulamasını cihazınıza yükleyin"
             >
               <span className="hidden xs:inline sm:inline">YÜKLE</span>
@@ -103,10 +103,24 @@ export default function TopBar() {
           {/* 2026-10-07: Piyasa modu hızlı değiştirici (SPOT / FX) KALDIRILDI —
               uygulama yalnızca Forex & Emtia sunar, seçilecek ikinci piyasa yok. */}
 
-          <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-900 dark:text-slate-300 font-black">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-neon-green animate-pulse" />
+          {/* 2026-11-09 denetimi: mobilde canlılık durumu YALNIZ renkli nokta
+              ile anlatılıyordu (`hidden sm:inline` metin) — "anlamı yalnız
+              renkle aktarma" ihlali. Artık her genişlikte METİN var: dar
+              ekranda kısa ("CANLI"), geniş ekranda tam cümle. Nokta
+              `aria-hidden` ve ekran okuyucu için `sr-only` tam metin duruyor. */}
+          <div className="flex items-center gap-1.5 font-mono text-2xs tracking-wider text-slate-900 dark:text-slate-300 font-black">
+            <span
+              aria-hidden="true"
+              className={`w-2 h-2 rounded-full animate-pulse ${exchange.error && !exchange.loading ? "bg-rose-500" : "bg-emerald-600 dark:bg-neon-green"}`}
+            />
             <span className="hidden sm:inline">
               {exchange.error && !exchange.loading ? "BAĞLANTI HATASI" : "Veri akışı canlı"}
+            </span>
+            <span className="sm:hidden" aria-hidden="true">
+              {exchange.error && !exchange.loading ? "HATA" : "CANLI"}
+            </span>
+            <span className="sr-only">
+              {exchange.error && !exchange.loading ? "Veri akışı hatası" : "Veri akışı canlı"}
             </span>
           </div>
         </div>

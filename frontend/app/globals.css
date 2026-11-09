@@ -1,5 +1,7 @@
-/* Fontlar next/font ile self-hosted yüklenir (layout.tsx: --font-sans/display/mono
-   CSS değişkenleri). Google Fonts @import kaldırıldı — render-blocking'di. */
+/* Fontlar `app/fonts.ts` içinde next/font/local ile DEPOYA GÖMÜLÜ yüklenir;
+   `--font-sans/display/mono` değişkenlerini next/font üretir ve `layout.tsx`
+   bunları <html> üzerine koyar. Burada DEKLARE EDİLMEZ — aksi halde :root
+   kuralı ile next/font sınıfı aynı özgüllükte çakışır ve kazanan sıraya kalır. */
 
 @tailwind base;
 @tailwind components;
@@ -7,10 +9,49 @@
 
 :root {
   color-scheme: dark;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-display: 'Poppins', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* ==========================================================================
+     TEMA TOKEN KATMANI (2026-11-09 denetimi)
+     Tek kaynak: renk değerleri BURADA ve `html.light` bloğunda tanımlanır,
+     bileşenler `text-ink-1/2/3` gibi anlamsal sınıflar kullanır. Böylece açık
+     tema, seçici bloklarının kopyalanmasıyla değil, değişken değişimiyle
+     sürülür (önceki durum: 208 `html.light` kuralı + 135 `!important`).
+
+     ÖLÇÜLEN KONTRAST (WCAG 2.x, sRGB) — zemin `#070b14` / `#142036`:
+       ink-1 #ffffff  → 19.68:1 / 16.28:1   ✅
+       ink-2 #93a7c6  →  8.04:1 /  6.66:1   ✅
+       ink-3 #8fa3c0  →  7.40:1 /  6.15:1   ✅
+     METİN İÇİN KULLANILMAZ: #64748b → 4.14:1 / 3.42:1 (AA altı),
+     #475569 → 2.60:1 / 2.15:1 (ciddi ihlal). İkisi de yalnız dekoratif
+     ayraç/ikon rolünde kalabilir.                                            */
+  --text-primary: #ffffff;
+  --text-secondary: #93a7c6;
+  --text-muted: #8fa3c0;
+  --focus-ring: #00f0ff;
+  --surface-app: #070b14;
+  --surface-1: #0c1322;
+  --surface-2: #142036;
+  --border-hairline: rgb(31 48 80 / .8);
+
+  /* Okuma ölçüsü: 45–75 karakter (ideal ~66). Uzun LLM/rapor gövdeleri için. */
+  --measure: 66ch;
 }
+
+/* ---- ODAK GÖRÜNÜRLÜĞÜ GÜVENLİK AĞI --------------------------------------
+   Denetimde 4 girdi (`outline-none` var, ikame stili yok) ve tek tek
+   düzeltilmesi unutulabilecek yeni kod için tek merkezden garanti.
+   Tailwind yardımcı sınıfları @layer utilities içindedir; katmansız
+   (unlayered) bu kural özgüllükten bağımsız olarak onları YENER — bu yüzden
+   `!important` gerekmez. Bileşen kendi `:focus-visible` stilini tanımlarsa
+   (daha yüksek özgüllük) o kazanır.                                        */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* NOT: `:focus:not(:focus-visible)` ile halkayı elle silme kuralı BİLİNÇLİ
+   OLARAK EKLENMEDİ — tarayıcı zaten fare tıklamasında `:focus-visible`
+   tetiklemez; elle silmek açık temadaki `html.light input:focus` gibi meşru
+   odak stillerini de sakatlardı. */
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -35,15 +76,15 @@ main, .content-shell, .content-shell > *, .page-shell, .card, .panel, .ui-card {
 
 .app-sidebar { position: sticky; top: 0; height: 100dvh; max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .topbar { position: sticky; top: 0; z-index: 20; min-height: 4.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1.5rem; background: rgb(7 11 20 / .88); border-bottom: 1px solid rgb(22 35 61 / .8); backdrop-filter: blur(14px); }
-.topbar-kicker { color: rgb(100 116 139); font: 600 .58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; }
-.topbar-title { margin-top: .3rem; color: white; font: 600 .9rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.topbar-status { display: flex; align-items: center; gap: .5rem; color: rgb(148 163 184); font: 600 .62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; }
+.topbar-kicker { color: rgb(100 116 139); font: 600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .14em; }
+.topbar-title { margin-top: .3rem; color: white; font: 600 .9rem/1 var(--font-mono, ui-monospace, monospace); }
+.topbar-status { display: flex; align-items: center; gap: .5rem; color: rgb(148 163 184); font: 600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .06em; }
 .content-shell { padding: 0.85rem; }
 @media (min-width: 640px) { .content-shell { padding: 1.5rem; } }
 @media (min-width: 1024px) { .content-shell { padding: 2rem; } }
 .section-tabs { display: flex; gap: .35rem; overflow-x: auto; padding: .35rem; border: 1px solid rgb(31 48 80 / .8); border-radius: .85rem; background: rgb(12 19 34 / .65); box-shadow: 0 8px 24px rgb(2 6 23 / .25), inset 0 1px rgb(255 255 255 / .05); scrollbar-width: none; }
 .section-tabs::-webkit-scrollbar { display: none; }
-.section-tabs button { flex: 0 0 auto; min-height: 2.75rem; padding: .65rem .9rem; border-radius: .55rem; color: rgb(148 163 184); font: 600 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; transition: color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out; }
+.section-tabs button { flex: 0 0 auto; min-height: 2.75rem; padding: .65rem .9rem; border-radius: .55rem; color: rgb(148 163 184); font: 600 .72rem/1 var(--font-mono, ui-monospace, monospace); transition: color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out; }
 .section-tabs button:hover { color: white; background: rgb(22 35 61 / .6); }
 .section-tabs button:active { transform: scale(.97); }
 .section-tabs button.active { color: #00f0ff; background: linear-gradient(180deg, rgb(0 240 255 / .2), rgb(0 240 255 / .08)); box-shadow: inset 0 0 0 1px rgb(56 189 248 / .45), 0 2px 8px rgb(0 240 255 / .15); }
@@ -54,7 +95,7 @@ button, a { touch-action: manipulation; }
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
 .chat-page { max-width:1440px; height:calc(100dvh - 8.25rem); min-height:0; margin:0 auto; display:flex; flex-direction:column; overflow:hidden; }
 .chat-heading { display:none; }
-.chat-footer { position:sticky; bottom:0; z-index:15; display:flex; align-items:center; justify-content:space-between; gap:.75rem; min-height:2.25rem; margin-top:.75rem; padding:.45rem .8rem; border:1px solid rgb(31 48 80 / .75); border-radius:.65rem; color:#64748b; background:rgb(7 11 20 / .92); backdrop-filter:blur(12px); font:600 .58rem/1 ui-monospace,monospace; letter-spacing:.08em; }
+.chat-footer { position:sticky; bottom:0; z-index:15; display:flex; align-items:center; justify-content:space-between; gap:.75rem; min-height:2.25rem; margin-top:.75rem; padding:.45rem .8rem; border:1px solid rgb(31 48 80 / .75); border-radius:.65rem; color:#93a7c6; background:rgb(7 11 20 / .92); backdrop-filter:blur(12px); font:600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing:.08em; }
 .chat-footer-status { display:flex; align-items:center; gap:.45rem; color:#00f0ff; }
 .chat-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
 .chat-layout { display:grid; grid-template-columns:minmax(0,1fr) 20rem; gap:1rem; align-items:stretch; flex:1 1 auto; min-height:0; height:auto; overflow:hidden; }
@@ -62,33 +103,33 @@ button, a { touch-action: manipulation; }
 .chat-messages { flex:1 1 auto; min-height:0; max-height:none; overflow-y:auto; padding:.25rem .1rem 1rem; }
 .chat-message { display:flex; gap:.5rem; margin-bottom:.55rem; max-width:94%; }
 .chat-message.user { margin-left:auto; flex-direction:row-reverse; }
-.chat-avatar { flex:0 0 auto; display:grid; place-items:center; width:1.7rem; height:1.7rem; margin-top:.15rem; border:1px solid rgb(31 48 80 / .8); border-radius:.55rem; color:#00f0ff; font:600 .55rem/1 ui-monospace,monospace; background:rgb(12 19 34 / .8); }
+.chat-avatar { flex:0 0 auto; display:grid; place-items:center; width:1.7rem; height:1.7rem; margin-top:.15rem; border:1px solid rgb(31 48 80 / .8); border-radius:.55rem; color:#00f0ff; font:600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); background:rgb(12 19 34 / .8); }
 .chat-message.user .chat-avatar { color:#03131e; background:#00f0ff; border-color:#00f0ff; }
 .chat-bubble { min-width:0; max-width:100%; overflow-wrap:anywhere; word-break:break-word; padding:.6rem .75rem; border:1px solid rgb(31 48 80 / .75); border-radius:.7rem; background:rgb(12 19 34 / .75); font-size:.86rem; line-height:1.5; }
 .chat-bubble > :first-child, .chat-bubble .markdown-body > :first-child { margin-top:0 !important; }
 .chat-bubble > :last-child, .chat-bubble .markdown-body > :last-child { margin-bottom:0 !important; }
-.chat-tts-button { float:right; min-height:1.5rem; padding:.2rem .45rem; margin-left:.5rem; border:1px solid rgb(56 189 248 / .4); border-radius:.4rem; color:#00f0ff; font:600 .58rem/1 ui-monospace,monospace; letter-spacing:.05em; }
+.chat-tts-button { float:right; min-height:1.5rem; padding:.2rem .45rem; margin-left:.5rem; border:1px solid rgb(56 189 248 / .4); border-radius:.4rem; color:#00f0ff; font:600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing:.05em; }
 .chat-tts-button:hover { background:rgb(0 240 255 / .12); }
 .chat-tts-setting { display:flex; flex-direction:column; gap:.35rem; margin-top:.75rem; color:#cbd5e1; font-size:.75rem; }
 .chat-tts-setting input { accent-color:#00f0ff; }
 .chat-message.user .chat-bubble { border-color:rgb(56 189 248 / .35); background:rgb(0 240 255 / .08); }
-.chat-thinking { display:flex; align-items:center; gap:.5rem; color:#fde68a; font:600 .68rem/1.4 ui-monospace,monospace; padding:.5rem 0; }
+.chat-thinking { display:flex; align-items:center; gap:.5rem; color:#fde68a; font:600 0.6875rem/1.4 var(--font-mono, ui-monospace, monospace); padding:.5rem 0; }
 .chat-price-watch { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:1rem; padding:.8rem 1rem; border:1px solid rgb(56 189 248 / .4); border-radius:.75rem; background:linear-gradient(135deg,rgb(8 47 73 / .35),rgb(7 11 20 / .85)); }
-.chat-price-watch strong { display:inline-block; margin:.2rem .7rem 0 0; color:white; font:700 1.15rem/1 ui-monospace,monospace; }
-.chat-price-watch-range { display:flex; flex-wrap:wrap; gap:.65rem; color:rgb(148 163 184); font:600 .68rem/1.4 ui-monospace,monospace; }
+.chat-price-watch strong { display:inline-block; margin:.2rem .7rem 0 0; color:white; font:700 1.15rem/1 var(--font-mono, ui-monospace, monospace); }
+.chat-price-watch-range { display:flex; flex-wrap:wrap; gap:.65rem; color:rgb(148 163 184); font:600 0.6875rem/1.4 var(--font-mono, ui-monospace, monospace); }
 .chat-composer { flex:0 0 auto; position:relative; z-index:20; display:flex; gap:.65rem; align-items:end; padding-top:.6rem; border-top:1px solid rgb(31 48 80 / .8); background:rgb(12 19 34 / .96); }
 .chat-composer textarea { flex:1; min-width:0; resize:none; border:1px solid rgb(31 48 80 / .8); border-radius:.7rem; background:rgb(7 11 20 / .8); padding:.75rem .85rem; color:white; outline:none; font-size:.85rem; }
 .chat-composer textarea:focus { border-color:rgb(0 240 255 / .7); box-shadow:0 0 0 3px rgb(0 240 255 / .15); }
 .chat-mobile-controls { display:none; }
 .chat-quick-prompts { display:flex; flex-wrap:wrap; gap:.35rem; padding:.45rem 0 .1rem; }
-.chat-quick-prompts button { min-height:1.85rem; padding:.32rem .6rem; border:1px solid rgb(31 48 80 / .75); border-radius:999px; color:#cbd5e1; background:rgb(12 19 34 / .64); font:600 .62rem/1.25 ui-monospace,monospace; text-align:left; transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease; }
+.chat-quick-prompts button { min-height:1.85rem; padding:.32rem .6rem; border:1px solid rgb(31 48 80 / .75); border-radius:999px; color:#cbd5e1; background:rgb(12 19 34 / .64); font:600 0.6875rem/1.25 var(--font-mono, ui-monospace, monospace); text-align:left; transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease; }
 .chat-quick-prompts button:hover:not(:disabled) { border-color:rgb(56 189 248 / .5); color:#00f0ff; background:rgb(0 240 255 / .1); }
 .chat-quick-prompts button:disabled { opacity:.5; }
 .chat-toggle { display:flex; align-items:flex-start; gap:.6rem; padding:.5rem .55rem; border:1px solid transparent; border-radius:.55rem; color:#cbd5e1; font-size:.76rem; cursor:pointer; }
 .chat-toggle:hover { border-color:rgb(51 65 85); background:rgb(30 41 59 / .4); }
 .chat-toggle span { display:flex; flex-direction:column; gap:.2rem; min-width:0; }
-.chat-toggle small { color:#64748b; font-size:.68rem; line-height:1.35; }
-.chat-toggle.compact { padding:.34rem .4rem; font-family:ui-monospace,monospace; font-size:.68rem; }
+.chat-toggle small { color:#93a7c6; font-size:0.6875rem; line-height:1.35; }
+.chat-toggle.compact { padding:.34rem .4rem; font-family:var(--font-mono, ui-monospace, monospace); font-size:0.6875rem; }
 .chat-toggle input { margin-top:.1rem; }
 .chat-controls { min-height:0; overflow-y:auto; }
 .chat-controls-header { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
@@ -109,7 +150,7 @@ button, a { touch-action: manipulation; }
     -webkit-tap-highlight-color:transparent;
   }
   .chat-controls-toggle-label { display:flex; align-items:center; justify-content:space-between; gap:.75rem; width:100%; }
-  .chat-controls-toggle-icon { font:700 1.2rem/1 ui-monospace,monospace; color:#00f0ff; }
+  .chat-controls-toggle-icon { font:700 1.2rem/1 var(--font-mono, ui-monospace, monospace); color:#00f0ff; }
   .chat-controls:not(.is-open) .chat-controls-body { display:none; }
   .chat-controls.is-open .chat-controls-body { display:block; }
   .chat-controls.is-open { border-color:rgb(0 240 255 / .35); }
@@ -117,7 +158,7 @@ button, a { touch-action: manipulation; }
 }
 .chat-conversation-actions { display:flex; align-items:center; justify-content:flex-end; gap:.6rem; margin:0 0 .5rem; }
 .chat-scan-buttons { display:flex; flex-wrap:wrap; gap:.5rem; margin:0 0 .6rem; }
-.chat-scan-buttons .ui-button { min-height:2.4rem; padding:.55rem .85rem; font-size:.68rem; }
+.chat-scan-buttons .ui-button { min-height:2.4rem; padding:.55rem .85rem; font-size:0.6875rem; }
 .upside-scout-loading { display:flex; align-items:center; gap:.5rem; }
 .upside-scout-spinner { width:14px; height:14px; border:2px solid rgba(0,240,255,0.3); border-top-color:#00f0ff; border-radius:50%; animation:upside-spin 0.8s linear infinite; }
 .upside-scout-text { color:#00f0ff; font-weight:600; letter-spacing:.04em; }
@@ -137,10 +178,10 @@ button, a { touch-action: manipulation; }
 .monitoring-radar-ring-3 { inset:40%; }
 .monitoring-radar-center { position:absolute; top:50%; left:50%; width:6px; height:6px; background:#00f0ff; border-radius:50%; transform:translate(-50%,-50%); box-shadow:0 0 12px #00f0ff; }
 @keyframes radar-sweep { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
-.chat-context-meter { color:#94a3b8; font:600 .65rem/1 ui-monospace,monospace; letter-spacing:.04em; }
+.chat-context-meter { color:#94a3b8; font:600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing:.04em; }
 .chat-context-meter.warning { color:#fde68a; }
 .chat-context-meter.critical { color:#fda4af; }
-.chat-context-alert { display:flex; justify-content:space-between; gap:.75rem; margin:0 0 .8rem; padding:.65rem .75rem; border:1px solid rgb(234 179 8 / .35); border-radius:.6rem; color:#fde68a; background:rgb(234 179 8 / .08); font:600 .68rem/1.4 ui-monospace,monospace; }
+.chat-context-alert { display:flex; justify-content:space-between; gap:.75rem; margin:0 0 .8rem; padding:.65rem .75rem; border:1px solid rgb(234 179 8 / .35); border-radius:.6rem; color:#fde68a; background:rgb(234 179 8 / .08); font:600 0.6875rem/1.4 var(--font-mono, ui-monospace, monospace); }
 .chat-context-alert span { flex:0 0 auto; color:inherit; white-space:nowrap; }
 .chat-context-alert.critical { border-color:rgb(244 63 94 / .45); color:#fda4af; background:rgb(244 63 94 / .08); }
 .chat-live-tools { padding:.8rem; border:1px solid rgb(31 48 80 / .65); border-radius:.7rem; background:rgb(7 11 20 / .45); }
@@ -208,7 +249,7 @@ button, a { touch-action: manipulation; }
   gap: 0.3rem;
   padding: 0.25rem 0.5rem;
   font-size: 0.7rem;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono, ui-monospace, monospace);
   color: #94a3b8;
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(51, 65, 85, 0.6);
@@ -226,28 +267,28 @@ button, a { touch-action: manipulation; }
 
 .velocity-table { overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .velocity-table table { min-width:30rem; border-collapse:collapse; }
-.velocity-table th { font-size:.62rem; letter-spacing:.04em; white-space:nowrap; }
+.velocity-table th { font-size:0.6875rem; letter-spacing:.04em; white-space:nowrap; }
 .velocity-table td { white-space:nowrap; }
 
 .model-activity-stream { display:flex; flex-direction:column; gap:.15rem; max-height:20rem; overflow-y:auto; }
-.model-activity-row { display:flex; align-items:baseline; gap:.5rem; padding:.4rem .5rem; border-left:2px solid rgb(0 240 255 / .5); border-radius:.35rem; background:rgb(12 19 34 / .65); color:#e2e8f0; font:500 .68rem/1.45 ui-monospace,monospace; animation:activity-in .28s ease; }
+.model-activity-row { display:flex; align-items:baseline; gap:.5rem; padding:.4rem .5rem; border-left:2px solid rgb(0 240 255 / .5); border-radius:.35rem; background:rgb(12 19 34 / .65); color:#e2e8f0; font:500 0.6875rem/1.45 var(--font-mono, ui-monospace, monospace); animation:activity-in .28s ease; }
 .model-activity-row.ok { border-left-color:rgb(0 240 255 / .7); }
 .model-activity-row.err { border-left-color:rgb(244 63 94 / .6); }
 .model-activity-row.info { border-left-color:rgb(56 189 248 / .5); }
 @keyframes activity-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 
-.chat-log-row { display:flex; justify-content:space-between; gap:.5rem; padding:.6rem 0; border-bottom:1px solid rgb(31 48 80 / .7); font-family:ui-monospace,monospace; }
+.chat-log-row { display:flex; justify-content:space-between; gap:.5rem; padding:.6rem 0; border-bottom:1px solid rgb(31 48 80 / .7); font-family:var(--font-mono, ui-monospace, monospace); }
 .chat-log-row > div { min-width:0; }
 .chat-modal-backdrop { position:fixed; inset:0; z-index:80; display:grid; place-items:center; padding:1rem; background:rgb(0 0 0 / .72); backdrop-filter:blur(5px); }
 .chat-modal { width:min(100%, 38rem); max-height:min(85dvh, 44rem); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgb(31 48 80 / .8); border-radius:1rem; background:#070b14; box-shadow:0 24px 80px rgb(0 0 0 / .55); }
 .chat-modal-head { display:flex; justify-content:space-between; align-items:flex-start; padding:1.15rem 1.25rem; border-bottom:1px solid rgb(31 48 80 / .7); }
 .chat-modal-tabs { display:flex; gap:.3rem; overflow-x:auto; padding:.55rem; border-bottom:1px solid rgb(31 48 80 / .7); }
-.chat-modal-tabs button { flex:0 0 auto; min-height:2.3rem; padding:.55rem .75rem; border-radius:.5rem; color:#94a3b8; font:600 .68rem/1 ui-monospace,monospace; }
+.chat-modal-tabs button { flex:0 0 auto; min-height:2.3rem; padding:.55rem .75rem; border-radius:.5rem; color:#94a3b8; font:600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); }
 .chat-modal-tabs button.active { color:#00f0ff; background:rgb(0 240 255 / .15); }
 .chat-modal-body { overflow-y:auto; padding:1rem 1.25rem; }
 .chat-modal-foot { display:flex; justify-content:flex-end; padding:.9rem 1.25rem; border-top:1px solid rgb(31 48 80 / .7); }
 .chat-setting-card { padding:1rem; border:1px solid rgb(31 48 80 / .7); border-radius:.7rem; background:rgb(7 11 20 / .55); }
-.chat-setting-card h3 { margin-top:.65rem; font:600 .85rem/1.2 ui-monospace,monospace; color:white; }
+.chat-setting-card h3 { margin-top:.65rem; font:600 .85rem/1.2 var(--font-mono, ui-monospace, monospace); color:white; }
 .chat-setting-card p { margin-top:.35rem; color:#94a3b8; font-size:.78rem; line-height:1.5; }
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 
@@ -377,7 +418,7 @@ html.light .bar-needle {
 .page-shell { width: min(100%, 1180px); margin: 0 auto; }
 .page-heading { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1.5rem; }
 .page-heading h1 { @apply font-mono text-2xl font-bold tracking-tight; }
-.page-heading p:not(.eyebrow) { max-width: 68ch; font-size: .9rem; color: rgb(148 163 184); }
+.page-heading p:not(.eyebrow) { max-inline-size: var(--measure); font-size: .9rem; color: rgb(148 163 184); }
 .panel { @apply bg-bunker-900/90 border border-bunker-800 rounded-xl; box-shadow: 0 10px 30px rgb(0 0 0 / .12); }
 .input { @apply min-h-10 rounded-lg border border-bunker-700 bg-bunker-950 px-3 py-2 text-sm text-white outline-none; min-width: 0; max-width: 100%; transition: border-color 160ms ease-out, box-shadow 160ms ease-out, background-color 160ms ease-out; }
 .input::placeholder { color: rgb(100 116 139); }
@@ -386,8 +427,8 @@ html.light .bar-needle {
 select.input { cursor: pointer; }
 textarea.input { min-height: 6rem; resize: vertical; }
 input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
-.data-table { width: 100%; border-collapse: separate; border-spacing: 0; font: .78rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.data-table th { padding: .8rem .9rem; color: rgb(148 163 184); font-size: .68rem; font-weight: 600; letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; background: rgb(5 8 13 / .45); border-bottom: 1px solid rgb(31 41 55); }
+.data-table { width: 100%; border-collapse: separate; border-spacing: 0; font: .78rem/1.4 var(--font-mono, ui-monospace, monospace); }
+.data-table th { padding: .8rem .9rem; color: rgb(148 163 184); font-size: 0.6875rem; font-weight: 600; letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; background: rgb(5 8 13 / .45); border-bottom: 1px solid rgb(31 41 55); }
 .data-table td { padding: .8rem .9rem; color: rgb(226 232 240); border-bottom: 1px solid rgb(31 41 55 / .7); white-space: nowrap; }
 .data-table tbody tr { transition: background-color 120ms ease-out; }
 .data-table tbody tr:hover { background: rgb(30 41 59 / .35); }
@@ -405,9 +446,9 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 .message-markdown li > p { margin: 0; }
 .message-markdown hr { margin: .5rem 0; border-color: rgb(51 65 85 / .6); }
 .message-table-wrap:focus-visible { outline: 2px solid rgb(74 222 128 / .7); outline-offset: 2px; }
-.message-table { min-width: 100%; width: max-content; border-collapse: separate; border-spacing: 0; font: .75rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.message-table { min-width: 100%; width: max-content; border-collapse: separate; border-spacing: 0; font: .75rem/1.45 var(--font-mono, ui-monospace, monospace); }
 .message-table th, .message-table td { min-width: 7rem; max-width: 20rem; padding: .55rem .7rem; text-align: left; vertical-align: top; border-bottom: 1px solid rgb(51 65 85 / .55); border-right: 1px solid rgb(51 65 85 / .35); white-space: normal; overflow-wrap: anywhere; }
-.message-table th { color: rgb(134 239 172); font-size: .67rem; letter-spacing: .06em; text-transform: uppercase; background: rgb(15 23 42 / .8); }
+.message-table th { color: rgb(134 239 172); font-size: 0.6875rem; letter-spacing: .06em; text-transform: uppercase; background: rgb(15 23 42 / .8); }
 .message-table td { color: rgb(226 232 240); }
 .message-table tr:last-child td { border-bottom: 0; }
 .message-table th:last-child, .message-table td:last-child { border-right: 0; }
@@ -429,7 +470,7 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
    güvenlik ağı olarak scroll kalır. */
 .table-scroll > table.table-compact { min-width: 0; }
 .data-table.table-compact { font-size: .72rem; }
-.data-table.table-compact th { padding: .55rem .6rem; font-size: .62rem; }
+.data-table.table-compact th { padding: .55rem .6rem; font-size: 0.6875rem; }
 .data-table.table-compact td { padding: .5rem .6rem; }
 
 .live-terminal { min-width: 0; }
@@ -464,7 +505,7 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 .portfolio-heading h1 { margin-top: .35rem; }
 .portfolio-tabs { width: 100%; }
 .portfolio-tabs button { display: inline-flex; align-items: center; gap: .45rem; }
-.portfolio-tabs small { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; padding: 0 .3rem; border-radius: 999px; color: #cbd5e1; background: rgb(31 48 80 / .65); font-size: .58rem; }
+.portfolio-tabs small { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; padding: 0 .3rem; border-radius: 999px; color: #cbd5e1; background: rgb(31 48 80 / .65); font-size: 0.6875rem; }
 .portfolio-tabs button.active small { color: #03131e; background: #00f0ff; }
 .portfolio-content { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .portfolio-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
@@ -472,16 +513,16 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 .portfolio-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .portfolio-plan-panel, .portfolio-table-card, .portfolio-filters, .portfolio-history-card { min-width: 0; }
 .portfolio-plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-.portfolio-plan-card { min-width: 0; padding: .8rem; border: 1px solid rgb(56 189 248 / .2); border-radius: .7rem; background: rgb(14 165 233 / .06); font: .72rem/1.4 ui-monospace, monospace; }
+.portfolio-plan-card { min-width: 0; padding: .8rem; border: 1px solid rgb(56 189 248 / .2); border-radius: .7rem; background: rgb(14 165 233 / .06); font: .72rem/1.4 var(--font-mono, ui-monospace, monospace); }
 .portfolio-plan-heading, .portfolio-trade-top, .portfolio-trade-meta, .portfolio-pagination { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-width: 0; }
 .portfolio-symbol { color: white; font-weight: 700; text-decoration: none; }
 .portfolio-symbol:hover { color: #00f0ff; }
-.portfolio-symbol-badge { display: inline-flex; align-items: center; min-height: 1.7rem; padding: .25rem .55rem; border: 1px solid; border-radius: .5rem; font: 700 .7rem/1 ui-monospace, monospace; letter-spacing: .04em; white-space: nowrap; }
+.portfolio-symbol-badge { display: inline-flex; align-items: center; min-height: 1.7rem; padding: .25rem .55rem; border: 1px solid; border-radius: .5rem; font: 700 .7rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .04em; white-space: nowrap; }
 .portfolio-symbol-badge.positive { color: #00f0ff; background: rgb(0 240 255 / .13); border-color: rgb(56 189 248 / .4); }
 .portfolio-symbol-badge.negative { color: #fda4af; background: rgb(244 63 94 / .13); border-color: rgb(244 63 94 / .4); }
 .portfolio-plan-values, .portfolio-trade-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-top: .8rem; }
 .portfolio-plan-values div, .portfolio-trade-values div { min-width: 0; }
-.portfolio-plan-values span, .portfolio-trade-values span { display: block; margin-bottom: .2rem; color: #64748b; font-size: .62rem; }
+.portfolio-plan-values span, .portfolio-trade-values span { display: block; margin-bottom: .2rem; color: #93a7c6; font-size: 0.6875rem; }
 .portfolio-plan-values strong, .portfolio-trade-values strong { display: block; overflow-wrap: anywhere; font-size: .76rem; }
 .portfolio-plan-reason, .portfolio-reason { display: block; min-width: 0; margin-top: .7rem; overflow: hidden; color: #94a3b8; text-overflow: ellipsis; white-space: nowrap; }
 .portfolio-table-card, .portfolio-history-card { overflow: hidden; }
@@ -499,39 +540,39 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 .portfolio-history-table-wrap { max-width: 100%; overflow: hidden; }
 .portfolio-table th, .portfolio-table td, .portfolio-history-table th, .portfolio-history-table td { vertical-align: middle; }
 .portfolio-strategy { display: block; max-width: 13rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fde047; }
-.table-subvalue { display: block; margin-top: .15rem; color: #94a3b8; font-size: .65rem; }
+.table-subvalue { display: block; margin-top: .15rem; color: #94a3b8; font-size: 0.6875rem; }
 .table-sort { color: inherit; font: inherit; white-space: nowrap; }
-.portfolio-alert { padding: .8rem 1rem; border: 1px solid rgb(56 189 248 / .3); border-radius: .7rem; color: #00f0ff; background: rgb(0 240 255 / .08); font: .75rem/1.4 ui-monospace, monospace; }
-.empty-state { padding: 1.5rem .25rem; color: #64748b; font-size: .85rem; }
+.portfolio-alert { padding: .8rem 1rem; border: 1px solid rgb(56 189 248 / .3); border-radius: .7rem; color: #00f0ff; background: rgb(0 240 255 / .08); font: .75rem/1.4 var(--font-mono, ui-monospace, monospace); }
+.empty-state { padding: 1.5rem .25rem; color: #93a7c6; font-size: .85rem; }
 .portfolio-filter-grid { display: grid; grid-template-columns: minmax(14rem, 1.5fr) repeat(3, minmax(10rem, 1fr)); gap: .75rem; }
 .portfolio-filter { display: flex; min-width: 0; flex-direction: column; gap: .35rem; }
-.portfolio-filter > span { color: #64748b; font: 600 .61rem/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
-.portfolio-filter input, .portfolio-filter select { width: 100%; min-width: 0; min-height: 2.65rem; padding: .65rem .75rem; border: 1px solid rgb(31 48 80 / .9); border-radius: .6rem; outline: none; color: white; background: #070b14; font: .72rem/1.2 ui-monospace, monospace; }
+.portfolio-filter > span { color: #93a7c6; font: 600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; }
+.portfolio-filter input, .portfolio-filter select { width: 100%; min-width: 0; min-height: 2.65rem; padding: .65rem .75rem; border: 1px solid rgb(31 48 80 / .9); border-radius: .6rem; outline: none; color: white; background: #070b14; font: .72rem/1.2 var(--font-mono, ui-monospace, monospace); }
 .portfolio-filter input:focus, .portfolio-filter select:focus { border-color: rgb(0 240 255 / .7); box-shadow: 0 0 0 3px rgb(0 240 255 / .15); }
 .portfolio-mobile-trades { display: none; }
-.portfolio-pagination { margin-top: 1rem; color: #64748b; font: .68rem/1.3 ui-monospace, monospace; }
+.portfolio-pagination { margin-top: 1rem; color: #93a7c6; font: 0.6875rem/1.3 var(--font-mono, ui-monospace, monospace); }
 .portfolio-pagination > div { display: flex; gap: .5rem; }
-.ui-button-compact { min-height: 2rem; padding: .45rem .65rem; font-size: .63rem; }
-.portfolio-trade-card { padding: .85rem; border: 1px solid rgb(31 48 80 / .8); border-radius: .75rem; background: rgb(7 11 20 / .55); font-family: ui-monospace, monospace; }
+.ui-button-compact { min-height: 2rem; padding: .45rem .65rem; font-size: 0.6875rem; }
+.portfolio-trade-card { padding: .85rem; border: 1px solid rgb(31 48 80 / .8); border-radius: .75rem; background: rgb(7 11 20 / .55); font-family: var(--font-mono, ui-monospace, monospace); }
 .portfolio-trade-card { cursor: pointer; transition: border-color 160ms ease-out, background-color 160ms ease-out; }
 .portfolio-trade-card:hover { border-color: rgb(56 189 248 / .45); background: rgb(0 240 255 / .06); }
-.portfolio-trade-meta { margin-top: .45rem; color: #94a3b8; font-size: .65rem; }
+.portfolio-trade-meta { margin-top: .45rem; color: #94a3b8; font-size: 0.6875rem; }
 .portfolio-trade-meta span:first-child { max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .portfolio-trade-values { margin-top: .75rem; }
-.portfolio-trade-values strong small { display: block; margin-top: .15rem; color: #94a3b8; font-size: .62rem; }
-.portfolio-trade-footer { display: flex; justify-content: space-between; gap: .75rem; margin-top: .75rem; padding-top: .65rem; border-top: 1px solid rgb(31 48 80 / .6); color: #64748b; font-size: .64rem; }
+.portfolio-trade-values strong small { display: block; margin-top: .15rem; color: #94a3b8; font-size: 0.6875rem; }
+.portfolio-trade-footer { display: flex; justify-content: space-between; gap: .75rem; margin-top: .75rem; padding-top: .65rem; border-top: 1px solid rgb(31 48 80 / .6); color: #93a7c6; font-size: 0.6875rem; }
 .portfolio-trade-footer span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .portfolio-detail-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / .72); backdrop-filter: blur(5px); }
 .portfolio-detail-modal { width: min(100%, 42rem); max-height: 90dvh; overflow-y: auto; padding: 1.25rem; border: 1px solid rgb(31 48 80 / .85); border-radius: 1rem; background: #070b14; box-shadow: 0 24px 80px rgb(0 0 0 / .55); }
 .portfolio-detail-head, .portfolio-detail-status { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.portfolio-detail-status { align-items: center; justify-content: flex-start; margin-top: 1rem; font: .72rem/1.3 ui-monospace, monospace; }
+.portfolio-detail-status { align-items: center; justify-content: flex-start; margin-top: 1rem; font: .72rem/1.3 var(--font-mono, ui-monospace, monospace); }
 .portfolio-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-top: 1.25rem; }
 .portfolio-detail-grid div { min-width: 0; padding: .75rem; border: 1px solid rgb(31 48 80 / .7); border-radius: .65rem; background: rgb(7 11 20 / .55); }
-.portfolio-detail-grid span, .portfolio-detail-reason > span { display: block; margin-bottom: .35rem; color: #64748b; font: 600 .61rem/1 ui-monospace, monospace; letter-spacing: .08em; }
-.portfolio-detail-grid strong { display: block; overflow-wrap: anywhere; color: white; font: 700 .82rem/1.3 ui-monospace, monospace; }
-.portfolio-detail-grid strong small { display: block; margin-top: .2rem; color: inherit; font-size: .67rem; }
+.portfolio-detail-grid span, .portfolio-detail-reason > span { display: block; margin-bottom: .35rem; color: #93a7c6; font: 600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .08em; }
+.portfolio-detail-grid strong { display: block; overflow-wrap: anywhere; color: white; font: 700 .82rem/1.3 var(--font-mono, ui-monospace, monospace); }
+.portfolio-detail-grid strong small { display: block; margin-top: .2rem; color: inherit; font-size: 0.6875rem; }
 .portfolio-detail-reason { margin-top: .75rem; padding: .85rem; border: 1px solid rgb(31 48 80 / .7); border-radius: .65rem; background: rgb(7 11 20 / .55); }
-.portfolio-detail-reason p { color: #cbd5e1; font: .75rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.portfolio-detail-reason p { color: #cbd5e1; font: .75rem/1.5 var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
 .status-dot { width: .45rem; height: .45rem; border-radius: 999px; display: inline-block; background: #00f0ff; box-shadow: 0 0 0 .2rem rgb(0 240 255 / .25); }
 .skeleton { position: relative; overflow: hidden; background: rgb(22 35 61 / .65); border-radius: .5rem; }
 .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(148 163 184 / .12), transparent); animation: skeleton-shimmer 1.4s infinite; }
@@ -548,10 +589,10 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 
 .ui-card { @apply bg-bunker-900/90 border border-bunker-800 rounded-xl p-5; box-shadow: 0 10px 30px rgb(0 0 0 / .12); }
 .ui-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-.ui-section-header h2 { margin-top: .35rem; color: white; font: 600 1rem/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ui-section-header h2 { margin-top: .35rem; color: white; font: 600 1rem/1.25 var(--font-mono, ui-monospace, monospace); }
 .ui-section-description { margin-top: .4rem; color: rgb(148 163 184); font-size: .78rem; line-height: 1.5; }
 .ui-section-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.ui-badge { display: inline-flex; align-items: center; min-height: 1.5rem; padding: .2rem .55rem; border: 1px solid transparent; border-radius: 999px; font: 600 .65rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.ui-badge { display: inline-flex; align-items: center; min-height: 1.5rem; padding: .2rem .55rem; border: 1px solid transparent; border-radius: 999px; font: 600 0.6875rem/1 var(--font-mono, ui-monospace, monospace); white-space: nowrap; }
 .ui-badge-neutral { color: #cbd5e1; background: rgb(31 48 80 / .5); border-color: rgb(56 82 125 / .6); }
 .ui-badge-positive { color: #00f0ff; background: rgb(0 240 255 / .12); border-color: rgb(56 189 248 / .3); }
 .ui-badge-negative { color: #fda4af; background: rgb(244 63 94 / .12); border-color: rgb(244 63 94 / .3); }
@@ -559,9 +600,9 @@ input[type="checkbox"] { accent-color: #00f0ff; width: 1rem; height: 1rem; }
 .ui-badge-info { color: #93c5fd; background: rgb(59 130 246 / .12); border-color: rgb(96 165 250 / .3); }
 .ui-badge-buy { color: #fff; background: #059669; border-color: #10b981; font-weight: 700; letter-spacing: .04em; }
 .ui-badge-sell { color: #fff; background: #e11d48; border-color: #fb7185; font-weight: 700; letter-spacing: .04em; }
-html.light .ui-badge-buy { color: #fff !important; background: #059669 !important; border-color: #047857 !important; }
-html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !important; border-color: #be123c !important; }
-.ui-button { min-height: 2.5rem; padding: .65rem .9rem; border-radius: .65rem; border: 1px solid transparent; font: 600 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out; }
+html.light .ui-badge-buy { color: #fff; background: #059669; border-color: #047857; }
+html.light .ui-badge-sell { color: #fff; background: #e11d48; border-color: #be123c; }
+.ui-button { min-height: 2.5rem; padding: .65rem .9rem; border-radius: .65rem; border: 1px solid transparent; font: 600 .72rem/1 var(--font-mono, ui-monospace, monospace); transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out; }
 .ui-button:active { transform: scale(.97); }
 .ui-button:disabled { cursor: not-allowed; opacity: .5; }
 .ui-button-primary { color: #03131e; background: #00f0ff; border-color: #00f0ff; }
@@ -582,7 +623,7 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
 .ui-tone-warning { color: #facc15; }
 .ui-tabs { display: flex; gap: .35rem; overflow-x: auto; padding: .35rem; border: 1px solid rgb(31 48 80 / .8); border-radius: .85rem; background: rgb(12 19 34 / .65); box-shadow: 0 8px 24px rgb(2 6 23 / .25), inset 0 1px rgb(255 255 255 / .05); scrollbar-width: none; }
 .ui-tabs::-webkit-scrollbar { display: none; }
-.ui-tabs button { flex: 0 0 auto; min-height: 2.5rem; padding: .6rem .85rem; border-radius: .55rem; color: rgb(148 163 184); font: 600 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; transition: color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out; }
+.ui-tabs button { flex: 0 0 auto; min-height: 2.5rem; padding: .6rem .85rem; border-radius: .55rem; color: rgb(148 163 184); font: 600 .72rem/1 var(--font-mono, ui-monospace, monospace); transition: color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out; }
 .ui-tabs button:hover { color: white; background: rgb(22 35 61 / .6); }
 .ui-tabs button:active { transform: scale(.97); }
 .ui-tabs button.active { color: #00f0ff; background: linear-gradient(180deg, rgb(0 240 255 / .2), rgb(0 240 255 / .08)); box-shadow: inset 0 0 0 1px rgb(56 189 248 / .45), 0 2px 8px rgb(0 240 255 / .12); }
@@ -599,9 +640,9 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
   main { padding: 0 !important; width: 100%; min-width: 0; overflow-x: clip; }
   .content-shell { padding: calc(0.85rem + env(safe-area-inset-top)) 0.85rem calc(5rem + env(safe-area-inset-bottom, 0px)); overflow-x: clip; }
   .topbar { min-height: 3.5rem; padding: 0.65rem 0.85rem; align-items: center; }
-  .topbar-kicker { font-size: .52rem; }
+  .topbar-kicker { font-size: 0.6875rem; }
   .topbar-title { font-size: .82rem; }
-  .topbar-status { max-width: 46%; align-items: flex-start; justify-content: flex-end; white-space: normal; text-align: right; font-size: .52rem; line-height: 1.3; }
+  .topbar-status { max-width: 46%; align-items: flex-start; justify-content: flex-end; white-space: normal; text-align: right; font-size: 0.6875rem; line-height: 1.3; }
   .chat-page { height:auto; min-height:calc(100dvh - 3.75rem); overflow:visible; }
   .chat-layout { display:flex; flex-direction:column; }
   .chat-conversation, .chat-controls { width:100%; }
@@ -609,7 +650,7 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
   .chat-conversation { min-height:calc(100dvh - 9rem); }
   .chat-conversation-actions { justify-content:space-between; }
   .chat-scan-buttons { flex-direction:row; margin:0 0 .5rem; }
-  .chat-scan-buttons .ui-button { flex:1 1 calc(50% - .25rem); min-height:2.75rem; justify-content:center; text-align:center; white-space:normal; font-size:.6rem; line-height:1.25; padding:.55rem .5rem; }
+  .chat-scan-buttons .ui-button { flex:1 1 calc(50% - .25rem); min-height:2.75rem; justify-content:center; text-align:center; white-space:normal; font-size:0.6875rem; line-height:1.25; padding:.55rem .5rem; }
   .chat-scan-buttons .ui-button.chat-scan-button-wide { flex:1 1 100%; }
   .chat-mobile-controls { display:inline-flex; }
   .chat-conversation-actions .ui-button { min-height:2.75rem; padding:.55rem .7rem; }
@@ -617,20 +658,20 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
   .chat-context-alert span { white-space:normal; }
   .chat-messages { min-height:0; max-height:none; padding-bottom:.6rem; }
   .chat-message { max-width:100%; gap:.45rem; margin-bottom:.75rem; }
-  .chat-avatar { width:1.7rem; height:1.7rem; border-radius:.5rem; font-size:.5rem; }
+  .chat-avatar { width:1.7rem; height:1.7rem; border-radius:.5rem; font-size:0.6875rem; }
   .chat-bubble { padding:.75rem .8rem; border-radius:.7rem; font-size:.85rem; line-height:1.6; }
   /* Dokunma hedefleri: mobilde 44px altındaki kontroller WCAG 2.5.5'i ihlal
      ediyordu (TTS 32px, quick-prompt 36px, actions 36px). */
   .chat-tts-button { min-height:2.75rem; min-width:2.75rem; padding:.35rem .5rem; }
   .chat-quick-prompts { overflow-x:auto; flex-wrap:nowrap; margin:0 -.15rem; padding:.65rem .15rem .35rem; scrollbar-width:none; }
   .chat-quick-prompts::-webkit-scrollbar { display:none; }
-  .chat-quick-prompts button { flex:0 0 min(15rem,78vw); min-height:2.75rem; font-size:.62rem; white-space:normal; }
+  .chat-quick-prompts button { flex:0 0 min(15rem,78vw); min-height:2.75rem; font-size:0.6875rem; white-space:normal; }
   .chat-trace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chat-bubble pre, .chat-bubble code { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
   .chat-footer { margin-top:.65rem; padding-bottom:calc(.45rem + env(safe-area-inset-bottom)); }
   .chat-composer { position:sticky; bottom:0; gap:.45rem; padding:.7rem 0 calc(.65rem + env(safe-area-inset-bottom)); background:linear-gradient(180deg,rgb(15 23 42 / .9),rgb(15 23 42 / 1) 28%); }
-  .chat-composer textarea { min-height:3.15rem; padding:.7rem; font-size:16px; }
-  .chat-composer .ui-button { min-height:3.15rem; padding:.6rem .7rem; font-size:.65rem; }
+  .chat-composer textarea { min-height:3.15rem; padding:.7rem; font-size:1rem; /* 16px: iOS odakta otomatik zoom yapmaz — rem TERCİH EDİLİR, kullanıcı varsayılanı büyütürse 16px'in altına düşmez */ }
+  .chat-composer .ui-button { min-height:3.15rem; padding:.6rem .7rem; font-size:0.6875rem; }
   .chat-price-watch { grid-template-columns:1fr; align-items:stretch; }
   .chat-controls { display:block; max-height:60dvh; overflow-y:auto; }
   .card { padding: 1rem; border-radius: .75rem; }
@@ -671,7 +712,7 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
   .portfolio-pagination { align-items: flex-start; flex-direction: column; }
   .portfolio-pagination > div { width: 100%; }
   .portfolio-pagination .ui-button { flex: 1 1 0; }
-  .portfolio-tabs button { min-width: 0; padding-inline: .65rem; font-size: .64rem; }
+  .portfolio-tabs button { min-width: 0; padding-inline: .65rem; font-size: 0.6875rem; }
   .portfolio-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mobile-menu-button { top: calc(12px + env(safe-area-inset-top)); }
   .app-sidebar { position: fixed; height: 100dvh; max-height: 100dvh; }
@@ -679,13 +720,13 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
   .chart-page-header > div:first-child { padding-inline: .15rem; }
   .chart-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; }
   .chart-toolbar .chart-symbol-select { min-width: 0; width: 100%; }
-  .chart-toolbar > button { min-height: 2.75rem; padding: .55rem .65rem; font-size: .65rem; }
+  .chart-toolbar > button { min-height: 2.75rem; padding: .55rem .65rem; font-size: 0.6875rem; }
   .chart-toolbar .chart-intervals { grid-column: 1 / -1; width: 100%; overflow-x: auto; scrollbar-width: none; }
   .chart-toolbar .chart-intervals::-webkit-scrollbar { display: none; }
   .chart-interval-button { flex: 1 0 2.75rem; min-height: 2.75rem; padding-inline: .55rem; }
   .chart-card { border-radius: .75rem; }
   .chart-card > div:first-of-type { min-height: 22rem; }
-  .chart-card .absolute.top-3.right-3 { top: .5rem; right: .5rem; padding: .35rem .5rem; font-size: .58rem; }
+  .chart-card .absolute.top-3.right-3 { top: .5rem; right: .5rem; padding: .35rem .5rem; font-size: 0.6875rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -725,16 +766,85 @@ html.light .ui-badge-sell { color: #fff !important; background: #e11d48 !importa
 }
 
 /* ==========================================================================
+   13. OKUNABİLİRLİK VE DOKUNMATİK YEDEKLERİ (2026-11-09 denetimi)
+   ========================================================================== */
+
+/* Okuma ölçüsü: 45–75 karakter (ideal ~66). Sınırsız satıra yayılan uzun metin
+   bloklarında göz satır başını kaybeder. Yalnız DÜZ METİN akışına uygulanır;
+   tablo/grafik kapsayıcıları kısıtlanmaz (kendi yatay kaydırmaları var). */
+.chat-bubble p,
+.message-markdown p,
+.message-markdown li,
+.ui-section-description,
+.empty-state {
+  max-inline-size: var(--measure);
+}
+/* Gövde metni satır yüksekliği 1.5–1.65 aralığında kalır. */
+.message-markdown { line-height: 1.6; }
+
+/* Dokunmatikte `hover` durumu YOKTUR. Denetimde içeriği tamamen gizleyen bir
+   hover deseni BULUNMADI (yalnızca `opacity-70 → 1` vurguları var, içerik zaten
+   okunur durumda) — bu blok gelecekte eklenebilecek "hover ile ortaya çıkan"
+   öğeler için güvenlik ağıdır; erişilemez eylem üretilmesini engeller. */
+@media (hover: none), (any-pointer: coarse) {
+  [class*="group-hover:opacity-100"] { opacity: 1; }
+  [class*="group-hover:visible"] { visibility: visible; }
+}
+
+/* "İçeriğe atla" bağlantısı (WCAG 2.4.1). Normalde görünmez, KLAVYE ile
+   odaklanınca sol üstte belirir. `position: fixed` ile sayfa akışından
+   çıkarılır ki düzen kayması (CLS) yaratmasın. */
+.skip-link {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  z-index: 100;
+  padding: .6rem 1rem;
+  border-end-end-radius: .5rem;
+  background: var(--focus-ring);
+  color: #04121a;
+  font: 700 .8125rem/1 var(--font-mono, ui-monospace, monospace);
+  transform: translateY(-120%);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid #04121a;
+  outline-offset: -4px;
+}
+
+/* Atla bağlantısının hedefi TÜM içerik alanıdır; viewport boyutunda bir odak
+   halkası çizmek görsel gürültüden başka bilgi taşımaz. Odak göstergesi
+   gereksinimi burada `transform` (sayfa kaydırma) + bir sonraki Tab'ın doğrudan
+   içerikteki ilk öğeye düşmesiyle karşılanır — `main` bir eylem öğesi değil,
+   kapsayıcıdır (GOV.UK/WebAIM atla-bağlantısı deseni). */
+#main-content:focus-visible { outline: none; }
+
+/* ==========================================================================
    AYDINLIK MOD (LIGHT THEME) DESTEĞİ
    ========================================================================== */
 
 html.light {
   color-scheme: light;
+
+  /* Aynı token'ların AÇIK tema değerleri. Değerler önceki `html.light`
+     kurallarının ürettiği nihai renklerle BİREBİR aynıdır (görsel regresyon
+     yok), fark yalnız tek kaynaktan sürülmeleridir.
+     Ölçülen kontrast (zemin `#ffffff`):
+       ink-1 #0f172a → 17.85:1 ✅   ink-2 #334155 → 10.35:1 ✅
+       ink-3 #475569 →  7.55:1 ✅   focus-ring #0284c7 → 4.20:1 ✅ (ikon/eşik 3:1) */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+  --focus-ring: #0284c7;
+  --surface-app: #f8fafc;
+  --surface-1: #ffffff;
+  --surface-2: #f1f5f9;
+  --border-hairline: #cbd5e1;
 }
 
 html.light body {
-  background-color: #f1f5f9 !important; /* slate-100 */
-  color: #0f172a !important; /* slate-900 */
+  background-color: #f1f5f9; /* slate-100 */
+  color: #0f172a; /* slate-900 */
 }
 
 /* ==========================================================================
@@ -745,8 +855,8 @@ html.light body {
 /* 1. Temel Sayfa ve Kart Zeminleri */
 html.light,
 html.light body {
-  background-color: #f8fafc !important; /* slate-50 */
-  color: #0f172a !important;            /* slate-900 */
+  background-color: #f8fafc; /* slate-50 */
+  color: #0f172a;            /* slate-900 */
 }
 
 /* Koyu bunker zeminleri temiz beyaz ve açık slate'e dönüştürülür */
@@ -755,30 +865,30 @@ html.light .ui-card,
 html.light .panel,
 html.light .bg-bunker-950,
 html.light [class*="bg-bunker-950"] {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 html.light .bg-bunker-900,
 html.light [class*="bg-bunker-900"] {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 html.light .bg-bunker-800,
 html.light [class*="bg-bunker-800"] {
-  background-color: #f1f5f9 !important; /* slate-100 */
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
+  background-color: #f1f5f9; /* slate-100 */
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 html.light .bg-slate-900,
 html.light .bg-slate-950 {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 /* Koyu degrade zeminler açık modda temiz ve ferah hale getirilir.
@@ -821,7 +931,7 @@ html.light [class*="border-bunker-800"],
 html.light [class*="border-bunker-700"],
 html.light [class*="border-slate-800"],
 html.light [class*="border-slate-700"] {
-  border-color: #cbd5e1 !important; /* slate-300: beyaz üstünde net ve belirgin */
+  border-color: #cbd5e1; /* slate-300: beyaz üstünde net ve belirgin */
 }
 
 /* 3. YÜKSEK KONTRASTLI METİN VE BAŞLIKLAR (SİLİK GRİLER ENGELLENDİ) */
@@ -840,7 +950,7 @@ html.light h3,
 html.light h4,
 html.light h5,
 html.light h6 {
-  color: #0f172a !important; /* slate-900: Simsiyah/koyu lacivert */
+  color: #0f172a; /* slate-900: Simsiyah/koyu lacivert */
   font-weight: 700;
 }
 
@@ -849,7 +959,7 @@ html.light .text-bunker-muted,
 html.light .text-slate-400,
 html.light .text-slate-500,
 html.light [class*="text-bunker-muted"] {
-  color: #334155 !important; /* slate-700: net ve yüksek kontrast */
+  color: #334155; /* slate-700: net ve yüksek kontrast */
   font-weight: 600;
 }
 
@@ -857,22 +967,22 @@ html.light [class*="text-bunker-muted"] {
 html.light .text-slate-300,
 html.light .text-slate-200,
 html.light .text-slate-100 {
-  color: #1e293b !important; /* slate-800 */
+  color: #1e293b; /* slate-800 */
   font-weight: 600;
 }
 
 /* Tablo başlıkları (th) simsiyah, kalın ve belirgin */
 html.light table th,
 html.light thead th {
-  color: #0f172a !important;
-  font-weight: 800 !important;
-  background-color: #f1f5f9 !important;
-  border-bottom: 2px solid #cbd5e1 !important;
+  color: #0f172a;
+  font-weight: 800;
+  background-color: #f1f5f9;
+  border-bottom: 2px solid #cbd5e1;
 }
 
 html.light table td {
-  color: #0f172a !important;
-  border-color: #e2e8f0 !important;
+  color: #0f172a;
+  border-color: #e2e8f0;
 }
 
 /* 4. CANLI VE ZIT VURGU RENKLERİ (BEYAZDA ASLA PARLAMAZ, NET OKUNUR) */
@@ -885,8 +995,8 @@ html.light .text-emerald-200,
 html.light .text-emerald-100,
 html.light .text-neon-green,
 html.light [class*="text-emerald-"] {
-  color: #047857 !important; /* emerald-700 */
-  font-weight: 700 !important;
+  color: #047857; /* emerald-700 */
+  font-weight: 700;
 }
 
 /* Kırmızı / Kayıp: Açık pembe yerine canlı yakut kırmızısı */
@@ -902,8 +1012,8 @@ html.light .text-red-300,
 html.light .text-red-200,
 html.light [class*="text-rose-"],
 html.light [class*="text-red-"] {
-  color: #b91c1c !important; /* red-700 */
-  font-weight: 700 !important;
+  color: #b91c1c; /* red-700 */
+  font-weight: 700;
 }
 
 /* Mavi / Cyan / Sky: Açık turkuaz yerine derin kobalt mavisi */
@@ -922,8 +1032,8 @@ html.light .text-blue-300,
 html.light .text-blue-200,
 html.light [class*="text-cyan-"],
 html.light [class*="text-sky-"] {
-  color: #0369a1 !important; /* sky-700 */
-  font-weight: 700 !important;
+  color: #0369a1; /* sky-700 */
+  font-weight: 700;
 }
 
 /* Sarı / Kehribar: Beyazda kaybolan sarı yerine ZENGİN KOYU KEHRİBAR */
@@ -942,8 +1052,8 @@ html.light [class*="text-yellow-"],
    amber kuralına takılmıyordu; beyaz zeminde kayboluyordu (IndicatorPicker
    "GRAFİK" rozeti). Aynı koyu kehribara bağla. */
 html.light .text-neon-yellow {
-  color: #b45309 !important; /* amber-700: %100 okunabilir koyu kehribar */
-  font-weight: 700 !important;
+  color: #b45309; /* amber-700: %100 okunabilir koyu kehribar */
+  font-weight: 700;
 }
 
 /* Mor / Lila / İndigo / Violet / Fuşya: BEYAZDA ASLA KAYBOLMAYAN KOYU ASİL MOR */
@@ -970,25 +1080,25 @@ html.light .text-fuchsia-400,
 html.light .text-fuchsia-300,
 html.light .text-fuchsia-200,
 html.light [class*="text-fuchsia-"] {
-  color: #581c87 !important; /* purple-900: Derin, net, asil koyu mor */
-  font-weight: 800 !important;
+  color: #581c87; /* purple-900: Derin, net, asil koyu mor */
+  font-weight: 800;
 }
 
 /* 5. CANLI VE TEMİZ ROZETLER (BADGES) */
 html.light [class*="bg-emerald-500/"],
 html.light [class*="bg-emerald-400/"],
 html.light [class*="bg-emerald-950"] {
-  background-color: #ecfdf5 !important; /* açık zümrüt zemin */
-  color: #047857 !important;            /* koyu zümrüt yazı */
-  border-color: #a7f3d0 !important;     /* açık zümrüt kenarlık */
+  background-color: #ecfdf5; /* açık zümrüt zemin */
+  color: #047857;            /* koyu zümrüt yazı */
+  border-color: #a7f3d0;     /* açık zümrüt kenarlık */
 }
 
 html.light [class*="bg-rose-500/"],
 html.light [class*="bg-rose-600/"],
 html.light [class*="bg-rose-950"] {
-  background-color: #fef2f2 !important; /* açık kırmızı zemin */
-  color: #b91c1c !important;            /* koyu kırmızı yazı */
-  border-color: #fecaca !important;
+  background-color: #fef2f2; /* açık kırmızı zemin */
+  color: #b91c1c;            /* koyu kırmızı yazı */
+  border-color: #fecaca;
 }
 
 html.light [class*="bg-blue-500/"],
@@ -996,19 +1106,19 @@ html.light [class*="bg-blue-600/"],
 html.light [class*="bg-cyan-500/"],
 html.light [class*="bg-cyan-950"],
 html.light [class*="bg-sky-500/"] {
-  background-color: #dbeafe !important; /* belirgin açık mavi zemin */
-  color: #1e40af !important;            /* koyu lacivert yazı */
-  border-color: #93c5fd !important;
-  font-weight: 700 !important;
+  background-color: #dbeafe; /* belirgin açık mavi zemin */
+  color: #1e40af;            /* koyu lacivert yazı */
+  border-color: #93c5fd;
+  font-weight: 700;
 }
 
 html.light [class*="bg-amber-500/"],
 html.light [class*="bg-amber-600/"],
 html.light [class*="bg-yellow-500/"] {
-  background-color: #fef3c7 !important; /* açık kehribar zemin */
-  color: #92400e !important;            /* koyu kehribar yazı */
-  border-color: #fcd34d !important;
-  font-weight: 700 !important;
+  background-color: #fef3c7; /* açık kehribar zemin */
+  color: #92400e;            /* koyu kehribar yazı */
+  border-color: #fcd34d;
+  font-weight: 700;
 }
 
 /* Mor / İndigo Rozetler: Açık lila zemin, koyu mor yazı ve ince mor kenarlık */
@@ -1021,10 +1131,10 @@ html.light [class*="bg-violet-950"],
 html.light [class*="bg-indigo-500/"],
 html.light [class*="bg-indigo-400/"],
 html.light [class*="bg-indigo-950"] {
-  background-color: #f3e8ff !important; /* purple-100 */
-  color: #581c87 !important;            /* purple-900 */
-  border-color: #d8b4fe !important;     /* purple-300 */
-  font-weight: 700 !important;
+  background-color: #f3e8ff; /* purple-100 */
+  color: #581c87;            /* purple-900 */
+  border-color: #d8b4fe;     /* purple-300 */
+  font-weight: 700;
 }
 
 /* Katı / Dolgulu renkli aktif filtre butonları açık modda beyaz yazısını korur */
@@ -1040,7 +1150,7 @@ html.light .bg-emerald-600,
 html.light .bg-emerald-500,
 html.light .bg-amber-600,
 html.light .bg-amber-500 {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 html.light .bg-indigo-600 *,
 html.light .bg-indigo-500 *,
@@ -1054,70 +1164,70 @@ html.light .bg-emerald-600 *,
 html.light .bg-emerald-500 *,
 html.light .bg-amber-600 *,
 html.light .bg-amber-500 * {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 
 /* 6. ÜST ÇUBUK (TOPBAR) & YAN ÇUBUK (SIDEBAR) */
 html.light .topbar {
-  background: #ffffff !important;
-  border-bottom: 1px solid #cbd5e1 !important;
+  background: #ffffff;
+  border-bottom: 1px solid #cbd5e1;
   box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.06);
 }
 
 html.light .topbar-title {
-  color: #0f172a !important;
+  color: #0f172a;
 }
 
 html.light .topbar-kicker {
-  color: #0284c7 !important;
-  font-weight: 700 !important;
+  color: #0284c7;
+  font-weight: 700;
 }
 
 html.light .app-sidebar,
 html.light aside[data-sidebar] {
-  background: #ffffff !important;
-  border-right: 1px solid #cbd5e1 !important;
+  background: #ffffff;
+  border-right: 1px solid #cbd5e1;
   box-shadow: 2px 0 6px 0 rgba(0, 0, 0, 0.04);
 }
 
 html.light .app-sidebar .text-bunker-muted {
-  color: #475569 !important; /* menü altındaki açıklamalar artık net okunur */
+  color: #475569; /* menü altındaki açıklamalar artık net okunur */
 }
 
 html.light .bottom-nav {
-  background: #ffffff !important;
-  border-top: 1px solid #cbd5e1 !important;
+  background: #ffffff;
+  border-top: 1px solid #cbd5e1;
 }
 
 /* 7. FORM ELEMANLARI & BUTONLAR */
 html.light select,
 html.light input,
 html.light textarea {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-  border: 1px solid #94a3b8 !important; /* slate-400 */
+  background-color: #ffffff;
+  color: #0f172a;
+  border: 1px solid #94a3b8; /* slate-400 */
 }
 
 html.light select:focus,
 html.light input:focus,
 html.light textarea:focus {
-  border-color: #0284c7 !important;
-  outline: 2px solid rgba(2, 132, 199, 0.2) !important;
+  border-color: #0284c7;
+  outline: 2px solid rgba(2, 132, 199, 0.2);
 }
 
 html.light .section-tabs {
-  background: #e2e8f0 !important;
-  border: 1px solid #cbd5e1 !important;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
 }
 
 html.light .section-tabs button {
-  color: #334155 !important;
+  color: #334155;
 }
 
 html.light .section-tabs button.active {
-  background: #ffffff !important;
-  color: #0284c7 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+  background: #ffffff;
+  color: #0284c7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 /* 8. SVG GAUGE (İBRE KADRANLARI) VE GRAFİK ÇİZGİLERİ (BEYAZDA ASLA KAYBOLMAZ) */
@@ -1150,67 +1260,67 @@ html.light .chat-page,
 html.light .chat-conversation,
 html.light .chat-controls,
 html.light .chat-composer {
-  background: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 html.light .chat-bubble {
-  background: #f1f5f9 !important; /* Açık ve temiz gri zemin */
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;      /* Koyu simsiyah yazı */
+  background: #f1f5f9; /* Açık ve temiz gri zemin */
+  border-color: #cbd5e1;
+  color: #0f172a;      /* Koyu simsiyah yazı */
 }
 
 html.light .chat-message.user .chat-bubble {
-  background: #e0f2fe !important; /* Açık mavi kullanıcı balonu */
-  border-color: #7dd3fc !important;
-  color: #0369a1 !important;
+  background: #e0f2fe; /* Açık mavi kullanıcı balonu */
+  border-color: #7dd3fc;
+  color: #0369a1;
 }
 
 html.light .chat-quick-prompts button {
-  background: #f8fafc !important;
-  border-color: #cbd5e1 !important;
-  color: #1e293b !important;
-  font-weight: 700 !important;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+  font-weight: 700;
 }
 
 html.light .chat-quick-prompts button:hover {
-  background: #e0f2fe !important;
-  border-color: #38bdf8 !important;
-  color: #0284c7 !important;
+  background: #e0f2fe;
+  border-color: #38bdf8;
+  color: #0284c7;
 }
 
 html.light .chat-composer textarea {
-  background: #ffffff !important;
-  border-color: #94a3b8 !important;
-  color: #0f172a !important;
+  background: #ffffff;
+  border-color: #94a3b8;
+  color: #0f172a;
 }
 
 html.light .chat-composer textarea::placeholder {
-  color: #64748b !important;
+  color: #475569; /* slate-600: beyaz zemin üzerinde okunur */
 }
 
 html.light .chat-footer {
-  background: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #334155 !important;
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
 }
 
 /* 10. SİDEBAR ALT PANEL & SİSTEM SAĞLIĞI ETİKETLERİ */
 html.light .app-sidebar .bg-bunker-950\/70,
 html.light .app-sidebar .bg-bunker-950\/40 {
-  background-color: #f8fafc !important;
-  border-color: #cbd5e1 !important;
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
 }
 
 html.light .app-sidebar [class*="text-cyan-400"] {
-  color: #0284c7 !important; /* Açık modda okunaklı canlı gök mavisi */
-  font-weight: 700 !important;
+  color: #0284c7; /* Açık modda okunaklı canlı gök mavisi */
+  font-weight: 700;
 }
 
 html.light .app-sidebar [class*="text-cyan-500"] {
-  color: #0369a1 !important;
-  font-weight: 700 !important;
+  color: #0369a1;
+  font-weight: 700;
 }
 
 /* 11. SCROLLBAR VE İNCE GÖSTERGELER */
@@ -1255,7 +1365,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @media (prefers-reduced-motion: reduce) {
   .ticker-banner .ticker-link { height: auto; min-height: 2rem; padding-block: .25rem; align-items: stretch; }
   .ticker-banner .ticker-track { white-space: normal; overflow: visible; }
-  .ticker-banner .animate-ticker { animation: none !important; transform: none; width: auto; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+  .ticker-banner .animate-ticker { animation: none; transform: none; width: auto; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
   .ticker-banner .animate-ticker > [aria-hidden="true"] { display: none; }
   .ticker-banner .animate-ticker > div { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; row-gap: .25rem; padding-right: 0; }
   .ticker-banner .ticker-item { flex-wrap: wrap; row-gap: .125rem; max-width: 100%; }

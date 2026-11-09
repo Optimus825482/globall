@@ -242,7 +242,7 @@ const tone = (v: number, neutral = false) =>
 const stars = (e: { stars?: number; impact?: string }) => (e.stars || (e.impact === "High" ? 3 : 2)) >= 3 ? "★★★" : "★★";
 
 const Eyebrow = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-bunker-muted">{children}</h2>
+  <h2 className="font-mono text-2xs font-bold uppercase tracking-[0.14em] text-bunker-muted">{children}</h2>
 );
 
 export default function HomePage() {
@@ -452,7 +452,7 @@ export default function HomePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="flex items-center gap-1.5 text-[11px] text-bunker-muted mr-1" aria-live="polite">
+          <span className="flex items-center gap-1.5 text-2xs text-bunker-muted mr-1" aria-live="polite">
             <span
               className={`w-1.5 h-1.5 rounded-full ${homeDataError ? "bg-rose-400" : updatedText ? "bg-emerald-400" : "bg-bunker-muted"}`}
               aria-hidden
@@ -511,7 +511,7 @@ export default function HomePage() {
             <p className={`mt-2 text-2xl sm:text-3xl font-bold tabular-nums ${tone(kpi.total_pnl_usd, noTrades)}`}>
               {noTrades ? "$0.00" : money(kpi.total_pnl_usd)}
             </p>
-            <p className="mt-1.5 text-[11px] text-bunker-muted tabular-nums">
+            <p className="mt-1.5 text-2xs text-bunker-muted tabular-nums">
               {pips(kpi.total_pnl_pips ?? 0)} pip · {kpi.total_trades} işlem
             </p>
           </div>
@@ -519,7 +519,7 @@ export default function HomePage() {
           <div className="p-4 sm:p-5">
             <p className="eyebrow">Kazanma oranı</p>
             <p className="mt-2 text-2xl sm:text-3xl font-bold tabular-nums">{noTrades ? "—" : `%${winRate.toFixed(1)}`}</p>
-            <p className="mt-1.5 text-[11px] text-bunker-muted tabular-nums">
+            <p className="mt-1.5 text-2xs text-bunker-muted tabular-nums">
               <span className={noTrades ? "" : "text-emerald-400"}>{kpi.wins} kazanç</span>
               {" · "}
               <span className={noTrades ? "" : "text-rose-400"}>{kpi.losses} kayıp</span>
@@ -543,7 +543,7 @@ export default function HomePage() {
             <p className={`mt-2 text-2xl sm:text-3xl font-bold tabular-nums ${pfTone}`}>
               {noTrades ? "—" : kpi.profit_factor_infinite ? "∞" : pfValue.toFixed(2)}
             </p>
-            <p className="mt-1.5 text-[11px] text-bunker-muted tabular-nums">
+            <p className="mt-1.5 text-2xs text-bunker-muted tabular-nums">
               Brüt +${(kpi.gross_profit_usd ?? 0).toFixed(2)} / −${(kpi.gross_loss_usd ?? 0).toFixed(2)}
             </p>
           </div>
@@ -553,7 +553,7 @@ export default function HomePage() {
             <p className="mt-2 text-2xl sm:text-3xl font-bold tabular-nums">
               {kpi.equity == null && kpi.balance == null ? "—" : `$${Number(kpi.equity ?? kpi.balance).toFixed(2)}`}
             </p>
-            <p className="mt-1.5 text-[11px] text-bunker-muted tabular-nums">
+            <p className="mt-1.5 text-2xs text-bunker-muted tabular-nums">
               Bakiye {kpi.balance == null ? "—" : `$${kpi.balance.toFixed(2)}`}
               {" · "}Açık{" "}
               <span className={tone(kpi.open_pnl_usd, kpi.open_positions_count === 0)}>
@@ -586,7 +586,7 @@ export default function HomePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs tabular-nums">
                   <thead>
-                    <tr className="text-[10px] uppercase tracking-wider text-bunker-muted">
+                    <tr className="text-2xs uppercase tracking-wider text-bunker-muted">
                       <th scope="col" className="text-left font-medium px-4 sm:px-5 py-2">Sembol</th>
                       <th scope="col" className="text-left font-medium px-2 py-2">Yön</th>
                       <th scope="col" className="text-right font-medium px-2 py-2">Lot</th>
@@ -604,7 +604,7 @@ export default function HomePage() {
                           <td className="px-4 sm:px-5 py-2.5 font-bold whitespace-nowrap">
                             {sym}
                             {p.strategy_label && (
-                              <span className="block text-[10px] font-normal text-bunker-muted truncate max-w-[11rem]">{p.strategy_label}</span>
+                              <span className="block text-2xs font-normal text-bunker-muted truncate max-w-[11rem]">{p.strategy_label}</span>
                             )}
                           </td>
                           <td className="px-2 py-2.5">
@@ -616,7 +616,7 @@ export default function HomePage() {
                           <td className="px-2 py-2.5 text-right text-bunker-muted">{formatPrice(p.sl_price, p.symbol)}</td>
                           <td className={`px-4 sm:px-5 py-2.5 text-right font-bold whitespace-nowrap ${tone(p.pnl_usd)}`}>
                             {money(Number(p.pnl_usd) || 0)}
-                            <span className="block text-[10px] font-normal opacity-80">{pips(Number(p.pnl_pips) || 0)} pip</span>
+                            <span className="block text-2xs font-normal opacity-80">{pips(Number(p.pnl_pips) || 0)} pip</span>
                           </td>
                         </tr>
                       );
@@ -635,13 +635,13 @@ export default function HomePage() {
               <div id="macro-title">
                 <Eyebrow>Makro veriler</Eyebrow>
               </div>
-              <Link href="/forex/calendar" className="inline-flex items-center min-h-11 sm:min-h-0 text-[11px] text-cyan-300 hover:text-cyan-200 hover:underline font-bold">
+              <Link href="/forex/calendar" className="inline-flex items-center min-h-11 sm:min-h-0 text-2xs text-cyan-300 hover:text-cyan-200 hover:underline font-bold">
                 Takvimin tamamı →
               </Link>
             </div>
 
             <div className="px-4 sm:px-5 pt-3 pb-1">
-              <p className="text-[10px] uppercase tracking-wider text-bunker-muted">Sıradaki</p>
+              <p className="text-2xs uppercase tracking-wider text-bunker-muted">Sıradaki</p>
             </div>
             {upcomingEvents.length === 0 ? (
               <p className="px-5 pb-4 text-xs text-bunker-muted">{calendarEvents.length ? "Yaklaşan kritik veri yok." : "Takvim yükleniyor…"}</p>
@@ -650,11 +650,11 @@ export default function HomePage() {
                 {upcomingEvents.map((e) => (
                   <li key={e.id}>
                     <Link href="/forex/calendar" className="flex items-center gap-2 rounded-lg px-3 py-2 min-h-11 hover:bg-bunker-800/60 transition-colors">
-                      <span className="text-[11px] text-bunker-muted tabular-nums w-10 shrink-0">{trClock(e.date_iso)}</span>
-                      <span className="text-[10px] font-bold text-bunker-muted w-8 shrink-0">{(e.currency || e.country || "").toUpperCase().slice(0, 3)}</span>
+                      <span className="text-2xs text-bunker-muted tabular-nums w-10 shrink-0">{trClock(e.date_iso)}</span>
+                      <span className="text-2xs font-bold text-bunker-muted w-8 shrink-0">{(e.currency || e.country || "").toUpperCase().slice(0, 3)}</span>
                       <span className="text-xs flex-1 min-w-0 truncate" title={e.title}>{e.title}</span>
-                      <span className={`text-[10px] shrink-0 ${stars(e) === "★★★" ? "text-amber-300" : "text-bunker-muted"}`} aria-label={stars(e) === "★★★" ? "Yüksek etki" : "Orta etki"}>{stars(e)}</span>
-                      <span className="text-[11px] font-bold tabular-nums shrink-0 text-cyan-300 w-14 text-right">
+                      <span className={`text-2xs shrink-0 ${stars(e) === "★★★" ? "text-amber-300" : "text-bunker-muted"}`} aria-label={stars(e) === "★★★" ? "Yüksek etki" : "Orta etki"}>{stars(e)}</span>
+                      <span className="text-2xs font-bold tabular-nums shrink-0 text-cyan-300 w-14 text-right">
                         {untilText(Date.parse(e.date_iso as string), nowMs)}
                       </span>
                     </Link>
@@ -664,7 +664,7 @@ export default function HomePage() {
             )}
 
             <div className="px-4 sm:px-5 pt-2 pb-1 border-t border-bunker-800/70">
-              <p className="text-[10px] uppercase tracking-wider text-bunker-muted">Bugün açıklananlar</p>
+              <p className="text-2xs uppercase tracking-wider text-bunker-muted">Bugün açıklananlar</p>
             </div>
             {publishedToday.length === 0 ? (
               <p className="px-5 pb-4 text-xs text-bunker-muted">Yorumlanabilir açıklama henüz yok.</p>
@@ -676,14 +676,14 @@ export default function HomePage() {
                   return (
                     <li key={e.id}>
                       <Link href="/forex/calendar" className="flex items-center gap-2 rounded-lg px-3 py-2 min-h-11 hover:bg-bunker-800/60 transition-colors">
-                        <span className="text-[11px] text-bunker-muted tabular-nums w-10 shrink-0">{trClock(e.date_iso)}</span>
+                        <span className="text-2xs text-bunker-muted tabular-nums w-10 shrink-0">{trClock(e.date_iso)}</span>
                         <span className="text-xs flex-1 min-w-0">
                           <span className="block truncate" title={e.title}>{e.title}</span>
-                          <span className="block text-[10px] text-bunker-muted truncate">
+                          <span className="block text-2xs text-bunker-muted truncate">
                             {labelText(e) || ""} · Açıklanan {e.actual}
                           </span>
                         </span>
-                        <span className={`text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded border ${side === "bullish" ? "text-emerald-300 border-emerald-400/40 bg-emerald-500/10" : "text-rose-300 border-rose-400/40 bg-rose-500/10"}`}>
+                        <span className={`text-2xs font-bold shrink-0 px-1.5 py-0.5 rounded border ${side === "bullish" ? "text-emerald-300 border-emerald-400/40 bg-emerald-500/10" : "text-rose-300 border-rose-400/40 bg-rose-500/10"}`}>
                           {cur} {side === "bullish" ? "▲ güçlü" : "▼ zayıf"}
                         </span>
                       </Link>
@@ -704,7 +704,7 @@ export default function HomePage() {
               <div id="closed-title">
                 <Eyebrow>Bugün kapanan işlemler ({closedTrades.length})</Eyebrow>
               </div>
-              <Link href="/forex/reports" className="inline-flex items-center min-h-11 sm:min-h-0 text-[11px] text-cyan-300 hover:text-cyan-200 hover:underline font-bold">
+              <Link href="/forex/reports" className="inline-flex items-center min-h-11 sm:min-h-0 text-2xs text-cyan-300 hover:text-cyan-200 hover:underline font-bold">
                 Tüm raporlar →
               </Link>
             </div>
@@ -716,7 +716,7 @@ export default function HomePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs tabular-nums">
                   <thead>
-                    <tr className="text-[10px] uppercase tracking-wider text-bunker-muted">
+                    <tr className="text-2xs uppercase tracking-wider text-bunker-muted">
                       <th scope="col" className="text-left font-medium px-4 sm:px-5 py-2">Saat</th>
                       <th scope="col" className="text-left font-medium px-2 py-2">Sembol</th>
                       <th scope="col" className="text-left font-medium px-2 py-2">Yön</th>
@@ -757,7 +757,7 @@ export default function HomePage() {
               <div id="sym-title">
                 <Eyebrow>Parite katkısı</Eyebrow>
               </div>
-              {symbolStats.length > 0 && <span className="text-[11px] text-bunker-muted">{symbolStats.length} parite</span>}
+              {symbolStats.length > 0 && <span className="text-2xs text-bunker-muted">{symbolStats.length} parite</span>}
             </div>
             {symbolStats.length === 0 ? (
               <p className="px-5 py-8 text-center text-xs text-bunker-muted">{loaded ? "Bugün kapanan işlem yok." : "Yükleniyor…"}</p>
@@ -767,7 +767,7 @@ export default function HomePage() {
                   <li key={s.symbol}>
                     <div className="flex items-baseline justify-between gap-2 text-xs tabular-nums">
                       <span className="font-bold">{s.symbol}</span>
-                      <span className="text-[10px] text-bunker-muted">
+                      <span className="text-2xs text-bunker-muted">
                         {s.trades} işlem · %{((s.wins / s.trades) * 100).toFixed(0)}
                       </span>
                       <span className={`font-bold ${tone(s.pnl_usd)}`}>{money(s.pnl_usd)}</span>
@@ -781,7 +781,7 @@ export default function HomePage() {
                   </li>
                 ))}
                 {symbolStats.length > 8 && (
-                  <li className="text-[11px] text-bunker-muted">+{symbolStats.length - 8} parite daha — Raporlar&apos;da</li>
+                  <li className="text-2xs text-bunker-muted">+{symbolStats.length - 8} parite daha — Raporlar&apos;da</li>
                 )}
               </ul>
             )}

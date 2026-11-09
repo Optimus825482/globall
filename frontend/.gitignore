@@ -30,3 +30,13 @@ plugins/impeccable-live.client.ts
 app/plugins/impeccable-live.client.ts
 src/plugins/impeccable-live.client.ts
 # impeccable-live-ignore-end
+
+# Ortam değişkenleri (2026-11-09): Next.js yerel env dosyaları ASLA
+# versiyonlanmaz. `frontend/.env.local` takipsizdi ama .gitignore'da karşılığı
+# YOKTU — `git add -A` ile yanlışlıkla commit'lenebilirdi. Şablon gerekiyorsa
+# depo kökündeki `.env.example` kullanılır.
+.env
+.env.local
+.env*.local
+.env.development.local
+.env.production.local

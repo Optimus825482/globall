@@ -45,6 +45,15 @@ const paths: Record<string, ReactElement> = {
     </>
   ),
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  // 2026-11-09: Sidebar'da çıkış düğmesi '⏻' glifi ile çiziliyordu — glif/ikon
+  // fontu yerine satır içi SVG (NavIcon sözleşmesi). Uçları `settings` ikonuyla
+  // aynı çizgi kalınlığında ve `currentColor` miraslı.
+  power: (
+    <>
+      <path d="M12 3.5v8" />
+      <path d="M6.8 6.8a7.5 7.5 0 1 0 10.4 0" />
+    </>
+  ),
   logo: (
     <>
       <circle cx="12" cy="12" r="9" />
