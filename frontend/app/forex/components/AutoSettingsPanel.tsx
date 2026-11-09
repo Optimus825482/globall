@@ -699,11 +699,31 @@ export default function AutoSettingsPanel({
                     <span className="text-bunker-muted">ECE: <b className="text-white">{Number(calibResult.metrics_raw?.ece ?? 0).toFixed(4)}</b> → <b className="text-emerald-300">{Number(calibResult.metrics_calibrated?.ece ?? 0).toFixed(4)}</b></span>
                     <span className="text-bunker-muted">skill: <b className={Number(calibResult.brier_skill_calibrated ?? 0) > 0 ? "text-emerald-300" : "text-neon-red"}>{Number(calibResult.brier_skill_calibrated ?? 0).toFixed(3)}</b></span>
                   </div>
+                  {/* OUT-OF-SAMPLE: raporun ASIL kanıtı. In-sample ECE ~0 bir
+                      yanılsamadır (izotonik eğri eğitildiği noktalarda sıfırlar). */}
+                  {calibResult.out_of_sample?.available && (
+                    <div className="rounded border border-bunker-700/70 bg-bunker-950/50 p-1.5">
+                      <div className="text-bunker-muted">
+                        <b className="text-cyan-300">OUT-OF-SAMPLE</b> (ilk {calibResult.out_of_sample.n_train} kararla eğitildi, son {calibResult.out_of_sample.n_test} kararla ölçüldü)
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-bunker-muted">Brier: <b className="text-white">{Number(calibResult.out_of_sample.metrics_raw?.brier ?? 0).toFixed(4)}</b> → <b className="text-emerald-300">{Number(calibResult.out_of_sample.metrics_calibrated?.brier ?? 0).toFixed(4)}</b></span>
+                        <span className="text-bunker-muted">ECE: <b className="text-white">{Number(calibResult.out_of_sample.metrics_raw?.ece ?? 0).toFixed(4)}</b> → <b className="text-emerald-300">{Number(calibResult.out_of_sample.metrics_calibrated?.ece ?? 0).toFixed(4)}</b></span>
+                        <span className="text-bunker-muted">skill: <b className={Number(calibResult.out_of_sample.brier_skill_calibrated ?? 0) > 0 ? "text-emerald-300" : "text-neon-red"}>{Number(calibResult.out_of_sample.brier_skill_calibrated ?? 0).toFixed(3)}</b></span>
+                      </div>
+                      <p className="text-bunker-muted/80 leading-snug">
+                        skill ≤ 0 ise güven puanı bilgi TAŞIMIYOR: kalibrasyon onu taban orana düzler (kullanmak = sabit tahmin).
+                      </p>
+                    </div>
+                  )}
                   <div className="pt-1 flex flex-wrap items-center gap-2">
                     <span className="text-bunker-muted">
                       önerilen min. güven: <b className="text-cyan-300 text-xs">{calibResult.threshold?.suggested_min_confidence}</b>
+                      {typeof calibResult.threshold?.coverage === "number" && (
+                        <span className="text-bunker-muted/80"> (kararların %{ (Number(calibResult.threshold.coverage) * 100).toFixed(2) }'i)</span>
+                      )}
                     </span>
-                    {typeof calibResult.threshold?.suggested_min_confidence === "number" && (
+                    {typeof calibResult.threshold?.suggested_min_confidence === "number" && !calibResult.threshold?.unreachable && (
                       <button
                         type="button"
                         onClick={() => setNumField("llm_review_min_confidence", String(calibResult.threshold.suggested_min_confidence))}
@@ -712,9 +732,14 @@ export default function AutoSettingsPanel({
                         Eşiği uygula
                       </button>
                     )}
+                    {calibResult.threshold?.unreachable && (
+                      <span className="text-neon-red font-bold">EŞİK UYGULANAMAZ</span>
+                    )}
                   </div>
-                  <p className="text-bunker-muted leading-snug">{calibResult.threshold?.reason}</p>
-                  <p className="text-bunker-muted/70">Uygulamak için önce "Eşiği uygula", sonra panelin KAYDET düğmesi.</p>
+                  <p className={`leading-snug ${calibResult.threshold?.unreachable ? "text-neon-red" : "text-bunker-muted"}`}>{calibResult.threshold?.reason}</p>
+                  {!calibResult.threshold?.unreachable && (
+                    <p className="text-bunker-muted/70">Uygulamak için önce "Eşiği uygula", sonra panelin KAYDET düğmesi.</p>
+                  )}
                 </div>
               ) : (
                 <p className="text-2xs text-amber-300">

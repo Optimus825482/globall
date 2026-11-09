@@ -115,5 +115,65 @@ class TestOverconfidentScenario(unittest.TestCase):
         self.assertIn("yetersiz", cal["reason"])
 
 
+class TestWalkForward(unittest.TestCase):
+    """In-sample ECE ~0 YANILSAMADIR; kanıt out-of-sample metriktir."""
+
+    def _noise_rows(self, n=1000, seed=9):
+        import random
+        rnd = random.Random(seed)
+        return [{"confidence": rnd.choice([62, 68, 75, 80]),
+                 "shadow_pips": (100 if rnd.random() < 0.31 else -100),
+                 "sl_pips": 100} for _ in range(n)]
+
+    def test_insufficient_data(self):
+        o = mod.walk_forward_metrics([0.6] * 10, [1] * 10, min_samples=80)
+        self.assertFalse(o["available"])
+
+    def test_trains_on_first_tests_on_last(self):
+        probs, hits, _ = mod.rows_to_series(self._noise_rows(1000))
+        o = mod.walk_forward_metrics(probs, hits, min_samples=80)
+        self.assertTrue(o["available"])
+        self.assertEqual(o["n_train"] + o["n_test"], len(probs))
+        self.assertGreater(o["n_train"], o["n_test"], "eğitim yarısı daha büyük olmalı")
+
+    def test_noise_confidence_calibrates_to_base_rate(self):
+        """Güven bilgi taşımıyorsa kalibre skill ~0'a düşer (taban orana düzlenir)."""
+        probs, hits, _ = mod.rows_to_series(self._noise_rows())
+        o = mod.walk_forward_metrics(probs, hits, min_samples=80)
+        self.assertLess(abs(o["brier_skill_raw"]), 999)   # hesaplanmış olmalı
+        self.assertGreater(o["brier_skill_raw"], -1.2)     # aşırı uç yok
+        self.assertLess(abs(o["brier_skill_calibrated"]), 0.05,
+                        "bilgi yoksa kalibre skill ~0 olmalı")
+
+
+class TestThresholdCoverage(unittest.TestCase):
+    """Ulaşılamaz eşik sessizce ticareti durdurmasın → uyarı + buton kapalı."""
+
+    def _rows(self, confs, win_rate=0.31, n=1200, seed=4):
+        import random
+        rnd = random.Random(seed)
+        return [{"confidence": rnd.choice(confs),
+                 "shadow_pips": (100 if rnd.random() < win_rate else -100),
+                 "sl_pips": 100} for _ in range(n)]
+
+    def test_high_threshold_flagged_unreachable(self):
+        # Tüm kararlar 55-80 bandında; eşik 90+ çıkarsa kapsam ~0 → uyarı
+        r = mod.compute(self._rows([55, 60, 65, 70, 80]))
+        t = r["threshold"]
+        self.assertIn("coverage", t)
+        if t["suggested_min_confidence"] >= 90:
+            self.assertTrue(t["unreachable"], "kapsam ~0 ise unreachable olmalı")
+            self.assertIn("UYGULAMAYIN", t["reason"])
+        else:
+            self.assertFalse(t["unreachable"])
+            self.assertGreaterEqual(t["coverage"], 0.02)
+
+    def test_coverage_reported(self):
+        r = mod.compute(self._rows([40, 50, 60, 70, 80]))
+        t = r["threshold"]
+        if t.get("suggested_min_confidence") is not None:
+            self.assertTrue(0.0 <= t["coverage"] <= 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
