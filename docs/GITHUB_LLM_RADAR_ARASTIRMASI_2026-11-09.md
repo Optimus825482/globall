@@ -544,3 +544,96 @@ Hedef boyutu/olasılık bağını değiştirmek **backtest ister**. Bu turda yal
 ayrıştırma varyantının A/B'si (PBO/DSR ile).
 
 **Tüm backend:** `2009 passed, 2 failed` (2 kırmızı önceden var).
+
+---
+
+## 14. HEDEF-OLASILIK BAĞINI AYIRMA — KARŞI-OLGUSAL BACKTEST
+
+**Soru:** §13'te bulunan bozukluğu (hedef olasılıkla birlikte büyüyor, üst dilim hedefe daha az değiyor) hedefi olasılıktan **ayırarak** düzeltmek beklenen değeri iyileştirir mi?
+**Araç:** `scripts/backtest_target_decoupling.py` · **Veri:** 65.471 aday, 180 gün, yerel Postgres.
+
+### 14.1 Yöntem ve dürüst sınır
+
+`mfe_pct` (gerçekleşen maksimum elverişli hareket) karşı-olgusal hedef için kullanılabilir: `mfe_pct ≥ T'` ise T' seviyesine **bir noktada** ulaşılmıştır. Ancak bu "**stop'tan ÖNCE** ulaşıldı" demek değildir — MFE zamanlaması veride yok. Bu yüzden varsayım uydurmak yerine **iki sınır** hesaplandı:
+
+* **alt sınır (garanti):** `touched_target=True` **ve** `T' ≤ target_pct` → gerçek (daha büyük) hedefe stop'tan önce ulaşılmış, küçük hedefe de kesinlikle ulaşılmıştır.
+* **üst sınır (iyimser):** `mfe_pct ≥ T'` — sıralama bilinmiyor.
+
+Gerçek değer bu ikisinin arasındadır. **Üst sınır bile negatifse** karar kesindir.
+
+Ekonomi **veriden** ölçüldü (varsayım değil): sabit stop **1.50%**, işlem maliyeti **0.35 puan**. Değerlendirme gürültüsü yok sayılabilir: `intrabar_ambiguous` = **%0,05** (25 / 52.341).
+
+### 14.2 Mevcut tasarım (taban)
+
+| | Değer |
+|---|---|
+| İsabet | **%28,2** |
+| Ortalama hedef | %2,393 |
+| **Brüt EV** (maliyet öncesi) | **−0,403 puan** |
+| Net EV | **−0,477 puan** |
+| Brüt break-even isabet (T/SL=1,60) | **%38,5** → açık **+10,4 puan** |
+
+> **Dikkat:** brüt EV zaten negatif. Yani **maliyet ana sorun değil** (maliyetin etkisi sadece −0,073 puan).
+
+### 14.3 Sabit hedef ızgarası
+
+| T' (%) | isabet alt | isabet üst | EV alt | **EV üst** | BE isabet | tekdüze (üst) |
+|---|---|---|---|---|---|---|
+| 0,50 | 0,282 | 0,736 | −1,287 | **−0,378** | 0,925 | ✅ |
+| 1,00 | 0,282 | 0,571 | −1,146 | **−0,422** | 0,740 | ✅ |
+| 1,50 | 0,282 | 0,450 | −1,005 | **−0,501** | 0,617 | ✅ |
+| 2,00 | 0,229 | 0,358 | −1,049 | **−0,597** | 0,529 | ✅ |
+| 2,50 | 0,089 | 0,256 | −1,494 | **−0,827** | 0,463 | ✅ |
+| 3,00 | 0,039 | 0,191 | −1,674 | **−0,990** | 0,411 | ✅ |
+
+**İki bulgu:**
+1. **Ayrıştırma tekdüzelik bozukluğunu DÜZELTİYOR** — T' ≤ 1,5% için isabet oranı olasılıkla birlikte tekdüze artıyor (§13'teki bozukluk kayboldu) ✅
+2. **Ama EV hiçbir hedefte pozitif değil** — iyimser üst sınırda bile en iyisi **−0,378** (T=0,5%)
+
+### 14.4 ATR tabanlı (olasılıktan tamamen bağımsız) hedef
+
+| k×ATR | hedef ort. | isabet (üst) | EV (üst) | BE isabet |
+|---|---|---|---|---|
+| 4 | 2,689% | 0,313 | **−0,538** | 0,442 |
+| 6 | 4,034% | 0,169 | **−0,916** | 0,334 |
+| 8 | 5,379% | 0,086 | **−1,261** | 0,269 |
+
+Hepsi negatif. Ayrıştırma **tek başına yeterli değil**.
+
+### 14.5 Bootstrap ve kararlılık
+
+En iyi varyant (T=0,5%) vs mevcut: **ΔEV = +0,098 puan**, %95 GA **[+0,086, +0,112]** → istatistiksel olarak **anlamlı** ve **iki zaman yarısında da tutarlı** (aşırı uyum kokusu yok). Ama sonuç hâlâ **negatif**.
+
+### 14.6 SEÇİCİLİK de kurtarmıyor (belirleyici ölçüm)
+
+Gerçekleşen net EV, olasılık on-dilimlerinde:
+
+| Dilim | ort. p | isabet | net EV | brüt EV |
+|---|---|---|---|---|
+| D1 | 0,003 | 0,162 | −0,488 | −0,920 |
+| D5 | 0,039 | **0,335** | **−0,391** | −0,237 |
+| D9 | 0,156 | 0,321 | −0,453 | −0,143 |
+| **D10** | 0,340 | 0,278 | **−0,570** | −0,234 |
+
+`velocity_score` on-dilimleri de tümüyle negatif (−0,434 … −0,530). **En iyi dilim bile −0,434.** Yani "eşiği yükselt, sadece iyi adayları al" **çalışmıyor**: hiçbir alt küme kârlı değil.
+
+### 14.7 KÖK NEDEN — geometri, hedef değil
+
+Brüt break-even: `p·T = (1−p)·SL` → mevcut isabet (%28,2) ve T (%2,39) ile:
+
+```
+gereken SL = p·T/(1−p) = 0,282 × 2,393 / 0,718 = 0,94%
+```
+
+**Yani stop'un 1,50% → ~0,94% olması gerekir (%37 daraltma).** Ama daraltma isabeti de düşüreceği için bu **bedava değil**. Alternatif (SL sabitken) gereken T = **3,82%** — gerçekçi değil.
+
+Ek not: işlemlerin **%20'si `MAX_HORIZON_EXPIRED`** ve net **−0,365** ile kapanıyor (ısınma/trend çıkışı ~0'da). Bu bacak başlı başına bir iyileştirme alanı.
+
+### 14.8 HÜKÜM
+
+1. **Hedefi olasılıktan ayırmak, sıralama bozukluğunu düzeltir** (kanıtlandı) — ama **kârlılığı çözmez**.
+2. **Bağlayıcı kısıt hedef boyutu değil**, `stop/target geometrisi × isabet oranı`. 1,5% stop + 2,4% hedef için %38,5 isabet gerekiyor; aday havuzu **her olasılık düzeyinde** %28 civarı veriyor.
+3. **Maliyet (0,35 puan) ikincil** — brüt EV zaten −0,403.
+4. **Doğru sonraki adım:** stop/hedef geometrisini (ör. SL 0,9-1,1% ya da ATR tabanlı asimetrik) **yeniden değerlendirme döngüsüyle** test etmek — karşı-olgusal MFE aritmetiği bunu **kanıtlayamaz** (sıralama bilinmiyor). Alternatif: `MAX_HORIZON_EXPIRED` bacağını ayrı tasarlamak.
+
+**Not:** `ml_probability` kalibrasyonu + gölge mod artık hazır; geometri değiştiğinde "kalibre olasılık eşiği" **ölçülerek** seçilebilir.
