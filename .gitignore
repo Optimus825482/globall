@@ -93,3 +93,10 @@ $null
 **/.impeccable/
 reports/
 research_notes/
+
+# 2026-11-09: `backend/artifacts/` yalnız ÇALIŞMA ANINDA/BAKIM İŞİNDE üretilen
+# artefaktları tutar (COT pozisyonları, kalibrasyon eğrisi, indirilen zip'ler).
+# Bunlar commit edilmez — ekonomik takvim önbelleğiyle aynı sınıf (her üretimde
+# değişir, commit gürültüsü olur). Üretim: `scripts/fetch_cot_positions.py`,
+# `scripts/report_probability_calibration.py`.
+backend/artifacts/

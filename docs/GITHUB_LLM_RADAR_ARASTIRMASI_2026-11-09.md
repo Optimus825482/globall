@@ -412,3 +412,72 @@ Cumartesi  likidite=0.00  PİYASA KAPALI (hafta sonu)
 **Yakalanan 1 hata:** Pazar 21:00'de piyasa *açılıyor* ama seans yok → likidite 0.0 değil **0.2 (ölü bölge)**. Test beklentim yanlıştı, kod doğruydu; test gerçek davranışa göre düzeltildi ve Asya skorundan küçük olduğu kilitlendi.
 
 **Tüm backend:** `1972 passed, 2 failed` (2 kırmızı önceden var).
+
+---
+
+## 12. P2 TURU — COT kurumsal pozisyonlanma (P2-8)
+
+### 12.1 Araştırma raporundaki iddia ÇÜRÜTÜLDÜ (kaynak dosya yanlıştı)
+
+Araştırma "`NDelventhal/cot_reports` kullan" diyordu. Kaynağı **kendim indirip ölçtüm**:
+
+| Dosya | Boyut | İçerik |
+|---|---|---|
+| `fut_disagg_txt_2026.zip` (önce denenen) | 2.1 MB | **333 market, YALNIZ EMTİA — hiç FX yok** (doğrulandı) |
+| `fut_fin_txt_2026.zip` (doğru olan) | 632 KB | **FX var**: EUR, GBP, JPY, CHF, CAD, AUD, MXN |
+
+Yani FX sözleşmeleri **TFF (Traders in Financial Futures)** raporunda. Ayrıca bu dosya
+`Noncommercial_*` değil `Dealer_*` / `Asset_Mgr_*` / **`Lev_Money_*`** kolonlarını taşıyor —
+eski legacy şema **yok**. Bu aslında daha iyi: "sıcak para" (leveraged money) ile
+"gerçek para" (asset manager) ayrışıyor ve **ikisinin ayrışması başlı başına bilgi**.
+
+### 12.2 Eklenenler
+
+| Dosya | İş |
+|---|---|
+| `app/cot_positions.py` | Saf hesaplama + artefakt okuyucu. **Yalnız stdlib** (json/math/os), ağ YOK. `parse_rows`, `build_artifact`, `bias()`, `summary()`; mtime kontrollü önbellek |
+| `scripts/fetch_cot_positions.py` | CFTC zip indir → artefakt JSON. `--file` (yerel zip), `--year` (çoklu), `--dry-run` |
+| `tests/test_cot_positions.py` | 16 test (aşağıda) |
+| `.gitignore` | `backend/artifacts/` (üretilen artefaktlar commit edilmez — takvim önbelleğiyle aynı sınıf) |
+| `/api/system/health` | `cot` bloğu (rapor tarihi, tazelik, para birimi duruşları) |
+
+### 12.3 GERÇEK VERİYLE doğrulama (2026-11-03 raporu)
+
+```
+kur       OI        lev_net   lev %OI  asset %OI   bias   duruş  kalabalık  Δhafta
+MXN   283,227      +71,381    +25.2      -12.8   +0.93    LONG       %44    +0.74
+CAD   348,660      -86,302    -24.8       +4.7   -0.93   SHORT       %74    +2.05
+AUD   328,599      +50,106    +15.2      -39.8   +0.77    LONG       %38    +0.35
+CHF   133,162      -16,845    -12.7      -15.7   -0.69   SHORT     %94 ⚠    +0.27
+GBP   245,590      +26,663    +10.9      -49.3   +0.62    LONG       %47    +4.09
+EUR   876,122      -78,559     -9.0      +16.5   -0.54   SHORT     %99 ⚠    -0.72
+JPY   380,641      -14,817     -3.9      +20.9   -0.25   SHORT        %3    +0.02
+Ayrışma (sıcak para ↔ gerçek para ZIT yönde): AUD, CAD, EUR, GBP, JPY, MXN
+Bu raporda YOK (uydurulmadı): NZD
+```
+
+Yorum: **EUR %99 kalabalık kısa** ve asset manager'lar uzun → klasik sıkışma adayı.
+`NZD` bu dosyada yok; modül onu **uydurmaz**, `unavailable` listesinde bildirir.
+
+### 12.4 Testlerin kilitlediği davranış (16 test)
+
+1. `parse_rows` net/%-OI doğru hesaplar.
+2. **Çapraz kur satırları atılır** (`EURO FX/BRITISH POUND XRATE` EUR'u ikinci kez saymamalı — çift sayım hata sınıfı).
+3. OI=0 veya eksik lev kolonu → satır atılır (sıfıra bölme yok).
+4. `bias` tanh ölçeğinde, işareti doğru, NEUTRAL bandı çalışıyor.
+5. `crowding_pct` **mutlak** pozisyonun tarihsel yüzdeligi; %90 eşiği `crowded`.
+6. `change_wow_pct` tek noktada None.
+7. `divergence` üç durumlu (True/False/None).
+8. `load_artifact` yok/bozuk → None; **mtime değişince yeniden okur**.
+9. `summary`/`bias` tazelik ve bilinmeyen kur davranışı.
+10. `NZD` `unavailable` listesinde.
+
+**Yakalanan test hatası:** `test_summary_without_artifact` gerçek artefakt diske yazıldıktan sonra kırıldı (test ortama bağımlıydı). `COT_ARTIFACT_PATH` env'i geçici olarak var olmayan yola çekilerek **yalıtıldı** — testler artık repo durumundan bağımsız.
+
+### 12.5 NE YAPMAZ (dürüstlük)
+
+`bias()` bir **al/sat sinyali değil, bağlamdır**. COT haftalıktır ve **~3 gün gecikmelidir**;
+skorlamaya/kapıya sokmak backtest ister. Şu an yalnız `/api/system/health` ve rapor
+yüzeyinde görünür — radar skorlamasına **girmedi** (bilinçli).
+
+**Tüm backend:** `1988 passed, 2 failed` (2 kırmızı önceden var).
