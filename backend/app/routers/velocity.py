@@ -463,6 +463,11 @@ async def detect_velocity_candidates(args: dict | None = None, *, horizon_minute
 
     def _add(sym: str, source: str) -> None:
         sym = str(sym).upper()
+        # KRİPTO ALLOWLIST (2026-11-09): havuzun TEK kapısı. Tüm kaynaklar
+        # (gainer / mover / discovery / config.SYMBOLS / extra) buradan geçer →
+        # BTC/ETH/XRP dışındaki kripto çiftleri radara HİÇ girmez.
+        if not config.is_crypto_symbol_allowed(sym):
+            return
         if sym and sym not in _pool_set and is_binance_tr_symbol(sym):
             pool.append(sym)
             _pool_set.add(sym)

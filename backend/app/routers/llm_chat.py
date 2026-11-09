@@ -2050,10 +2050,14 @@ async def _detect_upside_candidates(horizon_minutes: int, args: dict | None = No
     except Exception as exc:
         logger.warning("Top-gaining listesi alınamadı, aktif sembollere düşülüyor: %s", exc)
         gainer_rows = []
-    gainer_symbols = [item["symbol"] for item in gainer_rows]
+    # KRİPTO ALLOWLIST (2026-11-09): sohbetin "en çok yükselenler" listesi de
+    # BTC/ETH/XRP dışındaki kripto çiftlerini göstermez.
+    gainer_symbols, _dropped_gainers = config.filter_crypto_symbols(
+        [item["symbol"] for item in gainer_rows])
     gainer_meta = {item["symbol"]: item for item in gainer_rows}
     if not gainer_symbols:
-        gainer_symbols = [str(symbol).replace("_", "").upper() for symbol in config.SYMBOLS][:20]
+        gainer_symbols = config.filter_crypto_symbols(
+            [str(symbol).replace("_", "").upper() for symbol in config.SYMBOLS])[0][:20]
     historical_risers = await _fastest_risers_before(gainer_symbols, horizon_minutes, end_time_ms)
     historical_timeframes = ["1m", "3m", "5m"] if horizon_minutes == 5 else ["1m", "5m", "15m"]
     historical_snapshots = []

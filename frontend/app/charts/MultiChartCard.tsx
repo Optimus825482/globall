@@ -880,7 +880,9 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                 )}
                                 {!forexMode && (
                                 <div className="flex flex-wrap gap-1 mb-2">
-                                    {["BTCTRY","ETHTRY","SOLTRY","AVAXTRY","PEPETRY","XRPTRY"].map(s => (
+                                    {/* 2026-11-09: kripto allowlist — yalnız BTC/ETH/XRP (backend
+                                    config.CRYPTO_ALLOWED_BASES ile aynı). */}
+                                    {["BTCTRY","ETHTRY","XRPTRY"].map(s => (
                                         <button key={s} type="button" onClick={() => handleSelectSymbol(s)}
                                             className={`px-1.5 py-0.5 rounded text-2xs font-mono border transition-colors ${config.symbol === s ? "bg-neon-green/20 border-neon-green/50 text-neon-green font-bold" : "bg-bunker-800/60 border-bunker-700 text-bunker-muted hover:text-white"}`}>
                                             {s.replace("TRY","")}

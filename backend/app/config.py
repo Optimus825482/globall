@@ -171,26 +171,70 @@ class Config:
     # kullanılır; verilmezse kayıt defterindeki quote'ün varsayılan havuzu
     # kurulur. Sıralama ve büyüklük korunur — tarama genişliği ve radar
     # aday sayısı bu listeye bağlı.
+    # ------------------------------------------------------------------
+    # KRİPTO SEMBOL ALLOWLIST (2026-11-09 — Erkan talebi)
+    # Yalnız BTC / ETH / XRP tabanlı çiftler kalır; diğer TÜM kripto çiftleri
+    # radar, tarama evreni, spot monitor ve sohbet listelerinden DÜŞER.
+    #
+    # FX/EMTİA ETKİLENMEZ (XAUUSD, EURUSD, USDJPY, USOIL ...): filtre YALNIZ
+    # "kripto quote'lu" sembollere dokunur (USDT/TRY/USDC/BUSD/FDUSD/TUSD,
+    # ayrıca kripto-kripto BTC/ETH/BNB quote). USD quote'lu bir sembolün kripto
+    # CFD mi FX mi olduğu sembol adından ayırt EDİLEMEZ; o yüzden USD quote'lu
+    # sembollere hiç karışılmaz — yanlışlıkla XAUUSD'yi eleme riski yok.
+    #
+    # Env: `CRYPTO_ALLOWED_BASES=BTC,ETH,XRP` (virgülle; boşaltılamaz).
+    # ------------------------------------------------------------------
+    CRYPTO_ALLOWED_BASES = frozenset(
+        b.strip().upper() for b in os.getenv(
+            "CRYPTO_ALLOWED_BASES", "BTC,ETH,XRP").split(",") if b.strip()
+    ) or frozenset({"BTC", "ETH", "XRP"})
+
+    #: Kripto quote'ları — UZUNDAN KISAYA sıralı (USDT, TRY'den önce denenmeli).
+    _CRYPTO_QUOTES = ("USDC", "FDUSD", "TUSD", "BUSD", "USDT", "TRY", "BTC", "ETH", "BNB")
+
+    @classmethod
+    def crypto_base_of(cls, symbol) -> str | None:
+        """`BTCUSDT` → `BTC`. Kripto quote'lu DEĞİLSE ``None`` (FX/emtia)."""
+        raw = str(symbol or "").strip().upper().replace("_", "")
+        if not raw:
+            return None
+        for quote in cls._CRYPTO_QUOTES:
+            if len(raw) > len(quote) and raw.endswith(quote):
+                return raw[: -len(quote)]
+        return None
+
+    @classmethod
+    def is_crypto_symbol_allowed(cls, symbol) -> bool:
+        """İzinli kripto tabanı mı? FX/emtia/bilinmeyen sembol → ``True``."""
+        base = cls.crypto_base_of(symbol)
+        return True if base is None else base in cls.CRYPTO_ALLOWED_BASES
+
+    @classmethod
+    def filter_crypto_symbols(cls, symbols) -> tuple[list[str], list[str]]:
+        """(kalan, elenen) — kripto quote'lu olup izinli tabanda olmayanlar elenir."""
+        kept: list[str] = []
+        dropped: list[str] = []
+        for item in symbols or []:
+            text = str(item).strip().upper()
+            if not text:
+                continue
+            (kept if cls.is_crypto_symbol_allowed(text) else dropped).append(text)
+        return kept, dropped
+
+    @classmethod
+    def allowed_crypto_symbols(cls, quote: str | None = None) -> list[str]:
+        """İzinli sembollerin BU quote'taki karşılıkları (evren boş kalmasın)."""
+        q = str(quote or cls.QUOTE_ASSET).strip().upper()
+        return [f"{base}{q}" for base in sorted(cls.CRYPTO_ALLOWED_BASES)]
+
     _DEFAULT_SYMBOLS: dict = {
-        "TRY": [
-            "BTCTRY", "ETHTRY", "SOLTRY",   # Ana Hacimliler (Balinalar)
-            "XRPTRY", "ADATRY", "AVAXTRY",  # Orta Hacimliler (Trend Takipçileri)
-            "LINKTRY", "NEARTRY", "APTTRY", # Güçlü Projeler (Kırılım avcıları)
-            "ARBTRY", "OPTRY", "SUITRY",    # Yeni Nesil L2'ler (Hızlı Hareket)
-            "DOGETRY", "LTCTRY", "BNBTRY",  # Memecoinler (Hacim Patlaması Kralları)
-            "INJTRY", "WLDTRY", "DOTTRY", "GTRY",   # Yüksek Volatilite (Agresif Skalp)
-        ],
+        # 2026-11-09: yalnız izinli tabanlar (BTC/ETH/XRP) — diğer çiftler
+        # `CRYPTO_ALLOWED_BASES` ile HER YERDEN eleniyor.
+        "TRY": ["BTCTRY", "ETHTRY", "XRPTRY"],
         # Global'de aynı 18 majör, TRY → USDT. Taban varlıklar birebir aynı
         # seçildi ki iki örnek arasındaki davranış farkı yalnız borsada
         # olsun (sembol kurgusu, tarama genişliği, eşikler).
-        "USDT": [
-            "BTCUSDT", "ETHUSDT", "SOLUSDT",
-            "XRPUSDT", "ADAUSDT", "AVAXUSDT",
-            "LINKUSDT", "NEARUSDT", "APTUSDT",
-            "ARBUSDT", "OPUSDT", "SUIUSDT",
-            "DOGEUSDT", "LTCUSDT", "BNBUSDT",
-            "INJUSDT", "WLDUSDT", "DOTUSDT", "GUSDT",
-        ],
+        "USDT": ["BTCUSDT", "ETHUSDT", "XRPUSDT"],
     }
     _env_symbols = [s.strip().upper() for s in os.getenv("SYMBOLS", "").split(",") if s.strip()]
     SYMBOLS = _env_symbols or list(

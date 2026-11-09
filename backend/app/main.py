@@ -2236,6 +2236,13 @@ async def _apply_config_update(payload: dict, request: Request = None):
         if invalid:
             symbols = [symbol for symbol in symbols if symbol in allowed]
         symbols = [symbol for symbol in symbols if is_binance_tr_symbol(symbol)]
+        # KRİPTO ALLOWLIST (2026-11-09): yalnız BTC/ETH/XRP. Kullanıcının
+        # gönderdiği listeden elenenler `removed_invalid_symbols` içinde
+        # RAPORLANIR — sessizce düşürmek "kaydettim ama taramıyor" şaşkınlığı
+        # yaratırdı. FX/emtia sembolleri bu filtreye takılmaz.
+        symbols, _allowlist_dropped = config.filter_crypto_symbols(symbols)
+        if _allowlist_dropped:
+            invalid = sorted(set(invalid) | set(_allowlist_dropped))
         if not symbols:
             if invalid:
                 raise ValueError(f"{config.EXCHANGE_LABEL}'de işlemde olan ve Binance TR'de listeli {config.QUOTE_ASSET} sembolü kalmadı: {', '.join(invalid)}")

@@ -80,7 +80,23 @@ def apply_symbol_universe(symbols, *, source: str = "") -> list[str]:
     ``market.symbols = ...`` ataması ``config.SYMBOLS``'u geride bırakır ve
     yeniden başlatmada evrenin geri sarılmasına yol açar.
     """
-    normalized = _normalize(symbols)
+    # KRİPTO ALLOWLIST (2026-11-09): yalnız BTC/ETH/XRP tabanları geçer.
+    # FX/emtia sembolleri filtreye takılmaz (bkz. config.is_crypto_symbol_allowed).
+    kept, dropped = config.filter_crypto_symbols(symbols)
+    if dropped:
+        logger.info(
+            "kripto allowlist: %d sembol elendi (kaynak: %s): %s",
+            len(dropped), source or "bilinmiyor",
+            ", ".join(sorted(set(dropped))[:12]))
+    if not kept:
+        # Top-gainer rotasyonu izinli çiftleri içermeyebilir; evren BOŞ kalırsa
+        # tarama tamamen dururdu (`_reject_empty` hata verirdi). İzinli
+        # varsayılanlara düş — evren asla boş kalmaz.
+        kept = config.allowed_crypto_symbols()
+        logger.warning(
+            "kripto allowlist sonrası evren boştu → izinli varsayılanlara düşüldü "
+            "(kaynak: %s): %s", source or "bilinmiyor", kept)
+    normalized = _normalize(kept)
     _reject_empty(normalized, source)
     market.symbols = [symbol.lower() for symbol in normalized]
     config.SYMBOLS = normalized

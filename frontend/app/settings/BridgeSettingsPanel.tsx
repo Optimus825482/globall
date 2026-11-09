@@ -58,7 +58,7 @@ export default function BridgeSettingsPanel() {
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   // Ping test states
-  const [pingSymbol, setPingSymbol] = useState("SOLUSDT");
+  const [pingSymbol, setPingSymbol] = useState("BTCUSDT");
   const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState<{
     ok: boolean;
@@ -536,7 +536,8 @@ export default function BridgeSettingsPanel() {
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-bunker-muted">Hızlı Test Sembolü:</span>
               <div className="flex items-center gap-1">
-                {["SOLUSDT", "BTCUSDT", "PEPEUSDT", "AVAXUSDT"].map((sym) => (
+                {/* 2026-11-09: kripto allowlist — yalnız BTC/ETH/XRP. */}
+                {["BTCUSDT", "ETHUSDT", "XRPUSDT"].map((sym) => (
                   <button
                     key={sym}
                     type="button"
@@ -580,7 +581,7 @@ export default function BridgeSettingsPanel() {
           1. <strong>Öncü Sinyal Üretimi:</strong> Binance Global spot tahtasındaki USDT hacmi çok yüksek olduğu için bir coindeki kırılımlar, balina girişleri ve ani momentumlar Binance TR'den <strong>2 ila 5 saniye</strong> önce başlar.
         </p>
         <p>
-          2. <strong>Otomatik Sembol Eşleme:</strong> Global'de üretilen <code>SOLUSDT</code> sinyali taban varlığına (<code>SOL</code>) ayrıştırılarak Binance TR formatına (<code>SOLTRY</code>) dönüştürülür ve doğrudan TR uygulamasına iletilir.
+          2. <strong>Otomatik Sembol Eşleme:</strong> Global'de üretilen <code>BTCUSDT</code> sinyali taban varlığına (<code>SOL</code>) ayrıştırılarak Binance TR formatına (<code>BTCTRY</code>) dönüştürülür ve doğrudan TR uygulamasına iletilir.
         </p>
         <p>
           3. <strong>Sıfır Gecikmeli Webhook:</strong> Global analiz döngüsünü aksatmamak için istekler bağımsız HTTP havuzu üzerinden mikrosaniyeler içinde (non-blocking) fırlatılır.

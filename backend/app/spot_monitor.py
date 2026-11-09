@@ -48,12 +48,10 @@ COMMISSION_SCHEDULES = {
 }
 FEE_MODE = "bnb"
 
-# Taranacak ana ve hacimli semboller
-CORE_SYMBOLS = [
-    "BTCTRY", "ETHTRY", "SOLTRY", "AVAXTRY", "NEARTRY", "DOGETRY", 
-    "PEPETRY", "BNBTRY", "XRPTRY", "LINKTRY", "SHIBTRY", "ADATRY",
-    "DOTTRY", "RENDERTRY", "FETTRY", "ARBTRY", "OPTRY", "INJTRY"
-]
+# Taranacak semboller — 2026-11-09: kripto allowlist'i (BTC/ETH/XRP) uygulandı.
+# Diğer çiftler `config.CRYPTO_ALLOWED_BASES` ile HER YERDEN eleniyor; burada
+# liste elle küçültüldü ki tarama döngüsü boşa API çağırmasın.
+CORE_SYMBOLS = ["BTCTRY", "ETHTRY", "XRPTRY"]
 
 TIMEFRAMES = {
     "5m": {"tp_pct": 1.4, "sl_pct": 0.9, "label": "5m Scalp"},

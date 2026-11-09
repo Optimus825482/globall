@@ -76,17 +76,20 @@ class ConfigApiBehavior(unittest.IsolatedAsyncioTestCase):
             "market_symbols": list(main.market.symbols),
         }
         try:
-            main.config.SYMBOLS = ["HEMITRY", "ACXTRY", "VICTRY"]
-            main.config.SYMBOL_ORDER_PCT = {"HEMITRY": 0.1, "ACXTRY": 0.2}
-            with patch("app.main.trading_symbols", new=AsyncMock(return_value=["HEMITRY"])), \
+            # 2026-11-09 KRİPTO ALLOWLIST: HEMITRY/ACXTRY/VICTRY artık izinli
+            # DEĞİL (yalnız BTC/ETH/XRP). Testin NİYETİ korunuyor — "geçersiz
+            # sembol ayıklanır, geçerli olan kalır" — izinli tabanlarla.
+            main.config.SYMBOLS = ["BTCTRY", "XXTRY"]
+            main.config.SYMBOL_ORDER_PCT = {"BTCTRY": 0.1, "XXTRY": 0.2}
+            with patch("app.main.trading_symbols", new=AsyncMock(return_value=["BTCTRY"])), \
                  patch.object(main.market, "fetch_historical_data", new=AsyncMock()), \
                  patch("app.main.database.get_llm_setting", new=AsyncMock(return_value="{}")), \
                  patch("app.main.database.set_llm_setting", new=AsyncMock()), \
-                 patch("app.main.get_config", new=AsyncMock(return_value={"symbols": ["HEMITRY"]})):
-                result = await main._apply_config_update({"symbols": ["HEMITRY", "ACXTRY", "VICTRY"]})
-            self.assertEqual(main.config.SYMBOLS, ["HEMITRY"])
-            self.assertEqual(result["removed_invalid_symbols"], ["ACXTRY", "VICTRY"])
-            self.assertEqual(main.config.SYMBOL_ORDER_PCT, {"HEMITRY": 0.1})
+                 patch("app.main.get_config", new=AsyncMock(return_value={"symbols": ["BTCTRY"]})):
+                result = await main._apply_config_update({"symbols": ["BTCTRY", "XXTRY"]})
+            self.assertEqual(main.config.SYMBOLS, ["BTCTRY"])
+            self.assertEqual(result["removed_invalid_symbols"], ["XXTRY"])
+            self.assertEqual(main.config.SYMBOL_ORDER_PCT, {"BTCTRY": 0.1})
         finally:
             main.config.SYMBOLS = original["symbols"]
             main.config.SYMBOL_ORDER_PCT = original["order_pct"]
