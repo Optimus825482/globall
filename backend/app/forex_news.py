@@ -1571,6 +1571,364 @@ def _mark_investing_blocked(reason: str) -> None:
 
 
 # ============================================================================
+# ForexFactory HTML (curl_cffi) — AYNI GÜN `actual` VEREN ÜCRETSİZ KAYNAK
+# ============================================================================
+#
+# NEDEN BU: 2026-11-09'da tüm ücretsiz adaylar canlı denendi —
+#   Yahoo  : HTML'de takvim verisi YOK (JS kabuğu), calendar API 404
+#   FF XML : `<actual>` etiketi YOK (0/101)
+#   FF HTML: **curl_cffi `impersonate="safari17_0"` ile HTTP 200** (chrome131/124 → 403)
+#   Investing / forexprostools / TE / MQL5 : 403 veya 410
+#   TradingView : çalışıyor ama actual 1-2 gün GECİKMELİ
+#
+# Kanıt (aynı gün): FF `?day=today` → 5 açıklanmış olay; EUR German Trade Balance
+# `15.6B`, EUR Sentix `2.4` — TradingView bunları ertesi güne kadar vermiyor.
+#
+# ZAMAN: satırların saati SAYFANIN yerel saatidir (coğrafi IP'ye göre değişir!).
+# Bu yüzden saat dilimine GÜVENİLMEZ; her günün ilk satırındaki
+# `data-day-dateline` (yerel gece yarısının MUTLAK epoch'u) + saat-ofseti
+# kullanılır → hesap saat diliminden bağımsızdır.
+
+FF_HTML_URL = "https://www.forexfactory.com/calendar?week={week}"
+#: Denenen TLS parmak izleri. SIRA ÖNEMLİ: yalnız safari17_0 geçiyor (ölçüldü).
+FF_PROFILES = ("safari17_0", "chrome131", "chrome124")
+#: Tüm profiller düşerse bu süre boyunca yeniden denenmez.
+FF_BLOCK_SEC = 15 * 60
+_FF_STATE: Dict[str, Any] = {"last_error": None, "last_count": 0, "last_at": 0.0,
+                             "blocked_until": 0.0, "profile": None}
+
+
+def ff_state() -> Dict[str, Any]:
+    """Sağlık/panel yüzeyi: FF HTML kaynağı erişilebilir mi, son tur ne oldu?"""
+    remaining = max(0.0, float(_FF_STATE.get("blocked_until") or 0.0) - time.time())
+    return {
+        "enabled": True,
+        "blocked": remaining > 0,
+        "remaining_sec": round(remaining, 1),
+        "profile": _FF_STATE.get("profile"),
+        "last_error": _FF_STATE.get("last_error"),
+        "last_count": int(_FF_STATE.get("last_count") or 0),
+        "last_at": _FF_STATE.get("last_at") or None,
+    }
+
+
+try:
+    import html as html_lib
+except Exception:  # pragma: no cover
+    import html.entities as _he
+
+    class _HtmlLib:
+        @staticmethod
+        def unescape(x):
+            return _he.unescape(x)
+
+    html_lib = _HtmlLib()
+
+_FF_IMPACT_STARS = {"red": 3, "yel": 2}
+_FF_ROW_SPLIT = re.compile(r"<tr\b", re.I)
+
+
+def _ff_text(cell_html: str) -> str:
+    txt = html_lib.unescape(re.sub(r"<[^>]+>", " ", cell_html))
+    txt = txt.replace("\xa0", " ").strip()
+    return re.sub(r"\s+", " ", txt)
+
+
+def _ff_cell(row_html: str, cls: str) -> str:
+    m = re.search(r'<td[^>]*class="[^"]*calendar__%s[^"]*"[^>]*>(.*?)</td>' % cls, row_html, re.S | re.I)
+    return _ff_text(m.group(1)) if m else ""
+
+
+def _ff_minute(date_iso: Any) -> Optional[int]:
+    """`date_iso` → UTC dakika (eşleştirme anahtarı). Çözülemezse ``None``."""
+    try:
+        dt = datetime.datetime.fromisoformat(str(date_iso).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return int(dt.timestamp()) // 60
+
+
+def _ff_clock_minutes(text: str) -> Optional[int]:
+    """`1:30am` → 90. Saat değilse (All Day / Tentative / boş) ``None``."""
+    m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*(am|pm)?\s*$", str(text or ""), re.I)
+    if not m:
+        return None
+    hour = int(m.group(1)) % 12
+    if (m.group(3) or "").lower() == "pm":
+        hour += 12
+    return hour * 60 + int(m.group(2))
+
+
+def parse_forexfactory_html(html_text: str, now_utc: Optional[datetime.datetime] = None) -> List[Dict[str, Any]]:
+    """ForexFactory haftalık takvim HTML'ini iç biçime çevirir (SAF, ağ yok).
+
+    Yalnız 2-3 yıldızlı (Medium/High) VERİ olayları döner. Tatil/konuşma satırları
+    ve saati olmayan "tentative" kayıtlar elenir (bunların `actual`'ı olmaz ve
+    yanlış saate yerleştirmek takvimi yalan yapar).
+
+    İstisna fırlatmaz: bozuk/şeması değişmiş HTML `[]` döner (fail-closed).
+    """
+    if not html_text or "calendar__row" not in html_text:
+        return []
+    if now_utc is None:
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    chunks = re.split(r"(?=<tr\b)", html_text)
+    day_dateline: Optional[int] = None
+    last_minutes: Optional[int] = None
+    out: List[Dict[str, Any]] = []
+    for chunk in chunks:
+        if "calendar__row" not in chunk:
+            continue
+        # Gün çıpası her günün İLK veri satırında gelir; sonrakiler devralır.
+        dl = re.search(r'data-day-dateline="(\d+)"', chunk)
+        if dl:
+            try:
+                new_dateline = int(dl.group(1))
+            except ValueError:
+                new_dateline = None
+            # Saat devralması YALNIZ gerçekten gün değişince sıfırlanır: FF bazı
+            # düzenlerde dateline'ı her satırda tekrarlıyor; körlemesine sıfırlamak
+            # boş zamanlı satırı düşürürdü.
+            if new_dateline != day_dateline:
+                last_minutes = None
+            day_dateline = new_dateline
+        if day_dateline is None:
+            continue
+        if "calendar__row--day-breaker" in chunk:
+            continue
+
+        time_txt = _ff_cell(chunk, "time")
+        minutes = _ff_clock_minutes(time_txt)
+        if minutes is None:
+            if time_txt:
+                # "All Day" / "Tentative" / "Day 1": saat yok → saat uydurmayız.
+                last_minutes = None
+                continue
+            minutes = last_minutes          # boş hücre = üstteki saatle aynı
+        if minutes is None:
+            continue
+        last_minutes = minutes
+
+        currency = _ff_cell(chunk, "currency").strip().upper()
+        if not currency or len(currency) != 3:
+            continue
+        impact_cls = re.search(r"icon--ff-impact-([a-z]+)", chunk)
+        stars = _FF_IMPACT_STARS.get((impact_cls.group(1) if impact_cls else "").lower(), 0)
+        if stars < 2:
+            continue
+        title = _ff_cell(chunk, "event-title") or _ff_cell(chunk, "event")
+        title = re.sub(r"\s+", " ", title).strip()
+        if not title:
+            continue
+        actual = _ff_cell(chunk, "actual") or "—"
+        forecast = _ff_cell(chunk, "forecast") or "—"
+        previous = _ff_cell(chunk, "previous") or "—"
+
+        ts = day_dateline + minutes * 60
+        dt = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+        date_iso = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        eid = re.search(r'data-event-id="(\d+)"', chunk)
+        if eid:
+            item_id = f"cal-ff-{eid.group(1)}"
+        else:
+            item_id = "cal-ff-" + hashlib.md5(f"{title}|{date_iso}|{currency}".encode()).hexdigest()[:12]
+
+        passed = dt < now_utc
+        status = "Açıklandı" if actual != "—" else ("Geçti" if passed else "Bekleniyor")
+        c_info = COUNTRY_MAP.get(currency) or {"code": currency, "name": currency, "flag": "🌐"}
+        symbols = map_symbols_for_event(currency, title)
+        out.append({
+            "id": item_id,
+            "title": translate_title(title, currency),
+            "original_title": title,
+            "country": currency,
+            "currency": currency,
+            "country_name": c_info.get("name") or currency,
+            "flag": c_info.get("flag") or "🌐",
+            "date_str": dt.strftime("%d.%m %H:%M UTC"),
+            "date_iso": date_iso,
+            "impact": "High" if stars == 3 else "Medium",
+            "stars": stars,
+            "stars_str": "⭐⭐⭐" if stars == 3 else "⭐⭐",
+            "impact_label": f"⭐⭐⭐ HIGH" if stars == 3 else "⭐⭐ MEDIUM",
+            "forecast": forecast,
+            "previous": previous,
+            "actual": actual,
+            "status": status,
+            "is_passed": passed,
+            "comment": get_turkish_comment("", title, title),
+            "affected_symbols": symbols,
+            "scenario": generate_event_scenario(title, c_info.get("name") or currency, currency, symbols),
+            "source": "forexfactory_html",
+        })
+    return out
+
+
+def fetch_forexfactory_html_events_sync() -> tuple[List[Dict[str, Any]], Optional[str]]:
+    """(olaylar, hata) — curl_cffi ile bu hafta + gelecek hafta sayfalarını çeker."""
+    try:
+        from curl_cffi import requests as _cr
+    except Exception:
+        return [], "curl_cffi kurulu değil"
+    items: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    used = None
+    for week in ("this", "next"):
+        url = FF_HTML_URL.format(week=week)
+        got = False
+        for profile in ([used] if used else list(FF_PROFILES)):
+            try:
+                resp = _cr.get(url, impersonate=profile, timeout=25,
+                               headers={"Accept-Language": "en-US,en;q=0.9"})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{week}/{profile}: {type(exc).__name__}")
+                continue
+            if resp.status_code != 200:
+                errors.append(f"{week}/{profile}: HTTP {resp.status_code}")
+                continue
+            parsed = parse_forexfactory_html(resp.text or "")
+            if parsed:
+                items.extend(parsed)
+                used = profile
+                got = True
+                break
+            errors.append(f"{week}/{profile}: ayrıştırılamadı")
+        if not got:
+            continue
+    return items, ("; ".join(errors[:4]) if errors and not items else None)
+
+
+async def fetch_forexfactory_html_events() -> List[Dict[str, Any]]:
+    """ForexFactory HTML takvimini çeker (aynı gün `actual` için).
+
+    Tüm parmak izleri bloklanırsa `FF_BLOCK_SEC` boyunca yeniden denenmez
+    (Investing'de olduğu gibi): döngü saniyeler içinde 403 yağmuru üretmesin.
+    """
+    if time.time() < float(_FF_STATE.get("blocked_until") or 0.0):
+        return []
+    loop = asyncio.get_running_loop()
+    items, error = await loop.run_in_executor(None, fetch_forexfactory_html_events_sync)
+    _FF_STATE.update({"last_at": time.time(), "profile": _FF_STATE.get("profile")})
+    if items:
+        with_actual = sum(1 for i in items if i["actual"] != "—")
+        _FF_STATE.update({"last_error": None, "last_count": len(items),
+                          "blocked_until": 0.0})
+        logger.info("[EconomicCalendar] ForexFactory HTML: %d olay (actual dolu: %d)",
+                    len(items), with_actual)
+        return items
+    _FF_STATE.update({"last_error": error or "olay yok",
+                      "blocked_until": time.time() + FF_BLOCK_SEC})
+    logger.warning("[EconomicCalendar] ForexFactory HTML alınamadı (%s) — %d dk dinleniyor.",
+                   error or "olay yok", FF_BLOCK_SEC // 60)
+    return []
+
+
+def _ff_tokens(text: Any) -> set:
+    """Başlık benzerliği için anlamlı kelimeler (2+ harf, gürültü atılır)."""
+    stop = {"the", "of", "and", "for", "mom", "yoy", "qoq", "prel", "flash", "sa",
+            "usd", "eur", "gbp", "jpy", "cad", "aud", "chf", "nzd", "final", "revised"}
+    words = re.findall(r"[a-z]{2,}", str(text or "").lower())
+    return {w for w in words if w not in stop}
+
+
+def append_unmatched_ff(items: List[Dict[str, Any]], ff_items: List[Dict[str, Any]]) -> int:
+    """TV'de HİÇ karşılığı olmayan FF olaylarını listeye ekler.
+
+    NEDEN: FF'de olup TradingView'de olmayan gerçek veriler var (ör. CNY CPI/PPI).
+    Aynı `(para birimi, UTC dakikası)` zaten varsa EKLENMEZ → yinelenen satır olmaz.
+    """
+    if not ff_items:
+        return 0
+    have = set()
+    for ev in items:
+        minute = _ff_minute(ev.get("date_iso"))
+        if minute is not None:
+            have.add((str(ev.get("currency") or "").upper(), minute))
+    added = 0
+    for ev in ff_items:
+        minute = _ff_minute(ev.get("date_iso"))
+        if minute is None:
+            continue
+        key = (str(ev.get("currency") or "").upper(), minute)
+        if key in have:
+            continue
+        items.append(ev)
+        have.add(key)
+        added += 1
+    return added
+
+
+def backfill_values_from_ff(items: List[Dict[str, Any]], ff_items: List[Dict[str, Any]]) -> int:
+    """Kaynak karışımına FF'nin AYNI GÜN değerlerini yazar (satır ÜRETMEZ).
+
+    EŞLEŞTİRME KURALI (2026-11-09'da yanlış dolum testle yakalandı):
+      * Aynı `(para birimi, UTC dakikası)` için HEM hedefte HEM kaynakta TEK olay
+        varsa → doğrudan eşleşir.
+      * Birden fazla aday varsa (ör. 07:00 EUR: "Balance of Trade", "Exports MoM",
+        "Imports MoM") yalnız **başlık belirteçleri** ile TEK ve NET kazanan varsa
+        eşleşir. Aksi hâlde DOKUNULMAZ — yanlış değer yazmak, boş bırakmaktan
+        çok daha pahalıdır (LLM yanlış "açıklanan" değeri kanıt sanır).
+    """
+    if not items or not ff_items:
+        return 0
+    index: Dict[tuple, List[Dict[str, Any]]] = {}
+    for ev in ff_items:
+        minute = _ff_minute(ev.get("date_iso"))
+        if minute is None:
+            continue
+        index.setdefault((str(ev.get("currency") or "").upper(), minute), []).append(ev)
+    target_index: Dict[tuple, List[Dict[str, Any]]] = {}
+    for ev in items:
+        minute = _ff_minute(ev.get("date_iso"))
+        if minute is None:
+            continue
+        target_index.setdefault((str(ev.get("currency") or "").upper(), minute), []).append(ev)
+
+    filled = 0
+    for key, targets in target_index.items():
+        cands = index.get(key) or []
+        if not cands:
+            continue
+        if len(cands) == 1 and len(targets) == 1:
+            pairs = [(targets[0], cands[0])]
+        else:
+            # Belirsiz: başlık benzerliğiyle tek net kazanan ara.
+            pairs = []
+            for target in targets:
+                tt = _ff_tokens(target.get("original_title") or target.get("title"))
+                scored = []
+                for cand in cands:
+                    ct = _ff_tokens(cand.get("original_title") or cand.get("title"))
+                    if not tt or not ct:
+                        continue
+                    score = len(tt & ct) / len(tt | ct)
+                    scored.append((score, cand))
+                scored.sort(key=lambda x: -x[0])
+                if not scored or scored[0][0] < 0.34:
+                    continue
+                if len(scored) > 1 and scored[1][0] >= scored[0][0]:
+                    continue           # berabere → belirsiz, dokunma
+                pairs.append((target, scored[0][1]))
+        for target, src in pairs:
+            if str(target.get("actual") or "—").strip() not in ("", "—"):
+                continue
+            if str(src.get("actual") or "—").strip() in ("", "—"):
+                continue
+            target["actual"] = src["actual"]
+            for key2 in ("forecast", "previous"):
+                if (str(target.get(key2) or "—").strip() in ("", "—")
+                        and str(src.get(key2) or "—").strip() not in ("", "—")):
+                    target[key2] = src[key2]
+            target["status"] = "Açıklandı"
+            filled += 1
+    return filled
+
+
+
+# ============================================================================
 # FMP (Financial Modeling Prep) — AYNI GÜN `actual` İÇİN TEK ERİŞİLEBİLİR YOL
 # ============================================================================
 #
@@ -1743,7 +2101,9 @@ def investing_block_state() -> Dict[str, Any]:
         "remaining_sec": round(remaining, 1),
         "reason": _investing_blocked_reason or None,
         "profiles": list(_INVESTING_PROFILES),
-        # Aynı gün `actual` veren tek erişilebilir yol (anahtarlı).
+        # ÜCRETSİZ aynı gün kaynak (curl_cffi safari17_0 ile erişilebilir).
+        "forexfactory_html": ff_state(),
+        # Anahtarlı yedek (FF bloklanırsa).
         "fmp": fmp_state(),
     }
 
@@ -2022,6 +2382,21 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     # bağımlılık eksiğiyle değil, bu kapıyla da fiilen ölüydü. Ayrıca Investing
     # burada "son çare" değil **değer otoritesi**: aynı olayın Beklenti/Önceki/
     # Açıklanan üçlüsü ondan gelir (bkz. `merge_calendar_sources`).
+    # 1b) ForexFactory HTML — AYNI GÜN `actual` veren ücretsiz kaynak.
+    # (2-3 yıldız, gerçek veriler; satır ÜRETMEZ, eşleşenlerin değerini doldurur.)
+    ff_html_items: List[Dict[str, Any]] = []
+    try:
+        ff_html_items = await fetch_forexfactory_html_events()
+        if ff_html_items:
+            filled = backfill_values_from_ff(items, ff_html_items)
+            if filled:
+                logger.info("[EconomicCalendar] ForexFactory'dan %d olayın açıklanan/öngörü değeri dolduruldu.", filled)
+            added = append_unmatched_ff(items, ff_html_items)
+            if added:
+                logger.info("[EconomicCalendar] ForexFactory'dan %d yeni olay eklendi.", added)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[EconomicCalendar] ForexFactory HTML birleştirme hatası: %s", exc)
+
     inv_items: List[Dict[str, Any]] = []
     try:
         inv_items = await fetch_investing_com_events()
@@ -2108,7 +2483,7 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     # bu sahte satırları DB'ye yazmak, panelde aylar öncesinin olaylarını
     # "takvim" diye göstermek demekti. Sağlayıcı yoksa hiç yazmayız; okuma yolu
     # eldeki taze satırları sunmaya devam eder.
-    provider_ok = bool(tv_items or inv_items or fmp_items)
+    provider_ok = bool(tv_items or inv_items or fmp_items or ff_html_items)
     if database and final_items and provider_ok:
         try:
             saved_cnt = await database.save_economic_calendar_events(final_items)

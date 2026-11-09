@@ -55,6 +55,19 @@ export default function SystemHealthTab() {
                 </span>
                 {src.reason ? <span className="text-bunker-muted"> · {src.reason}</span> : null}
               </p>
+              {(() => {
+                const ff = src.forexfactory_html || {};
+                return (
+                  <p className="mt-2 font-mono text-sm">
+                    ForexFactory HTML (aynı gün değer):{" "}
+                    <span className={ff.blocked ? "text-yellow-300" : "text-neon-green"}>
+                      {ff.blocked ? `dinleniyor (${Math.round((ff.remaining_sec || 0) / 60)} dk)` : "erişilebilir"}
+                    </span>
+                    {ff.last_count ? <span className="text-bunker-muted"> · son tur {ff.last_count} olay</span> : null}
+                    {ff.profile ? <span className="text-bunker-muted"> · parmak izi {ff.profile}</span> : null}
+                  </p>
+                );
+              })()}
               <p className="mt-2 font-mono text-sm">
                 FMP (aynı gün değer):{" "}
                 <span className={fmp.configured ? "text-neon-green" : "text-yellow-300"}>
