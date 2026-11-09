@@ -7166,6 +7166,36 @@ async def get_candles_after(symbol: str, timeframe: str, after_ms: int, limit: i
     return await _run_db(op)
 
 
+async def count_llm_review_shadow_rows() -> int:
+    """Gölge sonucu çözülmüş LLM kararı sayısı (Gölge Modlar raporu)."""
+    def op(conn):
+        row = conn.execute(
+            "SELECT count(*) FROM llm_trade_reviews WHERE shadow_pips IS NOT NULL"
+        ).fetchone()
+        return int((row[0] if isinstance(row, (list, tuple)) else list(row.values())[0]) or 0)
+    return await _run_db(op)
+
+
+async def count_geometry_shadow_rows() -> int:
+    """`outcome_details.shadow_geometry` yazılmış aday sayısı (geometri gölgesi).
+
+    Gölge Modlar raporunun ilerleme göstergesi: karar için ~300 satır gerekiyor.
+    """
+    def op(conn):
+        # DİKKAT: `outcome_details ? 'shadow_geometry'` Postgres'te JSON VARLIK
+        # operatörüdür ama bu katmanda `?` PARAMETRE yer tutucusudur → çakışıp
+        # ProgrammingError verir. Metin karşılaştırması iki backend'de de çalışır.
+        row = conn.execute(
+            # `LIKE '%…%'` KULLANILMAZ: bu katmanın sürücüsü `%s` yer tutucusu
+            # bekliyor ve SQL içindeki `%` "geçersiz yer tutucu" hatası veriyor.
+            # `POSITION` iki backend'de de var ve `%` içermez.
+            "SELECT count(*) FROM velocity_candidates "
+            "WHERE POSITION('shadow_geometry' IN CAST(outcome_details AS TEXT)) > 0"
+        ).fetchone()
+        return int((row[0] if isinstance(row, (list, tuple)) else list(row.values())[0]) or 0)
+    return await _run_db(op)
+
+
 async def shadow_summary(frozen_id: int):
     """İleri test karnesi: kapı geçen/geçmeyen tahminlerin gerçek sonucu."""
     def op(conn):

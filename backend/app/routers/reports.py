@@ -702,3 +702,24 @@ async def get_ml_calibration_csv(days: float = 0.0):
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="ml_kalibrasyon_{stamp}.csv"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# GÖLGE MODLAR (2026-11-09)
+#
+# Sistemde kararı DEĞİŞTİRMEDEN ölçüm yapan 5 mekanizma var (LLM karar gölgesi,
+# ML kalibrasyonu, geometri, portföy risk kapısı, kanıt kapısı). Kullanıcı bunları
+# tek ekranda görmek istedi: hangisi kaç örnek topladı, hangisi karar eşiğine
+# yaklaştı. Mantık `app/shadow_report.py` (okuma; hiçbir ayarı değiştirmez).
+# ---------------------------------------------------------------------------
+
+@router.get("/api/reports/shadow-summary")
+async def get_shadow_summary():
+    """Tüm gölge ölçüm mekanizmalarının durumu (tek ekran)."""
+    from app import shadow_report
+
+    try:
+        return await shadow_report.build()
+    except Exception as exc:  # noqa: BLE001 - rapor ucu 500 dönmesin
+        logger.warning("shadow-summary üretilemedi: %s", exc)
+        return {"count": 0, "items": [], "error": f"{type(exc).__name__}: {exc}"}
