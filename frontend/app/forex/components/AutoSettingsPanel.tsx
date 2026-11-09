@@ -714,6 +714,30 @@ export default function AutoSettingsPanel({
                       <p className="text-bunker-muted/80 leading-snug">
                         skill ≤ 0 ise güven puanı bilgi TAŞIMIYOR: kalibrasyon onu taban orana düzler (kullanmak = sabit tahmin).
                       </p>
+                      {/* SONUÇTAN EYLEM (2026-11-09): skill ≤ 0 ise güven puanı filtre
+                          olarak işe yaramaz → LLM'i "Danışman" moduna almak, 26 sn
+                          gecikme ve %16 hata yükünü karar yolundan çıkarır. */}
+                      {Number(calibResult.out_of_sample.brier_skill_calibrated ?? 0) <= 0 && (
+                        <div className="rounded border border-amber-500/40 bg-amber-500/10 p-1.5 space-y-1">
+                          <p className="text-amber-200 leading-snug">
+                            Bu sonuç: güven puanı <b>filtre olarak kullanılamaz</b>. LLM kayıt tutmaya devam etsin
+                            ama işlemi engellemesin → modu <b>Danışman</b> yapın.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setField("llm_review_mode", "advisory")}
+                              className="ui-button ui-button-compact ui-button-secondary"
+                            >
+                              Modu "Danışman" yap
+                            </button>
+                            <span className="text-bunker-muted">
+                              şu an: <b className="text-white">{(form.llm_review_mode ?? "veto") === "advisory" ? "Danışman" : "Veto"}</b>
+                            </span>
+                          </div>
+                          <p className="text-bunker-muted/70">Seçim formda uygulanır; kalıcı olması için panelin KAYDET düğmesi.</p>
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="pt-1 flex flex-wrap items-center gap-2">

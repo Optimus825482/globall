@@ -291,3 +291,49 @@ Yalnız **ölçer** + artefakt yazar; `llm_review_min_confidence` ayarını **de
 3. Fail-closed kutusunun **kapalı** olduğunu doğrula (varsayılan), değilse kapat + kaydet
 
 **Doğrulama:** frontend `typecheck` 0 hata + `build` ✓ · backend `2077 passed, 2 failed` (2 kırmızı önceden var).
+
+---
+
+## 9. GERÇEK SUNUCU ÖLÇÜMÜ — 1234 karar (2026-11-09)
+
+Paneldeki "Güven kalibrasyonunu ölç" düğmesinin sunucudaki **ilk gerçek** çıktısı.
+
+### 9.1 Ham çıktı
+
+| | |
+|---|---|
+Örnek | **1234** karar |
+Taban isabet | **0.310** |
+Break-even | **0.377** (kazanç/kayıp **1.65 : 1**) |
+Brier ham → kalibre (tam veri) | 0.3763 → 0.2134 · ECE 0.3883 → 0.0000 · skill 0.003 |
+**OUT-OF-SAMPLE** (802 ile eğitildi, **432** ile ölçüldü) | **Brier 0.3378 → 0.2319** · **ECE 0.3202 → 0.0627** · **skill −0.020** |
+Önerilen eşik | 92 — kapsam **%0,24** (≈3 karar/60 gün) → **EŞİK UYGULANAMAZ** |
+
+### 9.2 Okuma
+
+**a) Kalibrasyon GERÇEKTEN çalışıyor (out-of-sample).** OOS ECE **0.3202 → 0.0627**. Yani izotonik eğri sadece eğitim verisini ezberlemiyor; **gelecekte de** aşırı güveni düzeltiyor. (Önceki tur "ECE → 0.0000" in-sample yanılsamaydı; düzeltildikten sonra OOS 0.0627 = "kabul edilebilir" bandın üstü.)
+
+**b) Ama güven puanı BİLGİ TAŞIMIYOR.** OOS skill **−0.020**: kalibre Brier 0.2319, test yarısının taban varyansı 0.2274 → **fark +0.0045**. Kalibrasyon skoru neredeyse **tam olarak sabit tahmine** düzlemiş. Yani "güven yüksekse daha iyi" diye bir sıralama **yok**; düzeltmeden sonra sıralayacak bir şey kalmıyor.
+
+**c) Ham hâliyle kullanmak zararlı.** Tam veride ham Brier skill **−0.759** — yani "%31,1 de" demek modelden **daha iyi**. LLM'in 60-80% dediği yerde gerçek ~31%. Eğer bu sayı herhangi bir yerde (boyut çarpanı, eşik, UI rozeti) **ham** kullanılıyorsa yanlış yönde.
+
+**d) Eşik 92 uygulanamaz.** 1234 kararın %0,24'ü = **60 günde ~3 onay**. Uygulanırsa LLM fiilen hiç onay vermez ve ticaret durur. Kapsam koruması bunu otomatik yakaladı (`unreachable`).
+
+**e) Beklenen değer:** 0.310 × 1.65 − 0.690 = **−0.178 R / karar**. LLM onaylı akış net negatif.
+
+### 9.3 Karar (veriyle)
+
+| İş | Neden |
+|---|---|
+**`llm_review_mode = advisory`** | Güven puanı filtre olarak işe yaramıyor (OOS skill ≤ 0). Danışman modda LLM kayıt tutmaya devam eder, işlem engellemez → **26 sn gecikme ve %16 hata yükü karar yolundan çıkar** |
+**Eşik 92'yi UYGULAMA** | Kapsam %0,24 → fiilen ticaret durur. Panel düğmeyi zaten gizliyor |
+**`min_confidence` 55'te kalsın** | Danışman modda etkisiz; veto'ya dönülürse başlangıç değeri |
+**2-3 hafta sonra tekrar ölç** | Bağlama koşulu: **OOS skill > 0** VE **eşik kapsamı ≥ %2** |
+
+### 9.4 Panelin son adımı da tek tıkla
+
+OOS `skill ≤ 0` çıktığında panel artık **amber bir öneri** gösteriyor: *"güven puanı filtre olarak kullanılamaz → modu Danışman yapın"* + **"Modu 'Danışman' yap"** düğmesi (formu doldurur; KAYDET ile kalıcı).
+
+### 9.5 Bu ölçüm neyi DEĞİŞTİRMEDİ
+
+Sistemin asıl sorunu hâlâ **geometri**: LLM tarafında break-even %37,7; gerçek MT5 işlemlerinde break-even **%67,2** vs gerçekleşen **%56,2**. LLM'i kapatmak da açmak da bunu çözmez — yalnız 26 sn + %16 hata yükünü kaldırır.
