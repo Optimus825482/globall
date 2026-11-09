@@ -481,3 +481,66 @@ skorlamaya/kapıya sokmak backtest ister. Şu an yalnız `/api/system/health` ve
 yüzeyinde görünür — radar skorlamasına **girmedi** (bilinçli).
 
 **Tüm backend:** `1988 passed, 2 failed` (2 kırmızı önceden var).
+
+---
+
+## 13. P2 TURU — Sinyal IC/kuantil ölçümü (P2-14) · **İLK GERÇEK BULGU**
+
+### 13.1 Neden `alphalens-reloaded` değil
+
+`alphalens` pandas + scipy ister; üretim imajında ikisi de yok. IC (Spearman) ve
+kuantil getirisi **saf numpy** ile hesaplanabilir → `app/signal_edge.py`
+(`information_coefficient`, `ic_tstat`, `quantile_returns`, `monotonicity`,
+`align_forward_returns`). 21 test. Ağır tearsheet gerekirse `alphalens`
+araştırma katmanında ayrıca koşulabilir.
+
+### 13.2 GERÇEK ÜRETİM VERİSİYLE ÖLÇÜM — 65.471 aday, 180 gün
+
+`scripts/report_signal_edge.py` yerel Postgres'teki `velocity_candidates`
+üzerinde koştu:
+
+| Ölçüm | n | IC | t | Tekdüze? | Hüküm |
+|---|---|---|---|---|---|
+| `ml_hit_probability` → MFE | 53.596 | **0.216** | 50,8 | ✅ evet | Güçlü |
+| `velocity_score` → MFE | 65.471 | **0.111** | 28,5 | ✅ evet | Anlamlı |
+| `ml_hit_probability` → `touched_target` | 53.596 | 0.074 | 17,1 | ❌ **HAYIR** | Sorunlu |
+
+Kuantil tablosu (`ml_hit_probability` → MFE) — **düzgün artan**:
+
+```
+Q1 1.19%   Q2 1.46%   Q3 1.81%   Q4 2.06%   Q5 2.74%
+```
+
+Ama **hedefe değme** oranı tekdüze DEĞİL:
+
+```
+Q1 0.198   Q2 0.278   Q3 0.324   Q4 0.310   Q5 0.299   ← tepe Q3'te, Q5 daha kötü
+```
+
+### 13.3 Kök neden — ÖLÇÜLDÜ ve DOĞRULANDI
+
+| Dilim | ort. olasılık | ort. **hedef %** | ort. MFE % | MFE/hedef | isabet |
+|---|---|---|---|---|---|
+| Q1 | 0.006 | 2.077 | 1.194 | 0.57 | 0.198 |
+| Q2 | 0.020 | 2.138 | 1.464 | 0.68 | 0.278 |
+| Q3 | 0.046 | 2.324 | 1.807 | 0.78 | 0.324 |
+| Q4 | 0.088 | 2.533 | 2.062 | 0.81 | 0.310 |
+| Q5 | 0.248 | **2.893** | 2.742 | **0.95** | 0.299 |
+
+`target_pct` olasılıkla birlikte **büyüyor** (Spearman **0.537**). Yani modelin
+"hit probability"si aslında **hareketin BÜYÜKLÜĞÜNÜ** iyi sıralıyor; ama hedef de
+aynı oranda büyüdüğü için **hedefe değme oranı** üst dilimde düşüyor
+(Q5'te MFE/hedef 0.95 → hedefin dibinde kalıyor).
+
+**Sonuç:** "olasılık yüksek = isabet yüksek" varsayımı **üst dilimde yanlış**.
+`ml_probability`'nin `touched_target` üzerinde kalibre edilmesi (P1-3) ve hedef
+boyutunun olasılıktan **ayrıştırılması** tam olarak bu boşluğu hedefliyor. Bu,
+ölçüm katmanı olmadan görülemeyecek bir bulgu.
+
+### 13.4 Ne YAPILMADI (bilinçli)
+
+Hedef boyutu/olasılık bağını değiştirmek **backtest ister**. Bu turda yalnız
+ölçüm ve kanıt üretildi. Sıradaki adım: `ml_probability` artefaktı + hedef
+ayrıştırma varyantının A/B'si (PBO/DSR ile).
+
+**Tüm backend:** `2009 passed, 2 failed` (2 kırmızı önceden var).
