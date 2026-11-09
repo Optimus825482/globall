@@ -26,7 +26,10 @@ OPPORTUNITY_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCA
                         "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "BTCUSD", "USTEC", "US30"]
 DEEP_ANALYSIS_TOP = 4              # taramada en net N sembol derin analiz edilir
 # Hafta sonu forex/altın/endeks kapalı: yalnızca kripto taranır (BTC, ETH ve sistemde tanımlı altcoinler) ve daha çok aday derin analiz edilir.
-WEEKEND_UNIVERSE = ["BTCUSD", "ETHUSD", "XRPUSD", "SOLUSD", "BNBUSD", "ADAUSD", "LNKUSD", "UNIUSD", "AVXUSD", "XTZUSD"]
+#: Hafta sonu taraması (forex/emtia kapalı). 2026-11-09: yalnız izinli kriptolar
+#: (`config.CRYPTO_ALLOWED_BASES`). Eski liste 10 coin taşıyordu; 7'si ürün
+#: kuralıyla emekliye ayrılmıştı ve derin-analiz kotasını boşa harcıyordu.
+WEEKEND_UNIVERSE = ["BTCUSD", "ETHUSD", "XRPUSD"]
 WEEKEND_DEEP_TOP = 5
 
 
@@ -39,7 +42,33 @@ def is_weekend(now_ts: Optional[float] = None) -> bool:
 
 
 def universe_now(now_ts: Optional[float] = None) -> List[str]:
-    return list(WEEKEND_UNIVERSE if is_weekend(now_ts) else OPPORTUNITY_UNIVERSE)
+    """Taranacak evren — MOTORUN KURALLARINA uyar (2026-11-09).
+
+    İki tutarsızlık düzeltildi; ikisi de kullanıcı çıktısında görünüyordu:
+      * `blocked_symbols` (sembol koruması) yok sayılıyordu → tarama, motorun
+        ASLA açmayacağı bir sembolü "en net yönlü fırsat" diye öneriyordu
+        (gözlem: AUDNZD önerildi, oysa AUD kümesi kara listede).
+      * Kripto allowlist'i (yalnız BTC/ETH/XRP) uygulanmıyordu → hafta sonu
+        evreninin 7/10'u sistemin artık işlem yapmadığı emekli coinlerle
+        doluyordu (derin analiz kotası boşa gidiyordu).
+
+    Tek çağıran `routers/forex_chat` fırsat taramasıdır; süzme burada yapılınca
+    panel ile motor aynı kuralları görür.
+    """
+    base = list(WEEKEND_UNIVERSE if is_weekend(now_ts) else OPPORTUNITY_UNIVERSE)
+    try:
+        from app.config import config as _cfg
+        base, _dropped = _cfg.filter_crypto_symbols(base)
+    except Exception:  # noqa: BLE001 - filtre kurulamazsa evren boş kalmasın
+        pass
+    try:
+        from app.routers import forex as _fx
+        blocked = {str(b).strip().upper() for b in (_fx._AUTO_SETTINGS.blocked_symbols or [])}
+        if blocked:
+            base = [s for s in base if s.strip().upper() not in blocked]
+    except Exception:  # noqa: BLE001
+        pass
+    return base
 
 
 def deep_top_now(now_ts: Optional[float] = None) -> int:

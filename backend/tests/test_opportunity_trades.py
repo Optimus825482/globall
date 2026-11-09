@@ -382,10 +382,17 @@ def test_weekend_window_boundaries():
 
 
 def test_weekend_universe_is_crypto_only_and_deeper():
+    """2026-11-09: evren MOTORUN kurallarına uyar — emekli coinler ve kara liste
+    dışlanır. Eski hâlde hafta sonu listesinin 7/10'u sistemin işlem yapmadığı
+    coinlerdi ve `universe_now` kara listeyi hiç görmüyordu (AUDNZD önerilebiliyordu).
+    """
+    from app.config import config as cfg
     wk, wd = utc(2026, 10, 31, 12), utc(2026, 11, 2, 10)
-    assert ot.universe_now(wk) == ot.WEEKEND_UNIVERSE and all(s.endswith("USD") and not s.startswith(("EUR", "GBP", "XAU", "US")) for s in ot.WEEKEND_UNIVERSE)
-    assert "BTCUSD" in ot.WEEKEND_UNIVERSE and "ETHUSD" in ot.WEEKEND_UNIVERSE
-    assert ot.universe_now(wd) == ot.OPPORTUNITY_UNIVERSE and "XAUUSD" in ot.OPPORTUNITY_UNIVERSE
+    weekend = ot.universe_now(wk)
+    weekday = ot.universe_now(wd)
+    assert weekend == ["BTCUSD", "ETHUSD", "XRPUSD"]
+    assert all(cfg.is_crypto_symbol_allowed(s) for s in weekend)
+    assert "XAUUSD" in weekday and weekday, "hafta içi evren boş kalmamalı"
     assert ot.deep_top_now(wk) > ot.deep_top_now(wd)
 
 

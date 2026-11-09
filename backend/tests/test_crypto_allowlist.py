@@ -9,7 +9,9 @@ Kilitlenen davranış:
   1. İzinli tabanlar (BTC/ETH/XRP) her quote biçiminde geçer.
   2. Diğer kripto çiftleri (SOLUSDT, DOGETRY, ORCAUSDT …) ELENİR.
   3. **FX/EMTİA DOKUNULMAZ** (XAUUSD, EURUSD, USDJPY, USOIL, NAS100) — filtre
-     yalnız kripto quote'lu sembollere uygulanır.
+     yalnız KRİPTO sembollere uygulanır. 2026-11-09: `XXXUSD` biçimi de kapsandı
+     (broker kriptoyu SOLUSD/ADAUSD diye adlandırıyor ve `USD` quote listesinde
+     olmadığı için bu isimler eski filtreye TAKILMIYORDU → ürün kuralı delikti).
   4. `apply_symbol_universe` evreni filtreler; hepsi elenirse **izinli
      varsayılanlara düşer** (evren asla boş kalmaz, `_reject_empty` patlamaz).
   5. `_DEFAULT_SYMBOLS` ve `spot_monitor.CORE_SYMBOLS` yalnız izinli çiftleri taşır.
@@ -172,6 +174,48 @@ class TestWiring(unittest.TestCase):
     def test_chat_gainers_filtered(self):
         src = pathlib.Path(ROOT, "app", "routers", "llm_chat.py").read_text(encoding="utf-8")
         self.assertIn("config.filter_crypto_symbols(", src)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+class TestUsdFormIsCovered(unittest.TestCase):
+    """`XXXUSD` biçimi (2026-11-09 deliği) — `USD` quote listesinde OLMADIĞI için
+    eski filtre `SOLUSD`/`ADAUSD` gibi isimleri FX sanıyordu ve ürün kuralı
+    ("yalnız BTC/ETH/XRP") bu biçimde DELİKTİ. Hafta sonu tarama evreninde 7
+    emekli coin görünmesiyle ortaya çıktı.
+    """
+
+    def test_retired_usd_cryptos_are_detected(self):
+        for sym in ("SOLUSD", "ADAUSD", "XTZUSD", "DATAUSD", "UNIUSD", "AVXUSD", "LNKUSD"):
+            self.assertFalse(config.is_crypto_symbol_allowed(sym), f"{sym} elenmeli")
+            self.assertIsNotNone(config.crypto_base_of(sym), f"{sym} kripto sayılmalı")
+
+    def test_allowed_usd_cryptos_kept(self):
+        for sym in ("BTCUSD", "ETHUSD", "XRPUSD"):
+            self.assertTrue(config.is_crypto_symbol_allowed(sym), f"{sym} kalmalı")
+
+    def test_fx_and_commodity_never_treated_as_crypto(self):
+        # REGRESYON KAPISI: `USD` quote listesine eklenirse bu liste patlar —
+        # tüm forex evreni "kripto" sayılırdı.
+        for sym in ("EURUSD", "GBPUSD", "USDJPY", "AUDCAD", "NZDUSD", "XAUUSD",
+                    "US30", "NAS100", "USTEC", "GBPJPY", "AUDJPY"):
+            self.assertIsNone(config.crypto_base_of(sym), f"{sym} kripto SAYILMAMALI")
+
+    def test_scan_universe_obeys_engine_rules(self):
+        """Fırsat taraması evreni motorun kurallarına uymalı: kara liste + allowlist."""
+        from app import opportunity_trades as ot
+        from app.routers import forex as fx
+        import datetime
+
+        blocked = {b.strip().upper() for b in (fx._AUTO_SETTINGS.blocked_symbols or [])}
+        for now_ts in (0, datetime.datetime(2026, 11, 14, 12, 0).timestamp()):  # hafta içi + hafta sonu
+            universe = ot.universe_now(now_ts)
+            self.assertTrue(universe, "evren boş kalmamalı")
+            for sym in universe:
+                self.assertTrue(config.is_crypto_symbol_allowed(sym),
+                                f"{sym} tarama evreninde ama kripto allowlist'i dışında")
+                self.assertNotIn(sym, blocked, f"{sym} tarama evreninde ama kara listede")
 
 
 if __name__ == "__main__":

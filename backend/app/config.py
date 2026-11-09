@@ -192,15 +192,34 @@ class Config:
     #: Kripto quote'ları — UZUNDAN KISAYA sıralı (USDT, TRY'den önce denenmeli).
     _CRYPTO_QUOTES = ("USDC", "FDUSD", "TUSD", "BUSD", "USDT", "TRY", "BTC", "ETH", "BNB")
 
+    #: `XXXUSD` biçimindeki kripto tabanları.
+    #:
+    #: NEDEN AYRI LİSTE: `USD` `_CRYPTO_QUOTES`'a EKLENEMEZ — her FX paritesi ve
+    #: emtia USD ile biter (EURUSD, GBPUSD, XAUUSD, AUDCAD…); USD'yi quote saymak
+    #: bütün forex evrenini "kripto" yapardı. Broker/panel dünyası ise kriptoyu
+    #: `SOLUSD`, `ADAUSD` biçiminde adlandırıyor ve bu isimler quote kuralına
+    #: TAKILMIYORDU → "yalnız BTC/ETH/XRP" ürün kuralı bu biçimde DELİKTİ
+    #: (2026-11-09: hafta sonu tarama evreninde 7 emekli coin görünüyordu).
+    #: Kapsam, sistemde gerçekten geçen tabanlarla sınırlı tutulur; FX para
+    #: birimleri (EUR/GBP/JPY/CHF/CAD/AUD/NZD/MXN) burada ASLA yer almaz.
+    KNOWN_USD_CRYPTO_BASES = frozenset({
+        "SOL", "BNB", "ADA", "LNK", "LINK", "UNI", "AVX", "AVAX", "XTZ", "DATA",
+    })
+
     @classmethod
     def crypto_base_of(cls, symbol) -> str | None:
-        """`BTCUSDT` → `BTC`. Kripto quote'lu DEĞİLSE ``None`` (FX/emtia)."""
+        """`BTCUSDT`/`BTCUSD` → `BTC`. Kripto DEĞİLSE ``None`` (FX/emtia)."""
         raw = str(symbol or "").strip().upper().replace("_", "")
         if not raw:
             return None
         for quote in cls._CRYPTO_QUOTES:
             if len(raw) > len(quote) and raw.endswith(quote):
                 return raw[: -len(quote)]
+        # `XXXUSD` biçimi: yalnız TANINAN kripto tabanları (FX/emtia karışmaz).
+        if raw.endswith("USD") and len(raw) > 3:
+            base = raw[:-3]
+            if base in cls.KNOWN_USD_CRYPTO_BASES:
+                return base
         return None
 
     @classmethod
