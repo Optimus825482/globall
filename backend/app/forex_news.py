@@ -1595,7 +1595,10 @@ FF_PROFILES = ("safari17_0", "chrome131", "chrome124")
 #: Tüm profiller düşerse bu süre boyunca yeniden denenmez.
 FF_BLOCK_SEC = 15 * 60
 _FF_STATE: Dict[str, Any] = {"last_error": None, "last_count": 0, "last_at": 0.0,
-                             "blocked_until": 0.0, "profile": None}
+                             "blocked_until": 0.0, "profile": None,
+                             "cached_items": [], "cached_at": 0.0}
+#: FF HTML önbellek/istek aralığı (sn). Chase 45 sn'de bir tetikliyor.
+FF_MIN_INTERVAL_SEC = 300.0
 
 
 def ff_state() -> Dict[str, Any]:
@@ -1807,15 +1810,23 @@ async def fetch_forexfactory_html_events() -> List[Dict[str, Any]]:
     Tüm parmak izleri bloklanırsa `FF_BLOCK_SEC` boyunca yeniden denenmez
     (Investing'de olduğu gibi): döngü saniyeler içinde 403 yağmuru üretmesin.
     """
+    now_ts = time.time()
     if time.time() < float(_FF_STATE.get("blocked_until") or 0.0):
         return []
+    # 5 dk ÖNBELLEK: release-chase 45 sn'de bir tam senkron tetikliyor; her
+    # tetikte FF'ye gitmek 90 dk'da ~120 istek demek (blok riski). Aynı değerler
+    # zaten 5 dk içinde değişmiyor → sonuç yeniden kullanılır.
+    cached = _FF_STATE.get("cached_items") or []
+    if cached and now_ts - float(_FF_STATE.get("cached_at") or 0.0) < FF_MIN_INTERVAL_SEC:
+        return list(cached)
     loop = asyncio.get_running_loop()
     items, error = await loop.run_in_executor(None, fetch_forexfactory_html_events_sync)
     _FF_STATE.update({"last_at": time.time(), "profile": _FF_STATE.get("profile")})
     if items:
         with_actual = sum(1 for i in items if i["actual"] != "—")
         _FF_STATE.update({"last_error": None, "last_count": len(items),
-                          "blocked_until": 0.0})
+                          "blocked_until": 0.0,
+                          "cached_items": items, "cached_at": time.time()})
         logger.info("[EconomicCalendar] ForexFactory HTML: %d olay (actual dolu: %d)",
                     len(items), with_actual)
         return items
@@ -1949,7 +1960,16 @@ def backfill_values_from_ff(items: List[Dict[str, Any]], ff_items: List[Dict[str
 
 FMP_BASE = "https://financialmodelingprep.com/api/v3/economic_calendar"
 FMP_KEY_ENV = "FMP_API_KEY"
-_FMP_STATE: Dict[str, Any] = {"last_error": None, "last_count": 0, "last_at": 0.0}
+_FMP_STATE: Dict[str, Any] = {"last_error": None, "last_count": 0, "last_at": 0.0,
+                             "day": None, "day_count": 0, "last_call_at": 0.0,
+                             "endpoint": None}
+
+#: FMP ÜCRETSİZ PLAN = 25 SORGU/GÜN (kullanıcı, 2026-11-09). Bu yüzden kaynak
+#: YALNIZ YEDEK: FF HTML çalışırken hiç çağrılmaz, çağrıldığında da günde en çok
+#: `FMP_DAILY_CAP` kez ve `FMP_MIN_INTERVAL_SEC` aralıklarla. Aksi hâlde 3 saatlik
+#: senkron + 45 sn'lik release-chase kotayı dakikalar içinde yakardı.
+FMP_DAILY_CAP = 20
+FMP_MIN_INTERVAL_SEC = 4 * 3600
 
 
 def fmp_state() -> Dict[str, Any]:
@@ -1960,7 +1980,24 @@ def fmp_state() -> Dict[str, Any]:
         "last_error": _FMP_STATE.get("last_error"),
         "last_count": int(_FMP_STATE.get("last_count") or 0),
         "last_at": _FMP_STATE.get("last_at") or None,
+        "endpoint": _FMP_STATE.get("endpoint"),
     }
+
+
+def _fmp_error_message(payload: Any) -> Optional[str]:
+    """FMP 200 dönüp gövdede hata verdiyse metnini çıkar (sessiz yutma yok).
+
+    FMP eski `/api/v3` yolunu birçok planda kapattı; anahtar geçersiz/plan dışıysa
+    HTTP 200 + `{"Error Message": "..."}` dönebiliyor. Bu durumda "0 olay" görmek
+    yanıltıcı olurdu — panelde NEDENi yazsın.
+    """
+    if isinstance(payload, dict):
+        for key in ("Error Message", "error", "message", "Information", "Note"):
+            val = payload.get(key)
+            if val:
+                return str(val)[:200]
+        return f"beklenmeyen gövde: anahtarlar {list(payload)[:6]}"
+    return None
 
 
 def _fmp_currency(item: Dict[str, Any]) -> str:
@@ -2065,28 +2102,79 @@ async def fetch_fmp_events(days_back: int = 2, days_forward: int = 3) -> List[Di
     key = os.getenv(FMP_KEY_ENV, "").strip()
     if not key:
         return []
+    now_ts = time.time()
+    today = time.strftime("%Y-%m-%d", time.gmtime(now_ts))
+    if _FMP_STATE.get("day") != today:                 # gün döndü → sayacı sıfırla
+        _FMP_STATE.update({"day": today, "day_count": 0})
+    if float(_FMP_STATE.get("last_call_at") or 0.0) and             now_ts - float(_FMP_STATE["last_call_at"]) < FMP_MIN_INTERVAL_SEC:
+        return []                                       # çok sık → sessiz atla
+    if int(_FMP_STATE.get("day_count") or 0) >= FMP_DAILY_CAP:
+        _FMP_STATE["last_error"] = f"günlük kota doldu ({_FMP_STATE['day_count']}/{FMP_DAILY_CAP}) — yarın sıfırlanır"
+        return []
+    _FMP_STATE.update({"last_call_at": now_ts, "day_count": int(_FMP_STATE.get("day_count") or 0) + 1})
     now = datetime.datetime.now(datetime.timezone.utc)
     frm = (now - datetime.timedelta(days=max(0, days_back))).strftime("%Y-%m-%d")
     to = (now + datetime.timedelta(days=max(1, days_forward))).strftime("%Y-%m-%d")
-    url = f"{FMP_BASE}?from={frm}&to={to}&apikey={urllib.parse.quote(key)}"
+    # İKİ YOL: eski `/api/v3` (eski anahtarlar) ve yeni `/stable` (yeni anahtarlar).
+    # FMP plan değişiminde v3'ü kapatıyor; tek yol denemek "anahtar var ama 0 olay"
+    # durumuna yol açıyordu.
+    q = urllib.parse.urlencode({"from": frm, "to": to, "apikey": key})
+    # SIRA ÖNEMLİ: doküman (2026-11-09) güncel yolu `/stable/economic-calendar`
+    # olarak veriyor; `/api/v3` legacy. v3'ü önce denemek HER çağrıda fazladan
+    # bir istek yakar → 25/gün kotası ikiye düşerdi.
+    stable_url = f"{FMP_BASE.replace('/api/v3/', '/stable/')}?{q}"
+    urls = [stable_url]
+    if "/api/v3/" in FMP_BASE:
+        urls.append(f"{FMP_BASE}?{q}")          # eski anahtarlar için yedek
 
-    def _fetch() -> Optional[str]:
+    def _fetch(url: str) -> Optional[str]:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as resp:
             return resp.read().decode("utf-8", errors="ignore")
 
-    try:
-        raw = await asyncio.get_running_loop().run_in_executor(None, _fetch)
-    except Exception as exc:  # noqa: BLE001
-        _FMP_STATE.update({"last_error": f"{type(exc).__name__}: {exc}", "last_at": time.time()})
-        logger.warning("[EconomicCalendar] FMP çekilemedi: %s", exc)
-        return []
-    try:
-        payload = json.loads(raw or "[]")
-    except Exception as exc:  # noqa: BLE001
-        _FMP_STATE.update({"last_error": f"json: {exc}", "last_at": time.time()})
+    payload = None
+    errors: List[str] = []
+    loop = asyncio.get_running_loop()
+    for url in urls:
+        try:
+            raw = await loop.run_in_executor(None, _fetch, url)
+        except Exception as exc:  # noqa: BLE001
+            # HTTPError gövdesi asıl sebebi taşır ("Invalid API KEY", "limit…").
+            detail = ""
+            try:
+                body = exc.read().decode("utf-8", "ignore")  # type: ignore[attr-defined]
+                detail = _fmp_error_message(json.loads(body)) or body[:120]
+            except Exception:  # noqa: BLE001
+                detail = ""
+            tail = f": {detail}" if detail else ""
+            errors.append(f"{url.split('?')[0].rsplit('/', 2)[-2]}: {type(exc).__name__}{tail}")
+            continue
+        try:
+            candidate = json.loads(raw or "[]")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"json: {exc}")
+            continue
+        err = _fmp_error_message(candidate)
+        if err:
+            errors.append(err)
+            continue
+        if isinstance(candidate, list) and candidate:
+            payload = candidate
+            _FMP_STATE["endpoint"] = url.split("?")[0]
+            break
+    if payload is None:
+        msg = "; ".join(errors[:3]) or "olay yok"
+        _FMP_STATE.update({"last_error": msg, "last_at": time.time()})
+        logger.warning("[EconomicCalendar] FMP alınamadı: %s", msg)
         return []
     items = parse_fmp_events(payload)
+    if not items:
+        # Gövde geldi ama hiç olay çıkmadı → ŞEMA farkı olabilir. Anahtarları
+        # panele taşı ki tek bakışta düzeltilebilsin (sessiz "0 olay" olmasın).
+        keys = list(payload[0])[:10] if isinstance(payload, list) and payload and isinstance(payload[0], dict) else []
+        _FMP_STATE.update({"last_error": f"şema uyuşmadı (anahtarlar: {keys})", "last_at": time.time()})
+        logger.warning("[EconomicCalendar] FMP gövdesi ayrıştırılamadı (anahtarlar: %s)", keys)
+        return []
     with_actual = sum(1 for i in items if i["actual"] != "—")
     _FMP_STATE.update({"last_error": None, "last_count": len(items), "last_at": time.time()})
     logger.info("[EconomicCalendar] FMP: %d olay (actual dolu: %d)", len(items), with_actual)
@@ -2410,9 +2498,11 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     # 2b) FMP (anahtarlı): aynı gün `actual` veren tek erişilebilir kaynak.
     # Investing 2026-11-09'dan beri tüm parmak izlerinde 403 döndüğü için değer
     # otoritesi rolünü o devralır. Anahtar yoksa bu blok hiç çalışmaz.
+    # FMP YALNIZ YEDEK: ücretsiz plan 25 sorgu/gün. FF HTML aynı gün değeri
+    # zaten veriyor → FF çalıştıysa FMP hiç çağrılmaz (kota korunur).
     fmp_items: List[Dict[str, Any]] = []
     try:
-        fmp_items = await fetch_fmp_events()
+        fmp_items = [] if ff_html_items else await fetch_fmp_events()
         if fmp_items:
             items = merge_calendar_sources(items, fmp_items)
             logger.info("[EconomicCalendar] FMP %d olayla birleştirildi.", len(fmp_items))

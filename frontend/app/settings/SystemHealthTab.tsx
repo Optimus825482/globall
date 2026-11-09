@@ -76,6 +76,9 @@ export default function SystemHealthTab() {
                 {fmp.configured && fmp.last_count != null ? (
                   <span className="text-bunker-muted"> · son tur {fmp.last_count} olay</span>
                 ) : null}
+                {fmp.endpoint ? (
+                  <span className="text-bunker-muted"> · uç {String(fmp.endpoint).split("/").slice(-2, -1)[0]}</span>
+                ) : null}
               </p>
               {fmp.configured && fmp.last_error ? (
                 <p className="mt-1 font-mono text-2xs text-neon-red">{String(fmp.last_error).slice(0, 120)}</p>
