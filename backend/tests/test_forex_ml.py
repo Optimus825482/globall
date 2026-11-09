@@ -156,5 +156,53 @@ class TestLeanAndWiring(unittest.TestCase):
             self.assertIn(fn, src)
 
 
+class TestPostgresCompat(unittest.TestCase):
+    """Sunucu 500'ÜNÜN kök nedeni (2026-11-10): `AUTOINCREMENT` SQLite sözdizimi,
+    Postgres'te geçersiz → tablo oluşamıyor → SELECT 'relation does not exist' →
+    her iki uç da 500. Proje idiomu `BIGSERIAL PRIMARY KEY` (llm_trade_reviews:6536).
+    Ayrıca `cur.lastrowid` psycopg'ta çalışmaz → `RETURNING id` idiomu.
+    Ve `set_llm_review_features` JSON'u 3000 karaktere kestiği için bozuk JSON
+    satır mümkün → satır bazlı savunma (tek satır tüm seti düşürmesin).
+    """
+
+    def test_table_uses_bigserial_not_autoincrement(self):
+        src = (ROOT / "app" / "database.py").read_text(encoding="utf-8")
+        i = src.index("CREATE TABLE IF NOT EXISTS forex_ml_runs")
+        block = src[i:i + 400]
+        self.assertIn("BIGSERIAL PRIMARY KEY", block)
+        self.assertNotIn("AUTOINCREMENT", block)
+
+    def test_save_uses_returning_id_not_lastrowid(self):
+        src = (ROOT / "app" / "database.py").read_text(encoding="utf-8")
+        i = src.index("INSERT INTO forex_ml_runs")
+        block = src[i:i + 700]
+        self.assertIn("RETURNING id", block)
+        self.assertNotIn("lastrowid", block)
+
+    def test_dataset_parses_features_per_row(self):
+        src = (ROOT / "app" / "database.py").read_text(encoding="utf-8")
+        i = src.index("async def get_forex_ml_dataset")
+        block = src[i:i + 1800]
+        self.assertIn("except ValueError", block, "bozuk JSON satırı atlanmalı")
+        self.assertIn("continue", block)
+
+    def test_end_to_end_local_postgres(self):
+        """Yerel Postgres'te tablo oluştur + kaydet + listele (gerçek DB turu)."""
+        import asyncio
+        import time as _t
+        from app import database
+
+        async def main():
+            rid = await database.save_forex_ml_run({
+                "trained_at": _t.time(), "n_usable": 2, "n_train": 1, "n_test": 1,
+                "brier_skill_oos": 0.21, "ic_test": 0.31, "verdict": "unittest"})
+            runs = await database.get_forex_ml_runs(limit=5)
+            return rid, runs
+
+        rid, runs = asyncio.run(main())
+        self.assertGreater(rid, 0, "RETURNING id çalışmalı")
+        self.assertTrue(any(r["id"] == rid for r in runs), "kayıt listede dönmeli")
+
+
 if __name__ == "__main__":
     unittest.main()

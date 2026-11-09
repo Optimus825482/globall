@@ -7220,7 +7220,7 @@ def _ensure_forex_ml_schema(conn) -> None:
         return
     try:
         conn.execute("""CREATE TABLE IF NOT EXISTS forex_ml_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             trained_at DOUBLE PRECISION NOT NULL,
             n_usable INTEGER, n_train INTEGER, n_test INTEGER,
             brier_skill_oos DOUBLE PRECISION, ic_test DOUBLE PRECISION,
@@ -7246,7 +7246,15 @@ async def get_forex_ml_dataset() -> List[Dict[str, Any]]:
                 "created_at": r[0], "confidence": r[1], "score": r[2], "direction": r[3],
                 "shadow_pips": r[4], "features": r[5]}
             d["created_at"] = str(d.get("created_at") or "")
-            d["features"] = json.loads(d.get("features") or "{}") if isinstance(d.get("features"), str) else (d.get("features") or {})
+            # `set_llm_review_features` JSON'u 3000 karaktere KESTİĞİ için bazı
+            # satırlar bozuk JSON olabilir → satır bazlı ayrıştır; bozuk satır
+            # tüm eğitim setini 500'e düşürmesin.
+            try:
+                d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or {})
+            except ValueError:
+                continue
+            if not isinstance(d["features"], dict):
+                continue
             out.append(d)
         return out
     return await _run_db(op)
@@ -7258,18 +7266,20 @@ async def save_forex_ml_run(report: Dict[str, Any]) -> int:
 
     def op(conn):
         _ensure_forex_ml_schema(conn)
-        cur = conn.execute(
+        row = conn.execute(
             """INSERT INTO forex_ml_runs
                (trained_at, n_usable, n_train, n_test, brier_skill_oos, ic_test, verdict, metrics_json)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?)
+               RETURNING id""",
             (float(report.get("trained_at") or time.time()),
              int(report.get("n_usable") or 0), int(report.get("n_train") or 0),
              int(report.get("n_test") or 0), report.get("brier_skill_oos"),
              report.get("ic_test"), str(report.get("verdict") or ""),
              _json.dumps({k: report.get(k) for k in report if k != "features"},
-                         ensure_ascii=False, default=str)[:12000]))
+                         ensure_ascii=False, default=str)[:12000]),
+        ).fetchone()
         conn.commit()
-        return int(cur.lastrowid or 0)
+        return int(row[0])
     return await _run_db(op)
 
 
