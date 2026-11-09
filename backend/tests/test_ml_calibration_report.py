@@ -141,5 +141,39 @@ class TestWiring(unittest.TestCase):
         self.assertIn("except Exception", block)
 
 
+class TestConfigAccess(unittest.TestCase):
+    """`from app import config` YANLIŞ: config bir MODÜL değil, `Config()`
+    singleton'ıdır (`app/config.py:1100`). 2026-11-09'da bu hata raporda
+    "AttributeError: module 'app.config' has no attribute 'ML_CALIBRATION_ARTIFACT'"
+    olarak panele düştü — kullanıcı sıfır rapor gördü.
+    """
+
+    def test_report_uses_singleton(self):
+        src = (ROOT / "app" / "ml_calibration_report.py").read_text(encoding="utf-8")
+        self.assertIn("from app.config import config as _cfg", src)
+        self.assertNotIn("from app import config as", src)
+
+    def test_no_module_style_config_usage_anywhere(self):
+        hits = []
+        for path in (ROOT / "app").rglob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if "from app import config as" in text:
+                hits.append(path.name)
+        self.assertEqual(hits, [], f"config singleton olarak import edilmeli: {hits}")
+
+    def test_artifact_error_is_honest_not_traceback(self):
+        """Artefakt yoksa panelde teknik istisna değil, NE YAPILACAĞI yazmalı."""
+        rep = mcr._artifact_summary()
+        if not rep.get("available"):
+            self.assertNotIn("AttributeError", str(rep.get("reason")))
+            self.assertIn("artefakt", str(rep.get("reason")).lower())
+
+    def test_partial_samples_explain_remaining(self):
+        r = mcr.summarize_rows(overconfident_rows(n=150))
+        self.assertFalse(r["fitted"])
+        self.assertEqual(r.get("samples_needed"), mcr.MIN_SAMPLES - 150)
+        self.assertIn("örnek daha birikince", r["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,6 +40,8 @@ interface Report {
   counters?: Record<string, unknown>;
   artifact?: { available: boolean; reason?: string; samples?: number; brier_skill_calibrated?: number | null; x_thresholds?: number[]; y_thresholds?: number[] };
   error?: string;
+  scope?: string;
+  samples_needed?: number;
 }
 
 const fmt = (v: number | null | undefined, d = 4) => (v == null ? "—" : v.toFixed(d));
@@ -104,6 +106,9 @@ export default function MlCalibrationReport() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-bold text-white uppercase tracking-wider">ML Olasılık Kalibrasyonu</h2>
+          {report?.scope ? (
+            <p className="mt-1 max-w-3xl text-2xs text-bunker-muted">{report.scope}</p>
+          ) : null}
           <p className="mt-0.5 max-w-3xl text-xs text-bunker-muted">
             Modelin “isabet olasılığı” dürüst mü? İzotonik eğri ham güveni gerçek isabete çevirir. Asıl kanıt
             <b className="text-white"> out-of-sample</b> metriklerdir: eğri geçmişte kurulur, gelecekte ölçülür —

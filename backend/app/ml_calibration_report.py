@@ -117,7 +117,13 @@ def summarize_rows(rows: list[dict]) -> dict[str, Any]:
         "fitted": False,
     }
     if len(probs) < MIN_SAMPLES:
-        out["reason"] = f"yetersiz değerlendirilmiş örnek: {len(probs)} < {MIN_SAMPLES}"
+        kalan = MIN_SAMPLES - len(probs)
+        out["reason"] = (
+            f"yetersiz değerlendirilmiş örnek: {len(probs)} < {MIN_SAMPLES}"
+            + (f" — {kalan} örnek daha birikince hüküm verilir" if len(probs) else
+               " — hiç değerlendirilmiş tahmin yok (gölge tahmin hattı çalışmıyor olabilir)")
+        )
+        out["samples_needed"] = kalan
         return out
     base_rate = sum(hits) / len(hits)
     wins = [r for r, h in zip(rs, hits) if h]
@@ -160,7 +166,7 @@ def csv_rows(rows: list[dict]) -> tuple[list[str], list[list[Any]]]:
     ]
     art = None
     try:
-        from app import config as _cfg
+        from app.config import config as _cfg      # SINGLETON nesne (modül değil)
         art = mp.load_state(_cfg.ML_CALIBRATION_ARTIFACT)
     except Exception:  # noqa: BLE001 - artefakt yoksa ham olasılık yazılır
         art = None
@@ -207,6 +213,13 @@ async def build(days: float = 0.0) -> dict[str, Any]:
     report = summarize_rows(rows)
     report["rows_total"] = len(rows)
     report["counters"] = ml_shadow.counters()
+    # KAPSAM (dürüstlük): bu metrikler `ml_shadow_predictions` (spot/velocity
+    # tahmin hattı) üzerinden hesaplanır. FOREX işlemleri bu tabloya GİRMEZ;
+    # forex için geometri gölgesi ve LLM güven kalibrasyonu ayrı yüzeylerdir.
+    # "Neden hep 0?" sorusunun cevabı burada dursun.
+    report["scope"] = ("ml_shadow_predictions (spot/velocity tahmin hattı) — "
+                       "forex işlemleri bu tabloya girmez; forex için geometri gölgesi "
+                       "ve LLM güven kalibrasyonu ayrı raporlardadır.")
     report["artifact"] = _artifact_summary()
     return report
 
@@ -214,7 +227,7 @@ async def build(days: float = 0.0) -> dict[str, Any]:
 def _artifact_summary() -> dict[str, Any]:
     """Kayıtlı kalibrasyon eğrisinin özeti (varsa)."""
     try:
-        from app import config as _cfg
+        from app.config import config as _cfg      # SINGLETON nesne (modül değil)
         art = mp.load_state(_cfg.ML_CALIBRATION_ARTIFACT)
     except Exception as exc:  # noqa: BLE001
         return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
