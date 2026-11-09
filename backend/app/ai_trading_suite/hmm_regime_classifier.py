@@ -1,4 +1,11 @@
-"""Hidden Markov Models (HMM) inspired Unsupervised Market Regime Classifier.
+"""PİYASA REJİMİ SINIFLANDIRICI — **EŞİK TABANLI SEZGİSEL** (2026-11-09).
+
+DÜRÜSTLÜK NOTU: Bu modül HMM (Hidden Markov Model) DEĞİLDİR. Gizli durum yok,
+geçiş matrisi yok, Baum-Welch/Viterbi yok. Üç skor el yazımı eşiklerle hesaplanıp
+normalize edilir; normalize edilmiş skor "olasılık" gibi sunulur. Panelde
+"HMM Rejimi (Olasılık %X)" yazması SAHTE KESİNLİKTİ — etiket "Rejim (eşik
+tabanlı)" olarak düzeltildi. Gerçek HMM için `hmmlearn` (BSD-3, sklearn uyumlu)
+takılabilir; takılırsa `method` alanı "gaussian_hmm" olur ve bu başlık güncellenir.
 
 Classifies the market into 3 unobservable latent states:
 1. TRENDING_EXPANSION: Moderate volatility, positive drift, strong directional momentum
@@ -23,6 +30,8 @@ class HMMRegimeResult(BaseModel):
     strategy_directive: str
     transition_risk: str
     verdict: str
+    #: "heuristic_thresholds" (bugünkü) | "gaussian_hmm" (hmmlearn takılırsa)
+    method: str = "heuristic_thresholds"
 
 
 def evaluate_hmm_regime(
@@ -52,7 +61,7 @@ def evaluate_hmm_regime(
     # State 3: Panic / Liquidity Shock (Averaging large standard deviation or high volatility ratio > 1.8)
     score_panic = max(0.01, (volatility_ratio * 1.5) if volatility_ratio > 1.8 else (0.1 if volatility_ratio < 1.3 else 0.4))
 
-    # Normalize into posterior probabilities
+    # Normalize edilmiş SKORLAR (posterior DEĞİL: gizli durum modeli yok)
     total_score = score_trending + score_choppy + score_panic
     prob_trend = round(score_trending / total_score, 3)
     prob_chop = round(score_choppy / total_score, 3)
@@ -62,17 +71,17 @@ def evaluate_hmm_regime(
         regime = "PANIC_VOLATILITY"
         directive = "CIRCUIT_BREAKER_HALT (Yeni pozisyon açılışlarını durdur, stopları koru)"
         trans_risk = "HIGH_SHOCK"
-        verdict = f"HMM Rejimi: Panik/Volatilite Şoku (Olasılık: %{int(prob_panic*100)}). Scalping riskli, piyasa çalkantılı."
+        verdict = f"Rejim (eşik tabanlı): Panik/Volatilite Şoku (Olasılık: %{int(prob_panic*100)}). Scalping riskli, piyasa çalkantılı."
     elif prob_trend >= prob_chop:
         regime = "TRENDING_EXPANSION"
         directive = "TREND_FOLLOWING_ACTIVE (Trend devamı ve kırılım stratejilerini tam kapasite çalıştır)"
         trans_risk = "LOW"
-        verdict = f"HMM Rejimi: Trend Genişlemesi (Olasılık: %{int(prob_trend*100)}, ADX: {adx:.1f}). Alım momentumu sağlıklı."
+        verdict = f"Rejim (eşik tabanlı): Trend Genişlemesi (Olasılık: %{int(prob_trend*100)}, ADX: {adx:.1f}). Alım momentumu sağlıklı."
     else:
         regime = "CHOPPY_MEAN_REVERSION"
         directive = "MEAN_REVERSION_ONLY (Kırılım alımlarını durdur, destek/direnç osilasyonlarına odaklan)"
         trans_risk = "MODERATE"
-        verdict = f"HMM Rejimi: Testere / Yatay Piyasa (Olasılık: %{int(prob_chop*100)}). Sahte kırılım (whipsaw) tuzağı riski."
+        verdict = f"Rejim (eşik tabanlı): Testere / Yatay Piyasa (Olasılık: %{int(prob_chop*100)}). Sahte kırılım (whipsaw) tuzağı riski."
 
     return HMMRegimeResult(
         symbol=sym,

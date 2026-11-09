@@ -389,7 +389,7 @@ class AITradingSuiteOrchestrator:
         if hmm_res.active_regime == "PANIC_VOLATILITY":
             veto_res.approved = False
             veto_res.final_action = TradeAction.WAIT
-            veto_res.veto_reasons.append(f"HMM Rejim Vetosu: {hmm_res.verdict}")
+            veto_res.veto_reasons.append(f"Rejim Vetosu: {hmm_res.verdict}")
         if cvd_res.absorption_detected == "BEAR_ABSORPTION":
             veto_res.approved = False
             veto_res.final_action = TradeAction.WAIT
