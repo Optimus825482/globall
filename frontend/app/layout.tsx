@@ -48,12 +48,11 @@ export const viewport: Viewport = {
   // zoom'u engeller ve WCAG 1.4.4'ü ihlal eder. Bilinçli olarak dokunulmadı.
   maximumScale: 5,
   viewportFit: "cover",
-  // İki şema için ayrı tema rengi: açık temada tarayıcı çubuğu koyu kalıp
-  // sayfayla çelişmiyordu (görsel sıçrama). Şema başına bir değer bildirilir.
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
-    { media: "(prefers-color-scheme: dark)", color: "#070b14" },
-  ]
+  // Uygulamanın VARSAYILANI artık AÇIK TEMA (Erkan kararı, 2026-11-09). Bu
+  // yüzden tema rengi de açık tema değeri. Kullanıcı Karanlık'a geçtiğinde
+  // `lib/theme.tsx` bu meta'yı çalışma anında günceller; OS tercihine göre iki
+  // değer bildirmek artık yanıltıcı olurdu (app teması OS'e bağlı değil).
+  themeColor: "#f8fafc"
 };
 
 export default function RootLayout({
@@ -62,20 +61,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className={`${fontVariables} dark`} suppressHydrationWarning data-build-id={BUILD_ID}>
+    // 2026-11-09: Başlangıç sınıfı `dark` → `light`. Varsayılan tema artık açık.
+    // `dark:` Tailwind varyantları `.dark` sınıfına bağlı olduğu için bu değişiklik
+    // onları da tutarlı hâle getirir (koyu varsayılanda `text-slate-800
+    // dark:text-cyan-300` gibi çiftler açık temada yanlış dalı seçiyordu).
+    <html lang="tr" className={`${fontVariables} light`} suppressHydrationWarning data-build-id={BUILD_ID}>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="build-id" content={BUILD_ID} />
         {/* Tema belirleme — FOUC önleyici, boyamadan ÖNCE senkron çalışır.
-            2026-11-09: `prefers-color-scheme` eklendi. Önceden depolanmış tema
-            yoksa koşulsuz koyu uygulanıyordu; işletim sistemi açık temada olan
-            ilk ziyaretçi tercihine rağmen koyu görüyordu. Artık OS tercihi
-            okunur, kullanıcının açık seçimi (localStorage) her zaman kazanır. */}
+            VARSAYILAN AÇIK TEMA (Erkan kararı, 2026-11-09). Kullanıcının
+            kayıtlı tercihi (localStorage) her zaman kazanır. `lib/theme.tsx`
+            ile aynı kuralı uygular — ikisi ayrışırsa açılışta tema zıplar. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("theme")||localStorage.getItem("forex_theme_preference");if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}var r=document.documentElement;if(t==="light"){r.classList.remove("dark");r.classList.add("light");r.setAttribute("data-theme","light");r.style.colorScheme="light";}else{r.classList.remove("light");r.classList.add("dark");r.setAttribute("data-theme","dark");r.style.colorScheme="dark";}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("theme")||localStorage.getItem("forex_theme_preference");if(t!=="light"&&t!=="dark"){t="light";}var r=document.documentElement;if(t==="light"){r.classList.remove("dark");r.classList.add("light");r.setAttribute("data-theme","light");r.style.colorScheme="light";}else{r.classList.remove("light");r.classList.add("dark");r.setAttribute("data-theme","dark");r.style.colorScheme="dark";}}catch(e){}})()`,
           }}
         />
       </head>

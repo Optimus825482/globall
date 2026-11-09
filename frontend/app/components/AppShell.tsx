@@ -72,7 +72,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             Görsel olarak gizli, yalnız odaklanınca görünür. */}
         <a href="#main-content" className="skip-link">İçeriğe atla</a>
         <div data-sidebar><Sidebar /></div>
-        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 min-h-screen overflow-y-auto">
+        {/* 2026-11-09 — MASAÜSTÜNDE YATAY KAYDIRMA YASAĞI.
+            `overflow-y-auto` TEK BAŞINA yazıldığında CSS gereği
+            `overflow-x: visible` → `auto`'ya çözülür ve `main` YATAY KAYDIRMA
+            KABI hâline gelir: içerik 1px taşsa bile masaüstünde yatay çubuk
+            çıkar (mobilde `.content-shell` kuralı bunu kapatıyordu, masaüstünde
+            hiçbir koruma yoktu). `overflow-x-clip` bunu keser; geniş tablolar
+            kendi `.table-scroll` / `overflow-x-auto` sarmalayıcılarında
+            kaymaya devam eder (ata kırpması alt öğenin kaydırma kabı olmasını
+            engellemez). */}
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 min-h-screen overflow-y-auto overflow-x-clip">
           <div data-topbar><TopBar /></div>
           <div className="content-shell">{children}</div>
         </main>

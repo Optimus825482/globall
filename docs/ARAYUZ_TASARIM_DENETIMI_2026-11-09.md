@@ -324,3 +324,106 @@ Bu kural hem `html.light .chat-bubble`'ı hem de light-dışı `.chat-message.us
 ### 9.5 Yan bulgu — Poppins deklare edildi ama hiç kullanılmıyor
 
 `font-display` Tailwind sınıfı kodda **0 kez** kullanılıyor. Tarayıcı tanılamasında `fontDisplay 600 → unloaded` çıktı: `@font-face` tanımlı ama hiçbir öğe bu aileyi istemediği için **woff2 indirilmiyor** (runtime maliyeti yok, yalnız depoda 2 dosya duruyor). Inter ve JetBrains Mono ise `loaded` ✓. Karar: dosyalar bırakıldı (`--font-display` hazır dursun), ama gerçekten kullanılmak istenirse başlıklara uygulanmalı; kullanılmayacaksa `app/fonts/Poppins-*.woff2` + `fontDisplay` tanımı silinebilir.
+
+---
+
+## 10. MASAÜSTÜ YATAY KAYDIRMA DENETİMİ — tüm rotalar (2026-11-09)
+
+**İstenen:** "Masaüstü görünümde yatay scroll istemiyorum, tüm sayfaları kontrol eder misin."
+
+### 10.1 Kök neden (kod kanıtlı)
+
+`app/components/AppShell.tsx:75`:
+
+```tsx
+<main id="main-content" tabIndex={-1} className="flex-1 min-w-0 min-h-screen overflow-y-auto">
+```
+
+`overflow-y: auto` **tek başına** yazılmış. CSS Overflow 3 kuralı: bir eksen `visible`, diğeri `visible`/`clip` **değilse**, `visible` → **`auto`** olur. Yani `main`, masaüstünde **yatay kaydırma kabı** hâline geliyordu: içerik 1px taşsa bile içerik alanında yatay kaydırma çubuğu çıkıyordu.
+
+Koruma yalnızca mobilde vardı — `globals.css` `@media (max-width: 768px) { main { … overflow-x: clip } }`. **Masaüstünde hiçbir koruma yoktu.** (Gövde düzeyindeki `body { overflow-x: clip }` bunu kapatmıyor: kırpma alt öğenin kendi kaydırma kabı olmasını engellemez.)
+
+### 10.2 Düzeltme
+
+| Yer | Değişiklik |
+|---|---|
+| `AppShell.tsx` | `main` sınıfına `overflow-x-clip` eklendi (+ gerekçe yorumu) |
+| `globals.css` | Global `main { overflow-x: clip }` ve `@media (min-width: 769px) { html, body { overflow-x: clip } }` |
+
+Geniş tablolar **etkilenmez**: `.table-scroll` / `.message-table-wrap` / `overflow-x-auto` sarmalayıcıları kendi kaydırma kaplarıdır; ata kırpması onları durdurmaz.
+
+### 10.3 Ölçüm yöntemi (görsel bakış değil)
+
+Üretim derlemesi (`next start`, port 3104) + gerçek yanıt şekillerini taklit eden sahte API (`DashboardData` ve `StrategiesData` alanları birebir; sentetik satırlar: 18 sinyal, 40 işlem, 18 takvim olayı, 4 zaman dilimi, 5 strateji). Gerçek backend çalıştırılmadı (Binance/Postgres/ML döngüleri ve bildirim yan etkisi istenmedi).
+
+Her rota için: `document.documentElement.scrollWidth > clientWidth` (sayfa düzeyi kaydırma), `main.scrollWidth - main.clientWidth`, ve **kırpılan içerik** taraması — `scrollWidth > clientWidth` olan her öğe için `overflow-x` hesaplanmış değeri okunur; `hidden`/`clip` ise ve kasıtlı elips değilse (`sr-only`, `text-overflow: ellipsis`) **erişilemez içerik** olarak raporlanır.
+
+### 10.4 Sonuç — 17 rota @1440px
+
+| İstenen rota | Gerçek rota | Sayfa yatay kaydırma | Kırpılan içerik | Tablo/satır |
+|---|---|---|---|---|
+| `/` | `/` | yok | yok | 1 / 8 |
+| `/charts` | `/charts` | yok | yok | — |
+| `/chat` | `/chat` | yok | yok | — |
+| `/forex` | `/forex` | yok | yok | — |
+| `/forex/ayarlar` | → `/settings` *(tasarım)* | yok | yok | — |
+| `/forex/btc-gold` | → `/forex/portfolio` *(tasarım)* | yok | yok | — |
+| `/forex/calendar` | `/forex/calendar` | yok | yok | — |
+| `/forex/charts` | `/forex/charts` | yok | yok | — |
+| `/forex/islemler` | `/forex/islemler` | yok | yok | kart görünümü |
+| `/forex/metamobil` | `/forex/metamobil` | yok | yok | — |
+| `/forex/portfolio` | `/forex/portfolio` | yok | yok | — |
+| `/forex/reports` | `/forex/reports` | yok | yok | 1 / 40 |
+| `/metamobil` | `/metamobil` | yok | yok | — |
+| `/profile` | `/profile` | yok | yok | — |
+| `/settings` | `/settings` | yok | yok | — |
+| `/spot-monitor` | `/spot-monitor` | yok | yok | 1 / 14 |
+| `/system-health` | → `/settings` *(tasarım)* | yok | yok | — |
+
+**Sorunlu rota sayısı: 0.** Tüm ölçümlerde `docSW == clientWidth` (dikey kaydırma çubuğu kadar fark), `main.scrollWidth - main.clientWidth == 0`, kırpılan içerik yok.
+
+Genişlik taraması (aynı ölçüm, en yoğun rotalar):
+
+| Rota | 1920 | 1600 | 1440 | 1280 | 1024 |
+|---|---|---|---|---|---|
+| `/` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `/spot-monitor` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `/forex/islemler` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `/forex/btc-gold`→portfolio | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+### 10.5 Kalan: TASARIM GEREĞİ dahili tablo kaydırması
+
+Aşağıdaki kaydırmalar **bilinçli**dir — tabloyu kapsayan kutunun içinde olur, sayfayı kaydırmaz ve klavyeyle erişilebilir (`tabIndex=0` + `role="region"`):
+
+| Rota | 1920 | 1600 | 1440 | 1280 | 1024 |
+|---|---|---|---|---|---|
+| `/spot-monitor` (9 sütun) | kaydırma yok | kaydırma yok | 110px | 270px | 526px |
+| `/forex/reports` | — | — | 174px | — | — |
+
+Masaüstünde hâlâ yatay kaydırma görüyorsan, gördüğün şey büyük olasılıkla bu **tablo içi** kaydırmadır. İstenirse ayrı bir tur olarak kaldırılabilir (sütun azaltma / mobil kart düzenine düşme), ama bu bir tasarım kararıdır.
+
+### 10.6 Ölçülemeyen sayfalar (dürüstlük notu)
+
+`/charts`, `/forex/charts` ve `/settings` **gövdeleri** sahte veriyle hata sınırına düştü (o sayfaların beklediği yanıt şekilleri taklit edilmedi). Kabukları (topbar/sidebar/kartlar) ölçüldü ve temiz çıktı; gövdeleri için gerçek backend gerekir. Aynı sınıf bir sağlamlık kokusu da yakalandı: `spot-monitor/page.tsx:982` `strategies?.timeframes.map(...)` — optional chaining bir seviye sığ; `timeframes` eksik gelirse sayfa çöker (`Cannot read properties of undefined`). Gerçek backend her zaman doldurduğu için üretimde görünmez, ama eksik yanıtta hata sınırına düşmek yerine boş durum göstermesi daha doğru olurdu (P2, açık).
+
+### 10.7 Not — 3004'teki dev sunucusu bayat
+
+Ölçüm sırasında 3004'teki dev sunucusunun **hydration'ı tamamlamadığı** görüldü (hiç API çağrısı yapmıyor, yalnız iskelet render ediyordu). Bu, uzun süre çalışan Turbopack HMR durumunun sonradan yapılan `layout.tsx` + `next/font` + `globals.css` değişikliklerini tutarlı uygulayamamasından kaynaklanıyor. **Dev sunucusunu yeniden başlatmak gerekiyor** (`git pull` sonrası `npm run dev`). Üretim derlemesi (`next start`) sorunsuz çalıştı.
+
+---
+
+## 11. VARSAYILAN TEMA AÇIĞA ALINDI (2026-11-09)
+
+Erkan'ın kararı: **açık tema varsayılan**. Önceki turda `prefers-color-scheme` okunuyordu; istenen davranış bu değil.
+
+| Yer | Önce | Şimdi |
+|---|---|---|
+| `layout.tsx` `<html className>` | `dark` | **`light`** |
+| `layout.tsx` FOUC script'i | OS tercihi (`prefers-color-scheme`) | **koşulsuz `light`** (kayıtlı tercih varsa o kazanır) |
+| `lib/theme.tsx` başlangıç durumu | `dark` / OS tercihi | **`light`** |
+| `viewport.themeColor` | OS'e göre iki değer | tek değer `#f8fafc` + tema değişince `meta` çalışma anında güncellenir |
+| `manifest.webmanifest` | `background_color`/`theme_color` `#070b14` | `#f8fafc` |
+
+Yan fayda: `dark:` Tailwind varyantları `.dark` sınıfına bağlı olduğundan, koyu varsayılan altında `text-slate-800 dark:text-cyan-300` gibi çiftler **açık temada yanlış dalı** seçiyordu; artık tutarlı.
+
+Ölçümle doğrulandı: 17 rotanın tamamında `<html>` sınıfı `light` ve TopBar tema düğmesi "Karanlık" etiketi gösteriyor (yani açık temada).

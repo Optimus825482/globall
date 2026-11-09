@@ -13,19 +13,26 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "dark",
-  isLight: false,
-  isDark: true,
+  // Varsayılan AÇIK TEMA (Erkan kararı, 2026-11-09). `layout.tsx`'teki
+  // başlangıç sınıfı ve FOUC script'i ile AYNI olmalı.
+  theme: "light",
+  isLight: true,
+  isDark: false,
   toggleTheme: () => {},
   setTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
 
   const applyTheme = useCallback((newTheme: Theme) => {
     if (typeof document !== "undefined") {
       const root = document.documentElement;
+      // Tarayıcı/OS çubuğu rengini temayla eşle. `viewport.themeColor` tek
+      // (açık) değer bildiriyor; kullanıcı Karanlık'a geçtiğinde meta'yı
+      // burada güncellemezsek çubuk açık kalır ve sayfayla çelişir.
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", newTheme === "light" ? "#f8fafc" : "#070b14");
       if (newTheme === "light") {
         root.classList.remove("dark");
         root.classList.add("light");
@@ -47,20 +54,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setThemeState(stored as Theme);
         applyTheme(stored as Theme);
       } else {
-        // 2026-11-09: Depolanmış tercih yoksa işletim sistemi tercihi okunur.
-        // Önceden koşulsuz `dark` uygulanıyordu; OS'u açık temada olan ilk
-        // ziyaretçi tercihine rağmen koyu tema görüyordu. `layout.tsx` içindeki
-        // FOUC önleyici senkron script ile aynı kuralı uygular.
-        const prefersLight =
-          typeof window !== "undefined" &&
-          typeof window.matchMedia === "function" &&
-          window.matchMedia("(prefers-color-scheme: light)").matches;
-        const initial: Theme = prefersLight ? "light" : "dark";
-        setThemeState(initial);
-        applyTheme(initial);
+        // 2026-11-09: Depolanmış tercih yoksa VARSAYILAN AÇIK TEMA'dır
+        // (Erkan kararı). İşletim sistemi tercihi artık belirleyici DEĞİL:
+        // önceki turda `prefers-color-scheme` okunuyordu ve OS'u koyu olan
+        // kullanıcı uygulamayı koyu açıyordu — istenen davranış bu değil.
+        // `layout.tsx` içindeki FOUC önleyici senkron script ile aynı kural.
+        setThemeState("light");
+        applyTheme("light");
       }
     } catch {
-      applyTheme("dark");
+      applyTheme("light");
     }
   }, [applyTheme]);
 

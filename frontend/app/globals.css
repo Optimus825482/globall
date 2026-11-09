@@ -85,6 +85,26 @@ body {
 
 html, body { max-width: 100%; }
 main, .content-shell, .content-shell > *, .page-shell, .card, .panel, .ui-card { min-width: 0; }
+
+/* ==========================================================================
+   YATAY TAŞMA KORUMASI (2026-11-09) — masaüstü DAHİL
+   `AppShell` içindeki `<main>` yalnız `overflow-y-auto` taşıyordu; CSS gereği
+   bir eksen `visible`, diğeri değilse `visible` → `auto` olur ve `main` YATAY
+   KAYDIRMA KABI hâline gelir. Sonuç: içerik 1px taşsa bile masaüstünde yatay
+   kaydırma çubuğu çıkıyordu (`@media (max-width:768px)` içindeki koruma
+   masaüstünü kapsamıyordu). Aşağıdaki kural bu yüzeyi tek merkezden kapatır.
+   Geniş tablolar `.table-scroll` / `.message-table-wrap` / `overflow-x-auto`
+   sarmalayıcılarında kaymaya devam eder: ata kırpması, alt öğenin KENDİ
+   kaydırma kabı olmasını engellemez (ENG-06 denetimi). */
+main { overflow-x: clip; }
+
+/* Dokunmatik olmayan işaretçide yatay kaydırma çubuğunu gizle: kırpma
+   uygulandığı için çubuk zaten çıkmaz, ama eski tarayıcılarda `clip`
+   desteklenmezse `overflow-y:auto` yüzünden çıkabilir. */
+@media (min-width: 769px) {
+  html, body { overflow-x: clip; }
+}
+
 .content-shell, .page-shell { max-width: 100%; }
 .topbar > div { min-width: 0; }
 .topbar-title, .page-heading h1, .ui-section-header h2, .ui-section-description { overflow-wrap: anywhere; }
