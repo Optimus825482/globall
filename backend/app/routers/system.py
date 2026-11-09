@@ -1,5 +1,6 @@
 """Health, memory and migration system routes."""
 import asyncio
+from pathlib import Path
 import os
 import time
 import logging
@@ -293,6 +294,41 @@ async def cot_status():
         "stale": cot_fetch.is_stale(),
         "stale_after_days": cot_fetch.STALE_AFTER_DAYS,
     }
+
+
+@router.get("/api/system/forex-ml")
+async def forex_ml_status():
+    """Forex ML veri seti + son eğitim koşuları (Ayarlar > Forex ML sekmesi)."""
+    from app import database
+    runs = await database.get_forex_ml_runs(limit=10)
+    dataset = await database.get_forex_ml_dataset()
+    art_path = Path(__file__).resolve().parents[2] / "artifacts" / "forex_ml.json"
+    artifact = None
+    try:
+        import json as _json
+        if art_path.exists():
+            artifact = _json.loads(art_path.read_text(encoding="utf-8")).get("metrics")
+    except Exception:  # noqa: BLE001
+        artifact = None
+    return {"dataset_n": len(dataset), "runs": runs, "artifact_metrics": artifact,
+            "min_rows": 120, "test_fraction": 0.30}
+
+
+@router.post("/api/system/forex-ml/train")
+async def forex_ml_train(request: Request, min_rows: int = 120, save: bool = True):
+    """Forex ML modelini eğit + OOS test et + kaydet (Ayarlar > Forex ML > Eğit).
+
+    Veri sunucu DB'sinde olduğu için eğitim SUNUCUDA koşar (yerelde tablo boştur).
+    Yalnız sklearn kullanır; artifact JSON'dur (pickle yok). Karar kapısı DEĞİL:
+    OOS skill <= 0 ise rapor "kapı olmamalı" der.
+    """
+    from app.security import require_admin
+    from app import forex_ml
+
+    require_admin(request)
+    report = await asyncio.to_thread(
+        forex_ml.run, min_rows=max(60, int(min_rows or 120)), save=bool(save))
+    return report
 
 
 @router.post("/api/system/cot-refresh")

@@ -7210,6 +7210,84 @@ async def get_candles_after(symbol: str, timeframe: str, after_ms: int, limit: i
     return await _run_db(op)
 
 
+_FOREX_ML_SCHEMA_READY = False
+
+
+def _ensure_forex_ml_schema(conn) -> None:
+    """`forex_ml_runs` tablosu (eğitim kayıtları — panel geçmişi için)."""
+    global _FOREX_ML_SCHEMA_READY
+    if _FOREX_ML_SCHEMA_READY:
+        return
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS forex_ml_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trained_at DOUBLE PRECISION NOT NULL,
+            n_usable INTEGER, n_train INTEGER, n_test INTEGER,
+            brier_skill_oos DOUBLE PRECISION, ic_test DOUBLE PRECISION,
+            verdict TEXT, metrics_json TEXT)""")
+        conn.commit()
+        _FOREX_ML_SCHEMA_READY = True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("forex_ml_runs şema hazırlama hatası: %s", exc)
+
+
+async def get_forex_ml_dataset() -> List[Dict[str, Any]]:
+    """Forex ML eğitim seti: features + gölge sonuç dolu LLM karar satırları."""
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        rows = conn.execute(
+            "SELECT created_at, confidence, score, direction, shadow_pips, features "
+            "FROM llm_trade_reviews WHERE features IS NOT NULL AND shadow_pips IS NOT NULL "
+            "ORDER BY created_at ASC LIMIT 50000"
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r) if not isinstance(r, (list, tuple)) else {
+                "created_at": r[0], "confidence": r[1], "score": r[2], "direction": r[3],
+                "shadow_pips": r[4], "features": r[5]}
+            d["created_at"] = str(d.get("created_at") or "")
+            d["features"] = json.loads(d.get("features") or "{}") if isinstance(d.get("features"), str) else (d.get("features") or {})
+            out.append(d)
+        return out
+    return await _run_db(op)
+
+
+async def save_forex_ml_run(report: Dict[str, Any]) -> int:
+    """Eğitim koşusunu kaydeder (panel geçmişi). Dönen değer satır id'si."""
+    import json as _json
+
+    def op(conn):
+        _ensure_forex_ml_schema(conn)
+        cur = conn.execute(
+            """INSERT INTO forex_ml_runs
+               (trained_at, n_usable, n_train, n_test, brier_skill_oos, ic_test, verdict, metrics_json)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (float(report.get("trained_at") or time.time()),
+             int(report.get("n_usable") or 0), int(report.get("n_train") or 0),
+             int(report.get("n_test") or 0), report.get("brier_skill_oos"),
+             report.get("ic_test"), str(report.get("verdict") or ""),
+             _json.dumps({k: report.get(k) for k in report if k != "features"},
+                         ensure_ascii=False, default=str)[:12000]))
+        conn.commit()
+        return int(cur.lastrowid or 0)
+    return await _run_db(op)
+
+
+async def get_forex_ml_runs(limit: int = 10) -> List[Dict[str, Any]]:
+    """Son eğitim koşuları (yeni → eski)."""
+    def op(conn):
+        _ensure_forex_ml_schema(conn)
+        rows = conn.execute(
+            "SELECT id, trained_at, n_usable, n_train, n_test, brier_skill_oos, ic_test, verdict "
+            "FROM forex_ml_runs ORDER BY trained_at DESC LIMIT ?", (max(1, min(int(limit), 50)),)
+        ).fetchall()
+        return [dict(r) if not isinstance(r, (list, tuple)) else {
+            "id": r[0], "trained_at": r[1], "n_usable": r[2], "n_train": r[3],
+            "n_test": r[4], "brier_skill_oos": r[5], "ic_test": r[6], "verdict": r[7]}
+            for r in rows]
+    return await _run_db(op)
+
+
 async def count_llm_review_shadow_rows() -> int:
     """Gölge sonucu çözülmüş LLM kararı sayısı (Gölge Modlar raporu)."""
     def op(conn):

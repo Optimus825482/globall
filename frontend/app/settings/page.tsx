@@ -16,6 +16,7 @@ import RequireAdmin from "../components/RequireAdmin";
 import { useAuth } from "../lib/auth";
 import { ProfileContent } from "../profile/page";
 import SystemHealthTab from "./SystemHealthTab";
+import ForexMlPanel from "./ForexMlPanel";
 import AutoSettingsPanel, { type AutoSettings } from "../forex/components/AutoSettingsPanel";
 import {
   getInAppNotificationSettings,
@@ -24,9 +25,9 @@ import {
   type InAppNotificationSettings,
 } from "../lib/notificationSettings";
 
-type SettingsTab = "forex" | "health" | "app" | "llm" | "chat" | "profile";
+type SettingsTab = "forex" | "health" | "app" | "llm" | "chat" | "profile" | "ml";
 
-const VALID_TABS: SettingsTab[] = ["forex", "health", "app", "llm", "chat", "profile"];
+const VALID_TABS: SettingsTab[] = ["forex", "health", "app", "llm", "chat", "profile", "ml"];
 
 interface CleanSlateResult {
   archived_count: number;
@@ -304,6 +305,7 @@ function SettingsPageInner() {
           ["health", "Sistem Sağlığı", "🩺"],
           ["app", "Uygulama Ayarları", "⚙️"],
           ["profile", "Profil", "👤"],
+          ["ml", "Forex ML", "📈"],
           ["llm", "LLM / Provider", "🤖"],
           ["chat", "Chat Ayarları", "✦"],
         ] as const).map(([key, label]) => (
@@ -441,6 +443,11 @@ function SettingsPageInner() {
         {/* SEKME 2: SİSTEM SAĞLIĞI */}
         <div className={`${activeTab !== "health" ? "hidden" : ""}`}>
           <SystemHealthTab />
+        </div>
+
+        {/* SEKME 2b: FOREX ML (2026-11-09) */}
+        <div className={`${activeTab !== "ml" ? "hidden" : ""}`}>
+          <ForexMlPanel />
         </div>
 
         {/* SEKME 3: PROFİL */}
