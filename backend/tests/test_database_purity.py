@@ -5,6 +5,7 @@ yazıyordu (UPDATE + COMMIT). Yani salt-okunur sanılan bir çağrı veritabanı
 değiştiriyordu. Yazma, ``backfill_position_trade_ids()`` açılış migration'ına
 taşındı; okuma yolu artık hiçbir koşulda yazmaz.
 """
+import pathlib
 import unittest
 
 from app import database
@@ -127,6 +128,46 @@ class BackfillPositionTradeIdsTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(0, updated)
         self.assertEqual(0, conn.commits, "Hiç eksik yokken commit yapılmamalı")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+class TestNoSqliteDialect(unittest.TestCase):
+    """Veritabanı %100 PostgreSQL'dir (gerçek sqlite3 bağlantısı yok) ama kod
+    TARİHSEL olarak SQLite lehçesiyle yazıldı; `_PostgresCompat` yalnız `?`→`%s`
+    ve üç tabloya özel INSERT OR IGNORE/REPLACE'i çevirir.
+
+    Kapsam dışı kalan SQLite-ism'ler çalışma anında patlar (2026-11-10: yeni
+    forex_ml_runs tablosu `AUTOINCREMENT` ile kurulmuştu → sunucuda her iki uç
+    500 veriyordu). Bu test o sınıfın bir daha girmemesini kilitler.
+    """
+
+    _DB = (pathlib.Path(__file__).resolve().parents[1] / "app" / "database.py").read_text(encoding="utf-8")
+
+    def test_no_autoincrement(self):
+        self.assertNotIn("AUTOINCREMENT", self._DB, "Postgres'te geçersiz — BIGSERIAL kullan")
+
+    def test_no_sqlite_pragma(self):
+        for token in ("PRAGMA table_info", "PRAGMA foreign_keys", "VACUUM;"):
+            self.assertNotIn(token, self._DB)
+
+    def test_no_lastrowid(self):
+        self.assertNotIn("lastrowid", self._DB, "psycopg'ta None döner — RETURNING id kullan")
+
+    def test_no_sqlite_connection(self):
+        app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
+        for path in app_dir.rglob("*.py"):
+            self.assertNotIn("import sqlite3", path.read_text(encoding="utf-8", errors="replace"),
+                             f"{path.name}: gerçek SQLite bağlantısı açılmamalı")
+
+    def test_existing_upserts_are_translated(self):
+        # Compat şeridi bilinen üç tabloyu çevirir; çevrilmeyen yeni "INSERT OR
+        # IGNORE/REPLACE" eklenirse şeride eklenmeli ya da ON CONFLICT yazılmalı.
+        src = self._DB
+        self.assertIn("_RE_PG_INSERT_IGNORE", src)
+        self.assertIn("_RE_PG_INSERT_REPLACE_POSITIONS", src)
+        self.assertIn("_RE_PG_INSERT_REPLACE_SKILLS", src)
 
 
 if __name__ == "__main__":
