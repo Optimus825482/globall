@@ -182,5 +182,54 @@ class TestGateRejectionRecorded(unittest.TestCase):
         self.assertIn('"--break-gate-bars", type=int, default=0', src)
 
 
+class TestEvidenceGateP2(unittest.TestCase):
+    """P2 KANIT KAPISI: "bu sembolde kenar kanıtlandı mı?" — Wilson alt sınırı
+    break-even'ın altındaysa çekimser kal. Canlıda VARSAYILAN KAPALI çünkü ölçüm
+    şunu gösterdi: replay defterinde hiç tetiklenmiyor, gerçek defterde TAM
+    durdurucu — yani açmak bir İŞ kararı.
+    """
+
+    def test_real_ledger_blocks(self):
+        """Gerçek defter: 276 işlem, isabet %56.2, break-even %67.2."""
+        r = mp.should_abstain_by_evidence({"n": 276, "wins": 155, "gw": 100.0, "gl": 160.0})
+        self.assertTrue(r["block"])
+        self.assertLess(r["wilson_lo"], r["break_even"])
+        self.assertIn("kenar YOK", r["reason"])
+
+    def test_replay_ledger_allows(self):
+        """Replay defteri: isabet %86, break-even ~%29 → alt sınır %83."""
+        r = mp.should_abstain_by_evidence({"n": 400, "wins": 344, "gw": 100.0, "gl": 40.0})
+        self.assertFalse(r["block"])
+        self.assertGreaterEqual(r["wilson_lo"], r["break_even"])
+
+    def test_warmup_gives_no_decision(self):
+        r = mp.should_abstain_by_evidence({"n": 10, "wins": 6, "gw": 10.0, "gl": 8.0}, min_trades=30)
+        self.assertFalse(r["block"])
+        self.assertIsNone(r["wilson_lo"])
+        self.assertIn("ısınma", r["reason"])
+
+    def test_missing_stats_never_blocks(self):
+        for bad in ({}, {"n": 0}, {"n": 50, "wins": 20, "gw": 0, "gl": 0}):
+            self.assertFalse(mp.should_abstain_by_evidence(bad)["block"])
+
+    def test_settings_default_off(self):
+        from app.routers.forex import ForexAutoPaperSettings
+        cfg = ForexAutoPaperSettings()
+        self.assertEqual(cfg.abstain_gate_mode, "off", "kanıt kapısı varsayılan KAPALI olmalı")
+        self.assertEqual(cfg.abstain_gate_min_trades, 30)
+        self.assertGreaterEqual(cfg.abstain_gate_window_days, 1.0)
+
+    def test_wiring_shadow_does_not_block(self):
+        src = (ROOT / "app" / "routers" / "forex.py").read_text(encoding="utf-8")
+        i_guard = src.index("8b1. SEMBOL KORUMASI")
+        i_gate = src.index("8b1b. KANIT KAPISI")
+        i_risk = src.index("8b2. Portföy risk kapısı")
+        self.assertLess(i_guard, i_gate)
+        self.assertLess(i_gate, i_risk, "kanıt kapısı risk kapısından ÖNCE olmalı")
+        block = src[i_gate:i_risk]
+        self.assertIn('if _abst_mode == "enforce":', block)
+        self.assertIn("GÖLGE: engellemedi", block)
+
+
 if __name__ == "__main__":
     unittest.main()

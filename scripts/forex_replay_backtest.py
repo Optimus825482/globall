@@ -189,6 +189,8 @@ INDEX_GATED = {"NAS100", "US30", "USTEC", "DJ30", "US100"}
 TUN_INDEX_HOURS = None        # (başlangıç_dk, bitiş_dk) UTC dakika aralığı — endeks girişleri yalnız bu pencerede (None = kapalı)
 TUN_INDEX_OPEN_DRIVE = False  # ABD açılışının ilk 5m mumu yönü 13:35-15:00 arası yön teyidi olarak zorunlu (Zarattini-Aziz 2023)
 
+TUN_ABSTAIN_GATE = 0        # 1: "kanıt aralığı break-even'ı kesmiyorsa girme" (P2)
+TUN_ABSTAIN_MIN_TRADES = 30 # bu kadar kapanmış işlemden sonra kapı devreye girer
 TUN_BREAK_GATE_BARS = 0    # >0: yapı kırılmasından sonra bu kadar bar yeni giriş YOK (P1)
 TUN_CHANDLIER = 0.0         # >0: trailing = MFE − chandelier×ATR(giriş) (0 = sabit pip trail)
 TUN_CHAND_INDEP = False     # 2026-10-14 Kol C: chandelier kapısını BE kilidinden BAĞIMSIZLAŞTIR
@@ -2352,6 +2354,38 @@ def manage_position(pos: SimPos, bar: Tuple, eff_trail_pips: float, eff_be_pips:
     return None
 
 
+def _abstain_blocks(book: Book, sym: str) -> bool:
+    """P2 KARAR ARALIĞI: sembolün kapanmış işlemlerinde isabet oranının %90 alt
+    sınırı break-even'ın ALTINDA kalıyorsa yeni giriş YOK.
+
+    NEDEN: tek sayı ("isabet %34") karar vermez; belirsizlik gerekir. Wilson alt
+    sınırı break-even'ı aşmıyorsa "bu sembolde kenar KANITLANMADI" demektir.
+    Veri `book.per_symbol` (her kapanışta güncellenir) → LOOK-AHEAD YOK.
+    Isınma: `TUN_ABSTAIN_MIN_TRADES` altında kapı AÇIK bırakılır (yoksa hiç
+    işlem açılmaz ve kanıt hiç birikmez).
+    """
+    st = (book.per_symbol or {}).get(sym)
+    if not st:
+        return False
+    n = int(st.get("n", 0) or 0)
+    if n < int(TUN_ABSTAIN_MIN_TRADES):
+        return False
+    wins = int(st.get("wins", 0) or 0)
+    gw = float(st.get("gw", 0.0) or 0.0)
+    gl = float(st.get("gl", 0.0) or 0.0)
+    if gw + gl <= 0:
+        return False
+    break_even = gl / (gw + gl)
+    try:
+        from app.ml_probability import hit_rate_interval_wilson
+        iv = hit_rate_interval_wilson([1] * wins + [0] * (n - wins), alpha=0.10)
+    except Exception:  # noqa: BLE001 - ölçüm yoksa kapı devre dışı (fail-open)
+        return False
+    if iv is None:
+        return False
+    return bool(iv["lo"] < break_even)
+
+
 def close_position(book: Book, pos: SimPos, reason: str, exit_price: float, closed_ts: float = 0.0) -> float:
     # Maliyet stresi (--slip-pips): HER BACAKTA aleyhe kayma. Giriş zaten kaymış girişte
     # uygulandı (bkz. open_position); burada yalnız ÇIKIŞ bacağı düşülür → gidiş-dönüş 2×.
@@ -4015,6 +4049,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
 
         # 4) Skor sırasına göre açılış (eski USD-yön sayacı kaldırıldı — korelasyon kalkanı koruyor)
         break_gate_blocked = {}
+        abstain_blocked = {}
         for vname, book in books.items():
             opened = 0
             for cand_d in sorted(candidates[vname], key=lambda x: -x["score"]):
@@ -4081,6 +4116,9 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                 # P1 YAPI KIRILMASI KAPISI (varsayılan KAPALI): kırılma sonrası
                 # `TUN_BREAK_GATE_BARS` bar boyunca yeni giriş yok. Yalnız araştırma
                 # bayrağıyla (`--break-gate-bars`) devreye girer.
+                if vname == "NEW" and TUN_ABSTAIN_GATE and _abstain_blocks(book, cand_d["symbol"]):
+                    abstain_blocked['n'] = abstain_blocked.get('n', 0) + 1
+                    continue
                 if vname == "NEW" and TUN_BREAK_GATE_BARS > 0:
                     _bsym = cand_d["symbol"]
                     # DİKKAT: `idx` ORTAK zaman çizgisidir; kırılma indeksi sembolün
@@ -4455,6 +4493,10 @@ def main():
     parser.add_argument("--fade", action="store_true", help="Seans-çapa fade mini-motorunu koş (NAS100/US30)")
     parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
     parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
+    parser.add_argument("--abstain-gate", action="store_true",
+                        help="P2: sembolün isabet oranı %90 alt sınırı break-even'ı aşmıyorsa giriş yok")
+    parser.add_argument("--abstain-min-trades", type=int, default=30,
+                        help="P2 kapısının devreye girdiği kapanmış işlem sayısı (ısınma)")
     parser.add_argument("--break-gate-bars", type=int, default=0,
                         help="P1 ARAŞTIRMA bayrağı: kırılma sonrası N bar giriş yok. "
                              "ÖLÇÜM: 24 bar −%17 net, 48 bar −%60 → CANLIYA ALINMADI.")
@@ -4696,6 +4738,8 @@ def main():
     EV_MAX_WIN_RATE = args.ev_wr
     TUN_CHANDLIER = args.chandelier
     globals()['TUN_BREAK_GATE_BARS'] = int(getattr(args, 'break_gate_bars', 0) or 0)
+    globals()['TUN_ABSTAIN_GATE'] = 1 if getattr(args, 'abstain_gate', False) else 0
+    globals()['TUN_ABSTAIN_MIN_TRADES'] = int(getattr(args, 'abstain_min_trades', 30) or 30)
     global TUN_NO_QUALITY, TUN_NO_SESSION
     TUN_NO_QUALITY = args.no_quality_gate
     TUN_NO_SESSION = args.no_session_filter

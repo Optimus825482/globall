@@ -474,3 +474,51 @@ def hit_rate_interval_wilson(hits: list[int], alpha: float = CONFORMAL_DEFAULT_A
     half = z * _m.sqrt(p_hat * (1 - p_hat) / n + z * z / (4 * n * n)) / denom
     return {"n": n, "hit_rate": round(p_hat, 4),
             "lo": round(max(0.0, center - half), 4), "hi": round(min(1.0, center + half), 4)}
+
+
+def should_abstain_by_evidence(stats: dict, *, min_trades: int = 30,
+                               alpha: float = CONFORMAL_DEFAULT_ALPHA) -> dict:
+    """KANIT KAPISI (P2): kapanmış işlemler bu sembolde kenar GÖSTERİYOR mu?
+
+    ``stats``: {"n", "wins", "gw" (brüt kazanç $), "gl" (brüt kayıp $)}.
+    Karar: isabet oranının %90 Wilson ALT sınırı, işlem başına break-even oranının
+    (gl/(gw+gl)) altında kalıyorsa "çekimser kal". Az örnekte (n < min_trades)
+    karar VERİLMEZ (ısınma) — yoksa sistem hiç işlem açmaz ve kanıt birikmez.
+
+    ÖLÇÜLDÜ (2026-11-09): replay defteri (isabet %86, break-even ~%30) → alt sınır
+    %83, bloklamaz. GERÇEK defter (276 işlem, isabet %56.2, break-even %67.2) →
+    alt sınır %51.2 → BLOKLAR. Yani bu kapı kâr artırıcı değil, "kanıtsız sembolde
+    ticareti durdur" anahtarıdır; bu yüzden canlıda VARSAYILAN KAPALI.
+    """
+    out = {"block": False, "n": 0, "wilson_lo": None, "break_even": None, "reason": ""}
+    try:
+        n = int(stats.get("n", 0) or 0)
+        wins = int(stats.get("wins", 0) or 0)
+        gw = float(stats.get("gw", 0.0) or 0.0)
+        gl = float(stats.get("gl", 0.0) or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        out["reason"] = "istatistik okunamadı"
+        return out
+    out["n"] = n
+    if n < int(min_trades):
+        out["reason"] = f"ısınma: {n} < {min_trades} kapanmış işlem"
+        return out
+    if gw + gl <= 0:
+        out["reason"] = "kazanç/kayıp toplamı sıfır"
+        return out
+    break_even = gl / (gw + gl)
+    iv = hit_rate_interval_wilson([1] * wins + [0] * (n - wins), alpha=alpha)
+    if iv is None:
+        out["reason"] = "aralık hesaplanamadı"
+        return out
+    out["break_even"] = round(break_even, 4)
+    out["wilson_lo"] = iv["lo"]
+    out["wilson_hi"] = iv["hi"]
+    if iv["lo"] < break_even:
+        out["block"] = True
+        out["reason"] = (f"kanıtlanmış kenar YOK: isabet %{iv['hit_rate']*100:.1f} "
+                         f"(alt sınır %{iv['lo']*100:.1f}, n={n}) < break-even %{break_even*100:.1f}")
+    else:
+        out["reason"] = (f"kenar aralığı break-even üstünde: alt sınır %{iv['lo']*100:.1f} "
+                         f"≥ break-even %{break_even*100:.1f}")
+    return out

@@ -25,7 +25,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 import random
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Response, Request, Body
@@ -1896,11 +1896,17 @@ def _collect_symbol_ev(symbol: str, now_ts: float, window_sec: float, source: Op
         rows.append(pnl)
     n = len(rows)
     wins = sum(1 for p in rows if p >= 0)
+    gw = round(sum(p for p in rows if p >= 0), 2)
+    gl = round(sum(-p for p in rows if p < 0), 2)
     return {
         "n": n,
         "net": round(sum(rows), 2),
         "wins": wins,
         "win_rate": round(100.0 * wins / n, 1) if n else 0.0,
+        # Kanıt kapısı (P2) için: brüt kazanç/kayıp → işlem başına break-even oranı.
+        "gw": gw,
+        "gl": gl,
+        "break_even": round(gl / (gw + gl), 4) if (gw + gl) > 0 else None,
     }
 
 
@@ -5758,6 +5764,25 @@ class ForexAutoPaperSettings(BaseModel):
         default_factory=lambda: ["AUDCAD", "AUDUSD", "AUDNZD"],
         description="İşlem AÇILMAYACAK pariteler (kara liste). Varsayılan AUD kümesi 2026-11-09 ölçümüyle: n=19, ortalama -6.11 USD/işlem, t=-4.12 (%95 anlamlı), 7 günde -116 USD. 7 GÜNLÜK VERİ olduğu için aşırı uyum riski vardır — boş liste ile kapatılabilir.",
     )
+    abstain_gate_mode: Literal["off", "shadow", "enforce"] = Field(
+        "off",
+        description="KANIT KAPISI (P2, 2026-11-09): sembolün kapanmış işlemlerinde isabet oranının "
+                    "%90 Wilson ALT sınırı break-even'ın altındaysa yeni giriş yapılmasın. "
+                    "off = kapalı (varsayılan), shadow = yalnız 'engellerdi' diye loglar, "
+                    "enforce = gerçekten engeller. ÖLÇÜM: replay defterinde (isabet %86, break-even ~%30) "
+                    "kapı HİÇ tetiklenmiyor; GERÇEK defterde (276 işlem, %56.2 vs %67.2) TAM DURDURUCU. "
+                    "Bu yüzden varsayılan KAPALI — açmak 'kanıtsız sembolde ticareti durdur' kararıdır.",
+    )
+    abstain_gate_min_trades: int = Field(
+        30, ge=5, le=500,
+        description="Kanıt kapısının devreye girdiği kapanmış işlem sayısı (ısınma). Altında karar verilmez; "
+                    "yoksa sistem hiç işlem açmaz ve kanıt birikmez.",
+    )
+    abstain_gate_window_days: float = Field(
+        30.0, ge=1.0, le=180.0,
+        description="Kanıt kapısının baktığı geriye dönük pencere (gün). Pencere eskiyince eski işlemler düşer, "
+                    "n sıfıra yaklaşır ve kapı kendiliğinden yeniden açılır (kilitlenme yok).",
+    )
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
                                  "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"],
@@ -9475,6 +9500,35 @@ async def _forex_auto_paper_loop():
                             metadata={"blocked_symbols": sorted(_blocked_syms)},
                         )
                     continue
+
+                # 8b1b. KANIT KAPISI (P2, 2026-11-09): "bu sembolde kenar KANITLANDI mı?"
+                # İsabet oranının %90 Wilson alt sınırı break-even'ın altındaysa giriş yok.
+                # Varsayılan `off`; `shadow` yalnız loglar. Ölçüm: gerçek defterde bu kapı
+                # TAM DURDURUCU, replay'de hiç tetiklenmiyor → iş kararı, bu yüzden opt-in.
+                _abst_mode = str(getattr(_AUTO_SETTINGS, "abstain_gate_mode", "off") or "off").lower()
+                if _abst_mode in ("shadow", "enforce"):
+                    try:
+                        from app.ml_probability import should_abstain_by_evidence
+                        _ev = _collect_symbol_ev(
+                            sym, now_ts,
+                            max(1.0, float(getattr(_AUTO_SETTINGS, "abstain_gate_window_days", 30.0))) * 86400.0)
+                        _ab = should_abstain_by_evidence(
+                            _ev, min_trades=int(getattr(_AUTO_SETTINGS, "abstain_gate_min_trades", 30)))
+                        if _ab.get("block"):
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_abstain", 0) > 300.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_abstain"] = now_ts
+                                _log_auto_decision(
+                                    "GATE",
+                                    f"[{cand.get('display', sym)}] 🧪 Kanıt kapısı"
+                                    f"{' (GÖLGE: engellemedi)' if _abst_mode == 'shadow' else ''}: "
+                                    + str(_ab.get("reason")),
+                                    symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                                    metadata={"abstain": _ab, "mode": _abst_mode},
+                                )
+                            if _abst_mode == "enforce":
+                                continue
+                    except Exception as _ab_exc:  # noqa: BLE001 - kapı kendi hatasıyla ticareti durdurmasın
+                        logger.debug("kanıt kapısı atlandı (%s): %s", sym, _ab_exc)
 
                 # 8b2. Portföy risk kapısı (deterministik, LLM'den bağımsız; araştırma Alan 3 + kart 2.4/1.6).
                 # shadow modda yalnız günlüğe "engellerdi" yazar; enforce modda engeller / lotu drawdown çarpanıyla küçültür.
