@@ -304,6 +304,21 @@ export default function AutoSettingsPanel({
   }));
   const [isSaving, setIsSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // LLM güven kalibrasyonu (2026-11-09): Ayarlar panelinden tek tuşla ölçüm.
+  // Backend ucu yalnız ÖLÇER + artefakt yazar; eşiği kullanıcı uygular.
+  const [calibBusy, setCalibBusy] = useState(false);
+  const [calibResult, setCalibResult] = useState<any>(null);
+  const [calibErr, setCalibErr] = useState<string | null>(null);
+  const runCalibration = async () => {
+    setCalibBusy(true); setCalibErr(null); setCalibResult(null);
+    try {
+      setCalibResult(await apiFetch("/api/system/llm-calibration?days=60", { method: "POST" }));
+    } catch (e) {
+      setCalibErr(e instanceof Error ? e.message : "Kalibrasyon çalıştırılamadı");
+    } finally {
+      setCalibBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (show) {
@@ -628,18 +643,84 @@ export default function AutoSettingsPanel({
                 />
                 <span className="text-2xs text-bunker-muted">Vetonun gerçek değerini ölçmek için küçük bir pay yine açılır (0 = kapalı).</span>
               </div>
+              {/* 2026-11-09: semantik düzeltildi. Önceki `!== false` ifadesi,
+                  değer tanımsızken kutuyu İŞARETLİ gösteriyordu (varsayılan artık
+                  fail-CLOSED). Ölçüm: hata gölge sonucu -0.17 R vs hatasız +0.07 R. */}
               <label className="inline-flex items-start gap-2 cursor-pointer self-end">
                 <input
                   type="checkbox"
-                  checked={form.llm_review_fail_open !== false}
+                  checked={form.llm_review_fail_open === true}
                   onChange={(e) => setField("llm_review_fail_open", e.target.checked)}
                   className={`rounded bg-bunker-950 border-bunker-700 ${acc.check} w-4 h-4 mt-0.5`}
                 />
                 <span>
-                  <span className="text-white font-semibold block">LLM yanıt vermezse işlem yine açılsın</span>
-                  <span className="text-2xs text-bunker-muted">Kapalıysa LLM yokken/yavaşken hiçbir işlem açılmaz.</span>
+                  <span className="text-white font-semibold block">
+                    LLM yanıt vermezse işlem yine açılsın <span className="text-amber-300 font-normal">(önerilmez)</span>
+                  </span>
+                  <span className="text-2xs text-bunker-muted">
+                    Kapalı (varsayılan) = fail-closed: LLM yokken/yavaşken işlem açılmaz.
+                    Ölçüm (517 karar): hatalı kararların gölge sonucu −0.17 R, hatasızlarınki +0.07 R;
+                    hata oranı %16. Bu yüzden varsayılan KAPALI.
+                  </span>
                 </span>
               </label>
+            </div>
+
+            {/* KALİBRASYON (2026-11-09): "güven puanı işe yarıyor mu?" sorusunu
+                veriyle cevaplar ve min_confidence için eşik ÖNERİR. Yalnız ölçer;
+                eşiği uygulamak ayrı bir tık (kullanıcı kararı). */}
+            <div className="pt-2 border-t border-bunker-800/80 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runCalibration}
+                  disabled={calibBusy}
+                  className="ui-button ui-button-compact ui-button-secondary"
+                >
+                  {calibBusy ? "Ölçülüyor…" : "Güven kalibrasyonunu ölç"}
+                </button>
+                <span className="text-2xs text-bunker-muted">
+                  Son 60 günün LLM kararlarıyla Brier/ECE hesaplar ve önerilen min. güveni verir.
+                </span>
+              </div>
+              {calibErr && (
+                <p role="alert" className="text-2xs text-neon-red">{calibErr}</p>
+              )}
+              {calibResult && (calibResult.fitted ? (
+                <div className="rounded-lg border border-bunker-700 bg-bunker-900/60 p-2.5 space-y-1 text-2xs font-mono">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-bunker-muted">
+                    <span>örnek: <b className="text-white">{calibResult.samples}</b></span>
+                    <span>taban isabet: <b className="text-white">{Number(calibResult.base_rate ?? 0).toFixed(3)}</b></span>
+                    <span>break-even: <b className="text-white">{Number(calibResult.break_even ?? 0).toFixed(3)}</b></span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    <span className="text-bunker-muted">Brier ham: <b className="text-white">{Number(calibResult.metrics_raw?.brier ?? 0).toFixed(4)}</b></span>
+                    <span className="text-bunker-muted">kalibre: <b className="text-emerald-300">{Number(calibResult.metrics_calibrated?.brier ?? 0).toFixed(4)}</b></span>
+                    <span className="text-bunker-muted">ECE: <b className="text-white">{Number(calibResult.metrics_raw?.ece ?? 0).toFixed(4)}</b> → <b className="text-emerald-300">{Number(calibResult.metrics_calibrated?.ece ?? 0).toFixed(4)}</b></span>
+                    <span className="text-bunker-muted">skill: <b className={Number(calibResult.brier_skill_calibrated ?? 0) > 0 ? "text-emerald-300" : "text-neon-red"}>{Number(calibResult.brier_skill_calibrated ?? 0).toFixed(3)}</b></span>
+                  </div>
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-bunker-muted">
+                      önerilen min. güven: <b className="text-cyan-300 text-xs">{calibResult.threshold?.suggested_min_confidence}</b>
+                    </span>
+                    {typeof calibResult.threshold?.suggested_min_confidence === "number" && (
+                      <button
+                        type="button"
+                        onClick={() => setNumField("llm_review_min_confidence", String(calibResult.threshold.suggested_min_confidence))}
+                        className="ui-button ui-button-compact ui-button-primary"
+                      >
+                        Eşiği uygula
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-bunker-muted leading-snug">{calibResult.threshold?.reason}</p>
+                  <p className="text-bunker-muted/70">Uygulamak için önce "Eşiği uygula", sonra panelin KAYDET düğmesi.</p>
+                </div>
+              ) : (
+                <p className="text-2xs text-amber-300">
+                  Ölçüm yapılamadı: {calibResult.reason || "yeterli çözülmüş karar yok"} — sahte eğri üretilmez.
+                </p>
+              ))}
             </div>
           </div>
 

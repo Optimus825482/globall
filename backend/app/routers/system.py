@@ -255,6 +255,30 @@ async def system_latency(request: Request):
     return snap
 
 
+@router.post("/api/system/llm-calibration")
+async def llm_calibration_run(request: Request, days: int = 60,
+                             min_samples: int | None = None, save: bool = True):
+    """LLM güven kalibrasyonunu çalıştır (Ayarlar panelindeki düğme).
+
+    Mantık `app/llm_calibration.py` (CLI ile AYNI kod). Yalnız ÖLÇÜM üretir ve
+    artefakt yazar; `llm_review_min_confidence` ayarını DEĞİŞTİRMEZ — kullanıcı
+    öneriyi görüp kendi uygular. Admin yetkisi gerekir.
+    """
+    from app.security import require_admin
+    from app import llm_calibration
+
+    require_admin(request)
+    try:
+        report = await llm_calibration.run(
+            max(0, int(days or 0)), min_samples=min_samples,
+            save=(llm_calibration.DEFAULT_ARTIFACT if save else None))
+    except RuntimeError as exc:  # DATABASE_URL yok
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:  # DB erişimi/şema
+        raise HTTPException(status_code=500, detail=f"kalibrasyon başarısız: {type(exc).__name__}")
+    return report
+
+
 @router.post("/api/system/latency/reset")
 async def system_latency_reset(request: Request):
     from app.security import require_admin

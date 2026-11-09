@@ -257,3 +257,37 @@ sahte eğri üretmiyor, açıkça söylüyor.
 Giriş döngüsünde **risk kapısından ÖNCE** kontrol edilir ve `continue` eder
 (boşa LLM çağrısı/gecikme olmasın). Karşılaştırma büyük harf; liste boşaltılırsa
 koruma tamamen kapanır.
+
+---
+
+## 8. AYARLAR PANELİNE İKİ DÜĞME (2026-11-09)
+
+Erkan: *"panelden fail-closed kapat → kalibrasyon betiği için ayarlara bir buton koy, basayım yapsın."*
+
+### 8.1 Fail-closed anahtarı — düzeltildi
+
+Anahtar **zaten vardı** ama semantiği tersti: `checked={form.llm_review_fail_open !== false}` ifadesi, değer tanımsızken kutuyu **işaretli** gösteriyordu — yeni varsayılan fail-CLOSED olduğu için yanıltıcıydı. `=== true` yapıldı ve etiket ölçümle güncellendi:
+
+> **LLM yanıt vermezse işlem yine açılsın (önerilmez)**
+> Kapalı (varsayılan) = fail-closed. Ölçüm (517 karar): hatalı kararların gölge sonucu −0.17 R, hatasızlarınki +0.07 R; hata oranı %16. Bu yüzden varsayılan KAPALI.
+
+### 8.2 "Güven kalibrasyonunu ölç" düğmesi — yeni
+
+**Backend:** mantık `app/llm_calibration.py`'ye taşındı (CLI ve API **aynı kod**). Yeni uç:
+
+```
+POST /api/system/llm-calibration?days=60      (admin)
+```
+
+Yalnız **ölçer** + artefakt yazar; `llm_review_min_confidence` ayarını **değiştirmez**.
+
+**Panel (`AutoSettingsPanel` → LLM Trader kutusu):** düğme → sonuç bloğu:
+örnek / taban isabet / break-even · **Brier ham → kalibre** · **ECE ham → kalibre** · **Brier skill** (renkli: pozitif yeşil, negatif kırmızı) · **önerilen min. güven** + **"Eşiği uygula"** düğmesi (formu doldurur; kaydı kullanıcı yapar). Yeterli veri yoksa "sahte eğri üretilmez" mesajı.
+
+### 8.3 Kullanım (sunucuda)
+
+1. Ayarlar → LLM Trader → **"Güven kalibrasyonunu ölç"**
+2. Çıkan öneriyi gör → **"Eşiği uygula"** → panelin **KAYDET**'i
+3. Fail-closed kutusunun **kapalı** olduğunu doğrula (varsayılan), değilse kapat + kaydet
+
+**Doğrulama:** frontend `typecheck` 0 hata + `build` ✓ · backend `2077 passed, 2 failed` (2 kırmızı önceden var).

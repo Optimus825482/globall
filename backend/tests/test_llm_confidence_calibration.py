@@ -13,7 +13,6 @@ Kilitlenen davranış:
      taban oranın üstüne çıkar (yani "daha yüksek güven iste" der).
   4. Yetersiz örnekte eğri KURULMAZ (sahte eğri yok).
 """
-import importlib.util
 import pathlib
 import sys
 import unittest
@@ -22,12 +21,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app import llm_calibration as mod  # noqa: E402  (mantık burada; CLI ince sarmalayıcı)
 from app import ml_probability as mp  # noqa: E402
-
-spec = importlib.util.spec_from_file_location(
-    "llm_cal", ROOT / "scripts" / "report_llm_confidence_calibration.py")
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
 
 
 def row(conf, pips, sl=100.0):
@@ -36,7 +31,7 @@ def row(conf, pips, sl=100.0):
 
 class TestRowsToSeries(unittest.TestCase):
     def test_basic_mapping(self):
-        probs, hits, rs = mod._rows_to_series([
+        probs, hits, rs = mod.rows_to_series([
             row(80, +150.0, 100.0),
             row(40, -100.0, 100.0),
         ])
@@ -45,12 +40,12 @@ class TestRowsToSeries(unittest.TestCase):
         self.assertEqual(rs, [1.5, -1.0])
 
     def test_missing_sl_is_safe(self):
-        probs, hits, rs = mod._rows_to_series([row(70, +50.0, sl=None)])
+        probs, hits, rs = mod.rows_to_series([row(70, +50.0, sl=None)])
         self.assertEqual(rs, [0.0], "sl yoksa R=0 (çökme yok)")
         self.assertEqual(hits, [1])
 
     def test_invalid_rows_skipped(self):
-        probs, hits, rs = mod._rows_to_series([
+        probs, hits, rs = mod.rows_to_series([
             {"confidence": None, "shadow_pips": 10, "sl_pips": 100},
             {"confidence": 60, "shadow_pips": None, "sl_pips": 100},
             row(60, +10.0),
@@ -59,7 +54,7 @@ class TestRowsToSeries(unittest.TestCase):
         self.assertEqual(probs[0], 0.6)
 
     def test_probability_clamped(self):
-        probs, _, _ = mod._rows_to_series([row(150, 1.0), row(-20, 1.0)])
+        probs, _, _ = mod.rows_to_series([row(150, 1.0), row(-20, 1.0)])
         self.assertEqual(probs, [1.0, 0.0])
 
 
@@ -67,18 +62,18 @@ class TestSuggestThreshold(unittest.TestCase):
     def test_first_crossing(self):
         cal = {"fitted": True, "x_thresholds": [0.2, 0.5, 0.8],
                "y_thresholds": [0.10, 0.30, 0.70]}
-        out = mod._suggest_threshold(cal, break_even=0.45)
+        out = mod.suggest_threshold(cal, break_even=0.45)
         self.assertEqual(out["suggested_min_confidence"], 80)
         self.assertAlmostEqual(out["calibrated_at_that_point"], 0.70, places=4)
 
     def test_no_crossing_means_no_edge(self):
         cal = {"fitted": True, "x_thresholds": [0.2, 0.9], "y_thresholds": [0.1, 0.2]}
-        out = mod._suggest_threshold(cal, break_even=0.6)
+        out = mod.suggest_threshold(cal, break_even=0.6)
         self.assertEqual(out["suggested_min_confidence"], 100)
         self.assertIn("GEREKTİRMİYOR", out["reason"])
 
     def test_unfitted_curve(self):
-        out = mod._suggest_threshold({"fitted": False}, break_even=0.5)
+        out = mod.suggest_threshold({"fitted": False}, break_even=0.5)
         self.assertIsNone(out["suggested_min_confidence"])
 
 
@@ -96,7 +91,7 @@ class TestOverconfidentScenario(unittest.TestCase):
         return rows
 
     def test_calibration_improves_brier(self):
-        probs, hits, _ = mod._rows_to_series(self._rows())
+        probs, hits, _ = mod.rows_to_series(self._rows())
         cal = mp.fit_calibration(probs, hits)
         self.assertTrue(cal["fitted"])
         self.assertLess(cal["metrics_calibrated"]["brier"], cal["metrics_raw"]["brier"],
@@ -104,17 +99,17 @@ class TestOverconfidentScenario(unittest.TestCase):
         self.assertLess(cal["metrics_calibrated"]["ece"], cal["metrics_raw"]["ece"])
 
     def test_threshold_above_base_rate(self):
-        probs, hits, _ = mod._rows_to_series(self._rows())
+        probs, hits, _ = mod.rows_to_series(self._rows())
         cal = mp.fit_calibration(probs, hits)
         base = sum(hits) / len(hits)
         # R oranı 1:1 → break-even 0.5; gerçek isabet ~0.37
-        out = mod._suggest_threshold(cal, break_even=0.5)
+        out = mod.suggest_threshold(cal, break_even=0.5)
         self.assertEqual(out["suggested_min_confidence"], 100,
                          "isabet break-even'ın altındaysa hiçbir güven düzeyi onay gerektirmemeli")
         self.assertLess(base, 0.5)
 
     def test_insufficient_samples_no_curve(self):
-        probs, hits, _ = mod._rows_to_series(self._rows(n=20))
+        probs, hits, _ = mod.rows_to_series(self._rows(n=20))
         cal = mp.fit_calibration(probs, hits)
         self.assertFalse(cal["fitted"])
         self.assertIn("yetersiz", cal["reason"])
