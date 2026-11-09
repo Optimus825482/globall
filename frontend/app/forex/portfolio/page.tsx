@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
+import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { formatUtc3 } from "../../lib/format";
 import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
 import dynamic from "next/dynamic";
@@ -234,46 +235,50 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     window.setTimeout(() => setMt5Message(null), isError ? 8000 : 5000);
   };
 
+  // REST yoklaması ve WS `fx_state` AYNI reducer'dan geçer (2026-11-09):
+  // alan kayması olmaz, panel canlı yayın ile yoklama arasında tutarsız kalamaz.
+  const applyStatus = useCallback((res: any) => {
+    if (!res) return;
+    setAutoStatus(res.status || "Hazır");
+    setAutoEnabled(Boolean(res.enabled));
+    if (typeof res.balance === "number") setBalance(res.balance);
+    if (typeof res.equity === "number") setEquity(res.equity);
+    else if (typeof res.balance === "number") setEquity(res.balance);
+    setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
+    setOpenPnlPips(res.open_pnl_pips ?? 0.0);
+    setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
+    setRealizedPnlPips(res.realized_pnl_pips ?? 0.0);
+    setTotalTrades(res.total_trades ?? 0);
+    setWins(res.wins ?? 0);
+    setLosses(res.losses ?? 0);
+    setWinRate(res.win_rate ?? 0.0);
+    setDailyWinRate(res.daily_win_rate ?? 0.0);
+    setDailyTrades(res.daily_trades ?? 0);
+    setDailyWins(res.daily_wins ?? 0);
+    setDailyLosses(res.daily_losses ?? 0);
+    setDailyPnlUsd(res.daily_pnl ?? 0.0);
+    setDailyPnlPips(res.daily_pips ?? 0.0);
+    setOpenPositions((res.open_positions || []).filter(
+      (p: AutoPosition) => !symFilter || symFilter.has(String(p.symbol).toUpperCase())
+    ));
+    setClosedTrades((res.closed_trades || []).filter(
+      (t: ClosedTrade) => !symFilter || symFilter.has(String(t.symbol).toUpperCase())
+    ));
+    setPerSymbolToday((res.per_symbol_today || []).filter(
+      (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
+    ));
+    setPerSymbolAllTime((res.per_symbol_all_time || []).filter(
+      (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
+    ));
+    setDecisionLogs((res.decision_logs || []).filter(
+      (l: DecisionLog) => !symFilter || !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
+    ));
+  }, [symFilter]);
+
   const fetchStatus = async () => {
     try {
       const res = await apiFetch("/api/forex/auto-paper/status");
-      if (res) {
-        setAutoStatus(res.status || "Hazır");
-        setAutoEnabled(Boolean(res.enabled));
-        if (typeof res.balance === "number") setBalance(res.balance);
-        if (typeof res.equity === "number") setEquity(res.equity);
-        else if (typeof res.balance === "number") setEquity(res.balance);
-        setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
-        setOpenPnlPips(res.open_pnl_pips ?? 0.0);
-        setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
-        setRealizedPnlPips(res.realized_pnl_pips ?? 0.0);
-        setTotalTrades(res.total_trades ?? 0);
-        setWins(res.wins ?? 0);
-        setLosses(res.losses ?? 0);
-        setWinRate(res.win_rate ?? 0.0);
-        setDailyWinRate(res.daily_win_rate ?? 0.0);
-        setDailyTrades(res.daily_trades ?? 0);
-        setDailyWins(res.daily_wins ?? 0);
-        setDailyLosses(res.daily_losses ?? 0);
-        setDailyPnlUsd(res.daily_pnl ?? 0.0);
-        setDailyPnlPips(res.daily_pips ?? 0.0);
-        setOpenPositions((res.open_positions || []).filter(
-          (p: AutoPosition) => !symFilter || symFilter.has(String(p.symbol).toUpperCase())
-        ));
-        setClosedTrades((res.closed_trades || []).filter(
-          (t: ClosedTrade) => !symFilter || symFilter.has(String(t.symbol).toUpperCase())
-        ));
-        setPerSymbolToday((res.per_symbol_today || []).filter(
-          (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
-        ));
-        setPerSymbolAllTime((res.per_symbol_all_time || []).filter(
-          (k: SymbolDailyKpi) => !symFilter || symFilter.has(String(k.symbol).toUpperCase())
-        ));
-        setDecisionLogs((res.decision_logs || []).filter(
-          (l: DecisionLog) => !symFilter || !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
-        ));
-        setSessions(res.sessions || []);
-      }
+      applyStatus(res);
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Durum alınamadı";
       setAutoStatus(`bağlantı yok: ${detail}`);
@@ -323,7 +328,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
     }
   };
 
-  usePolling(fetchStatus, 3000);
+  // CANLI YAYIN (2026-11-09): köprü 1,5 sn'de bir WS'e `fx_state` basıyor →
+  // fiyat/K-Z gecikmesi ~0. Yoklama yalnız GÜVENLİK AĞI (WS düşerse 15 sn).
+  usePolling(fetchStatus, 15000);
+
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message.type === "fx_state") {
+      applyStatus(message.data);
+    } else if (message.type === "fx_trade_closed") {
+      void fetchStatus();   // kapanan işlem listesi ağır → olayla tazelenir
+    }
+  }, [applyStatus]));
 
   // MT5 Otomatik Emir İletimini Aç / Kapat
   const toggleMt5Auto = async () => {

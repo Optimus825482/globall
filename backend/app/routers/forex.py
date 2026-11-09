@@ -9697,6 +9697,36 @@ def _invalidate_status_cache() -> None:
     _STATUS_CACHE = None
 
 
+async def _broadcast_fx_state(*, closed_count: int = 0) -> None:
+    """Köprü senkronundan sonra panel durumunu **WS ile** yayınlar (2026-11-09).
+
+    NEDEN: köprü 1,5 sn'de bir `/sync-mt5` POST ediyordu ama panel bu veriyi
+    yalnız REST yoklamasıyla (3 sn) görüyordu → tazelik ortalama ~2,5 sn, en
+    kötü ~4,5 sn bayat. Artık aynı anda WS'e de gidiyor; panel yoklaması
+    güvenlik ağı olarak 15 sn'ye çekildi.
+
+    SÖZLEŞME PARİTESİ: `data` yükü `/auto-paper/status` yanıtının BİREBİR
+    kopyasıdır (aynı alan adları) — istemci REST ile WS için AYRI reducer
+    yazmak zorunda kalmaz, alan kayması olmaz. `portfolio` WS tipinde de
+    aynı disiplin uygulanır (`/api/positions` ile birebir).
+
+    NaN/±Infinity temizlenir: `json.dumps` bunları `NaN` olarak yazar, geçersiz
+    JSON olur ve istemci `JSON.parse` hatasıyla mesajı sessizce düşürür.
+    """
+    from app.api_common import _json_safe_positions as _json_safe
+    from app.ws_runtime import ws_manager
+
+    # Kimse dinlemiyorsa ağır yükü üretme: sync 1,5 sn'de bir koşuyor.
+    if ws_manager.connection_count == 0:
+        return
+
+    _invalidate_status_cache()          # az önce yazılan tick'ler yükte temsil edilsin
+    payload = await get_forex_auto_paper_status()
+    await ws_manager.broadcast({"type": "fx_state", "data": _json_safe(payload)})
+    if closed_count:
+        await ws_manager.broadcast({"type": "fx_trade_closed", "data": {"count": int(closed_count)}})
+
+
 # Kokpit kapı-görünümü için hafif önbellek: iki sembol, 2 sn TTL. Snapshot salt
 # okumadır ama `_collect_symbol_ev` her çağrıda tüm kapanış defterini tarar;
 # kokpit 3 sn'de bir iki sembol için çekerken bu, status ucunun 1 sn TTL
@@ -11496,6 +11526,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
         _LAST_TECH_FETCH_TIME = 0.0
 
     # MT5 canlı tick fiyatlarını entegre et
+    _new_closed_count = 0
     if req.ticks:
         for sym_code, tick_dict in req.ticks.items():
             sym_up = str(sym_code).upper()
@@ -11544,6 +11575,10 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
                     if not is_first_sync or (deal_time > 0 and (now_ts - deal_time < 60.0)):
                         global _LAST_BTC_EXIT_TIME
                         _LAST_BTC_EXIT_TIME = now_ts
+
+        # WS: panel kapanan işlem listesini bu olayla ANINDA tazeler (ağır liste
+        # WS ile taşınmaz; yalnız "değişti" sinyali gider).
+        _new_closed_count = len(newly_closed_deals)
 
         # Seri-SL sigortası (CANLI MT5 yolu): kapanan her işlem sayaca girer.
         #   - İlk senkronizasyonda geçmiş penceresi (300 deal) topluca beslenirse
@@ -11631,6 +11666,14 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
     else:
         commands = list(_MT5_STATE["pending_commands"])
         _MT5_STATE["pending_commands"].clear()
+
+    # CANLI YAYIN (2026-11-09): panel bu senkrondan hemen sonra tazelenir.
+    # Yayın hatası bu POST'u ASLA düşürmemeli: köprü başarısız yanıt görürse
+    # komutları tekrar dener ve emirler çift iletilir.
+    try:
+        await _broadcast_fx_state(closed_count=_new_closed_count)
+    except Exception as _ws_exc:  # pragma: no cover - savunmacı
+        logger.warning("fx_state WS yayını başarısız: %s", _ws_exc)
 
     return {
         "status": "ok",

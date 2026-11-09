@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
+import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { useTheme } from "../../lib/theme";
 import EVShieldModal, { EVShieldStatusResponse } from "../components/EVShieldModal";
 
@@ -315,7 +316,32 @@ export default function ForexIslemlerPage() {
 
   // PERFORMANS (2026-10-08): Çıplak interval yerine usePolling — arka plana
   // geçince tamamen durur ve tur üst üste binmesi engellenir.
-  usePolling(() => fetchData(true), 3000);
+  // CANLI YAYIN (2026-11-09): köprü 1,5 sn'de bir WS'e `fx_state` basıyor →
+  // açık pozisyonların fiyat/K-Z'si ~0 gecikmeyle güncellenir. Yoklama artık
+  // yalnız GÜVENLİK AĞI (WS düşerse 15 sn). Kapanan işlem listesi ve ondan
+  // türeyen KPI'lar ağır olduğu için WS ile taşınmaz: `fx_trade_closed` olayı
+  // geldiğinde liste bir kez tazelenir.
+  usePolling(() => fetchData(true), 15000);
+
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message.type === "fx_state") {
+      const res = message.data as any;
+      if (!res) return;
+      // Yalnız CANLI alanlar: açık pozisyonlar + bakiye/özkaynak. İşlem sayısı
+      // KPI'larına dokunulmaz (onların tek kaynağı kapanan işlem listesidir).
+      if (Array.isArray(res.open_positions)) setOpenPositions(res.open_positions);
+      setKpi((prev) => ({
+        ...prev,
+        balance: typeof res.balance === "number" ? res.balance : prev.balance,
+        equity: typeof res.equity === "number" ? res.equity : prev.equity,
+        open_positions_count: Array.isArray(res.open_positions) ? res.open_positions.length : prev.open_positions_count,
+      }));
+      if (res.ev_shield) setEvShieldStatus(res.ev_shield);
+      setLastUpdated(new Date());
+    } else if (message.type === "fx_trade_closed") {
+      void fetchData(true);
+    }
+  }, [fetchData]));
 
   // Dinamik Açık PnL Toplamları
   const openSummary = useMemo(() => {

@@ -200,6 +200,16 @@ class ConnectionManager:
         return [ws for ws in self.active_connections
                 if self._owners.get(id(ws)) == user_id]
 
+    @property
+    def connection_count(self) -> int:
+        """Aktif bağlantı sayısı — "kimse dinlemiyorsa ağır yayını üretme" kapısı.
+
+        `/sync-mt5` her 1,5 sn'de bir çalışır ve `fx_state` yükü (EV hesapları,
+        per-sembol KPI, kapanan işlem normalizasyonu) ucuz değildir. Bağlı istemci
+        yokken bu yükü üretmek saf israf olduğu için çağıran taraf önce buraya bakar.
+        """
+        return len(self._outboxes)
+
     async def broadcast(self, message: dict, *, user_id: Any = None):
         """Mesajı KUYRUĞA koy; hiçbir gönderimi beklemez.
 
