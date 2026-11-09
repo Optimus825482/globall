@@ -25,6 +25,14 @@ work/
 
 # Backend research artifacts (JSON/CSV dumps)
 backend/*.json
+# 2026-11-09: `backend/data/` yalnız ÇALIŞMA ANINDA üretilen önbellekleri tutar
+# (ekonomik takvim). `economic_calendar_cache.json` takip ediliyordu ve her
+# çalıştırmada değiştiği için sürekli "modified" görünüyor, commit gürültüsü
+# üretiyordu — takipten çıkarıldı ve diskten silindi. Backend kendini yeniler:
+# `forex_news._load_disk_cache()` `os.path.exists` ile korumalı,
+# `_save_disk_cache()` dizini oluşturup yeniden yazar. Yoksa ilk takvim
+# çekiminde yeniden üretilir; veri kaybı olmaz.
+backend/data/*.json
 backend/*.csv
 backend/scripts/*.json
 backend/scripts/*.csv
