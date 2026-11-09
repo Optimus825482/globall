@@ -1,7 +1,8 @@
-/* Fontlar `app/fonts.ts` içinde next/font/local ile DEPOYA GÖMÜLÜ yüklenir;
-   `--font-sans/display/mono` değişkenlerini next/font üretir ve `layout.tsx`
-   bunları <html> üzerine koyar. Burada DEKLARE EDİLMEZ — aksi halde :root
-   kuralı ile next/font sınıfı aynı özgüllükte çakışır ve kazanan sıraya kalır. */
+/* Fontlar `app/fonts.ts` içinde next/font/local ile DEPOYA GÖMÜLÜ yüklenir
+   (2026-11-09: Roboto = arayüz, Noto Sans Mono = sayı/tablo; Türkçe + ₺ tam).
+   `--font-sans/mono` değişkenlerini next/font üretir ve `layout.tsx` bunları
+   <html> üzerine koyar. Burada DEKLARE EDİLMEZ — aksi halde :root kuralı ile
+   next/font sınıfı aynı özgüllükte çakışır ve kazanan kaynak sırasına kalır. */
 
 @tailwind base;
 @tailwind components;

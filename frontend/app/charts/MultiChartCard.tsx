@@ -67,6 +67,15 @@ interface MultiChartCardProps {
 }
 
 // Zaman dilimleri — kullanıcı etiketi 1-3-5-15-30-H1-H4-D1 (2026-10-14 isteği).
+/** lightweight-charts canvas'a AİLE ADI gerekir (CSS değişkeni çözülmez).
+ *  Tema fontu `--font-mono`'dan çalışma anında okunur; böylece grafik
+ *  etiketleri uygulamanın gerçek fontuyla çizilir. */
+function chartFontFamily(): string {
+  if (typeof window === "undefined") return "monospace";
+  const v = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
+  return v ? v + ", monospace" : "monospace";
+}
+
 const INTERVALS = [
     { v: "1m",  l: "1m" },
     { v: "3m",  l: "3m" },
@@ -459,7 +468,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
         const chart = createChart(containerRef.current, {
             width: containerRef.current.clientWidth,
             height: containerRef.current.clientHeight || 280,
-            layout: { background: { type: ColorType.Solid, color: "#06080d" }, textColor: "#9ca3af", fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+            layout: { background: { type: ColorType.Solid, color: "#06080d" }, textColor: "#9ca3af", fontFamily: chartFontFamily(), fontSize: 11 },
             grid: { vertLines: { color: "rgba(31,41,55,0.4)" }, horzLines: { color: "rgba(31,41,55,0.4)" } },
             crosshair: { mode: 0, vertLine: { color: "#10b981", width: 1, style: LineStyle.Dashed }, horzLine: { color: "#10b981", width: 1, style: LineStyle.Dashed } },
             timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#1f2937" },

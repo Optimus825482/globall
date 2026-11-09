@@ -69,9 +69,11 @@ export default {
         xs: "420px"
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["var(--font-display)", "var(--font-sans)", "sans-serif"],
-        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"]
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "Roboto", "sans-serif"],
+        // 2026-11-09 (2. tur): ayrı bir "display" ailesi kaldırıldı
+        // (kullanılmayan Poppins dosyaları silindi) — Roboto tek arayüz ailesi.
+        display: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "Consolas", "Menlo", "monospace"]
       }
     }
   },

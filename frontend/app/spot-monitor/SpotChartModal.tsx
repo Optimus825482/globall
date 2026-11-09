@@ -352,7 +352,12 @@ export default function SpotChartModal({ signal, onClose }: SpotChartModalProps)
       layout: {
         background: { type: ColorType.Solid, color: "#06090e" },
         textColor: "#94a3b8",
-        fontFamily: "JetBrains Mono, monospace",
+        // lightweight-charts canvas'a AİLE ADI ister (CSS değişkeni çözülmez).
+        // Tema fontu çalışma anında okunur — grafik etiketleri uygulamanın
+        // gerçek fontuyla çizilsin.
+        fontFamily: typeof window === "undefined"
+          ? "monospace"
+          : (getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace") + ", monospace",
         fontSize: 11,
       },
       grid: {

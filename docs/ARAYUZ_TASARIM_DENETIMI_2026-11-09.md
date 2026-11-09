@@ -427,3 +427,52 @@ Erkan'ın kararı: **açık tema varsayılan**. Önceki turda `prefers-color-sch
 Yan fayda: `dark:` Tailwind varyantları `.dark` sınıfına bağlı olduğundan, koyu varsayılan altında `text-slate-800 dark:text-cyan-300` gibi çiftler **açık temada yanlış dalı** seçiyordu; artık tutarlı.
 
 Ölçümle doğrulandı: 17 rotanın tamamında `<html>` sınıfı `light` ve TopBar tema düğmesi "Karanlık" etiketi gösteriyor (yani açık temada).
+
+---
+
+## 12. YAZI TİPİ DEĞİŞTİRİLDİ + TÜRKÇE GLİF HATASI (2026-11-09, 3. tur)
+
+**Bildirim:** "Bu yazı fontunda Türkçe karakterlerin bazıları tanınmıyor, o yüzden daha bilindik ve gözü yormayan bir fontla değiştir."
+
+### 12.1 Kök neden — ÖLÇÜMLE kanıtlandı (önceki turda benim hatam)
+
+§8'de fontları yüklerken Google Fonts'tan **yalnız `latin` alt kümesi** indirilmişti. Türkçeye özgü harfler `latin-ext` bloğundadır; `₺` (U+20BA) ise para birimleri bloğunda. Gönderilen dosyaların cmap'i okundu:
+
+| Dosya | Glif | EKSİK karakterler |
+|---|---|---|
+| `Inter-Variable.woff2` | 230 | `ğ Ğ İ ş Ş` + `₺` + `→` |
+| `JetBrainsMono-Variable.woff2` | 229 | `ğ Ğ İ ş Ş` + `₺` + `→` |
+
+Yani o harfler tarayıcının yedek fontuyla (Arial) çiziliyordu → "bazı harfler bozuk/tanınmıyor" tam olarak bu. `₺` uygulamada **58 yerde** geçiyor.
+
+### 12.2 Yeni font çifti
+
+| Rol | Font | Gerekçe |
+|---|---|---|
+| Arayüz | **Roboto** | Dünyada en yaygın tanınan arayüz fontu; ekran için tasarlanmış, yüksek x-yüksekliği, sakin ve yormayan |
+| Sayı/tablo | **Noto Sans Mono** | Sayısal hizalama gerekli; Google'ın "hiç tofu olmasın" amacıyla yaptığı aile, çok geniş kapsam |
+
+Her ikisi de **repoya gömülü** (`app/fonts/*.woff2`, `next/font/local`) — build'de ağ gerekmez. Üretim, kaynak koddan **ölçülen** karakter kümesiyle yapılır: latin + latin-ext-A + latin-1 + para birimleri + genel noktalama; `tnum`/kerning/kerning özellikleri korunur.
+
+Boyut: Roboto 104 KB + Noto Sans Mono 111 KB (değişken font, 400–700 tek dosyada).
+
+### 12.3 Ölçümle doğrulama (tarayıcı)
+
+| Kontrol | Sonuç |
+|---|---|
+| `ğ Ğ İ ı ş Ş ç ö ü ₺ A` — Roboto'da çiziliyor mu (Times metriklerinden farklı mı) | **10/10 ✓** |
+| Aynı karakterler Noto Sans Mono'da (mono adım = 60 ≠ Times) | **10/10 ✓** |
+| `body` hesaplanan fontu | `fontSans, "fontSans Fallback", -apple-system, …` ✓ |
+| `.font-mono` hesaplanan fontu | `fontMono, "fontMono Fallback", ui-monospace, "Cascadia Mono", …` ✓ |
+| `document.fonts` durumu | her iki yüz `loaded` (bozuk woff2 değil) ✓ |
+| Times New Roman kalıntısı | **yok** ✓ |
+
+### 12.4 Bu turda yakalanan İKİNCİ sessiz hata
+
+`next/font` `fallback` adlarını üretilen CSS'e **TIRNAKSIZ** yazar. Tırnaksız aile adı geçerli CSS tanımlayıcıları dizisi olmalıdır; listeye eklediğim `Noto Sans Symbols 2` bu kuralı ihlal ediyordu (son parça rakamla başlıyor) → tarayıcı **`font-family` bildiriminin tamamını** geçersiz saydı ve **tüm arayüz Times New Roman'a düştü**. Derleme başarılıydı; ancak tarayıcıda ölçümle görüldü (`body` hesaplanan fontu "Times New Roman"). `Noto Sans Symbols` (geçerli ad) ile düzeltildi ve ölçümle teyit edildi.
+
+Bu hata sınıfı bir daha olamasın diye **regresyon testi** eklendi: `app/fonts.test.ts` — fallback adlarının her birini CSS tanımlayıcı kurallarına göre doğrular, listede spread olmadığını ve sembol/emoji yedeğinin durduğunu kontrol eder (5 test).
+
+### 12.5 Not
+
+Oklar (`→`), üçgenler (`▲▼`) ve emoji bu fontların hiçbirinde yoktur — tarayıcı bunları işletim sisteminin sembol/emoji fontundan alır. `fallback` zincirine (`Segoe UI Symbol`, `Noto Sans Symbols`, `Segoe UI Emoji`, `Noto Color Emoji`) açıkça yazıldı ki hangi fontun devreye girdiği öngörülebilir olsun. Türkçe harflerde bu yedeğe **hiç düşülmüyor** — asıl şikâyet buydu ve çözüldü.
