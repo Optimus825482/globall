@@ -414,8 +414,23 @@ def decide(verdict: Optional[Dict[str, Any]], error: Optional[str], *, mode: str
            min_confidence: int) -> Dict[str, Any]:
     """Saf politika: kararı motorun uygulayacağı sonuca çevirir (test edilebilir).
 
-    Dönen `applied`: allowed | blocked | advisory_allow | advisory_reject | fail_open | fail_closed.
+    Dönen `applied`: allowed | blocked | advisory_allow | advisory_reject | advisory_error
+    | fail_open | fail_closed | reject_voided.
+
+    DANIŞMAN modu **asla engellemez** — LLM çökse/zaman aşımına girse bile. Bu yüzden
+    `advisory` kontrolü en başta (fail-open/closed dalından ÖNCE) yapılır: aksi hâlde
+    "danışman" diyen bir ayar LLM kesintisinde tüm işlemleri durdururdu. Motor bu
+    yüzden danışmanda incelemeyi bekletmez, arka planda kaydeder.
     """
+    if mode == "advisory":
+        if verdict is None:
+            return {"blocked": False, "applied": "advisory_error",
+                    "reason": error or "LLM yanıt vermedi"}
+        if verdict.get("downgraded"):
+            return {"blocked": False, "applied": "reject_voided", "reason": verdict.get("summary", "")}
+        ok = verdict["decision"] == "APPROVE" and verdict["confidence"] >= int(min_confidence)
+        return {"blocked": False, "applied": "advisory_allow" if ok else "advisory_reject",
+                "reason": verdict.get("summary", "")}
     if verdict is None:
         return {"blocked": not fail_open, "applied": "fail_open" if fail_open else "fail_closed",
                 "reason": error or "LLM yanıt vermedi"}
@@ -423,8 +438,6 @@ def decide(verdict: Optional[Dict[str, Any]], error: Optional[str], *, mode: str
         # Red yalnız habere dayandığı için geçersiz: LLM onay vermedi, motorun kararı geçerli (güven eşiği uygulanmaz).
         return {"blocked": False, "applied": "reject_voided", "reason": verdict.get("summary", "")}
     ok = verdict["decision"] == "APPROVE" and verdict["confidence"] >= int(min_confidence)
-    if mode == "advisory":
-        return {"blocked": False, "applied": "advisory_allow" if ok else "advisory_reject", "reason": verdict.get("summary", "")}
     if ok:
         return {"blocked": False, "applied": "allowed", "reason": verdict.get("summary", "")}
     why = verdict.get("summary", "")

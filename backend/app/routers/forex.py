@@ -6953,6 +6953,41 @@ def _build_modify_sltp_cmd(cmd_id: str, ticket: int, pos: Dict[str, Any],
     return cmd
 
 
+# ---- Danışman modunda LLM incelemesi ARKA PLANDA (2026-11-09) -----------------
+# Ölçüm (517 karar): danışman modunda LLM kararı işlemi ENGELLEMİYOR
+# (`llm_trade_review.decide` → blocked=False) ama `review_entry` yine de inline
+# bekletiliyordu: ortanca 26 sn, timeout tabanı 40 sn ve `_review_lock` yüzünden
+# adaylar SIRAYLA. Karara etkisi olmayan bir kayıt için girişi 26 sn geciktirmek
+# yanlış takastı → inceleme artık arka planda çalışır, kaydı üretir ve işlem
+# açıldığında referansı bağlar. VETO modunda bekleme ZORUNLU (karar engelleyici):
+# orada `await` korunur. Karar semantiği DEĞİŞMEZ — yalnız giriş zamanlaması.
+_LLM_BG_INFLIGHT: set = set()
+_LLM_BG_MAX = 6                      # LLM takılırsa görev yığılması olmasın
+
+
+async def _llm_review_background(ctx: dict, key: tuple, ref_fut) -> None:
+    """Danışman incelemesi: karar kaydını yazar, işlem referansını sonradan bağlar."""
+    from app import llm_trade_review
+    res: dict = {}
+    try:
+        res = await llm_trade_review.review_entry(ctx)
+    except Exception as exc:  # noqa: BLE001 - arka plan görevi ana döngüyü asla düşürmesin
+        logger.warning("Arka plan LLM incelemesi çöktü (%s): %s", ctx.get("symbol"), exc)
+    finally:
+        _LLM_BG_INFLIGHT.discard(key)
+    rid = (res or {}).get("review_id")
+    if not rid:
+        return
+    ref = None
+    try:
+        ref = await asyncio.wait_for(ref_fut, timeout=10.0)
+    except Exception:  # noqa: BLE001 - işlem açılmadı (erken continue) ya da gecikti
+        ref = None
+    if not ref:
+        return                       # işlem açılmadı: "açıldı" işaretlemeyiz
+    await llm_trade_review.mark_executed(rid, ref)
+
+
 async def _forex_auto_paper_loop():
     """Arka plan otonom forex scalper izleme ve işlem açma döngüsü."""
     global _LAST_SESSION_BLOCK_LOG_TIME, _LAST_SCAN_PULSE_TIME, _LAST_GOLD_EXIT_TIME, _LAST_BTC_EXIT_TIME, _LAST_BLOCKED_HOUR_LOG_TIME
@@ -9400,40 +9435,53 @@ async def _forex_auto_paper_loop():
                     mt5_lots = _pr.adjust_lots(mt5_lots, _rg["mult"])
 
                 # 8c. LLM Trader İncelemesi (ayarlardan açılır): açılıştan ÖNCE ikinci görüş.
-                # Karar her durumda kaydedilir; veto modunda RED işlemi engeller, LLM yoksa
-                # fail-open/closed ayarı belirler. Aday başına en fazla `llm_review_timeout_sec` bekler.
-                _review_id, _review_ref = None, None
+                # VETO modunda karar engelleyici olduğu için beklenir (aday başına en fazla
+                # `llm_review_timeout_sec`); DANIŞMAN modunda karar bloğu yok → girişi bekletmez,
+                # inceleme arka planda kaydedilir (aşağıda `_llm_review_background`).
+                _review_id, _review_ref, _ref_fut = None, None, None
                 if _AUTO_SETTINGS.llm_review_enabled:
-                    try:
-                        from app import llm_trade_review
-                        _verdict = await llm_trade_review.review_entry({
-                            "symbol": sym, "direction": direction, "cand": cand, "lots": mt5_lots,
-                            "sl_pips": sl_pips, "tp_pips": tp_pips, "atr_pips": round(float(atr_pips), 1),
-                            "pip_size": spec["pip_size"], "entry_price": entry_p,
-                            "risk_usd": round(mt5_lots * sl_pips * pip_val, 2),
-                            "strategy": _c_strat, "strategy_label": _c_strat_lbl,
-                            "mode": _AUTO_SETTINGS.llm_review_mode, "fail_open": _AUTO_SETTINGS.llm_review_fail_open,
-                            "min_confidence": _AUTO_SETTINGS.llm_review_min_confidence,
-                            "timeout_sec": max(float(_AUTO_SETTINGS.llm_review_timeout_sec), 40.0),   # eski kayıtlı 25 sn ölçülen gecikmeden kısa kalıyordu (%17 zaman aşımı)
-                            "explore_pct": _AUTO_SETTINGS.llm_review_explore_pct,
-                        })
-                    except Exception as exc:
-                        logger.warning("LLM inceleme çağrısı çöktü (%s): %s", sym, exc)
-                        _verdict = {"blocked": not _AUTO_SETTINGS.llm_review_fail_open, "applied": "hata",
-                                    "reason": str(exc)[:160], "review_id": None, "verdict": None, "cached": False}
-                    _review_id = _verdict.get("review_id")
-                    if _verdict.get("blocked"):
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_llmrev", 0) > 60.0:
-                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_llmrev"] = now_ts
-                            _v = _verdict.get("verdict") or {}
-                            _log_auto_decision(
-                                "GATE",
-                                f"[{cand['display']}][{_c_strat_lbl}] 🧠 LLM Trader işlemi ONAYLAMADI "
-                                f"({direction}, güven %{_v.get('confidence', '—')}): {_verdict.get('reason', '')}",
-                                symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
-                                metadata={"llm_review_id": _review_id, "applied": _verdict.get("applied")},
-                            )
-                        continue
+                    _review_ctx = {
+                        "symbol": sym, "direction": direction, "cand": cand, "lots": mt5_lots,
+                        "sl_pips": sl_pips, "tp_pips": tp_pips, "atr_pips": round(float(atr_pips), 1),
+                        "pip_size": spec["pip_size"], "entry_price": entry_p,
+                        "risk_usd": round(mt5_lots * sl_pips * pip_val, 2),
+                        "strategy": _c_strat, "strategy_label": _c_strat_lbl,
+                        "mode": _AUTO_SETTINGS.llm_review_mode, "fail_open": _AUTO_SETTINGS.llm_review_fail_open,
+                        "min_confidence": _AUTO_SETTINGS.llm_review_min_confidence,
+                        "timeout_sec": max(float(_AUTO_SETTINGS.llm_review_timeout_sec), 40.0),   # eski kayıtlı 25 sn ölçülen gecikmeden kısa kalıyordu (%17 zaman aşımı)
+                        "explore_pct": _AUTO_SETTINGS.llm_review_explore_pct,
+                    }
+                    if str(_AUTO_SETTINGS.llm_review_mode or "veto") == "advisory":
+                        _bg_key = (sym, direction)
+                        if len(_LLM_BG_INFLIGHT) < _LLM_BG_MAX:
+                            _LLM_BG_INFLIGHT.add(_bg_key)
+                            _ref_fut = asyncio.get_running_loop().create_future()
+                            asyncio.create_task(_llm_review_background(_review_ctx, _bg_key, _ref_fut))
+                        elif now_ts - _LAST_CANDIDATE_LOG_TIME.get("llmrev_bgfull", 0) > 300.0:
+                            _LAST_CANDIDATE_LOG_TIME["llmrev_bgfull"] = now_ts
+                            logger.warning("LLM inceleme kuyruğu dolu (%d) — %s incelenmeden açıldı",
+                                           len(_LLM_BG_INFLIGHT), sym)
+                    else:
+                        try:
+                            from app import llm_trade_review
+                            _verdict = await llm_trade_review.review_entry(_review_ctx)
+                        except Exception as exc:
+                            logger.warning("LLM inceleme çağrısı çöktü (%s): %s", sym, exc)
+                            _verdict = {"blocked": not _AUTO_SETTINGS.llm_review_fail_open, "applied": "hata",
+                                        "reason": str(exc)[:160], "review_id": None, "verdict": None, "cached": False}
+                        _review_id = _verdict.get("review_id")
+                        if _verdict.get("blocked"):
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_llmrev", 0) > 60.0:
+                                _LAST_CANDIDATE_LOG_TIME[f"{sym}_llmrev"] = now_ts
+                                _v = _verdict.get("verdict") or {}
+                                _log_auto_decision(
+                                    "GATE",
+                                    f"[{cand['display']}][{_c_strat_lbl}] 🧠 LLM Trader işlemi ONAYLAMADI "
+                                    f"({direction}, güven %{_v.get('confidence', '—')}): {_verdict.get('reason', '')}",
+                                    symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                                    metadata={"llm_review_id": _review_id, "applied": _verdict.get("applied")},
+                                )
+                            continue
 
                 # IC Markets MT5 bağlıysa doğrudan MT5 emir kuyruğuna ekle
                 if _MT5_STATE.get("connected") and _MT5_STATE.get("auto_trade"):
@@ -9561,6 +9609,8 @@ async def _forex_auto_paper_loop():
                     _review_ref = pos_item["id"]
                     _invalidate_status_cache()
 
+                if _ref_fut is not None and not _ref_fut.done():
+                    _ref_fut.set_result(_review_ref)      # arka plan incelemesi 'açıldı' bağını kursun
                 if _review_id:
                     from app import llm_trade_review as _ltr
                     await _ltr.mark_executed(_review_id, _review_ref)
