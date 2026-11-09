@@ -234,6 +234,15 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
     tp_val = float(tp) if tp is not None else 0.0
     tp_display = tp_val if tp_val > 0 else "Dinamik Trailing & BE Kilidi (Sabit TP Yok)"
     rr_display = round(tp_val / float(sl), 2) if (sl and tp_val > 0) else "Trailing Stop Yönetimli"
+    # MAKRO BAĞLAM (2026-11-09): COT pozisyonlanması + seans/likidite + istatistiksel
+    # doğrulama. Bu üç modül yazılmıştı ama karar veren hiçbir yüzeye bağlı değildi
+    # (yalnız sağlık panelinde görünüyordu). Tek uygulama: `app/context_extras`.
+    try:
+        from app import context_extras
+        macro = context_extras.macro_context(sym, now=now)
+    except Exception as exc:  # noqa: BLE001 - bağlam eki dosyayı asla düşürmesin
+        logger.info("Makro bağlam eklenemedi (%s): %s", sym, exc)
+        macro = None
     dossier = {
         "saat_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(now)),
         "islem": {
@@ -252,6 +261,7 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
         "dolar_rejimi": dxy,
         "hesap_ve_yigilma": acct,
         "sembol_performansi": perf,
+        "makro_baglam": macro,
         "ozellikler": features,
     }
     return dossier

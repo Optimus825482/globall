@@ -2885,6 +2885,13 @@ async def symbol_analysis_llm_chat(symbol: str, payload: dict = None, request: R
         snapshot = dict(snapshot)
         snapshot["market_scan"] = {"error": str(exc), "paper_only": True}
     snapshot = dict(snapshot)
+    # MAKRO BAĞLAM: bu sembolün COT pozisyonlanması + seans/likidite + doğrulama.
+    try:
+        from app import context_extras
+        snapshot["macro_context"] = context_extras.macro_context(symbol)
+        snapshot["macro_context_lines"] = context_extras.compact_lines(symbol)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("sembol macro_context eklenemedi: %s", exc)
     snapshot["plain_turkish"] = True
     snapshot["username"] = username
     snapshot["user_name"] = username
@@ -3541,6 +3548,20 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
     # NİYET BAYRAKLARI yukarıda (ağır bağlam kurulmadan ÖNCE) hesaplandı:
     # analysis_only_intent / trade_intent / research_only_intent /
     # requested_symbols / market_opportunity_intent / has_trade_verb.
+    #
+    # MAKRO BAĞLAM (2026-11-09): COT pozisyonlanması + seans/likidite + istatistiksel
+    # doğrulama. Üçü de yazılmıştı ama sohbet bağlamına girmiyordu. Sembol
+    # belirtilmişse o sembolün para birimlerine göre daraltılır; tarama/snapshot
+    # sorularında tüm majörler verilir (kalabalık/ayrışma karşı-kanıt üretir).
+    # Tek uygulama: `app/context_extras` — işlem incelemesi ve fırsat taraması da
+    # aynı kaynağı kullanır.
+    try:
+        from app import context_extras
+        _focus_sym = (requested_symbols[0].replace("_", "") if requested_symbols else None)
+        context["macro_context"] = context_extras.macro_context(_focus_sym)
+        context["macro_context_lines"] = context_extras.compact_lines(_focus_sym)
+    except Exception as exc:  # noqa: BLE001 - bağlam eki sohbeti düşürmesin
+        logger.info("macro_context eklenemedi: %s", exc)
     if market_opportunity_intent and not requested_symbols:
         try:
             market_scan = await scan_market_snapshots({

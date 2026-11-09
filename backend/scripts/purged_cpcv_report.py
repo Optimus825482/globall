@@ -58,6 +58,13 @@ SIGNIFICANCE = 0.95
 PBO_DANGER = 0.50
 
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+#: `--out` verilmezse sonuç buraya yazılır (app/edge_validation.py okur).
+DEFAULT_ARTIFACT = ROOT / "artifacts" / "edge_validation.json"
+
+
 def _sharpe(returns: np.ndarray, bars_per_year: int = 252) -> float:
     r = np.asarray(returns, dtype=float)
     if r.size < 2:
@@ -175,12 +182,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--demo", choices=["noise", "edge"])
     ap.add_argument("--bars-per-year", type=int, default=252)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--out", nargs="?", const=str(DEFAULT_ARTIFACT),
+                    help="JSON artefakt dosyası (bkz. app/edge_validation.py)")
     args = ap.parse_args(argv)
     if not args.csv and not args.demo:
         ap.error("--csv veya --demo gerekli")
 
     returns = _demo(args.demo) if args.demo else load_matrix(args.csv)
     res = run(returns, bars_per_year=args.bars_per_year)
+
+    if args.out:
+        from app import edge_validation
+        print(f"artefakt yazıldı: {edge_validation.write_section('cpcv', res, args.out)}")
 
     if args.json:
         import json

@@ -414,7 +414,26 @@ def build_context(findings: Dict[str, Any]) -> Dict[str, Any]:
         ctx["haber_basliklari_dis_kaynak"] = news
     if "dxy" in findings:
         ctx["dolar"] = findings["dxy"]
-    if len(ctx) == 1:
+    # MAKRO BAĞLAM (2026-11-09): COT pozisyonlanması + seans/likidite + istatistiksel
+    # doğrulama (SPA/DSR/PBO). Bu üç modül yazılmıştı ama sohbet/fırsat taraması
+    # bağlamına HİÇ girmiyordu. Tek uygulama: `app/context_extras` (işlem incelemesi
+    # de aynı kaynağı kullanır → sohbet ile panel birbirini yalanlamaz).
+    try:
+        from app import context_extras
+        syms = [k.split(":", 1)[1] for k in findings if k.startswith("ta:")]
+        focus = syms[0] if len(syms) == 1 else None
+        ctx["makro_baglam"] = context_extras.macro_context(focus)
+        ctx["makro_ozet"] = context_extras.compact_lines(focus)
+    except Exception as exc:  # noqa: BLE001 - bağlam eki yanıtı düşürmesin
+        logger.info("makro bağlam eklenemedi: %s", exc)
+    # "Araştırma adımlarının hiçbiri tamamlanamadı" uyarısı: makro bağlam HER
+    # yanıtta eklenir (COT/seans/doğrulama), bu yüzden anahtar SAYISINA bakmak
+    # yanıltıcı olurdu — ARAŞTIRMA adımlarının varlığına bakılır.
+    research_present = any(
+        k in ctx for k in ("firsat_taramasi", "tradingview_teknik_ozet", "demo_islemler",
+                           "teknik_analiz", "ekonomik_takvim", "haber_basliklari_dis_kaynak", "dolar")
+    )
+    if not research_present:
         ctx["uyari"] = "Araştırma adımlarının hiçbiri tamamlanamadı; yorum sınırlı."
     return ctx
 

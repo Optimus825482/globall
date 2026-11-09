@@ -6973,6 +6973,34 @@ async def get_pending_shadow_predictions(limit: int = 500):
     return await _run_db(op)
 
 
+async def get_shadow_predictions(days: float = 0.0, limit: int = 20000,
+                                 evaluated_only: bool = False):
+    """Kalibrasyon raporu için tahmin+sonuç satırları (en yeni önce).
+
+    2026-11-09: `shadow_summary` yalnız TEK `frozen_id` için karne veriyordu;
+    "güven puanı dürüst mü?" sorusu TÜM donmuş modellerin karma örneklemini
+    gerektirir (aksi halde her model için tek tek bakmak gerekirdi).
+    """
+    def op(conn):
+        where = ["1=1"]
+        params: list = []
+        if days and float(days) > 0:
+            where.append("predicted_at >= ?")
+            params.append(time.time() - float(days) * 86400.0)
+        if evaluated_only:
+            where.append("status='evaluated'")
+        params.append(max(1, min(int(limit), 200000)))
+        rows = conn.execute(
+            f"""SELECT id, frozen_id, predicted_at, horizon_minutes, symbol, entry_price,
+                       hit_probability, target_pct, gate_passed, status, evaluated_at,
+                       max_favorable_pct, max_adverse_pct, exit_pct, hit_target, bars_held
+                  FROM ml_shadow_predictions
+                 WHERE {' AND '.join(where)}
+                 ORDER BY predicted_at DESC LIMIT ?""", tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+    return await _run_db(op)
+
+
 async def mark_shadow_expired(pred_id: int):
     def op(conn):
         conn.execute("UPDATE ml_shadow_predictions SET status='expired' WHERE id=?", (int(pred_id),))

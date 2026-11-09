@@ -654,3 +654,51 @@ async def get_llm_vs_rules_csv(day: str | None = None, limit: int = 1000):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+
+
+# ---------------------------------------------------------------------------
+# ML OLASILIK KALİBRASYONU (2026-11-09)
+#
+# NEDEN: `ml_probability` + `ml_shadow` yazılmıştı ama sonucu yalnız
+# `/api/system/health` içinde SAYAÇ olarak görünüyordu. Kullanıcı "modelin güven
+# puanı dürüst mü?" sorusunu panelden okuyamıyor, ham veriyi CSV alamıyordu.
+# Panel ve CSV AYNI modülden (`app/ml_calibration_report`) beslenir → indirilen
+# dosya ile ekrandaki sayı birbirini tutar.
+# ---------------------------------------------------------------------------
+
+@router.get("/api/reports/ml-calibration")
+async def get_ml_calibration_report(days: float = 0.0):
+    """Güven kalibrasyonu: ham vs kalibre Brier/ECE + OUT-OF-SAMPLE kanıt + eşik eğrisi."""
+    from app import ml_calibration_report as mcr
+
+    try:
+        return await mcr.build(days=days)
+    except Exception as exc:  # noqa: BLE001 - rapor ucu 500 dönmesin
+        logger.warning("ml-calibration raporu üretilemedi: %s", exc)
+        return {"samples": 0, "fitted": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+@router.get("/api/reports/ml-calibration/csv")
+async def get_ml_calibration_csv(days: float = 0.0):
+    """Kalibrasyonun HAM verisi (tahmin + gerçekleşen sonuç) — Excel uyumlu CSV."""
+    import csv
+    import io
+    from fastapi.responses import Response
+
+    from app import ml_calibration_report as mcr
+
+    rows = await mcr.rows_for_csv(days=days)
+    headers, body = mcr.csv_rows(rows)
+
+    output = io.StringIO()
+    output.write("\ufeff")                       # Excel Türkçe karakter uyumu
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(headers)
+    writer.writerows(body)
+
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="ml_kalibrasyon_{stamp}.csv"'},
+    )
