@@ -11,6 +11,11 @@ Artık üç LLM yüzeyi de aynı kaynaktan beslenir:
   2. `routers/forex_chat` `mode="opportunity_scan"` — paneldeki "Fırsat taraması"
   3. `routers/llm_chat` — genel sohbet / tarama bağlamı
 
+2026-11-09: dördüncü blok eklendi — `market_pulse` KÜRESEL VARLIK NABZI
+(VIX / DXY / ABD 10Y verim / altın / petrol / S&P 500). Öncesinde bu
+cross-asset serileri hiçbir yüzeyde yoktu; LLM "finans uzmanı" rolüne
+rağmen risk iştahı ve faiz okumasını uyduruyordu.
+
 TEK UYGULAMA KURALI: aynı veriyi üç yerde üç farklı şekilde kurgulamak
 sohbetin paneli, panelin LLM'i yalanlamasına yol açar. Bu yüzden bütün
 biçimlendirme burada; çağıranlar yalnız `macro_context()` / `compact_lines()`
@@ -150,12 +155,24 @@ def edge_block() -> dict[str, Any]:
     return {**s, "lines": ev.compact_lines()}
 
 
+def cross_asset_block() -> dict[str, Any]:
+    """Küresel varlık nabzı (VIX/DXY/10Y/altın/petrol/SPX) — fail-closed."""
+    from app import market_pulse as mp
+
+    s = mp.summary()
+    if not s.get("available"):
+        return {**s, "note": ("Küresel varlık nabzı YOK: " + str(s.get("reason"))
+                              + " — risk iştahı/faiz/emtia okunamadı, uydurulmaz.")}
+    return {**s, "note": " | ".join(s.get("notes") or []) or "Cross-asset belirgin çapraz sinyal yok."}
+
+
 def macro_context(symbol: str | None = None, *, now: float | None = None) -> dict[str, Any]:
-    """Üç bloğu tek sözlükte toplar (LLM bağlamına doğrudan gömülebilir)."""
+    """Dört bloğu tek sözlükte toplar (LLM bağlamına doğrudan gömülebilir)."""
     return {
         "seans_ve_likidite": sessions_block(now),
         "cot_pozisyonlanma": cot_block(symbol),
         "istatistiksel_dogrulama": edge_block(),
+        "kuresel_varlik_nabzi": cross_asset_block(),
     }
 
 
@@ -206,4 +223,11 @@ def compact_lines(symbol: str | None = None) -> list[str]:
     else:
         lines.append(f"COT: {cot.get('reason')}")
     lines.extend(ctx["istatistiksel_dogrulama"].get("lines") or [])
+    lines.extend(cross_asset_lines())
     return lines
+
+
+def cross_asset_lines() -> list[str]:
+    """Varlık nabzı satırları — `market_pulse.compact_lines` tek kaynaktır."""
+    from app import market_pulse as mp
+    return mp.compact_lines()

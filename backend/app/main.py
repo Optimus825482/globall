@@ -1098,7 +1098,7 @@ async def startup_services():
             print(f"[UpsideScout] birim onarımı: {repair}", flush=True)
     except Exception as exc:
         print(f"[UpsideScout] birim onarımı atlandı: {exc}")
-    await database.ensure_default_scalper_skill()
+    await database.ensure_default_llm_skills()
     saved_config = await database.get_llm_setting("runtime_config")
     if saved_config:
         try:

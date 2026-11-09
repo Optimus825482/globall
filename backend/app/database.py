@@ -57,6 +57,47 @@ DEFAULT_SCALPER_SKILL_INSTRUCTIONS = (
     "evidence; never invent data or place real orders."
 )
 
+# 2026-11-09: finans-piyasası uzmanlık seed'leri. LLM'in "forex/emtia uzmanı"
+# rolünü SAYILI bağlamla destekler: `market_pulse` cross-asset nabzı (VIX/DXY/
+# ABD 10Y/altın/petrol/SPX), COT ve ekonomik takvim artık üç yüzeyde VAR — bu
+# skill'ler "nasıl okunacağını" öğretir. Panelden düzenlenen skill'i ezmemek
+# için scalper seed'iyle aynı ON CONFLICT DO NOTHING sözleşmesi kullanılır.
+DEFAULT_FOREX_MACRO_SKILL_NAME = "Forex Makro Okuma"
+DEFAULT_FOREX_MACRO_SKILL_INSTRUCTIONS = (
+    "Küresel varlık nabzı bağlam verildiğinde okuma sırasını kur: önce risk iştahı (VIX seviyesi ve yönü, "
+    "S&P 500 yönü), sonra dolar (DXY yönü ve büyüklüğü), sonra faiz (ABD 10Y verim değişimi), sonra emtia "
+    "(altın, petrol). DXY yükselişi majör pariteler ve altın için karşı rüzgârdır; DXY ile altın birlikte "
+    "yükseliyorsa güvenli liman/ihtiyatlılık talebini öne çıkar ve altın rallisini yalnızca 'dolar zayıf' "
+    "diye açıklama. VIX stres bölgesindeyse yeni işlem fikirlerini boyut küçültme ve artırılmış kanıt eşiği "
+    "notuyla sun. Nabız verisi yoksa piyasa geneli hakkında varsayım üretme; 'genel piyasa verisi yok' deyip "
+    "sembolün kendi kanıtlarıyla devam et."
+)
+DEFAULT_RISK_SKILL_NAME = "Risk Yönetimi Disiplini"
+DEFAULT_RISK_SKILL_INSTRUCTIONS = (
+    "Her işlem fikrini risk penceresiyle ver: giriş bölgesi, teyit koşulu, invalidasyon/stop seviyesi, hedef "
+    "ve bu geometriye gereken kabaca isabet oranı. Yüksek etkili ekonomik olayın 30 dakika öncesi ve "
+    "sonrasında yeni giriş önerme; bağlamda bekleyen veri varsa bunu ilk satırda haber riski olarak belirt. "
+    "COT kalabalık pozisyon ve anlamlı ayrışma gösteriyorsa ters hareket riskini açıkça yaz ve stop tamponunu "
+    "genişletmeyi öner. Düşük likidite pencerelerinde (ölü bölge, seans açılış/kapanışı, hafta sonu) spread "
+    "ve kayma maliyetini ayrıca uyararak ver."
+)
+DEFAULT_MARKET_DATA_SKILL_NAME = "Veri ve Haber Etki Okuma"
+DEFAULT_MARKET_DATA_SKILL_INSTRUCTIONS = (
+    "Ekonomik takvim satırlarını sürpriz yönü olarak oku: açıklanan değerin beklenen değere pozitif sapması "
+    "para birimi için pozitif kabul edilir. Yaklaşan olay için beklenen değeri tahmin gibi sunma; yalnızca "
+    "olayın varlığını ve saatini haber riski olarak ver. COT raporu haftalık ve 3 gün gecikmelidir; günlük "
+    "hız okuması için kullanma, kalabalık/ayrışma bağlamı için kullan. Haber başlıkları tek başına sinyal "
+    "değildir; teknik ve bağlam kanıtını teyit ya da çürütme için tart. Bağlamda sayısal alan yoksa değeri "
+    "uydurma, 'bilinmiyor' yaz."
+)
+
+_DEFAULT_SKILL_SEEDS: tuple[tuple[str, str], ...] = (
+    (DEFAULT_SCALPER_SKILL_NAME, DEFAULT_SCALPER_SKILL_INSTRUCTIONS),
+    (DEFAULT_FOREX_MACRO_SKILL_NAME, DEFAULT_FOREX_MACRO_SKILL_INSTRUCTIONS),
+    (DEFAULT_RISK_SKILL_NAME, DEFAULT_RISK_SKILL_INSTRUCTIONS),
+    (DEFAULT_MARKET_DATA_SKILL_NAME, DEFAULT_MARKET_DATA_SKILL_INSTRUCTIONS),
+)
+
 def _json_value(value, fallback):
     if value in (None, ""): return fallback
     if isinstance(value, (dict, list)): return value
@@ -384,9 +425,10 @@ async def init_db():
                 logger.warning(
                     "Kısıt kurulamadı (veri temizliği gerekli, açılış sürüyor): %s",
                     constraint_sql, exc_info=True)
-        conn.execute("INSERT INTO llm_skills(name,instructions,enabled,created_at) VALUES(%s,%s,TRUE,%s) "
-                     "ON CONFLICT(name) DO NOTHING",
-                     (DEFAULT_SCALPER_SKILL_NAME, DEFAULT_SCALPER_SKILL_INSTRUCTIONS, time.time()))
+        for _skill_name, _skill_instructions in _DEFAULT_SKILL_SEEDS:
+            conn.execute("INSERT INTO llm_skills(name,instructions,enabled,created_at) VALUES(%s,%s,TRUE,%s) "
+                         "ON CONFLICT(name) DO NOTHING",
+                         (_skill_name, _skill_instructions, time.time()))
         # Reconcile migrated cash with trades and open positions.
         # Portföy reseti sonrası yeniden init, reset ÖNCESİ PnL'i cüzdana
         # geri yüklememeli — reset cutoff'u burada da uygulanır.
@@ -420,16 +462,18 @@ async def init_db():
     # okuma yolu (load_positions) artık veritabanına yazmaz (Madde 21).
     await backfill_position_trade_ids()
 
-async def ensure_default_scalper_skill():
-    """Keep the built-in trade manager visible in the active database skill registry."""
+async def ensure_default_llm_skills():
+    """Keep the built-in skills (trade manager + finans-uzmanlık seed'leri)
+    visible in the active database skill registry."""
     def op(conn):
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_llm_skills_name ON llm_skills(name)")
         enabled_literal = "TRUE"
-        conn.execute(
-            f"INSERT INTO llm_skills(name,instructions,enabled,created_at) VALUES(?,?,{enabled_literal},?) "
-            "ON CONFLICT(name) DO NOTHING",
-            (DEFAULT_SCALPER_SKILL_NAME, DEFAULT_SCALPER_SKILL_INSTRUCTIONS, time.time()),
-        )
+        for skill_name, skill_instructions in _DEFAULT_SKILL_SEEDS:
+            conn.execute(
+                f"INSERT INTO llm_skills(name,instructions,enabled,created_at) VALUES(?,?,{enabled_literal},?) "
+                "ON CONFLICT(name) DO NOTHING",
+                (skill_name, skill_instructions, time.time()),
+            )
         conn.commit()
     return await _run_db(op)
 

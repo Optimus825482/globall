@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -225,8 +226,13 @@ class TestWiring(unittest.TestCase):
         self.assertIn("makro_baglam", ctx)
 
     def test_macro_context_shape(self):
-        ctx = cx.macro_context("EURUSD")
-        self.assertEqual(set(ctx), {"seans_ve_likidite", "cot_pozisyonlanma", "istatistiksel_dogrulama"})
+        # kuresel_varlik_nabzi (2026-11-09) AĞA çıkmaması için mock'lu: shape
+        # testi kaynak dizisini değil SÖZLEŞMEYI kilitler.
+        with mock.patch("app.market_pulse.summary",
+                        return_value={"available": False, "reason": "test"}):
+            ctx = cx.macro_context("EURUSD")
+        self.assertEqual(set(ctx), {"seans_ve_likidite", "cot_pozisyonlanma",
+                                    "istatistiksel_dogrulama", "kuresel_varlik_nabzi"})
 
 
 if __name__ == "__main__":
