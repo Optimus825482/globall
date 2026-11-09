@@ -22,6 +22,12 @@ const read = (...p: string[]) => readFileSync(path.join(FRONTEND, ...p), "utf8")
 const SOCKET = read("app", "lib", "liveSocket.ts");
 const PORTFOLIO = read("app", "forex", "portfolio", "page.tsx");
 const ISLEMLER = read("app", "forex", "islemler", "page.tsx");
+const ANA_SAYFA = read("app", "page.tsx");
+const METAMOBIL = read("app", "forex", "metamobil", "page.tsx");
+const BTC_GOLD = read("app", "forex", "btc-gold", "page.tsx");
+const MULTI_CHART = read("app", "charts", "MultiChartCard.tsx");
+const FX_NATIVE_CHART = read("app", "forex", "components", "ForexNativeChart.tsx");
+const RADAR_MODAL = read("app", "forex", "components", "ForexRadarModal.tsx");
 
 describe("WS kanalı yeni tipleri ELİYOR mu", () => {
   it("fx_state ve fx_trade_closed elenen listede OLMAMALI", () => {
@@ -81,5 +87,68 @@ describe("İşlemler sayfası — canlı yayın", () => {
     expect(ISLEMLER).toContain('message.type === "fx_trade_closed"');
     expect(ISLEMLER).toContain("usePolling(() => fetchData(true), 15000)");
     expect(ISLEMLER).not.toContain("usePolling(() => fetchData(true), 3000)");
+  });
+});
+
+// ── Tam envanter: canlı açık işlem gösteren HER sayfa + grafikler (2026-11-09) ──
+// Kullanıcı isteği: "canlı açık işlemlerin olduğu tüm sayfaları ve grafikleri buna
+// bağla". Yeni bir sayfa eklenip bağlanmazsa bu liste kırılır.
+describe("Ana sayfa", () => {
+  it("fx_state + fx_trade_closed aboneliği ve 15 sn güvenlik ağı", () => {
+    expect(ANA_SAYFA).toContain("useLiveMessages");
+    expect(ANA_SAYFA).toContain('message.type === "fx_state"');
+    expect(ANA_SAYFA).toContain('message.type === "fx_trade_closed"');
+    expect(ANA_SAYFA).toContain("usePolling(() => fetchData(true), 15000)");
+    expect(ANA_SAYFA).not.toContain("usePolling(() => fetchData(true), 4000)");
+  });
+});
+
+describe("MetaMobil", () => {
+  it("fx_state aboneliği; hesap reducer'ı paylaşımlı", () => {
+    expect(METAMOBIL).toContain('message.type === "fx_state"');
+    // REST ve WS aynı reducer'ı çağırır (iki ayrı hesap = panel kendi içinde çelişir)
+    expect(METAMOBIL).toContain("applyAccountStatus(statusData)");
+    expect(METAMOBIL).toContain("applyAccountStatus(res)");
+    expect(METAMOBIL).toContain("usePolling(refreshAllData, 15000)");
+  });
+});
+
+describe("BTC-Gold kokpiti", () => {
+  it("fx_state + fx_ticks aboneliği ve 15 sn güvenlik ağı", () => {
+    expect(BTC_GOLD).toContain('message.type === "fx_state"');
+    expect(BTC_GOLD).toContain('message.type === "fx_ticks"');
+    expect(BTC_GOLD).toContain("applyStatus(res)");
+    expect(BTC_GOLD).toContain("usePolling(fetchAllData, 15000)");
+  });
+});
+
+describe("Grafikler", () => {
+  it("MultiChartCard canlı `kline` yayınını tüketiyor", () => {
+    expect(MULTI_CHART).toContain("useLiveMessages");
+    expect(MULTI_CHART).toContain('message?.type !== "kline"');
+    expect(MULTI_CHART).toContain("priceSnapshotFromBars");
+  });
+
+  it("fiyat özeti TEK uygulama (yoklama ve canlı akış aynı fonksiyon)", () => {
+    // İki ayrı hesap olsaydı panel grafikle çelişirdi
+    const defs = MULTI_CHART.match(/function priceSnapshotFromBars/g) || [];
+    expect(defs.length).toBe(1);
+    const uses = MULTI_CHART.match(/priceSnapshotFromBars\(/g) || [];
+    expect(uses.length).toBeGreaterThanOrEqual(3);   // 1 tanım + 2 çağrı
+  });
+
+  it("ForexNativeChart tick uygulaması REST+WS için ortak ve yoklama 15 sn", () => {
+    expect(FX_NATIVE_CHART).toContain('message?.type !== "fx_ticks"');
+    expect(FX_NATIVE_CHART).toContain("applyTicker(");
+    expect(FX_NATIVE_CHART).toContain("}, 15000);");
+    expect(FX_NATIVE_CHART).not.toContain("}, 2500);");
+  });
+});
+
+describe("Radar bildirim modalı", () => {
+  it("işlem açıldığı an popup kapanıyor (WS), karar mantığı tek yerde", () => {
+    expect(RADAR_MODAL).toContain("closeIfPositionOpened");
+    expect(RADAR_MODAL).toContain('message?.type === "fx_state"');
+    expect(RADAR_MODAL).toContain("usePolling(pollActiveStatus, activeSignal ? 15000 : null)");
   });
 });

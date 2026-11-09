@@ -11,6 +11,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "./lib/api";
 import { usePolling } from "./lib/usePolling";
+import { useLiveMessages, type LiveMessage } from "./lib/liveSocket";
 import {
   hasPublishedActual,
   outcomeSide,
@@ -374,8 +375,34 @@ export default function HomePage() {
   }, []);
 
   // PERFORMANS (2026-10-08): usePolling sekme arka plandayken durur.
-  usePolling(() => fetchData(true), 4000);
+  // CANLI YAYIN (2026-11-09): MT5 köprüsü 1,5 sn'de bir WS'e `fx_state` basıyor →
+  // açık pozisyonların fiyat/K-Z'si ~0 gecikmeyle güncellenir; yoklama artık
+  // yalnız GÜVENLİK AĞI. Kapanan işlem listesi (ve ondan türeyen PF/KPI) ağır
+  // olduğu için WS ile taşınmaz: `fx_trade_closed` olayında bir kez tazelenir.
+  usePolling(() => fetchData(true), 15000);
   usePolling(() => fetchCalendar(), 180000);
+
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message.type === "fx_state") {
+      const res = message.data as any;
+      if (!res) return;
+      if (Array.isArray(res.open_positions)) {
+        setOpenPositions(res.open_positions);
+        const openPnl = res.open_positions.reduce((acc: number, p: any) => acc + Number(p.pnl_usd ?? 0), 0);
+        setKpi((prev) => ({
+          ...prev,
+          balance: typeof res.balance === "number" ? res.balance : prev.balance,
+          equity: typeof res.equity === "number" ? res.equity : prev.equity,
+          open_positions_count: res.open_positions.length,
+          open_pnl_usd: openPnl,
+        }));
+      }
+      if (res.ev_shield) setEvShieldStatus(res.ev_shield);
+      setLastUpdated(new Date());
+    } else if (message.type === "fx_trade_closed") {
+      void fetchData(true);
+    }
+  }, [fetchData]));
 
   const nowSec = useSharedNowSec(calendarEvents.length > 0);
   const nowMs = nowSec * 1000;

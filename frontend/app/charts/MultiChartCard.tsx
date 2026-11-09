@@ -16,6 +16,7 @@ import {
 } from "lightweight-charts";
 import { API_BASE, apiRequest } from "../lib/api";
 import { formatPrice, pricePrecision } from "../lib/format";
+import { useLiveMessages, type LiveMessage } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 
 export interface ChartIndicators {
@@ -110,6 +111,21 @@ const INDICATOR_REBUILD_MIN_MS = 60_000;
 // ─── Math utilities ───────────────────────────────────────────────────────────
 
 type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
+
+/** Son mumdan fiyat + 24 saatlik değişim özetini üretir.
+ *  Yoklama (`fetchKlines`) ve canlı WS akışı AYNI yolu kullanır: iki ayrı hesap
+ *  olsaydı biri diğerinden sapar ve panel grafikle çelişirdi. */
+function priceSnapshotFromBars(bars: Bar[], interval: string): { last: number; changePct: number } | null {
+    const last = bars[bars.length - 1];
+    if (!last) return null;
+    // changePct: son mumun açılış→kapanış değişimi (gerçek mum hareketi)
+    const lastChangePct = last.open > 0 ? ((last.close - last.open) / last.open) * 100 : 0;
+    // 24 saatlik değişim için ~288 mum (1m) veya ~96 mum (15m) geriye git
+    const barsPerDay = Math.round(86_400_000 / (INTERVAL_MS[interval] || 60_000));
+    const refBar = bars[Math.max(0, bars.length - 1 - barsPerDay)];
+    const dayChangePct = refBar && refBar.open > 0 ? ((last.close - refBar.open) / refBar.open) * 100 : lastChangePct;
+    return { last: last.close, changePct: dayChangePct };
+}
 type Point = { time: UTCTimestamp; value: number };
 
 function calcEMA(bars: Bar[], period: number): Point[] {
@@ -568,18 +584,11 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
             if (!sameWindow || lastBarMoved) {
                 candleSeriesRef.current.setData(bars.map(b => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
             }
-            const last = bars[bars.length - 1];
-            if (last) {
-                const precision = pricePrecision(last.close);
+            const snap = priceSnapshotFromBars(bars, config.interval);
+            if (snap) {
+                const precision = pricePrecision(snap.last);
                 candleSeriesRef.current.applyOptions({ priceFormat: { type: "price", precision, minMove: 1 / Math.pow(10, precision) } });
-                // changePct: son mumun açılış→kapanış değişimi (gerçek mum hareketi)
-                const lastChangePct = last.open > 0 ? ((last.close - last.open) / last.open) * 100 : 0;
-                // 24 saatlik değişim için ~288 mum (1m) veya ~96 mum (15m) geriye git
-                const barsPerDay = Math.round(86_400_000 / (INTERVAL_MS[config.interval] || 60_000));
-                const refIdx = Math.max(0, bars.length - 1 - barsPerDay);
-                const refBar = bars[refIdx];
-                const dayChangePct = refBar?.open > 0 ? ((last.close - refBar.open) / refBar.open) * 100 : lastChangePct;
-                setPriceData({ last: last.close, changePct: dayChangePct });
+                setPriceData(snap);
             }
             // Başlık göstergeleri: seçili TF'nin son mumlarından RSI-14 / ADX-14.
             // Bunlar ucuz (O(n) tek geçiş) ve her turda görünür oldukları için
@@ -801,6 +810,48 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     // çalışmak) anlamsız; repo standardı `useVisibleInterval` (4 kart açıkken
     // arka planda 4 bağımsız döngü çalışıyordu).
     useVisibleInterval(() => { void fetchKlines(); }, 6000);
+
+    // ── Canlı mum akışı (WS `kline`) ─────────────────────────────────────────
+    // FX grafikleri eskiden yalnız 6 sn'lik HTTP yoklamasıyla tazeleniyordu.
+    // Backend artık köprüden gelen tick ile OLUŞAN mumu `kline` olarak yayınlıyor
+    // (bkz. `forex.py::_publish_fx_bars`). Yoklama güvenlik ağı olarak kalır:
+    // geçmiş doldurma ve mum boşluğu düzeltmesi hâlâ onun işi.
+    // Göstergeler canlı tikte YENİDEN KURULMAZ (pahalı, jank yapar); en geç
+    // `INDICATOR_REBUILD_MIN_MS` içinde bir sonraki yoklamada hizalanır.
+    useLiveMessages(useCallback((message: LiveMessage) => {
+        if (message?.type !== "kline") return;
+        const d = message.data as {
+            symbol?: string; timeframe?: string; time?: number;
+            open?: number; high?: number; low?: number; close?: number; volume?: number;
+        } | null;
+        if (!d || !d.time || d.close == null || !Number.isFinite(Number(d.close))) return;
+        if (d.timeframe !== config.interval) return;
+        const rawSym = config.symbol.includes(":") ? (config.symbol.split(":").pop() || config.symbol) : config.symbol;
+        if (String(d.symbol || "").toUpperCase() !== rawSym.replace(/[\/_]/g, "").toUpperCase()) return;
+        const series = candleSeriesRef.current;
+        const bars = lastBarsRef.current;
+        if (!series || !bars.length) return;
+        const t = Math.floor(Number(d.time) > 1e10 ? Number(d.time) / 1000 : Number(d.time));
+        const last = bars[bars.length - 1];
+        if (t === last.time) {
+            last.close = Number(d.close);
+            if (d.high != null) last.high = Math.max(last.high, Number(d.high));
+            if (d.low != null && Number(d.low) > 0) last.low = Math.min(last.low, Number(d.low));
+        } else if (t > last.time) {
+            bars.push({
+                time: t, open: Number(d.open ?? d.close), high: Number(d.high ?? d.close),
+                low: Number(d.low ?? d.close), close: Number(d.close), volume: Number(d.volume ?? 0),
+            });
+        } else {
+            return;                     // eski mum: seride geri gitmeyiz
+        }
+        const updated = bars[bars.length - 1];
+        try {
+            series.update({ time: updated.time as UTCTimestamp, open: updated.open, high: updated.high, low: updated.low, close: updated.close });
+        } catch { return; }
+        const snap = priceSnapshotFromBars(bars, config.interval);
+        if (snap) setPriceData(snap);
+    }, [config.symbol, config.interval]));
 
     const activeCount = Object.values(config.indicators).filter(Boolean).length;
     const intervalMs = INTERVAL_MS[config.interval] || 60_000;

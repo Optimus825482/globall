@@ -10,6 +10,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { usePolling } from "../../lib/usePolling";
 import {
   getInAppNotificationSettings,
@@ -196,21 +197,33 @@ export default function ForexRadarModal() {
   // Açık olan bildirimdeki sembole işlem açıldıysa bildirimi kendiliğinden hemen kapat
   // PERFORMANS (2026-10-08): /auto-paper/status ağırlıklı bir uçtur; modal açıkken
   // 2 sn'de bir dövmek yerine 5 sn yeterli. usePolling: arka planda durur.
+  // Karar mantığı tek yerde: REST yoklaması ve WS `fx_state` AYNI kontrolü yapar
+  // (2026-11-09). Aksi halde yoklama ile canlı yayın farklı anlarda farklı
+  // sonuç verip popup'ı bir açıp bir kapatabilirdi.
+  const closeIfPositionOpened = useCallback((statusRes: any) => {
+    if (!activeSignal) return;
+    if (statusRes?.open_positions && Array.isArray(statusRes.open_positions)) {
+      const isNowOpen = statusRes.open_positions.some(
+        (p: any) => String(p.symbol || "").toUpperCase() === activeSignal.symbol.toUpperCase()
+      );
+      if (isNowOpen) {
+        setActiveSignal(null);
+      }
+    }
+  }, [activeSignal]);
+
   const pollActiveStatus = useCallback(async () => {
     if (!activeSignal) return;
     try {
-      const statusRes = await apiFetch("/api/forex/auto-paper/status");
-      if (statusRes?.open_positions && Array.isArray(statusRes.open_positions)) {
-        const isNowOpen = statusRes.open_positions.some(
-          (p: any) => String(p.symbol || "").toUpperCase() === activeSignal.symbol.toUpperCase()
-        );
-        if (isNowOpen) {
-          setActiveSignal(null);
-        }
-      }
+      closeIfPositionOpened(await apiFetch("/api/forex/auto-paper/status"));
     } catch {}
-  }, [activeSignal]);
-  usePolling(pollActiveStatus, activeSignal ? 5000 : null);
+  }, [activeSignal, closeIfPositionOpened]);
+  usePolling(pollActiveStatus, activeSignal ? 15000 : null);
+
+  // CANLI YAYIN (2026-11-09): işlem açıldığı AN popup kapanır (yoklama gecikmesi yok).
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message?.type === "fx_state") closeIfPositionOpened(message.data);
+  }, [closeIfPositionOpened]));
 
   // Otomatik kapanma sayacı (autoCloseSec)
   useEffect(() => {

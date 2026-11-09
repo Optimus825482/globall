@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
+import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { formatUtc3 } from "../../lib/format";
 import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
 
@@ -915,47 +916,52 @@ export default function BtcGoldForexPage() {
   } | null>(null);
 
   // --- VERİ ÇEKME DÖNGÜSÜ ---
+  // Durum yükünü tek noktadan uygular: REST yoklaması ve WS `fx_state` AYNI
+  // yolu kullanır (2026-11-09) — iki ayrı hesap olsaydı panel çelişirdi.
+  const applyStatus = (res: any) => {
+    if (!res) return;
+    setAutoStatus(res.status || "Hazır");
+    setAutoEnabled(Boolean(res.enabled));
+    setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
+    setOpenPnlPips(res.open_pnl_pips ?? 0.0);
+    setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
+    setRealizedPnlPips(res.realized_pnl_pips ?? 0.0);
+    setTotalTrades(res.total_trades ?? 0);
+    setWins(res.wins ?? 0);
+    setLosses(res.losses ?? 0);
+    setWinRate(res.win_rate ?? 0.0);
+    setDailyWinRate(res.daily_win_rate ?? 0.0);
+    setDailyTrades(res.daily_trades ?? 0);
+    setDailyWins(res.daily_wins ?? 0);
+    setDailyLosses(res.daily_losses ?? 0);
+    setDailyPnlUsd(res.daily_pnl ?? 0.0);
+    setDailyPnlPips(res.daily_pips ?? 0.0);
+    setPerSymbolToday(
+      (res.per_symbol_today || []).filter((k: SymbolKpi) => symFilter.has(String(k.symbol).toUpperCase()))
+    );
+    setPerSymbolAllTime(
+      (res.per_symbol_all_time || []).filter((k: SymbolKpi) => symFilter.has(String(k.symbol).toUpperCase()))
+    );
+
+    setOpenPositions(
+      (res.open_positions || []).filter((p: AutoPosition) => symFilter.has(String(p.symbol).toUpperCase()))
+    );
+    setClosedTrades(
+      (res.closed_trades || []).filter((t: ClosedTrade) => symFilter.has(String(t.symbol).toUpperCase()))
+    );
+    setDecisionLogs(
+      (res.decision_logs || []).filter(
+        (l: DecisionLog) => !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
+      )
+    );
+    setSessions(res.sessions || []);
+  };
+
   const fetchAllData = async () => {
     // 1. Otonom Durum ve İşlemler
     try {
       const res = await apiFetch("/api/forex/auto-paper/status");
-      if (res) {
-        setAutoStatus(res.status || "Hazır");
-        setAutoEnabled(Boolean(res.enabled));
-        setOpenPnlUsd(res.open_pnl_usd ?? 0.0);
-        setOpenPnlPips(res.open_pnl_pips ?? 0.0);
-        setRealizedPnlUsd(res.realized_pnl_usd ?? 0.0);
-        setRealizedPnlPips(res.realized_pnl_pips ?? 0.0);
-        setTotalTrades(res.total_trades ?? 0);
-        setWins(res.wins ?? 0);
-        setLosses(res.losses ?? 0);
-        setWinRate(res.win_rate ?? 0.0);
-        setDailyWinRate(res.daily_win_rate ?? 0.0);
-        setDailyTrades(res.daily_trades ?? 0);
-        setDailyWins(res.daily_wins ?? 0);
-        setDailyLosses(res.daily_losses ?? 0);
-        setDailyPnlUsd(res.daily_pnl ?? 0.0);
-        setDailyPnlPips(res.daily_pips ?? 0.0);
-        setPerSymbolToday(
-          (res.per_symbol_today || []).filter((k: SymbolKpi) => symFilter.has(String(k.symbol).toUpperCase()))
-        );
-        setPerSymbolAllTime(
-          (res.per_symbol_all_time || []).filter((k: SymbolKpi) => symFilter.has(String(k.symbol).toUpperCase()))
-        );
-
-        setOpenPositions(
-          (res.open_positions || []).filter((p: AutoPosition) => symFilter.has(String(p.symbol).toUpperCase()))
-        );
-        setClosedTrades(
-          (res.closed_trades || []).filter((t: ClosedTrade) => symFilter.has(String(t.symbol).toUpperCase()))
-        );
-        setDecisionLogs(
-          (res.decision_logs || []).filter(
-            (l: DecisionLog) => !l.symbol || symFilter.has(String(l.symbol).toUpperCase())
-          )
-        );
-        setSessions(res.sessions || []);
-      }
+      applyStatus(res);
     } catch (err) {
       console.error("Auto paper status hatası:", err);
     }
@@ -1019,7 +1025,41 @@ export default function BtcGoldForexPage() {
   // sekme arka plana geçince tamamen durur, üst üste binme engellenir; aralık
   // 3 sn'ye çıkarıldı (backend teknik önbelleği zaten 15 sn'de tazeleniyor —
   // 1.5 sn'lik sorgu görsel fark üretmiyordu, yalnız CPU/ağ yakıyordu).
-  usePolling(fetchAllData, 3000);
+  // CANLI YAYIN (2026-11-09): köprü 1,5 sn'de bir WS'e basıyor →
+  // (a) `fx_state` açık pozisyon/K-Z ve hesap metrikleri,
+  // (b) `fx_ticks` sembol fiyatları (bid/ask/spread) anında güncellenir.
+  // Yoklama artık GÜVENLİK AĞI; teknik göstergeler yine onunla tazelenir.
+  usePolling(fetchAllData, 15000);
+
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message.type === "fx_state") {
+      applyStatus(message.data);
+    } else if (message.type === "fx_ticks") {
+      const ticks = message.data as Record<string, any> | null;
+      if (!ticks) return;
+      setTickers((prev) => {
+        let changed = false;
+        const next: Record<string, TickerData> = { ...prev };
+        for (const [sym, t] of Object.entries(ticks)) {
+          const key = sym.toUpperCase();
+          const cur = next[key];
+          if (!cur) continue;              // bu sembol kokpitte yok → ekleme
+          const patch: Partial<TickerData> = {};
+          if (Number.isFinite(Number(t?.bid))) patch.bid = Number(t.bid);
+          if (Number.isFinite(Number(t?.ask))) patch.ask = Number(t.ask);
+          if (Number.isFinite(Number(t?.spread_pips))) patch.spread_pips = Number(t.spread_pips);
+          if (Number.isFinite(Number(t?.ts))) patch.updated_at = Number(t.ts);
+          if (!Object.keys(patch).length) continue;
+          next[key] = { ...cur, ...patch };
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    } else if (message.type === "fx_trade_closed") {
+      void fetchAllData();
+    }
+  }, [applyStatus]));
+
 
   // Otomatik yorum: 60 sn'de bir backend'den insan-okur analiz çeker
   // (gösterge verisi ana döngüyle zaten canlı; yorum metni sakin kalsın diye ayrı yavaş döngü)

@@ -1053,6 +1053,59 @@ def _closed_tick_bars(sym: str, bucket_sec: int) -> List[Dict[str, Any]]:
     return list(_CLOSED_TICK_BARS.get((canonical_symbol(sym), bucket_sec), []))
 
 
+# Grafik ufukları → saniye. Oluşan mumun PENCERESİNİ doğrulamak için gerekir.
+_INTERVAL_SECONDS: Dict[str, int] = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "4h": 14400, "1d": 86400,
+}
+
+
+def _publish_fx_bars(now_ts: float) -> None:
+    """Görüntülenen FX çiftlerinin OLUŞAN mumunu WS'e verir (grafik canlı kalsın).
+
+    `_MT5_CANDLES_CACHE` köprünün `copy_rates` ile getirdiği broker mumlarını
+    tutar ve yalnızca panelin BAKTIĞI (sembol, ufuk) çiftlerini içerir — yani
+    tur maliyeti görüntülenen grafik sayısıyla sınırlıdır.
+
+    PENCERE KAPISI: mumun zaman aralığı `now_ts`i kapsamıyorsa o mum KAPANMIŞ
+    demektir. Kapanmış bir mumu "oluşan" diye yayınlamak grafikte geçmiş bir
+    muma canlı tik yazmak olurdu → yayınlanmaz (6 sn'lik yoklama kapanışı
+    zaten getirir).
+    """
+    from app.ws_live_candles import publish_fx_bar
+
+    for cache_key, entry in list(_MT5_CANDLES_CACHE.items()):
+        if "|" not in cache_key:
+            continue
+        sym, tf = cache_key.split("|", 1)
+        tf = tf.lower()
+        tf_sec = _INTERVAL_SECONDS.get(tf)
+        if not tf_sec:
+            continue
+        bars = entry[1] if isinstance(entry, tuple) and len(entry) > 1 else None
+        if not bars:
+            continue
+        last = bars[-1]
+        try:
+            bar_time = int(last["time"])
+            bar_open = float(last["open"])
+            bar_high = float(last["high"])
+            bar_low = float(last["low"])
+            live = float(_LIVE_PRICES_CACHE.get(sym) or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if live <= 0 or _PRICE_SOURCE.get(sym) != "mt5_tick":
+            continue
+        if not (bar_time <= now_ts < bar_time + tf_sec):
+            continue
+        publish_fx_bar(
+            sym, tf, time_sec=bar_time, open_=bar_open,
+            high=max(bar_high, live),
+            low=min(bar_low, live) if bar_low > 0 else live,
+            close=live, volume=0.0, closed=False,
+        )
+
+
 def _broker_bars_utc_offset(raw: List[Dict[str, Any]], now_bucket: int, bucket_sec: int) -> int:
     """MT5 copy_rates zamanları broker sunucu saatindeyse (UTC+2/+3) farkı (sn) bulur."""
     max_opened = 0
@@ -9697,7 +9750,8 @@ def _invalidate_status_cache() -> None:
     _STATUS_CACHE = None
 
 
-async def _broadcast_fx_state(*, closed_count: int = 0) -> None:
+async def _broadcast_fx_state(*, closed_count: int = 0,
+                              ticks: Optional[Dict[str, Any]] = None) -> None:
     """Köprü senkronundan sonra panel durumunu **WS ile** yayınlar (2026-11-09).
 
     NEDEN: köprü 1,5 sn'de bir `/sync-mt5` POST ediyordu ama panel bu veriyi
@@ -9723,6 +9777,11 @@ async def _broadcast_fx_state(*, closed_count: int = 0) -> None:
     _invalidate_status_cache()          # az önce yazılan tick'ler yükte temsil edilsin
     payload = await get_forex_auto_paper_status()
     await ws_manager.broadcast({"type": "fx_state", "data": _json_safe(payload)})
+    # Grafikler için hafif tick paketi (sunucuda zaten bellekte: ek hesap yok).
+    # `fx_state` bir pozisyon/durum yükü; grafik her sembolün ANLIK fiyatını
+    # bundan okuyamaz (pozisyonu olmayan sembol yükte yok).
+    if ticks:
+        await ws_manager.broadcast({"type": "fx_ticks", "data": _json_safe(ticks)})
     if closed_count:
         await ws_manager.broadcast({"type": "fx_trade_closed", "data": {"count": int(closed_count)}})
 
@@ -11527,6 +11586,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
 
     # MT5 canlı tick fiyatlarını entegre et
     _new_closed_count = 0
+    _fx_ticks_payload: Dict[str, Any] = {}
     if req.ticks:
         for sym_code, tick_dict in req.ticks.items():
             sym_up = str(sym_code).upper()
@@ -11544,6 +11604,27 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
                     _spread_ceiling = 10000.0 if is_crypto_symbol(app_sym) else 100.0
                     if 0.0 < spread_pips <= _spread_ceiling:
                         _LIVE_SPREAD_PIPS[app_sym] = round(spread_pips, 2)
+            # Grafiklerin tick paketi (mid zaten `_note_mt5_tick` ile yazıldı).
+            _tick_sym = canonical_symbol(sym_up)
+            _tick_mid = float(_LIVE_PRICES_CACHE.get(_tick_sym) or 0.0)
+            if _tick_mid > 0:
+                _fx_ticks_payload[_tick_sym] = {
+                    "price": _tick_mid,
+                    "bid": float(bid_v) if bid_v else None,
+                    "ask": float(ask_v) if ask_v else None,
+                    "spread_pips": _LIVE_SPREAD_PIPS.get(_tick_sym),
+                    "ts": now_ts,
+                }
+
+    # FX GRAFİK CANLI AKIŞI (2026-11-09): `/api/forex/klines` çifti zaten
+    # "görüntüleniyor" diye kaydediyordu ama FX mumlarını MarketData üretmediği
+    # için canlı mum yayını FX'te HİÇ olmuyordu → grafikler 6 sn'lik yoklamaya
+    # mahkumdu. Köprü 1,5 sn'de bir broker mumu + tick getirdiği için oluşan
+    # mumu buradan veriyoruz (yalnız bakılan çiftler, pencere kapısıyla).
+    try:
+        _publish_fx_bars(now_ts)
+    except Exception as _kline_exc:  # pragma: no cover - yayın sync'i düşürmesin
+        logger.debug("FX mum yayını atlandı: %s", _kline_exc)
 
     if req.deals:
         # Her deal'e strateji kimliği yazılır (köprü `strategy_tag`'inden çözülür):
@@ -11671,7 +11752,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
     # Yayın hatası bu POST'u ASLA düşürmemeli: köprü başarısız yanıt görürse
     # komutları tekrar dener ve emirler çift iletilir.
     try:
-        await _broadcast_fx_state(closed_count=_new_closed_count)
+        await _broadcast_fx_state(closed_count=_new_closed_count, ticks=_fx_ticks_payload)
     except Exception as _ws_exc:  # pragma: no cover - savunmacı
         logger.warning("fx_state WS yayını başarısız: %s", _ws_exc)
 

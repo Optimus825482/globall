@@ -208,6 +208,46 @@ def _on_bar(symbol: str, timeframe: str, bar: dict) -> None:
     _publish(key, bar, closed=False)
 
 
+# FX tarafı için ayrı burst tarifi: köprü 1,5 sn'de bir senkron atar (spot
+# akışından bağımsız zamanlama), bu yüzden sayaç ayrı tutulur.
+_last_fx_publish_at: dict[tuple[str, str], float] = {}
+
+
+def publish_fx_bar(symbol, timeframe, *, time_sec, open_, high, low, close, volume=0.0, closed=False) -> None:
+    """FX mumunu grafik akışına verir — köprü senkronundan beslenir (2026-11-09).
+
+    NEDEN GEREKLİ: `/api/forex/klines` uç noktası çifti zaten `note_viewed` ile
+    "görüntüleniyor" diye kaydediyordu ama FX mumlarını `MarketData` üretmediği
+    için `_on_bar` hiç çağrılmıyordu → kayıt boşa düşüyor, FX grafikleri yalnız
+    6 sn'lik HTTP yoklamasıyla tazeleniyordu ("canlı" değil, rozet yanıltıcı).
+
+    KURALLAR spot ile aynı: yalnız GÖRÜNTÜLENEN çift yayınlanır (kimse bakmıyorsa
+    tek mesaj üretilmez) ve burst koruması vardır.
+    """
+    key = _key(symbol, timeframe)
+    if not key[0] or not key[1] or not _is_viewed(key):
+        return
+    bar_time = int(time_sec or 0)
+    if bar_time <= 0:
+        return
+    bar = {"time": bar_time, "open": float(open_ or 0.0), "high": float(high or 0.0),
+           "low": float(low or 0.0), "close": float(close or 0.0), "volume": float(volume or 0.0)}
+    if closed:
+        if bar_time <= _last_closed_ms.get(key, 0):
+            return                      # aynı kapanmış mum tekrar geldi
+        _last_closed_ms[key] = bar_time
+        _publish(key, bar, closed=True)
+        return
+    if bar_time < _last_open_ms.get(key, 0):
+        return                          # geriye giden mum → yayınlama
+    now = time.monotonic()
+    if now - _last_fx_publish_at.get(key, 0.0) < MIN_OPEN_PUBLISH_GAP_SEC:
+        return                          # burst koruması
+    _last_fx_publish_at[key] = now
+    _last_open_ms[key] = max(bar_time, _last_open_ms.get(key, 0))
+    _publish(key, bar, closed=False)
+
+
 def start_live_candle_broadcast(market_instance=None) -> None:
     """MarketData örneğine bar dinleyicisini kaydet ve yayını başlat.
 

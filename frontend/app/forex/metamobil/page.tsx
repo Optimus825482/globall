@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
+import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import ForexNativeChart, { type Timeframe } from "../components/ForexNativeChart";
 
 // MetaMobil grafik periyot etiketleri (MT5 mobil) → ForexNativeChart aralıkları.
@@ -227,6 +228,38 @@ export default function MetaMobilePage() {
     } catch {}
   }, []);
 
+  // Hesap alanlarını tek noktadan uygular: REST yoklaması ve WS `fx_state`
+  // AYNI yolu kullanır — iki ayrı hesap olsaydı panel kendi içinde çelişirdi.
+  const applyAccountStatus = useCallback((statusData: any) => {
+    setAccount((prev) => {
+      const bal = Number(statusData.balance ?? prev.balance);
+      const eq = Number(statusData.equity ?? statusData.balance ?? prev.equity);
+      const pnl = Number(statusData.open_pnl_usd ?? statusData.open_pnl ?? (eq - bal));
+      const marg = Number(statusData.margin ?? prev.margin);
+      const freeMarg = Number(statusData.free_margin ?? (eq - marg));
+      const level = marg > 0 ? (eq / marg) * 100 : 0;
+      const server = String(statusData.server_name || statusData.server || prev.server_name || "");
+      const login = Number(statusData.account_id ?? statusData.login ?? prev.account_id ?? 0);
+      const leverageRaw = statusData.leverage;
+      const leverage = leverageRaw == null || leverageRaw === ""
+        ? prev.leverage
+        : String(leverageRaw).startsWith("1:") ? String(leverageRaw) : `1:${leverageRaw}`;
+      return {
+        ...prev,
+        balance: Number.isFinite(bal) ? bal : 0,
+        equity: Number.isFinite(eq) ? eq : 0,
+        open_pnl: Number.isFinite(pnl) ? pnl : 0,
+        margin: Number.isFinite(marg) ? marg : 0,
+        free_margin: Number.isFinite(freeMarg) ? freeMarg : 0,
+        margin_level: Number.isFinite(level) ? level : 0,
+        server_name: server,
+        account_id: Number.isFinite(login) ? login : 0,
+        leverage,
+        is_connected: true,
+      };
+    });
+  }, []);
+
   // API Verilerini Çekme (Radar Fiyatları, Hesap Durumu, Pozisyonlar)
   const refreshAllData = useCallback(async () => {
     const failures: string[] = [];
@@ -291,47 +324,35 @@ export default function MetaMobilePage() {
 
     try {
       const statusData = await apiFetch("/api/forex/auto-paper/status");
-      setAccount((prev) => {
-        const bal = Number(statusData.balance ?? prev.balance);
-        const eq = Number(statusData.equity ?? statusData.balance ?? prev.equity);
-        const pnl = Number(statusData.open_pnl_usd ?? statusData.open_pnl ?? (eq - bal));
-        const marg = Number(statusData.margin ?? prev.margin);
-        const freeMarg = Number(statusData.free_margin ?? (eq - marg));
-        const level = marg > 0 ? (eq / marg) * 100 : 0;
-        const server = String(statusData.server_name || statusData.server || prev.server_name || "");
-        const login = Number(statusData.account_id ?? statusData.login ?? prev.account_id ?? 0);
-        const leverageRaw = statusData.leverage;
-        const leverage = leverageRaw == null || leverageRaw === ""
-          ? prev.leverage
-          : String(leverageRaw).startsWith("1:") ? String(leverageRaw) : `1:${leverageRaw}`;
-        return {
-          ...prev,
-          balance: Number.isFinite(bal) ? bal : 0,
-          equity: Number.isFinite(eq) ? eq : 0,
-          open_pnl: Number.isFinite(pnl) ? pnl : 0,
-          margin: Number.isFinite(marg) ? marg : 0,
-          free_margin: Number.isFinite(freeMarg) ? freeMarg : 0,
-          margin_level: Number.isFinite(level) ? level : 0,
-          server_name: server,
-          account_id: Number.isFinite(login) ? login : 0,
-          leverage,
-          is_connected: true,
-        };
-      });
+      applyAccountStatus(statusData);
     } catch (err) {
       failures.push(err instanceof Error ? err.message : "Hesap durumu alınamadı");
       setAccount((prev) => ({ ...prev, is_connected: false }));
     }
 
     setLinkError(failures.length ? `bağlantı yok: ${failures[0]}` : "");
-  }, [historyPeriod]);
+  }, [historyPeriod, applyAccountStatus]);
+
+  // CANLI YAYIN (2026-11-09): köprü 1,5 sn'de bir `fx_state` basıyor → açık
+  // pozisyonlar ve hesap metrikleri ~0 gecikmeyle; yoklama güvenlik ağı.
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message.type === "fx_state") {
+      const res = message.data as any;
+      if (!res) return;
+      applyAccountStatus(res);
+      if (Array.isArray(res.open_positions)) setOpenPositions(res.open_positions);
+    } else if (message.type === "fx_trade_closed") {
+      void refreshAllData();
+    }
+  }, [applyAccountStatus, refreshAllData]));
+
 
   // Periyodik Canlı Veri Yenileme
   // PERFORMANS (2026-10-08): 2 sn'lik çıplak interval arka planda da dönüyordu
   // ve üç endpoint'i sırayla çekiyordu. usePolling ile arka planda durur,
   // üst üste binen turlar engellenir. Flash efektleri tazelenme sonunda
   // temizlenir (eskiden her quotes değişiminde yeni bir timer kuruluyordu).
-  usePolling(refreshAllData, 3000);
+  usePolling(refreshAllData, 15000);
 
   // Güncel seçili sembol verisi
   const activeQuote = useMemo(() => {

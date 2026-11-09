@@ -15,6 +15,7 @@ import {
 } from "lightweight-charts";
 import dynamic from "next/dynamic";
 import { apiFetch } from "../../lib/api";
+import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { findIndicatorEntry, filterIndicatorInstances } from "../../charts/IndicatorPicker";
 import {
   applySeries,
@@ -623,92 +624,105 @@ export default function ForexNativeChart({
     recomputeLiveValues(candlesRef.current);
   }, [recomputeLiveValues]);
 
-  // Canlı Ticker Dinleme
+  // Canlı fiyatı grafiğe uygular — REST yoklaması ve WS `fx_ticks` AYNI yolu kullanır
+  // (iki ayrı uygulama olsaydı biri diğerinden sapar; grafik yalan söylerdi).
+  const applyTicker = useCallback((tick: any) => {
+    if (!tick) return;
+    const tickError = typeof tick.error === "string" ? tick.error.trim() : "";
+    const bidKnown = Number(tick.bid);
+    const askKnown = Number(tick.ask);
+    const priceKnown = Number(tick.price);
+    const hasQuote = (Number.isFinite(priceKnown) && priceKnown > 0)
+      || (Number.isFinite(bidKnown) && bidKnown > 0)
+      || (Number.isFinite(askKnown) && askKnown > 0);
+    if (tickError && !hasQuote) {
+      setQuoteError(tickError);
+      setLivePrice(null);
+      setLiveBid(null);
+      setLiveAsk(null);
+      return;
+    }
+    setQuoteError("");
+    // FİYAT KAPISI: tick nesnesi `price` taşımazsa (yalnız bid/ask yayınlanır)
+    // eskiden `tick.price` = `undefined` doğrudan mumun `close` alanına yazılıyor,
+    // `series.update()` ile seriye giriyor ve lightweight-charts mumu boyarken
+    // `ensure(close)` ile "Value is undefined" fırlatıp grafiği her karede
+    // patlatıyordu. Fiyatı bid/ask ortasından türet; sonlu değilse muma dokunma.
+    const bid = Number(tick.bid);
+    const ask = Number(tick.ask);
+    const mid = Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0
+      ? (bid + ask) / 2
+      : NaN;
+    const rawPrice = Number(tick.price);
+    const px = Number.isFinite(rawPrice) && rawPrice > 0
+      ? rawPrice
+      : (Number.isFinite(mid) ? mid : NaN);
+
+    if (Number.isFinite(px) && Math.abs(px - (livePrice || 0)) > 1e-6) {
+      setLastTickDir(livePrice != null && px >= livePrice ? "up" : "down");
+      setLivePrice(px);
+    }
+    if (Number.isFinite(bid) && bid > 0) setLiveBid(bid);
+    if (Number.isFinite(ask) && ask > 0) setLiveAsk(ask);
+    if (tick.spread_pips != null) setLiveSpread(tick.spread_pips);
+
+    if (candleSeriesRef.current && lastCandleRef.current && Number.isFinite(px)) {
+      const last = lastCandleRef.current;
+      if (Number.isFinite(last.open) && Number.isFinite(last.high) && Number.isFinite(last.low)) {
+        // BAZ FARKI KAPISI (2026-10-07): canlı fiyat (MT5 spot) ile mum
+        // serisi (Yahoo vadeli GC=F) arasında baz farkı varsa, canlı fiyatı
+        // son mumun close'una yazmak tek barda ~26$'lik SAHTE çöküş çubuğu
+        // üretiyordu. Uçuk farkta mumu güncelleme; backend bir sonraki kline
+        // turunda tüm seriyi spota kaydırarak hizalar (bkz. _fetch_forex_klines).
+        const ref = Number(last.close);
+        const rel = ref > 0 ? Math.abs(px - ref) / ref : 0;
+        if (rel <= 0.0015) {
+          const updatedBar: CandleBar = {
+            time: last.time,
+            open: last.open,
+            high: Math.max(last.high, px),
+            low: Math.min(last.low, px),
+            close: px,
+          };
+          lastCandleRef.current = updatedBar;
+          // Aynadaki son mumu da güncelle → göstergeler bu mumla senkron hesaplanır.
+          const arr = candlesRef.current;
+          if (arr.length > 0 && arr[arr.length - 1].time === updatedBar.time) {
+            arr[arr.length - 1] = updatedBar;
+          }
+          try {
+            candleSeriesRef.current.update(updatedBar as any);
+            syncLiveIndicators();
+          } catch {}
+        }
+      }
+    }
+  }, [symbol, syncLiveIndicators, livePrice]);
+
+  // Canlı Ticker: WS birincil, REST yoklaması GÜVENLİK AĞI (WS düşerse).
   useEffect(() => {
     const fetchTicker = async () => {
       try {
         const res = await apiFetch(`/api/forex/tickers`);
         if (res && Array.isArray(res.tickers)) {
-          const tick = res.tickers.find((t: any) => t.symbol === symbol.toUpperCase());
-          if (tick) {
-            const tickError = typeof tick.error === "string" ? tick.error.trim() : "";
-            const bidKnown = Number(tick.bid);
-            const askKnown = Number(tick.ask);
-            const priceKnown = Number(tick.price);
-            const hasQuote = (Number.isFinite(priceKnown) && priceKnown > 0)
-              || (Number.isFinite(bidKnown) && bidKnown > 0)
-              || (Number.isFinite(askKnown) && askKnown > 0);
-            if (tickError && !hasQuote) {
-              setQuoteError(tickError);
-              setLivePrice(null);
-              setLiveBid(null);
-              setLiveAsk(null);
-              return;
-            }
-            setQuoteError("");
-            // FİYAT KAPISI: tick nesnesi `price` taşımazsa (yalnız bid/ask yayınlanır)
-            // eskiden `tick.price` = `undefined` doğrudan mumun `close` alanına yazılıyor,
-            // `series.update()` ile seriye giriyor ve lightweight-charts mumu boyarken
-            // `ensure(close)` ile "Value is undefined" fırlatıp grafiği her karede
-            // patlatıyordu. Fiyatı bid/ask ortasından türet; sonlu değilse muma dokunma.
-            const bid = Number(tick.bid);
-            const ask = Number(tick.ask);
-            const mid = Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0
-              ? (bid + ask) / 2
-              : NaN;
-            const rawPrice = Number(tick.price);
-            const px = Number.isFinite(rawPrice) && rawPrice > 0
-              ? rawPrice
-              : (Number.isFinite(mid) ? mid : NaN);
-
-            if (Number.isFinite(px) && Math.abs(px - (livePrice || 0)) > 1e-6) {
-              setLastTickDir(livePrice != null && px >= livePrice ? "up" : "down");
-              setLivePrice(px);
-            }
-            if (Number.isFinite(bid) && bid > 0) setLiveBid(bid);
-            if (Number.isFinite(ask) && ask > 0) setLiveAsk(ask);
-            if (tick.spread_pips != null) setLiveSpread(tick.spread_pips);
-
-            if (candleSeriesRef.current && lastCandleRef.current && Number.isFinite(px)) {
-              const last = lastCandleRef.current;
-              if (Number.isFinite(last.open) && Number.isFinite(last.high) && Number.isFinite(last.low)) {
-                // BAZ FARKI KAPISI (2026-10-07): canlı fiyat (MT5 spot) ile mum
-                // serisi (Yahoo vadeli GC=F) arasında baz farkı varsa, canlı fiyatı
-                // son mumun close'una yazmak tek barda ~26$'lik SAHTE çöküş çubuğu
-                // üretiyordu. Uçuk farkta mumu güncelleme; backend bir sonraki kline
-                // turunda tüm seriyi spota kaydırarak hizalar (bkz. _fetch_forex_klines).
-                const ref = Number(last.close);
-                const rel = ref > 0 ? Math.abs(px - ref) / ref : 0;
-                if (rel <= 0.0015) {
-                  const updatedBar: CandleBar = {
-                    time: last.time,
-                    open: last.open,
-                    high: Math.max(last.high, px),
-                    low: Math.min(last.low, px),
-                    close: px,
-                  };
-                  lastCandleRef.current = updatedBar;
-                  // Aynadaki son mumu da güncelle → göstergeler bu mumla senkron hesaplanır.
-                  const arr = candlesRef.current;
-                  if (arr.length > 0 && arr[arr.length - 1].time === updatedBar.time) {
-                    arr[arr.length - 1] = updatedBar;
-                  }
-                  try {
-                    candleSeriesRef.current.update(updatedBar as any);
-                    syncLiveIndicators();
-                  } catch {}
-                }
-              }
-            }
-          }
+          applyTicker(res.tickers.find((t: any) => t.symbol === symbol.toUpperCase()));
         }
       } catch {}
     };
     const t = setInterval(() => {
       if (!document.hidden) fetchTicker();
-    }, 2500);
+    }, 15000);
     return () => clearInterval(t);
-  }, [symbol, syncLiveIndicators]);
+  }, [symbol, applyTicker]);
+
+  // MT5 KÖPRÜSÜ CANLI TICK (WS): köprü 1,5 sn'de bir tick gönderiyor → grafik
+  // 2,5 sn'lik yoklama yerine ~1,5 sn'de güncellenir. Yayın yoksa yoklama devrede.
+  useLiveMessages(useCallback((message: LiveMessage) => {
+    if (message?.type !== "fx_ticks") return;
+    const data = message.data as Record<string, any> | null;
+    if (!data) return;
+    applyTicker(data[symbol.toUpperCase()]);
+  }, [applyTicker, symbol]));
 
   // Grafik Tuvalini Başlat (lightweight-charts)
   useEffect(() => {

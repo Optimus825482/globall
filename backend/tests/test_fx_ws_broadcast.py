@@ -87,6 +87,16 @@ class TestBroadcastFxState(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fake.sent, [], "bağlı istemci yokken yayın yapılmamalı")
         self.assertIsNotNone(fx._STATUS_CACHE, "boşa yayın için önbellek yakılmamalı")
 
+    async def test_ticks_packets_published_for_charts(self):
+        ticks = {"XAUUSD": {"price": 2412.5, "bid": 2412.4, "ask": 2412.6, "spread_pips": 2.0, "ts": 1.0}}
+        await fx._broadcast_fx_state(ticks=ticks)
+        self.assertEqual([m["type"] for m in self.fake.sent], ["fx_state", "fx_ticks"])
+        self.assertEqual(self.fake.sent[1]["data"]["XAUUSD"]["price"], 2412.5)
+
+    async def test_no_ticks_no_packet(self):
+        await fx._broadcast_fx_state(ticks={})
+        self.assertEqual([m["type"] for m in self.fake.sent], ["fx_state"])
+
     async def test_closed_event_only_when_count(self):
         await fx._broadcast_fx_state(closed_count=0)
         self.assertEqual([m["type"] for m in self.fake.sent], ["fx_state"])
@@ -100,10 +110,10 @@ class TestWiring(unittest.TestCase):
     def test_sync_handler_publishes(self):
         i = SRC.index("async def sync_mt5_bridge")
         block = SRC[i:i + 26000]
-        self.assertIn("await _broadcast_fx_state(closed_count=_new_closed_count)", block)
+        self.assertIn("await _broadcast_fx_state(closed_count=_new_closed_count, ticks=_fx_ticks_payload)", block)
 
     def test_broadcast_failure_does_not_break_sync(self):
-        i = SRC.index("await _broadcast_fx_state(closed_count=_new_closed_count)")
+        i = SRC.index("await _broadcast_fx_state(closed_count=_new_closed_count, ticks=_fx_ticks_payload)")
         around = SRC[max(0, i - 400):i + 300]
         self.assertIn("try:", around)
         self.assertIn("except Exception", around)
@@ -113,8 +123,25 @@ class TestWiring(unittest.TestCase):
         j = SRC.index("newly_closed_deals: List[Dict[str, Any]] = []")
         self.assertLess(i, j, "sayaç ilk kullanımdan önce tanımlı olmalı (deals bloğu opsiyonel)")
 
+    def test_ticks_payload_built_and_passed(self):
+        self.assertIn("_fx_ticks_payload: Dict[str, Any] = {}", SRC)
+        self.assertIn("ticks=_fx_ticks_payload", SRC)
+        i = SRC.index("_fx_ticks_payload: Dict[str, Any] = {}")
+        j = SRC.index("_fx_ticks_payload[_tick_sym] = {")
+        self.assertLess(i, j)
+
+    def test_chart_bar_publisher_wired(self):
+        # FX grafikleri için oluşan mum yayını (kline) köprü senkronundan beslenir
+        self.assertIn("def _publish_fx_bars", SRC)
+        self.assertIn("_publish_fx_bars(now_ts)", SRC)
+        i = SRC.index("_publish_fx_bars(now_ts)")
+        j = SRC.index("if req.deals:")
+        self.assertLess(i, j, "mum yayını tick'ler yazıldıktan sonra olmalı")
+        src_c = (ROOT / "app" / "ws_live_candles.py").read_text(encoding="utf-8")
+        self.assertIn("def publish_fx_bar", src_c)
+
     def test_publish_happens_before_return(self):
-        i = SRC.index("await _broadcast_fx_state(closed_count=_new_closed_count)")
+        i = SRC.index("await _broadcast_fx_state(closed_count=_new_closed_count, ticks=_fx_ticks_payload)")
         j = SRC.index('"server_time": now_ts,')
         self.assertLess(i, j)
 
