@@ -232,7 +232,7 @@ Sıra 1–5 (yaklaşık bir günlük iş) en yüksek kullanıcı etkisini üreti
 | P0-4 | Kontrast altı metin | `globals.css`'te 8 metin kuralı `#64748b`→`#93a7c6`; hafif-modda beyaz zemin üzerindeki placeholder `#475569` yapıldı; EVShieldModal'da koyu zemin üzerindeki `placeholder:text-slate-500`→`-400`, `hover:text-slate-600`→`-200`; kadran min/max SVG etiketi `#64748b/8`→`#93a7c6/11` | `color:#64748b` globals.css'te **0**; ekranda `#64748b` metin kalmadı |
 | P0-5 | Tanımsız Tailwind tonları | 24 kullanım tanımlı tonlara eşlendi (`bunker-300/400`→`bunker-muted`, `750`→`700`, `500`→`600`); ölü `hover:text-bunker-muted` → `hover:text-white` | `grep -rE "(text\|bg\|border)-bunker-(300\|400\|500\|750)"` → **0** |
 | P0-6 | Placeholder = etiket | `settings/page.tsx`'te 7 girdi + 2 `select` görünür `eyebrow` etiketiyle `<label>` içine alındı; placeholder örnek değere indirildi; `autoComplete`/`w-full` eklendi | 9 alanın tamamı etiketli |
-| P1-1 | 208 `html.light` kuralı / 135 `!important` | Tema token katmanı (`--text-primary/secondary/muted`, `--focus-ring`, `--surface-*`, `--border-hairline`) `:root` + `html.light`'ta **tek kaynak**; `tailwind.config.ts`'e `ink.1/2/3`. **107 gereksiz `!important` budandı** (katmansız CSS `@layer utilities`'i zaten yener — 135 → 28) | `!important` sayısı 135→28; kalan 28 `@media` blokları, `svg`/gradient/ticker muafiyetleri ve `diverging-track` özgüllük hilesi |
+| P1-1 | 208 `html.light` kuralı / 135 `!important` | Tema token katmanı (`--text-primary/secondary/muted`, `--focus-ring`, `--surface-*`, `--border-hairline`) `:root` + `html.light`'ta **tek kaynak**; `tailwind.config.ts`'e `ink.1/2/3`. **108 `!important` budandı** (135 → 26 deklarasyon, yorum hariç; gerekçe §9'da ölçümle doğrulandı) | `!important` sayısı 135 → 26; kalanlar: `prefers-reduced-motion` blokları, `svg`/gradient/ticker muafiyetleri, `diverging-track` özgüllük hilesi ve yeni odak güvenlik ağı (ölçüm: §9.4) |
 | P1-2 | `prefers-color-scheme` yok | `layout.tsx` FOUC script'i + `lib/theme.tsx`: depolanmış tercih yoksa OS tercihi okunur | Kod yolu iki yerde aynı kural |
 | P1-3 | Skip-link yok | `AppShell` başına `.skip-link` + `<main id="main-content" tabIndex={-1}>` | Klavye ile ilk Tab → "İçeriğe atla" |
 | P1-4 | hover yedeği yok | `@media (hover:none),(any-pointer:coarse)` güvenlik ağı. **Not:** içeriği gizleyen hover deseni yoktu (yalnız `opacity-70→1`) | Çıktıda doğrulandı |
@@ -245,7 +245,7 @@ Sıra 1–5 (yaklaşık bir günlük iş) en yüksek kullanıcı etkisini üreti
 
 - **`spot-monitor` / `btc-gold` / `forex` sayfalarının sekme başına bölünmesi ve RSC'ye taşınması (P1-7):** 2185/2294/1462 satırlık 3 dosyanın bölünmesi, davranış regresyonu riski taşıyan ve **render edilmiş bir karşılaştırma gerektiren** bir refactor. Görsel doğrulama yapılmadan körlemesine yapılması, düzeltmeye çalıştığımız arayüzden daha kötü bir sonuç üretir. Ayrı ve odaklı bir tur olarak bırakıldı.
 - **`container-type: inline-size` (P1-7 CSS kısmı):** `inline-size` containment, genişliği içeriğe bağlı olmayan öğeleri (flex satırındaki `flex: 0 1 auto` kartlar) **0 genişliğe çökertebilir**. `.panel`/`.ui-card`'ın tüm kullanım yerlerini görsel doğrulamadan containment altına almak kabul edilemez risk. Aynı turda yapılmalı.
-- **Açık tema (light mode) görsel turu:** Bu ortamda uygulama `AuthGate` arkasında; kimliği doğrulanmış kabuk render edilemedi. `html.light` bloklarındaki 107 `!important` kaldırması **katman sıralaması garantisine** dayanıyor (katmansız CSS, `@layer utilities`'i özgüllükten bağımsız yener; yarışan tüm kurallar ya Tailwind yardımcı sınıfı ya da daha düşük özgüllüklü katmansız kural). Satır içi stil taşıyan 11 öğe tarandı; hiçbiri bu kurallarla yarışmıyor. **Yine de açık temada bir tur atılması önerilir:** sidebar + topbar + bir tablo + bir kart + bir form.
+- **Açık tema (light mode) taraması:** Görsel tur yerine **kaynak üzerinde kaskad denetimi** yapıldı ve §9'a yazıldı (istenen yöntem bu). Sonuç: budama güvenli; 37 light↔light çakışması no-op, 2 light-dışı aday daha özgül bir light kuralıyla etkisizleşiyor, `!important` taşıyan light-dışı rakip 0. Denetim ayrıca gerçek bir odak kaybını (`focus:outline-none` varyantı) buldu ve düzeltildi. **Kalan öneri:** gözle bir tur (sidebar + topbar + tablo + kart + form) — artık bloke edici değil, teyit amaçlı.
 
 ### Yeni kabul kriterleri (PR kapısı)
 
@@ -255,7 +255,72 @@ grep -rE "(text|bg|border)-bunker-(300|400|500|750)" app --include=*.tsx   # 0 o
 grep -rhoE "text-\[[0-9]+px\]" app --include=*.tsx                      # 0 olmalı
 grep -rhoE "text-\[0\.[0-6][0-9]*rem\]" app --include=*.tsx            # 0 olmalı (11px altı yok)
 grep -rn "color:#64748b\|color: #64748b" app/globals.css                 # 0 olmalı
-grep -c "!important" app/globals.css                                      # 28'i geçmemeli
+python -c "import re,io;print(re.sub(r'/\*.*?\*/','',io.open('app/globals.css',encoding='utf-8').read(),flags=re.S).count('!important'))"   # 26'yı geçmemeli
 grep -rn "next/font" app/fonts.ts                                         # 1+ olmalı
 npm run typecheck && npm run build
 ```
+
+---
+
+## 9. KASKAD DENETİMİ — `!important` budaması gerçekten güvenli mi? (2026-11-09)
+
+Bu madde, §8'de "veril doğrulaması bekliyor" diye bırakılan açık işin **statik kanıtıdır**: render alınmadı, üretilen CSS dosyası ayrıştırılıp kaskad hesaplandı.
+
+### 9.1 Kırılan varsayım (düzeltildi)
+
+Budamayı yaparken gerekçem şuydu: *"Tailwind yardımcı sınıfları `@layer utilities` içindedir; katmansız (unlayered) CSS onları özgüllükten bağımsız yener."*
+
+**Bu varsayım bu projede GEÇERSİZ.** Üretilen CSS'te `@layer` sayısı **0**:
+
+```
+$ grep -c "@layer" .next/static/chunks/*.css
+0
+```
+
+Turbopack CSS katmanlarını düzleştiriyor. Yani kaskad yalnızca **`!important` > özgüllük > kaynak sırası** ile çalışıyor ve ayrıca **satır içi stiller kazanıyor**. Yanlış gerekçe `globals.css`'teki yorumdan ve bu rapordan temizlendi; yerine ölçülen gerçek yazıldı. (Bu, kodu okuyan bir sonraki geliştiricinin güveneceği bir yorumun yanlış kalmasını engeller.)
+
+### 9.2 Yöntem
+
+Üretilen `chunks/*.css` ayrıştırıldı (2.148 kural, 217'si `html.light*`); her kural için özgüllük `(a,b,c)` hesaplandı — **`:where()` sıfır özgüllük** ve `:is()/:not()` argümanının en yükseği olarak (Tailwind preflight `:where()`'i yoğun kullanır; bunu normal pseudo sınıf sayan ilk sürüm 16.148 yanlış pozitif üretti, düzeltildi). Sonra her `html.light` deklarasyonu, **aynı öğeyi hedefleyen** (son bileşen sınıf/öğe eşleşmesi) ve aynı özelliği farklı değerle yazan tüm rakipleriyle karşılaştırıldı; kazanan `!important → özgüllük → sıra` ile belirlendi.
+
+Kritik ayrım: **rakip de bir `html.light` kuralıysa bu bir regresyon DEĞİLDİR.** Budamadan önce iki taraf da `!important` taşıyordu → karar özgüllük+sıraya kalıyordu; budamadan sonra da tam olarak aynı karşılaştırma yapılır. Yalnızca rakibi `html.light` **olmayan** çiftler davranış değiştirebilir.
+
+### 9.3 Sonuç
+
+| Grup | Adet | Değerlendirme |
+|---|---|---|
+| `html.light` ↔ `html.light` çakışması | 37 | **No-op.** İki tarafta da `!important` vardı; kaldırınca özgüllük+sıra kararı birebir aynı kalır |
+| Rakibi `html.light` **olmayan** | **2** | `.chat-message.user .chat-bubble` (0,3,0) — aşağıda etkisiz çıktı |
+| Rakibi `!important` taşıyan light-dışı kural | **0** | — |
+| Preflight kaynaklı | **0** | `input:where([type=button])` vb. sıfır özgüllüklü olduğu için `html.light input` (0,1,2) zaten kazanıyor |
+
+Kalan 2 aday, `html.light .chat-bubble { background:#f1f5f9; border-color:#cbd5e1 }` ile daha özgül bir light kuralı arasındaydı. Dosya üzerinde doğrulandı:
+
+```css
+/* globals.css:1274 */
+html.light .chat-message.user .chat-bubble {   /* spec (0,4,1) */
+  background: #e0f2fe; border-color: #7dd3fc; color: #0369a1;
+}
+```
+
+Bu kural hem `html.light .chat-bubble`'ı hem de light-dışı `.chat-message.user .chat-bubble`'ı yeniyor → kullanıcı balonunun açık tema görünümü değişmiyor; asistan balonunda ise `.chat-message.user` hiç eşleşmiyor.
+
+**Hüküm: `!important` budaması kaskad açısından güvenli.** (Not: bu bir *kaskad* kanıtıdır, *piksel* kanıtı değildir. Renk değerlerinin kendisi hiç değişmediği için kaskad kanıtı bu iş için yeterlidir; yine de gözle bir tur atılması zarar vermez.)
+
+### 9.4 Denetimin bulduğu 2 GERÇEK kusur (düzeltildi)
+
+1. **Yanlış gerekçe** — `globals.css`'teki odak kuralı yorumu katman garantisine dayanıyordu (§9.1). Gerçek ölçümle değiştirildi.
+2. **Odak göstergesi gerçekten kayboluyordu.** Üretilen CSS'te bayt ofsetleri ölçüldü:
+
+   | Kural | Ofset | Özgüllük |
+   |---|---|---|
+   | `.outline-none` (Tailwind) | 68.868 | (0,1,0) |
+   | `:focus-visible { outline: 2px solid var(--focus-ring) }` | 75.177 | (0,1,0) → **sonra geldiği için kazanır** ✓ |
+   | `[class*="outline-none"]:focus-visible { … !important }` *(yeni)* | 75.247 | (0,2,0) + `!important` |
+   | `.focus\:outline-none:focus` (Tailwind) | 138.467 | **(0,2,0) → düz ağı YENER** ✗ |
+
+   Yani düz `:focus-visible` ağı, `outline-none`'ı kapatıyordu ama **`focus:outline-none` varyantını kapatamıyordu** — kodda 8 yerde bu varyant var ve birinde (`spot-monitor/page.tsx:1634`) hiçbir ikame stili yok, yani odak görünmezdi. Ağa ikinci katman eklendi: `[class*="outline-none"]:focus-visible` (öznitelik seçici özgüllüğü (0,2,0)'a çıkarır + `!important` sıradan bağımsız kazandırır).
+
+### 9.5 Yan bulgu — Poppins deklare edildi ama hiç kullanılmıyor
+
+`font-display` Tailwind sınıfı kodda **0 kez** kullanılıyor. Tarayıcı tanılamasında `fontDisplay 600 → unloaded` çıktı: `@font-face` tanımlı ama hiçbir öğe bu aileyi istemediği için **woff2 indirilmiyor** (runtime maliyeti yok, yalnız depoda 2 dosya duruyor). Inter ve JetBrains Mono ise `loaded` ✓. Karar: dosyalar bırakıldı (`--font-display` hazır dursun), ama gerçekten kullanılmak istenirse başlıklara uygulanmalı; kullanılmayacaksa `app/fonts/Poppins-*.woff2` + `fontDisplay` tanımı silinebilir.

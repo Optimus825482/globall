@@ -40,14 +40,29 @@
 /* ---- ODAK GÖRÜNÜRLÜĞÜ GÜVENLİK AĞI --------------------------------------
    Denetimde 4 girdi (`outline-none` var, ikame stili yok) ve tek tek
    düzeltilmesi unutulabilecek yeni kod için tek merkezden garanti.
-   Tailwind yardımcı sınıfları @layer utilities içindedir; katmansız
-   (unlayered) bu kural özgüllükten bağımsız olarak onları YENER — bu yüzden
-   `!important` gerekmez. Bileşen kendi `:focus-visible` stilini tanımlarsa
-   (daha yüksek özgüllük) o kazanır.                                        */
+
+   ÖNEMLİ — ÖZGÜLLÜK/SIRA GERÇEĞİ (2026-11-09, üretilen CSS üzerinde ölçüldü):
+   Turbopack `@layer` bildirimlerini ÇIKTIYA TAŞIMIYOR (üretilen CSS'te 0 adet
+   `@layer` var). Yani "katmansız CSS Tailwind katmanını yener" varsayımı bu
+   projede GEÇERSİZ; kaskad yalnızca !important > özgüllük > kaynak sırası ile
+   çalışır. Bu kural (0,1,0) `.outline-none` (0,1,0) ile EŞİT özgüllükte olup
+   üretilen CSS'te ondan SONRA gelir (ölçüm: 75.177 > 68.868 bayt) → kazanır.
+   Ancak `focus:outline-none` VARYANTI (0,2,0) hem daha özgül hem daha sonra
+   (138.366) geldiği için bu kuralı yener; o yüzden aşağıda ikinci bir ağ var. */
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* `outline-none` sınıfını taşıyan öğeler için ikinci ağ. Öznitelik seçici
+   özgüllüğü (0,2,0)'a çıkarır, `!important` ise kaynak sırası ne olursa olsun
+   kazandırır. Böylece `focus:outline-none` yazıp kenarlık değişimi gibi zayıf
+   (3:1'i garanti etmeyen) bir ikame bırakan kod da odak göstergesini kaybetmez. */
+[class*="outline-none"]:focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+}
+
 /* NOT: `:focus:not(:focus-visible)` ile halkayı elle silme kuralı BİLİNÇLİ
    OLARAK EKLENMEDİ — tarayıcı zaten fare tıklamasında `:focus-visible`
    tetiklemez; elle silmek açık temadaki `html.light input:focus` gibi meşru
