@@ -40,6 +40,8 @@ except ImportError:  # paket dışı bağlam (test/script)
     from .. import combo3_m5 as _c3
     from .. import kombo_m5 as _km
 
+from app import trade_reasons  # kanonik kapanış nedeni (2026-11-09)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/forex", tags=["forex"])
@@ -5618,7 +5620,7 @@ class ForexAutoPaperSettings(BaseModel):
     require_mt5_connection: bool = Field(True, description="MT5 köprüsü bağlı değilken YENİ işlem açılmaz (paper'a sessiz kayma + gerçek MT5 pozisyonunun yanlışlıkla kapanması biter — #7). False yapılırsa eski davranış: köprü yokken paper motoru devreye girer.")
     llm_review_enabled: bool = Field(True, description="LLM Trader incelemesi: motor işlem açmadan ÖNCE deneyimli-trader istemiyle LLM'e ikinci görüş sordurur (varsayılan AÇIK; LLM yoksa fail-open ayarı geçerli). Karar ve sonucu Raporlar > LLM Kararları'nda izlenir.")
     llm_review_mode: str = Field("veto", pattern="^(veto|advisory)$", description="veto: LLM reddederse işlem açılmaz · advisory: yalnız kayıt/rapor, işlemi engellemez (denemek için)")
-    llm_review_fail_open: bool = Field(True, description="LLM yanıt vermez/yavaşsa/bozuksa: True = işlem yine açılır (motor kararı), False = işlem açılmaz")
+    llm_review_fail_open: bool = Field(False, description="LLM yanıt vermez/yavaşsa/bozuksa: False (VARSAYILAN, 2026-11-09) = işlem AÇILMAZ · True = işlem yine açılır (eski davranış). Ölçüm (517 karar): hatalı kararların gölge sonucu -0.17 R, hatasız kararlarınki +0.07 R → hata durumunda işlem açmak kaybettiriyor. Hata oranı %16, medyan gecikme 26 sn.")
     llm_review_min_confidence: int = Field(55, ge=0, le=100, description="Onay için LLM'in minimum güven puanı (altındaki onaylar da engellenir)")
     llm_review_timeout_sec: float = Field(45.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-35 sn sürebilir (ölçülen p90 ≈ 27 sn). Yedek model varsa %60'ı ana modele gider. Aşılırsa fail-open/closed kuralı uygulanır")
     risk_gate_mode: str = Field("shadow", pattern="^(off|shadow|enforce)$", description="Portföy risk kapısı: off · shadow (varsayılan: yalnız günlüğe 'engellerdi' yazar, motoru DEĞİŞTİRMEZ) · enforce (engeller + drawdown çarpanını uygular)")
@@ -5952,6 +5954,16 @@ try:
             _known = {k: v for k, v in _persisted.items()
                       if k in ForexAutoPaperSettings.model_fields}
             _AUTO_SETTINGS = ForexAutoPaperSettings(**_known)
+            # 2026-11-09: fail-open ölçümle KAYBETTİRİYOR (hata gölge sonucu -0.17 R
+            # vs +0.07 R, hata oranı %16). Yeni varsayılan fail-CLOSED; kayıtlı
+            # dosya eski `true` değerini taşıyorsa SESSİZCE ezmiyoruz — kullanıcı
+            # kendi seçimini görsün diye yüksek sesle uyarıyoruz.
+            if _AUTO_SETTINGS.llm_review_fail_open:
+                logger.warning(
+                    "[FX AYAR] llm_review_fail_open=True (kayıtlı ayar). ÖLÇÜM: LLM hata/"
+                    "zaman aşımında işlem açmak kaybettiriyor (hata gölge sonucu -0.17 R vs "
+                    "hatasız +0.07 R; hata oranı %16). Önerilen: Ayarlar > LLM Trader > "
+                    "fail-closed.")
             _dropped_phantoms = _enforce_universe_invariant(_AUTO_SETTINGS)
             if _dropped_phantoms:
                 logger.warning(
@@ -9699,6 +9711,15 @@ async def get_forex_auto_paper_status():
         # #1: net sonuç = profit + commission + swap (MT5 bakiyesiyle uzlaşır).
         pnl = _deal_net_pnl_usd(d)
         t_id = d.get("ticket") or d.get("id") or 0
+        _reason_info = trade_reasons.canonical_exit_reason(
+            reason_text=d.get("exit_reason_title") or d.get("exit_reason"),
+            pnl_usd=pnl,
+            entry_price=d.get("open_price", d.get("entry_price")),
+            exit_price=d.get("price", d.get("exit_price")),
+            direction=d.get("direction"),
+            sl_price=d.get("sl_price", d.get("sl")),
+            tp_price=d.get("tp_price", d.get("tp")),
+        )
         normalized_deals.append({
             "id": d.get("id") or f"MT5-{t_id}",
             "ticket": t_id,
@@ -9712,6 +9733,13 @@ async def get_forex_auto_paper_status():
             "exit_time": d.get("exit_time", d.get("time", "")),
             "exit_reason": d.get("exit_reason", "MT5 Kapanış"),
             "exit_reason_title": d.get("exit_reason_title", "IC Markets MT5"),
+            # KANONİK KAPANIŞ KODU (2026-11-09): köprüden gelen serbest metin
+            # güvenilmez (240/276 "SL" etiketli işlemin 152'si KAZANÇ'tı).
+            # `trade_reasons.canonical_exit_reason` mantık kapısıyla onarır:
+            # kârlı işlem SL olamaz. Ham metin provenance olarak korunur.
+            "exit_reason_code": _reason_info.get("code"),
+            "exit_reason_canonical": _reason_info.get("label"),
+            "exit_reason_repaired": _reason_info.get("contradiction", False),
             "strategy": strategy_from_mt5_deal(d),
             "entry_source": d.get("entry_source", ""),
             "pnl_usd": pnl,
@@ -11236,6 +11264,7 @@ async def export_forex_trades_csv(
         "Kapanış Zamanı (UTC)",
         "İşlem Süresi",
         "Çıkış Nedeni",
+        "Çıkış Kodu",
         "Zarar Durdur (SL)",
         "Kâr Al (TP)",
         "Kâr/Zarar (Pip)",
@@ -11264,6 +11293,7 @@ async def export_forex_trades_csv(
             tr.get("exit_time", "-"),
             tr.get("duration_human", f"{tr.get('duration_sec', 0)} sn" if tr.get("duration_sec") else "-"),
             tr.get("exit_reason_title", tr.get("exit_reason", "IC Markets MT5")),
+            tr.get("exit_reason_code", "-"),
             tr.get("sl_price", "-"),
             tr.get("tp_price", "-"),
             f"{pips:+.1f}",

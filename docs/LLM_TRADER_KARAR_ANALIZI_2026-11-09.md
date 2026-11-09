@@ -178,3 +178,58 @@ R cinsinden normalizasyon **gerçek işlemlerden** yapılamıyor; yalnız gölge
 * Panel metrikleri panelin kendi tanımıyla alındı; ham karar kayıtlarına (517 satır CSV) erişip yeniden hesaplamadım. Panelin kendi "kanıtlanmadı" hükümleri bu yüzden **olduğu gibi** raporlandı.
 * Gölge R ile gerçek USD arasındaki köprü (spread/kayma/trailing) **ölçülmedi** — öneri 8 bunu mümkün kılar.
 * Aynı strateji içinde korelasyonlu işlemler (ör. BTCUSD'de 5 saniye arayla iki giriş) t-testinin bağımsızlık varsayımını zayıflatır; gerçek GA daha geniş olabilir.
+
+---
+
+## 7. UYGULAMA — Sıra 1 & 2 (2026-11-09)
+
+### 7.1 Fail-open → **fail-CLOSED** (varsayılan)
+
+`ForexAutoPaperSettings.llm_review_fail_open` varsayılanı **True → False** yapıldı. Gerekçe alan açıklamasına yazıldı: *"Ölçüm (517 karar): hatalı kararların gölge sonucu −0.17 R, hatasız kararlarınki +0.07 R → hata durumunda işlem açmak kaybettiriyor. Hata oranı %16, medyan gecikme 26 sn."*
+
+**Kayıtlı ayar sessizce EZİLMEDİ.** Disk `forex_auto_settings.json` eski `true` değerini taşıyorsa motor açılışta **yüksek sesle uyarı** basar:
+
+```
+[FX AYAR] llm_review_fail_open=True (kayıtlı ayar). ÖLÇÜM: LLM hata/zaman aşımında
+işlem açmak kaybettiriyor (hata gölge sonucu -0.17 R vs hatasız +0.07 R; hata oranı %16).
+Önerilen: Ayarlar > LLM Trader > fail-closed.
+```
+
+**Neden göç (migration) YAPILMADI:** `persist_settings()` dosyayı `model_dump()` ile baştan yazıyor; tek seferlik göç işareti o dosyada tutulamaz ve kullanıcı panelden `true`'ya döndürdüğünde bir sonraki açılışta tekrar `false`'a çevrilirdi. Kullanıcının **açık seçimini sessizce ezmek** kabul edilemez; varsayılan + görünür uyarı doğru denge.
+
+### 7.2 Kanonik kapanış nedeni — `app/trade_reasons.py` (YENİ)
+
+Kök sorun: kapanış nedeni köprüden gelen **serbest metin**; EA trailing/kısmi kapanışları da "SL" diye işaretliyor. Mantık kapısı: **kârlı bir işlem SL_HIT olamaz** (zarar durdurma tanımı gereği kaybı sınırlar).
+
+Kanıt önceliği: **(1) fiyat** (çıkış ≈ SL/TP seviyesi, %0.08 tolerans) → **(2) metin** (trailing/kısmi/flip/EOD/manuel/scalper-close/TP/SL; *trailing ve kısmi ÖNCE*, çünkü "İz Süren Stop" ikisini de içerir) → **(3) PnL işareti** → UNKNOWN.
+
+**Gerçek CSV üzerinde ölçülen sonuç:**
+
+| Kod | Önce (ham metin) | Sonra (kanonik) |
+|---|---|---|
+🛑 "Zarar Durdur (SL)" | **240** | 88 |
+Kâr olarak onarılan | — | **OTHER_WIN 152** |
+Scalper Close | 35 | 35 |
+🎯 TP | 1 | 1 |
+**Toplam** | 276 | **276** ✓ |
+Çelişki tespit / onarım | — | **152 / 152** |
+Onarım sonrası "SL ama kazanç" | 152 | **0** |
+
+**Kablolama:**
+* `app/routers/forex.py` MT5 kapanış eşlemesi → `exit_reason_code`, `exit_reason_canonical`, `exit_reason_repaired` alanları eklendi. **Ham metin (`exit_reason_title`) provenance olarak korunur.**
+* CSV export'a **"Çıkış Kodu"** kolonu eklendi (ham "Çıkış Nedeni" yanında; veri gizlenmiyor).
+
+**Neden önemli:** "Çıkış kuralı A/B" ölçümü kapanış nedenine dayanıyor; etiket bozukken canlı veriyle hiçbir çıkış varyantı doğrulanamıyordu. Ayrıca `normalize_close_reason()` seri-SL sigortası `SL_HIT` bekliyor — kazançlı kapanışın SL sayılması onu yanlış tetikliyordu.
+
+**Testler:** `tests/test_trade_reasons.py` — 15 test (çelişki onarımı, fiyat kanıtı önceliği, trailing/kısmi sırası, PnL yedeği, CSV dağılımının taklidi).
+
+**Tüm backend:** `2061 passed, 2 failed` (2 kırmızı önceden var).
+
+### 7.3 Sıradaki maddeler (henüz yapılmadı)
+
+| # | İş | Durum |
+|---|---|---|
+3 | LLM güvenini kalibre et + çekimserlik (Brier skill −0.185) | bekliyor — `ml_probability` hazır, LLM karar tablosuyla beslenmeli |
+4 | Vetoyu kaldır / yalnız kalibre eşikle kullan | bekliyor — 3'e bağlı |
+5 | AUD kümesini kapat + yüksek lot kripto sınırı | bekliyor — **7 günlük veri, aşırı uyum riski**; ayar olarak eklenmeli |
+7 | Export'a `radar_score` / `sl_pct` / `tp_pct` | **kısmen**: `exit_reason_code` eklendi; skor/SL/TP köprü payload'ında YOK → köprü tarafı düzeltilmeli |
