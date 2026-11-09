@@ -229,7 +229,31 @@ Onarım sonrası "SL ama kazanç" | 152 | **0** |
 
 | # | İş | Durum |
 |---|---|---|
-3 | LLM güvenini kalibre et + çekimserlik (Brier skill −0.185) | bekliyor — `ml_probability` hazır, LLM karar tablosuyla beslenmeli |
-4 | Vetoyu kaldır / yalnız kalibre eşikle kullan | bekliyor — 3'e bağlı |
-5 | AUD kümesini kapat + yüksek lot kripto sınırı | bekliyor — **7 günlük veri, aşırı uyum riski**; ayar olarak eklenmeli |
-7 | Export'a `radar_score` / `sl_pct` / `tp_pct` | **kısmen**: `exit_reason_code` eklendi; skor/SL/TP köprü payload'ında YOK → köprü tarafı düzeltilmeli |
+3 | LLM güvenini kalibre et + çekimserlik | ✅ **`scripts/report_llm_confidence_calibration.py`** — Brier/log-loss/ECE + izotonik eğri + **eşik önerisi** (`ml_probability` yeniden kullanıldı). Yerelde LLM kaydı olmadığı için **sunucuda** koşulmalı. 10 test |
+4 | Vetoyu kaldır / yalnız kalibre eşikle kullan | ⏸ **bilinçli beklemede** — kalibre eşik + 2-3 hafta gölge veri olmadan vetoyu kaldırmak ölçümsüz müdahale olur |
+5 | AUD kümesini kapat | ✅ **`blocked_symbols`** ayarı (varsayılan AUDCAD/AUDUSD/AUDNZD), girişte **risk kapısından ÖNCE** `continue`. Liste boşaltılarak kapatılabilir. 6 test |
+5b | Yüksek lot kripto sınırı | ⏸ beklemede — mevcut `order_pct` boyutlandırmasıyla çakışıyor; ayrı tasarım gerekir |
+7 | Export'a `radar_score` / `sl_pct` / `tp_pct` | **kısmen**: `exit_reason_code` eklendi; skor/SL/TP köprü payload'ında YOK → köprü (MT5 EA) tarafı düzeltilmeli |
+
+### 7.4 Sıra 3 — LLM güven kalibrasyonu (sunucuda koşulacak)
+
+```
+python -m scripts.report_llm_confidence_calibration --days 60 --save artifacts/llm_confidence_calibration.json
+```
+
+Yaptığı: `llm_trade_reviews` (confidence + `shadow_pips`/`sl_pips` → R) üzerinden
+(a) ham Brier/log-loss/ECE, (b) `ml_probability` ile **izotonik eğri** ve kalibre
+metrikler, (c) güvenilirlik kovaları, (d) **`llm_review_min_confidence` için eşik
+önerisi** — kalibre olasılığın break-even'ı ilk aştığı ham güven değeri. Hiç
+aşmıyorsa "LLM onayı bu veriyle işlem açmayı GEREKTİRMİYOR" der.
+
+**Yerelde 0 satır döndü** (LLM kararları sunucuda birikiyor) — betik veri yokken
+sahte eğri üretmiyor, açıkça söylüyor.
+
+### 7.5 Sıra 5 — sembol koruması
+
+`ForexAutoPaperSettings.blocked_symbols` varsayılan **AUDCAD, AUDUSD, AUDNZD**
+(açıklamada: n=19, −6.11 USD/işlem, t=−4.12, **7 günlük veri → aşırı uyum riski**).
+Giriş döngüsünde **risk kapısından ÖNCE** kontrol edilir ve `continue` eder
+(boşa LLM çağrısı/gecikme olmasın). Karşılaştırma büyük harf; liste boşaltılırsa
+koruma tamamen kapanır.

@@ -5688,6 +5688,10 @@ class ForexAutoPaperSettings(BaseModel):
     news_bias_bypass_filters: bool = Field(False, description="Takvim yönü sinyali DESTEKLİYORSA yumuşak filtreleri atla (major seans/min-ATR, skor eşiği, ADX, SuperTrend). MALİYET/RİSK kapıları (spread, korelasyon, seri-SL, soğuma, EV, lot bütçesi, maks pozisyon) ASLA atlanmaz. Varsayılan KAPALI — bu bir strateji değişikliğidir, OOS replay kanıtı ister.")
     news_bias_window_sec: float = Field(900.0, ge=60.0, le=3600.0, description="Açıklamadan sonra yönün geçerli sayıldığı pencere (saniye; varsayılan 900 = 15 dk)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
+    blocked_symbols: List[str] = Field(
+        default_factory=lambda: ["AUDCAD", "AUDUSD", "AUDNZD"],
+        description="İşlem AÇILMAYACAK pariteler (kara liste). Varsayılan AUD kümesi 2026-11-09 ölçümüyle: n=19, ortalama -6.11 USD/işlem, t=-4.12 (%95 anlamlı), 7 günde -116 USD. 7 GÜNLÜK VERİ olduğu için aşırı uyum riski vardır — boş liste ile kapatılabilir.",
+    )
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
                                  "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"],
@@ -9353,6 +9357,23 @@ async def _forex_auto_paper_loop():
                     continue
 
                 entry_p = t["ask"] if direction == "BUY" else t["bid"]
+
+                # 8b1. SEMBOL KORUMASI (2026-11-09): ölçümle kanıtlanmış zarar ettiren
+                # paritelerde işlem açılmaz. Kara liste ayardan gelir (varsayılan AUD
+                # kümesi; t=-4.12, n=19). Risk kapısından ÖNCE çalışır: boşa LLM/risk
+                # çağrısı ve boşa gecikme olmasın.
+                _blocked_syms = {str(x).strip().upper() for x in (_AUTO_SETTINGS.blocked_symbols or [])}
+                if sym in _blocked_syms:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_blocked", 0) > 300.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_blocked"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand.get('display', sym)}] ⛔ Sembol koruması: bu parite kara listede "
+                            f"(ölçülen negatif beklenti). Ayarlar > blocked_symbols.",
+                            symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                            metadata={"blocked_symbols": sorted(_blocked_syms)},
+                        )
+                    continue
 
                 # 8b2. Portföy risk kapısı (deterministik, LLM'den bağımsız; araştırma Alan 3 + kart 2.4/1.6).
                 # shadow modda yalnız günlüğe "engellerdi" yazar; enforce modda engeller / lotu drawdown çarpanıyla küçültür.
