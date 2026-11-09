@@ -363,3 +363,52 @@ curl -s localhost:8000/api/system/health | jq .ml_calibration
 Sağlık bloğu: `enabled`, `artifact_loaded`, `artifact_samples`, `observations`, `calibrated_observations`, `would_abstain`, `abstain_rate_pct`, `mean_raw`, `mean_calibrated`.
 
 **Tüm backend testleri:** `1949 passed, 2 failed` (2 kırmızı önceden var).
+
+---
+
+## 11. P2 TURU — Seans pencereleri (P2-10)
+
+### 11.1 Neden `pandas_market_calendars` DEĞİL
+
+Araştırma P2-10 için `pandas_market_calendars` öneriyordu. **Üretim imajında pandas yok** (`requirements.txt`: numpy + scikit-learn). FX seans sınırları sabit UTC saatleridir → pandas gerekmez. Aynı işlev **bağımlılıksız** (yalnız `datetime`) yazıldı: `app/session_windows.py`.
+
+### 11.2 Ne sağlıyor
+
+| Fonksiyon | Çıktı |
+|---|---|
+| `active_sessions(dt)` | aynı anda açık seanslar (`asia`, `london`, `new_york`) |
+| `in_overlap(dt)` | Londra ∩ NY (12:00–16:00 UTC) — günün en likit penceresi |
+| `is_dead_zone(dt)` | 21:00+ UTC veya hafta sonu → düşük likidite |
+| `liquidity_score(dt)` | 0.0 (kapalı) → 1.0 (örtüşme) |
+| `spread_risk_window(dt)` | seans açılış/kapanışına ±15 dk → `"open"`/`"close"` |
+| `is_weekend_closed(dt)` | Cuma 21:00 UTC → Pazar 21:00 UTC kapalı |
+| `describe(dt)` | tek sözlükte tüm bağlam + Türkçe etiket |
+
+Ölçülen çıktı (2026-11-09, Pazartesi):
+
+```
+02:00 UTC  likidite=0.50  Asya
+08:00 UTC  likidite=0.80  Asya + Londra
+10:00 UTC  likidite=0.80  Londra
+13:00 UTC  likidite=1.00  Londra+NY örtüşmesi (en likit)
+18:00 UTC  likidite=0.80  New York
+22:00 UTC  likidite=0.20  Ölü bölge (düşük likidite)
+Cumartesi  likidite=0.00  PİYASA KAPALI (hafta sonu)
+```
+
+### 11.3 Entegrasyon — SKORLAMAYA DOKUNMADAN
+
+| Yer | Ne eklendi |
+|---|---|
+| `combined_radar.build_unified_envelope()` | `"session": session_windows.describe()` — **bilgi alanı, `score`'a girmez** |
+| `/api/system/health` → `market.session` | aynı bağlam, ops/UI görünürlüğü |
+
+**Bilinçli karar:** seans bilgisini skorlamaya/kapıya sokmak **backtest ister**. Bu turda yalnız görünürlük sağlandı; filtre olarak kullanmak ölçülmüş bir sonraki adımdır (aynı disiplin: `ml_shadow`).
+
+### 11.4 Testler
+
+`tests/test_session_windows.py` — **23 test**: seans sınıflandırma, örtüşme sınırları (16:00 kesme), ölü bölge, hafta sonu geçişleri (Cuma 21:00 / Pazar 21:00), spread-risk penceresi, naif datetime'ın UTC sayılması, farklı tz dönüşümü, gece yarısını aşan pencere mantığı.
+
+**Yakalanan 1 hata:** Pazar 21:00'de piyasa *açılıyor* ama seans yok → likidite 0.0 değil **0.2 (ölü bölge)**. Test beklentim yanlıştı, kod doğruydu; test gerçek davranışa göre düzeltildi ve Asya skorundan küçük olduğu kilitlendi.
+
+**Tüm backend:** `1972 passed, 2 failed` (2 kırmızı önceden var).

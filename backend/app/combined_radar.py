@@ -36,6 +36,7 @@ TASARIM KARARLARI:
       kullanır; canlıda zaten kaynak başına tek olay gelir).
 """
 from __future__ import annotations
+from . import session_windows
 
 from collections import defaultdict
 from typing import Any, Iterable
@@ -411,4 +412,8 @@ def build_unified_envelope(candidate: dict) -> dict:
         # birleşik motor taze üretim yapar → her zaman False.
         "updated": False,
         "notification_key": f"radar-{candidate['symbol']}",
+        # SEANS BAĞLAMI (2026-11-09, P2-10): likidite/ölü bölge/spread riski.
+        # SADECE BİLGİ — `score`'a GİRMEZ, kapı değildir. Skorlamayı seans ile
+        # değiştirmek backtest ister; bu alan önce UI/raporda görünürlük sağlar.
+        "session": session_windows.describe(),
     }
