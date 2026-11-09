@@ -50,6 +50,18 @@ except Exception:
     _INVESTING_DEPS_AVAILABLE = False
 
 # Önbellek ve Senkronizasyon Ayarları
+#: Investing.com engellediğinde kaynağı bu süre boyunca HİÇ denemeyiz.
+#: Ban derinleşmesini önler ve log spam'ini keser; 3 saatlik senkron zaten var.
+INVESTING_BLOCK_COOLDOWN_SEC = 15 * 60
+
+#: Parmak izi profilleri EN YENİDEN ESKİYE. 2026-11-09 ölçümü: chrome120 ve
+#: chrome124 Investing.com tarafından 403 ile engelleniyor, chrome131 çalışıyor.
+#: curl_cffi yeni profil yayınladıkça listenin BAŞINA ekleyin.
+_INVESTING_PROFILES = ("chrome131", "chrome124", "chrome120")
+
+_investing_blocked_until = 0.0
+_investing_blocked_reason = ""
+
 _CACHE_TTL_SEC = 300  # 5 dakika bellek tazeleme
 CALENDAR_REFRESH_INTERVAL_SEC = 3 * 3600  # 3 saatte bir arka planda kontrol ve DB güncelleme
 # Saati geçip "Açıklanan" değeri henüz gelmemiş olay varsa sağlayıcı bu aralıkla
@@ -1533,6 +1545,29 @@ def parse_investing_payload(html_text: str, now_utc: Optional[datetime.datetime]
         return []
 
 
+def _mark_investing_blocked(reason: str) -> None:
+    """Kaynağı bir süre devre dışı bırak (ban derinleşmesin)."""
+    global _investing_blocked_until, _investing_blocked_reason
+    _investing_blocked_until = time.time() + INVESTING_BLOCK_COOLDOWN_SEC
+    _investing_blocked_reason = reason
+    logger.warning(
+        "[EconomicCalendar] Investing.com %d dk dinlendirilecek (sebep: %s). "
+        "Takvim bu süre boyunca DB/disk önbelleğinden sunulur.",
+        INVESTING_BLOCK_COOLDOWN_SEC // 60, reason,
+    )
+
+
+def investing_block_state() -> Dict[str, Any]:
+    """Sağlık/UI yüzeyi: kaynak şu an dinleniyor mu?"""
+    remaining = max(0.0, _investing_blocked_until - time.time())
+    return {
+        "blocked": remaining > 0,
+        "remaining_sec": round(remaining, 1),
+        "reason": _investing_blocked_reason or None,
+        "profiles": list(_INVESTING_PROFILES),
+    }
+
+
 async def fetch_investing_com_events() -> List[Dict[str, Any]]:
     """Investing.com takvimini çeker ve ayrıştırır.
 
@@ -1545,6 +1580,11 @@ async def fetch_investing_com_events() -> List[Dict[str, Any]]:
     (kaynak sessizce ölü kalmasın — 2026-10-10'a kadar tam olarak bu oluyordu),
     engelleme/limit (403/429) `logger.warning` ile durum koduyla raporlanır.
     """
+    if _investing_blocked_until > time.time():
+        logger.debug("[EconomicCalendar] Investing.com dinlenmede (%.0f sn kaldı), atlandı.",
+                     _investing_blocked_until - time.time())
+        return []
+
     if not _INVESTING_DEPS_AVAILABLE:
         logger.error(
             "[EconomicCalendar] Investing.com kaynağı DEVRE DIŞI: `curl_cffi` kurulu "
@@ -1556,39 +1596,63 @@ async def fetch_investing_com_events() -> List[Dict[str, Any]]:
     def _fetch() -> Optional[str]:
         from curl_cffi import requests
 
+        # 2026-11-09 — 403 KÖK NEDENİ ÖLÇÜLDÜ: `impersonate="chrome120"` profili
+        # Investing.com tarafından ENGELLENİYOR (canlı test: chrome120 → HTTP 403,
+        # chrome124 → 403, **chrome131 → HTTP 200 + payload OK**). İstek sıklığı
+        # zaten doğruydu (`_CACHE_TTL_SEC=300`, `CALENDAR_REFRESH_INTERVAL_SEC=3h`),
+        # yani suçlu sıklık değil, ÖLÜ PARMAK İZİ profiliydi.
+        #
+        # İkinci hata: kod `User-Agent`'ı elle `Chrome/124` diye eziyordu ama
+        # `impersonate` chrome120'ye ait TLS/başlık düzenini kuruyor. UA ile
+        # parmak izi uyuşmazlığı bot tespitini KOLAYLAŞTIRIR. Artık UA
+        # override EDİLMEZ — curl_cffi profilin kendi UA'sını kullanır.
+        #
+        # Üçüncü dayanıklılık: profil listesi sırayla denenir; biri engellenirse
+        # diğeri devreye girer. Böylece bir sonraki engelleme kaynağı tamamen
+        # öldürmez (2026-10-10'da kaynağın sessizce ölmesiyle aynı sınıf hata).
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://www.investing.com/",
         }
-        try:
-            r = requests.get(
-                "https://www.investing.com/economic-calendar/",
-                headers=headers,
-                impersonate="chrome120",
-                timeout=7,
-            )
-        except Exception as exc:
-            logger.warning("[EconomicCalendar] Investing.com bağlantı hatası: %s", exc)
-            return None
-
-        if r.status_code in (403, 429):
-            logger.warning(
-                "[EconomicCalendar] Investing.com engelledi: HTTP %s (%s). "
-                "İstek sıklığı düşük tutulmalı (3 saatlik senkron + 5 dk önbellek).",
-                r.status_code, "rate limit" if r.status_code == 429 else "forbidden",
-            )
-            return None
-        if r.status_code != 200:
-            logger.warning("[EconomicCalendar] Investing.com beklenmeyen durum: HTTP %s", r.status_code)
-            return None
-        if "economicCalendarStore" not in r.text:
-            logger.debug(
-                "[EconomicCalendar] Investing.com gövdesi beklenen `economicCalendarStore` "
-                "yükünü taşımıyor (sayfa yapısı değişmiş olabilir)."
-            )
-            return None
-        return r.text
+        blocked_statuses = (403, 429)
+        url = "https://www.investing.com/economic-calendar/"
+        for profile in _INVESTING_PROFILES:
+            try:
+                r = requests.get(url, headers=headers, impersonate=profile, timeout=10)
+            except Exception as exc:
+                logger.warning("[EconomicCalendar] Investing.com bağlantı hatası (%s): %s",
+                               profile, exc)
+                continue
+            if r.status_code in blocked_statuses:
+                logger.warning(
+                    "[EconomicCalendar] Investing.com engelledi (%s): HTTP %s (%s) — "
+                    "sıradaki parmak izi profili denenecek.",
+                    profile, r.status_code,
+                    "rate limit" if r.status_code == 429 else "forbidden",
+                )
+                if r.status_code == 429:
+                    _mark_investing_blocked("rate limit")
+                    return None
+                continue
+            if r.status_code != 200:
+                logger.warning("[EconomicCalendar] Investing.com beklenmeyen durum (%s): HTTP %s",
+                               profile, r.status_code)
+                continue
+            if "economicCalendarStore" not in r.text:
+                logger.debug(
+                    "[EconomicCalendar] Investing.com gövdesi beklenen "
+                    "`economicCalendarStore` yükünü taşımıyor (sayfa yapısı değişmiş "
+                    "olabilir) — profil %s.", profile,
+                )
+                continue
+            if profile != _INVESTING_PROFILES[0]:
+                logger.info("[EconomicCalendar] Investing.com yedek parmak iziyle "
+                            "çalıştı: %s", profile)
+            return r.text
+        # Hiçbir profil geçemedi → kaynağı bir süre dinlendir (ban derinleşmesin).
+        _mark_investing_blocked("all profiles blocked")
+        return None
 
     loop = asyncio.get_running_loop()
     html_text = await loop.run_in_executor(None, _fetch)
