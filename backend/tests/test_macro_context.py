@@ -104,22 +104,51 @@ class TestCotFailClosed(unittest.TestCase):
         finally:
             cot_positions.summary = orig
 
-    def test_crowded_and_divergence_notes(self):
+    def _summary(self, cur, **stats):
+        base = {"bias": 0.9, "stance": "LONG", "crowding_pct": 99.0, "crowded": True,
+                "lev_net": 100.0, "change_wow_pct": 1.0, "lev_net_pct": 45.0,
+                "asset_mgr_net_pct": -20.0}
+        base.update(stats)
+        return {
+            "available": True, "report_date": "2026-11-03", "age_days": 2.0, "stale": False,
+            "currencies": {cur: base}, "unavailable": [],
+        }
+
+    def test_crowded_and_material_divergence_notes(self):
         from app import cot_positions
         orig = cot_positions.summary
-        cot_positions.summary = lambda *a, **k: {
-            "available": True, "report_date": "2026-11-03", "age_days": 2.0, "stale": False,
-            "currencies": {"JPY": {"bias": 0.9, "stance": "LONG", "crowding_pct": 99.0,
-                                   "crowded": True, "lev_net": 100.0, "change_wow_pct": 1.0,
-                                   "divergence": True}},
-            "unavailable": [],
-        }
+        cot_positions.summary = lambda *a, **k: self._summary("JPY", divergence=True)
         try:
             b = cx.cot_block("GBPJPY")
             self.assertIn("kalabalık LONG", b["note"])
-            self.assertIn("AYRIŞIYOR", b["note"])
+            self.assertIn("ZIT yönde", b["note"], "materyal ayrışma raporda olmalı")
+            self.assertIn("+45.0", b["note"], "büyüklük yazılmalı (LLM tartabilsin)")
+            self.assertIn("-20.0", b["note"])
         finally:
             cot_positions.summary = orig
+
+    def test_immaterial_divergence_is_not_called_divergence(self):
+        """CANLI VAKA (2026-11-09): JPY lev -3.9% vs am +20.9% -> işaretler zıt ama
+        lev NÖTR. Eşiksiz sürümde 7 para biriminin 6'sı "ayrışma" diyordu."""
+        from app import cot_positions
+        orig = cot_positions.summary
+        cot_positions.summary = lambda *a, **k: self._summary(
+            "JPY", divergence=True, lev_net_pct=-3.9, asset_mgr_net_pct=20.9)
+        try:
+            b = cx.cot_block("GBPJPY")
+            self.assertNotIn("ZIT yönde", b["note"])
+            self.assertIn("ayrışma sayılmadı", b["note"])
+        finally:
+            cot_positions.summary = orig
+
+    def test_materiality_threshold_unit(self):
+        from app.cot_positions import is_material_divergence
+        self.assertTrue(is_material_divergence({"lev_net_pct": 15.2, "asset_mgr_net_pct": -39.8}))
+        self.assertFalse(is_material_divergence({"lev_net_pct": -3.9, "asset_mgr_net_pct": 20.9}))
+        self.assertFalse(is_material_divergence({"lev_net_pct": -24.8, "asset_mgr_net_pct": 4.7}))
+        self.assertFalse(is_material_divergence({"lev_net_pct": -12.7, "asset_mgr_net_pct": -15.7}))
+        self.assertIsNone(is_material_divergence({"lev_net_pct": 20.0, "asset_mgr_net_pct": None}))
+        self.assertIsNone(is_material_divergence({}))
 
 
 class TestEdgeValidationArtifact(unittest.TestCase):

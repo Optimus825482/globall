@@ -100,11 +100,34 @@ def cot_block(symbol: str | None = None, *, currencies: Iterable[str] | None = N
             + (" (USD satırı TFF raporunda bulunmaz — rapor majörleri USD'ye karşı verir)" if "USD" in missing else "")
         )
     for cur, st in picked.items():
+        try:
+            lev = float(st.get("lev_net_pct"))
+        except (TypeError, ValueError):
+            lev = 0.0
+        am_raw = st.get("asset_mgr_net_pct")
         if st.get("crowded"):
             side = "LONG" if float(st.get("lev_net") or 0) > 0 else "SHORT"
-            notes.append(f"{cur}: kalabalık {side} (yüzdeli̇k {st.get('crowding_pct')}%) → ters hareket riski yüksek")
-        if st.get("divergence"):
-            notes.append(f"{cur}: sıcak para ile gerçek para AYRIŞIYOR (lev vs asset-mgr) → sinyal güvenilirliği düşük")
+            notes.append(f"{cur}: kalabalık {side} (|lev| {abs(lev):.1f}%OI, yüzdeli̇k "
+                         f"{st.get('crowding_pct')}%) → ters hareket riski yüksek")
+        # AYRIŞMA ARTIK EŞİKLİ: yalnız iki taraf da ANLAMLI büyüklükteyse
+        # (2026-11-09: eşiksiz hâlde 7 para biriminin 6'sı "ayrışma" diyordu →
+        # uyarı bilgi taşımıyordu). Sayılar da yazılır ki LLM büyüklüğü tartabilsin.
+        # `divergence_material` yoksa (eski/harici yük) yüzdelerden YENİDEN hesapla —
+        # eski `divergence` bayrağına körlemesine güvenmek eşiği atlatırdı.
+        material = st.get("divergence_material")
+        if material is None:
+            from app.cot_positions import is_material_divergence
+            material = is_material_divergence(st)
+        if material and am_raw is not None:
+            try:
+                am = float(am_raw)
+            except (TypeError, ValueError):
+                am = 0.0
+            notes.append(f"{cur}: sıcak para (lev {lev:+.1f}%OI) ile gerçek para "
+                         f"(asset-mgr {am:+.1f}%OI) ZIT yönde → sinyal güvenilirliği düşük")
+        elif st.get("divergence") and not material:
+            notes.append(f"{cur}: lev/asset-mgr işaretleri zıt ama bir taraf nötre yakın "
+                         f"(lev {lev:+.1f}%OI) → ayrışma sayılmadı")
     if stale:
         notes.append(f"COT raporu eski ({data.get('age_days')} gün) — tazelenmeli.")
     return {
@@ -143,11 +166,42 @@ def compact_lines(symbol: str | None = None) -> list[str]:
     lines = [f"Seans: {ses.get('label')} (UTC {ses.get('utc')}) · likidite {ses.get('liquidity_score')} · {ses.get('note')}"]
     cot = ctx["cot_pozisyonlanma"]
     if cot.get("available"):
-        lines.append(f"COT ({cot.get('report_date')}, {cot.get('age_days')} gün): {cot.get('note')}")
-        for cur, st in (cot.get("currencies") or {}).items():
+        # ÖZET satırı kısa tutulur; bayraklar ve BÜYÜKLÜKLER para birimi
+        # satırlarına yazılır. LLM uzun "|" zincirinden büyüklük okuyamıyordu.
+        cur_map = cot.get("currencies") or {}
+        mat = [c for c, st in cur_map.items() if st.get("divergence_material")]
+        crowd = [c for c, st in cur_map.items() if st.get("crowded")]
+        bits = []
+        if mat:
+            bits.append(f"anlamlı ayrışma {len(mat)}/{len(cur_map)} ({', '.join(sorted(mat))})")
+        if crowd:
+            bits.append(f"kalabalık: {', '.join(sorted(crowd))}")
+        ozet = "; ".join(bits) if bits else "belirgin kalabalık/ayrışma yok"
+        lines.append(f"COT ({cot.get('report_date')}, {cot.get('age_days')} gün): {ozet}")
+        # Yalnız "veri YOK" bilgisi ayrıca yazılır (sessiz boşluk olmasın); geri
+        # kalan yorum satırları aşağıdaki para birimi satırlarında zaten var.
+        if cot.get("unavailable_for"):
+            lines.append(f"  COT satırı doğrudan yok: {', '.join(cot.get('unavailable_for') or [])}")
+        for cur, st in cur_map.items():
+            try:
+                lev = float(st.get("lev_net_pct"))
+            except (TypeError, ValueError):
+                lev = 0.0
+            am = st.get("asset_mgr_net_pct")
+            flags = []
+            if st.get("crowded"):
+                flags.append(f"⚠KALABALIK %{st.get('crowding_pct')}")
+            if st.get("divergence_material"):
+                try:
+                    am_f = float(am)
+                except (TypeError, ValueError):
+                    am_f = 0.0
+                flags.append(f"⚠AYRIŞMA (lev {lev:+.1f} / am {am_f:+.1f} %OI)")
             lines.append(
-                f"  {cur}: bias {st.get('bias')} ({st.get('stance')}) · kalabalık %{st.get('crowding_pct')}"
-                f" · haftalık değişim {st.get('change_wow_pct')}pp"
+                f"  {cur}: bias {st.get('bias')} ({st.get('stance')}) · lev {lev:+.1f}%OI"
+                + (f" · am {float(am):+.1f}%OI" if am is not None else "")
+                + f" · haftalık {st.get('change_wow_pct')}pp"
+                + (f" · {' · '.join(flags)}" if flags else "")
             )
     else:
         lines.append(f"COT: {cot.get('reason')}")

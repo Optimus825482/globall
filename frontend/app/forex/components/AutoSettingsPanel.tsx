@@ -729,7 +729,7 @@ export default function AutoSettingsPanel({
                               {Number(st.bias) > 0 ? "+" : ""}{Number(st.bias).toFixed(2)}
                             </b>
                             {st.crowded ? <span className="text-amber-300"> ⚠kalabalık</span> : null}
-                            {st.divergence ? <span className="text-amber-300"> ⚠ayrışma</span> : null}
+                            {st.divergence_material ?? st.divergence ? <span className="text-amber-300"> ⚠ayrışma</span> : null}
                           </span>
                         ))}
                       </div>

@@ -66,6 +66,13 @@ BIAS_SCALE_PCT = 15.0
 NEUTRAL_BAND = 0.25
 #: Kalabalık sayılma yüzdelik eşiği.
 CROWDED_PERCENTILE = 90.0
+#: Ayrışmanın "anlamlı" sayılması için HER İKİ tarafın da en az bu kadar
+#: (|%OI|) pozisyon taşıması gerekir. NEDEN: ayrışma yalnız "işaretler zıt mı"
+#: diye ölçülünce neredeyse HER para biriminde yanıyordu (2026-11-09 canlı veri:
+#: 7'nin 6'sı) — JPY'de lev -3.9% vs amgr +20.9% "ayrışma" sanılıyordu, oysa
+#: -3.9% fiilen NÖTR. Uyarı her yerde yanarsa hiçbir bilgi taşımaz.
+#: NOT: Bu bir GÖRÜNTÜ/bağlam eşiğidir, işlem kuralı değildir — backtest edilmedi.
+DIVERGENCE_MIN_PCT = 8.0
 #: Artefakt bu kadar günden eskiyse `stale=True` (haftalık rapor → 8 gün tolerans).
 STALE_DAYS = 8
 
@@ -151,6 +158,29 @@ def _stance(bias: float) -> str:
     return "NEUTRAL"
 
 
+def is_material_divergence(stats: dict, min_pct: float = DIVERGENCE_MIN_PCT) -> Optional[bool]:
+    """Sıcak para (lev) ile gerçek para (asset-mgr) ANLAMLI biçimde zıt mı?
+
+    ``None`` = veri yok (asset_mgr yayınlanmamış). ``True`` yalnız iki taraf da
+    zıt işaretli VE her ikisi de ``min_pct`` eşiğinin üzerindeyse döner.
+    Eşik olmadan bu bayrak neredeyse her para biriminde yanıyordu (2026-11-09).
+    """
+    try:
+        lev = float(stats.get("lev_net_pct"))
+    except (TypeError, ValueError):
+        return None
+    raw_am = stats.get("asset_mgr_net_pct")
+    if raw_am is None:
+        return None
+    try:
+        am = float(raw_am)
+    except (TypeError, ValueError):
+        return None
+    if abs(lev) < float(min_pct) or abs(am) < float(min_pct):
+        return False
+    return (lev > 0) != (am > 0)
+
+
 def compute_currency_stats(series: list[dict[str, Any]]) -> dict[str, Any]:
     """Tek para biriminin zaman serisinden güncel durum + tarihsel istatistik."""
     if not series:
@@ -166,10 +196,8 @@ def compute_currency_stats(series: list[dict[str, Any]]) -> dict[str, Any]:
     if len(series) >= 2:
         wow = round(lev_pct - float(series[-2]["lev_net_pct"]), 3)
     # Ayrışma: sıcak para ile gerçek para zıt yönde mi?
-    divergence = None
     am_pct = latest.get("asset_mgr_net_pct")
-    if am_pct is not None:
-        divergence = (lev_pct > 0) != (am_pct > 0)
+    divergence = is_material_divergence({"lev_net_pct": lev_pct, "asset_mgr_net_pct": am_pct})
     return {
         "date": latest["date"],
         "open_interest": latest["open_interest"],
@@ -285,7 +313,12 @@ def summary(artifact: dict[str, Any] | None = None) -> dict[str, Any]:
         "age_days": age,
         "stale": bool(age is not None and age > STALE_DAYS),
         "generated_at": data.get("generated_at"),
-        "currencies": data.get("currencies") or {},
+        # Okuma anında yeniden hesaplanır: eşik değiştiğinde ESKİ artefaktlar da
+        # doğru bayrağı gösterir (yeniden indirme beklemeden).
+        "currencies": {
+            cur: {**st, "divergence_material": is_material_divergence(st)}
+            for cur, st in (data.get("currencies") or {}).items()
+        },
         "unavailable": data.get("unavailable") or [],
     }
 
