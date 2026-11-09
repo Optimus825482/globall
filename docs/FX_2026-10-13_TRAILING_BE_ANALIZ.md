@@ -212,3 +212,65 @@ Kaymada da sıralama korunuyor → etki spread-gürültüsü artefaktı değil.
 çözünürlüğüne bağlı olduğunu gösteriyor; (c) sabit-pip trail sweep'i global bir
 `--trail-pips` kullandı, canlı ise sembol başına farklı değer (XAU 40 / BTC 48) —
 yassı sonuç per-sembol incelikleri gizliyor olabilir, ama hiçbir eğim göstermiyor.
+
+---
+
+# 2026-11-09 EK — `chandelier_atr_mult` 0.3 → 0.1 (sıkma DEVAM ETTİ)
+
+**Tetikleyen:** kullanıcı gözlemi — *"trailingler çok uzaktan takip ediyor, şu andaki
+takip mesafesine göre üçte bir oranına yaklaştıralım."* Yani 0.3 → **0.1**.
+
+**Neden gözlem doğruydu (ölçüm):** bu dosyadaki §4 tablosunda 0.2, 0.3'ten *daha iyi*
+görünüp "15 dk bar çekingenliğiyle" elenmişti. Gradyan hiç ters dönmemişti; sadece test
+edilmemişti. Bu turda aynı yöntemle (replay, XAUUSD+BTCUSD, kaymasız ve 2 pip kaymalı)
+0.1 ölçüldü.
+
+## Aynı pencere, 4 kademe (14 gün, kaymasız, NEW kolu)
+
+| chand | n | WR% | net $ | ort. $ | PF | maxDD $ |
+|---|---|---|---|---|---|---|
+| 0.3 (eski canlı) | 810 | 85.7 | 62,020 | 76.6 | 1.93 | 3,443 |
+| 0.2 | 847 | 86.1 | 81,481 | 96.2 | 2.18 | 3,324 |
+| 0.15 | 848 | 86.1 | 89,475 | 105.5 | 2.30 | 3,605 |
+| **0.1 (yeni canlı)** | 849 | 86.1 | **101,357** | 119.4 | **2.47** | 3,502 |
+
+0.3 → 0.1: **net +63%**, PF **1.93 → 2.47**, WR +0.4 puan, maxDD **aynı** (~3.5k),
+SL sayısı 116 → 118 (yani "kaybedeni kesme" değil, gerçek kâr kilitleme).
+
+**Çıkış dağılımı (asıl kanıt):** BE 299 → **25**, TRAIL 395 → **706**.
+0.3'te chandelier çoğu pozisyonda BE devralmadan ateşleyemiyordu → kâr tepeden geri
+veriliyordu. Kullanıcının gördüğü tam olarak buydu.
+
+**Sembol ayrımı:** iki sembolde de kazanç — XAU 58.0k → 92.8k, BTC 4.0k → 8.6k
+(altına özel artefakt değil).
+
+## Yanlış-pozitif testleri
+
+**2 pip aleyhe kayma (14 gün):**
+
+| chand | n | WR% | net $ | PF | maxDD $ |
+|---|---|---|---|---|---|
+| 0.3 | 715 | 76.8 | 15,694 | 1.21 | **10,140** |
+| 0.1 | 806 | 80.9 | **56,519** | **1.72** | **4,485** |
+
+Sıkı trailing maliyet stresinde de kazanıyor ve **maxDD'yi yarıya indiriyor** — "sıkı
+trail gürültüde ölür" itirazı bu veride geçersiz.
+
+**30 gün (daha uzun pencere):**
+
+| chand | n | WR% | net $ | PF | maxDD $ |
+|---|---|---|---|---|---|
+| 0.3 | 1,241 | 82.0 | 62,670 | 1.58 | 6,150 |
+| 0.1 | 1,257 | 81.9 | **107,103** | **1.99** | **4,308** |
+
+WR **aynı** (82.0 → 81.9) — kazanç isabet oranından değil, kârın korunmasından geliyor.
+
+## Karar ve geri alma
+
+- `CANLI_CHANDELIER_ATR_MULT = 0.1` (`forex.py`), kilit: `test_forex_enhancements.py`
+  `test_chandelier_default_is_replay_verified` + sabit karşılaştırması.
+- Panelden/ayar dosyasından **ezilemez** (kod sabiti) — geri almak için sabiti düzenle.
+- **Açık kalan risk:** 0.1 ile 0.05 arası ölçülmedi; gradyan hâlâ monoton görünüyor ama
+  0.1 seçildi çünkü (a) üç pencerede de maxDD bozulmadı, (b) WR erozyonu başladı mı diye
+  30 günde kontrol edildi (başlamadı). Bir sonraki adım 0.05'i ölçmek olurdu — **bu turda
+  YAPILMADI**, "daha sıkı daha iyi" varsayımıyla ilerlenmedi.

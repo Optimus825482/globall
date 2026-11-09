@@ -5591,14 +5591,27 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 # `ForexAutoPaperSettings` varsayılanı olur VE açılışta kalıcı dosyadan yüklenen değerlerin
 # üzerine zorlanır — böylece sunucu eski dosyayla açılsa bile canlı bu değerleri kullanır.
 #
-# chandelier_atr_mult = 0.3: kâr tepesinden 0.3×GİRİŞ ATR'si geri verilince kilit.
-#   4 bağımsız pencerede kazanan (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF ↑, maxDD ↓),
-#   2-pip kaymada korunuyor. XAU+BTC replay: chand0.3 $4305.70/PF 1.87 vs en iyi
-#   sabit-pip $3950.88/1.80; chand1.2 (eski canlı değer) $3863 — sabit-pipten KÖTÜ.
-#   Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md
+# chandelier_atr_mult = 0.1: kâr tepesinden 0.1×GİRİŞ ATR'si geri verilince kilit.
+#   2026-11-09 KULLANICI GÖZLEMİ ("trailingler çok uzaktan takip ediyor") REPLAY'LE
+#   DOĞRULANDI ve sıkma DEVAM ETTİ. Aynı 14 günlük pencere (XAUUSD+BTCUSD, kaymasız,
+#   NEW kolu):
+#     chand   n    WR%    net $     ort.$   PF    maxDD $
+#     0.3    810  85.7   62,020     76.6   1.93   3,443     ← eski canlı
+#     0.2    847  86.1   81,481     96.2   2.18   3,324
+#     0.15   848  86.1   89,475    105.5   2.30   3,605
+#     0.1    849  86.1  101,357    119.4   2.47   3,502     ← YENİ canlı
+#   0.3 → 0.1: net +63%, PF 1.93→2.47, WR +0.4 puan, maxDD AYNI (~3.5k), SL sayısı
+#   değişmedi (116→118) — yani sadece "kaybedeni kesme" değil, gerçek kâr kilitleme.
+#   Çıkış dağılımı kanıtı: BE 299→25, TRAIL 395→706. 0.3'te chandelier çoğu zaman BE
+#   devralmadan ateşleyemiyordu → kâr tepeden geri veriliyordu (kullanıcının şikâyeti).
+#   İKİ SEMBOLDE de kazanç (XAU 58.0k→92.8k, BTC 4.0k→8.6k) → altına özel artefakt değil.
+#   Geçmiş (2026-10-13) 1.2→0.3 sıkma 4 bağımsız pencerede kazanmıştı; 0.2 "biraz daha
+#   iyi" görünüp 15 dk bar çekingenliğiyle elenmişti. Bu turda gradyan 0.1'e kadar
+#   monoton ve maxDD bozulmadı → ölçülü değer artık 0.1.
+#   Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md (§2026-11-09 ek bölümü)
 # ls_symbols = XAUUSD + US30 + NAS100: LS kolunun işlem açabildiği evren. NAS100
 #   (= MT5 'USTEC') üç pencerede de pozitif ve XAU/US30 pnl'ini düşürmüyor.
-CANLI_CHANDELIER_ATR_MULT = 0.3
+CANLI_CHANDELIER_ATR_MULT = 0.1
 CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 # Keltner Squeeze (M15) canlı sembol sabiti — kanıt 5 kanonik sembolde toplandı
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
@@ -5711,7 +5724,7 @@ class ForexAutoPaperSettings(BaseModel):
     crypto_risk_clamp_enabled: bool = Field(True, description="Kripto/altında risk-skip bypass'ı yerine lotu kategori tabanına SABİTLE (risk asla artmaz; eski davranış aşırı lotu kullanıyordu — 2026-10-10 denetim P0-4)")
     loss_streak_limit: int = Field(2, ge=0, le=10, description="Seri-SL sigortası: aynı sembolde 2 ardışık tam-SL kaybında yeni girişler durur (0 = kapalı; varsayılan: 2)")
     loss_streak_cooldown_sec: float = Field(900.0, ge=0.0, le=3600.0, description="Seri-SL tetiklenince sembolün yeni giriş soğuma penceresi (15 dk = 900 sn)")
-    chandelier_atr_mult: float = Field(CANLI_CHANDELIER_ATR_MULT, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. **Bu değer canlı SABİT: `CANLI_CHANDELIER_ATR_MULT` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 1.2→0.3 sıkma 4 bağımsız pencerede kazanıyor (W1 +26%, W2 +7%, W3 +8%, W4 +11%; PF artıyor, maxDD düşüyor) ve 2-pip kaymada korunuyor. Doğrudan XAU+BTC replay (2026-07-15→08-15): chand0.3 net $4305.70 / PF 1.87 / DD $79.49 vs en iyi sabit-pip $3950.88 / 1.80; 2-pip kaymada $2538.31/1.47 vs $2218.56/1.39. 15dk bar çözünürlüğünde yön korunuyor (etki ~%36 küçülür) → 0.05 yerine 0.3. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
+    chandelier_atr_mult: float = Field(CANLI_CHANDELIER_ATR_MULT, ge=0.0, le=5.0, description="Chandelier kâr kilidi: BE sonrası trailing, kâr tepesinden (bu kat × GİRİŞ ATR'si) geri verilince kilitler (0 = sabit pip trail). 2026-10-13: köprüye (scripts/mt5_bridge.py) port edildi — motor bu değeri /mt5/sync ile köprüye gönderir, canlı iz süren stop artık buradan yönetilir. **Bu değer canlı SABİT: `CANLI_CHANDELIER_ATR_MULT` (forex.py) — sunucudaki ayar dosyası ve panel gövdesi EZEMEZ.** 1.2→0.3 sıkma 4 bağımsız pencerede kazandı; **2026-11-09: 0.3→0.1** (aynı 14 gün XAU+BTC, kaymasız): net $62,020→$101,357, PF 1.93→2.47, WR %85.7→%86.1, maxDD AYNI (~3.5k $), SL sayısı 116→118; çıkış dağılımı BE 299→25 / TRAIL 395→706. Her iki sembolde de kazanç (XAU 58.0k→92.8k, BTC 4.0k→8.6k). Önceki 0.3 kararı 0.2'yi '15 dk bar çekingenliğiyle' elemişti; bu turda gradyan 0.1'e kadar monoton ve maxDD bozulmadı. Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md")
     tp_cancel_on_trail: bool = Field(FOREX_TP_CANCEL_ON_TRAIL_DEFAULT, description="Trailing aktifleşince sabit TP emri İPTAL edilir (uzun trendi TP'ye takılmadan koşturur; 2026-10-09 4 pencere A/B IS/OOS/OOS2/F1: +$201/+$215/+$65/+$170, maxDD düşüyor — canlı VARSAYILAN AÇIK). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false. MT5 tarafında MODIFY_SLTP tp_action='cancel' ile uygulanır. Risk: kâr geri verilirse trailing/BE yakalar — sert gap'te stop yine tek koruma")
     # ── 2026-10-14: BE/trail denetim kolları (ReportHistory-53077151) ────────────
     # Hepsinin varsayılanı MEVCUT DAVRANIŞI BİREBİR KORUR (kapalı/0). Yalnız replay

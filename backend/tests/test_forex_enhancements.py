@@ -1540,11 +1540,15 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
 
     def test_chandelier_default_is_replay_verified(self):
         # 2026-10-13: chandelier köprüye port edildi; motor bu değeri /mt5/sync ile
-        # gönderdiği için artık CANLI davranışı belirler. Replay kanıtı 0.3 diyor
-        # (net $4305.70 / PF 1.87 vs sabit-pip $3950.88 / 1.80; 2-pip kaymada korunur).
-        # 1.2'ye geri dönerse chandelier sabit-pipten KÖTÜ olur (3863 vs 3933) → bu
-        # test sessiz bir gerileme ya da kanıtsız bir değişikliği yakalar.
-        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 0.3)
+        # gönderdiği için artık CANLI davranışı belirler.
+        # 2026-11-09 (kullanıcı: "trailingler çok uzaktan takip ediyor") — sıkma
+        # replay'le doğrulanıp 0.3 → 0.1 yapıldı. Aynı 14 gün XAU+BTC, kaymasız:
+        #   net $62,020 → $101,357 · PF 1.93 → 2.47 · WR %85.7 → %86.1
+        #   maxDD aynı (~3.5k $) · SL 116 → 118 · BE/TRAIL 299/395 → 25/706
+        #   (her iki sembolde de kazanç → altına özel artefakt değil)
+        # 1.2'ye geri dönmek chandelier'i sabit-pipten KÖTÜ yapıyordu (3863 vs 3933);
+        # gevşetmek yön-tutarsızdı. Bu test sessiz gerileme/kanıtsız değişikliği yakalar.
+        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 0.1)
 
     def test_canli_sabitler_override_settings_file_and_panel(self):
         """İki canlı sabit (chandelier + ls_symbols) hem kalıcı dosyayı hem panel
@@ -1580,7 +1584,9 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(forex.CANLI_CLASSIC_SYMBOLS), ["XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD"])
 
         # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
-        self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.3)
+        # 2026-11-09: 0.3 → 0.1. Aynı 14 gün XAU+BTC replay'inde net $62,020→$101,357,
+        # PF 1.93→2.47, maxDD aynı (~3.5k $), BE→TRAIL kayması 299/395 → 25/706.
+        self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.1)
         self.assertEqual(list(forex.CANLI_LS_SYMBOLS), ["XAUUSD", "US30", "NAS100"])
         # Keltner Squeeze (M15) kapsamı da kanıtlanmış 5 semboldür; panel/ayar
         # dosyası ezemez (2026-10-14 kanonik DB hattı + --combined defter testi).
