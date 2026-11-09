@@ -279,6 +279,41 @@ async def llm_calibration_run(request: Request, days: int = 60,
     return report
 
 
+@router.get("/api/system/cot")
+async def cot_status():
+    """COT artefaktının durumu (panel göstergesi): rapor tarihi + bayat mı?
+
+    Admin gerekmez (kişisel veri yok, yalnız kamuya açık CFTC özeti).
+    """
+    from app import cot_fetch
+
+    return {
+        "summary": cot_positions.summary(),
+        "age_days": cot_fetch.artifact_age_days(),
+        "stale": cot_fetch.is_stale(),
+        "stale_after_days": cot_fetch.STALE_AFTER_DAYS,
+    }
+
+
+@router.post("/api/system/cot-refresh")
+async def cot_refresh(request: Request, years: str = "", keep_zip: bool = False):
+    """COT pozisyonlanma raporunu indir ve artefaktı yaz (Ayarlar panelindeki düğme).
+
+    Mantık `app/cot_fetch.py` — CLI ve otomatik tazeleme döngüsüyle AYNI kod.
+    NEDEN GEREKLİ: `cot_positions` yalnız artefakt OKUR; indirme yalnız elle
+    çalıştırılan bir betikti. LLM bağlamına bağlandıktan sonra üretimde artefakt
+    hiç üretilmediği için LLM sürekli "COT verisi yok" diyordu (2026-11-09).
+    Admin yetkisi gerekir.
+    """
+    from app.security import require_admin
+    from app import cot_fetch
+
+    require_admin(request)
+    year_list = [int(y) for y in str(years or "").replace(" ", "").split(",") if y.strip().isdigit()]
+    # İndirme bloklayıcı (urllib) → event loop'u kilitlememek için thread'e ver.
+    return await asyncio.to_thread(cot_fetch.refresh, years=year_list or None, keep_zip=keep_zip)
+
+
 @router.post("/api/system/latency/reset")
 async def system_latency_reset(request: Request):
     from app.security import require_admin

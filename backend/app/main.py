@@ -1251,6 +1251,10 @@ async def startup_services():
     _start_background(forex_auto_paper_start_loop, "forex-auto-paper")
     await asyncio.sleep(0.05)
     _start_background(economic_calendar_background_loop, "economic-calendar-sync")
+    # COT artefaktı yalnız elle üretilebiliyordu → üretimde LLM bağlamı sürekli
+    # "COT verisi yok" diyordu. Bayatlayınca otomatik tazelenir (CFTC haftalık).
+    from app.cot_fetch import cot_refresh_background_loop
+    _start_background(cot_refresh_background_loop, "cot-refresh")
     from app.llm_trade_review import tracker_loop
     _start_background(tracker_loop, "llm-review-tracker")
     from app.position_supervisor import supervisor_loop

@@ -4,7 +4,7 @@
 // ORTAK PARAMETRE PANELİ — Forex Çoklu Algoritma & 31 Sembol Yönetim Paneli
 // ============================================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 
 export interface AutoSettings {
@@ -302,6 +302,38 @@ export default function AutoSettingsPanel({
   // Backend ucu yalnız ÖLÇER + artefakt yazar; eşiği kullanıcı uygular.
   const [calibBusy, setCalibBusy] = useState(false);
   const [calibResult, setCalibResult] = useState<any>(null);
+  // COT POZİSYONLANMA (2026-11-09): LLM bağlamı bu artefaktı okuyor ama üretici
+  // yalnız elle çalıştırılan bir betikti → üretimde LLM sürekli "COT verisi yok"
+  // diyordu. Panelden tazelenebilir; ayrıca bayatlayınca sunucu kendi tazeler.
+  const [cotState, setCotState] = useState<any>(null);
+  const [cotBusy, setCotBusy] = useState(false);
+  const [cotErr, setCotErr] = useState<string | null>(null);
+
+  const loadCot = useCallback(async () => {
+    try {
+      setCotState(await apiFetch("/api/system/cot"));
+      setCotErr(null);
+    } catch (e) {
+      setCotErr(e instanceof Error ? e.message : "COT durumu alınamadı");
+    }
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadCot(); }, []);
+
+  const refreshCot = async () => {
+    setCotBusy(true);
+    setCotErr(null);
+    try {
+      const res = await apiFetch("/api/system/cot-refresh", { method: "POST" });
+      if (!res?.ok) throw new Error(String(res?.error || "COT indirilemedi"));
+      await loadCot();
+    } catch (e) {
+      setCotErr(e instanceof Error ? e.message : "COT indirilemedi");
+    } finally {
+      setCotBusy(false);
+    }
+  };
   const [calibErr, setCalibErr] = useState<string | null>(null);
   const runCalibration = async () => {
     setCalibBusy(true); setCalibErr(null); setCalibResult(null);
@@ -658,6 +690,57 @@ export default function AutoSettingsPanel({
                   </span>
                 </span>
               </label>
+            </div>
+
+            {/* COT POZİSYONLANMA (2026-11-09): LLM'in makro bağlamı bu artefaktı
+                okur. Üretici eskiden YALNIZ elle çalıştırılan bir betikti → üretimde
+                LLM her seferinde "COT verisi yok" diyordu. */}
+            <div className="pt-2 border-t border-bunker-800/80 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={refreshCot}
+                  disabled={cotBusy}
+                  className="ui-button ui-button-compact ui-button-secondary"
+                >
+                  {cotBusy ? "İndiriliyor…" : "COT verisini indir"}
+                </button>
+                <span className="text-2xs text-bunker-muted">
+                  CFTC haftalık raporu (7 majör para birimi). LLM'in "kalabalık/ayrışma" bağlamı buradan gelir.
+                </span>
+              </div>
+              {cotErr && <p role="alert" className="text-2xs text-neon-red">{cotErr}</p>}
+              {cotState && (
+                <div className="rounded-lg border border-bunker-700 bg-bunker-900/60 p-2.5 space-y-1 text-2xs font-mono">
+                  {cotState.summary?.available ? (
+                    <>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-bunker-muted">
+                        <span>rapor tarihi: <b className="text-white">{cotState.summary.report_date}</b></span>
+                        <span>yaş: <b className={cotState.stale ? "text-amber-300" : "text-white"}>
+                          {cotState.age_days == null ? "—" : `${Number(cotState.age_days).toFixed(1)} gün`}
+                        </b></span>
+                        <span>para birimi: <b className="text-white">{Object.keys(cotState.summary.currencies || {}).length}</b></span>
+                        {cotState.stale && <span className="text-amber-300">BAYAT (otomatik tazelenir / düğmeye bas)</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                        {Object.entries(cotState.summary.currencies || {}).map(([cur, st]: [string, any]) => (
+                          <span key={cur} className="text-bunker-muted">
+                            {cur}: <b className={Number(st.bias) > 0 ? "text-emerald-300" : Number(st.bias) < 0 ? "text-neon-red" : "text-white"}>
+                              {Number(st.bias) > 0 ? "+" : ""}{Number(st.bias).toFixed(2)}
+                            </b>
+                            {st.crowded ? <span className="text-amber-300"> ⚠kalabalık</span> : null}
+                            {st.divergence ? <span className="text-amber-300"> ⚠ayrışma</span> : null}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-bunker-muted">
+                      Artefakt yok — LLM'e "COT verisi yok" olarak gider (uydurma yapılmaz). Düğmeyle indir.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* KALİBRASYON (2026-11-09): "güven puanı işe yarıyor mu?" sorusunu
