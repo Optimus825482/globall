@@ -93,6 +93,11 @@ $null
 **/.impeccable/
 reports/
 research_notes/
+# AMA: `reports/` yukarıda genel — kaynak kod klasörünü de yutuyordu.
+# `frontend/app/forex/reports/` İZLENEN kaynak (3 React bileşeni): buraya
+# eklenecek YENİ bir bileşen sessizce ignore edilip deploy'a hiç girmiyordu
+# (2026-11-09'da fark edildi). Aşağıdaki istisna klasörü geri AÇAR.
+!frontend/app/forex/reports/
 
 # 2026-11-09: `backend/artifacts/` yalnız ÇALIŞMA ANINDA/BAKIM İŞİNDE üretilen
 # artefaktları tutar (COT pozisyonları, kalibrasyon eğrisi, indirilen zip'ler).
