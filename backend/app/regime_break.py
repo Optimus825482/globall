@@ -9,9 +9,19 @@ istemez, üretim imajıyla uyumlu. Bilinen-cevap testi geçti (200. noktadaki re
 değişimini TAM buldu). Paket yoksa modül **fail-open** davranır: `available=False`
 döner, karar DEĞİŞMEZ (ölçüm eksik kalır, ticaret durmaz).
 
-KARAR DEĞİŞTİRMEZ (gölge/bağlam): bugün için bu bilgi LLM dosyasına ve karar
-kaydına eklenir. Gerçek bir KAPI yapmak replay A/B kanıtı ister — bu projede
-çiviyi ölçmeden çakmıyoruz.
+KARAR DEĞİŞTİRMEZ (gölge/bağlam): bu bilgi LLM dosyasına eklenir. KAPI olarak
+denenmesi REDDEDİLDİ — ölçüm (`scripts/forex_replay_backtest.py --break-gate-bars`,
+14 gün XAU+BTC, chandelier 0.1):
+
+    kapı      n     WR%    net $      PF    maxDD $
+    yok       849   86.1   101,357    2.47   3,502
+    12 bar    849   86.1   101,357    2.47   3,502   (fiilen hiç tetiklenmiyor)
+    24 bar    732   85.5    83,783    2.38   3,646   (−%17)
+    48 bar    448   83.5    40,154    1.99   5,898   (−%60)
+
+Yani "kırılma sonrası giriş yasak" bu sistemde KÂR KESİYOR (stratejiler kırılmanın
+İÇİNDE işlem yapıyor). Bu yüzden bilgi olarak kalır, kapı olarak KULLANILMAZ.
+Tekrar önerilmesin: ölçüm yukarıda.
 """
 from __future__ import annotations
 

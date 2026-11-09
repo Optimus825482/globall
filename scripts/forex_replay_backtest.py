@@ -189,6 +189,7 @@ INDEX_GATED = {"NAS100", "US30", "USTEC", "DJ30", "US100"}
 TUN_INDEX_HOURS = None        # (başlangıç_dk, bitiş_dk) UTC dakika aralığı — endeks girişleri yalnız bu pencerede (None = kapalı)
 TUN_INDEX_OPEN_DRIVE = False  # ABD açılışının ilk 5m mumu yönü 13:35-15:00 arası yön teyidi olarak zorunlu (Zarattini-Aziz 2023)
 
+TUN_BREAK_GATE_BARS = 0    # >0: yapı kırılmasından sonra bu kadar bar yeni giriş YOK (P1)
 TUN_CHANDLIER = 0.0         # >0: trailing = MFE − chandelier×ATR(giriş) (0 = sabit pip trail)
 TUN_CHAND_INDEP = False     # 2026-10-14 Kol C: chandelier kapısını BE kilidinden BAĞIMSIZLAŞTIR
                             # (MFE > mult×giriş ATR'si olur olmaz kur). Kapalıyken davranış birebir eski hâli.
@@ -2026,6 +2027,45 @@ def compute_cost_aware_levels(cand: Dict, base_sl: float, base_tp: float) -> Tup
     tp_p = round(sl_p * 1.8, 1)
     part_p = round(sl_p * 1.0, 1)  # TP1 tam 1.0R (Kısmi kâr / nefes alanı garantisi)
     return sl_p, tp_p, part_p
+
+
+_BREAK_CACHE: Dict[tuple, Dict[str, int]] = {}
+
+
+def _break_gate_state(sym: str, bars: List[tuple], ci: int, *,
+                      window: int = 300, recompute: int = 12) -> Optional[int]:
+    """Son yapı kırılmasının MUTLAK bar indeksi (yalnız `ci`'ye kadarki veri).
+
+    LOOK-AHEAD YOK: kesit `bars[:ci+1]` ile sınırlıdır; PELT her 12 barda bir
+    yeniden koşar (her barda koşmak O(n²) olurdu). Bar sayısı yetmezse ``None``.
+    `ruptures` yoksa sessizce ``None`` → kapı devre dışı (fail-open).
+    """
+    if ci is None or ci < 60 or not bars:
+        return None
+    try:
+        from app import regime_break
+    except Exception:  # noqa: BLE001
+        return None
+    bucket = int(ci) // max(1, int(recompute))
+    key = (sym, bucket)
+    hit = _BREAK_CACHE.get(key)
+    if hit is not None:
+        return hit.get("last")
+    closes = []
+    for b in bars[: int(ci) + 1]:
+        try:
+            closes.append(float(b[4]))
+        except (IndexError, TypeError, ValueError):
+            continue
+    if len(closes) < 60:
+        _BREAK_CACHE[key] = {"last": -1}
+        return None
+    seg = closes[-int(window):]
+    offset = len(closes) - len(seg)
+    breaks = regime_break.detect_breaks(seg)
+    last = (offset + breaks[-1]) if breaks else -1
+    _BREAK_CACHE[key] = {"last": int(last)}
+    return int(last) if last >= 0 else None
 
 
 def open_position(cand: Dict, sl_pips: float, tp_pips: float, partial_pips: float, idx: int) -> Optional[SimPos]:
@@ -3974,6 +4014,7 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
 
 
         # 4) Skor sırasına göre açılış (eski USD-yön sayacı kaldırıldı — korelasyon kalkanı koruyor)
+        break_gate_blocked = {}
         for vname, book in books.items():
             opened = 0
             for cand_d in sorted(candidates[vname], key=lambda x: -x["score"]):
@@ -4037,6 +4078,20 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
                     # onaylarsa o barın kapanışından girilir (3-öncesi bloğu işler).
                     pending_confirm[vname].append({"cand": cand_d, "idx_signal": idx, "ci_signal": cursors[cand_d["symbol"]]})
                     continue
+                # P1 YAPI KIRILMASI KAPISI (varsayılan KAPALI): kırılma sonrası
+                # `TUN_BREAK_GATE_BARS` bar boyunca yeni giriş yok. Yalnız araştırma
+                # bayrağıyla (`--break-gate-bars`) devreye girer.
+                if vname == "NEW" and TUN_BREAK_GATE_BARS > 0:
+                    _bsym = cand_d["symbol"]
+                    # DİKKAT: `idx` ORTAK zaman çizgisidir; kırılma indeksi sembolün
+                    # KENDİ bar listesinde. İkisini karşılaştırmak zaman çizgilerini
+                    # karıştırıyordu (kapı fiilen hiç tetiklenmiyordu) → sembolün
+                    # kendi imleci (`cursors[sym]`) kullanılır.
+                    _bci = int(cursors.get(_bsym, idx))
+                    _blast = _break_gate_state(_bsym, data.get(_bsym) or [], _bci)
+                    if _blast is not None and 0 <= (_bci - _blast) < TUN_BREAK_GATE_BARS:
+                        break_gate_blocked['n'] = break_gate_blocked.get('n', 0) + 1
+                        continue
                 pos = open_position(cand_d, sl_pips, tp_pips, partial, idx)
                 if pos is None:
                     continue  # Risk kalkanı: en küçük mümkün lot bile sert risk sınırını aşıyor
@@ -4400,6 +4455,9 @@ def main():
     parser.add_argument("--fade", action="store_true", help="Seans-çapa fade mini-motorunu koş (NAS100/US30)")
     parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
     parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
+    parser.add_argument("--break-gate-bars", type=int, default=0,
+                        help="P1 ARAŞTIRMA bayrağı: kırılma sonrası N bar giriş yok. "
+                             "ÖLÇÜM: 24 bar −%17 net, 48 bar −%60 → CANLIYA ALINMADI.")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
     parser.add_argument("--chand-indep-gate", action="store_true", help="2026-10-14 Kol C: chandelier kapısını BE kilidinden bağımsızlaştır (MFE > mult×giriş ATR'si olur olmaz kur). Kapalı = mevcut davranış.")
     parser.add_argument("--be-trigger-atr-gold", type=float, default=0.0, help="XAUUSD'ye özel BE tetik tabanı (× giriş ATR'si; 0 = kapalı). Canlı `be_trigger_atr_mult_gold` ile aynı.")
@@ -4637,6 +4695,7 @@ def main():
     EV_WINDOW_SEC = args.ev_window * 3600.0
     EV_MAX_WIN_RATE = args.ev_wr
     TUN_CHANDLIER = args.chandelier
+    globals()['TUN_BREAK_GATE_BARS'] = int(getattr(args, 'break_gate_bars', 0) or 0)
     global TUN_NO_QUALITY, TUN_NO_SESSION
     TUN_NO_QUALITY = args.no_quality_gate
     TUN_NO_SESSION = args.no_session_filter

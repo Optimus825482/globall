@@ -160,5 +160,27 @@ class TestWiring(unittest.TestCase):
         self.assertIn("ruptures==", req)
 
 
+class TestGateRejectionRecorded(unittest.TestCase):
+    """P1 KAPI olarak denendi ve REDDEDİLDİ (ölçüm: 24 bar −%17, 48 bar −%60).
+
+    Bu kayıt kodda durmazsa aynı fikir tekrar tekrar önerilir. Kilit, ölçümün
+    ve ret gerekçesinin kaynakta kalmasını sağlar.
+    """
+
+    def test_module_documents_rejection_with_numbers(self):
+        src = (ROOT / "app" / "regime_break.py").read_text(encoding="utf-8")
+        self.assertIn("REDDEDİLDİ", src)
+        self.assertIn("83,783", src, "24 barın net kaybı yazılı olmalı")
+        self.assertIn("40,154", src, "48 barın net kaybı yazılı olmalı")
+        self.assertIn("kırılmanın", src.lower())
+
+    def test_replay_flag_warns_not_live(self):
+        # replay betiği REPO KÖKÜNDE (`backend/` altında değil)
+        src = (ROOT.parent / "scripts" / "forex_replay_backtest.py").read_text(encoding="utf-8")
+        self.assertIn("CANLIYA ALINMADI", src)
+        # bayrak varsayılan KAPALI kalmalı
+        self.assertIn('"--break-gate-bars", type=int, default=0', src)
+
+
 if __name__ == "__main__":
     unittest.main()
