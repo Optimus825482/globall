@@ -345,6 +345,23 @@ class Config:
     #: Çekimserlik eşiğini türeten ödül/risk oranı (başabaş p = 1/(1+RR)).
     ML_CALIBRATION_REWARD_RISK = max(0.1, float(
         os.getenv("ML_CALIBRATION_REWARD_RISK", "1.5")))
+
+    # --- GEOMETRİ GÖLGESİ (2026-11-09) ---------------------------------------
+    # §14 backtesti: mevcut geometri (SL %1.5 / hedef ~%2.4) brüt break-even için
+    # %38.5 isabet ister, aday havuzu %28 verir; hiçbir hedef varyantı EV'yi
+    # pozitife çevirmiyor. Karşı-olgusal MFE aritmetiği "stop mu önce" sorusunu
+    # cevaplayamadığı için alternatif geometri GERÇEK değerlendirmeye alınır:
+    # aynı bar penceresi, aynı muhafazakâr TP/SL yürüyüşü, farklı SL/hedef.
+    # KARAR DEĞİŞMEZ — sonuç `outcome_details.shadow_geometry` altına yazılır.
+    GEOMETRY_SHADOW_ENABLED = os.getenv(
+        "GEOMETRY_SHADOW_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+    #: SL %0.9 — §14'te ölçülen break-even stopu ~%0.94'ün en yakın yuvarlak değeri.
+    GEOMETRY_SHADOW_SL_PCT = max(0.1, float(os.getenv("GEOMETRY_SHADOW_SL_PCT", "0.9")))
+    #: Hedef = ATR × bu çarpan (olasılıktan BAĞIMSIZ — §13 bozukluğunu ayırır).
+    GEOMETRY_SHADOW_ATR_MULT = max(0.5, float(os.getenv("GEOMETRY_SHADOW_ATR_MULT", "4")))
+    #: Hedef kırpma aralığı (ATR aşırı uçlarında anlamsız hedef üretilmesin).
+    GEOMETRY_SHADOW_TARGET_MIN = max(0.05, float(os.getenv("GEOMETRY_SHADOW_TARGET_MIN", "0.4")))
+    GEOMETRY_SHADOW_TARGET_MAX = max(0.5, float(os.getenv("GEOMETRY_SHADOW_TARGET_MAX", "6.0")))
     LLM_FORECAST_LESSON_MIN_SAMPLES = max(8, int(os.getenv("LLM_FORECAST_LESSON_MIN_SAMPLES", "12")))
     # Desen madenciliği minimum destek sayısı (koşula uyan ölçülmüş tahmin).
     LLM_PATTERN_MIN_SUPPORT = max(5, int(os.getenv("LLM_PATTERN_MIN_SUPPORT", "8")))

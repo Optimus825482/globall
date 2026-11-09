@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.config import config
 from app.binance_tr_symbols import is_binance_tr_symbol
+from app import geometry_shadow
 from app import database
 from app.state import market, analyzer
 from app.api_common import _start_background, _fresh_public_price, _background_tasks
@@ -1366,6 +1367,13 @@ async def velocity_learning_loop():
                         "status_reason": "MAX_HORIZON_EXPIRED"
                     }
 
+                # GÖLGE GEOMETRİ (2026-11-09): karar DEĞİŞMEZ — alternatif
+                # SL/hedef aynı pencere üzerinde ölçülür ve kayda eklenir.
+                details["shadow_geometry"] = geometry_shadow.evaluate(
+                    window=window, entry=entry, atr_pct=candidate.get("atr_pct"),
+                    cost_pct=cost_pct, first_hit_fn=_first_stop_or_target_bar,
+                    now_ms=int(now_ms), due_ms=int(due_ms))
+
                 ok = await database.mark_velocity_candidate_evaluated(
                     candidate["candidate_id"], mfe_pct=round(mfe_pct, 4),
                     touched_target=touched,
@@ -1585,15 +1593,24 @@ async def remeasure_velocity_candidate(candidate_id: str, request: Request = Non
     ambiguous = bool(hit_bar is not None and hit_stop
                      and (float(hit_bar[2]) / entry - 1) * 100 >= target_pct)
 
-    await database.mark_velocity_candidate_evaluated(
-        candidate_id, mfe_pct=round(mfe_pct, 4), touched_target=hit_target,
-        exit_pct=round(exit_pct, 4), net_pct=round(net_pct, 4),
-        details={"remeasured": True, "window_bars": len(window),
+    shadow_details = {
+        "remeasured": True, "window_bars": len(window),
                  "window_first": datetime.fromtimestamp(int(window[0][0]) / 1000, tz=timezone(timedelta(hours=3))).strftime("%H:%M"),
                  "window_last": datetime.fromtimestamp(int(window[-1][0]) / 1000, tz=timezone(timedelta(hours=3))).strftime("%H:%M"),
                  "entry": entry, "target_pct": candidate["target_pct"], "touch_sec": touch_sec,
                  "stop_sec": stop_sec, "status_reason": reason,
-                 "intrabar_ambiguous": ambiguous},
+                 "intrabar_ambiguous": ambiguous}
+    shadow_details["shadow_geometry"] = geometry_shadow.evaluate(
+        window=window, entry=entry, atr_pct=candidate.get("atr_pct"),
+        cost_pct=cost_pct, first_hit_fn=_first_stop_or_target_bar,
+        # Yol 2 manuel "yeniden ölç" çağrısıdır: "şimdi" = bu an.
+        # (Yol 1'de `now_ms` tarama döngüsünden gelir.)
+        now_ms=int(time.time() * 1000),
+        due_ms=int(due_ms))
+    await database.mark_velocity_candidate_evaluated(
+        candidate_id, mfe_pct=round(mfe_pct, 4), touched_target=hit_target,
+        exit_pct=round(exit_pct, 4), net_pct=round(net_pct, 4),
+        details=shadow_details,
         force=True)
     return {"ok": True, "paper_only": True, "mfe_pct": round(mfe_pct, 3),
             "touched_target": hit_target, "window_bars": len(window),

@@ -637,3 +637,52 @@ Ek not: işlemlerin **%20'si `MAX_HORIZON_EXPIRED`** ve net **−0,365** ile kap
 4. **Doğru sonraki adım:** stop/hedef geometrisini (ör. SL 0,9-1,1% ya da ATR tabanlı asimetrik) **yeniden değerlendirme döngüsüyle** test etmek — karşı-olgusal MFE aritmetiği bunu **kanıtlayamaz** (sıralama bilinmiyor). Alternatif: `MAX_HORIZON_EXPIRED` bacağını ayrı tasarlamak.
 
 **Not:** `ml_probability` kalibrasyonu + gölge mod artık hazır; geometri değiştiğinde "kalibre olasılık eşiği" **ölçülerek** seçilebilir.
+
+---
+
+## 15. GEOMETRİ GÖLGESİ — SL %0,9 / hedef ATR×4 gerçek değerlendirmeye alındı (2026-11-09)
+
+§14'ün sınırı şuydu: karşı-olgusal analiz `mfe_pct` üzerinden çalıştığı için "stop mu önce, hedef mi?" sırasını bilemiyor, **[alt, üst] sınır aralığı** veriyordu. Bu tur o sınırı kaldırır: alternatif geometri **gerçek bar penceresi** üzerinde, gerçek değerlendirmenin **aynı** `_first_stop_or_target_bar` fonksiyonuyla ölçülür.
+
+### 15.1 Varyant ve gerekçesi
+
+| Parametre | Değer | Neden |
+|---|---|---|
+| SL | **%0,9** | §14'te ölçülen break-even stopu **%0,94**'ün en yakın yuvarlak değeri |
+| Hedef | **ATR × 4** | `target_pct`'yi **olasılıktan tamamen ayırır** (§13 bozukluğu), oynaklığa bağlar. §14'te en yakın EV'yi veren çarpan |
+| Kırpma | %0,4 … %6,0 | ATR aşırı uçlarında anlamsız hedef üretilmesin (ATR %0,05 → hedef %0,2 maliyetin altında kalırdı) |
+
+Tümü env ile ayarlanabilir: `GEOMETRY_SHADOW_ENABLED`, `GEOMETRY_SHADOW_SL_PCT`, `GEOMETRY_SHADOW_ATR_MULT`, `GEOMETRY_SHADOW_TARGET_MIN/MAX`.
+
+### 15.2 Karar değişmiyor
+
+Sonuç `outcome_details.shadow_geometry` altına yazılır; **gerçek `target_pct` / stop / `net_pct` alanlarına dokunulmaz**. `GEOMETRY_SHADOW_ENABLED=0` ile tamamen kapanır. Kablolama **iki yazım noktasına** da eklendi (ölçüm döngüsü + manuel "yeniden ölç") ve bu bir testle kilitlendi.
+
+### 15.3 Testlerin kilitlediği (13 test)
+
+1. Hedef = ATR × çarpan, **[min,max] kırpmalı**; geçersiz/eksik ATR → `None` (uydurma yok).
+2. Ekonomi doğru: TARGET_HIT → `net = hedef − maliyet`, STOPPED_OUT → `net = −SL − maliyet`.
+3. **ÇEKİRDEK TEST:** dar SL (%0,9), gerçek geometrinin (%1,5) TP'ye ulaştığı bir işlemi **stop ediyor** → gölge gerçekten **farklı sonuç** üretiyor (karşı-olgusal değil, ölçüm).
+4. `MAX_HORIZON_EXPIRED` → son mumun kapanışı; `PENDING` → net `None`.
+5. Belirsiz bar (aynı mumda TP+SL) → muhafazakâr **SL** + `intrabar_ambiguous=True` (gerçek değerlendirmeyle aynı sözleşme).
+6. Kablolama: `geometry_shadow.evaluate(` çağrısı **tam 2** yerde (regresyon kilidi).
+
+### 15.4 Sonuçları okuma
+
+`scripts/report_geometry_shadow.py` — **eşleştirilmiş (paired)** karşılaştırma:
+
+```bash
+python -m scripts.report_geometry_shadow --days 21 --min-samples 300
+```
+
+Verdiği: iki geometrinin EV/kazanma oranı/durum dağılımı, **ΔEV'nin %95 bootstrap GA'sı**, geçiş matrisi (gerçek→gölge) ve hüküm. Paired olduğu için fark, aday havuzundaki değişimden arındırılmıştır — §14'teki sınır aralığından **daha güçlü**.
+
+Ayrıca §13'teki ayrıştırma kontrolü de raporda: gölge hedefinin ortalaması/medyanı/aralığı basılır (hedefin artık olasılığa değil ATR'ye bağlı olduğu doğrulanır).
+
+### 15.5 Ne zaman karar verilir
+
+`--min-samples 300` varsayılanı **bilinçli**: küçük örnekte EV gürültüsü baskındır ve erken "kazandı" demek §14'teki hatanın tekrarı olur. Öneri: **2-3 hafta** biriktir, sonra paired GA'ya bak. Hüküm üç durumlu: anlamlı iyi / anlamlı kötü / anlamsız (daha fazla örnek).
+
+**Uyarı (raporda da basılıyor):** iki geometri de negatif EV'de kalırsa, geometri seçimi tek başına kârlılık üretmiyor demektir — aday havuzu/filtre kalitesi de ele alınmalı (§14).
+
+**Tüm backend:** `2029 passed, 2 failed` (2 kırmızı önceden var).
