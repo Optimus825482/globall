@@ -84,6 +84,7 @@ const APPLIED_TR: Record<string, string> = {
   blocked: "Engellendi",
   advisory_allow: "Danışman: onay",
   advisory_reject: "Danışman: red (engellemedi)",
+  advisory_error: "Danışman: LLM yanıt yok (engellemedi)",
   reject_voided: "Red geçersiz sayıldı (yalnız habere dayanıyordu), motor açtı",
   explore_pass: "Kontrollü keşif: veto edilen işlem ölçüm için açıldı",
   fail_open: "LLM yok, motor açtı",
