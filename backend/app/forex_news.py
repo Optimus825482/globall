@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -1569,6 +1570,171 @@ def _mark_investing_blocked(reason: str) -> None:
     )
 
 
+# ============================================================================
+# FMP (Financial Modeling Prep) — AYNI GÜN `actual` İÇİN TEK ERİŞİLEBİLİR YOL
+# ============================================================================
+#
+# ÖLÇÜM (2026-11-09, hepsi CANLI denendi — tahmin değil):
+#   Yahoo Finance     : HTML'de takvim VERİSİ YOK, public calendar API 404
+#                       (kullanıcı önerisi "Yahoo'dan alalım" → çalışmıyor)
+#   ForexFactory XML  : `<actual>` etiketi HİÇ YOK (0/101)
+#   ForexFactory HTML : HTTP 403
+#   Investing.com     : HTML/AJAX + tr/m aynaları → 403 (chrome131/124/120)
+#   forexprostools    : 403 (investing'in eski canlı feed'i de kapalı)
+#   TradingEconomics  : HTML'de veri yok (JS), guest API → 410 Gone
+#   TradingView       : ÇALIŞIYOR ama `actual` 1-2 GÜN GECİKMELİ
+#                       (ölçüm: 0-6 saat %0, 2+ gün %92)
+#
+# Yani "aynı gün açıklanan değer" için ÜCRETSİZ + ANAHTARSIZ kaynak kalmadı.
+# Bu yüzden ANAHTARLI kaynak eklendi: anahtar varsa aynı gün değer gelir; yoksa
+# sistem eskisi gibi (TradingView + 5 günlük geri dolum) çalışır — sessizce kırılmaz.
+
+FMP_BASE = "https://financialmodelingprep.com/api/v3/economic_calendar"
+FMP_KEY_ENV = "FMP_API_KEY"
+_FMP_STATE: Dict[str, Any] = {"last_error": None, "last_count": 0, "last_at": 0.0}
+
+
+def fmp_state() -> Dict[str, Any]:
+    """Sağlık/panel yüzeyi: FMP yapılandırıldı mı, son tur ne oldu?"""
+    return {
+        "configured": bool(os.getenv(FMP_KEY_ENV, "").strip()),
+        "key_env": FMP_KEY_ENV,
+        "last_error": _FMP_STATE.get("last_error"),
+        "last_count": int(_FMP_STATE.get("last_count") or 0),
+        "last_at": _FMP_STATE.get("last_at") or None,
+    }
+
+
+def _fmp_currency(item: Dict[str, Any]) -> str:
+    cur = str(item.get("currency") or "").strip().upper()
+    if cur and len(cur) == 3:
+        return cur
+    country = str(item.get("country") or "").strip().upper()
+    info = COUNTRY_MAP.get(country) or {}
+    return str(info.get("code") or country or "").upper()
+
+
+def parse_fmp_events(payload: Any, now_utc: Optional[datetime.datetime] = None) -> List[Dict[str, Any]]:
+    """FMP ekonomik takvim JSON'unu iç biçime çevirir (SAF, ağ yok).
+
+    ŞEMA DOĞRULAMASI: beklenmeyen gövde `[]` döner (fail-closed). Kaynağın alan
+    adları değişirse sahte/yanlış veri yazmak yerine o tur atlanır.
+    Beklenen anahtarlar: `date`, `event`, `impact`, `actual`, `estimate`, `previous`.
+    """
+    if not isinstance(payload, list) or not payload:
+        return []
+    first = payload[0]
+    if not isinstance(first, dict) or "date" not in first or "event" not in first:
+        logger.warning("[EconomicCalendar] FMP yanıt şeması beklediğimizden farklı "
+                       "(anahtarlar: %s) — bu tur atlandı.",
+                       list(first)[:8] if isinstance(first, dict) else type(first).__name__)
+        return []
+    if now_utc is None:
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    out: List[Dict[str, Any]] = []
+    for item in payload:
+        try:
+            impact = str(item.get("impact") or "").strip().title()
+            if impact not in ("High", "Medium"):
+                continue
+            stars = 3 if impact == "High" else 2
+            orig_title = str(item.get("event") or "").strip()
+            if not orig_title:
+                continue
+            currency = _fmp_currency(item)
+            if not currency:
+                continue
+            raw_date = str(item.get("date") or "").strip()
+            if not raw_date:
+                continue
+            # FMP "2026-11-09 13:30:00" (UTC) verir; "T"/"Z" biçimi de olabilir.
+            dt = datetime.datetime.fromisoformat(raw_date.replace("Z", "+00:00").replace(" ", "T"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            dt = dt.astimezone(datetime.timezone.utc)
+            date_iso = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+            def _fmt(v: Any) -> str:
+                if v is None or str(v).strip() == "":
+                    return "—"
+                return str(v).strip()
+
+            actual = _fmt(item.get("actual"))
+            forecast = _fmt(item.get("estimate"))
+            previous = _fmt(item.get("previous"))
+            passed = dt < now_utc
+            status = "Açıklandı" if actual != "—" else ("Geçti" if passed else "Bekleniyor")
+            country = str(item.get("country") or currency)
+            c_info = COUNTRY_MAP.get(currency) or COUNTRY_MAP.get(country) or {
+                "code": currency, "name": currency, "flag": "🌐"}
+            symbols = map_symbols_for_event(currency, orig_title)
+            # KARARLI kimlik: `hash()` KULLANILMAZ (süreç başına rastgeleleşir →
+            # aynı olay her açılışta yeni satır olur; 2026-11-09'da bu yinelenen
+            # takvim satırlarına yol açmıştı).
+            digest = hashlib.md5(f"{orig_title}|{date_iso}|{currency}".encode("utf-8")).hexdigest()[:12]
+            out.append({
+                "id": f"cal-fmp-{digest}",
+                "title": translate_title(orig_title, country),
+                "original_title": orig_title,
+                "country": currency,
+                "currency": currency,
+                "country_name": c_info.get("name") or currency,
+                "flag": c_info.get("flag") or "🌐",
+                "date_str": dt.strftime("%d.%m %H:%M UTC"),
+                "date_iso": date_iso,
+                "impact": impact,
+                "stars": stars,
+                "stars_str": "⭐⭐⭐" if stars == 3 else "⭐⭐",
+                "impact_label": f"⭐⭐⭐ {impact.upper()}" if stars == 3 else f"⭐⭐ {impact.upper()}",
+                "forecast": forecast,
+                "previous": previous,
+                "actual": actual,
+                "status": status,
+                "is_passed": passed,
+                "comment": get_turkish_comment("", orig_title, orig_title),
+                "affected_symbols": symbols,
+                "scenario": generate_event_scenario(orig_title, c_info.get("name") or currency, currency, symbols),
+                "source": "fmp",
+            })
+        except Exception as exc:  # noqa: BLE001 - tek satır bozuksa diğerleri gelsin
+            logger.debug("[EconomicCalendar] FMP satırı atlandı: %s", exc)
+    return out
+
+
+async def fetch_fmp_events(days_back: int = 2, days_forward: int = 3) -> List[Dict[str, Any]]:
+    """FMP takvimini çeker. Anahtar yoksa boş döner (sessiz atlama, hata değil)."""
+    key = os.getenv(FMP_KEY_ENV, "").strip()
+    if not key:
+        return []
+    now = datetime.datetime.now(datetime.timezone.utc)
+    frm = (now - datetime.timedelta(days=max(0, days_back))).strftime("%Y-%m-%d")
+    to = (now + datetime.timedelta(days=max(1, days_forward))).strftime("%Y-%m-%d")
+    url = f"{FMP_BASE}?from={frm}&to={to}&apikey={urllib.parse.quote(key)}"
+
+    def _fetch() -> Optional[str]:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+
+    try:
+        raw = await asyncio.get_running_loop().run_in_executor(None, _fetch)
+    except Exception as exc:  # noqa: BLE001
+        _FMP_STATE.update({"last_error": f"{type(exc).__name__}: {exc}", "last_at": time.time()})
+        logger.warning("[EconomicCalendar] FMP çekilemedi: %s", exc)
+        return []
+    try:
+        payload = json.loads(raw or "[]")
+    except Exception as exc:  # noqa: BLE001
+        _FMP_STATE.update({"last_error": f"json: {exc}", "last_at": time.time()})
+        return []
+    items = parse_fmp_events(payload)
+    with_actual = sum(1 for i in items if i["actual"] != "—")
+    _FMP_STATE.update({"last_error": None, "last_count": len(items), "last_at": time.time()})
+    logger.info("[EconomicCalendar] FMP: %d olay (actual dolu: %d)", len(items), with_actual)
+    return items
+
+
 def investing_block_state() -> Dict[str, Any]:
     """Sağlık/UI yüzeyi: kaynak şu an dinleniyor mu?"""
     remaining = max(0.0, _investing_blocked_until - time.time())
@@ -1577,6 +1743,8 @@ def investing_block_state() -> Dict[str, Any]:
         "remaining_sec": round(remaining, 1),
         "reason": _investing_blocked_reason or None,
         "profiles": list(_INVESTING_PROFILES),
+        # Aynı gün `actual` veren tek erişilebilir yol (anahtarlı).
+        "fmp": fmp_state(),
     }
 
 
@@ -1864,6 +2032,18 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
 
     items = merge_calendar_sources(items, inv_items)
 
+    # 2b) FMP (anahtarlı): aynı gün `actual` veren tek erişilebilir kaynak.
+    # Investing 2026-11-09'dan beri tüm parmak izlerinde 403 döndüğü için değer
+    # otoritesi rolünü o devralır. Anahtar yoksa bu blok hiç çalışmaz.
+    fmp_items: List[Dict[str, Any]] = []
+    try:
+        fmp_items = await fetch_fmp_events()
+        if fmp_items:
+            items = merge_calendar_sources(items, fmp_items)
+            logger.info("[EconomicCalendar] FMP %d olayla birleştirildi.", len(fmp_items))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[EconomicCalendar] FMP birleştirme hatası: %s", exc)
+
     # 3. Hala az geldiyse ForexFactory akışını dene
     if len(items) < 6:
         try:
@@ -1928,7 +2108,7 @@ async def sync_economic_calendar_to_db(min_stars: int = 2) -> List[Dict[str, Any
     # bu sahte satırları DB'ye yazmak, panelde aylar öncesinin olaylarını
     # "takvim" diye göstermek demekti. Sağlayıcı yoksa hiç yazmayız; okuma yolu
     # eldeki taze satırları sunmaya devam eder.
-    provider_ok = bool(tv_items or inv_items)
+    provider_ok = bool(tv_items or inv_items or fmp_items)
     if database and final_items and provider_ok:
         try:
             saved_cnt = await database.save_economic_calendar_events(final_items)
