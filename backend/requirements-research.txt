@@ -3,3 +3,29 @@
 # research tooling only, never by the app itself.
 vectorbt==1.1.0
 pandas==3.0.5
+
+# ── 2026-11-09 · ARAŞTIRMA/ÖLÇÜM KATMANI (GitHub araştırması P1) ─────────────
+# BU DOSYA ÜRETİM İMAJINA GİRMEZ. Üretim `requirements.txt` bilinçli olarak
+# yalın tutulur (numpy + scikit-learn); buradaki paketler yalnız
+# `backend/scripts/` altındaki ölçüm/denetim araçları içindir.
+#
+# arch       → scripts/edge_significance.py
+#              White's Reality Check, Hansen SPA, Romano-Wolf StepM,
+#              Model Confidence Set ("en iyi strateji şans mı?").
+#              Lisans: permissive (Kevin Sheppard, MIT-benzeri NCSA).
+#
+# purgedcv   → scripts/purged_cpcv_report.py
+#              PSR (Probabilistic Sharpe), DSR (Deflated Sharpe), PBO
+#              (Probability of Backtest Overfitting, CSCV), MinTRL,
+#              CombinatorialPurgedCV (purge + embargo). Lisans: MIT.
+#              NOT: `mlfinlab` KULLANILMAZ (lisansı SPDX tanınmıyor, 2023'te
+#              donmuş) ve AGPL `pypbo` GEREKMEZ (PBO zaten buradadır).
+#
+# statsmodels → periyodik sweep raporlarında çoklu-test düzeltmesi
+#              (multipletests: Benjamini-Hochberg / Holm / FDR) ve
+#              MarkovRegression (rejim kapısı) için. Lisans: BSD-3.
+#
+# Kurulum:  python -m pip install -r requirements-research.txt
+arch==8.0.0
+purgedcv==0.1.12
+statsmodels==0.15.0

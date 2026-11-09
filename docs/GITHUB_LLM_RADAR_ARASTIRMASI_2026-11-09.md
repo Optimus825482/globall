@@ -81,7 +81,7 @@ Bu raporu yazmadan önce karar verici iddiaları **kendim** doğruladım. Üç d
 |---|---|
 | Repo | `pgvector/pgvector` — 23.6k★, PostgreSQL Lisansı, push 2026-11-09 |
 | Embedding/rerank | `FlagOpen/FlagEmbedding` — 12.3k★, MIT (BGE-M3 + `bge-reranker`) |
-| Neden | **Postgres zaten var** → yeni altyapı gerekmez, tek migration ile `embedding_worker.py` + `memory_service.py` güçlenir. Reranker, bağlam isabetini belirgin artırır |
+| Neden | **Postgres zaten var** → yeni altyapı gerekmez. **DÜZELTME (uygulama sırasında ölçüldü): pgvector ZATEN KURULU** — `migrations/001_pgvector_schema.sql:1 CREATE EXTENSION vector`, `memory_documents` + `embedding_jobs` + `memory_service` çalışıyor. **Kalan gerçek boşluk: (a) HNSW index'i yorum satırı** (`001_pgvector_schema.sql:202` — "controlled maintenance job" notuyla kapatılmış), (b) **reranker yok** (arama `1-(embedding <=> $1::halfvec)` + ağırlıklı skorla yapılıyor) |
 | ALMA | `tensorchord/pgvecto.rs` (halefi VectorChord oldu, 2025-02'de durdu) |
 | Risk | Düşük |
 
@@ -238,3 +238,60 @@ backend/scripts/*.py              → ağır hesaplar, offline
 **Doğrulanan repolar (gh api, 2026-11-09):** `bashtage/arch` · `eslazarev/purged-cross-validation` · `esvhd/pypbo` · `stefan-jansen/machine-learning-for-trading` · `Nixtla/statsforecast` · `Nixtla/mlforecast` · `EFS-OpenSource/calibration-framework` · `scikit-learn-contrib/MAPIE` · `stefan-jansen/alphalens-reloaded` · `online-ml/river` · `deepcharles/ruptures` · `mlflow/mlflow` · `treeverse/dvc` · `ranaroussi/quantstats` · `PyPortfolio/PyPortfolioOpt` · `mortada/fredapi` · `microsoft/qlib` · `statsmodels/statsmodels` · `nardew/talipp` · `NDelventhal/cot_reports` · `rsheftel/pandas_market_calendars` · `joshyattridge/smart-money-concepts` · `567-labs/instructor` · `pgvector/pgvector` · `FlagOpen/FlagEmbedding` · `BerriAI/litellm` · `TauricResearch/TradingAgents` · `kernc/backtesting.py` · `polakowo/vectorbt` · `hudson-and-thames/mlfinlab` · `twopirllc/pandas-ta` (404)
 
 **Yerel kanıt dosyaları:** `backend/app/llm_second_eye.py:48,72` · `backend/app/calibration.py` (docstring) · `backend/app/portfolio_risk.py:238` · `backend/app/ml_forecast.py:6,29` · `backend/requirements.txt` · `backend/requirements-research.txt` · `backend/scripts/vectorbt_research.py:21`
+
+---
+
+## 9. UYGULAMA — P1 turu (2026-11-09, commit'ler bu bölümün altında)
+
+Araştırmanın P1 maddeleri koda döküldü. **Her araç bilinen cevaplı sentetik veriyle doğrulandı** — "çalışıyor gibi görünüyor" değil, beklenen sonucu verdiği kanıtlandı.
+
+### 9.1 Eklenenler
+
+| Dosya | Ne yapar | Katman |
+|---|---|---|
+| `backend/app/ml_probability.py` | İzotonik kalibrasyon + Brier/log-loss/**ECE**/güvenilirlik kovaları + **çekimserlik** (başabaş olasılık) + walk-forward bölme + JSON artefakt | **ÜRETİM** (yalnız numpy+sklearn — `requirements.txt`'te zaten var) |
+| `backend/tests/test_ml_probability.py` | 22 test: metrik matematiği, aşırı-güven tespiti, yetersiz örnekte eğri kurulmaması, monotonluk, kalibrasyonun Brier/ECE'yi iyileştirmesi, çekimserlik, kalıcılık | test |
+| `backend/scripts/edge_significance.py` | **RealityCheck + SPA + StepM + MCS** ("en iyi strateji şans mı?") | ARAŞTIRMA (`arch`) |
+| `backend/scripts/purged_cpcv_report.py` | **PSR + DSR + PBO (CSCV) + MinTRL** | ARAŞTIRMA (`purgedcv`) |
+| `backend/scripts/report_probability_calibration.py` | DB'den (`velocity_candidates`: `ml_hit_probability` → `touched_target`) eğri kurar, eğitim/test ayrı raporlar, artefakt yazar | OPS |
+| `backend/app/llm_second_eye.py` | **Pydantic şema kapısı**: `SecondEyeVerdict` + `validate_verdict()`; çıktıya `schema_ok` / `schema_issues` ölçüm alanları | **ÜRETİM** (pydantic zaten var) |
+| `backend/tests/test_llm_second_eye_schema.py` | 13 test: şema normalizasyonu, geçersiz rejim/tp/sl temizliği, eş anlamlı eşleme, kurtarma bayrağı, geriye dönük alan uyumu | test |
+| `backend/requirements-research.txt` | `arch==8.0.0`, `purgedcv==0.1.12`, `statsmodels==0.15.0` + neden/gerekçe | meta |
+
+### 9.2 Doğrulama kanıtları
+
+**`edge_significance.py`** — iki bilinen senaryo:
+
+| Demo | Beklenen | Ölçülen |
+|---|---|---|
+| `--demo noise` (6 saf gürültü serisi) | hiçbiri anlamlı olmamalı | SPA p=**0.394**, RC p=0.43, StepM p=0.42 → **"KENAR YOK"** ✓ |
+| `--demo edge` (1 gerçek kenar + 6 gürültü) | yalnız `edge_gercek` anlamlı | SPA p=**0.000**, `edge_gercek` **ÜSTÜN** + MCS'te, 6 gürültü **ELENDİ** ✓ |
+
+**`purged_cpcv_report.py`**:
+
+| Demo | Beklenen | Ölçülen |
+|---|---|---|
+| `--demo noise` | PSR<0.95, PBO yüksek | PSR 0.859, DSR 0.261, **PBO 0.446** → "KANITLANAMADI" ✓ |
+| `--demo edge` | PSR/DSR≥0.95, PBO düşük | PSR **1.000**, DSR **1.000**, **PBO 0.000** → "KANITLANMIŞ" ✓ |
+
+**`test_ml_probability.py`**: 22/22 geçti. Ölçülen örnek — ham olasılık %85-95 diyen ama gerçek isabet %60 olan 400 gözlemde izotonik eğri Brier'i **düşürdü** ve ECE'yi iyileştirdi; kalibre değer 0.90'dan <0.80'e indi (aşırı güven düzeltildi).
+
+**`test_llm_second_eye_schema.py`** + mevcut `test_llm_second_eye.py`: 43/43 geçti — şema kapısı **hiçbir mevcut davranışı bozmadı**.
+
+**Tüm backend paketi:** `1941 passed, 2 failed`. İki kırmızı **önceden vardı** (`test_forex_enhancements.py::test_gold_dynamic_atr_buffer`, `::test_btcusd_integration_and_specs` — ATR tampon değer kayması, temiz HEAD'de de kırmızı).
+
+### 9.3 Uygulama sırasında yakalanan 3 gerçek hata (araçların kendisinde)
+
+1. **`arch` sütun hizalaması** — `numpy` matris verildiğinde `mcs.included`/`stepm.superior_models` **konumsal** dizi döner ve sütun sırası garanti değildir; ilk sürümde Sharpe'ı **−0.73** olan bir gürültü serisi "ÜSTÜN" işaretlendi. Çözüm: `arch`'a **pandas DataFrame** verilir → sonuçlar **isimlerle** döner (`["edge_gercek"]`), konumsal eşleme tamamen kalkar.
+2. **`arch` p-değer etiketleri** — `SPA.pvalues` indeksi `["lower","consistent","upper"]`'dır (`"SPA"` diye bir etiket YOK); `StepM`'in **p-değeri hiç yok**, `superior_models` verir. İlk sürüm `None` döndürüyordu (her zaman "kenar yok" derdi — fail-safe ama işe yaramaz).
+3. **`validate_verdict` yedek yolu** — şema tamamen tutmadığında yalnız `verdict`/`confidence` temizleniyordu; `regime="trendy"` gibi geçersiz değerler aşağı akışa sızıyordu. Yedek normalizasyon artık `regime`/`suggested_tp_pct`/`suggested_sl_pct`/`reasons` alanlarını da temizliyor (testle kilitli).
+
+### 9.4 Bu turda YAPILMAYANLAR (gerekçeli)
+
+| Madde | Neden |
+|---|---|
+| `statsforecast` baseline (P1-4) | `numba`/LLVM derleme zinciri getiriyor; araştırma ortamı için ağır. **Yerine `statsmodels` ile ARIMA/naif baseline yeterli** (statsmodels artık kurulu) |
+| HNSW index (P1-7) | `001_pgvector_schema.sql:195-203` yorumu **bilinçli**: "ilk embedding backfill'inden sonra kontrollü bakım işinde oluştur". Startup migration'a `CREATE INDEX CONCURRENTLY` koymak transaction kısıtına takılır. **Ayrı bakım betiği olarak yapılmalı**, migration olarak değil |
+| BGE reranker (P1-7) | Model ağırlığı indirmesi + servis bağımlılığı gerektirir; canlı arama yolunu değiştirir. Ölçüm yapılmadan açmak riskli |
+| `instructor` (P1-6) | **Gereksiz çıktı**: aynı garanti `pydantic` + `validate_verdict` ile sağlandı, yeni bağımlılık eklenmedi |
+| P2/P3 maddeleri (COT, talipp, SMC, seans, GARCH, Kelly, alphalens, mlflow, DVC, river, litellm) | Bu turun kapsamı P1'di; her biri ayrı entegrasyon ve doğrulama turu istiyor |

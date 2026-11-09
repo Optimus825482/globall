@@ -24,6 +24,107 @@ from collections import deque
 from app import database
 from app.llm_analysis import _json_load_lenient
 
+# ---------------------------------------------------------------------------
+# ŞEMA GARANTİSİ (2026-11-09 — GitHub araştırması P1-6)
+#
+# `parse_verdict` zaten toleranslı bir ayrıştırıcı: eş anlamlıları eşler, sarmalanmış
+# JSON'a iner, cümle içine gömülü `"verdict"` kalıbını kurtarır. Ama çıktının
+# SÖZLEŞMESİ yalnız docstring'deydi; tip düzeyinde zorlanmıyordu. Sonuç: model
+# `confidence: "yüksek"`, `regime: "trendy"`, `reasons: "tek metin"` gibi şema dışı
+# değerler döndürdüğünde bunu ancak çağıran taraf fark ediyordu.
+#
+# Bu katman çıktıyı TEK bir yerde doğrular ve normalize eder. Ölçüm için
+# `schema_ok` + `schema_issues` alanları eklenir: kaç yanıtın şema düzeltmesi
+# gerektirdiği görünür olur (prompt kalitesinin doğrudan göstergesi).
+#
+# NOT: `strict=False` bilinçli — LLM'den gelen "87" (str) → 87 (int) dönüşümü
+# meşrudur; reddetmek faydalı bilgi kaybı olurdu. `extra="ignore"` da bilinçli:
+# model fazladan alan döndürürse kararı düşürmeyiz.
+# ---------------------------------------------------------------------------
+
+try:
+    from pydantic import BaseModel, ConfigDict, Field, ValidationError
+except Exception:  # pragma: no cover - pydantic yoksa şema katmanı devre dışı
+    BaseModel = None  # type: ignore[assignment]
+    ConfigDict = None  # type: ignore[assignment]
+    Field = None  # type: ignore[assignment]
+    ValidationError = Exception  # type: ignore[assignment,misc]
+
+
+if BaseModel is not None:
+    class SecondEyeVerdict(BaseModel):
+        """`llm_second_eye` kararının tip düzeyinde sözleşmesi."""
+
+        model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+        verdict: str = Field(pattern=r"^(DEVAM|FAKE|BELIRSIZ)$")
+        confidence: int = Field(ge=0, le=100)
+        bull_thesis: str | None = Field(default=None, max_length=250)
+        bear_antithesis: str | None = Field(default=None, max_length=250)
+        regime: str | None = Field(default=None, pattern=r"^(TRENDING|RANGE|PANIC)$")
+        suggested_tp_pct: float | None = Field(default=None, ge=0, le=100)
+        suggested_sl_pct: float | None = Field(default=None, ge=0, le=100)
+        reasons: list[str] = Field(default_factory=list, max_length=5)
+        trap_evidence: list[str] = Field(default_factory=list, max_length=5)
+        summary: str | None = Field(default=None, max_length=300)
+else:  # pragma: no cover
+    SecondEyeVerdict = None  # type: ignore[assignment]
+
+
+def validate_verdict(payload: dict) -> tuple[dict, bool, list[str]]:
+    """Karar sözlüğünü şemaya göre doğrula; (normalize, schema_ok, sorunlar) döndür.
+
+    ``schema_ok`` yalnız GİRDİ zaten geçerliyse True olur; normalize edilmesi
+    gereken her durum ``schema_issues`` içinde listelenir. Çağıran bunu metrik
+    olarak kullanabilir (yüksek oran → prompt/şema uyumu bozuk).
+    """
+    if SecondEyeVerdict is None:  # pragma: no cover
+        return payload, True, []
+    issues: list[str] = []
+    # 1) Ham girdi geçerli mi?
+    raw_ok = True
+    try:
+        SecondEyeVerdict.model_validate(payload)
+    except ValidationError as exc:
+        raw_ok = False
+        for err in exc.errors()[:4]:
+            issues.append(f"{'.'.join(str(x) for x in err.get('loc', ()))}: {err.get('type')}")
+    # 2) Normalize edilmiş sürüm (parse_verdict zaten kırpmış olmalı)
+    try:
+        model = SecondEyeVerdict.model_validate(payload)
+        normalized = model.model_dump()
+    except ValidationError:
+        # Şema hâlâ tutmuyorsa güvenli tabana indir — asla çökme.
+        # HER alan ayrıca temizlenir: yalnız verdict/confidence'ı düzeltip
+        # `regime="trendy"` gibi değerleri bırakmak, aşağı akışta (rapor/UI)
+        # geçersiz etiket üretirdi.
+        normalized = dict(payload)
+        normalized["verdict"] = payload.get("verdict") if payload.get("verdict") in (
+            "DEVAM", "FAKE", "BELIRSIZ") else "BELIRSIZ"
+        try:
+            normalized["confidence"] = max(0, min(100, int(float(payload.get("confidence") or 0))))
+        except (TypeError, ValueError):
+            normalized["confidence"] = 0
+        regime_raw = str(payload.get("regime") or "").strip().upper()
+        normalized["regime"] = regime_raw if regime_raw in ("TRENDING", "RANGE", "PANIC") else None
+        for key in ("suggested_tp_pct", "suggested_sl_pct"):
+            value = payload.get(key)
+            try:
+                normalized[key] = None if value is None else max(0.0, min(100.0, float(value)))
+            except (TypeError, ValueError):
+                normalized[key] = None
+        for key in ("reasons", "trap_evidence"):
+            raw_list = payload.get(key)
+            cleaned = []
+            if isinstance(raw_list, list):
+                for item in raw_list[:5]:
+                    if isinstance(item, str) and item.strip():
+                        cleaned.append(item.strip()[:120])
+            normalized[key] = cleaned
+        issues.append("normalize edilemedi → güvenli tabana indirildi")
+    return normalized, raw_ok, issues
+
+
 logger = logging.getLogger("scalper.llm_second_eye")
 
 # --- Ayarlar (env ile aynen; testler modül niteliğini değiştirerek kelepçeler) ---
@@ -379,7 +480,7 @@ def parse_verdict(text) -> dict | None:
         except (ValueError, TypeError):
             pass
 
-    return {
+    payload = {
         "verdict": verdict,
         "confidence": round(confidence),
         "bull_thesis": str((decoded or {}).get("bull_thesis") or "").strip()[:250] or None,
@@ -391,6 +492,12 @@ def parse_verdict(text) -> dict | None:
         "trap_evidence": _str_list((decoded or {}).get("trap_evidence") if isinstance(decoded, dict) else None),
         "summary": str((decoded or {}).get("summary") or "").strip()[:300] or None,
     }
+    # Şema kapısı: çıktı tip düzeyinde doğrulanır; ölçüm alanları eklenir.
+    normalized, schema_ok, schema_issues = validate_verdict(payload)
+    normalized["schema_ok"] = bool(schema_ok) and not schema_issues
+    normalized["schema_issues"] = schema_issues
+    normalized["salvaged"] = bool(salvaged)
+    return normalized
 
 
 def build_verdict_notification(notif: dict, verdict: dict) -> dict:
