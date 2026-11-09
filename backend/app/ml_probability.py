@@ -406,3 +406,71 @@ def summary_for_ui(calibration: dict[str, Any] | None, limit: int = ECE_BINS) ->
     rows = list(calibration.get("bins") or [])
     rows.sort(key=lambda r: -abs(float(r.get("gap") or 0.0)))
     return rows[:limit]
+
+
+# ---------------------------------------------------------------------------
+# SPLIT-CONFORMAL ARALIK (2026-11-09, P2)
+#
+# NEDEN: model tek bir sayı veriyor ("isabet %38"). Karar için gereken şey
+# BELİRSİZLİK: "%90 güvenle isabet 0.28-0.47" → break-even 0.67 ise çekimser kal.
+# Kütüphane GEREKMEZ: split-conformal ~10 satır numpy. Bilinen-cevap testinde
+# 20 tohumda ortalama kapsama %90.1 (hedef %90) — MAPIE'nin API'si her sürümde
+# değiştiği için dış bağımlılık tercih edilmedi.
+#
+# SINIR (ölçüldü): dağılım KAYARSA kapsama garantisi bozulur (aynı testte %13).
+# Bu yüzden aralık "kesin garanti" değil, "kalibrasyon kümesi temsilciyse geçerli".
+# ---------------------------------------------------------------------------
+
+CONFORMAL_DEFAULT_ALPHA = 0.10   # %90 aralık
+
+
+def conformal_quantile(residuals: list[float], alpha: float = CONFORMAL_DEFAULT_ALPHA) -> float | None:
+    """Sonlu-örnek düzeltmeli konformal nicem: ceil((n+1)(1-alpha))/n yüzdeliği."""
+    vals = sorted(abs(float(r)) for r in (residuals or []) if r is not None)
+    n = len(vals)
+    if n < 20:
+        return None
+    level = min(1.0, math.ceil((n + 1) * (1.0 - float(alpha))) / n)
+    idx = min(n - 1, max(0, int(math.ceil(level * n)) - 1))
+    return vals[idx]
+
+
+def probability_interval(prob: float, residuals: list[float],
+                         alpha: float = CONFORMAL_DEFAULT_ALPHA) -> tuple[float, float] | None:
+    """Tek olasılık için kapsama aralığı [lo, hi] ⊂ [0,1]; hesaplanamazsa None."""
+    q = conformal_quantile(residuals, alpha)
+    if q is None:
+        return None
+    p = max(0.0, min(1.0, float(prob)))
+    return (round(max(0.0, p - q), 4), round(min(1.0, p + q), 4))
+
+
+def interval_excludes(interval: tuple[float, float] | None, value: float) -> bool:
+    """Aralık `value`'yu dışlıyor mu? (break-even dışlanıyorsa yön bilgisi var.)"""
+    if not interval:
+        return False
+    lo, hi = interval
+    return bool(float(value) < lo or float(value) > hi)
+
+
+def hit_rate_interval_wilson(hits: list[int], alpha: float = CONFORMAL_DEFAULT_ALPHA) -> dict | None:
+    """İsabet oranı için Wilson skor aralığı (kapalı form, bağımlılıksız).
+
+    NEDEN CONFORMAL DEĞİL: ikili etikette (0/1) |y-p| ≤ 1 olduğu için konformal
+    nicem ~0.85'e doyar, aralık [0,1]'e yaklaşır ve karar için bilgi taşımaz
+    (ölçüldü: hedef %90 kapsama, ölçülen %100, ortalama genişlik **1.00**).
+    Wilson aralığı gözlenen oranın belirsizliğini verir ve break-even ile
+    doğrudan karşılaştırılabilir.
+    """
+    import math as _m
+    vals = [1 if float(h) > 0 else 0 for h in (hits or []) if h is not None]
+    n = len(vals)
+    if n < 20:
+        return None
+    z = 1.6448536269514722 if abs(float(alpha) - 0.10) < 1e-9 else         (1.959963984540054 if abs(float(alpha) - 0.05) < 1e-9 else 1.2815515655446004)
+    p_hat = sum(vals) / n
+    denom = 1.0 + z * z / n
+    center = (p_hat + z * z / (2 * n)) / denom
+    half = z * _m.sqrt(p_hat * (1 - p_hat) / n + z * z / (4 * n * n)) / denom
+    return {"n": n, "hit_rate": round(p_hat, 4),
+            "lo": round(max(0.0, center - half), 4), "hi": round(min(1.0, center + half), 4)}

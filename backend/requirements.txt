@@ -23,3 +23,5 @@ urllib3>=2.2.0
 # izi taklidi (impersonate="chrome120") şart. Gömülü `economicCalendarStore`
 # JSON'u standart `html.parser` ile çıkarıldığı için `beautifulsoup4` GEREKMEZ.
 curl_cffi==0.16.0
+# 2026-11-09 P1: yapı kırılması (change-point) — saf numpy/scipy, üretim imajıyla uyumlu.
+ruptures==1.1.10

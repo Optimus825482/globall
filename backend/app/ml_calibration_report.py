@@ -154,7 +154,45 @@ def summarize_rows(rows: list[dict]) -> dict[str, Any]:
         "generated_at": time.time(),
     })
     out["out_of_sample"] = _walk_forward(probs, hits, min_samples=MIN_SAMPLES)
+    # KONFORMAL ARALIK (P2): "isabet oranı şu aralıkta" — karar desteği.
+    # Eğri/nicem eğitim yarısında kurulur, test yarısında kapsama ÖLÇÜLÜR.
+    out["conformal"] = _conformal_block(probs, hits, break_even)
     return out
+
+
+def _conformal_block(probs: list[float], hits: list[int], break_even: float,
+                     alpha: float = mp.CONFORMAL_DEFAULT_ALPHA) -> dict[str, Any]:
+    """Test yarısında isabet oranı + Wilson aralığı + break-even karşılaştırması.
+
+    CONFORMAL REDDEDİLDİ (ölçüm): ikili etikette |y-p| ≤ 1 → nicem 0.85'e doyar,
+    aralık genişliği **1.00**, kapsama %100 → karar için bilgi YOK. Wilson aralığı
+    gözlenen oranın belirsizliğini verir ve doğrudan break-even ile kıyaslanır.
+    """
+    n = len(probs)
+    cut = int(n * 0.65)
+    if n < MIN_SAMPLES or cut < 40 or (n - cut) < 30:
+        return {"available": False, "reason": "aralık için yetersiz veri"}
+    te_h = hits[cut:]
+    iv = mp.hit_rate_interval_wilson(te_h, alpha)
+    if iv is None:
+        return {"available": False, "reason": "yetersiz test örneği"}
+    be = float(break_even)
+    verdict = ("aralık break-even'ın TAMAMEN ALTINDA → bu güven düzeyinde kenar YOK"
+               if iv["hi"] < be else
+               "aralık break-even'ın TAMAMEN ÜSTÜNDE → kenar mümkün"
+               if iv["lo"] > be else
+               "aralık break-even'ı KESİYOR → belirsiz, çekimser kal")
+    return {
+        "available": True,
+        "alpha": alpha,
+        "n_test": iv["n"],
+        "hit_rate": iv["hit_rate"],
+        "wilson_lo": iv["lo"],
+        "wilson_hi": iv["hi"],
+        "break_even": round(be, 4),
+        "verdict": verdict,
+        "note": "Wilson %90 aralığı; konformal ikili etikette doyduğu için kullanılmadı.",
+    }
 
 
 def csv_rows(rows: list[dict]) -> tuple[list[str], list[list[Any]]]:

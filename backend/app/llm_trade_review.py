@@ -190,12 +190,41 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
             logger.info("LLM inceleme dosyası parçası atlandı (%s): %s", name, exc)
             return None
 
+    async def _kirilma():
+        """Yapı kırılması (P1): rejim değişiminden hemen sonra giriş riskli mi?
+
+        5m kapanış serisinde `ruptures` PELT ile kırılma noktası aranır. Paket yoksa
+        `available=False` döner ve LLM "ölçüm yok" görür (uydurma yok, karar durmaz).
+        """
+        from app import regime_break, hmm_regime
+        bars, src = await forex_research.run_blocking(forex_research.get_candles, sym, "5m")
+        info = regime_break.from_candles(bars)
+        # AYNI mum serisinden oynaklık rejimi (P3) — ikinci ağ çağrısı YOK.
+        # GERÇEK 2 durumlu Gaussian HMM (log yuvarlanan std üzerinde); naif
+        # "getiri üzerinde 3 durum" tasarımı ölçümde başarısız olduğu için bu.
+        closes: list[float] = []
+        for bar in (bars or []):
+            try:
+                if bar.get("close") is not None:
+                    closes.append(float(bar["close"]))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        rets = [(closes[i] - closes[i - 1]) / closes[i - 1]
+                for i in range(1, len(closes)) if closes[i - 1]]
+        try:
+            vol = hmm_regime.volatility_state(rets)
+        except Exception as exc:  # noqa: BLE001 - gölge bilgi kararı düşürmesin
+            vol = {"available": False, "method": "none", "note": f"HMM hatası: {type(exc).__name__}"}
+        return {**info, "oynaklik_rejimi": vol,
+                "veri_kaynagi": src, "bar_sayisi": len(bars or [])}
+
     async def _tv():
         tv = await forex_research.run_blocking(forex_research.tradingview_technicals, sym)
         return {"genel": tv["summary"], "dilimler": tv["words"]} if tv else None
 
-    tech, cal, news, dxy, tv = await asyncio.gather(_guard(_tech(), "teknik"), _guard(_cal(), "takvim"),
-                                                    _guard(_news(), "haber"), _guard(_dxy(), "dxy"), _guard(_tv(), "tv"))
+    tech, cal, news, dxy, tv, kirilma = await asyncio.gather(
+        _guard(_tech(), "teknik"), _guard(_cal(), "takvim"), _guard(_news(), "haber"),
+        _guard(_dxy(), "dxy"), _guard(_tv(), "tv"), _guard(_kirilma(), "kirilma"))
     now = time.time()
     features = None
     try:
@@ -261,6 +290,7 @@ async def build_dossier(ctx: Dict[str, Any]) -> Dict[str, Any]:
         "dolar_rejimi": dxy,
         "hesap_ve_yigilma": acct,
         "sembol_performansi": perf,
+        "yapi_kirilmasi": kirilma,
         "makro_baglam": macro,
         "ozellikler": features,
     }
