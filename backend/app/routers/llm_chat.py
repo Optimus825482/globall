@@ -18,6 +18,7 @@ from app import security
 from app.config import config
 from app.binance_tr_symbols import is_binance_tr_symbol
 from app import database
+from app import llm_danger
 from app.state import market, analyzer
 from app.api_common import (_start_background, _fresh_public_price, _main_pg_pool, _llm_guard_block_reason)
 from app.ai_trading_suite.chat_tools import (
@@ -3609,6 +3610,22 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
     failed_tool_calls = set()
 
     async def _dispatch_tool(name, args):
+        # TEHLİKE KAPISI (2026-11-10): gerçek para/canlı işlem araçları LLM yolundan ÇALIŞMAZ.
+        # Condor `runtime/danger.py` deseni: tehlike İSİMDEN taşınır, bilinmeyen ad fail-closed.
+        # Tek merkezî ret noktası — dağınık `_require_admin_principal` kontrollerinin yerine değil,
+        # ONLARIN ÖNÜNE konur.
+        _danger = llm_danger.gate(name)
+        if _danger is not None:
+            try:
+                await database.save_llm_tool_log({
+                    "scope": "llm_chat", "tool_name": str(name),
+                    "arguments": {"blocked": True, "args": args},
+                    "result_summary": "danger_blocked:" + llm_danger.summarize(name, args),
+                    "success": False,
+                })
+            except Exception:  # noqa: BLE001 - log hatası kapıyı açmasın
+                pass
+            return _danger
         if name == "run_ai_trading_suite_evaluation": return await execute_ai_trading_suite_evaluation(args)
         if name == "get_hedge_fund_council_deliberation": return await execute_hedge_fund_council(args)
         if name == "check_risk_chief_veto": return await execute_risk_chief_veto(args)
