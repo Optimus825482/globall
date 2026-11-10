@@ -104,14 +104,24 @@ async def build() -> dict[str, Any]:
         from app import database, forex_ml
         art = forex_ml.load_scoring_model()
         n = await database.count_llm_ml_prob_rows()
+        stream = await database.get_forex_ml_prequential()
+        n_res = len(stream)
+        metric = f"model: lojistik, {len(art.get('feature_names') or [])} özellik" if art else None
+        note = ("artifact yok: önce Forex ML sekmesinden eğit" if not art else
+                "yalnız eğitim tarihinden SONRAKİ kararlar skorlanır (in-sample sızıntı yok)")
+        # PREQUENTIAL IC: çözülmüş kararlarda model olasılığının sıralama gücü.
+        # n_res >= 40 altında ölçüm gürültülü → "birikiyor" yazar, sayı uydurmaz.
+        if n_res >= 40:
+            ic = forex_ml._spearman([x["prob"] for x in stream], [float(x["hit"]) for x in stream])
+            if ic is not None:
+                metric = (f"prequential IC {ic:+.3f} (n={n_res}) "
+                          f"{'✓' if ic > 0.1 else 'zayıf' if ic > 0 else 'sinyal yok'}")
         items.append(_item(
             "forex_ml_shadow", "Forex ML isabet olasılığı (skor gölgesi)", mode="shadow",
             active=art is not None,
             measures="Modelin karar anındaki isabet olasılığı vs gerçekleşen sonuç (prequential)",
-            n=n, needed=300,
-            metric=(f"model: lojistik, {len(art.get('feature_names') or [])} özellik" if art else None),
-            note=("artifact yok: önce Forex ML sekmesinden eğit" if not art else
-                  "yalnız eğitim tarihinden SONRAKİ kararlar skorlanır (in-sample sızıntı yok)")))
+            n=n, needed=300, metric=metric, note=note + f" · çözülmüş {n_res}",
+            detail="/api/reports/ml-calibration"))
     except Exception as exc:  # noqa: BLE001
         items.append(_item("forex_ml_shadow", "Forex ML skor gölgesi", mode="unknown",
                            active=False, measures="Forex ML skor gölgesi",

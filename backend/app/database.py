@@ -7315,6 +7315,34 @@ async def set_llm_review_ml_prob(review_id: int, prob: float) -> None:
     return await _run_db(op)
 
 
+async def get_forex_ml_prequential(limit: int = 5000) -> list[dict[str, Any]]:
+    """Forex ML gölgesinin prequential akışı: (model olasılığı, final sonuç).
+
+    Yalnız ÇÖZÜLMÜŞ kararlar döner — skorlanan ama hâlâ izlenen satırların
+    sonucu henüz yazılmadığı için IC'e alınmaz (etiket hareket eder).
+    """
+    def op(conn):
+        _ensure_llm_review_schema(conn)
+        rows = conn.execute(
+            "SELECT forex_ml_prob, shadow_pips FROM llm_trade_reviews "
+            "WHERE forex_ml_prob IS NOT NULL AND shadow_pips IS NOT NULL "
+            "AND shadow_status != 'IZLENIYOR' ORDER BY created_at ASC LIMIT ?",
+            (max(1, min(int(limit), 20000)),)
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r) if not isinstance(r, (list, tuple)) else {
+                "forex_ml_prob": r[0], "shadow_pips": r[1]}
+            try:
+                prob = float(d["forex_ml_prob"])
+                hit = 1 if float(d["shadow_pips"]) > 0 else 0
+            except (TypeError, ValueError):
+                continue
+            out.append({"prob": prob, "hit": hit})
+        return out
+    return await _run_db(op)
+
+
 async def count_llm_ml_prob_rows() -> int:
     """Skorlanmış karar sayısı (Forex ML gölge satırının n'i)."""
     def op(conn):
