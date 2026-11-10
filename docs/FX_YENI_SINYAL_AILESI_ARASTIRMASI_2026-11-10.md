@@ -97,3 +97,38 @@ Blog/YouTube iddiası: gotobi günlerinde (ayın 5/10/15/…/30'u) Tokyo fix ön
 5. **M1 derinliği** (gotobi fix-sonrası pencere + tick doğrulaması için) — Dukascopy tick arşivi ya da terminal geçmiş indirmesi.
 
 **Kural:** hiçbir aday bu kapıları geçmeden canlıya alınmaz; her aday için "kontrol grubu" ve "maliyet sonrası" şartı zorunludur.
+
+---
+
+## 6) UYGULAMA TURU — (a) RADAR sızıntıları ve (b) haber ailesi ÖLÇÜLDÜ
+
+### (a) RADAR/mevcut hat sızıntıları — 2 gerçek düzeltme (commit f9dca4ed)
+
+**1. Kalite kalkanındaki TERS MANTIK (canlı, kripto dalı):**
+```python
+max_dist = 0.85 if score >= 80.0 else 0.30     # skor ≥80 → FOMO'ya 3× izin
+min_body = 0.25 if score >= 80.0 else 0.35     # skor ≥80 → zayıf gövdeye izin
+```
+Canlı RADAR defterinde skor **ters** çalışıyor: skor <90 → **+0.204R**, 90-95 → +0.053R, 96+ → **−0.065R** (n=468). Yani "yüksek skor" pratikte "daha uzamış (geç) giriş" demekti. **Düzeltildi:** skor artık kalkanı gevşetmiyor (tek tip sıkı eşik 0.30/0.35).
+⚠️ **Replay A/B sonuçsuz çıktı** — çünkü replay `asset_quality_gate`'e `score` **geçmiyor** (`score=0` → eski kod da sıkı dalı kullanıyordu). Yani bu değişiklik **canlı defterden** doğrulanacak (deploy sonrası skor kovası beklentisi); harness boşluğu ayrı iş.
+
+**2. XRPUSD kara listeye eklendi:** canlı RADAR'da n=48, isabet **%22.9**, −0.116R — aynı kanalda BTCUSD %69.4. %22.9 isabette başabaş için **RR>3.4** gerekir. (Not: XRP kripto allowlist'inde; yasak ölçümle gerekçeli, boş listeyle geri alınabilir.)
+
+**3. FRS/fırsat kanalı (−0.177R, t=−2.51): SEMBOL YASAKLAMADIM.** Ölçüm: kanalın negatifliği sembole özgü değil (her sembol hücresi n=5-11 ve işaret karışık: GBPUSD +0.234 / AUDJPY −0.395 / EURGBP −0.261). Orada sembol kesmek curve-fitting olurdu. Kanalın geometrisi farklı: medyan SL 26.5p, TP 36.9p, RR 1.48, isabet %49.5 → gerçekleşen kazanç RR'ın çok altında (kazanan erken kesiliyor). Doğru iş: kanalın BE/trailing davranışını ölçmek — sıradaki tur.
+
+### (b) Haber/sürpriz ailesi — `scripts/fx_news_probe.py` (kontrol gruplu ölçüm)
+
+Kural: `calendar_surprises` (z cinsinden sürpriz) → sürpriz yönünde, **t0+90 sn** giriş, 60 dk tutuş, gerçek maliyet düşülmüş. 40 olay / 124 parite-işlem:
+
+| | sonuç |
+|---|---|
+| TOPLAM net | **−2.06 pip/işlem (t=−1.96)** |
+| En kötü | USDJPY −5.92p (t=−2.39), EURUSD −3.12p, EURJPY −18.3p (n=5) |
+| En iyi | USDCAD +1.71p (n=20, t=0.49), GBPJPY +5.43p (n=6) |
+| **Kontrol 1 (ters yön)** | net −1.45p → **ters yön de kaybediyor** |
+| **Kontrol 2 (|z|<0.5)** | net −3.94p |
+| **Kontrol 3 (saat kaydırma)** | net **−0.33p** → olay anı, rastgele saatten **daha kötü** |
+
+**Okuma:** brüt etki ≈ **0.4 pip**, maliyet ≈ **1.7 pip** → sürpriz yönünde devam **yok**; ters yönde de yok (maliyet ikisini de yiyor). Literatürün en güçlü olduğu CPI/NFP/FOMC olayları bu yerel örneklemde **yok** (yerel tablo CAD/CHF/GBP ikincil göstergeleri ağırlıklı; 3 yıldızlı yalnız 11 olay) ve M1 derinliği ~3 ay. Yani **"bu örneklemde kenar yok"** — "hiç yok" değil. Prob sunucuda (tam takvim + daha derin geçmiş) koşulmaya hazır.
+
+**Sonuç:** iki kol da dürüst biçimde kapandı: (a) canlıda iki somut hata düzeltildi, (b) haber ailesi bu örneklemde maliyeti aşamadı.
