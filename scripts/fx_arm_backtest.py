@@ -41,6 +41,8 @@ except ImportError:
     sys.exit(1)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: uygulama sembolü → broker sembolü (NAS100 terminalde USTEC)
+BROKER_ALIAS = {"NAS100": "USTEC", "US100": "USTEC"}
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 
 TFS = {"15m": mt5.TIMEFRAME_M15, "30m": mt5.TIMEFRAME_M30, "1h": mt5.TIMEFRAME_H1,
@@ -68,8 +70,13 @@ def atr_series(bars: list[tuple], period: int = 14) -> list[float]:
 
 def build_trades(bars: list[tuple], signals: list[int], *, atr_mult: float = 1.5,
                  hold_bars: int = 1, tp_r: float = 0.0, cost_price: float = 0.0,
-                 pip: float = 0.0, shift: int = 0) -> list[dict]:
-    """Sinyal serisinden işlem defteri. Giriş = sinyal barından SONRAKİ barın açılışı."""
+                 pip: float = 0.0, shift: int = 0, exit_on_opposite: bool = False) -> list[dict]:
+    """Sinyal serisinden işlem defteri. Giriş = sinyal barından SONRAKİ barın açılışı.
+
+    `atr_mult <= 0` → **SL YOK** (yalnız karşıt sinyal / zaman çıkışı; Donchian/EMA ailelerinin
+    doğal çıkışı budur). `exit_on_opposite=True` → seride ters sinyal (−1) geldiğinde o barın
+    kapanışından çık (sözleşmedeki "0 kapatmaz" kuralı korunur; yalnız −1 kapatır).
+    """
     if len(bars) != len(signals):
         raise ValueError("bar/sinyal uzunluğu uyuşmuyor")
     if pip <= 0:
@@ -91,39 +98,103 @@ def build_trades(bars: list[tuple], signals: list[int], *, atr_mult: float = 1.5
         a = atr[j]
         if a <= 0:
             continue
-        sl_dist = atr_mult * a
-        sl = entry - sig * sl_dist
-        tp = entry + sig * tp_r * sl_dist if tp_r > 0 else None
+        use_sl = atr_mult > 0
+        sl_dist = atr_mult * a if use_sl else 0.0
+        sl = entry - sig * sl_dist if use_sl else 0.0
+        tp = entry + sig * tp_r * sl_dist if (tp_r > 0 and use_sl) else None
         exit_idx = min(entry_idx + max(1, hold_bars), n - 1)
         exit_px, reason = bars[exit_idx][4], "TIME"
         for k in range(entry_idx, exit_idx + 1):
             hi, lo = bars[k][2], bars[k][3]
-            hit_sl = (lo <= sl) if sig == 1 else (hi >= sl)
-            if hit_sl:                     # muhafazakar: SL önce
-                exit_px, reason, exit_idx = sl, "SL", k
+            if use_sl and ((lo <= sl) if sig == 1 else (hi >= sl)):
+                exit_px, reason, exit_idx = sl, "SL", k     # muhafazakar: SL önce
                 break
-            if tp is not None:
-                hit_tp = (hi >= tp) if sig == 1 else (lo <= tp)
-                if hit_tp:
-                    exit_px, reason, exit_idx = tp, "TP", k
+            if tp is not None and ((hi >= tp) if sig == 1 else (lo <= tp)):
+                exit_px, reason, exit_idx = tp, "TP", k
+                break
+            # KARŞIT SİNYAL: sözleşmede −1 "ters yön adayı" demek; long-only kolda çıkıştır.
+            if exit_on_opposite and k < n - 1:
+                nxt = int(signals[min(k + 1, n - 1)])
+                if nxt == -sig:
+                    exit_px, reason, exit_idx = bars[k][4], "OPPOSITE", k
                     break
         gross = sig * (exit_px - entry)
         net = gross - cost_price
         risk = sl_dist
         trades.append({"entry_idx": entry_idx, "exit_idx": exit_idx, "dir": sig,
                        "gross_pips": gross / pip, "net_pips": net / pip,
-                       "R": net / risk, "reason": reason})
+                       "R": (net / risk) if use_sl and risk > 0 else float("nan"), "reason": reason})
+    return trades
+
+
+def build_trades_sequential(bars: list[tuple], signals: list[int], *, cost_price: float = 0.0,
+                          pip: float = 0.0, shift: int = 0, atr_mult: float = 0.0) -> list[dict]:
+    """TEK POZİSYON simülasyonu (Donchian/EMA gibi "karşıt sinyalde çık" aileleri).
+
+    NEDEN: sinyal başına bağımsız işlem açan mod, sinyal-çıkışlı ailelerde her sinyali veri
+    sonuna kadar taşır → **drift artefaktı** (2026-11-10'da ölçüldü: kontrol grubu bile t=18).
+    Burada pozisyon durumu tutulur: sinyal gelince gir (sonraki bar açılışı), karşıt sinyalde
+    çık (o barın kapanışı). `atr_mult > 0` ise SL de uygulanır.
+    """
+    if len(bars) != len(signals):
+        raise ValueError("bar/sinyal uzunluğu uyuşmuyor")
+    if pip <= 0:
+        raise ValueError("pip > 0 olmalı")
+    atr = atr_series(bars)
+    n = len(bars)
+    trades: list[dict] = []
+    i = 1
+    while i < n - 1:
+        j = i - shift
+        sig = int(signals[j]) if 0 <= j < n else 0
+        if sig not in (1, -1):
+            i += 1
+            continue
+        entry_idx = i + 1
+        if entry_idx >= n:
+            break
+        entry = bars[entry_idx][1]
+        use_sl = atr_mult > 0 and atr[j] > 0
+        sl = entry - sig * atr_mult * atr[j] if use_sl else 0.0
+        exit_idx, exit_px, reason = n - 1, bars[n - 1][4], "TIMEEOF"
+        k = entry_idx
+        while k < n:
+            if use_sl and ((bars[k][3] <= sl) if sig == 1 else (bars[k][2] >= sl)):
+                exit_idx, exit_px, reason = k, sl, "SL"
+                break
+            kj = k - shift
+            nxt = int(signals[kj]) if 0 <= kj < n else 0
+            if nxt == -sig:                     # karşıt sinyal → çıkış
+                exit_idx, exit_px, reason = k, bars[k][4], "OPPOSITE"
+                break
+            k += 1
+        trades.append({"entry_idx": entry_idx, "exit_idx": exit_idx, "dir": sig,
+                       "gross_pips": sig * (exit_px - entry) / pip,
+                       "net_pips": (sig * (exit_px - entry) - cost_price) / pip,
+                       "R": (float("nan") if not use_sl else
+                             (sig * (exit_px - entry) - cost_price) / (atr_mult * atr[j])),
+                       "bars_held": exit_idx - entry_idx + 1, "reason": reason})
+        i = exit_idx + 1                        # pozisyon kapandıktan sonra devam
     return trades
 
 
 def summarize(trades: list[dict], years: float) -> dict:
     if not trades:
         return {"n": 0}
-    rs = [t["R"] for t in trades]
+    rs = [t["R"] for t in trades if t["R"] == t["R"]]   # NaN'leri at (SL'siz kollar)
     wins = [t["R"] for t in trades if t["R"] > 0]
     losses = [t["R"] for t in trades if t["R"] <= 0]
     gw = sum(t["net_pips"] for t in trades if t["net_pips"] > 0)
     gl = -sum(t["net_pips"] for t in trades if t["net_pips"] <= 0) or 1e-9
+    if not rs:                       # SL'siz kol: R tanımsız → pip bazlı özet
+        pips = [t["net_pips"] for t in trades]
+        m = statistics.mean(pips)
+        sd = statistics.pstdev(pips) or 1e-9
+        return {"n": len(trades), "isabet_pct": round(100.0 * sum(1 for v in pips if v > 0) / len(pips), 1),
+                "ort_kazanan_R": None, "ort_kaybeden_R": None, "beklenti_R": None,
+                "beklenti_pip": round(m, 3), "t": round(m / (sd / len(pips) ** 0.5), 2),
+                "PF": round(sum(v for v in pips if v > 0) / (abs(sum(v for v in pips if v < 0)) or 1e-9), 3),
+                "net_pip": round(sum(pips), 1), "islem_yil": round(len(trades) / years, 0) if years else None}
     m = statistics.mean(rs)
     sd = statistics.pstdev(rs) or 1e-9
     return {"n": len(trades), "isabet_pct": round(100.0 * len(wins) / len(trades), 1),
@@ -137,6 +208,7 @@ def summarize(trades: list[dict], years: float) -> dict:
 # --------------------------------------------------------------------------- veri + CLI
 
 def load_bars(sym: str, years: float, tf: str) -> list[tuple]:
+    broker = BROKER_ALIAS.get(str(sym).upper(), str(sym).upper())
     out: list[tuple] = []
     end = dt.datetime.now()
     days = int(years * 365.25)
@@ -145,7 +217,7 @@ def load_bars(sym: str, years: float, tf: str) -> list[tuple]:
     while i < days:
         b_end = end - dt.timedelta(days=i)
         b_start = max(b_end - dt.timedelta(days=step), end - dt.timedelta(days=days))
-        r = mt5.copy_rates_range(sym, TFS[tf], b_start, b_end)
+        r = mt5.copy_rates_range(broker, TFS[tf], b_start, b_end)
         if r is not None and len(r):
             out.extend((int(x["time"]), float(x["open"]), float(x["high"]),
                         float(x["low"]), float(x["close"])) for x in r)
@@ -205,6 +277,8 @@ def main() -> int:
     ap.add_argument("--hold-bars", type=int, default=1, help="zaman çıkışı (bar)")
     ap.add_argument("--tp-r", type=float, default=0.0, help=">0 ise TP = bu R (yoksa yalnız SL/zaman)")
     ap.add_argument("--shift", type=int, default=0, help="kontrol: sinyali N bar kaydır")
+    ap.add_argument("--exit-on-opposite", action="store_true",
+                    help="ters sinyal (−1) geldiğinde çık (Donchian/EMA ailelerinin doğal çıkışı)")
     ap.add_argument("--json", default="")
     args = ap.parse_args()
 
@@ -242,17 +316,32 @@ def main() -> int:
         if errs:
             print(f"{sym:<8} SÖZLEŞME İHLALİ: {errs[0]}")
             continue
-        trades = build_trades(bars, sig, atr_mult=args.atr_mult, hold_bars=args.hold_bars,
-                             tp_r=args.tp_r, cost_price=cost_price(sym), pip=pip, shift=args.shift)
+        if args.exit_on_opposite:
+            trades = build_trades_sequential(bars, sig, cost_price=cost_price(sym), pip=pip,
+                                             shift=args.shift, atr_mult=args.atr_mult)
+        else:
+            trades = build_trades(bars, sig, atr_mult=args.atr_mult, hold_bars=args.hold_bars,
+                                 tp_r=args.tp_r, cost_price=cost_price(sym), pip=pip, shift=args.shift)
         s = summarize(trades, args.years)
         per_symbol[sym] = s
         all_trades.extend(trades)
         if s.get("n"):
-            print(f"{sym:<8}{s['n']:>6}{s['isabet_pct']:>8.1f}{s['ort_kazanan_R']:>7.2f}"
-                  f"{s['ort_kaybeden_R']:>7.2f}{s['beklenti_R']:>10.3f}{s['t']:>7.2f}"
+            _kr = s.get("ort_kazanan_R")
+            _kay = s.get("ort_kaybeden_R")
+            _bek = s.get("beklenti_R") if s.get("beklenti_R") is not None else s.get("beklenti_pip")
+            print(f"{sym:<8}{s['n']:>6}{s['isabet_pct']:>8.1f}"
+                  f"{(_kr if _kr is not None else float('nan')):>7.2f}"
+                  f"{(_kay if _kay is not None else float('nan')):>7.2f}"
+                  f"{(_bek if _bek is not None else float('nan')):>10.3f}{s['t']:>7.2f}"
                   f"{s['PF']:>6.2f}{s['net_pip']:>9.0f}{s['islem_yil']:>10.0f}")
     tot = summarize(all_trades, args.years)
-    if tot.get("n"):
+    if tot.get("n") and tot.get("beklenti_R") is None:
+        print("-" * 79)
+        print(f"{'TOPLAM':<8}{tot['n']:>6}{tot['isabet_pct']:>8.1f}{'':>7}{'':>7}{tot['beklenti_pip']:>10.3f}"
+              f"{tot['t']:>7.2f}{tot['PF']:>6.2f}{tot['net_pip']:>9.0f}{tot['islem_yil']:>10.0f}")
+        print(f"\n  okay (SL'siz): beklenti {tot['beklenti_pip']:+.3f} pip/işlem · t={tot['t']} · "
+              f"PF={tot['PF']} · işlem/yıl={tot['islem_yil']:.0f} · kontrol için --shift 5")
+    elif tot.get("n"):
         print("-" * 79)
         print(f"{'TOPLAM':<8}{tot['n']:>6}{tot['isabet_pct']:>8.1f}{tot['ort_kazanan_R']:>7.2f}"
               f"{tot['ort_kaybeden_R']:>7.2f}{tot['beklenti_R']:>10.3f}{tot['t']:>7.2f}"

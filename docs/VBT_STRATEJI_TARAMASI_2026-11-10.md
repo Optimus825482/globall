@@ -58,3 +58,49 @@ pozitif olduğu enstrümanlar (XAU, USTEC, US30) + **kanıt kapsamından çıkar
 - **Çoklu test**: 55 hücre; komşuluk kararlılığı riski büyük ölçüde azaltıyor ama `arch` SPA/Reality Check
   ile resmi düzeltme hâlâ yapılmadı.
 - Bizim **replay motoru** (kapılar + gerçek spread + SL-first) ile çapraz doğrulama yapılmadı → sıradaki adım.
+
+---
+
+## 5) ÇAPRAZ DOĞRULAMA — adaylar 10 yılda TUTMADI (durum: ELENDİ)
+
+Üç aday kol dosyası olarak yazıldı (`app/arms/donchian_break.py`, `ema_trend_cross.py`), sonra üç
+bağımsız denetimden geçirildi:
+
+### 5.1 Buy&hold ile kıyas (5 yıl, 1h, long-only)
+
+| vaka | Sharpe | getiri | **DD** | işlem |
+|---|---|---|---|---|
+| XAUUSD buy&hold | 1.19 | +125% | **30%** | 1 |
+| **XAUUSD Donchian(15) LONG** | **1.65** | +128% | **14%** | 419 |
+| XAUUSD SHORT (aynı sinyal) | **−1.71** | −62% | 68% | 419 |
+| USDJPY buy&hold | 0.86 | +40% | 16% | 1 |
+| **USDJPY Donchian(10) LONG** | **1.14** | +38% | **12%** | 621 |
+| USDJPY SHORT | −1.47 | −36% | 39% | 621 |
+| NAS100 buy&hold | 0.72 | +72% | 37% | 1 |
+| NAS100 EMA(10,200) LONG | 0.76 | +47% | **17%** | 188 |
+| NAS100 SHORT | −0.78 | −41% | 51% | 188 |
+
+**Okuma:** getiri buy&hold'dan YÜKSEK değil; kazanç **DD yarıya inmesi** (30→14%, 37→17%) ve
+**short tarafı her üç enstrümanda da yıkım** (−0.8…−1.7). Yani kulp "alfa" değil, **beta + DD zamanlaması**.
+
+### 5.2 10 YIL GÜNLÜK — rejim testi (2016-2026: 2018 düzeltmesi, 2020 çöküşü, 2022 ayı dahil)
+
+| vaka | buy&hold Sharpe | **trend LONG Sharpe** | buy&hold getiri | trend getiri |
+|---|---|---|---|---|
+| XAUUSD | **0.98** | 0.68 | +236% | +93% |
+| USDJPY | **0.58** | 0.37 | +48% | +19% |
+| NAS100 | 1.06 | 1.04 | +487% | +306% |
+
+**Sonuç: 5 yıllık 1h "kenarı" rejim artefaktı.** Boğa piyasasında DD kontrolü gibi görünen şey,
+10 yıllık pencerede buy&hold'un **altında** kalıyor. Bu yüzden iki kol da **kayıtlı değil**
+(`register_arm` yok, `EVIDENCE` negatif sonucu taşıyor, testle kilitli).
+
+### 5.3 Metodolojik notlar (bu turda öğrenilenler)
+
+- **Trend ailelerinde shift kontrolü geçersiz**: sinyali 5 bar kaydırmak trendi hâlâ yakalıyor →
+  kontrol olarak **buy&hold** ve **ters taraf (short)** kullanılmalı.
+- **Pozisyon durumu olmadan** sinyal-çıkışlı aile simüle edilemez: her sinyali veri sonuna kadar
+  taşıyan naif simülatör **drift artefaktı** üretir (ölçüldü: t=18 "kenar"). `fx_arm_backtest.py`
+  artık `--exit-on-opposite` için **tek pozisyonlu sıralı** simülatör kullanır.
+- Tek IS/OOS dilimi + tek zaman dilimi **yetmiyor**; en az bir **rejim karşıtı pencere** (10 yıl günlük
+  veya 2011-2015 altın ayısı) şart.
