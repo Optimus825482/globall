@@ -197,3 +197,36 @@ Ulaşma olasılıkları: FRS P(MFE≥0.5R)=%31.2, P(MFE≥1.5R)=%5.4 — **başa
 Öte yandan R-beklentisi negatif olan kümeler (FX majörleri, FRS, LBRK, Scalper/FVG mirası) için **hiçbir hedef eşiği** başabaşı geçmiyor.
 
 **Sonuç — üç kapı da kapandı:** (1) çıkış/hedef ayarı, (2) basit özelliklerle seçicilik (AUC 0.58), (3) zengin özelliklerle seçicilik (AUC 0.59, en iyi kesitte dahi breakeven). Geriye **kapsam kararı** kalıyor: kanıtlı alt kümede (RADAR × USTEC/US30/XAUUSD + Tokyo pencereleri) yoğunlaşmak; R-beklentisi negatif kümelerde işlem açmamak.
+
+---
+
+## 9) KOL DOSYASI + BACKTESTER — Tokyo penceresi R cinsinden ne veriyor? (2026-11-10)
+
+**Yeni araç:** `scripts/fx_arm_backtest.py` — `app/arms/*` kolunu **look-ahead'siz** ölçer:
+sinyal bar `i` → giriş **bar `i+1` açılışı**; SL = `k×ATR(14)`; çıkış SL veya `hold_bars`;
+maliyet (tick p50 spread + komisyon) tur başına düşülür; **bar içi SL önce** (muhafazakâr);
+`--shift N` ile **kontrol grubu**. Çekirdek 5 known-answer testiyle kilitli
+(`backend/tests/test_arm_backtest.py`).
+
+`tokyo_window` kolu, 5 yıl H1, `hold_bars=1`, 4 sembol (7.767 işlem):
+
+| varyant | isabet% | beklenti R | t | PF |
+|---|---|---|---|---|
+| **SL = 1.5×ATR (canlı varsayılanı)** | 47.7 | **+0.002** | 0.25 | 1.14 |
+| SL = 1.0×ATR | 45.2 | −0.005 | −0.43 | 1.11 |
+| SL = 0.6×ATR | 38.4 | −0.016 | −0.97 | 1.05 |
+| SL = 3.0×ATR | 48.7 | −0.003 | −0.61 | 1.11 |
+| **KONTROL: sinyal 5 bar kaydırılmış** | 49.9 | **−0.007** | −1.21 | **0.89** |
+
+**Okuma (dürüst):**
+1. **Kontrol grubu çöküyor** (PF 1.14 → 0.89) → zamanlama etkisi verinin genel eğilimi değil, **gerçek**.
+2. Ama **hiçbir stop boyu R'yi pozitife çekmiyor**; en iyi varyant +0.002R (t=0.25) ≈ **başabaş**.
+   Nedeni: ölçülen etki ~**+1.5 pip/saat**; 1 saatlik hareketin ATR'si ~8-12 pip olduğu için etki
+   stop gürültüsünün içinde kalıyor (maliyet ~1 pip).
+3. **Sonuç:** Tokyo penceresi **standalone işlem kolu olarak kâr motoru değil**. Doğru kullanım:
+   **zaman filtresi/ağırlığı** — o saatlerde diğer sinyallere izin vermek/kısıtlamak, veya çok
+   küçük stopla saat-içi ölçek. Canlı `tokyo_drift` kolu **kalabilir** (negatif değil, t=0.25),
+   ama **boyut artırılmamalı**; bir sonraki adım: diğer kollar için "01:00 UTC penceresi" filtresini A/B etmek.
+4. Metodolojik not: bu, "pip düzeyinde anlamlı (t=10.7) etki" ile "işlem R'sinde anlamlı kenar"
+   arasındaki farkın **ölçülmüş** örneğidir; bir etkinin büyüklüğü, hedeflediği stop geometrisine
+   göre değerlendirilmeden strateji sayılmamalı.

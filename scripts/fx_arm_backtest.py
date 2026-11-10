@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""KOL BACKTESTER — dosya tabanlı sinyal kollarını ölçer (2026-11-10)
+
+NEDEN
+-----
+`app/arms/*` ile kollar **dosya** olarak tanımlandı (sözleşme: +1/−1/0, `0` kapatmaz, saf).
+Motorun tamamını (çok kollu defter + kapılar) çalıştırmadan bir kolu hızlıca A/B etmek için
+bu bağımsız koşucu var: sinyal serisi → işlem defteri → payoff/beklenti R.
+
+KURALLAR (ölçüm dürüstlüğü)
+---------------------------
+1. **Look-ahead YOK:** sinyal bar `i`'de üretilirse giriş **bar i+1'in açılışından** yapılır.
+2. **SL gerçekçi:** SL = `atr_mult × ATR(14)` (giriş anındaki ATR), yön tersi.
+3. **Çıkış:** SL veya `hold_bars` sonunda kapanış (TP yok varsayılan; `--tp-r` ile eklenebilir).
+4. **Maliyet:** sembol başına ölçülen spread (p50, tick) + komisyon (pip cinsine çevrilir),
+   her tur için bir kez düşülür.
+5. **Kontrol grubu:** sinyaller `--shift` bar kaydırılınca beklenti sıfıra çök meli —
+   çökmüyorsa "etki" verinin genel eğilimidir, sinyalin değil.
+6. Bar içi sıra **muhafazakâr**: SL önce (canlı replay ile aynı varsayım).
+
+Kullanim:
+    python scripts/fx_arm_backtest.py --arm tokyo_window --years 5 --tf 1h
+    python scripts/fx_arm_backtest.py --arm tokyo_window --symbols GBPUSD --hold-bars 1 --json outputs/arm.json
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import datetime as dt
+import json
+import os
+import statistics
+import sys
+
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    print("[HATA] MetaTrader5 yok — Python 3.12'yi tam yolla cagirin.")
+    sys.exit(1)
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+
+TFS = {"15m": mt5.TIMEFRAME_M15, "30m": mt5.TIMEFRAME_M30, "1h": mt5.TIMEFRAME_H1,
+       "4h": mt5.TIMEFRAME_H4, "1d": mt5.TIMEFRAME_D1}
+
+
+# --------------------------------------------------------------------------- saf çekirdek
+
+def atr_series(bars: list[tuple], period: int = 14) -> list[float]:
+    """Basit ATR (Wilder yumuşatma) — bar: (ts, o, h, l, c)."""
+    out = [0.0] * len(bars)
+    trs: list[float] = []
+    for i, (_, _o, h, l, c) in enumerate(bars):
+        prev_c = bars[i - 1][4] if i > 0 else c
+        trs.append(max(h - l, abs(h - prev_c), abs(l - prev_c)))
+    if len(trs) < period:
+        return out
+    atr = statistics.mean(trs[:period])
+    out[period - 1] = atr
+    for i in range(period, len(trs)):
+        atr = (atr * (period - 1) + trs[i]) / period
+        out[i] = atr
+    return out
+
+
+def build_trades(bars: list[tuple], signals: list[int], *, atr_mult: float = 1.5,
+                 hold_bars: int = 1, tp_r: float = 0.0, cost_price: float = 0.0,
+                 pip: float = 0.0, shift: int = 0) -> list[dict]:
+    """Sinyal serisinden işlem defteri. Giriş = sinyal barından SONRAKİ barın açılışı."""
+    if len(bars) != len(signals):
+        raise ValueError("bar/sinyal uzunluğu uyuşmuyor")
+    if pip <= 0:
+        raise ValueError("pip > 0 olmalı")
+    atr = atr_series(bars)
+    trades: list[dict] = []
+    n = len(bars)
+    for i in range(n):
+        j = i - shift                     # kontrol grubu için kaydırma
+        if j < 20:
+            continue
+        sig = int(signals[j])
+        if sig not in (1, -1):
+            continue
+        entry_idx = i + 1
+        if entry_idx >= n - 1:
+            continue
+        entry = bars[entry_idx][1]        # sonraki barın AÇILIŞI (look-ahead yok)
+        a = atr[j]
+        if a <= 0:
+            continue
+        sl_dist = atr_mult * a
+        sl = entry - sig * sl_dist
+        tp = entry + sig * tp_r * sl_dist if tp_r > 0 else None
+        exit_idx = min(entry_idx + max(1, hold_bars), n - 1)
+        exit_px, reason = bars[exit_idx][4], "TIME"
+        for k in range(entry_idx, exit_idx + 1):
+            hi, lo = bars[k][2], bars[k][3]
+            hit_sl = (lo <= sl) if sig == 1 else (hi >= sl)
+            if hit_sl:                     # muhafazakar: SL önce
+                exit_px, reason, exit_idx = sl, "SL", k
+                break
+            if tp is not None:
+                hit_tp = (hi >= tp) if sig == 1 else (lo <= tp)
+                if hit_tp:
+                    exit_px, reason, exit_idx = tp, "TP", k
+                    break
+        gross = sig * (exit_px - entry)
+        net = gross - cost_price
+        risk = sl_dist
+        trades.append({"entry_idx": entry_idx, "exit_idx": exit_idx, "dir": sig,
+                       "gross_pips": gross / pip, "net_pips": net / pip,
+                       "R": net / risk, "reason": reason})
+    return trades
+
+
+def summarize(trades: list[dict], years: float) -> dict:
+    if not trades:
+        return {"n": 0}
+    rs = [t["R"] for t in trades]
+    wins = [t["R"] for t in trades if t["R"] > 0]
+    losses = [t["R"] for t in trades if t["R"] <= 0]
+    gw = sum(t["net_pips"] for t in trades if t["net_pips"] > 0)
+    gl = -sum(t["net_pips"] for t in trades if t["net_pips"] <= 0) or 1e-9
+    m = statistics.mean(rs)
+    sd = statistics.pstdev(rs) or 1e-9
+    return {"n": len(trades), "isabet_pct": round(100.0 * len(wins) / len(trades), 1),
+            "ort_kazanan_R": round(statistics.mean(wins), 3) if wins else 0.0,
+            "ort_kaybeden_R": round(statistics.mean(losses), 3) if losses else 0.0,
+            "beklenti_R": round(m, 4), "t": round(m / (sd / len(rs) ** 0.5), 2),
+            "PF": round(gw / gl, 3), "net_pip": round(sum(t["net_pips"] for t in trades), 1),
+            "islem_yil": round(len(trades) / years, 0) if years else None}
+
+
+# --------------------------------------------------------------------------- veri + CLI
+
+def load_bars(sym: str, years: float, tf: str) -> list[tuple]:
+    out: list[tuple] = []
+    end = dt.datetime.now()
+    days = int(years * 365.25)
+    i = 0
+    step = 30 if tf in ("15m", "30m") else 180
+    while i < days:
+        b_end = end - dt.timedelta(days=i)
+        b_start = max(b_end - dt.timedelta(days=step), end - dt.timedelta(days=days))
+        r = mt5.copy_rates_range(sym, TFS[tf], b_start, b_end)
+        if r is not None and len(r):
+            out.extend((int(x["time"]), float(x["open"]), float(x["high"]),
+                        float(x["low"]), float(x["close"])) for x in r)
+        i += step
+    out.sort(key=lambda b: b[0])
+    return out
+
+
+def cost_price(sym: str, days: int = 3) -> float:
+    """Tur başına maliyet (fiyat cinsinden): spread p50 + komisyon 2 yön."""
+    i = mt5.symbol_info(sym)
+    if i is None:
+        return 0.0
+    end = dt.datetime.now()
+    t = mt5.copy_ticks_range(sym, end - dt.timedelta(days=days), end, mt5.COPY_TICKS_ALL)
+    sp = None
+    if t is not None and len(t):
+        vals = sorted(float(x["ask"]) - float(x["bid"]) for x in t if float(x["ask"]) > float(x["bid"]) > 0)
+        if vals:
+            sp = vals[len(vals) // 2]
+    if sp is None:
+        sp = float(i.spread) * float(i.point)
+    tick_val, tick_size = float(i.trade_tick_value or 0), float(i.trade_tick_size or 0)
+    pip = float(i.point) * (10.0 if i.digits in (3, 5) else 1.0)
+    comm = (2.0 * 3.5 * (tick_size / tick_val) * pip) if (tick_val and tick_size and pip) else 0.0
+    return sp + comm
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Dosya tabanlı sinyal kolu backtester'ı")
+    ap.add_argument("--arm", required=True, help="kol adı (app/arms içinde kayıtlı)")
+    ap.add_argument("--symbols", default="", help="boş = kolun kendi symbols listesi")
+    ap.add_argument("--years", type=float, default=5.0)
+    ap.add_argument("--tf", default="", help="boş = kolun timeframe'i (1h/15m/1d…)")
+    ap.add_argument("--atr-mult", type=float, default=1.5, help="SL = ATR × bu")
+    ap.add_argument("--hold-bars", type=int, default=1, help="zaman çıkışı (bar)")
+    ap.add_argument("--tp-r", type=float, default=0.0, help=">0 ise TP = bu R (yoksa yalnız SL/zaman)")
+    ap.add_argument("--shift", type=int, default=0, help="kontrol: sinyali N bar kaydır")
+    ap.add_argument("--json", default="")
+    args = ap.parse_args()
+
+    if not mt5.initialize():
+        print(f"[HATA] MT5 initialize basarisiz: {mt5.last_error()}")
+        return 2
+    from app.arms.base import get_arm, validate_signals
+    arm = get_arm(args.arm)
+    if arm is None:
+        print(f"[HATA] kol bulunamadı: {args.arm} (kayıtlı: app/arms)")
+        return 2
+    tf = args.tf or arm.timeframe
+    if tf not in TFS:
+        print(f"[HATA] desteklenmeyen timeframe: {tf}")
+        return 2
+    syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()] or list(arm.symbols)
+    print(f"KOL: {arm.name} | tf={tf} | {args.years} yıl | SL={args.atr_mult}×ATR | "
+          f"tut={args.hold_bars} bar | TP={args.tp_r or 'yok'} | shift={args.shift}")
+    print(f"KANIT NOTU: {arm.evidence[:140]}")
+
+    print(f"\n{'sembol':<8}{'n':>6}{'isabet%':>8}{'kazR':>7}{'kayR':>7}{'beklentiR':>10}{'t':>7}"
+          f"{'PF':>6}{'net_pip':>9}{'işlem/yıl':>10}")
+    per_symbol: dict[str, dict] = {}
+    all_trades: list[dict] = []
+    for sym in syms:
+        bars = load_bars(sym, args.years, tf)
+        if len(bars) < 500:
+            print(f"{sym:<8} veri yetersiz ({len(bars)})")
+            continue
+        i = mt5.symbol_info(sym)
+        pip = float(i.point) * (10.0 if i.digits in (3, 5) else 1.0)
+        sig = arm.handler(bars, sym)
+        errs = validate_signals(sig, len(bars), arm.name)
+        if errs:
+            print(f"{sym:<8} SÖZLEŞME İHLALİ: {errs[0]}")
+            continue
+        trades = build_trades(bars, sig, atr_mult=args.atr_mult, hold_bars=args.hold_bars,
+                             tp_r=args.tp_r, cost_price=cost_price(sym), pip=pip, shift=args.shift)
+        s = summarize(trades, args.years)
+        per_symbol[sym] = s
+        all_trades.extend(trades)
+        if s.get("n"):
+            print(f"{sym:<8}{s['n']:>6}{s['isabet_pct']:>8.1f}{s['ort_kazanan_R']:>7.2f}"
+                  f"{s['ort_kaybeden_R']:>7.2f}{s['beklenti_R']:>10.3f}{s['t']:>7.2f}"
+                  f"{s['PF']:>6.2f}{s['net_pip']:>9.0f}{s['islem_yil']:>10.0f}")
+    tot = summarize(all_trades, args.years)
+    if tot.get("n"):
+        print("-" * 79)
+        print(f"{'TOPLAM':<8}{tot['n']:>6}{tot['isabet_pct']:>8.1f}{tot['ort_kazanan_R']:>7.2f}"
+              f"{tot['ort_kaybeden_R']:>7.2f}{tot['beklenti_R']:>10.3f}{tot['t']:>7.2f}"
+              f"{tot['PF']:>6.2f}{tot['net_pip']:>9.0f}{tot['islem_yil']:>10.0f}")
+        print(f"\n  okay: beklenti {tot['beklenti_R']:+.3f}R · t={tot['t']} · PF={tot['PF']} · "
+              f"işlem/yıl={tot['islem_yil']:.0f} · kontrol için --shift 5 ile tekrar koş "
+              f"(beklenti sıfıra çökmeli)")
+    if args.json:
+        p = args.json if os.path.isabs(args.json) else os.path.join(ROOT, args.json)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"arm": arm.name, "tf": tf, "years": args.years, "atr_mult": args.atr_mult,
+                       "hold_bars": args.hold_bars, "tp_r": args.tp_r, "shift": args.shift,
+                       "per_symbol": per_symbol, "total": tot}, f, ensure_ascii=False, indent=2)
+        print(f"JSON: {p}")
+    mt5.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
