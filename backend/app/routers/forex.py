@@ -2183,47 +2183,72 @@ def _tokyo_drift_candidates(ticks: Dict[str, Any], now_ts: float) -> List[Dict[s
     now_dt = datetime.datetime.now(datetime.timezone.utc)
     if now_dt.weekday() >= 5:                      # hafta sonu: FX kapalı
         return []
-    if int(now_dt.hour) != int(getattr(_AUTO_SETTINGS, "tokyo_drift_entry_hour_utc", 1)):
-        return []
-    if int(now_dt.minute) >= int(getattr(_AUTO_SETTINGS, "tokyo_drift_window_min", 5) or 5):
-        return []
+    # NOT: saat/dakika kontrolü ARTIK pencere tablosunda (sembol başına birden çok pencere
+    # ve iki yön desteklenir). Burada yalnız hafta sonu kontrolü kalır.
     day_id = int(now_ts // 86400)
-    allowed = {str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "allowed_symbols", []) or [])}
     blocked = {str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "blocked_symbols", []) or [])}
     open_syms = {str(p.get("symbol", "")).upper() for p in _AUTO_STATE.get("open_positions", [])}
+    windows_map: Dict[str, List[str]] = getattr(_AUTO_SETTINGS, "tokyo_drift_windows", {}) or {}
+    fallback_win = f"{int(getattr(_AUTO_SETTINGS, 'tokyo_drift_entry_hour_utc', 1)):02d}:00:BUY"
     out: List[Dict[str, Any]] = []
     for sym in [str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "tokyo_drift_symbols", []) or [])]:
-        if not sym or _TOKYO_DRIFT_LAST_DAY.get(sym) == day_id or sym in open_syms:
+        if not sym or sym in open_syms:
             continue
-        if sym in blocked or (allowed and sym not in allowed):
+        # Evren: kolun KENDİ listesi (tokyo_drift_symbols) + kara liste. Radar evrenine
+        # (`allowed_symbols`) BAĞLANMAZ — 2026-11-10'da EURUSD o listede olmadığı için
+        # kol sessizce hiç işlem açmayacaktı (kod varsayılanı: EURUSD yok).
+        if sym in blocked:
             continue
+        wins = windows_map.get(sym) or [fallback_win]
         t = ticks.get(sym) or {}
         pip = float(t.get("pip_size") or 0.0)
         atr = float(t.get("atr_pips") or 0.0)
         if pip <= 0 or atr <= 0 or not (t.get("bid") or t.get("ask")):
             continue
-        sl_pips = max(4.0, round(atr * float(getattr(_AUTO_SETTINGS, "tokyo_drift_sl_atr_mult", 1.5)), 1))
-        hold = int(getattr(_AUTO_SETTINGS, "tokyo_drift_hold_min", 60) or 60)
-        _TOKYO_DRIFT_LAST_DAY[sym] = day_id      # aday üretildi = bugünkü hak kullanıldı
-        out.append({
-            "symbol": sym, "display": t.get("display", sym), "action": "BUY",
-            "score": 100.0, "spread_pips": float(t.get("spread_pips", 0.0) or 0.0),
-            "atr_pips": round(atr, 1), "adx": float(t.get("adx", 0.0) or 0.0),
-            "supertrend_dir": int(t.get("supertrend_dir", 0) or 0),
-            "entry_source": "tokyo_drift", "strategy": TOKYO_DRIFT_STRATEGY,
-            "strategy_label": TOKYO_DRIFT_LABEL,
-            "sl_pips_override": sl_pips, "tp_pips_override": 0.0, "hold_minutes": hold,
-            "signal_bar_time": int(now_ts // 300) * 300, "signal_bar_confirmed": True,
-            "soft_bypass": True, "_arm_quota": None,
-        })
-        _log_auto_decision(
-            "SCAN",
-            f"🌅 [{t.get('display', sym)}] {TOKYO_DRIFT_LABEL}: BUY adayı — {now_dt.hour:02d}:00 UTC "
-            f"penceresi (ölçüm: 5y H1, trend demean, maliyet sonrası pozitif), SL {sl_pips:.1f}p, "
-            f"TP yok, {hold} dk sonra kapanır — risk kapıları uygulanıyor.",
-            symbol=sym, strategy=TOKYO_DRIFT_STRATEGY, strategy_label=TOKYO_DRIFT_LABEL,
-        )
+        for win in wins:                          # "SS:DD:YÖN"
+            parts = str(win).split(":")
+            if len(parts) != 3:
+                continue
+            try:
+                w_hour, w_min = int(parts[0]), int(parts[1])
+            except ValueError:
+                continue
+            w_dir = parts[2].strip().upper()
+            if w_dir not in ("BUY", "SELL"):
+                continue
+            _win_len = int(getattr(_AUTO_SETTINGS, "tokyo_drift_window_min", 5) or 5)
+            if int(now_dt.hour) != w_hour or not (w_min <= int(now_dt.minute) < w_min + _win_len):
+                continue
+            if _TOKYO_DRIFT_LAST_DAY.get(f"{sym}:{w_hour}") == day_id:
+                continue
+            _TOKYO_DRIFT_LAST_DAY[f"{sym}:{w_hour}"] = day_id   # bu pencere bugün kullanıldı
+            _tokyo_drift_emit(out, sym, t, w_dir, w_hour, w_min, atr, pip, now_ts)
     return out
+
+
+def _tokyo_drift_emit(out: List[Dict[str, Any]], sym: str, t: Dict[str, Any], w_dir: str,
+                      w_hour: int, w_min: int, atr: float, pip: float, now_ts: float) -> None:
+    """Tek pencere için aday sözlüğünü üret (kanal kimliği + zaman çıkışı ile)."""
+    sl_pips = max(4.0, round(atr * float(getattr(_AUTO_SETTINGS, "tokyo_drift_sl_atr_mult", 1.5)), 1))
+    hold = int(getattr(_AUTO_SETTINGS, "tokyo_drift_hold_min", 60) or 60)
+    out.append({
+        "symbol": sym, "display": t.get("display", sym), "action": w_dir,
+        "score": 100.0, "spread_pips": float(t.get("spread_pips", 0.0) or 0.0),
+        "atr_pips": round(atr, 1), "adx": float(t.get("adx", 0.0) or 0.0),
+        "supertrend_dir": int(t.get("supertrend_dir", 0) or 0),
+        "entry_source": "tokyo_drift", "strategy": TOKYO_DRIFT_STRATEGY,
+        "strategy_label": TOKYO_DRIFT_LABEL,
+        "sl_pips_override": sl_pips, "tp_pips_override": 0.0, "hold_minutes": hold,
+        "signal_bar_time": int(now_ts // 300) * 300, "signal_bar_confirmed": True,
+        "soft_bypass": True, "_arm_quota": None,
+    })
+    _log_auto_decision(
+        "SCAN",
+        f"🌅 [{t.get('display', sym)}] {TOKYO_DRIFT_LABEL}: {w_dir} adayı — "
+        f"{w_hour:02d}:{w_min:02d} UTC penceresi (ölçüm: 5y H1, trend demean, maliyet sonrası "
+        f"pozitif), SL {sl_pips:.1f}p, TP yok, {hold} dk sonra kapanır — risk kapıları uygulanıyor.",
+        symbol=sym, strategy=TOKYO_DRIFT_STRATEGY, strategy_label=TOKYO_DRIFT_LABEL,
+    )
 
 
 def strategy_name_for(entry_source: Any) -> str:
@@ -5902,6 +5927,21 @@ class ForexAutoPaperSettings(BaseModel):
                     "isteğiyle eklendi; bu kol için 5c seans likidite kapısı atlanır (spread "
                     "filtresi yine aktif). Listeden sembol çıkarmak kolun o sembolde işlem "
                     "açmamasını sağlar.",
+    )
+    tokyo_drift_windows: Dict[str, List[str]] = Field(
+        default_factory=lambda: {
+            "GBPUSD": ["01:00:BUY", "13:00:SELL"],
+            "EURUSD": ["01:00:BUY", "14:00:SELL"],
+            "USDJPY": ["01:00:BUY"],
+            "XAUUSD": ["01:00:BUY"],
+        },
+        description="Sembol → ölçülmüş pencereler (`SS:DD:YÖN`, UTC). 5 yıl H1, trend demean, "
+                    "maliyet düşülmüş net beklenti: GBPUSD 01:00 BUY +1.58p (t=10.7) · "
+                    "GBPUSD 13:00 SELL +0.25p (t=-2.7) · EURUSD 01:00 BUY +0.67p (t=7.3) · "
+                    "EURUSD 14:00 SELL +0.56p (t=-4.6) · EURUSD 00:00 BUY +0.11p (t=7.1, sınırda) · "
+                    "USDJPY 01:00 BUY +1.27p (t=6.4) · XAUUSD 01:00 BUY +70p (t=3.2). "
+                    "15 sembol × 24 saat tarandı: |t|>=3.0 ve maliyet sonrası pozitif BAŞKA pencere "
+                    "YOK → bu aile yapısal olarak günde ~6-7 işlem üretir (frekans bu ailenin sınırı).",
     )
     tokyo_drift_entry_hour_utc: int = Field(
         1, ge=0, le=23, description="Giriş saati (UTC). Ölçüm 01:00 UTC'yi işaret ediyor; 00:00 "

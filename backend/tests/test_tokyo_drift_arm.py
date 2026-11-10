@@ -127,12 +127,42 @@ class TestCandidateBuilder(unittest.TestCase):
         self.assertEqual(c["tp_pips_override"], 0.0, "sabit TP yok (zaman çıkışı)")
         self.assertTrue(c["soft_bypass"])
 
-    def test_once_per_day(self):
+    def test_once_per_window_per_day(self):
         self._at()
         now_ts = 1794274026.0
         self.assertEqual(len(fx._tokyo_drift_candidates({"GBPUSD": _tick()}, now_ts)), 1)
         self.assertEqual(fx._tokyo_drift_candidates({"GBPUSD": _tick()}, now_ts + 60), [],
-                         "aynı gün ikinci giriş yok")
+                         "aynı pencere ikinci kez açılmaz")
+
+    def test_second_window_same_day_is_allowed(self):
+        """GBPUSD 01:00 BUY + 13:00 SELL: aynı gün İKİ ayrı pencere açılabilmeli."""
+        self._at(minute=1)
+        ts = 1794274026.0
+        first = fx._tokyo_drift_candidates({"GBPUSD": _tick()}, ts)
+        self.assertEqual([c["action"] for c in first], ["BUY"])
+        self._at(hour=13, minute=1)          # aynı gün, ikinci pencere
+        second = fx._tokyo_drift_candidates({"GBPUSD": _tick()}, ts)
+        self.assertEqual([c["action"] for c in second], ["SELL"],
+                         "13:00 penceresi SHORT (ölçüm: demean −1.05p, t=−2.7)")
+
+    def test_symbol_outside_radar_universe_still_trades(self):
+        """Kol, radar evrenine (`allowed_symbols`) BAĞLI OLMAMALI — 2026-11-10 bulgusu:
+        EURUSD kod varsayılanındaki listede yoktu ve kol sessizce hiç işlem açmıyordu."""
+        self._at()
+        old_allowed = list(fx._AUTO_SETTINGS.allowed_symbols)
+        fx._AUTO_SETTINGS.allowed_symbols = ["GBPUSD"]      # EURUSD radar evreninin DIŞINDA
+        try:
+            cands = fx._tokyo_drift_candidates({"EURUSD": _tick("EURUSD")}, 1794274026.0)
+            self.assertEqual([c["action"] for c in cands], ["BUY"],
+                             "radar evreninde olmayan sembolde de kol işlem açmalı")
+        finally:
+            fx._AUTO_SETTINGS.allowed_symbols = old_allowed
+
+    def test_eurusd_short_window(self):
+        self._at(hour=14, minute=1)
+        cands = fx._tokyo_drift_candidates({"EURUSD": _tick("EURUSD")}, 1794274026.0)
+        self.assertEqual([c["action"] for c in cands], ["SELL"])
+        self.assertEqual(cands[0]["entry_source"], "tokyo_drift")
 
     def test_blocked_symbol_excluded(self):
         self._at()
