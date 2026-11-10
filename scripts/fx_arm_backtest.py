@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import argparse
 import collections
+import urllib.parse
+import urllib.request
 import datetime as dt
 import json
 import os
@@ -152,6 +154,27 @@ def load_bars(sym: str, years: float, tf: str) -> list[tuple]:
     return out
 
 
+def _yahoo_daily(sym: str, years: float) -> dict:
+    """Yahoo günlük kapanışlar → {YYYY-MM-DD: close}. Ağ erişimi YOKSA boş sözlük."""
+    try:
+        u = (f"https://query2.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}"
+             f"?range={int(years)}y&interval=1d")
+        raw = urllib.request.urlopen(urllib.request.Request(
+            u, headers={"User-Agent": "Mozilla/5.0"}), timeout=30).read()
+        r = json.loads(raw)["chart"]["result"][0]
+        return {dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y-%m-%d"): float(c)
+                for t, c in zip(r["timestamp"], r["indicators"]["quote"][0]["close"]) if c is not None}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[UYARI] dış seri alınamadı {sym}: {type(exc).__name__} → kol sinyalsiz kalır")
+        return {}
+
+
+def _external_ctx(external: list[str], sym: str, years: float) -> dict:
+    i = mt5.symbol_info(sym)
+    off = int(round((int(i.time) - __import__("time").time()) / 3600.0)) if i and i.time else 2
+    return {"external": {e: _yahoo_daily(e, years) for e in external}, "offset_h": off}
+
+
 def cost_price(sym: str, days: int = 3) -> float:
     """Tur başına maliyet (fiyat cinsinden): spread p50 + komisyon 2 yön."""
     i = mt5.symbol_info(sym)
@@ -188,7 +211,7 @@ def main() -> int:
     if not mt5.initialize():
         print(f"[HATA] MT5 initialize basarisiz: {mt5.last_error()}")
         return 2
-    from app.arms.base import get_arm, validate_signals
+    from app.arms.base import call_handler, get_arm, validate_signals
     arm = get_arm(args.arm)
     if arm is None:
         print(f"[HATA] kol bulunamadı: {args.arm} (kayıtlı: app/arms)")
@@ -213,7 +236,8 @@ def main() -> int:
             continue
         i = mt5.symbol_info(sym)
         pip = float(i.point) * (10.0 if i.digits in (3, 5) else 1.0)
-        sig = arm.handler(bars, sym)
+        ctx = _external_ctx(arm.external_inputs, sym, args.years) if arm.external_inputs else None
+        sig = call_handler(arm, bars, sym, ctx)
         errs = validate_signals(sig, len(bars), arm.name)
         if errs:
             print(f"{sym:<8} SÖZLEŞME İHLALİ: {errs[0]}")

@@ -38,6 +38,7 @@ class ArmSpec:
     symbols: List[str]
     handler: Callable[..., List[int]]
     evidence: str = ""          # ölçüm/kanıt notu (hangi veri, hangi sonuç)
+    external_inputs: List[str] = field(default_factory=list)   # dış seri (ör. "^GSPC")
     tags: List[str] = field(default_factory=list)
     vectorized: bool = True     # sözleşme gereği True; satır-döngüsü bilinçli istisna ise False
 
@@ -94,6 +95,22 @@ def validate_signals(series: Sequence[int], n_bars: int, arm_name: str = "?") ->
     if bad:
         errs.append(f"{arm_name}: geçersiz sinyal değerleri {sorted(bad)} (yalnız +1/-1/0)")
     return errs
+
+
+def call_handler(spec: "ArmSpec", bars: Sequence[Any], symbol: str,
+                 ctx: Optional[Dict[str, Any]] = None) -> List[int]:
+    """Kolun `signal()`'ini çağırır; dış veri (`ctx`) isteyen kolları da destekler.
+
+    `ctx` biçimi: {"external": {yahoo_symbol: {date_iso: close}}, "offset_h": int}
+    """
+    import inspect as _inspect
+    try:
+        params = _inspect.signature(spec.handler).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if len(params) >= 3:
+        return list(spec.handler(bars, symbol, ctx or {}))   # type: ignore[misc]
+    return list(spec.handler(bars, symbol))                   # type: ignore[misc]
 
 
 def signals_to_rows(bars: Sequence[Any], series: Sequence[int]) -> List[int]:

@@ -9,6 +9,34 @@ COT kontraryan) **tekrar önerilmedi**.
 
 ## 1) KENDİ ÖLÇÜMÜMÜZ — turun en güçlü iki adayı (MT5 barlarıyla)
 
+> ## ⚠️ DÜZELTME (aynı gün, 2026-11-10) — BU AİLE ÖLÇÜMLE ELENDİ
+>
+> Aşağıdaki "+0.094 (t=4.22)" ve "+0.156 (t=7.06)" sonuçları **hatalıydı**: `daily_pairs`
+> fonksiyonunda X'in değişimi de Y ile **aynı gün penceresinde** hesaplanıyordu → yani
+> "lead" değil **eşzamanlı korelasyon** ölçülmüştü. Hata, aileyi kol dosyası olarak yazıp
+> `fx_arm_backtest.py` ile A/B edince ortaya çıktı (kol −0.005R, PF 0.94, t=−2.09 verdi;
+> doğrudan ölçüm pozitif diyordu → çelişki).
+>
+> **GERÇEK GECİKMEYLE yeniden ölçüm** (X: t−1 gün değişimi, Y: t günü getirisi):
+>
+> | sinyal (t−1) | hedef | kısmi rho | t | net p/gün | yarılar |
+> |---|---|---|---|---|---|
+> | ^TNX | USDJPY | **+0.025** | **+1.10** | −2.10 | −0.09 / −4.10 |
+> | ^GSPC | AUDUSD | **+0.027** | **+1.20** | −0.69 | +0.92 / −2.30 |
+> | PLASEBO ^FVX | EURUSD | +0.012 | +0.52 | (gürültü) | +0.83 / +3.16 |
+>
+> **Saatlikte gerçek gecikme VAR ama ekonomik değil:** ^GSPC→AUDUSD rho **+0.251 (t=14.1)**
+> net **+0.32p** (t=1.61); ^TNX→USDJPY rho +0.130 (t=7.18) net +0.23p (t=0.57) — **1 pip
+> maliyetin altında**. Yani çapraz-varlık bilgisi fiyata çoktan gömülü; bize kalan kırıntı
+> maliyetin altında.
+>
+> **Durum:** aile **elenenler**e taşındı; kol dosyası `app/arms/crossasset_lag.py` **kayıtlı
+> değil** (yalnız negatif sonucun yeniden üretilebilir kaydı; testle kilitli).
+> **DERS:** bir "lead" iddiasını kabul etmeden önce X ile Y'nin **pencere örtüşmesi**
+> kontrol edilmeli; eşzamanlı korelasyon, gecikme gibi görünür. Kol dosyası + bağımsız
+> backtester bu hata sınıfını yakaladı.
+
+
 Yahoo günlük (10 yıl) + **kendi MT5 D1 barlarımız**; X **gecikmeli** (t−1), Y_t getirisi,
 Y_{t−1} kontrol edilerek **kısmi korelasyon**; kural: `isaret(X_{t−1})` yönünde 1 gün, maliyet düşülmüş.
 
@@ -79,7 +107,9 @@ modelini düzeltmek** ve negatif-swap tarafını veto etmek.
 
 ## 5) ÖNERİLEN SIRA
 
-1. **Çapraz-varlık gecikmesi ailesi** (^TNX→USDJPY, ^GSPC→AUDUSD): alt-dönem kırılımı + maliyet stresi +
+1. ~~Çapraz-varlık gecikmesi ailesi~~ **ELENDİ** (bkz. §1 düzeltmesi) — saatlik ρ anlamlı ama
+   net < maliyet; günlük "lead" ölçüm hatasıydı.
+1b. **Sıradaki aday:** aşağıdaki swap/maliyet düzeltmesi (P1) ve perakende sentiment loglaması. (^TNX→USDJPY, ^GSPC→AUDUSD): alt-dönem kırılımı + maliyet stresi +
    saatlik hizalama denetimi (MT5 UTC+2 ofseti ile "kapanıştan sonraki ilk bar" kuralı). Geçerse
    `app/arms/` kol dosyası olarak yazılıp `fx_arm_backtest.py` ile A/B edilir.
 2. **Swap'ı `cost_r`'ye sok** + negatif-swap veto (JPY çaprazları): tüm A/B'lerin maliyet doğruluğunu düzeltir.

@@ -108,6 +108,14 @@ class TestTokyoWindowArm(unittest.TestCase):
         module_doc = (ab.__doc__ or "")
         self.assertIn("KAPATMAZ", module_doc, "sözleşme metni 0'ın kapatmadığını yazmalı")
 
+    def test_crossasset_lag_is_not_registered(self):
+        """2026-11-10: çapraz-varlık gecikmesi ÖLÇÜMLE ELENDİ → kayıtlı kol OLMAMALI."""
+        names = {a.name for a in ab.all_arms()}
+        self.assertNotIn("crossasset_lag", names, "elenen aile kayda girmemeli")
+        from app.arms import crossasset_lag as cal
+        self.assertIn("ELENDİ", (cal.__doc__ or ""))
+        self.assertIn("rho +0.025", cal.EVIDENCE)
+
     def test_purity_same_input_same_output(self):
         bars = _bars(dt.datetime(2026, 11, 9, tzinfo=dt.timezone.utc), hours=30)
         first = tw.signal(bars, "EURUSD")
