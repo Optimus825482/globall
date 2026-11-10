@@ -145,9 +145,20 @@ class TestLeanAndWiring(unittest.TestCase):
         i = SYSTEM_SRC.index("@router.post(\"/api/system/forex-ml/train\")")
         self.assertIn("require_admin", SYSTEM_SRC[i:i + 500])
 
+    def test_endpoint_awaits_run_directly(self):
+        # 2026-11-10 500 VAKASI: `to_thread(forex_ml.run, ...)` async fonksiyonu
+        # KOŞTURMAZ — coroutine nesnesi döndürüp FastAPI serialization'da patlıyordu.
+        self.assertIn("await forex_ml.run(", SYSTEM_SRC)
+        # Dilim YALNIZ train fonksiyonuna kadar: sonraki uç (cot-refresh) meşru
+        # `to_thread` kullanıyor (senkron CFTC indirmesi).
+        i = SYSTEM_SRC.index('@router.post("/api/system/forex-ml/train")')
+        j = SYSTEM_SRC.index("@router.", i + 10)
+        self.assertNotIn("to_thread(", SYSTEM_SRC[i:j])
+
     def test_training_runs_in_thread(self):
-        # sklearn CPU-bound → event loop'u kilitlememek için to_thread
-        self.assertIn("to_thread", SYSTEM_SRC)
+        # sklearn CPU-bound → event loop'u kilitlememek için train() to_thread'te
+        src = (ROOT / "app" / "forex_ml.py").read_text(encoding="utf-8")
+        self.assertIn("asyncio.to_thread(train", src)
 
     def test_db_functions_exist(self):
         src = (ROOT / "app" / "database.py").read_text(encoding="utf-8")
@@ -202,6 +213,40 @@ class TestPostgresCompat(unittest.TestCase):
         rid, runs = asyncio.run(main())
         self.assertGreater(rid, 0, "RETURNING id çalışmalı")
         self.assertTrue(any(r["id"] == rid for r in runs), "kayıt listede dönmeli")
+
+
+class TestRunAsyncOrchestration(unittest.TestCase):
+    """`run()` async'tir; to_thread'e verilirse coroutine nesnesi döner ve uç
+    serialization'da 500 verir (2026-11-10 vakası). Bu test gerçek koşumu kanıtlar."""
+
+    def test_run_returns_real_report(self):
+        import asyncio
+        from app import database, forex_ml
+
+        rows = _synthetic_rows(n=300, signal=True)
+
+        async def fake_dataset():
+            return rows
+
+        saved = []
+
+        async def fake_save(report):
+            saved.append(report)
+            return 1
+
+        orig_d, orig_s = database.get_forex_ml_dataset, database.save_forex_ml_run
+        database.get_forex_ml_dataset = fake_dataset
+        database.save_forex_ml_run = fake_save
+        try:
+            res = asyncio.run(forex_ml.run(min_rows=120, save=False))
+        finally:
+            database.get_forex_ml_dataset = orig_d
+            database.save_forex_ml_run = orig_s
+        # EN KRİTİK iddia: sonuç coroutine DEĞİL, gerçek rapor sözlüğü
+        self.assertIsInstance(res, dict, "run() coroutine döndürmemeli")
+        self.assertTrue(res.get("trained"), res.get("reason"))
+        self.assertGreater(res.get("brier_skill_oos") or -1, 0)
+        self.assertEqual(len(saved), 1, "DB koşu kaydı yazılmalı")
 
 
 if __name__ == "__main__":

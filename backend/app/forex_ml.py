@@ -275,14 +275,22 @@ def save_artifact(report: dict[str, Any], path: str | Path | None = None) -> str
 
 
 async def run(*, min_rows: int = MIN_ROWS, save: bool = True) -> dict[str, Any]:
-    """Panelden çağrılan tam akış: veri çek → eğit → artifact + DB kaydı."""
+    """Panelden çağrılan tam akış: veri çek → eğit → artifact + DB kaydı.
+
+    DİKKAT (2026-11-10 500'ü): `run` async olduğu için `asyncio.to_thread(run, …)`
+    onu KOŞTURMAZ — coroutine nesnesi döndürüp FastAPI'de serialization hatası
+    veriyordu. Doğru düzen: DB adımları await, CPU-bound `train()` to_thread'te
+    (sklearn eğitim event loop'u kilitlemesin).
+    """
+    import asyncio
+
     from app import database
 
     rows = await database.get_forex_ml_dataset()
-    report = train(rows, min_rows=min_rows)
+    report = await asyncio.to_thread(train, rows, min_rows=min_rows)
     if report.get("trained") and save:
         try:
-            report["artifact_path"] = save_artifact(report)
+            report["artifact_path"] = await asyncio.to_thread(save_artifact, report)
         except Exception as exc:  # noqa: BLE001
             report["artifact_error"] = f"{type(exc).__name__}: {exc}"
     try:

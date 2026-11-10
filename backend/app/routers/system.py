@@ -326,8 +326,9 @@ async def forex_ml_train(request: Request, min_rows: int = 120, save: bool = Tru
     from app import forex_ml
 
     require_admin(request)
-    report = await asyncio.to_thread(
-        forex_ml.run, min_rows=max(60, int(min_rows or 120)), save=bool(save))
+    # `forex_ml.run` ASYNC'tir → to_thread'e verilirse coroutine nesnesi döner ve
+    # FastAPI serialization'da 500 verir (2026-11-10 vakası). Doğrudan await edilir.
+    report = await forex_ml.run(min_rows=max(60, int(min_rows or 120)), save=bool(save))
     return report
 
 
