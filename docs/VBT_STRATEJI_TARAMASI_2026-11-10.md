@@ -104,3 +104,43 @@ bağımsız denetimden geçirildi:
   artık `--exit-on-opposite` için **tek pozisyonlu sıralı** simülatör kullanır.
 - Tek IS/OOS dilimi + tek zaman dilimi **yetmiyor**; en az bir **rejim karşıtı pencere** (10 yıl günlük
   veya 2011-2015 altın ayısı) şart.
+
+---
+
+## 6) 10 YIL GÜNLÜK: MEAN-REVERSION — plato bulundu, sonra iki yerden çürüdü
+
+10 yıl günlükte aile sıralaması **tersine döndü** (OOS medyanları): **IBS 0.68 · RSI2 0.60** pozitif,
+Bollinger+ADX 0.53; buna karşılık **momentum 0.23 · Donchian 0.15** (1h/5y'de iyi görünen trend ailesi).
+Yani doğru ufuk: **günlükte mean-reversion, trend değil.**
+
+IBS hücre platosu (yalnız OOS): BTCUSD 18/19 · EURUSD 16/20 · GBPUSD 15/15 · AUDUSD 15/15 · XAUUSD 9/15
+→ "şanslı hücre değil, plato" görünüyordu. **Ama iki denetim bunu kırdı:**
+
+### 6.1 Tam örneklem (OOS değil) — plato aslında OOS penceresi artefaktı
+
+| sembol | TAM 10 yıl Sharpe | PF | yalnız OOS Sharpe |
+|---|---|---|---|
+| XAUUSD | **1.14** | **2.01** | 1.03 |
+| BTCUSD | 0.62 | 1.37 | 0.62 |
+| AUDUSD | 0.54 | 1.35 | 0.88 |
+| EURUSD | **0.15** | 1.08 | 0.76 |
+| GBPUSD | **0.15** | 1.08 | 0.80 |
+
+→ **FX majörlerinin "platosu" son 3 yılın penceresinde kayboluyor** (10 yılda +%3-4 getiri = sıfır).
+Yalnız **XAUUSD (PF 2.01)** ve kısmen BTCUSD tam örneklemde ayakta.
+
+### 6.2 Dolum zamanı sonucun İŞARETİNİ değiştiriyor
+
+Aynı kural, iki dolum varsayımı: XAUUSD kapanış dolumu **PF 2.01** ↔ sonraki-bar-açılış dolumu
+(bizim muhafazakâr backtester) **PF 0.59 / negatif beklenti**. Fark **gecelik boşluk** (mean-reversion
+düşüş kapanışından sonra girer; açılış yukarı gaplerse tepki kaçar). BTCUSD'de 1.37 ↔ 0.90.
+
+**Durum:** `ibs_reversion` kolu **kayıtlı değil**. Sıradaki test net ve küçük: XAU'nun bu 145 işlem gününün
+**tick'ini** çekip kapanış dolumunun gerçekten mümkün olduğunu ölçmek (14 işlem/yıl → ucuz).
+Bu yapılmadan canlıya alınmaz.
+
+### 6.3 Ders (kalıcı)
+1. **OOS-only raporlama yanıltıcı**: aynı hücre 10 yılda PF 1.08, son 3 yılda PF 1.58. Her sonuç
+   **tam örneklem + OOS + en az bir karşıt rejim** ile birlikte verilmeli.
+2. **Dolum varsayımı kenarın kendisi kadar belirleyici**: kapanış vs sonraki açılış, PF 2.01 → 0.59.
+   Yüksek frekanslı ailelerde tick doğrulaması zorunlu.

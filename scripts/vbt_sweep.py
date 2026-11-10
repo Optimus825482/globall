@@ -97,6 +97,20 @@ def sig_boll_adx(df: pd.DataFrame, n: int, k: float, adx_max: float):
     return ((c < lower) & (adx < adx_max)), (c > mid)
 
 
+def sig_ibs(df: pd.DataFrame, ibs_max: float, rsi_max: float, trend: int = 0):
+    """IBS = (C−L)/(H−L) ve RSI(21) düşükken long; çıkış: kapanış > önceki kapanış."""
+    c, h, l = df["close"], df["high"], df["low"]
+    ibs = (c - l) / (h - l).replace(0, np.nan)
+    d = c.diff()
+    up = d.clip(lower=0).ewm(alpha=1 / 21, adjust=False).mean()
+    dn = (-d.clip(upper=0)).ewm(alpha=1 / 21, adjust=False).mean()
+    rsi21 = 100 - 100 / (1 + up / dn.replace(0, np.nan))
+    cond = (ibs < ibs_max) & (rsi21 < rsi_max)
+    if trend:
+        cond = cond & (c > c.rolling(trend).mean())
+    return cond, (c > c.shift(1))
+
+
 def sig_mom(df: pd.DataFrame, n: int):
     c = df["close"]
     roc = c.pct_change(n)
@@ -112,6 +126,8 @@ def grid_for(tf: str):
         ("boll_adx", sig_boll_adx, [{"n": n, "k": k, "adx_max": a}
                                     for n in (20, 50) for k in (2.0, 2.5) for a in (20, 25)]),
         ("mom", sig_mom, [{"n": n} for n in (5, 10, 20, 50)]),
+        ("ibs", sig_ibs, [{"ibs_max": i, "rsi_max": r, "trend": t}
+                          for i in (0.2, 0.25, 0.35) for r in (40, 45, 55) for t in (0, 200)]),
     ]
     return g
 

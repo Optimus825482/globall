@@ -119,12 +119,14 @@ class TestTokyoWindowArm(unittest.TestCase):
     def test_vbt_candidates_are_not_registered(self):
         """2026-11-10: vectorbt adayları 10 yıllık günlükte tutmadı → kayıtlı OLMAMALI."""
         names = {a.name for a in ab.all_arms()}
-        for nm in ("donchian_break", "ema_trend_cross"):
+        for nm in ("donchian_break", "ema_trend_cross", "ibs_reversion"):
             self.assertNotIn(nm, names, f"{nm} elendi ama kayıtlı")
         from app.arms import donchian_break, ema_trend_cross
         self.assertIn("ELENDİ", (donchian_break.__doc__ or ""))
         self.assertIn("10 yıl", donchian_break.EVIDENCE)
         self.assertIn("ELENDİ", (ema_trend_cross.__doc__ or ""))
+        from app.arms import ibs_reversion as ibs
+        self.assertIn("dolum", ibs.EVIDENCE_DETAIL.lower(), "dolum hassasiyeti yazılı olmalı")
 
     def test_purity_same_input_same_output(self):
         bars = _bars(dt.datetime(2026, 11, 9, tzinfo=dt.timezone.utc), hours=30)
