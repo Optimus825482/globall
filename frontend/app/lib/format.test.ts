@@ -16,56 +16,29 @@ import {
   formatPrice,
   formatTL,
   formatSignedTL,
+  QUOTE_SYMBOL,
   formatFixed,
   formatNumber2,
   formatRatioPct,
   localDateInput,
   withQuote,
   withQuotePrice,
-  toSymbol,
-  QUOTE_ASSET,
-  QUOTE_SYMBOL,
 } from "./format";
 
-// Bu dosya NEXT_PUBLIC_QUOTE_ASSET tanımsız (TR varsayılanı) çalışır.
-// Aşağıdaki kilitler TR örneğinin değişmeden kaldığını garanti eder; USDT
-// örneğinin doğru gösterimi `format.usdt.test.ts` içinde aynı sözleşmeyle
-// ayrıca doğrulanır (build-time env'i test içinde değiştirmek mümkün değil).
-describe("format — gösterim birimi katmanı (TR örneği)", () => {
-  it("env verilmezse TRY ve ₺", () => {
-    expect(QUOTE_ASSET).toBe("TRY");
-    expect(QUOTE_SYMBOL).toBe("₺");
-  });
-
-  it("toSymbol taban adına deployment quote'sünü ekler", () => {
-    expect(toSymbol("BTC")).toBe("BTCTRY");
-    expect(toSymbol("btc")).toBe("BTCTRY");
-    // Zaten ekliyse İKİ KEZ EKLEMEZ — sayfa sembolü zaten tam yazdığında
-    // "BTCTRYTRY" gibi bulunamayan bir sembol üretmemeli.
-    expect(toSymbol("BTCTRY")).toBe("BTCTRY");
-  });
-
-  it("withQuote öneki ve seçilen ondalığı uygular", () => {
-    // Yalnız MAKSİMUM kova: "1,23" / "1,23456" (trailing zero yok —
-    // `formatMoney`'den farkı, çağıranın alanı belirlemesidir).
-    expect(withQuote(1.23456, 2)).toBe("₺1,23");
-    expect(withQuote(1.23456, 6)).toBe("₺1,23456");
-  });
-
+// GÖSTERİM BİRİMİ (2026-11-10 DÜZELTME): `NEXT_PUBLIC_QUOTE_ASSET` bir Next.js
+// BUILD-TIME sabitidir ve `format.ts` varsayılanı artık **USDT**. Birim varsayımına
+// dayanan testler iki ayrı dosyaya taşındı (her biri env'i kendisi kurup modül
+// grafiğini tazeler):
+//   • `format.try.test.ts`  → env=TRY  (TR build)
+//   • `format.usdt.test.ts` → env=USDT (Global build, varsayılan)
+// Burada yalnız BİRİMDEN BAĞIMSIZ sözleşmeler kalır.
+describe("format — gösterim birimi katmanı (birimden bağımsız sözleşmeler)", () => {
   it("withQuote geçersiz girdide '—' DÖNER, 0 değil", () => {
     // "1.234,56" gibi önceden biçimlenmiş bir metin Number() ile NaN olur.
     // Sessizce "₺NaN" basmak yerine "—" dönmeli.
     expect(withQuote("₺1.234,56")).toBe("—");
     expect(withQuote("abc")).toBe("—");
     expect(withQuote(0)).not.toBe("—");
-  });
-
-  it("withQuotePrice formatPrice ile AYNI hassasiyet kovasını kullanır", () => {
-    // Fiyat biçiminin tek kaynağı `pricePrecision`; önek eklerken
-    // ondalık kovası KAYBOLMAMALI (ayrı bir `toFixed` çağrısı kazanırdı).
-    expect(withQuotePrice(1.5)).toBe(`₺${formatPrice(1.5)}`);
-    expect(withQuotePrice(4250)).toBe(`₺${formatPrice(4250)}`);
-    expect(withQuotePrice(0.000123)).toBe(`₺${formatPrice(0.000123)}`);
   });
 
   it("withQuotePrice 'veri yok' durumunda önek basmaz", () => {
@@ -166,7 +139,7 @@ describe("format — fiyat / TL", () => {
   });
 
   it("formatSignedTL işareti koyar, meşru 0'ı korur", () => {
-    expect(formatSignedTL(0)).toBe("₺0,00");
+    expect(formatSignedTL(0)).toBe(`${QUOTE_SYMBOL}0,00`);   // birim env'e bağlı, işaret değil
     expect(formatSignedTL(5).startsWith("+")).toBe(true);
     expect(formatSignedTL(-5).startsWith("-")).toBe(true);
     expect(formatSignedTL(null)).toBe("—");
