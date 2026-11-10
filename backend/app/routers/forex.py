@@ -5761,8 +5761,20 @@ class ForexAutoPaperSettings(BaseModel):
     news_bias_window_sec: float = Field(900.0, ge=60.0, le=3600.0, description="Açıklamadan sonra yönün geçerli sayıldığı pencere (saniye; varsayılan 900 = 15 dk)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     blocked_symbols: List[str] = Field(
-        default_factory=lambda: ["AUDCAD", "AUDUSD", "AUDNZD"],
-        description="İşlem AÇILMAYACAK pariteler (kara liste). Varsayılan AUD kümesi 2026-11-09 ölçümüyle: n=19, ortalama -6.11 USD/işlem, t=-4.12 (%95 anlamlı), 7 günde -116 USD. 7 GÜNLÜK VERİ olduğu için aşırı uyum riski vardır — boş liste ile kapatılabilir.",
+        default_factory=lambda: ["AUDCAD", "AUDNZD", "AUDUSD",
+                                 "EURJPY", "GBPJPY", "GBPUSD", "USDCHF", "USDJPY"],
+        description="İşlem AÇILMAYACAK pariteler (kara liste). AUD kümesi 2026-11-09 ölçümüyle "
+                    "(n=19, ortalama -6.11 USD/işlem, t=-4.12). **2026-11-10 EKLEME — İKİ BAĞIMSIZ "
+                    "KAYNAK ÖRTÜŞÜYOR:** (1) gerçek broker defteri 60 gün/4315 işlem: USDJPY -0.402R "
+                    "(isabet %36.8, -2401 USD), EURJPY -0.474R, GBPJPY -0.269R, USDCHF -0.246R, "
+                    "GBPUSD -0.089R — hepsi pencerenin İKİ YARISINDA da negatif (n>=30); (2) replay A/B "
+                    "30 gün (chandelier 0.1, slip 2 pip): bu semboller çıkarıldığında net -111.156 -> "
+                    "+66.075 USD, PF 0.70 -> 1.50, isabet %64.6 -> %75.7, maxDD 113.204 -> 8.894 USD. "
+                    "MEKANİZMA: ölçülen maliyet/stop oranı bu paritelerde 0.079-0.146R iken kalan sette "
+                    "(XAUUSD 0.036, BTCUSD 0.038, US30/NAS100 0.025) 2-4 kat daha düşük. İZLEME "
+                    "(replay teyidi yok, henüz eklenmedi): EURUSD -0.132R, USDCAD -0.115R, NZDUSD "
+                    "-0.242R. XAUUSD/BTCUSD gerçek defterde hafif negatif ama replay'de pozitif ve "
+                    "iyileşiyor -> LİSTEYE ALINMADI. Boş liste korumayı kapatır (geri alınabilir).",
     )
     abstain_gate_mode: Literal["off", "shadow", "enforce"] = Field(
         "off",

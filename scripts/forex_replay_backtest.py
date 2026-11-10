@@ -101,6 +101,12 @@ REPLAY_SYMBOL_DEFS = {
 # Krosçarların Yahoo sembolleri (fetch_all ek olarak çeker; canlı YAHOO_SYMBOL_MAP'e dokunmaz)
 REPLAY_EXTRA_YF = {sym: f"{sym}=X" for sym in REPLAY_SYMBOL_DEFS}
 
+# Replay evreni (2026-11-10): `SYMBOLS`/`ALL_SYMBOL_CODES` adları modülden kalkmıştı ve
+# **sembol verilmeyen her koşu NameError ile ölüyordu** (`--help` dışında test edilmemiş yol).
+# Evren tek yerden türetilir; canlı evren `routers/forex.FOREX_SYMBOLS` ile aynı kaynaktır.
+DEFAULT_SYMBOLS = set(forex.YAHOO_SYMBOL_MAP) | set(REPLAY_EXTRA_YF)
+ALL_SYMBOL_CODES = {s["symbol"] for s in forex.FOREX_SYMBOLS}
+
 # pip_val override'ı: spec fonksiyonu JPY'siz krosçarlar için sabit 10.0 kullanır; gerçek
 # değer = 10 × quote-para-biriminin USD değeri (EURGBP: 10×GBPUSD, JPY kross: 1000/USDJPY).
 # main() veriyi yükledikten sonra pencere ortalamalarıyla doldurulur ve spec sarılır.
@@ -4494,12 +4500,12 @@ def main():
     parser.add_argument("--fade-k-atr", type=float, default=2.0, help="Fade sapma eşiği (× ATR)")
     parser.add_argument("--fade-early-only", action="store_true", help="Fade girişleri yalnız ilk 2 saat (13:30-15:30 UTC)")
     parser.add_argument("--abstain-gate", action="store_true",
-                        help="P2: sembolün isabet oranı %90 alt sınırı break-even'ı aşmıyorsa giriş yok")
+                        help="P2: sembolün isabet oranı %%90 alt sınırı break-even'ı aşmıyorsa giriş yok")
     parser.add_argument("--abstain-min-trades", type=int, default=30,
                         help="P2 kapısının devreye girdiği kapanmış işlem sayısı (ısınma)")
     parser.add_argument("--break-gate-bars", type=int, default=0,
                         help="P1 ARAŞTIRMA bayrağı: kırılma sonrası N bar giriş yok. "
-                             "ÖLÇÜM: 24 bar −%17 net, 48 bar −%60 → CANLIYA ALINMADI.")
+                             "ÖLÇÜM: 24 bar −%%17 net, 48 bar −%%60 → CANLIYA ALINMADI.")
     parser.add_argument("--chandelier", type=float, default=0.0, help="MFE−ATR chandelier trailing çarpanı (0 = sabit pip trail; scalping için ~2.0)")
     parser.add_argument("--chand-indep-gate", action="store_true", help="2026-10-14 Kol C: chandelier kapısını BE kilidinden bağımsızlaştır (MFE > mult×giriş ATR'si olur olmaz kur). Kapalı = mevcut davranış.")
     parser.add_argument("--be-trigger-atr-gold", type=float, default=0.0, help="XAUUSD'ye özel BE tetik tabanı (× giriş ATR'si; 0 = kapalı). Canlı `be_trigger_atr_mult_gold` ile aynı.")
@@ -4871,7 +4877,7 @@ def main():
     if args.source == "db" or (args.source == "auto" and not (args.cache and os.path.exists(cache_path))):
         _want = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
         if not _want:
-            _want = set(ALL_SYMBOL_CODES) if args.all_symbols else set(SYMBOLS.keys())
+            _want = set(ALL_SYMBOL_CODES) if args.all_symbols else set(DEFAULT_SYMBOLS)
         # Kros pip_val override'ı quote-USD kurlarına bakar (_compute_pip_val_overrides);
         # tek sembollü DB koşusunda bunlar da yüklenir ama işlem filtresine girmez.
         _ref = {"USDJPY", "USDCAD", "USDCHF", "NZDUSD", "AUDUSD", "EURUSD", "GBPUSD"}

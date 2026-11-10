@@ -55,6 +55,45 @@ Rapor yazıldıktan hemen sonra iki ölçüm betiği yazıldı ve **MT5 hesabın
 
 ---
 
+## 0.6 ADIM 1 ve 2 KOŞULDU (aynı gün) — çıkış tarafı D OYMUŞ, kaldıraç sembol setindeydi
+
+### Adım 1 — payoff/geometri A/B: NEGATİF SONUÇ (dürüst kayıt)
+Replay canlı konfigin etrafında koşuldu (`--chandelier 0.1 --slip-pips 2`, 30 gün, 5 varyant):
+
+| Varyant | n | isabet% | kazanan$ | kaybeden$ | **payoff** | break-even isabet% | kenar% | net$ | PF |
+|---|---|---|---|---|---|---|---|---|---|
+| canlı (chand 0.1) | 3254 | 64.6 | 124.4 | 323.2 | **0.39** | 72.2 | −7.6 | −111.156 | 0.70 |
+| `--tp-mult 2.5` | 3253 | 64.6 | 124.6 | 323.4 | 0.39 | 72.2 | −7.6 | −110.826 | 0.70 |
+| `--no-tp-on-trail` | 3255 | 64.6 | 125.4 | 324.5 | 0.39 | 72.1 | −7.5 | −109.642 | 0.71 |
+| `--chandelier 0.3` (gevşek) | 2932 | 58.7 | 116.3 | 303.6 | 0.38 | 72.3 | −13.6 | −167.085 | 0.55 |
+| `--no-be` (BE kapalı) | 2994 | 50.7 | 139.5 | 209.2 | **0.67** | 60.0 | −9.3 | −96.968 | 0.69 |
+| `--sl-mult 1.0` (dar stop) | 3332 | 61.5 | 128.5 | 299.8 | 0.43 | 70.0 | −8.5 | −121.630 | 0.68 |
+
+**Sonuç: TP genişliği / trail mesafesi / stop mesafesi payoff'u oynatmıyor (0.38-0.39).** BE'yi kapatınca payoff hedefe (0.67) çıkıyor ama isabet %64.6→%50.7'ye düşüyor → net daha kötü. Yani **çıkış tarafı bu giriş kenarı için doymuş**; Carver'ın "stopu genişlet" tavsiyesi (`--sl-mult 1.5→1.0` ve trail 0.3 denemeleri) bu sette desteklenmedi.
+Çıkış nedeni ekonomisi (canlı varyant): **TRAIL 2109 işlem ortalama +124$**, **SL 1053 işlem ortalama −352$** — kaybeden kazananın 2.8 katı ve **sabit TP neredeyse hiç tetiklenmiyor**. Kök neden çıkış parametresi değil, hangi sembollerde işlem açıldığı.
+
+### Adım 2 — sembol seti: ÖLÇÜM İKİ BAĞIMSIZ KAYNAKTA ÖRTÜŞTÜ → UYGULANDI
+Replay A/B (aynı konfig, `--exclude-symbols USDCHF,USDJPY,GBPUSD,AUDUSD,EURUSD,AUDNZD,AUDCAD,NZDUSD,GBPJPY,EURJPY`):
+
+| | n | isabet% | payoff | beklenti$ | net$ | PF | maxDD$ |
+|---|---|---|---|---|---|---|---|
+| canlı set | 3254 | 64.6 | 0.39 | −34.2 | −111.156 | 0.70 | 113.204 |
+| **kesilmiş set** | 1500 | **75.7** | 0.48 | **+44.1** | **+66.075** | **1.50** | **8.894** |
+
+Geriye kalan set: **XAUUSD, BTCUSD, US30, NAS100** (replay'de pozitif olan tek grup). Bu, gerçek defterle aynı yönü gösteriyor (USDJPY −2401$, USDCHF −588$, GBPUSD −405$, AUDUSD −339$, AUDCAD −568$ ≙ toplam zararın ~%46'sı).
+**Mekanizma (curve-fit değil):** ölçülen maliyet/stop oranı kesilen paritelerde **0.079-0.146R**, kalan sette **0.025-0.038R** (2-4 kat). Yani kural "kaybedeni kes" değil, "**maliyeti stop mesafesinin ~%5'ini aşan sembolde işlem açma**".
+
+**Uygulama:** `ForexAutoPaperSettings.blocked_symbols` varsayılanı AUD kümesi + ölçülen 5 parite (`EURJPY, GBPJPY, GBPUSD, USDCHF, USDJPY`) olarak güncellendi; kanıt alan açıklamasına yazıldı ve `tests/test_symbol_guard.py` ile kilitlendi (sessizce düşerse test kırmızı). Geri alma: listeyi boşaltmak korumayı kapatır. **XAUUSD/BTCUSD listeye alınmadı** (gerçek defterde hafif negatif ama replay'de pozitif ve iki yarıda iyileşiyor).
+
+### Yol boyunca bulunan 2 gerçek replay hatası (düzeltildi)
+1. `--help` çöküyordu: `add_argument` help metinlerinde escape edilmemiş `%` (2 yer) → `ValueError: unsupported format character`.
+2. **Sembol verilmeyen her koşu ölüyordu:** `SYMBOLS` / `ALL_SYMBOL_CODES` isimleri modülden kalkmıştı → `NameError`. Evren artık `forex.YAHOO_SYMBOL_MAP` + `REPLAY_EXTRA_YF` (ve `--all-symbols` için `FOREX_SYMBOLS`) üzerinden tek yerden türetiliyor.
+
+### Aktarılabilirlik sınırı (dürüstlük)
+Replay Yahoo 5m barları kullanır (broker dolumları değil) ve mutlak isabeti canlıdan farklıdır (replay %64.6 ↔ gerçek defter %59.4). Bu yüzden **mutlak $ seviyeleri aktarılmaz**; aktarılan şey **yön ve mekanizmadır** ve o yön gerçek defter ölçümüyle bağımsız olarak doğrulanmıştır. Yeni araçlar: `scripts/fx_payoff_compare.py` (payoff/break-even karşılaştırması), `scripts/fx_symbol_expectancy.py` (gerçek defter), `scripts/fx_intrabar_ambiguity.py` (belirsizlik + swap).
+
+---
+
 ## 1) Mevcut durum — kendi kodumuzdan doğrulananlar
 
 | Bulgu | Kanıt |
