@@ -927,6 +927,10 @@ async def _stream_chat_once(snapshot, messages, tools=None, tool_executor=None, 
     Hızlı şerit kısa yanıt ister — uzun yanıt hem daha yavaş ilk-jeton hem boşa
     maliyettir (2026-09-17).
     """
+    # AKTİF UZMAN KÜMESİ (2026-11-10): `chat()` ile AYNI semantik. Bu fonksiyonda
+    # `selected` yoktu ama aşağıdaki istem kurucusu `charter_block(selected)` çağırıyordu
+    # → canlıda "name 'selected' is not defined" (forex sohbet hattı). Kapsam burada kurulur.
+    selected = set(str(v) for v in (active_skills or []))
     if tools and tool_executor:
         result = await chat(snapshot, messages, tools, tool_executor, active_skills, max_tokens=max_tokens)
         # GÖRÜNÜRLÜK (2026-09-18, sohbet sayfası teşhisi): `chat()` hataları
