@@ -34,7 +34,8 @@ interface TrainReport {
   best_model?: string; best_profile?: string;
   profiles?: Record<string, { n_features?: number; brier_skill_oos?: number | null; ic_test?: number | null; brier_test?: number }>;
   selected_hyperparams?: { C?: number; penalty?: string; val_skill?: number | null; cv_skill?: number | null; margin?: number; selection?: string };
-  feature_profile?: string;
+  feature_profile?: string; selection_note?: string; regime_shift_warning?: string;
+  skill_noise_band?: number | null;
   wilson?: { n: number; hit_rate: number; lo: number; hi: number } | null;
   error?: string;
 }
@@ -148,6 +149,18 @@ export default function ForexMlPanel() {
                   Artifact: {report.artifact_path || "—"}
                 </div>
               </div>
+
+              {report.selection_note && (
+                <p className="text-2xs text-bunker-muted">
+                  seçim: {report.selection_note}
+                  {report.skill_noise_band != null ? ` · gürültü bandı ±${Number(report.skill_noise_band).toFixed(3)}` : ""}
+                </p>
+              )}
+              {report.regime_shift_warning && (
+                <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-2xs text-amber-200">
+                  ⚠ {report.regime_shift_warning}
+                </p>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[

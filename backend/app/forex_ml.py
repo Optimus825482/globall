@@ -341,14 +341,35 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
 
     # KAZANAN: en iyi CV skill'ine SELECTION_MARGIN kadar yaklaşanlar arasından
     # SADE olanı (temel profil → L2 → küçük C). Test kümesine BAKILMAZ.
+    # --- SEÇİM GÜVENİLİRLİĞİ (2026-11-10, koşum 7) ---------------------------
+    # Koşum 7'de CV skill NEGATİF (−0.146) çıkarken test skill +0.037'ydi: erken
+    # dönemde eğitilen model ileriye genellemiyor (rejim kayması). Böyle bir CV
+    # "hangi profil daha iyi" sorusunu CEVAPLAYAMAZ. Ayrıca 446 test satırında
+    # skill gürültüsü σ≈1/√n≈0.047 → 0.037 vs 0.052 AYIRT EDİLEMEZ.
+    # Politika: CV negatifse veya profiller arası fark gürültü bandındaysa
+    # SADE VARSAYILAN (temel + L2 + C=0.3) kullanılır; seçim oynamaz.
+    noise_band = (1.0 / math.sqrt(len(yte))) if yte else None
     cvs = [v["hyperparams"]["cv_skill"] for v in ok.values() if v["hyperparams"]["cv_skill"] is not None]
-    if cvs:
-        best_cv = max(cvs)
+    best_cv = max(cvs) if cvs else None
+    test_skills = {k: v["brier_skill_oos"] for k, v in ok.items()}
+    sel_note = ""
+    if best_cv is None:
+        sel_note = "CV kurulamadı (küçük veri) → sade varsayılan"
+        near = list(ok)
+    elif best_cv < 0:
+        sel_note = (f"CV skill negatif ({round(best_cv,3)}): dönemler arası KAYMA — profil "
+                    f"karşılaştırması güvenilmez → sade varsayılan (temel)")
+        near = ["temel"] if "temel" in ok else list(ok)
+    else:
         near = [k for k, v in ok.items()
                 if v["hyperparams"]["cv_skill"] is not None
                 and best_cv - v["hyperparams"]["cv_skill"] <= SELECTION_MARGIN]
-    else:
-        near = list(ok)                      # CV hiç yok → sade-model sıralaması karar verir
+        if len(ok) == 2 and noise_band is not None:
+            d = abs((test_skills.get("zengin") or 0) - (test_skills.get("temel") or 0))
+            if d < noise_band:
+                sel_note = (f"profiller arasında AYRIM YOK (test fark {d:.3f} < gürültü bandı "
+                            f"{noise_band:.3f}) → sade model (temel) kullanılıyor")
+                near = ["temel"] if "temel" in ok else near
     best_name = sorted(
         near,
         key=lambda k: (ok[k]["_extras"], ok[k]["hyperparams"]["penalty"] == "l1",
@@ -371,6 +392,12 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
     out["profiles"] = {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
                        for k, v in prof.items()}
     out["best_profile"] = "zengin" if extras else "temel"
+    out["selection_note"] = sel_note or "CV ile seçildi (marj içinde sade tercih)"
+    out["skill_noise_band"] = None if noise_band is None else round(noise_band, 4)
+    if best_cv is not None and best_cv < 0:
+        out["regime_shift_warning"] = (
+            "Erken dönemde eğitilen model ileriye genellemiyor (CV skill negatif). "
+            "Karar kapısından önce prequential gölge IC takibi şart.")
     out["selected_hyperparams"] = {**best["hyperparams"], "margin": SELECTION_MARGIN,
                                    "selection": "bloklu CV + sade model tercihi"}
     out["feature_profile"] = "zengin" if extras else "temel"
