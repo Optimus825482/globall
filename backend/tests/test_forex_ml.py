@@ -299,5 +299,51 @@ class TestResolvedOnly(unittest.TestCase):
         self.assertIn(r["best_model"], ("logistic", "hist_gradient_boosting"))
 
 
+class TestRegularizationAndProfiles(unittest.TestCase):
+    """AŞIRI UYUM VAKASI (2026-11-10): özellik zenginleştirmesi sıralamayı
+    iyileştirdi (IC 0.176→0.285) ama olasılıkları bozdu (skill 0.034→−0.008):
+    train Brier düştü, test Brier yükseldi. Çare: (a) cezayı eğitim-içi doğrulama
+    dilimiyle seç, (b) iki özellik profilini aynı koşuda yarıştır.
+    """
+
+    def test_profiles_compete_and_are_reported(self):
+        r = forex_ml.train(_synthetic_rows(n=700, signal=True))
+        self.assertIn("profiles", r)
+        self.assertIn("temel", r["profiles"])
+        self.assertIn("zengin", r["profiles"])
+        self.assertGreater(r["profiles"]["zengin"]["n_features"],
+                           r["profiles"]["temel"]["n_features"],
+                           "zengin profil daha çok özellik taşımalı")
+        self.assertIn(r["best_profile"], ("temel", "zengin"))
+
+    def test_hyperparams_selected_by_validation(self):
+        r = forex_ml.train(_synthetic_rows(n=700, signal=True))
+        hp = r.get("selected_hyperparams") or {}
+        self.assertIn("C", hp)
+        self.assertIn(hp["penalty"], ("l1", "l2"))
+
+    def test_artifact_stores_profile_and_gate_respects_it(self):
+        r = forex_ml.train(_synthetic_rows(n=700, signal=True))
+        self.assertIn(r.get("feature_profile"), ("temel", "zengin"))
+        path = ROOT / "artifacts" / "_test_profile.json"
+        try:
+            saved = forex_ml.save_artifact(r, path)
+            data = json.loads(pathlib.Path(saved).read_text(encoding="utf-8"))
+            self.assertEqual(data["feature_profile"], r["feature_profile"])
+            # Aynı artifact yüklenebilmeli (kapı kendi profiline göre doğrular)
+            self.assertIsNotNone(forex_ml.load_scoring_model(path))
+            # Profil yanlış işaretlenirse kapı REDDETMELİ
+            data["feature_profile"] = "temel" if r["feature_profile"] == "zengin" else "zengin"
+            pathlib.Path(saved).write_text(json.dumps(data), encoding="utf-8")
+            forex_ml.load_scoring_model.__globals__  # noqa: B018 - sadece erişim
+            import importlib
+            importlib.reload(forex_ml)
+            self.assertIsNone(forex_ml.load_scoring_model(path), "profil uyuşmazlığı reddedilmeli")
+        finally:
+            path.unlink(missing_ok=True)
+            import importlib
+            importlib.reload(forex_ml)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -68,7 +68,7 @@ def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
 def featurize(row: dict[str, Any], *, medians: Optional[dict[str, float]] = None,
               sessions: tuple[str, ...] = SESSION_VALUES,
               biases: tuple[str, ...] = BIAS_VALUES,
-              strategies: tuple[str, ...] = ()) -> dict[str, float]:
+              strategies: tuple[str, ...] = (), extras: bool = True) -> dict[str, float]:
     """Bir karar satırını sayısal özellik vektörüne çevirir (deterministik).
 
     Eksik sayısal özellikler `medians` (eğitim medyanı) ile doldurulur;
@@ -103,6 +103,8 @@ def featurize(row: dict[str, Any], *, medians: Optional[dict[str, float]] = None
     for b in biases:
         out[f"bias_{b}"] = 1.0 if bias == b else 0.0
     out["direction_buy"] = 1.0 if str(row.get("direction") or "").upper() == "BUY" else 0.0
+    if not extras:
+        return out
     # --- 2026-11-10 ÖZELLİK ZENGİNLEŞTİRME (skill 0.034 zayıftı) ---
     # Hepsi DB'de ZATEN VAR olan kolonlardan türetilir; yeni enstrümantasyon yok.
     sym = str(row.get("symbol") or "").upper()
@@ -136,13 +138,15 @@ def featurize(row: dict[str, Any], *, medians: Optional[dict[str, float]] = None
 
 def feature_names(*, sessions: tuple[str, ...] = SESSION_VALUES,
                   biases: tuple[str, ...] = BIAS_VALUES,
-                  strategies: tuple[str, ...] = ()) -> list[str]:
+                  strategies: tuple[str, ...] = (), extras: bool = True) -> list[str]:
     """`featurize` çıktısının ANAHTAR SIRASI (artifact ile birebir aynı olmalı)."""
     names = list(NUMERIC_FEATURES)
     names += [f"{n}_eksik" for n in ("level_clearance_atr", "extension_atr", "spread_atr_ratio")]
     names += [f"session_{s}" for s in sessions]
     names += [f"bias_{b}" for b in biases]
     names += ["direction_buy"]
+    if not extras:
+        return names
     names += [f"family_{v}" for v in FAMILY_VALUES]
     names += [f"strategy_{v}" for v in strategies]
     names += ["hour_sin", "hour_cos", "weekday", "rr_ratio", "sl_pips"]
@@ -165,9 +169,9 @@ def symbol_family(symbol: str) -> str:
 
 
 def _vector(row: dict[str, Any], medians: dict[str, float],
-            strategies: tuple[str, ...] = ()) -> list[float]:
-    f = featurize(row, medians=medians, strategies=strategies)
-    return [f[k] for k in feature_names(strategies=strategies)]
+            strategies: tuple[str, ...] = (), extras: bool = True) -> list[float]:
+    f = featurize(row, medians=medians, strategies=strategies, extras=extras)
+    return [f[k] for k in feature_names(strategies=strategies, extras=extras)]
 
 
 def _spearman(a: list[float], b: list[float]) -> Optional[float]:
@@ -233,18 +237,16 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
     strat_counts = Counter(str(r.get("strategy") or "").strip() for r in clean if str(r.get("strategy") or "").strip())
     strategies = tuple(k for k, _ in strat_counts.most_common(TOP_STRATEGIES_N))
     out["strategies"] = list(strategies)
-    X = [_vector(r, medians, strategies) for r in clean]
     y = [1 if float(r.get("shadow_pips")) > 0 else 0 for r in clean]
-    names = feature_names(strategies=strategies)
     cut = int(len(clean) * (1.0 - float(test_fraction)))
     cut = max(1, min(len(clean) - 1, cut))
-    Xtr, Xte, ytr, yte = X[:cut], X[cut:], y[:cut], y[cut:]
-    out.update({"n_train": len(Xtr), "n_test": len(Xte)})
-
+    ytr, yte = y[:cut], y[cut:]
+    out.update({"n_train": len(ytr), "n_test": len(yte)})
     base = sum(ytr) / len(ytr)
-    out["base_rate_train"] = round(base, 4)
     base_te = sum(yte) / len(yte)
+    out["base_rate_train"] = round(base, 4)
     out["base_rate_test"] = round(base_te, 4)
+    denom_te = base_te * (1 - base_te)
 
     try:
         import numpy as np
@@ -253,43 +255,106 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
         out["reason"] = f"sklearn yok: {type(exc).__name__}"
         return out
 
-    Xtr_a = np.asarray(Xtr, dtype=float)
-    Xte_a = np.asarray(Xte, dtype=float)
-    mean = Xtr_a.mean(axis=0)
-    std = np.where(Xtr_a.std(axis=0) < 1e-9, 1.0, Xtr_a.std(axis=0))
-    model = LogisticRegression(max_iter=2000, C=1.0, random_state=0)
-    try:
-        model.fit((Xtr_a - mean) / std, ytr)
-    except Exception as exc:  # noqa: BLE001
-        out["reason"] = f"eğitim başarısız: {type(exc).__name__}: {exc}"
-        return out
-
-    p_tr = model.predict_proba((Xtr_a - mean) / std)[:, 1].tolist()
-    p_te = model.predict_proba((Xte_a - mean) / std)[:, 1].tolist()
-
     from app import ml_probability as mp
-    brier_tr = mp.brier_score(p_tr, ytr)
-    brier_te = mp.brier_score(p_te, yte)
-    denom_te = base_te * (1 - base_te)
-    skill = round(1 - brier_te / denom_te, 4) if denom_te else None
-    ece_te = mp.ece(p_te, yte)
-    ic = _spearman(p_te, [float(v) for v in yte])
-    ic_p = None
-    if ic is not None:
-        ic_p = round(ic / math.sqrt(max(1, len(yte))), 4)   # yaklaşık z-skoru
-    iv = mp.hit_rate_interval_wilson(yte, alpha=0.10)
 
-    # KARŞILAŞTIRMA MODELLERİ (2026-11-10, PDF tavsiyesi: tabular için gradient
-    # boosting — Databricks Big Book 3e s58 "LightGBM … captures seasonality and
-    # complex patterns"). sklearn'in LightGBM-esinli karşılığı:
-    # HistGradientBoostingClassifier. Yeni bağımlılık YOK. Artifact'a YAZILMAZ
-    # (skorlayıcı yalnız lojistik JSON'ı okur); yalnız OOS kıyas amaçlı.
+    def _run_profile(name: str, extras: bool, C_grid=(0.03, 0.1, 0.3, 1.0)) -> dict[str, Any]:
+        """Tek özellik profilini eğitir; cezayı EĞİTİM İÇİ doğrulama dilimiyle seçer."""
+        X = [_vector(r, medians, strategies, extras) for r in clean]
+        names = feature_names(strategies=strategies, extras=extras)
+        Xtr_a = np.asarray(X[:cut], dtype=float)
+        Xte_a = np.asarray(X[cut:], dtype=float)
+        mean = Xtr_a.mean(axis=0)
+        std = np.where(Xtr_a.std(axis=0) < 1e-9, 1.0, Xtr_a.std(axis=0))
+        Ztr = (Xtr_a - mean) / std
+
+        def _fit(C: float, penalty: str):
+            m = LogisticRegression(max_iter=2000, C=float(C), penalty=penalty,
+                                   solver="liblinear" if penalty == "l1" else "lbfgs",
+                                   random_state=0)
+            m.fit(Ztr, ytr)
+            return m
+
+        sel = {"C": 1.0, "penalty": "l2", "val_skill": None}
+        vc = int(len(Ztr) * 0.75)
+        if vc >= 150 and (len(Ztr) - vc) >= 60:
+            best = None
+            for penalty in ("l2", "l1"):
+                for C in C_grid:
+                    try:
+                        m = _fit(C, penalty)
+                        pv = m.predict_proba(Ztr[vc:])[:, 1]
+                        yv = np.asarray(ytr[vc:], dtype=float)
+                        bv = float(yv.mean())
+                        d = bv * (1 - bv)
+                        sk = (1 - float(np.mean((pv - yv) ** 2)) / d) if d > 0 else None
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if sk is not None and (best is None or sk > best[0]):
+                        best = (sk, C, penalty)
+            if best:
+                sel = {"C": best[1], "penalty": best[2], "val_skill": round(best[0], 4)}
+        model = _fit(sel["C"], sel["penalty"])
+        p_tr = model.predict_proba(Ztr)[:, 1].tolist()
+        p_te = model.predict_proba((Xte_a - mean) / std)[:, 1].tolist()
+        b_te = mp.brier_score(p_te, yte)
+        ic = _spearman(p_te, [float(v) for v in yte])
+        return {
+            "profile": name, "n_features": len(names), "hyperparams": sel,
+            "brier_train": round(mp.brier_score(p_tr, ytr), 4),
+            "brier_test": round(b_te, 4),
+            "brier_skill_oos": (round(1 - b_te / denom_te, 4) if denom_te else None),
+            "ece_test": round(mp.ece(p_te, yte), 4),
+            "ic_test": round(ic, 4) if ic is not None else None,
+            "_model": model, "_names": names, "_mean": mean, "_std": std,
+            "_extras": extras, "_p_tr": p_tr, "_p_te": p_te,
+        }
+
+    profiles = {}
+    for pname, pextras in (("temel", False), ("zengin", True)):
+        try:
+            profiles[pname] = _run_profile(pname, pextras)
+        except Exception as exc:  # noqa: BLE001
+            profiles[pname] = {"profile": pname, "error": f"{type(exc).__name__}: {exc}"}
+    out["profiles"] = {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
+                       for k, v in profiles.items()}
+    # KAZANAN: eğitim-içi doğrulama skill'i (test'e bakılmaz → seçim sızıntısı yok)
+    ok = {k: v for k, v in profiles.items() if "_model" in v}
+    if not ok:
+        out["reason"] = "hiçbir özellik profili eğitilemedi"
+        return out
+    best_name = max(ok, key=lambda k: (ok[k]["hyperparams"].get("val_skill") is not None,
+                                       ok[k]["hyperparams"].get("val_skill") or -9))
+    best = ok[best_name]
+    model, names = best["_model"], best["_names"]
+    mean, std, extras = best["_mean"], best["_std"], best["_extras"]
+    p_tr, p_te = best["_p_tr"], best["_p_te"]
+    brier_tr, brier_te = best["brier_train"], best["brier_test"]
+    skill = best["brier_skill_oos"]
+    ece_te = best["ece_test"]
+    ic = best["ic_test"]
+    ic_p = round(ic / math.sqrt(max(1, len(yte))), 4) if ic is not None else None
+    iv = mp.hit_rate_interval_wilson(yte, alpha=0.10)
+    out["best_profile"] = best_name
+    out["selected_hyperparams"] = best["hyperparams"]
+    out["feature_names"] = names
+    out["feature_profile"] = "zengin" if extras else "temel"
+    out["means"] = [round(float(v), 6) for v in mean]
+    out["scales"] = [round(float(v), 6) for v in std]
+
+    # OOS HÜKÜM: skill > 0 ise test yarısında bilgi var; <= 0 ise kapı OLMAMALI.
+    verdict = ("OOS skill > 0: model test yarısında bilgi taşıyor (kapı için YİNE replay A/B şart)"
+               if (skill is not None and skill > 0) else
+               "OOS skill <= 0: model test yarısında bilgi TAŞIMIYOR — karar kapısı OLMAMALI")
+
+    # İKİNCİ MODEL KIYASI (PDF: Databricks Big Book 3e s58 → gradient boosting).
+    # Kazanan özellik profilinin matrisiyle eğitilir; kaydedilmez, yalnız kıyas.
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
+        Xb_tr = np.asarray([_vector(r, medians, strategies, extras) for r in clean[:cut]], dtype=float)
+        Xb_te = np.asarray([_vector(r, medians, strategies, extras) for r in clean[cut:]], dtype=float)
         hgb = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.08,
-                                             max_depth=3, random_state=0)
-        hgb.fit(Xtr_a, ytr)
-        hgb_p = hgb.predict_proba(Xte_a)[:, 1].tolist()
+                                             max_depth=3, random_state=0).fit(Xb_tr, ytr)
+        hgb_p = hgb.predict_proba(Xb_te)[:, 1].tolist()
         hgb_brier = mp.brier_score(hgb_p, yte)
         hgb_skill = round(1 - hgb_brier / denom_te, 4) if denom_te else None
         hgb_ic = _spearman(hgb_p, [float(v) for v in yte])
@@ -301,17 +366,12 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
                                        "brier_skill_oos": hgb_skill,
                                        "ic_test": round(hgb_ic, 4) if hgb_ic is not None else None},
         }
-        best_name = max(("logistic", "hist_gradient_boosting"),
-                        key=lambda k: (out["models"][k]["brier_skill_oos"] is not None,
-                                       out["models"][k]["brier_skill_oos"] or -9))
-        out["best_model"] = best_name
-    except Exception as exc:  # noqa: BLE001 - kıyas modeli raporu düşürmesin
+        out["best_model"] = max(("logistic", "hist_gradient_boosting"),
+                                key=lambda k: (out["models"][k]["brier_skill_oos"] is not None,
+                                               out["models"][k]["brier_skill_oos"] or -9))
+    except Exception as exc:  # noqa: BLE001
         out["models_note"] = f"hist-GB kıyası atlandı: {type(exc).__name__}"
 
-    # OOS hüküm: skill > 0 VE yön tutarlı → model bilgi taşıyor.
-    verdict = ("OOS skill > 0: model test yarısında bilgi taşıyor (kapı için YİNE replay A/B şart)"
-               if (skill is not None and skill > 0) else
-               "OOS skill <= 0: model test yarısında bilgi TAŞIMIYOR — karar kapısı OLMAMALI")
     out.update({
         "trained": True,
         "brier_train": round(brier_tr, 4),
@@ -356,7 +416,8 @@ def load_scoring_model(path: str | Path | None = None) -> Optional[dict[str, Any
     # UYUMLULUK KAPISI: özellik seti değiştiyse (ör. 2026-11-10 zenginleştirme)
     # eski artifact yanlış vektörle skorlar → sessiz bozulma yerine REDDET.
     strat = tuple(art.get("strategies") or [])
-    if list(art.get("feature_names") or []) != feature_names(strategies=strat):
+    extras = str(art.get("feature_profile") or "zengin") == "zengin"
+    if list(art.get("feature_names") or []) != feature_names(strategies=strat, extras=extras):
         logger.info("forex_ml artifact özellik seti güncel değil → yeniden eğitim gerekli")
         return None
     return art
@@ -383,7 +444,8 @@ def score_features(features_dict: dict[str, Any], artifact: dict[str, Any]) -> O
                   medians=artifact.get("medians") or {},
                   sessions=tuple(s[8:] for s in artifact["feature_names"] if s.startswith("session_")),
                   biases=tuple(b[5:] for b in artifact["feature_names"] if b.startswith("bias_")),
-                  strategies=tuple(artifact.get("strategies") or []))
+                  strategies=tuple(artifact.get("strategies") or []),
+                  extras=str(artifact.get("feature_profile") or "zengin") == "zengin")
     try:
         import numpy as np
         x = np.asarray([f[k] for k in artifact["feature_names"]], dtype=float)
@@ -404,8 +466,9 @@ def save_artifact(report: dict[str, Any], path: str | Path | None = None) -> str
         raise ValueError("eğitilmemiş rapor artifact'a yazılamaz")
     target.parent.mkdir(parents=True, exist_ok=True)
     import json
-    payload = {"saved_at": time.time(), "version": 2,
+    payload = {"saved_at": time.time(), "version": 3,
                "strategies": report.get("strategies") or [],
+               "feature_profile": report.get("feature_profile") or "zengin",
                "feature_names": report.get("feature_names"),
                "means": report.get("means"), "scales": report.get("scales"),
                "coefficients": report.get("coefficients"), "intercept": report.get("intercept"),

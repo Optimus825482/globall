@@ -31,7 +31,10 @@ interface TrainReport {
   calibrated_brier_test?: number; calibration_improved?: boolean;
   artifact_path?: string; artifact_error?: string; run_log_error?: string;
   models?: Record<string, { brier_test?: number; brier_skill_oos?: number | null; ic_test?: number | null }>;
-  best_model?: string;
+  best_model?: string; best_profile?: string;
+  profiles?: Record<string, { n_features?: number; brier_skill_oos?: number | null; ic_test?: number | null; brier_test?: number }>;
+  selected_hyperparams?: { C?: number; penalty?: string; val_skill?: number | null };
+  feature_profile?: string;
   wilson?: { n: number; hit_rate: number; lo: number; hi: number } | null;
   error?: string;
 }
@@ -165,6 +168,41 @@ export default function ForexMlPanel() {
                   İzotonik kalibrasyon (test): {fmt(report.calibrated_brier_test)} —{" "}
                   {report.calibration_improved ? "Brier'ı iyileştirdi" : "iyileştirmedi"}
                 </p>
+              )}
+
+              {report.profiles && (
+                <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3">
+                  <h3 className="font-mono text-2xs uppercase tracking-wide text-bunker-muted">
+                    Özellik profili kıyası (ceza, eğitim-içi doğrulama dilimiyle seçildi — test&apos;e bakılmadı)
+                  </h3>
+                  <table className="mt-2 w-full">
+                    <thead>
+                      <tr><th className={th}>profil</th><th className={th}>özellik</th><th className={th}>Brier (test)</th><th className={th}>OOS skill</th><th className={th}>IC</th><th className={th}></th></tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(report.profiles).map(([name, pr]) => (
+                        <tr key={name} className="border-t border-bunker-800">
+                          <td className={td}>{name === "temel" ? "Temel (20)" : "Zengin (aile/strateji/saat/geometri)"}</td>
+                          <td className={td}>{pr.n_features ?? "—"}</td>
+                          <td className={td}>{fmt(pr.brier_test)}</td>
+                          <td className={`${td} ${skillCls(pr.brier_skill_oos)}`}>{fmt(pr.brier_skill_oos, 3)}</td>
+                          <td className={td}>{fmt(pr.ic_test, 3)}</td>
+                          <td className={td}>
+                            {report.best_profile === name && (
+                              <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-2xs font-bold text-emerald-300">SEÇİLDİ</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {report.selected_hyperparams && (
+                    <p className="mt-2 text-2xs text-bunker-muted">
+                      seçilen ceza: C={report.selected_hyperparams.C} · {report.selected_hyperparams.penalty?.toUpperCase()}
+                      {report.selected_hyperparams.val_skill != null ? ` · doğrulama skill ${Number(report.selected_hyperparams.val_skill).toFixed(3)}` : ""}
+                    </p>
+                  )}
+                </div>
               )}
 
               {report.models && (
