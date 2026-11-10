@@ -419,6 +419,18 @@ FOREX_SYMBOLS = [
         "tv_symbol": "FOREXCOM:DJI",
         "default_price": 43500.0,
     },
+    # 2026-11-10 EKLEME: vectorbt ölçümünde TAM örneklemde pozitif kalan endeksler
+    # (JP225 PF 1.60 Sharpe 1.00 · US2000 PF 1.51 Sharpe 0.74 · UK100 PF 1.57 Sharpe 0.76).
+    # HK50 (0.43) ve SWI20 (-0.83) BİLİNÇLİ olarak eklenmedi.
+    {"symbol": "JP225", "display": "Nikkei 225", "name": "Japan 225 Index",
+     "category": "index", "base": "N225", "quote": "JPY", "pip_size": 1.0, "digits": 2,
+     "tv_symbol": "FOREXCOM:JAPAN225", "default_price": 50000.0},
+    {"symbol": "US2000", "display": "Russell 2000", "name": "US Small Cap 2000",
+     "category": "index", "base": "RUT", "quote": "USD", "pip_size": 1.0, "digits": 2,
+     "tv_symbol": "FOREXCOM:RUSSELL", "default_price": 2400.0},
+    {"symbol": "UK100", "display": "FTSE 100", "name": "UK 100 Index",
+     "category": "index", "base": "UKX", "quote": "GBP", "pip_size": 1.0, "digits": 2,
+     "tv_symbol": "FOREXCOM:UKXGBP", "default_price": 8500.0},
     # Crypto
     {
         "symbol": "BTCUSD",
@@ -3157,6 +3169,18 @@ def get_symbol_trading_specs(
         eff_tp_pips = round(base_tp * mult, 1)
         eff_be_pips = max(20.0, round(base_be_floored * mult, 1))
         eff_trail_pips = max(35.0, round(base_trail * mult, 1))
+
+    elif any(k in clean_sym for k in ("JP225", "US2000", "UK100", "HK50", "SWI20", "DE40", "GER40")):
+        # 2026-11-10: US30/USTEC dışındaki endeks CFD'leri (IC Markets: contract 1.0 → 1 puan = $1)
+        pip_size = 1.0
+        mult = 3.0
+        digits = 2
+        pip_val = 1.0
+        base_sl_calc = round(base_sl * mult, 1)
+        eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1)) if (atr_pips and atr_pips > 0) else base_sl_calc
+        eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
+        eff_be_pips = max(25.0, round(eff_sl_pips * 0.75, 1))
+        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
 
     elif "US30" in clean_sym or "DJ30" in clean_sym or "WS30" in clean_sym:
         pip_size = 1.0           # 1 pip = 1.0 index point
@@ -5988,8 +6012,11 @@ class ForexAutoPaperSettings(BaseModel):
                     "ayarı (TP 0.3-1.5R), basit seçicilik (AUC 0.58) ve zengin seçicilik "
                     "(AUC 0.59) hiçbiri bu kümeleri pozitife çevirmedi. Kapatmak için False.")
     proof_scope_symbols: List[str] = Field(
-        default_factory=lambda: ["NAS100", "USTEC", "US30", "XAUUSD", "BTCUSD"],
-        description="Kanıt kapsamındaki semboller. Tokyo sabahı drifti kolu bu kapıdan MUAFTIR "
+        default_factory=lambda: ["NAS100", "USTEC", "US30", "XAUUSD", "BTCUSD",
+                                 "JP225", "US2000", "UK100"],
+        description="Kanıt kapsamındaki semboller. **2026-11-10 EKLEME:** JP225 (PF 1.60 / Sharpe 1.00), "
+                    "US2000 (1.51 / 0.74), UK100 (1.57 / 0.76) — vectorbt 5y 1h TAM ÖRNEKLEM (OOS değil) "
+                    "pozitif; HK50 (1.31/0.43) ve SWI20 (0.53/-0.83) EKLENMEDİ. Tokyo sabahı drifti kolu bu kapıdan MUAFTIR "
                     "(kendi ölçülmüş pencereleri var: `soft_bypass`), ayrıca `blocked_symbols` "
                     "her zaman kazanır.",
     )
@@ -6020,7 +6047,8 @@ class ForexAutoPaperSettings(BaseModel):
     )
     allowed_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
-                                 "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"],
+                                 "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD",
+                                 "JP225", "US2000", "UK100"],
         description="İşleme izin verilen pariteler. DEĞİŞMEZ: allowed_symbols ⊆ FOREX_SYMBOLS (test_forex_auto_paper ile kilitli).",
     )
     mode_symbols: List[str] = Field(

@@ -36,12 +36,13 @@ class TestDefaults(unittest.TestCase):
         m = ForexAutoPaperSettings()
         self.assertTrue(m.proof_scope_enabled)
         self.assertEqual(sorted(m.proof_scope_symbols),
-                         ["BTCUSD", "NAS100", "US30", "USTEC", "XAUUSD"])
+                         ["BTCUSD", "JP225", "NAS100", "UK100", "US2000", "US30", "USTEC", "XAUUSD"])
 
     def test_unproven_symbols_not_in_scope(self):
         m = ForexAutoPaperSettings()
         scope = {s.upper() for s in m.proof_scope_symbols}
-        for sym in ("EURUSD", "USDJPY", "GBPUSD", "USDCHF", "USDCAD", "EURJPY", "AUDJPY"):
+        for sym in ("EURUSD", "USDJPY", "GBPUSD", "USDCHF", "USDCAD", "EURJPY", "AUDJPY",
+                    "HK50", "SWI20"):
             self.assertNotIn(sym, scope, f"{sym} kanıtlanmış pozitif kenar listesinde değil")
 
     def test_description_carries_evidence(self):
