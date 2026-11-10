@@ -5966,8 +5966,14 @@ class ForexAutoPaperSettings(BaseModel):
                                          "pencerede ~0.7-1.5 pip net olduğu için stop geniş "
                                          "tutulur (maliyet/stop oranı düşsün).")
     abstain_gate_mode: Literal["off", "shadow", "enforce"] = Field(
-        "off",
-        description="KANIT KAPISI (P2, 2026-11-09): sembolün kapanmış işlemlerinde isabet oranının "
+        "shadow",
+        description="KANIT KAPISI (P2). **2026-11-10: varsayılan `shadow` YAPILDI** (davranış "
+                    "DEĞİŞMEZ, yalnız 'engellerdi' diye loglar) çünkü ölçüm kapının değerini "
+                    "gösterdi: kanalların MFE dağılımı hedef matematiğini desteklemiyor "
+                    "(P(MFE>=0.5R)=%31, başabaş için %67 gerekir; hiçbir TP 0.3-1.5R aralığında "
+                    "beklenti pozitif değil) ve giriş kalitesi mevcut özelliklerle öngörülemiyor "
+                    "(lojistik AUC 0.58). Shadow verisi 'hangi sembol/kanal engellenirdi' "
+                    "sorusunu ölçer. enforce = gerçekten engeller (iş kararı). Eski açıklama: "
                     "%90 Wilson ALT sınırı break-even'ın altındaysa yeni giriş yapılmasın. "
                     "off = kapalı (varsayılan), shadow = yalnız 'engellerdi' diye loglar, "
                     "enforce = gerçekten engeller. ÖLÇÜM: replay defterinde (isabet %86, break-even ~%30) "

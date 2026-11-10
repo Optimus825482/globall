@@ -49,14 +49,13 @@ class TestBuild(unittest.TestCase):
         import asyncio
         rep = asyncio.run(shadow_report.build())
         keys = {i["key"] for i in rep["items"]}
-        # Görünür: mode != off. Kullanıcı kararı: pasif (KAPALI) mekanizmalar
-        # rapordan GİZLENİR; kanıt kapısı varsayılan off olduğu için gizli.
+        # Görünür: mode != off. Kullanıcı kararı: pasif (KAPALI) mekanizmalar rapordan
+        # GİZLENİR. 2026-11-10: kanıt kapısı varsayılanı `shadow` → artık görünür
+        # (hidden_off davranışı `test_off_mode_still_hidden` ile ayrıca kilitli).
         for expected in ("llm_shadow", "ml_calibration", "geometry_shadow",
-                         "forex_ml_shadow", "risk_gate"):
+                         "forex_ml_shadow", "risk_gate", "abstain_gate"):
             self.assertIn(expected, keys, f"{expected} raporda yok")
-        self.assertNotIn("abstain_gate", keys, "kapalı mekanizma gizlenmeli")
         self.assertEqual(rep["count"], len(rep["items"]) + rep["hidden_off"])
-        self.assertGreaterEqual(rep["hidden_off"], 1)
 
     def test_rows_survive_failures(self):
         """Kaynak okunamasa bile satır listede ve notu açıklayıcı olmalı."""
@@ -68,14 +67,30 @@ class TestBuild(unittest.TestCase):
             self.assertIsInstance(it["measures"], str)
 
     def test_defaults_reflect_settings(self):
-        """Kanıt kapısı varsayılan OFF ve RAPORDAN GİZLİ; risk kapısı GÖLGE ve görünür."""
+        """2026-11-10: kanıt kapısı varsayılanı `shadow` (ölçüm) → raporda GÖRÜNÜR.
+
+        Gerekçe: kanalların MFE dağılımı hedef matematiğini desteklemiyor
+        (P(MFE>=0.5R)=%31 vs başabaş %67) ve giriş kalitesi öngörülemiyor (AUC 0.58)
+        → kapı 'engellerdi' verisini toplamak için gölgeye alındı (davranış değişmez).
+        """
         import asyncio
         rep = asyncio.run(shadow_report.build())
         by = {i["key"]: i for i in rep["items"]}
-        self.assertNotIn("abstain_gate", by, "varsayılan off → rapordan gizlenmeli")
-        self.assertGreaterEqual(rep.get("hidden_off", 0), 1)
+        self.assertIn("abstain_gate", by, "varsayılan shadow → raporda görünür")
+        self.assertEqual(by["abstain_gate"]["mode"], "shadow")
         if by["risk_gate"]["mode"] not in ("unknown",):
             self.assertEqual(by["risk_gate"]["mode"], "shadow")
+
+    def test_off_mode_still_hidden(self):
+        """KAPALI bir mekanizma hâlâ rapordan gizlenir (sayı `hidden_off`'ta durur)."""
+        import asyncio
+        from unittest import mock
+        from app.routers import forex as fx
+        with mock.patch.object(fx._AUTO_SETTINGS, "abstain_gate_mode", "off", create=True):
+            rep = asyncio.run(shadow_report.build())
+        by = {i["key"]: i for i in rep["items"]}
+        self.assertNotIn("abstain_gate", by)
+        self.assertGreaterEqual(rep.get("hidden_off", 0), 1)
 
 
 class TestReadOnly(unittest.TestCase):

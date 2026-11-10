@@ -132,3 +132,40 @@ Kural: `calendar_surprises` (z cinsinden sürpriz) → sürpriz yönünde, **t0+
 **Okuma:** brüt etki ≈ **0.4 pip**, maliyet ≈ **1.7 pip** → sürpriz yönünde devam **yok**; ters yönde de yok (maliyet ikisini de yiyor). Literatürün en güçlü olduğu CPI/NFP/FOMC olayları bu yerel örneklemde **yok** (yerel tablo CAD/CHF/GBP ikincil göstergeleri ağırlıklı; 3 yıldızlı yalnız 11 olay) ve M1 derinliği ~3 ay. Yani **"bu örneklemde kenar yok"** — "hiç yok" değil. Prob sunucuda (tam takvim + daha derin geçmiş) koşulmaya hazır.
 
 **Sonuç:** iki kol da dürüst biçimde kapandı: (a) canlıda iki somut hata düzeltildi, (b) haber ailesi bu örneklemde maliyeti aşamadı.
+
+---
+
+## 7) FRS KANALI ve "giriş kalitesi" ÖLÇÜMÜ — ayar tükendi, sebep GİRİŞ
+
+### 7.1 FRS çıkış davranışı (canlı defter, M1'den MFE hesabı, n=93 FRS / 871 RADAR)
+
+| kanal | gerçek R | **medyan MFE** | medyan hedef | MFE≥1R oranı | çıkış dağılımı |
+|---|---|---|---|---|---|
+| RADAR | −0.067R | **0.41R** | 0.81R | %12.6 | SL 803 · EA 62 · TP 6 |
+| FRS | −0.177R | **0.28R** | **1.49R** | **%10.8** | SL 64 · EA 26 · TP 3 |
+
+**Hipotez yanlış çıktı:** sorun "kazananı erken kesmek" değil — FRS işlemleri **hiç gitmiyor** (medyan lehte hareket 0.28R ≈ gürültü) ve hedef 1.49R, yani ulaşılması imkânsız bir hedef.
+
+### 7.2 Hedef politikası matematiği (MFE dağılımından — çıkış kuralından BAĞIMSIZ kanıt)
+
+| kanal | TP=0.3R | TP=0.5R | TP=0.7R | TP=1.0R | TP=1.5R |
+|---|---|---|---|---|---|
+| RADAR | −0.409 | −0.556 | −0.703 | −0.807 | −0.897 |
+| FRS | −0.399 | −0.532 | −0.671 | −0.785 | −0.866 |
+
+Ulaşma olasılıkları: FRS P(MFE≥0.5R)=%31.2, P(MFE≥1.5R)=%5.4 — **başabaş için gereken %67 / %40**. Yani **hiçbir TP ayarı bu kanalları pozitife çeviremez**; bu, "çıkış parametresi" hipotezlerinin (TP genişliği, trailing, BE) matematiksel olarak kapandığı yerdir.
+
+### 7.3 Giriş kalitesi öngörülebilir mi? (1.074 işlem, hedef = MFE≥0.5R, taban oran %28.9)
+
+- **Skor: TAMAMEN DÜZ** — çeyrekler %29.5 / %28.0 / %28.7 / %29.3. Yani skor seçicilik üretmiyor (canlı defterde "ters" görünmesinin sebebi de bu: bilgi taşımıyor, kalite kalkanı gevşetmesi ayrı kusurdu).
+- Stop mesafesi: küçük stoplar %40.7 ↔ büyük stoplar %17.4 (sembol vekili).
+- Tutma süresi (sonradan bakıldığında): %21.3 ↔ %36.3.
+- **Çok değişkenli lojistik (skor, stop, saat, yön) 5-kat CV AUC = 0.576 ± 0.053** → yazı-tura.
+
+**Sonuç:** mevcut giriş-anı özellikleriyle lehte hareket öngörülemiyor. Bu yüzden:
+1. Çıkış/hedef ayarları **kapandı** (7.2 matematiksel).
+2. Basit özelliklerle seçicilik **kapandı** (7.3).
+3. Kalan kaldıraç: (a) **daha zengin giriş özellikleri** (bağlam: DXY/seans/volatilite rejimi, takvim yakınlığı, HTF yapı — mevcut Forex ML özellik seti IC≈0.22 veriyordu), (b) **kanıtlanmış kapsama yoğunlaşma** (RADAR × USTEC/US30/XAUUSD, t=2.7-5.3 — tek istatistiksel anlamlı kenar).
+
+### 7.4 Uygulanan tek değişiklik
+**Kanıt kapısı (abstain gate) varsayılanı `off` → `shadow`** (davranış DEĞİŞMEZ; yalnız "engellerdi" logu). Gerekçe: 7.2/7.3 ölçümü kapının ne söyleyeceğini artık değerli kılıyor. `enforce` hâlâ iş kararı.
