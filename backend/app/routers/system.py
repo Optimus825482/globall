@@ -397,3 +397,13 @@ async def run_routine(name: str, request: Request):
     if get(name) is None:
         raise HTTPException(status_code=404, detail=f"rutin yok: {name}")
     return await run_once(name, force=True)
+
+
+@router.get("/system/agents")
+async def list_agent_charters():
+    """Ajan sözleşmeleri (condor AGENT.md deseni): hangi uzman ne zaman, neyi YAPMAZ.
+
+    LLM istemine giren yönlendirme tablosunun aynısı — panelde görünür olsun diye açıldı.
+    """
+    from app import agent_charters
+    return {"count": len(agent_charters.CHARTERS), "agents": agent_charters.all_charters()}
