@@ -247,6 +247,40 @@ def vol_multiplier(vol: Optional[Dict[str, Any]]) -> float:
     return 1.0
 
 
+# --------------------------------------------------------------------------- taşıma (swap)
+
+def direction_swap_pips(ctx: Dict[str, Any]) -> Optional[float]:
+    """İşlem YÖNÜ için günlük swap (pip, + = kredi, − = maliyet). Bilinmiyorsa None.
+
+    2026-11-10: MT5 `symbol_info().swap_long/short` POINTS modunda; köprü 1 pip = 10 points
+    (hem 3 hem 5 haneli sembollerde ölçüldü) ile pip'e çevirip gönderir. Sadece mode=POINTS
+    desteklenir; diğer modlarda `None` döner (uydurma yok).
+    """
+    d = str(ctx.get("direction") or "").upper()
+    long_p = ctx.get("swap_long_pips")
+    short_p = ctx.get("swap_short_pips")
+    if long_p is None and short_p is None:
+        return None
+    if d == "BUY":
+        return None if long_p is None else float(long_p)
+    if d == "SELL":
+        return None if short_p is None else float(short_p)
+    return None
+
+
+def expected_swap_pips(swap_pips_day: Optional[float], hold_hours: float) -> float:
+    """Beklenen taşıma etkisi (pip): rollover'ı geçme olasılığı × günlük swap.
+
+    Basit ve şeffaf varsayım: tutuş süresi gün içinde düzgün dağılı → P(rollover) = hold/24.
+    Tek rollover geçilir (çarşamba 3× etkisi `swap_pips_day`'in içinde DEĞİL; ayrı gün hesabı
+    gerekir — muhafazakâr olarak çarpan uygulanmaz, not edilir).
+    """
+    if swap_pips_day is None:
+        return 0.0
+    p = max(0.0, min(1.0, float(hold_hours) / 24.0))
+    return round(p * float(swap_pips_day), 4)
+
+
 def evaluate_entry(ctx: Dict[str, Any], cfg: Dict[str, Any], account: Dict[str, Any], positions: List[Dict[str, Any]],
                    prices: Dict[str, float], specs: Callable[[str], Dict[str, Any]], state: RiskState,
                    now: Optional[float] = None) -> Dict[str, Any]:
@@ -319,10 +353,23 @@ def evaluate_entry(ctx: Dict[str, Any], cfg: Dict[str, Any], account: Dict[str, 
     sl_pips = float(ctx.get("sl_pips") or 0)
     if spread > 0 and sl_pips > 0:
         comm_pips = (float(ctx.get("comm_per_lot") or 0) / pip_val) if pip_val > 0 else 0.0
-        cost_r = (spread + comm_pips) / sl_pips
+        # TAŞIMA (2026-11-10): swap maliyeti/kredisi maliyet oranına girer. Ölçüm: GBPJPY kısa
+        # -2.29 pip/gün (20p stop'un %11'i), uzun +1.14 kredi. Yön için günlük swap, beklenen
+        # rollover olasılığıyla çarpılır (hold/24).
+        _swap_day = direction_swap_pips(ctx) if cfg.get("swap_cost_enabled", True) else None
+        _swap_exp = expected_swap_pips(_swap_day, float(cfg.get("swap_hold_hours", 4.0) or 4.0))
+        # İŞARET: `_swap_exp` + ise KREDİ (maliyeti azaltır), − ise MALİYET (ekler) → çıkarılır.
+        cost_r = (spread + comm_pips - _swap_exp) / sl_pips
+        metrics["swap_pips_day"] = None if _swap_day is None else round(_swap_day, 3)
+        metrics["swap_pips_expected"] = _swap_exp
         metrics.update(cost_r=round(cost_r, 3), spread_pips=round(spread, 2))
         if cost_r > cfg.get("cost_r_max", 0.25):
             reasons.append({"code": "cost_r", "text": f"Maliyet {cost_r:.2f}R > {cfg.get('cost_r_max', 0.25)}R (spread+komisyon / stop)"})
+        _veto = float(cfg.get("swap_veto_pips", 0.5) or 0.0)
+        if _veto > 0 and _swap_day is not None and _swap_exp <= -_veto:
+            reasons.append({"code": "swap_veto",
+                            "text": (f"Taşıma maliyeti yön aleyhine: {_swap_day:+.2f} pip/gün "
+                                     f"(beklenen {_swap_exp:+.2f} pip) — eşik -{_veto:.2f}")})
         if sl_pips < cfg.get("stop_spread_mult", 8.0) * spread:
             reasons.append({"code": "stop_vs_spread", "text": f"Stop {sl_pips:.0f}p < {cfg.get('stop_spread_mult', 8.0):.0f}× spread ({spread:.1f}p)"})
         hour = datetime.fromtimestamp(now, timezone.utc).hour
@@ -365,7 +412,10 @@ def settings_cfg(settings: Any) -> Dict[str, Any]:
             "heat_limit_pct": float(g("risk_heat_limit_pct", 6.0)), "usd_net_limit_pct": float(g("risk_usd_net_limit_pct", 3.0)),
             "daily_loss_pct": float(g("risk_daily_loss_pct", 3.0)), "weekly_loss_pct": float(g("risk_weekly_loss_pct", 6.0)),
             "kill_dd_pct": float(g("risk_kill_dd_pct", 12.0)), "cost_r_max": float(g("risk_cost_r_max", 0.25)),
-            "stop_spread_mult": float(g("risk_stop_spread_mult", 8.0)), "block_losing_adds": bool(g("risk_block_losing_adds", True))}
+            "stop_spread_mult": float(g("risk_stop_spread_mult", 8.0)), "block_losing_adds": bool(g("risk_block_losing_adds", True)),
+            "swap_cost_enabled": bool(g("risk_swap_cost_enabled", True)),
+            "swap_hold_hours": float(g("risk_swap_hold_hours", 4.0)),
+            "swap_veto_pips": float(g("risk_swap_veto_pips", 0.5))}
 
 
 async def refresh_state(equity: float, now: Optional[float] = None) -> RiskState:

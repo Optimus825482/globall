@@ -852,6 +852,27 @@ def execute_market_order(cmd: dict) -> dict:
         return {"success": False, "error": comment_err}
 
 
+def _swap_catalog(symbols) -> dict:
+    """Sembol → {"long": pip, "short": pip, "mode": int} taşıma kataloğu (2026-11-10).
+
+    MT5 `swap_long/short` POINTS modunda **point** cinsindendir; ölçümle doğrulandı:
+    **1 pip = 10 point** (3 ve 5 haneli semboller). Diğer modlarda çeviri yapılmaz → None
+    (uydurma değer göndermiyoruz; risk kapısı None'ı "bilinmiyor" sayar).
+    """
+    out = {}
+    for sym in list(symbols or []):
+        i = mt5.symbol_info(sym)
+        if i is None:
+            continue
+        if int(getattr(i, "swap_mode", 0) or 0) == mt5.SYMBOL_SWAP_MODE_POINTS:
+            out[sym] = {"long": round(float(i.swap_long) / 10.0, 4),
+                        "short": round(float(i.swap_short) / 10.0, 4),
+                        "mode": int(i.swap_mode)}
+        else:
+            out[sym] = {"long": None, "short": None, "mode": int(getattr(i, "swap_mode", 0) or 0)}
+    return out
+
+
 def execute_close_order(cmd: dict) -> dict:
     """Belirli bir MT5 açık pozisyonunu kapatır."""
     ticket = int(cmd.get("ticket", 0))
@@ -1703,6 +1724,7 @@ def sync_with_server(api_base: str):
         "account": account_data,
         "positions": positions,
         "deals": deals,
+        "swaps": _swap_catalog(ticks_data.keys()),
         "ticks": ticks_data,
         "candles": _next_watch_candles(),
         "version": "1.0.2",

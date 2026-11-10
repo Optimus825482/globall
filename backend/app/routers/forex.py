@@ -5838,6 +5838,18 @@ class ForexAutoPaperSettings(BaseModel):
     risk_kill_dd_pct: float = Field(12.0, ge=3.0, le=90.0, description="Tepeden düşüş bu eşikte otomatik durdurma (30 günlük kayan tepe). Kademeler: %3→×0.75, %5→×0.5, %8→×0.25")
     risk_cost_r_max: float = Field(0.25, ge=0.02, le=2.0, description="Maliyet-R tavanı: (spread + komisyon) / stop mesafesi")
     risk_stop_spread_mult: float = Field(8.0, ge=1.0, le=50.0, description="Stop mesafesi en az bu kat × spread olmalı")
+    risk_swap_cost_enabled: bool = Field(
+        True,
+        description="TAŞIMA (SWAP) maliyetini `cost_r`'ye ekle (2026-11-10). Ölçüm: GBPJPY kısa "
+                    "-2.29 pip/gün = 20p stop'un %11'i, uzun +1.14 pip/gün KREDİ; USDJPY uzun "
+                    "+0.83. Sunucu saati UTC+2 → rollover **22:00 UTC**. Swap oranları köprüden "
+                    "(`symbol_info().swap_long/short`, POINTS modu, 1 pip = 10 points) gelir.")
+    risk_swap_hold_hours: float = Field(
+        4.0, ge=0.0, le=72.0, description="Taşıma beklentisi için varsayılan tutuş süresi (saat). "
+                                          "P(rollover) = tutuş/24 ile çarpılır.")
+    risk_swap_veto_pips: float = Field(
+        0.5, ge=0.0, le=20.0, description="Yön aleyhine beklenen taşıma bu eşiği (pip) aşarsa "
+                                          "giriş engellenir (0 = veto kapalı).")
     risk_block_losing_adds: bool = Field(True, description="Zarardaki aynı yönlü pozisyona ekleme (ortalama düşürme) yasak")
     position_supervisor_mode: str = Field("log", pattern="^(off|log|act)$", description="Açık pozisyon gözetimi: off · log (varsayılan: öneriyi günlüğe yazar) · act (olay öncesi başabaş/risk azaltma ve hafta sonu öncesi kapama komutu verir)")
     position_event_window_min: int = Field(10, ge=1, le=60, description="Yüksek etkili veriye bu kadar dakika kala açık pozisyon için olay-riski kuralı devreye girer")
@@ -9784,7 +9796,11 @@ async def _forex_auto_paper_loop():
                     _rg = await _pr.check_entry({
                         "symbol": sym, "direction": direction, "lots": mt5_lots, "sl_pips": sl_pips,
                         "spread_pips": float(cand.get("spread_pips", 0.0) or 0.0), "pip_size": spec["pip_size"],
-                        "pip_val": pip_val, "comm_per_lot": comm_per_lot, "entry_price": entry_p}, _AUTO_SETTINGS)
+                        "pip_val": pip_val, "comm_per_lot": comm_per_lot, "entry_price": entry_p,
+                        # TAŞIMA: köprünün sembol kataloğundan (yoksa None → kapı uydurmaz)
+                        "swap_long_pips": (_MT5_STATE.get("swaps") or {}).get(sym, {}).get("long"),
+                        "swap_short_pips": (_MT5_STATE.get("swaps") or {}).get(sym, {}).get("short"),
+                    }, _AUTO_SETTINGS)
                 except Exception as exc:
                     logger.warning("Risk kapısı çağrısı çöktü (%s): %s", sym, exc)
                     _rg = None
@@ -11797,6 +11813,8 @@ async def export_forex_trades_csv(
 
 class MT5SyncRequest(BaseModel):
     account: Dict[str, Any] = Field(default_factory=dict)
+    #: Sembol → {"long": pip, "short": pip, "mode": int} (taşıma kataloğu, 2026-11-10)
+    swaps: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     positions: List[Dict[str, Any]] = Field(default_factory=list)
     deals: List[Dict[str, Any]] = Field(default_factory=list)
     ticks: Dict[str, Dict[str, float]] = Field(default_factory=dict)
@@ -11901,6 +11919,10 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
     # MT5 canlı tick fiyatlarını entegre et
     _new_closed_count = 0
     _fx_ticks_payload: Dict[str, Any] = {}
+    # TAŞIMA KATALOĞU (2026-11-10): köprü `swaps` gönderirse sakla (risk kapısı kullanır).
+    _swaps_in = getattr(req, "swaps", None)
+    if isinstance(_swaps_in, dict):
+        _MT5_STATE["swaps"] = {str(k).upper(): v for k, v in _swaps_in.items() if isinstance(v, dict)}
     if req.ticks:
         for sym_code, tick_dict in req.ticks.items():
             sym_up = str(sym_code).upper()
