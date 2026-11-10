@@ -2165,6 +2165,67 @@ FIRSAT_COMMENT_TAG = "FRS"
 SCAN_RISK_PCT = 1.0          # işlem başı risk: bakiyenin %1'i (motorun sembol riskinden bağımsız, muhafazakâr)
 
 
+#: Tokyo drifti: sembol → son giriş yapılan gün kimliği (günde bir giriş garantisi).
+_TOKYO_DRIFT_LAST_DAY: Dict[str, int] = {}
+
+
+def _tokyo_drift_candidates(ticks: Dict[str, Any], now_ts: float) -> List[Dict[str, Any]]:
+    """01:00 UTC (Tokyo sabahı) LONG adayları — zaman tabanlı kol (2026-11-10).
+
+    Ölçüm gerekçesi ve kapı politikası `TOKYO_DRIFT_*` sabitlerinin başında. Bu fonksiyon
+    yeni bir emir yolu AÇMAZ: standart aday yolundan geçer (risk kapıları, lot bütçesi,
+    spread, korelasyon, günlük zarar kesici hepsi uygulanır). Yalnız sinyal-kalitesi
+    kapıları `soft_bypass` ile atlanır (skor/ADX/SuperTrend/EV/DXY) — çünkü bu kol
+    bar-deseni değil ZAMAN tabanlıdır ve o kapılar bu kola kalibre değildir.
+    """
+    if not bool(getattr(_AUTO_SETTINGS, "tokyo_drift_enabled", False)):
+        return []
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    if now_dt.weekday() >= 5:                      # hafta sonu: FX kapalı
+        return []
+    if int(now_dt.hour) != int(getattr(_AUTO_SETTINGS, "tokyo_drift_entry_hour_utc", 1)):
+        return []
+    if int(now_dt.minute) >= int(getattr(_AUTO_SETTINGS, "tokyo_drift_window_min", 5) or 5):
+        return []
+    day_id = int(now_ts // 86400)
+    allowed = {str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "allowed_symbols", []) or [])}
+    blocked = {str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "blocked_symbols", []) or [])}
+    open_syms = {str(p.get("symbol", "")).upper() for p in _AUTO_STATE.get("open_positions", [])}
+    out: List[Dict[str, Any]] = []
+    for sym in [str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "tokyo_drift_symbols", []) or [])]:
+        if not sym or _TOKYO_DRIFT_LAST_DAY.get(sym) == day_id or sym in open_syms:
+            continue
+        if sym in blocked or (allowed and sym not in allowed):
+            continue
+        t = ticks.get(sym) or {}
+        pip = float(t.get("pip_size") or 0.0)
+        atr = float(t.get("atr_pips") or 0.0)
+        if pip <= 0 or atr <= 0 or not (t.get("bid") or t.get("ask")):
+            continue
+        sl_pips = max(4.0, round(atr * float(getattr(_AUTO_SETTINGS, "tokyo_drift_sl_atr_mult", 1.5)), 1))
+        hold = int(getattr(_AUTO_SETTINGS, "tokyo_drift_hold_min", 60) or 60)
+        _TOKYO_DRIFT_LAST_DAY[sym] = day_id      # aday üretildi = bugünkü hak kullanıldı
+        out.append({
+            "symbol": sym, "display": t.get("display", sym), "action": "BUY",
+            "score": 100.0, "spread_pips": float(t.get("spread_pips", 0.0) or 0.0),
+            "atr_pips": round(atr, 1), "adx": float(t.get("adx", 0.0) or 0.0),
+            "supertrend_dir": int(t.get("supertrend_dir", 0) or 0),
+            "entry_source": "tokyo_drift", "strategy": TOKYO_DRIFT_STRATEGY,
+            "strategy_label": TOKYO_DRIFT_LABEL,
+            "sl_pips_override": sl_pips, "tp_pips_override": 0.0, "hold_minutes": hold,
+            "signal_bar_time": int(now_ts // 300) * 300, "signal_bar_confirmed": True,
+            "soft_bypass": True, "_arm_quota": None,
+        })
+        _log_auto_decision(
+            "SCAN",
+            f"🌅 [{t.get('display', sym)}] {TOKYO_DRIFT_LABEL}: BUY adayı — {now_dt.hour:02d}:00 UTC "
+            f"penceresi (ölçüm: 5y H1, trend demean, maliyet sonrası pozitif), SL {sl_pips:.1f}p, "
+            f"TP yok, {hold} dk sonra kapanır — risk kapıları uygulanıyor.",
+            symbol=sym, strategy=TOKYO_DRIFT_STRATEGY, strategy_label=TOKYO_DRIFT_LABEL,
+        )
+    return out
+
+
 def strategy_name_for(entry_source: Any) -> str:
     """Giriş kaynağından işlem kaydına yazılacak strateji kimliğini türetir.
 
@@ -2172,6 +2233,8 @@ def strategy_name_for(entry_source: Any) -> str:
     isteği 2026-10-08). Öncelik: mod → donchian → klasik radar.
     """
     src = str(entry_source or "").strip().lower()
+    if src == "tokyo_drift":
+        return TOKYO_DRIFT_STRATEGY
     if src == "ema_adx_pullback":
         return EMA_ADX_PULLBACK_STRATEGY
     if src.startswith("s3_"):
@@ -2202,6 +2265,8 @@ def strategy_comment_tag(entry_source: Any) -> str:
     MT5 geçmişinde/işlem kaydında işlemin hangi stratejiye ait olduğu okunur.
     """
     src = str(entry_source or "").strip().lower()
+    if src == "tokyo_drift":
+        return TOKYO_DRIFT_COMMENT_TAG
     if src == "ema_adx_pullback":
         return "EAP-M5"
     if src.startswith("s3_"):
@@ -2235,6 +2300,8 @@ def strategy_display_label(code_or_source: Any) -> str:
     """Strateji kodundan veya giriş kaynağından insan-okur Türkçe etiket türetir."""
     s = str(code_or_source or "").strip()
     u = s.upper()
+    if u == "TOKYO_DRIFT":
+        return TOKYO_DRIFT_LABEL
     if u in ("FIRSAT_TARAMASI", "FRS") or "FIRSAT" in u:
         return FIRSAT_LABEL
     if u in ("EMA_ADX_PULLBACK", "EMA_ADX_PULLBACK_M5", "EAP", "EAP-M5") or "EMA_ADX" in u or "EAP" in u:
@@ -5643,6 +5710,21 @@ CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
 # Klasik radar emir evreni: XAU, BTC, US30, AUDUSD, AUDCAD
 CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
+
+# ── TOKYO SABAHI DRİFTİ (2026-11-10) — ZAMAN TABANLI YENİ KOL ─────────────────
+# Araştırma: `docs/FX_YENI_SINYAL_AILESI_ARASTIRMASI_2026-11-10.md`.
+# ÖLÇÜM (5 yıl H1, 1.290 gözlem/sembol/saat, TREND DEMEAN edilmiş, maliyet düşülmüş):
+#   01:00 UTC'de LONG — GBPUSD +2.38p (t=10.7), USDJPY +2.57p (t=6.4), EURUSD +1.47p (t=7.3).
+#   00:00 UTC de pozitif ama TAM ROLLOVER saati (spread 10-30×) → giriş 01:00'e alındı.
+#   Dört ayrı varlıkta AYNI saat + Bonferroni (96 hücre) → ortak faktör.
+#   Literatür: Breedon & Ranaldo JMCB 45(5):953 (2013) + Ito & Yamada JIE 109:214 (2017).
+# TASARIM: yeni emir yolu YOK — mevcut aday yolunu kullanır; çıkış `hold_minutes`
+#   (mevcut EoD zaman-stopu) ve/veya SL/trailing. Sabit TP yok.
+# DIŞARIDA: XAUUSD (5c seans likidite kuralı: XAU yalnız 07:00-20:00 UTC; 01:00'de
+#   altın spread'i genişliyor). Blok listesindeki semboller de her zaman dışarıda.
+TOKYO_DRIFT_STRATEGY = "TOKYO_MORNING_DRIFT"
+TOKYO_DRIFT_LABEL = "Tokyo Sabahı Drifti (01:00 UTC)"
+TOKYO_DRIFT_COMMENT_TAG = "TKYO"   # MT5 emir yorumu → defterde kanal ayrımı görünür olsun
 # Mod-özel semboller: ham klasik radar kapalıdır (Donchian/FVG/Squeeze çalışır)
 CANLI_MODE_EXCLUSIVE_SYMBOLS = ("GBPJPY", "EURJPY", "CHFJPY")
 # 2026-10-16 31-sembol 50k bar testleri:
@@ -5798,6 +5880,36 @@ class ForexAutoPaperSettings(BaseModel):
                     "canlı sızıntı. Doğru kaldıraç sembolü yasaklamak değil: (a) kanal kalitesi "
                     "(FRS), (b) kanıtlı sembollerin kapsamı. Boş liste korumayı kapatır.",
     )
+    tokyo_drift_enabled: bool = Field(
+        True,
+        description="TOKYO SABAHI DRİFTİ (2026-11-10): **zaman tabanlı** yeni kol. 5 yıl H1 "
+                    "ölçümünde (1.290 gözlem/sembol/saat, trend demean edilmiş, maliyet düşülmüş) "
+                    "01:00 UTC'de LONG yönü dört ayrı varlıkta pozitif: GBPUSD +2.38p (t=10.7), "
+                    "USDJPY +2.57p (t=6.4), EURUSD +1.47p (t=7.3), XAUUSD +86p (t=3.2). "
+                    "Mekanizma: Tokyo sabahı USD talebi (Breedon-Ranaldo 2013 · Ito-Yamada 2017). "
+                    "Giriş 01:00-01:05 UTC penceresinde sembol başına GÜNDE BİR KEZ; sabit TP yok, "
+                    "çıkış `tokyo_drift_hold_min` sonunda (EoD zaman-stopu) veya SL/trailing. "
+                    "RİSK KAPILARI (spread, lot bütçesi, korelasyon, günlük zarar kesici) ATLANMAZ; "
+                    "yalnız sinyal-kalitesi kapıları (skor/ADX/SuperTrend/EV/DXY) atlanır çünkü "
+                    "bunlar bar-deseni kolları için kalibre edilmiştir. Kapatmak için False.")
+    tokyo_drift_symbols: List[str] = Field(
+        default_factory=lambda: ["GBPUSD", "EURUSD", "USDJPY"],
+        description="Tokyo sabahı driftinin işlem açacağı semboller. Ölçülen dörtlüden XAUUSD "
+                    "bilinçli DIŞARIDA (5c seans likidite kuralı: XAU yalnız 07:00-20:00 UTC).",
+    )
+    tokyo_drift_entry_hour_utc: int = Field(
+        1, ge=0, le=23, description="Giriş saati (UTC). Ölçüm 01:00 UTC'yi işaret ediyor; 00:00 "
+                                    "rollover saatidir (spread 10-30×) → varsayılan 1.")
+    tokyo_drift_window_min: int = Field(
+        5, ge=1, le=30, description="Giriş penceresi (dakika). Pencere dışında işlem denenmez; "
+                                    "sembol başına günde tek giriş.")
+    tokyo_drift_hold_min: int = Field(
+        60, ge=5, le=720, description="Tutma süresi (dakika) — mevcut EoD zaman-stopu kullanılır "
+                                      "(çıkış nedeni EOD_TIME). Ölçüm penceresi 1 saat.")
+    tokyo_drift_sl_atr_mult: float = Field(
+        1.5, ge=0.3, le=6.0, description="SL = bu kat × giriş ATR'si. Ölçülen getiri 1 saatlik "
+                                         "pencerede ~0.7-1.5 pip net olduğu için stop geniş "
+                                         "tutulur (maliyet/stop oranı düşsün).")
     abstain_gate_mode: Literal["off", "shadow", "enforce"] = Field(
         "off",
         description="KANIT KAPISI (P2, 2026-11-09): sembolün kapanmış işlemlerinde isabet oranının "
@@ -8470,6 +8582,8 @@ async def _forex_auto_paper_loop():
                                 )
 
             candidates = _order_entry_arms(candidates, arm_rows)
+            # Zaman tabanlı kol (2026-11-10): 01:00 UTC Tokyo sabahı drifti
+            candidates = candidates + _tokyo_drift_candidates(ticks, now_ts)
 
             # Periyodik Canlı Tarama Özeti (Her 20 saniyede bir Decision Stream'e düşer)
             if now_ts - _LAST_SCAN_PULSE_TIME > 20.0:
@@ -8595,6 +8709,8 @@ async def _forex_auto_paper_loop():
                 _c_src = cand.get("entry_source", "")
                 _c_strat = strategy_name_for(_c_src)
                 _c_strat_lbl = strategy_display_label(_c_src)
+                # Zaman tabanlı kol: sinyal-kalitesi kapıları atlanır (risk kapıları ASLA).
+                _soft_bypass = bool(cand.get("soft_bypass"))
 
                 # Kapsam kapısı: Hafta sonu 7/24 kripto havuzu serbest, hafta içi allowed_symbols aranır.
                 if weekend_now:
@@ -8915,7 +9031,7 @@ async def _forex_auto_paper_loop():
                     last_sym_time = now_ts
                 time_since_sym = max(0.0, now_ts - last_sym_time)
                 sym_cd_left = max(0.0, min(sym_cd, sym_cd - time_since_sym))
-                if sym_cd_left > 0:
+                if sym_cd_left > 0 and not _soft_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_symcd", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_symcd"] = now_ts
                         _log_auto_decision(
@@ -8931,7 +9047,7 @@ async def _forex_auto_paper_loop():
                 # (2026-10-10 denetim P0-3: BTCUSD artık VARSAYILAN olarak muaf DEĞİL — eski
                 #  "BTC/XAU 60 sn soğuma" muafiyeti BTC'yi kayıp-uyarlamalı frenden yoksun
                 #  bırakıyordu. XAU muafiyeti korunur; BTC istenirse btc_ev_exempt=True ile geri alınır.)
-                _ev_exempt = (sym == "XAUUSD") or (sym == "BTCUSD" and _AUTO_SETTINGS.btc_ev_exempt)
+                _ev_exempt = (sym == "XAUUSD") or (sym == "BTCUSD" and _AUTO_SETTINGS.btc_ev_exempt) or _soft_bypass
                 if _AUTO_SETTINGS.ev_guard_enabled and not _ev_exempt:
                     ev_override_until = _SYMBOL_EV_OVERRIDE_UNTIL.get(sym, 0.0)
                     if now_ts < ev_override_until:
@@ -9176,7 +9292,7 @@ async def _forex_auto_paper_loop():
                     _AUTO_SETTINGS.major_session_start_utc, _AUTO_SETTINGS.major_session_end_utc,
                     _get_symbol_major_min_atr(sym, _AUTO_SETTINGS.major_min_atr_pips),
                 )
-                if gate_reason and not _news_bypass:
+                if gate_reason and not _news_bypass and not _soft_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_major", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_major"] = now_ts
                         reason_str = ("Majör Seans Filtresi: UTC saat penceresi dışında (Asya seansı chop riski)."
@@ -9208,7 +9324,7 @@ async def _forex_auto_paper_loop():
 
                 # 7. Skor eşiği — panel ile aynı fonksiyon (emtia tabanı tek sabitte).
                 req_score = required_entry_score(sym, weak_symbol_score_bump)
-                if cand["score"] < req_score and not _news_bypass:
+                if cand["score"] < req_score and not _news_bypass and not _soft_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_score", 0) > 25.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_score"] = now_ts
                         _log_auto_decision(
@@ -9222,7 +9338,8 @@ async def _forex_auto_paper_loop():
 
                 # 7b. ADX Trend Gücü Kalkanı — çalkantılı/yönsüz piyasada trend girişi yapılmaz
                 adx_val = float(cand.get("adx", 25.0))
-                if _AUTO_SETTINGS.adx_filter_enabled and adx_val < _AUTO_SETTINGS.adx_min and not _news_bypass:
+                if (_AUTO_SETTINGS.adx_filter_enabled and adx_val < _AUTO_SETTINGS.adx_min
+                        and not _news_bypass and not _soft_bypass):
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_adx", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_adx"] = now_ts
                         _log_auto_decision(
@@ -9244,7 +9361,7 @@ async def _forex_auto_paper_loop():
                 # alındı (harness varsayılanı TUN_ST_FILTER=False) → canlıda filtre
                 # açıkken uygulanırsa test edilen davranıştan sapar.
                 st_dir = int(cand.get("supertrend_dir", 0))
-                if supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir, news_bypass=_news_bypass):
+                if (not _soft_bypass) and supertrend_blocks_entry(cand.get("entry_source", ""), direction, st_dir, news_bypass=_news_bypass):
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_st", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_st"] = now_ts
                         _log_auto_decision(
@@ -9257,7 +9374,7 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 7d. Varlık Sınıfı Akıllı Kalite Kalkanı (BTC, ETH, XAUUSD, US30, USTEC)
-                if _AUTO_SETTINGS.quality_gate_enabled and not _news_bypass:
+                if _AUTO_SETTINGS.quality_gate_enabled and not _news_bypass and not _soft_bypass:
                     c_body = float(cand.get("body_ratio", 0.5) if cand.get("body_ratio") is not None else 0.5)
                     c_dist = float(cand.get("dist_ema21_pct", 0.0) if cand.get("dist_ema21_pct") is not None else 0.0)
                     c_score = float(cand.get("score", 0.0) or 0.0)
