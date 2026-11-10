@@ -55,11 +55,11 @@ class _Clock:
 
 
 class TestDefaults(unittest.TestCase):
-    def test_enabled_by_default_with_fx_majors(self):
+    def test_enabled_by_default_with_measured_basket(self):
         m = fx.ForexAutoPaperSettings()
         self.assertTrue(m.tokyo_drift_enabled)
-        self.assertEqual(sorted(m.tokyo_drift_symbols), ["EURUSD", "GBPUSD", "USDJPY"])
-        self.assertNotIn("XAUUSD", m.tokyo_drift_symbols, "XAU 5c likidite kuralı gereği dışarıda")
+        # Ölçülen dörtlü (2026-11-10): XAUUSD kullanıcı isteğiyle eklendi
+        self.assertEqual(sorted(m.tokyo_drift_symbols), ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"])
 
     def test_window_defaults(self):
         m = fx.ForexAutoPaperSettings()
@@ -161,10 +161,9 @@ class TestWiring(unittest.TestCase):
             self.assertIn(gate, SRC, f"yumuşak kapı beklenen biçimde değil: {gate}")
 
     def test_risk_gates_are_not_bypassed(self):
-        """Spread/seans/EV kapıları soft_bypass GÖRMEMELİ (satır bazında kaynak taraması)."""
+        """Spread/EV kapıları soft_bypass GÖRMEMELİ (satır bazında kaynak taraması)."""
         risk_lines = [
             'if cand["spread_pips"] > effective_max_spread:',
-            'if (is_gold or is_index_cand) and not (7 <= current_utc_hour < 20):',
             'if _AUTO_SETTINGS.ev_guard_enabled and not _ev_exempt:',
         ]
         for line in risk_lines:
@@ -172,6 +171,14 @@ class TestWiring(unittest.TestCase):
             self.assertEqual(len(hits), 1, f"risk kapısı bulunamadı (ya da çoklu): {line}")
             self.assertNotIn("_soft_bypass", hits[0],
                              f"risk/safety kapısına soft_bypass eklenmiş — YASAK: {line}")
+
+    def test_gold_session_gate_bypassed_only_for_this_arm(self):
+        """XAU 01:00'de işlem açabilsin diye 5c kapısı YALNIZ _soft_bypass ile atlanır."""
+        hits = [ln for ln in SRC.splitlines()
+                if "is_gold or is_index_cand) and not (7 <= current_utc_hour < 20)" in ln]
+        self.assertEqual(len(hits), 1, "5c seans likidite kapısı bulunamadı")
+        self.assertIn("and not _soft_bypass:", hits[0],
+                      "5c kapısı zaman kolunda atlanmalı (XAU 01:00 ölçümü pozitif)")
 
     def test_exit_uses_existing_time_stop(self):
         self.assertIn('"hold_minutes": hold', SRC)

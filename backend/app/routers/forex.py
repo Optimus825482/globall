@@ -5720,8 +5720,10 @@ CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
 #   Literatür: Breedon & Ranaldo JMCB 45(5):953 (2013) + Ito & Yamada JIE 109:214 (2017).
 # TASARIM: yeni emir yolu YOK — mevcut aday yolunu kullanır; çıkış `hold_minutes`
 #   (mevcut EoD zaman-stopu) ve/veya SL/trailing. Sabit TP yok.
-# DIŞARIDA: XAUUSD (5c seans likidite kuralı: XAU yalnız 07:00-20:00 UTC; 01:00'de
-#   altın spread'i genişliyor). Blok listesindeki semboller de her zaman dışarıda.
+# XAUUSD (kullanıcı isteği 2026-11-10): 01:00 UTC ölçümü +86p (t=3.2, maliyet düşülmüş)
+#   → kolun kapsamına ALINDI. Bunun için 5c seans likidite kapısı (XAU yalnız 07:00-20:00 UTC)
+#   BU KOL için bilinçli atlanır (`_soft_bypass`); spread filtresi yine aktiftir → 01:00'de
+#   altın spread'i genişlerse aday sessizce elenir (ek sigorta). Blok listesi her zaman dışarıda.
 TOKYO_DRIFT_STRATEGY = "TOKYO_MORNING_DRIFT"
 TOKYO_DRIFT_LABEL = "Tokyo Sabahı Drifti (01:00 UTC)"
 TOKYO_DRIFT_COMMENT_TAG = "TKYO"   # MT5 emir yorumu → defterde kanal ayrımı görünür olsun
@@ -5893,9 +5895,13 @@ class ForexAutoPaperSettings(BaseModel):
                     "yalnız sinyal-kalitesi kapıları (skor/ADX/SuperTrend/EV/DXY) atlanır çünkü "
                     "bunlar bar-deseni kolları için kalibre edilmiştir. Kapatmak için False.")
     tokyo_drift_symbols: List[str] = Field(
-        default_factory=lambda: ["GBPUSD", "EURUSD", "USDJPY"],
-        description="Tokyo sabahı driftinin işlem açacağı semboller. Ölçülen dörtlüden XAUUSD "
-                    "bilinçli DIŞARIDA (5c seans likidite kuralı: XAU yalnız 07:00-20:00 UTC).",
+        default_factory=lambda: ["GBPUSD", "EURUSD", "USDJPY", "XAUUSD"],
+        description="Tokyo sabahı driftinin işlem açacağı semboller. Ölçüm dörtlüsü: GBPUSD "
+                    "+2.38p (t=10.7) · USDJPY +2.57p (t=6.4) · EURUSD +1.47p (t=7.3) · "
+                    "XAUUSD +86p (t=3.2) — hepsi maliyet düşülmüş. XAUUSD 2026-11-10'da kullanıcı "
+                    "isteğiyle eklendi; bu kol için 5c seans likidite kapısı atlanır (spread "
+                    "filtresi yine aktif). Listeden sembol çıkarmak kolun o sembolde işlem "
+                    "açmamasını sağlar.",
     )
     tokyo_drift_entry_hour_utc: int = Field(
         1, ge=0, le=23, description="Giriş saati (UTC). Ölçüm 01:00 UTC'yi işaret ediyor; 00:00 "
@@ -9259,7 +9265,9 @@ async def _forex_auto_paper_loop():
 
                 # 5c. Varlık Sınıfı Seans Likidite Penceresi (XAUUSD ve US30/NAS100 yalnız 07:00-20:00 UTC)
                 is_index_cand = ("NAS" in sym or "USTEC" in sym or "US30" in sym or "SPX" in sym)
-                if (is_gold or is_index_cand) and not (7 <= current_utc_hour < 20):
+                # NOT: `_soft_bypass` (zaman tabanlı kol) bu kapıyı BİLİNÇLİ atlar —
+                # ölçüm XAU'nun 01:00 UTC'de maliyet sonrası pozitif olduğunu gösteriyor.
+                if (is_gold or is_index_cand) and not (7 <= current_utc_hour < 20) and not _soft_bypass:
                     if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_liq_sess", 0) > 30.0:
                         _LAST_CANDIDATE_LOG_TIME[f"{sym}_liq_sess"] = now_ts
                         _log_auto_decision(
