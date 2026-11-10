@@ -4873,8 +4873,13 @@ def main():
 
     # 2026-10-14: ÖNCE PostgreSQL (MT5 köprüsü verisi). JSON önbelleği elle tazelenir ve
     # pencere dışıysa sessizce 0 işlem dönerdi; `historical_candles` sürekli beslenir.
+    # 2026-11-10: "hepsi ya hiç" davranışı KALDIRILDI — tek bir eksik sembol 300k MT5
+    # barını çöpe atıp ağdan Yahoo indirmeye düşürüyordu. Artık DB verisi KORUNUR, yalnız
+    # eksikler önbellek/Yahoo ile tamamlanır ve hangi sembolün nereden geldiği yazılır.
     data = None
-    if args.source == "db" or (args.source == "auto" and not (args.cache and os.path.exists(cache_path))):
+    _missing: List[str] = []
+    _want: set = set()
+    if args.source in ("db", "auto"):
         _want = {s.strip().upper() for s in args.symbols.split(",") if s.strip()}
         if not _want:
             _want = set(ALL_SYMBOL_CODES) if args.all_symbols else set(DEFAULT_SYMBOLS)
@@ -4882,31 +4887,46 @@ def main():
         # tek sembollü DB koşusunda bunlar da yüklenir ama işlem filtresine girmez.
         _ref = {"USDJPY", "USDCAD", "USDCHF", "NZDUSD", "AUDUSD", "EURUSD", "GBPUSD"}
         _db = fetch_candles_from_db(args.interval, (_want | _ref) if _want else None)
-        if _want:
-            _missing = sorted(s for s in _want if s not in _db)
-            if _missing:
-                print(f"[VERI] DB'de eksik sembol: {_missing}")
-                _db = {} if args.source == "auto" else _db
-                if args.source == "db" and _missing:
-                    raise SystemExit(f"[VERI] --source db istendi ama şu semboller DB'de yok: {_missing}")
-        if _db:
+        _missing = sorted(s for s in _want if s not in _db) if _want else []
+        if data is None and _db:
             data = _db
-    if data is None and args.source == "db":
-        raise SystemExit("[VERI] --source db istendi ama historical_candles boş. "
-                         "Köprü/motor veri akıtıyor mu? (backend/app/routers/maintenance.py)")
+        if args.source == "db":
+            if not data:
+                raise SystemExit("[VERI] --source db istendi ama historical_candles boş. "
+                                 "Köprü/motor veri akıtıyor mu? (backend/app/routers/maintenance.py)")
+            if _missing:
+                raise SystemExit(f"[VERI] --source db istendi ama şu semboller DB'de yok: {_missing}")
+        if _missing:
+            print(f"[VERI] DB'de eksik sembol: {_missing} — yalnız bunlar önbellek/Yahoo ile tamamlanacak")
 
-    if data is None and os.path.exists(cache_path):
-        print(f"[VERI] Önbellekten yükleniyor: {cache_path}")
-        with open(cache_path, encoding="utf-8") as f:
-            raw = json.load(f)
-        data = {sym: [tuple(b) for b in bars] for sym, bars in raw.items()}
-    elif data is None:
-        print(f"[VERI] Yahoo Finance'ten {args.days} gün 5M mum çekiliyor...")
-        data = fetch_all(args.days)
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump({sym: [list(b) for b in bars] for sym, bars in data.items()}, f)
-        print(f"[VERI] Önbelleğe yazıldı: {cache_path} ({len(data)} sembol)")
+    if _missing or data is None:
+        _fill: Dict[str, List[Tuple]] = {}
+        if os.path.exists(cache_path):
+            print(f"[VERI] Önbellekten yükleniyor: {cache_path}")
+            with open(cache_path, encoding="utf-8") as f:
+                raw = json.load(f)
+            _fill = {sym: [tuple(b) for b in bars] for sym, bars in raw.items()}
+        _need = [s for s in _missing if s not in _fill] if _missing else []
+        if (data is None and not _fill) or _need:
+            print(f"[VERI] Yahoo Finance'ten {args.days} gün 5M mum çekiliyor...")
+            _yf = fetch_all(args.days)
+            _fill.update(_yf)
+        if data is None:
+            data = _fill
+            if not args.cache:  # önbelleği tazeliyoruz (eski davranış)
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump({sym: [list(b) for b in bars] for sym, bars in data.items()}, f)
+                print(f"[VERI] Önbelleğe yazıldı: {cache_path} ({len(data)} sembol)")
+        else:
+            _used = 0
+            for s in _missing:
+                if s in _fill and _fill[s]:
+                    data[s] = _fill[s]
+                    _used += 1
+            if _used:
+                print(f"[VERI] Karma kaynak: DB + {_used} sembol önbellek/Yahoo "
+                      f"(toplam {len(data)} sembol)")
 
     # Krosçar pip_val override'ı: pencere ortalaması quote-kurlarıyla spec sarılır
     global REPLAY_PIP_VAL_OVERRIDE

@@ -132,6 +132,25 @@ Kullanıcı itirazı haklıydı: "bunları bloklamak mı çözüm?". Sembol bazl
 
 ---
 
+## 0.8 FX MAJÖRLERİ "BLOKLAMADAN KÂRA ÇEVİRME" DENEYİ — cevap: MEVCUT SİNYALLE OLMUYOR
+
+Kullanıcı talebi: "bloklama yerine bu paritelerde nasıl daha kârlı sinyaller üretiriz?".
+Canlı defter ipucu: stop <20 pip → −0.198R, ≥60 pip → +0.168R; R:R <1.2 → +0.190R.
+Bu yüzden MT5 verisiyle (replay artık yerel DB'den okuyor) FX majörü alt kümesinde koşuldu:
+
+| varyant (9 FX majörü, 60 gün, MT5 5m) | n | isabet% | payoff | net$ | PF |
+|---|---|---|---|---|---|
+| taban (chandelier 0.1) | 2683 | 52.9 | 0.23 | −311.784 | **0.26** |
+| geniş stop (×3) + dar TP (×1.0, rr-floor 1.0) | 2498 | 63.9 | 0.16 | −236.907 | **0.28** |
+| geniş stop (×3) + trailing | 2498 | 63.9 | 0.16 | −236.907 | 0.28 |
+
+**Okuma:** geniş stop isabeti yükseltiyor (%52.9→%63.9) ama payoff'u düşürüyor (0.23→0.16) — net −%24 iyileşme ama **PF hâlâ 0.28**. FX majörlerinde mevcut sinyal setinin kenarı **yok**; parametre oynatmak yalnızca ödünçleşmeyi kaydırıyor (isabet ↔ payoff). İki varyantın birebir aynı çıkması da TP'nin zaten neredeyse hiç tetiklenmediğini doğruluyor (çıkışlar TRAIL/SL).
+Yani "blokla ya da düzelt" ikilemi yanlış: **FX majörlerinde kârlılık yeni bir SİNYAL ailesi gerektiriyor**, parametre ayarı değil. Canlı veride en umut verici iz: **saat koşullu giriş** (14:00 +0.150R, 16:00 +0.148R, 20:00 +0.109R vs 15:00 −0.221R, 21:00 −0.066R, n≈40) ve **skorun ters çalışması** (skor <90: +0.204R vs 96+: −0.065R) → skorlama modeli o paritelerde yanlış kalibre.
+
+**Ayrıca düzeltilen altyapı hatası:** replay veri seçimi "hepsi ya hiç" idi — DB'de tek sembol eksikse **300k MT5 barını çöpe atıp** ağdan Yahoo indiriyordu. Artık DB verisi korunuyor, yalnız eksik semboller önbellek/Yahoo ile tamamlanıyor (`[VERI] Karma kaynak: ...`). Yeni araç: `scripts/fx_import_mt5_bars.py` (60 gün `/ 25 sembol = 280.874 bar`, alias NAS100→USTEC dahil).
+
+---
+
 ## 1) Mevcut durum — kendi kodumuzdan doğrulananlar
 
 | Bulgu | Kanıt |
