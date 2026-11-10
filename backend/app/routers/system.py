@@ -407,3 +407,16 @@ async def list_agent_charters():
     """
     from app import agent_charters
     return {"count": len(agent_charters.CHARTERS), "agents": agent_charters.all_charters()}
+
+
+@router.get("/system/arms")
+async def list_signal_arms():
+    """Sinyal kolları (dosya tabanlı, `signal()` sözleşmesi) — panel/denetim görünümü.
+
+    Sözleşme: çıktı +1/−1/0; **0 = yeni sinyal yok, pozisyon KAPATMAZ**; `signal()` saf.
+    """
+    from app.arms.base import all_arms
+    return {"count": len(all_arms()), "arms": [
+        {"name": a.name, "description": a.description, "timeframe": a.timeframe,
+         "symbols": a.symbols, "vectorized": a.vectorized, "evidence": a.evidence, "tags": a.tags}
+        for a in all_arms()]}
