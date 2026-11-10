@@ -13,6 +13,48 @@
 
 ---
 
+## 0.5 ÖLÇÜM SONUCU — gerçek defter (aynı gün koşuldu, hipotezlerin bir kısmı DÜŞTÜ)
+
+Rapor yazıldıktan hemen sonra iki ölçüm betiği yazıldı ve **MT5 hesabının kendi defterinde** koşuldu (ICMarketsSC-Demo 53077151, equity ~415 USD):
+`scripts/fx_intrabar_ambiguity.py` (belirsizlik bandı + gerçek swap) · `scripts/fx_symbol_expectancy.py` (sembol bazlı R beklentisi + ölçülen maliyet + kararlılık).
+
+### A) İntrabar belirsizlik: **%1.9** → P1 DEĞİL (kendi teşhisim düzeltildi)
+- 4367 kapanmış pozisyon / 60 gün: **81 işlemde** çıkış barında iki bariyer de düşüyor (%1.9).
+- Bunların yalnız **10'u** tick ile çözülebildi (tick derinliği sınırı) → çözülenlerde "SL-first" varsayımı 2/10 doğru çıktı.
+- Ama hacim küçük: replay sonucunu "temelden sarsan" bir belirsizlik **yok**. §2.5 "en kritik" sıralamasından **çıkarıldı**, izleme maddesine indirildi.
+- Yol boyunca çıkan iki gerçek bulgu:
+  - Pozisyonların **%33'ünde TP emri yok** (`no_tp`/runner modu) → o işlemlerde "TP mi SL mi önce" sorusu zaten anlamsız.
+  - **SL neredeyse hiç taşınmıyor**: 4322 pozisyonda SL'in girişin kâr tarafına taşındığı vaka **1**. Yani "trailing" SL'i kaydırmıyor, pozisyonu piyasadan kapatıyor (`reason=EXPERT`). Broker etiketi ile (240/276 "SL ama kazanç") aynı kök: **etiketler değil, fiyat kanıtı esastır**.
+
+### B) Gerçek swap vs komisyon (modellenmemiş kalem ölçüldü)
+- 60 gün: swap toplamı **−19 USD**, komisyon **−2761 USD**. Yani maliyetin asıl kalemi **komisyon**, swap değil (swap beklentisi bu FX/endeks setinde ihmal edilebilir).
+
+### C) ASIL KÖK NEDEN ÖLÇÜLDÜ: payoff 0.50 (gereken 0.67)
+`fx_symbol_expectancy.py --days 60`: **4315 işlem, isabet %59.4, ortalama kazanan +0.43R, ortalama kaybeden −0.87R → beklenti −0.097R/işlem, net −9750 USD.**
+
+| Ölçüm | Değer |
+|---|---|
+| Ortalama kazanan | **+0.43R** |
+| Ortalama kaybeden | **−0.87R** |
+| Payoff (kaz/kay) | **0.50** |
+| Bu payoff ile break-even isabet | **%66.8** |
+| Gerçek isabet | %59.4 (açık **7,4 puan**) |
+| Ölçülen maliyet (komisyon+spread p50) | ort **0.061R** (küçük!) |
+
+**Okuma:** Kaybeden neredeyse tam stop (−0.87R) ama kazanan ancak yarım risk (+0.43R). Yani sistem "kaybedeni tam yiyor, kazananı yarıda kesiyor". Maliyet ikincil (0.061R). Bu, önceki "geometri" teşhisini **para cinsinden doğruluyor** ve hedefi netleştiriyor: payoff **0.50 → 0.67** (o zaman break-even %40'a iner).
+
+**Sembol ayrışması (n≥30, 60 günün İKİ yarısında da negatif olanlar):** EURJPY −0.474R · USDJPY **−0.402R (−2401 USD, isabet %36.8)** · GBPJPY −0.269 · USDCHF −0.246 · NZDUSD −0.242 · AUDUSD −0.237 · EURUSD −0.132 · USDCAD −0.115 · GBPUSD −0.089 · **XAUUSD −0.051R (−790 USD, n=961)** · **BTCUSD −0.049R (−2193 USD, n=1260)**. Pozitif güvenilir: **yalnız US30** (+0.034R, isabet %77.6). USTEC belirsiz (+0.023R).
+⚠️ Kritik ayrım: XAUUSD/BTCUSD'de **maliyet R 0.036-0.038 = sorun maliyet değil, payOff** (0.47/0.50). Yani "hatalı sembolü kes" yetmez; en hacimli iki sembol de geometri sorunundan zarar ediyor. Maliyetin gerçekten yüksek olduğu yerler ayrı: AUDNZD 0.204R, UNIUSD 0.204, BNBUSD 0.290, LNKUSD 0.331, XTZUSD 0.326, ADAUSD 0.385 (bunlar zaten allowlist dışı/legacy).
+⚠️ Bu seçim **in-sample**'dır (aynı 60 günün yarıları); kalıcı blok kararı replay A/B ile teyit edilmeli.
+
+### D) Değişen öncelik sırası
+1. **Payoff/geometri A/B** (kazananı erken kesme: TP genişliği, trailing mesafesi, kısmi-kâr oranı) — ölçüte PF değil **payoff + beklenti R**.
+2. **Sembol kesme/limitleme** (USDJPY, EURJPY, GBPJPY, USDCHF, NZDUSD, AUDUSD) — mekanizma hazır (`blocked_symbols`), ölçüm yukarıda.
+3. 1:1 falsifikasyon + n-bar çıkış (giriş kalitesi tavanı).
+4. LLM tarafı (§4) — defter ölçümünden bağımsız.
+
+---
+
 ## 1) Mevcut durum — kendi kodumuzdan doğrulananlar
 
 | Bulgu | Kanıt |
