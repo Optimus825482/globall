@@ -1686,8 +1686,13 @@ def asset_quality_gate(
     # A) Kripto (BTC, ETH, SOL, BNB, XRP, LNK, UNI, AVX, ADA, XTZ, DATA)
     if any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
         min_adx = 20.0
-        max_dist = 0.85 if score >= 80.0 else 0.30
-        min_body = 0.25 if score >= 80.0 else 0.35
+        # 2026-11-10 ÖLÇÜMLE BULUNAN TERS MANTIK: eski hâlde skor >= 80 olan sinyal
+        # aşırı-uzama sınırını 0.30% -> 0.85% (FOMO'ya izin) ve gövde tabanını 0.35 -> 0.25
+        # GEVŞETİYORDU. Canlı RADAR defterinde skor ters çalışıyor: skor <90 -> +0.204R,
+        # 90-95 -> +0.053R, 96+ -> -0.065R (n=468). Yani "yüksek skor daha uzamış giriş"
+        # demek oluyordu. Skor artık kalkanı GEVŞETMEZ (tek tip sıkı eşik).
+        max_dist = 0.30
+        min_body = 0.35
         if adx < min_adx:
             return False, f"ADX Kalkanı: Kripto trend gücü yetersiz (ADX {adx:.1f} < {min_adx:.1f}) — testere piyasası"
         if abs(dist_ema21_pct) > max_dist:
@@ -5890,7 +5895,7 @@ class ForexAutoPaperSettings(BaseModel):
     news_bias_window_sec: float = Field(900.0, ge=60.0, le=3600.0, description="Açıklamadan sonra yönün geçerli sayıldığı pencere (saniye; varsayılan 900 = 15 dk)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     blocked_symbols: List[str] = Field(
-        default_factory=lambda: ["AUDCAD", "AUDUSD", "AUDNZD"],
+        default_factory=lambda: ["AUDCAD", "AUDUSD", "AUDNZD", "XRPUSD"],
         description="İşlem AÇILMAYACAK pariteler (kara liste). Tek meşru gerekçe AUD kümesi "
                     "(2026-11-09: n=19, -6.11 USD/işlem, t=-4.12). **2026-11-10 KANAL AYRIMI "
                     "(sembol bloklamak YANLIŞ ÇIKTI):** 60 günlük defterde 'kötü sembol' görünen "
@@ -5904,7 +5909,11 @@ class ForexAutoPaperSettings(BaseModel):
                     "USTEC×RADAR +0.198R (t=5.28, isabet %95.7), US30×RADAR +0.117R (t=2.74), "
                     "XAUUSD×RADAR +0.223R (t=2.72) = KANITLI KENAR; buna karşılık "
                     "FRS/fırsat taraması -0.183R (t=-2.51) ve XRPUSD -0.116R (isabet %22.9) = "
-                    "canlı sızıntı. Doğru kaldıraç sembolü yasaklamak değil: (a) kanal kalitesi "
+                    "canlı sızıntı. **XRPUSD 2026-11-10'da EKLENDİ (kanal aynı, sembol aykırı):** "
+                    "canlı RADAR'da n=48, isabet %22.9, -0.116R — aynı kanalda BTCUSD %69.4 (n=216). "
+                    "%22.9 isabette başabaş için RR>3.4 gerekir; ölçülen RR yok. FRS'in -0.177R'i "
+                    "İSE sembole özgü DEĞİL (her hücre n=5-11, işaret karışık) -> orada sembol "
+                    "yasaklamak curve-fitting olurdu, yapılmadı. Doğru kaldıraç sembolü yasaklamak değil: (a) kanal kalitesi "
                     "(FRS), (b) kanıtlı sembollerin kapsamı. Boş liste korumayı kapatır.",
     )
     tokyo_drift_enabled: bool = Field(

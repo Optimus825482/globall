@@ -33,9 +33,10 @@ SRC = (ROOT / "app" / "routers" / "forex.py").read_text(encoding="utf-8")
 
 
 class TestDefaults(unittest.TestCase):
-    def test_default_blocked_symbols_is_aud_only(self):
+    def test_default_blocked_symbols_is_measured_set(self):
+        """AUD kümesi (2026-11-09) + XRPUSD (2026-11-10: canlı RADAR isabet %22.9, n=48)."""
         m = ForexAutoPaperSettings()
-        self.assertEqual(sorted(m.blocked_symbols), ["AUDCAD", "AUDNZD", "AUDUSD"])
+        self.assertEqual(sorted(m.blocked_symbols), ["AUDCAD", "AUDNZD", "AUDUSD", "XRPUSD"])
 
     def test_description_carries_evidence_and_caveat(self):
         desc = ForexAutoPaperSettings.model_fields["blocked_symbols"].description
@@ -54,6 +55,12 @@ class TestChannelConfoundLesson(unittest.TestCase):
         desc = ForexAutoPaperSettings.model_fields["blocked_symbols"].description
         for token in ("USTEC", "+0.198R", "FRS", "-0.183R"):
             self.assertIn(token, desc, f"{token} kanal ölçümü açıklamada olmalı")
+
+    def test_xrp_measurement_documented(self):
+        desc = ForexAutoPaperSettings.model_fields["blocked_symbols"].description
+        self.assertIn("XRPUSD", desc)
+        self.assertIn("22.9", desc, "XRP isabet oranı (kanıt) açıklamada olmalı")
+        self.assertIn("curve-fitting", desc, "FRS'te sembol yasaklamama gerekçesi yazılmalı")
 
     def test_no_measured_symbols_were_added(self):
         """Geçici eklenen 5 parite geri alındı; tekrar eklenirse kanal ayrımı istenir."""
