@@ -50,6 +50,11 @@ NUMERIC_FEATURES = (
 #: Kategorik özellikler (one-hot; bilinmeyen değer → tüm bitler 0).
 SESSION_VALUES = ("asia", "london", "new_york", "overlap")
 BIAS_VALUES = ("bullish", "bearish", "neutral")
+#: Sembol ailesi (tek-hot) — 20 sembolü tek tek açmak yerine 5 kova.
+FAMILY_VALUES = ("xau", "crypto", "index", "fx_major", "fx_cross")
+#: Strateji one-hot'u eğitim verisinden seçilir (en sık N). Artifact bu listeyi
+#: saklar; skorlarken AYNI liste kullanılır (aksi hâlde vektör kayar).
+TOP_STRATEGIES_N = 6
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -62,7 +67,8 @@ def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
 
 def featurize(row: dict[str, Any], *, medians: Optional[dict[str, float]] = None,
               sessions: tuple[str, ...] = SESSION_VALUES,
-              biases: tuple[str, ...] = BIAS_VALUES) -> dict[str, float]:
+              biases: tuple[str, ...] = BIAS_VALUES,
+              strategies: tuple[str, ...] = ()) -> dict[str, float]:
     """Bir karar satırını sayısal özellik vektörüne çevirir (deterministik).
 
     Eksik sayısal özellikler `medians` (eğitim medyanı) ile doldurulur;
@@ -97,23 +103,71 @@ def featurize(row: dict[str, Any], *, medians: Optional[dict[str, float]] = None
     for b in biases:
         out[f"bias_{b}"] = 1.0 if bias == b else 0.0
     out["direction_buy"] = 1.0 if str(row.get("direction") or "").upper() == "BUY" else 0.0
+    # --- 2026-11-10 ÖZELLİK ZENGİNLEŞTİRME (skill 0.034 zayıftı) ---
+    # Hepsi DB'de ZATEN VAR olan kolonlardan türetilir; yeni enstrümantasyon yok.
+    sym = str(row.get("symbol") or "").upper()
+    fam = symbol_family(sym)
+    for v in FAMILY_VALUES:
+        out[f"family_{v}"] = 1.0 if fam == v else 0.0
+    strat = str(row.get("strategy") or "").strip()
+    for v in strategies:
+        out[f"strategy_{v}"] = 1.0 if strat == v else 0.0
+    # Saat/gün döngüsel kodlanır (24 dummy yerine 2 sinyal).
+    ts = _f(row.get("created_at_ts"))
+    if ts is None:
+        ts = _f(row.get("created_at"))
+    if ts is not None and ts > 1e9:
+        dt = time.gmtime(ts)
+        hour = dt.tm_hour + dt.tm_min / 60.0
+        out["hour_sin"] = round(math.sin(2 * math.pi * hour / 24.0), 4)
+        out["hour_cos"] = round(math.cos(2 * math.pi * hour / 24.0), 4)
+        out["weekday"] = float(dt.tm_wday)          # 0=Pzt … 6=Paz
+    else:
+        out["hour_sin"] = float(med.get("hour_sin", 0.0))
+        out["hour_cos"] = float(med.get("hour_cos", 0.0))
+        out["weekday"] = float(med.get("weekday", 0.0))
+    # Risk geometrisi: R:R ve SL genişliği (pips) — kâr/zarar yapısının özeti.
+    slp = _f(row.get("sl_pips"))
+    tpp = _f(row.get("tp_pips"))
+    out["rr_ratio"] = float(med.get("rr_ratio", 0.0)) if (not slp or not tpp) else round(tpp / slp, 3)
+    out["sl_pips"] = slp if slp is not None else float(med.get("sl_pips", 0.0))
     return out
 
 
 def feature_names(*, sessions: tuple[str, ...] = SESSION_VALUES,
-                  biases: tuple[str, ...] = BIAS_VALUES) -> list[str]:
+                  biases: tuple[str, ...] = BIAS_VALUES,
+                  strategies: tuple[str, ...] = ()) -> list[str]:
     """`featurize` çıktısının ANAHTAR SIRASI (artifact ile birebir aynı olmalı)."""
     names = list(NUMERIC_FEATURES)
     names += [f"{n}_eksik" for n in ("level_clearance_atr", "extension_atr", "spread_atr_ratio")]
     names += [f"session_{s}" for s in sessions]
     names += [f"bias_{b}" for b in biases]
     names += ["direction_buy"]
+    names += [f"family_{v}" for v in FAMILY_VALUES]
+    names += [f"strategy_{v}" for v in strategies]
+    names += ["hour_sin", "hour_cos", "weekday", "rr_ratio", "sl_pips"]
     return names
 
 
-def _vector(row: dict[str, Any], medians: dict[str, float]) -> list[float]:
-    f = featurize(row, medians=medians)
-    return [f[k] for k in feature_names()]
+def symbol_family(symbol: str) -> str:
+    """Sembol → aile (tek-hot). XAU/emtia → xau, kripto → crypto, endeks → index,
+    saf FX 6 harf: USD'li majör → fx_major, değilse fx_cross."""
+    sym = str(symbol or "").upper().replace("/", "").replace("_", "")
+    if "XAU" in sym or "GOLD" in sym or "XAG" in sym:
+        return "xau"
+    if any(k in sym for k in ("BTC", "ETH", "XRP", "SOL", "ADA", "DOGE")):
+        return "crypto"
+    if sym in ("US30", "NAS100", "USTEC", "SPX500", "GER40") or sym.isdigit():
+        return "index"
+    if len(sym) == 6 and sym.isalpha():
+        return "fx_major" if "USD" in sym else "fx_cross"
+    return "index" if sym else "fx_major"
+
+
+def _vector(row: dict[str, Any], medians: dict[str, float],
+            strategies: tuple[str, ...] = ()) -> list[float]:
+    f = featurize(row, medians=medians, strategies=strategies)
+    return [f[k] for k in feature_names(strategies=strategies)]
 
 
 def _spearman(a: list[float], b: list[float]) -> Optional[float]:
@@ -173,9 +227,15 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
         medians[name] = vals[len(vals) // 2] if vals else 0.0
     out["medians"] = medians
 
-    X = [_vector(r, medians) for r in clean]
+    # STRATEJİ ONE-HOT LİSTESİ: eğitim verisinde en sık N strateji. Artifact'a
+    # yazılır; skorlarken AYNI liste kullanılır (vektör kaymasın).
+    from collections import Counter
+    strat_counts = Counter(str(r.get("strategy") or "").strip() for r in clean if str(r.get("strategy") or "").strip())
+    strategies = tuple(k for k, _ in strat_counts.most_common(TOP_STRATEGIES_N))
+    out["strategies"] = list(strategies)
+    X = [_vector(r, medians, strategies) for r in clean]
     y = [1 if float(r.get("shadow_pips")) > 0 else 0 for r in clean]
-    names = feature_names()
+    names = feature_names(strategies=strategies)
     cut = int(len(clean) * (1.0 - float(test_fraction)))
     cut = max(1, min(len(clean) - 1, cut))
     Xtr, Xte, ytr, yte = X[:cut], X[cut:], y[:cut], y[cut:]
@@ -293,6 +353,12 @@ def load_scoring_model(path: str | Path | None = None) -> Optional[dict[str, Any
         return None
     if not art.get("coefficients") or not art.get("feature_names"):
         return None
+    # UYUMLULUK KAPISI: özellik seti değiştiyse (ör. 2026-11-10 zenginleştirme)
+    # eski artifact yanlış vektörle skorlar → sessiz bozulma yerine REDDET.
+    strat = tuple(art.get("strategies") or [])
+    if list(art.get("feature_names") or []) != feature_names(strategies=strat):
+        logger.info("forex_ml artifact özellik seti güncel değil → yeniden eğitim gerekli")
+        return None
     return art
 
 
@@ -305,11 +371,19 @@ def score_features(features_dict: dict[str, Any], artifact: dict[str, Any]) -> O
     """
     if not artifact:
         return None
-    f = featurize({"features": features_dict, "direction": features_dict.get("_direction", "BUY"),
-                   "confidence": features_dict.get("_confidence"), "score": features_dict.get("_motor_score")},
+    f = featurize({"features": features_dict,
+                   "direction": features_dict.get("_direction", "BUY"),
+                   "confidence": features_dict.get("_confidence"),
+                   "score": features_dict.get("_motor_score"),
+                   "symbol": features_dict.get("_symbol"),
+                   "strategy": features_dict.get("_strategy"),
+                   "created_at_ts": features_dict.get("_ts"),
+                   "sl_pips": features_dict.get("_sl_pips"),
+                   "tp_pips": features_dict.get("_tp_pips")},
                   medians=artifact.get("medians") or {},
                   sessions=tuple(s[8:] for s in artifact["feature_names"] if s.startswith("session_")),
-                  biases=tuple(b[5:] for b in artifact["feature_names"] if b.startswith("bias_")))
+                  biases=tuple(b[5:] for b in artifact["feature_names"] if b.startswith("bias_")),
+                  strategies=tuple(artifact.get("strategies") or []))
     try:
         import numpy as np
         x = np.asarray([f[k] for k in artifact["feature_names"]], dtype=float)
@@ -330,7 +404,8 @@ def save_artifact(report: dict[str, Any], path: str | Path | None = None) -> str
         raise ValueError("eğitilmemiş rapor artifact'a yazılamaz")
     target.parent.mkdir(parents=True, exist_ok=True)
     import json
-    payload = {"saved_at": time.time(), "version": 1,
+    payload = {"saved_at": time.time(), "version": 2,
+               "strategies": report.get("strategies") or [],
                "feature_names": report.get("feature_names"),
                "means": report.get("means"), "scales": report.get("scales"),
                "coefficients": report.get("coefficients"), "intercept": report.get("intercept"),

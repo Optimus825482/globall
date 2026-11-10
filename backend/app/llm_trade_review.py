@@ -564,7 +564,15 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 from app import forex_ml
                 art = forex_ml.load_scoring_model()
-                prob = forex_ml.score_features(dict(dossier["ozellikler"]), art) if art else None
+                _env = {
+                    **dict(dossier["ozellikler"]),
+                    "_symbol": ctx.get("symbol"), "_strategy": ctx.get("strategy"),
+                    "_sl_pips": ctx.get("sl_pips"), "_tp_pips": ctx.get("tp_pips"),
+                    "_ts": time.time(),
+                    "_motor_score": (ctx.get("cand") or {}).get("score"),
+                    "_confidence": (verdict or {}).get("confidence"),
+                }
+                prob = forex_ml.score_features(_env, art) if art else None
                 if prob is not None and review_id:
                     await database.set_llm_review_ml_prob(review_id, prob)
             except Exception as exc:  # noqa: BLE001

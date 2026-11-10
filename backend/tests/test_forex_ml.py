@@ -56,6 +56,20 @@ def _synthetic_rows(n=420, *, signal=True, seed=5):
 
 
 class TestTrainer(unittest.TestCase):
+    def test_artifact_compat_gate_rejects_stale_feature_set(self):
+        """Eski artifact (farklı özellik seti) REDDEDİLMELİ — sessiz yanlış skor yok."""
+        r = forex_ml.train(_synthetic_rows())
+        path = ROOT / "artifacts" / "_test_stale.json"
+        try:
+            saved = forex_ml.save_artifact(r, path)
+            import json as _json
+            data = _json.loads(pathlib.Path(saved).read_text(encoding="utf-8"))
+            data["feature_names"] = list(data["feature_names"]) + ["uydurma_ozellik"]
+            pathlib.Path(saved).write_text(_json.dumps(data), encoding="utf-8")
+            self.assertIsNone(forex_ml.load_scoring_model(path), "uyumsuz artifact yüklenmemeli")
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_signal_data_reaches_positive_skill(self):
         r = forex_ml.train(_synthetic_rows(signal=True))
         self.assertTrue(r.get("trained"), r.get("reason"))
@@ -103,10 +117,18 @@ class TestFeaturize(unittest.TestCase):
         self.assertEqual(f["direction_buy"], 0.0)
 
     def test_feature_names_match_featurize_keys(self):
-        row = {"features": {"session": "asia", "ta_bias": "bullish"}, "direction": "BUY", "confidence": 70, "score": 80}
-        f = forex_ml.featurize(row)
-        self.assertEqual(list(f.keys()), forex_ml.feature_names(),
+        row = {"features": {"session": "asia", "ta_bias": "bullish"}, "direction": "BUY",
+               "confidence": 70, "score": 80, "symbol": "XAUUSD", "strategy": "classic",
+               "created_at_ts": 1793000000.0, "sl_pips": 150, "tp_pips": 300}
+        strat = ("classic", "fvg")
+        f = forex_ml.featurize(row, strategies=strat)
+        self.assertEqual(list(f.keys()), forex_ml.feature_names(strategies=strat),
                          "vektör sırası artifact ile birebir aynı olmalı")
+        # 2026-11-10 zenginleştirme: aile/saat/geometri özellikleri var olmalı
+        for key in ("family_xau", "strategy_classic", "hour_sin", "hour_cos", "weekday", "rr_ratio", "sl_pips"):
+            self.assertIn(key, f)
+        self.assertEqual(f["rr_ratio"], 2.0, "300/150 = 2.0")
+        self.assertEqual(f["family_xau"], 1.0)
 
     def test_deterministic(self):
         row = _synthetic_rows(n=5)[2]

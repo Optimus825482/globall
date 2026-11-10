@@ -7243,7 +7243,8 @@ async def get_forex_ml_dataset() -> List[Dict[str, Any]]:
         # etiketler koşumlar arasında değişir (2026-11-10: aynı 1564 satır iki
         # koşumda skill 0.048 → 0.042). SL/TP/ZAMAN_ASIMI = etiket FİNAL.
         rows = conn.execute(
-            "SELECT created_at, confidence, score, direction, shadow_pips, features "
+            "SELECT created_at, confidence, score, direction, shadow_pips, features, "
+            "       symbol, strategy, sl_pips, tp_pips "
             "FROM llm_trade_reviews WHERE features IS NOT NULL AND shadow_pips IS NOT NULL "
             "AND shadow_status != 'IZLENIYOR' "
             "ORDER BY created_at ASC LIMIT 50000"
@@ -7252,7 +7253,9 @@ async def get_forex_ml_dataset() -> List[Dict[str, Any]]:
         for r in rows:
             d = dict(r) if not isinstance(r, (list, tuple)) else {
                 "created_at": r[0], "confidence": r[1], "score": r[2], "direction": r[3],
-                "shadow_pips": r[4], "features": r[5]}
+                "shadow_pips": r[4], "features": r[5], "symbol": r[6], "strategy": r[7],
+                "sl_pips": r[8], "tp_pips": r[9]}
+            d["created_at_ts"] = d.get("created_at")
             d["created_at"] = str(d.get("created_at") or "")
             # `set_llm_review_features` JSON'u 3000 karaktere KESTİĞİ için bazı
             # satırlar bozuk JSON olabilir → satır bazlı ayrıştır; bozuk satır
