@@ -30,6 +30,8 @@ interface TrainReport {
   verdict?: string; reason?: string; coefficients?: Record<string, number>;
   calibrated_brier_test?: number; calibration_improved?: boolean;
   artifact_path?: string; artifact_error?: string; run_log_error?: string;
+  models?: Record<string, { brier_test?: number; brier_skill_oos?: number | null; ic_test?: number | null }>;
+  best_model?: string;
   wilson?: { n: number; hit_rate: number; lo: number; hi: number } | null;
   error?: string;
 }
@@ -163,6 +165,42 @@ export default function ForexMlPanel() {
                   İzotonik kalibrasyon (test): {fmt(report.calibrated_brier_test)} —{" "}
                   {report.calibration_improved ? "Brier'ı iyileştirdi" : "iyileştirmedi"}
                 </p>
+              )}
+
+              {report.models && (
+                <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3">
+                  <h3 className="font-mono text-2xs uppercase tracking-wide text-bunker-muted">
+                    Model kıyası (aynı veri, aynı kronolojik split — Databricks Big Book 3e s58: tabular → boosting)
+                  </h3>
+                  <table className="mt-2 w-full">
+                    <thead>
+                      <tr><th className={th}>model</th><th className={th}>Brier (test)</th><th className={th}>OOS skill</th><th className={th}>IC (test)</th><th className={th}></th></tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(report.models).map(([name, m]) => (
+                        <tr key={name} className="border-t border-bunker-800">
+                          <td className={td}>
+                            {name === "logistic" ? "Lojistik (JSON artifact)" : "Hist Gradient Boosting"}
+                          </td>
+                          <td className={td}>{fmt(m.brier_test)}</td>
+                          <td className={`${td} ${skillCls(m.brier_skill_oos)}`}>{fmt(m.brier_skill_oos, 3)}</td>
+                          <td className={td}>{fmt(m.ic_test, 3)}</td>
+                          <td className={td}>
+                            {report.best_model === name && (
+                              <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-2xs font-bold text-emerald-300">
+                                EN İYİ
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-2 text-2xs text-bunker-muted">
+                    Skorlayıcı (gölge) yalnız lojistik artifact&apos;ını okur; boosting modeli kıyas amaçlıdır ve
+                    kaydedilmez (kalıcılık için joblib/pickle kararı ayrıca verilir).
+                  </p>
+                </div>
               )}
 
               <div className="rounded-xl border border-bunker-800 bg-bunker-900/60 p-3">

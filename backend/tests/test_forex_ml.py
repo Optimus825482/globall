@@ -249,5 +249,33 @@ class TestRunAsyncOrchestration(unittest.TestCase):
         self.assertEqual(len(saved), 1, "DB koşu kaydı yazılmalı")
 
 
+class TestResolvedOnly(unittest.TestCase):
+    """İKİ KOŞUM SIRRI (2026-11-10): aynı 1564 satır iki eğitimde skill 0.048 →
+    0.042 değişti. Sebep: `shadow_status='IZLENIYOR'` satırların shadow_pips'i
+    HÂLÂ HAREKET EDİYOR (yüzen etiket). Eğitim yalnız ÇÖZÜLMÜŞ (SL/TP/ZAMAN_ASIMI)
+    kararlarla yapılmalı — etiket final değilse model "hareket eden hedefe" uyar.
+    """
+
+    def test_dataset_filters_unresolved(self):
+        src = (ROOT / "app" / "database.py").read_text(encoding="utf-8")
+        i = src.index("async def get_forex_ml_dataset")
+        block = src[i:i + 1200]
+        self.assertIn("shadow_status != 'IZLENIYOR'", block,
+                      "eğitim seti yalnız çözülmüş kararları içermeli")
+
+    def test_panel_shows_model_comparison(self):
+        panel = (ROOT.parent / "frontend" / "app" / "settings" / "ForexMlPanel.tsx").read_text(encoding="utf-8")
+        self.assertIn("Model kıyası", panel)
+        self.assertIn("Hist Gradient Boosting", panel)  # görünen etiket (anahtar iterate edilir)
+        self.assertIn("best_model", panel)
+
+    def test_trainer_emits_comparison(self):
+        r = forex_ml.train(_synthetic_rows(signal=True))
+        self.assertIn("models", r)
+        self.assertIn("logistic", r["models"])
+        self.assertIn("hist_gradient_boosting", r["models"])
+        self.assertIn(r["best_model"], ("logistic", "hist_gradient_boosting"))
+
+
 if __name__ == "__main__":
     unittest.main()

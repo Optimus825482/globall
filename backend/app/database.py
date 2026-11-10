@@ -7238,9 +7238,14 @@ async def get_forex_ml_dataset() -> List[Dict[str, Any]]:
     """Forex ML eğitim seti: features + gölge sonuç dolu LLM karar satırları."""
     def op(conn):
         _ensure_llm_review_schema(conn)
+        # YALNIZ ÇÖZÜLMÜŞ kararlar: `shadow_status='IZLENIYOR'` satırların
+        # shadow_pips'i HÂLÂ HAREKET EDİYOR (yüzen sonuç). Onlarla eğitirsek
+        # etiketler koşumlar arasında değişir (2026-11-10: aynı 1564 satır iki
+        # koşumda skill 0.048 → 0.042). SL/TP/ZAMAN_ASIMI = etiket FİNAL.
         rows = conn.execute(
             "SELECT created_at, confidence, score, direction, shadow_pips, features "
             "FROM llm_trade_reviews WHERE features IS NOT NULL AND shadow_pips IS NOT NULL "
+            "AND shadow_status != 'IZLENIYOR' "
             "ORDER BY created_at ASC LIMIT 50000"
         ).fetchall()
         out = []
