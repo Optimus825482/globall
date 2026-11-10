@@ -41,6 +41,10 @@ except ImportError:  # paket dışı bağlam (test/script)
     from .. import kombo_m5 as _km
 
 from app import trade_reasons  # kanonik kapanış nedeni (2026-11-09)
+# Kripto ürün kuralı (BTC/ETH/XRP) TEK kaynaktan okunur — `config` bir
+# `Config()` örneğidir (`app/config.py`), modül değil. Kripto evreni buradan
+# türetilir ki elle yazılmış liste kuraldan kopmasın (2026-11-10).
+from app.config import config as _cfg
 
 logger = logging.getLogger(__name__)
 
@@ -488,7 +492,7 @@ ALL_RADAR_SYMBOLS = {s["symbol"] for s in FOREX_SYMBOLS}
 # `config.CRYPTO_ALLOWED_BASES` (varsayılan BTC,ETH,XRP) → kural değişirse
 # burası kendiliğinden uyar. Kilit: tests/test_crypto_allowlist.py
 CANLI_WEEKEND_CRYPTO_SYMBOLS = tuple(
-    f"{base}USD" for base in sorted(config.CRYPTO_ALLOWED_BASES)
+    f"{base}USD" for base in sorted(_cfg.CRYPTO_ALLOWED_BASES)
 )
 
 
@@ -542,6 +546,109 @@ _RETIRED_FOREX_SYMBOLS = [
         "tv_symbol": "FOREXCOM:SPXUSD",
         "default_price": 5830.20,
     },
+    # --- 2026-11-10: kripto ürün kuralı (yalnız BTC/ETH/XRP) radar/panel
+    # evrenine de uygulandı. Bu 8 coin `FOREX_SYMBOLS`'ten ÇIKARILDI çünkü
+    # `ALL_RADAR_SYMBOLS` üzerinden Forex Radar listesinde görünmeye devam
+    # ediyorlardı (tick üretimi `FOREX_SYMBOLS`'e bağlı). Spec kayıtları
+    # SİLİNMEDİ: arşivde açık/kapanmış bu sembollere ait kayıtların pip_val ve
+    # digits bilgisi `get_symbol_trading_specs` içindeki isim dallarından
+    # okunmaya devam eder. Geri almak için blok `FOREX_SYMBOLS` içine taşınır.
+    {
+        "symbol": "SOLUSD",
+        "display": "SOL/USD",
+        "name": "Solana / US Dollar",
+        "category": "crypto",
+        "base": "SOL",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 4,
+        "tv_symbol": "BINANCE:SOLUSDT",
+        "default_price": 104.0,
+    },
+    {
+        "symbol": "BNBUSD",
+        "display": "BNB/USD",
+        "name": "Binance Coin / US Dollar",
+        "category": "crypto",
+        "base": "BNB",
+        "quote": "USD",
+        "pip_size": 0.10,
+        "digits": 3,
+        "tv_symbol": "BINANCE:BNBUSDT",
+        "default_price": 720.0,
+    },
+    {
+        "symbol": "LNKUSD",
+        "display": "LINK/USD",
+        "name": "Chainlink / US Dollar",
+        "category": "crypto",
+        "base": "LNK",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 3,
+        "tv_symbol": "BINANCE:LINKUSDT",
+        "default_price": 12.30,
+    },
+    {
+        "symbol": "UNIUSD",
+        "display": "UNI/USD",
+        "name": "Uniswap / US Dollar",
+        "category": "crypto",
+        "base": "UNI",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 4,
+        "tv_symbol": "BINANCE:UNIUSDT",
+        "default_price": 7.25,
+    },
+    {
+        "symbol": "AVXUSD",
+        "display": "AVAX/USD",
+        "name": "Avalanche / US Dollar",
+        "category": "crypto",
+        "base": "AVX",
+        "quote": "USD",
+        "pip_size": 0.01,
+        "digits": 4,
+        "tv_symbol": "BINANCE:AVAXUSDT",
+        "default_price": 10.0,
+    },
+    {
+        "symbol": "ADAUSD",
+        "display": "ADA/USD",
+        "name": "Cardano / US Dollar",
+        "category": "crypto",
+        "base": "ADA",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "BINANCE:ADAUSDT",
+        "default_price": 0.225,
+    },
+    {
+        "symbol": "XTZUSD",
+        "display": "XTZ/USD",
+        "name": "Tezos / US Dollar",
+        "category": "crypto",
+        "base": "XTZ",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 5,
+        "tv_symbol": "BINANCE:XTZUSDT",
+        "default_price": 0.31,
+    },
+    {
+        "symbol": "DATAUSD",
+        "display": "DATA/USD",
+        "name": "Streamr / US Dollar",
+        "category": "crypto",
+        "base": "DATA",
+        "quote": "USD",
+        "pip_size": 0.0001,
+        "digits": 4,
+        "tv_symbol": "BINANCE:DATAUSDT",
+        "default_price": 0.18,
+    },
 ]
 
 # In-memory realistic price and tick cache
@@ -552,7 +659,7 @@ _LAST_CACHE_TIME = 0.0
 def is_forex_weekend(now_dt: Optional[datetime.datetime] = None) -> bool:
     """Forex, altın ve endeks piyasaları hafta sonu kapalı mı?
     IC Markets ve global FX piyasaları Cuma 21:00 UTC'den Pazar 21:00 UTC'ye kadar kapalıdır.
-    Kripto pariteler (BTCUSD, ETHUSD, SOLUSD vb.) ise 7/24 kesintisiz açıktır.
+    Kripto pariteler (BTCUSD, ETHUSD, XRPUSD) ise 7/24 kesintisiz açıktır.
     """
     now_utc = now_dt or datetime.datetime.now(datetime.timezone.utc)
     current_hour = now_utc.hour + now_utc.minute / 60.0
@@ -2032,21 +2139,21 @@ KOMBO_LABEL = _km.KOMBO_LABEL
 FVG_PULLBACK_STRATEGY = "FVG_PULLBACK"
 FVG_PULLBACK_LABEL = "FVG Imbalance Pullback"
 CANLI_FVG_ENABLED = False
-CANLI_WEEKEND_CRYPTO_SYMBOLS = (
-    "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
-    "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD",
-)
+# NOT (2026-11-10): burada `CANLI_WEEKEND_CRYPTO_SYMBOLS` İKİNCİ kez elle
+# tanımlanıyordu ve üstteki (satır ~494) allowlist türevini EZİYORDU → elenen
+# 8 coin (SOL/BNB/LNK/UNI/AVX/ADA/XTZ/DATA) hafta sonu taramasına geri
+# sızıyordu. Tek kaynak üstteki türev; burada YENİDEN TANIMLANMAZ.
 CANLI_FVG_SYMBOLS = (
     "GBPJPY", "EURJPY", "USDJPY", "GBPUSD", "XAUUSD", "US30",
     "USTEC", "NAS100", "BTCUSD", "NZDUSD", "USDCHF", "GBPAUD", "AUDCHF",
-    # 7/24 & Hafta Sonu Kripto Şampiyonları (Backtest %69.4 WR):
-    "SOLUSD", "UNIUSD", "XTZUSD", "LNKUSD", "BNBUSD", "AVXUSD", "ADAUSD", "DATAUSD", "XRPUSD", "ETHUSD",
+    # 7/24 & Hafta Sonu kripto kolu — yalnız izinli üçlü (ürün kuralı 2026-11-09)
+    *CANLI_WEEKEND_CRYPTO_SYMBOLS,
 )
 CANLI_S3_SYMBOLS_5M = (
     "GBPUSD", "NZDUSD", "NZDJPY", "EURUSD", "NZDCAD",
     "XAUUSD", "US30", "NAS100", "USTEC", "AUDUSD", "BTCUSD",
-    # 7/24 & Hafta Sonu Kripto S3 Şampiyonları (ETH %83.3, LNK, XRP, SOL, UNI):
-    "ETHUSD", "LNKUSD", "XRPUSD", "SOLUSD", "UNIUSD", "DATAUSD", "ADAUSD", "XTZUSD",
+    # 7/24 & Hafta Sonu kripto kolu — yalnız izinli üçlü (ürün kuralı 2026-11-09)
+    *CANLI_WEEKEND_CRYPTO_SYMBOLS,
 )
 
 

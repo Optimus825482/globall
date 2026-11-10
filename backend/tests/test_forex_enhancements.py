@@ -428,8 +428,13 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         """
         universe = [s["symbol"] for s in forex.FOREX_SYMBOLS]
         retired = [s["symbol"] for s in forex._RETIRED_FOREX_SYMBOLS]
-        # 2026-10-17: ETHUSD 7/24 hafta sonu kripto portföyü ile aktifleştirildi; emekli evreninde USOIL, SPX500, XAGUSD kalır.
-        self.assertEqual(sorted(retired), ["SPX500", "USOIL", "XAGUSD"])
+        # 2026-10-17: ETHUSD 7/24 hafta sonu kripto portföyü ile aktifleştirildi.
+        # 2026-11-10: ürün kuralı (yalnız BTC/ETH/XRP) radar evrenine de uygulandı →
+        # elenen 8 coin spec'leriyle birlikte buraya taşındı (bkz. test_crypto_allowlist).
+        self.assertEqual(sorted(retired), [
+            "ADAUSD", "AVXUSD", "BNBUSD", "DATAUSD", "LNKUSD", "SOLUSD",
+            "SPX500", "UNIUSD", "USOIL", "XAGUSD", "XTZUSD",
+        ])
 
         for sym in retired:
             self.assertNotIn(sym, universe, f"{sym} tarama evreninde olmamalı")

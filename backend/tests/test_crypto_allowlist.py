@@ -218,5 +218,84 @@ class TestUsdFormIsCovered(unittest.TestCase):
                 self.assertNotIn(sym, blocked, f"{sym} tarama evreninde ama kara listede")
 
 
+class TestForexUniverseObeysAllowlist(unittest.TestCase):
+    """FOREX/radar evreni de ürün kuralına uyar (2026-11-10).
+
+    Kullanıcı "Forex Radar sayfasından sistemden çıkarılan kripto çiftlerini
+    kaldır" dedi. Kök neden: `FOREX_SYMBOLS` 8 elenmiş coini (SOL/BNB/LNK/UNI/
+    AVX/ADA/XTZ/DATA) HÂLÂ taşıyordu → `ALL_RADAR_SYMBOLS` üzerinden radar
+    listesinde görünüyorlardı (tick üretimi `FOREX_SYMBOLS`'e bağlı). Frontend
+    zaten temizdi; delik backend evrenindeydi. Bu sınıf tekrarını kilitler.
+    """
+
+    def setUp(self):
+        from app.routers import forex as fx
+        self.fx = fx
+
+    #: İzinli üçlü + ürün kuralıyla elenen coinler. `config.crypto_base_of`
+    #: BURADA kullanılmaz: o fonksiyon yalnız `XXXUSD` biçimini TANINAN izinsiz
+    #: tabanlarla eşler (BTC/ETH/XRP `KNOWN_USD_CRYPTO_BASES`'te YOK) → izinli
+    #: çiftler için ``None`` döner ve test sessizce BOŞ küme karşılaştırırdı.
+    ALLOWED3 = ("BTCUSD", "ETHUSD", "XRPUSD")
+    EMEKLI_USD = ("SOLUSD", "BNBUSD", "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD",
+                  "XTZUSD", "DATAUSD")
+
+    def test_forex_symbols_crypto_members_are_allowlisted(self):
+        crypto = [i["symbol"] for i in self.fx.FOREX_SYMBOLS
+                  if i.get("category") == "crypto"]
+        self.assertTrue(crypto, "FOREX_SYMBOLS'te kripto dalı boş kalmamalı")
+        for sym in crypto:
+            self.assertIn(sym, self.ALLOWED3,
+                          f"{sym} forex evreninde ama ürün kuralı dışında")
+
+    def test_radar_universe_crypto_members_are_exactly_allowed(self):
+        crypto = sorted(i["symbol"] for i in self.fx.FOREX_SYMBOLS
+                        if i.get("category") == "crypto")
+        self.assertEqual(crypto, sorted(self.fx.CANLI_WEEKEND_CRYPTO_SYMBOLS))
+        self.assertEqual(
+            sorted(self.fx.CANLI_WEEKEND_CRYPTO_SYMBOLS),
+            sorted(f"{b}USD" for b in config.CRYPTO_ALLOWED_BASES),
+        )
+        # Radar evreni tam olarak FOREX_SYMBOLS'ten türer (tick üretimi oradan)
+        self.assertEqual(self.fx.ALL_RADAR_SYMBOLS,
+                         {i["symbol"] for i in self.fx.FOREX_SYMBOLS})
+
+    def test_weekend_crypto_universe_is_derived_not_handwritten(self):
+        """Elle yazılmış 11-coin listesi geri gelirse test kırılır."""
+        src = pathlib.Path(ROOT, "app", "routers", "forex.py").read_text(encoding="utf-8")
+        self.assertEqual(src.count("CANLI_WEEKEND_CRYPTO_SYMBOLS = "), 1,
+                         "hafta sonu kripto evreni TEK yerde tanımlanmalı "
+                         "(eskiden ikinci tanım üsttekini eziyordu)")
+        self.assertIn("_cfg.CRYPTO_ALLOWED_BASES", src)
+        weekend_block = src.split("CANLI_WEEKEND_CRYPTO_SYMBOLS = ")[1].split(
+            "def is_crypto_symbol")[0]
+        for base in self.EMEKLI_USD:
+            self.assertNotIn(f'"{base}"', weekend_block,
+                             f"{base} hafta sonu kripto evreninde olmamalı")
+
+    def test_strategy_crypto_lists_only_allowed(self):
+        known = set(self.ALLOWED3) | set(self.EMEKLI_USD)
+        for name in ("CANLI_FVG_SYMBOLS", "CANLI_S3_SYMBOLS_5M"):
+            hit = [s for s in getattr(self.fx, name) if s in known]
+            self.assertTrue(hit, f"{name} içinde hiç kripto yok → test anlamsız")
+            for sym in hit:
+                self.assertIn(sym, self.fx.CANLI_WEEKEND_CRYPTO_SYMBOLS,
+                              f"{name} içinde izin dışı kripto: {sym}")
+
+    def test_retired_crypto_specs_kept_for_archive(self):
+        """Evrenden çıkarıldılar ama pip/lot spec'leri arşiv PnL'i için KALIR."""
+        universe = {s["symbol"] for s in self.fx.FOREX_SYMBOLS}
+        retired = {s["symbol"] for s in self.fx._RETIRED_FOREX_SYMBOLS}
+        for sym in self.EMEKLI_USD:
+            self.assertNotIn(sym, universe, f"{sym} radar evreninde görünmemeli")
+            self.assertIn(sym, retired, f"{sym} emekli listesinde olmalı")
+            specs = self.fx.get_symbol_trading_specs(sym, base_sl=8.0, base_tp=20.0)
+            self.assertGreater(specs["pip_val"], 0.0, f"{sym} spec korunmalı")
+            # Bu listedeki coinler tanınan izinsiz tabanlar olarak da GÖRÜNMELİ:
+            # aksi halde `XXXUSD` biçimi bir gün sessizce FX sayılırdı.
+            self.assertIsNotNone(config.crypto_base_of(sym),
+                                 f"{sym} kripto olarak tanınmalı")
+
+
 if __name__ == "__main__":
     unittest.main()
