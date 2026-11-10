@@ -359,3 +359,41 @@ async def system_latency_reset(request: Request):
     require_admin(request)
     latency_stats.reset()
     return {"status": "reset"}
+
+
+# ── RUTİN KAYIT DEFTERİ (2026-11-10) ─────────────────────────────────────────
+# Sunucu tarafı rutinler (DB-only): gölge/kapsam/kalibrasyon anlık görüntüleri.
+# MT5 isteyen ölçüm probları sunucuda KOŞMAZ (terminal yok) → köprü makinesinde koşulur;
+# burada "yerel gerekli" olarak raporlanır.
+
+@router.get("/system/routines")
+async def list_routines(request: Request):
+    """Rutin listesi + son çalıştırma durumu (panel görünümü)."""
+    from app.routines.base import all_routines
+    from app import database
+    out = []
+    for spec in all_routines():
+        last = await database.get_routine_runs(spec.name, limit=1)
+        row = last[0] if last else None
+        out.append({
+            "name": spec.name,
+            "description": spec.description,
+            "interval_sec": spec.interval_sec,
+            "requires_mt5": spec.requires_mt5,
+            "output_note": spec.output_note,
+            "tags": spec.tags,
+            "last_run_ts": row["started_ts"] if row else None,
+            "last_ok": bool(row["ok"]) if row else None,
+            "last_duration_ms": row["duration_ms"] if row else None,
+            "last_result": row["result"] if row else None,
+        })
+    return {"count": len(out), "routines": out}
+
+
+@router.post("/system/routines/{name}/run")
+async def run_routine(name: str, request: Request):
+    """Bir rutini elle koştur (vade beklemeden)."""
+    from app.routines.base import run_once, get
+    if get(name) is None:
+        raise HTTPException(status_code=404, detail=f"rutin yok: {name}")
+    return await run_once(name, force=True)

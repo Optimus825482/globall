@@ -6761,6 +6761,66 @@ async def log_risk_gate(rec: Dict[str, Any]) -> None:
     await _run_db(op)
 
 
+def _ensure_routine_schema(conn) -> None:
+    """Rutin çalıştırma defteri (2026-11-10, condor `routines/base.py` deseni)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS routine_runs (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            started_ts DOUBLE PRECISION NOT NULL,
+            duration_ms INTEGER,
+            ok INTEGER DEFAULT 0,
+            result TEXT
+        )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_routine_name_ts ON routine_runs(name, started_ts DESC)")
+
+
+async def save_routine_run(name: str, started_ts: float, duration_ms: int, ok: bool,
+                          result: Any) -> None:
+    """Bir rutin çalıştırmasının sonucunu yaz (JSON metin)."""
+    def op(conn):
+        _ensure_routine_schema(conn)
+        conn.execute("INSERT INTO routine_runs (name, started_ts, duration_ms, ok, result) "
+                     "VALUES (?, ?, ?, ?, ?)",
+                     (str(name), float(started_ts), int(duration_ms), 1 if ok else 0,
+                      _json_safe_dumps(result, default=str)))
+        conn.commit()
+    await _run_db(op)
+
+
+async def get_routine_runs(name: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """Son rutin çalıştırmaları (name verilirse o rutin)."""
+    keys = ["id", "name", "started_ts", "duration_ms", "ok", "result"]
+
+    def op(conn):
+        _ensure_routine_schema(conn)
+        q = f"SELECT {', '.join(keys)} FROM routine_runs"
+        args: tuple = ()
+        if name:
+            q += " WHERE name = ?"
+            args = (str(name),)
+        q += " ORDER BY started_ts DESC LIMIT ?"
+        cur = conn.execute(q, args + (max(1, min(int(limit), 500)),))
+        rows = _rows(keys, cur)
+        for r in rows:
+            try:
+                r["result"] = json.loads(r["result"]) if isinstance(r["result"], str) else (r["result"] or {})
+            except Exception:  # noqa: BLE001
+                r["result"] = {}
+        return rows
+
+    return await _run_db(op)
+
+
+async def last_routine_run_ts(name: str) -> float:
+    """Rutinin son başarılı/başarısız çalışma zamanı (0 = hiç)."""
+    def op(conn):
+        _ensure_routine_schema(conn)
+        row = conn.execute("SELECT MAX(started_ts) FROM routine_runs WHERE name = ?", (str(name),)).fetchone()
+        return float(row[0] or 0.0) if row else 0.0
+    return await _run_db(op)
+
+
 async def list_risk_gate_log(since_ts: float = 0.0, limit: int = 300) -> List[Dict[str, Any]]:
     keys = ["id", "ts", "symbol", "direction", "lots", "mult", "decision", "mode", "enforced", "reasons", "metrics"]
 

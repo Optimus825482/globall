@@ -1255,6 +1255,9 @@ async def startup_services():
     # "COT verisi yok" diyordu. Bayatlayınca otomatik tazelenir (CFTC haftalık).
     from app.cot_fetch import cot_refresh_background_loop
     _start_background(cot_refresh_background_loop, "cot-refresh")
+    # RUTİN DÖNGÜSÜ (2026-11-10): gölge/kapsam/kalibrasyon anlık görüntüleri → routine_runs
+    from app.routines.base import routine_loop as _routine_loop
+    _start_background(_routine_loop, "routine-loop")
     from app.llm_trade_review import tracker_loop
     _start_background(tracker_loop, "llm-review-tracker")
     from app.position_supervisor import supervisor_loop
