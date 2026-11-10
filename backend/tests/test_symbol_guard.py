@@ -1,20 +1,23 @@
-"""SEMBOL KORUMASI (kara liste) kilitleri (2026-11-09 → 2026-11-10 güncellendi).
+"""SEMBOL KORUMASI (kara liste) kilitleri (2026-11-09 → 2026-11-10 düzeltildi).
 
-Gerekçe (ölçüldü):
-  * AUD kümesi (2026-11-09, 276 işlem/7 gün): n=19, ortalama **−6.11 USD**, **t=−4.12**.
-  * **2026-11-10 EKLEME — iki bağımsız kaynak örtüşüyor:**
-    - gerçek broker defteri 60 gün / 4315 işlem: USDJPY −0.402R (−2401 USD, isabet %36.8),
-      EURJPY −0.474R, GBPJPY −0.269R, USDCHF −0.246R, GBPUSD −0.089R; hepsi pencerenin
-      İKİ YARISINDA da negatif (n≥30).
-    - replay A/B 30 gün: bu semboller çıkarılınca net −111.156 → **+66.075 USD**, PF 0.70 → 1.50,
-      maxDD 113.204 → 8.894 USD.
-    - mekanizma: ölçülen maliyet/stop oranı bu paritelerde 0.079-0.146R, kalan sette 0.025-0.038R.
+Gerekçe (ölçüldü): AUD kümesi (2026-11-09, 276 işlem/7 gün): n=19, ortalama **−6.11 USD**,
+**t=−4.12**.
+
+**2026-11-10 DERS — SEMBOL BLOKLAMAK YANLIŞ ÇIKTI (kilit bu yüzden geri alındı):**
+60 günlük broker defterinde "kötü sembol" görünen USDJPY/USDCHF/GBPUSD negatifliği o
+paritelerden değil, **artık işlem açmayan iki kanaldan** geliyordu: `Scalper MT5`
+(09-30→10-08, 1218 işlem, −0.088R) ve `FVG` (10-17→10-27, isabet %39.7, −0.224R).
+Yalnız canlı kanallar (10-29 sonrası) ölçüldüğünde aynı pariteler nötr/pozitif:
+USDCHF +0.043R, GBPUSD +0.067R. Kanıtlı kenar ise şurada: **USTEC×RADAR +0.198R (t=5.28)**,
+**US30×RADAR +0.117R (t=2.74)**, **XAUUSD×RADAR +0.223R (t=2.72)**; canlı sızıntı
+**FRS/fırsat taraması −0.183R (t=−2.51)** ve **XRPUSD −0.116R (isabet %22.9)**.
 
 Kilitlenen davranış:
-  1. Varsayılan kara liste = AUD kümesi + 2026-11-10 ölçüm kümesi (ayardan değiştirilebilir).
-  2. Koruması `continue` ile işlemi AÇMAZ ve **risk kapısından ÖNCE** çalışır.
-  3. Karşılaştırma BÜYÜK HARF (küçük harfli giriş de yakalanır).
-  4. Liste boşaltılırsa koruma tamamen kapanır (aşırı uyum riskine karşı geri alınabilir).
+  1. Varsayılan kara liste = AUD kümesi (kanal ayrımından bağımsız, tek meşru gerekçe).
+  2. Sembol listesine "kötü sembol" gerekçesiyle ekleme YAPILMAMALI — önce kanal ayrımı
+     yapılmalı (ölü/aktif kanal ayrımı test edilir: `test_channel_confound_lesson_locked`).
+  3. Koruması `continue` ile işlemi AÇMAZ ve **risk kapısından ÖNCE** çalışır.
+  4. Liste boşaltılırsa koruma tamamen kapanır.
 """
 import pathlib
 import sys
@@ -28,32 +31,37 @@ from app.routers.forex import ForexAutoPaperSettings  # noqa: E402
 
 SRC = (ROOT / "app" / "routers" / "forex.py").read_text(encoding="utf-8")
 
-#: 2026-11-10 ölçümüyle eklenen pariteler (gerçek defter + replay örtüşmesi).
-MEASURED_2026_11_10 = ["EURJPY", "GBPJPY", "GBPUSD", "USDCHF", "USDJPY"]
-
 
 class TestDefaults(unittest.TestCase):
-    def test_default_blocked_symbols(self):
+    def test_default_blocked_symbols_is_aud_only(self):
         m = ForexAutoPaperSettings()
-        self.assertEqual(sorted(m.blocked_symbols),
-                         ["AUDCAD", "AUDNZD", "AUDUSD"] + MEASURED_2026_11_10)
-
-    def test_measured_set_not_dropped_silently(self):
-        """Ölçümle eklenen pariteler sessizce listeden düşmemeli (regresyon kilidi)."""
-        blocked = {s.upper() for s in ForexAutoPaperSettings().blocked_symbols}
-        for sym in MEASURED_2026_11_10:
-            self.assertIn(sym, blocked, f"{sym} ölçümle eklendi; listeden çıkarıldıysa kanıt gerekir")
+        self.assertEqual(sorted(m.blocked_symbols), ["AUDCAD", "AUDNZD", "AUDUSD"])
 
     def test_description_carries_evidence_and_caveat(self):
         desc = ForexAutoPaperSettings.model_fields["blocked_symbols"].description
         self.assertIn("t=-4.12", desc, "AUD ölçüm kanıtı korunmalı")
-        self.assertIn("-0.402R", desc, "2026-11-10 gerçek defter kanıtı açıklamada olmalı")
-        self.assertIn("66.075", desc, "replay A/B kanıtı açıklamada olmalı")
-        self.assertIn("LİSTEYE ALINMADI", desc, "XAU/BTC'nin neden listede olmadığı yazılmalı")
+        self.assertIn("KANAL AYRIMI", desc, "kanal/confound dersi açıklamada kalmalı")
 
     def test_empty_list_disables_guard(self):
         m = ForexAutoPaperSettings(blocked_symbols=[])
         self.assertEqual(m.blocked_symbols, [])
+
+
+class TestChannelConfoundLesson(unittest.TestCase):
+    """2026-11-10 dersi: sembol yasağından ÖNCE ölü/aktif kanal ayrımı yapılmalı."""
+
+    def test_live_edges_are_documented(self):
+        desc = ForexAutoPaperSettings.model_fields["blocked_symbols"].description
+        for token in ("USTEC", "+0.198R", "FRS", "-0.183R"):
+            self.assertIn(token, desc, f"{token} kanal ölçümü açıklamada olmalı")
+
+    def test_no_measured_symbols_were_added(self):
+        """Geçici eklenen 5 parite geri alındı; tekrar eklenirse kanal ayrımı istenir."""
+        blocked = {s.upper() for s in ForexAutoPaperSettings().blocked_symbols}
+        for sym in ("USDJPY", "USDCHF", "GBPUSD", "GBPJPY", "EURJPY"):
+            self.assertNotIn(sym, blocked,
+                             f"{sym} blok listesinde: 2026-11-10 ölçümü bunun yanlış olduğunu "
+                             f"gösterdi (kanal confound) — önce kanal ayrımı yapılmalı")
 
 
 class TestWiring(unittest.TestCase):

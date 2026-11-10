@@ -94,6 +94,44 @@ Replay Yahoo 5m barları kullanır (broker dolumları değil) ve mutlak isabeti 
 
 ---
 
+## 0.7 KANAL AYRIMI — §0.6'daki "sembol kes" kararı DÜZELTİLDİ (aynı gün, ikinci ölçüm)
+
+Kullanıcı itirazı haklıydı: "bunları bloklamak mı çözüm?". Sembol bazlı ölçüm, **kapanmış kanalların kalıntısıyla kirlenmişti**. Broker defterini kanala göre ayırdım (60 gün, 4378 pozisyon; kanal = emir yorumunun etiketi — `candidate_comment_tag()` yazıyor):
+
+| kanal | n | isabet% | beklenti R | t | net$ | aktif? |
+|---|---|---|---|---|---|---|
+| FVG | 247 | 39.7 | **−0.224** | −3.86 | −1.036 | **BİTTİ 10-27** |
+| FRS (fırsat taraması) | 91 | 48.4 | **−0.183** | −2.51 | −120 | **AKTİF** |
+| EAP-M5 | 24 | 58.3 | −0.116 | −0.92 | −32 | aktif |
+| **Scalper MT5** | 1218 | 54.6 | −0.088 | −3.58 | **−4.168** | **BİTTİ 10-08** |
+| DONCH | 29 | 55.2 | −0.076 | −0.72 | +22 | aktif |
+| **RADAR** | 2559 | 64.6 | **−0.063** | **−4.22** | −2.899 | **AKTİF** |
+| LBRK | 76 | 67.1 | −0.055 | −0.95 | −97 | aktif |
+| S3 / S3F | 19 / 31 | 63 / 65 | +0.035 / +0.041 | — | −15 / −3 | aktif |
+
+**Ölü kanallar (Scalper MT5, FVG) 60 günün geçmişinde −5.200 USD üretmiş ama artık işlem açmıyor** → sembol bazlı "kötü sembol" tablosunu bunlar kirletiyordu. Yalnız **canlı kanallar** (10-29 sonrası) ölçüldüğünde tablo tersine dönüyor:
+
+| sembol × kanal (canlı) | n | isabet% | beklenti R | t |
+|---|---|---|---|---|
+| **USTEC × RADAR** | 69 | 95.7 | **+0.198** | **5.28** |
+| **XAUUSD × RADAR** | 62 | 79.0 | **+0.223** | **2.72** |
+| **US30 × RADAR** | 109 | 91.7 | **+0.117** | **2.74** |
+| USDCHF × RADAR | 34 | 70.6 | +0.043 | 0.33 |
+| GBPUSD × RADAR | 26 | 69.2 | +0.012 | 0.08 |
+| BTCUSD × RADAR | 216 | 69.4 | −0.024 | −0.53 |
+| USDCAD × RADAR | 47 | 72.3 | −0.024 | −0.24 |
+| **XRPUSD × RADAR** | 48 | **22.9** | **−0.116** | −0.44 |
+| **FRS (fırsat) tümü** | 91 | 48.4 | **−0.183** | **−2.51** |
+| EURJPY (n=12) / GBPJPY (n=21) | | | −0.212 / −0.096 | anlamsız |
+
+**Sonuçlar:**
+1. **Kaldıraç sembol yasağı değil: (a) kanal kalitesi, (b) kanıtlı kapsam.** Kanıtlı kenar tek yerde: **RADAR × {USTEC, XAUUSD, US30}** (+0.12…+0.22R, t=2.7-5.3). Canlı sızıntı: **FRS/fırsat taraması (−0.183R, t=−2.51)** ve **XRPUSD (isabet %22.9)**.
+2. §0.6'da eklenen 5 paritelik blok **geri alındı** (varsayılan yine AUD kümesi); `tests/test_symbol_guard.py` artık "ölçümle sembol eklenmesin, önce kanal ayrımı yapılsın" dersini kilitliyor.
+3. **Skor kanalı ölçüldü ve ÖLÜ:** skor kovalarında (75-84 / 85-91 / 92-95 / 96+) monoton ilişki yok (USDJPY'de 92-95 dışındakiler −0.32…−0.48R, XAU'da 96+ ile 75-84 arasında fark yok).
+4. Replay'in "sembol" sonucu da bu yüzden yanıltıcıydı: replay kolları (FVG/scalper benzeri) o paritelerde yoğunlaşıyordu → **kanal etkisi sembol etkisi gibi göründü**.
+
+---
+
 ## 1) Mevcut durum — kendi kodumuzdan doğrulananlar
 
 | Bulgu | Kanıt |

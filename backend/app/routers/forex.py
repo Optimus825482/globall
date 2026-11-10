@@ -440,30 +440,9 @@ FOREX_SYMBOLS = [
         "tv_symbol": "BINANCE:ETHUSDT",
         "default_price": 2410.0,
     },
-    {
-        "symbol": "SOLUSD",
-        "display": "SOL/USD",
-        "name": "Solana / US Dollar",
-        "category": "crypto",
-        "base": "SOL",
-        "quote": "USD",
-        "pip_size": 0.01,
-        "digits": 4,
-        "tv_symbol": "BINANCE:SOLUSDT",
-        "default_price": 104.0,
-    },
-    {
-        "symbol": "BNBUSD",
-        "display": "BNB/USD",
-        "name": "Binance Coin / US Dollar",
-        "category": "crypto",
-        "base": "BNB",
-        "quote": "USD",
-        "pip_size": 0.10,
-        "digits": 3,
-        "tv_symbol": "BINANCE:BNBUSDT",
-        "default_price": 720.0,
-    },
+    # Kripto evreni ÜRÜN KURALI (2026-11-09): yalnız BTC / ETH / XRP.
+    # Diğer coinler `config.CRYPTO_ALLOWED_BASES` ile elenir; spec'leri
+    # `_RETIRED_FOREX_SYMBOLS`'te (arşiv uyumluluğu) durur.
     {
         "symbol": "XRPUSD",
         "display": "XRP/USD",
@@ -475,78 +454,6 @@ FOREX_SYMBOLS = [
         "digits": 4,
         "tv_symbol": "BINANCE:XRPUSDT",
         "default_price": 1.30,
-    },
-    {
-        "symbol": "LNKUSD",
-        "display": "LINK/USD",
-        "name": "Chainlink / US Dollar",
-        "category": "crypto",
-        "base": "LNK",
-        "quote": "USD",
-        "pip_size": 0.01,
-        "digits": 3,
-        "tv_symbol": "BINANCE:LINKUSDT",
-        "default_price": 12.30,
-    },
-    {
-        "symbol": "UNIUSD",
-        "display": "UNI/USD",
-        "name": "Uniswap / US Dollar",
-        "category": "crypto",
-        "base": "UNI",
-        "quote": "USD",
-        "pip_size": 0.01,
-        "digits": 4,
-        "tv_symbol": "BINANCE:UNIUSDT",
-        "default_price": 7.25,
-    },
-    {
-        "symbol": "AVXUSD",
-        "display": "AVAX/USD",
-        "name": "Avalanche / US Dollar",
-        "category": "crypto",
-        "base": "AVX",
-        "quote": "USD",
-        "pip_size": 0.01,
-        "digits": 4,
-        "tv_symbol": "BINANCE:AVAXUSDT",
-        "default_price": 10.0,
-    },
-    {
-        "symbol": "ADAUSD",
-        "display": "ADA/USD",
-        "name": "Cardano / US Dollar",
-        "category": "crypto",
-        "base": "ADA",
-        "quote": "USD",
-        "pip_size": 0.0001,
-        "digits": 5,
-        "tv_symbol": "BINANCE:ADAUSDT",
-        "default_price": 0.225,
-    },
-    {
-        "symbol": "XTZUSD",
-        "display": "XTZ/USD",
-        "name": "Tezos / US Dollar",
-        "category": "crypto",
-        "base": "XTZ",
-        "quote": "USD",
-        "pip_size": 0.0001,
-        "digits": 5,
-        "tv_symbol": "BINANCE:XTZUSDT",
-        "default_price": 0.31,
-    },
-    {
-        "symbol": "DATAUSD",
-        "display": "DATA/USD",
-        "name": "Streamr / US Dollar",
-        "category": "crypto",
-        "base": "DATA",
-        "quote": "USD",
-        "pip_size": 0.0001,
-        "digits": 4,
-        "tv_symbol": "BINANCE:DATAUSDT",
-        "default_price": 0.18,
     },
 ]
 
@@ -573,9 +480,15 @@ RADAR_SCAN_SYMBOLS = {
     "XAUUSD", "US30", "BTCUSD", "GBPUSD", "AUDUSD", "AUDCAD",
 }
 ALL_RADAR_SYMBOLS = {s["symbol"] for s in FOREX_SYMBOLS}
-CANLI_WEEKEND_CRYPTO_SYMBOLS = (
-    "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
-    "LNKUSD", "UNIUSD", "AVXUSD", "ADAUSD", "XTZUSD", "DATAUSD",
+
+# Hafta sonu (7/24) kripto evreni — ÜRÜN KURALI'ndan TÜRETİLİR, elle yazılmaz
+# (2026-11-10). Eskiden 11 coin elle sayılıydı ve kullanıcı kararıyla elenen
+# 8 coin (SOL/BNB/LNK/UNI/AVX/ADA/XTZ/DATA) hafta sonu taramasında yaşamaya
+# devam ediyordu: panelde "sistemde olmayan çift" görünüyordu. Tek kaynak
+# `config.CRYPTO_ALLOWED_BASES` (varsayılan BTC,ETH,XRP) → kural değişirse
+# burası kendiliğinden uyar. Kilit: tests/test_crypto_allowlist.py
+CANLI_WEEKEND_CRYPTO_SYMBOLS = tuple(
+    f"{base}USD" for base in sorted(config.CRYPTO_ALLOWED_BASES)
 )
 
 
@@ -5761,20 +5674,22 @@ class ForexAutoPaperSettings(BaseModel):
     news_bias_window_sec: float = Field(900.0, ge=60.0, le=3600.0, description="Açıklamadan sonra yönün geçerli sayıldığı pencere (saniye; varsayılan 900 = 15 dk)")
     blocked_hours_utc: List[int] = Field(default_factory=list, description="İşlem yapılmasın istenen UTC saatleri (varsayılan: boş — zayıf saat kalkanı kaldırıldı)")
     blocked_symbols: List[str] = Field(
-        default_factory=lambda: ["AUDCAD", "AUDNZD", "AUDUSD",
-                                 "EURJPY", "GBPJPY", "GBPUSD", "USDCHF", "USDJPY"],
-        description="İşlem AÇILMAYACAK pariteler (kara liste). AUD kümesi 2026-11-09 ölçümüyle "
-                    "(n=19, ortalama -6.11 USD/işlem, t=-4.12). **2026-11-10 EKLEME — İKİ BAĞIMSIZ "
-                    "KAYNAK ÖRTÜŞÜYOR:** (1) gerçek broker defteri 60 gün/4315 işlem: USDJPY -0.402R "
-                    "(isabet %36.8, -2401 USD), EURJPY -0.474R, GBPJPY -0.269R, USDCHF -0.246R, "
-                    "GBPUSD -0.089R — hepsi pencerenin İKİ YARISINDA da negatif (n>=30); (2) replay A/B "
-                    "30 gün (chandelier 0.1, slip 2 pip): bu semboller çıkarıldığında net -111.156 -> "
-                    "+66.075 USD, PF 0.70 -> 1.50, isabet %64.6 -> %75.7, maxDD 113.204 -> 8.894 USD. "
-                    "MEKANİZMA: ölçülen maliyet/stop oranı bu paritelerde 0.079-0.146R iken kalan sette "
-                    "(XAUUSD 0.036, BTCUSD 0.038, US30/NAS100 0.025) 2-4 kat daha düşük. İZLEME "
-                    "(replay teyidi yok, henüz eklenmedi): EURUSD -0.132R, USDCAD -0.115R, NZDUSD "
-                    "-0.242R. XAUUSD/BTCUSD gerçek defterde hafif negatif ama replay'de pozitif ve "
-                    "iyileşiyor -> LİSTEYE ALINMADI. Boş liste korumayı kapatır (geri alınabilir).",
+        default_factory=lambda: ["AUDCAD", "AUDUSD", "AUDNZD"],
+        description="İşlem AÇILMAYACAK pariteler (kara liste). Tek meşru gerekçe AUD kümesi "
+                    "(2026-11-09: n=19, -6.11 USD/işlem, t=-4.12). **2026-11-10 KANAL AYRIMI "
+                    "(sembol bloklamak YANLIŞ ÇIKTI):** 60 günlük defterde 'kötü sembol' görünen "
+                    "USDJPY/USDCHF/GBPUSD negatifliğinin kaynağı o pariteler değil, ARTIK İŞLEM "
+                    "AÇMAYAN iki kanaldı — `Scalper MT5` (09-30→10-08, 1218 işlem, -0.088R) ve "
+                    "`FVG` (10-17→10-27, 247 işlem, isabet %39.7, -0.224R). O ÖLÜ kanallar "
+                    "çıkarıldığında (yalnız 10-29 sonrası, canlı kanallar) aynı pariteler nötr/"
+                    "pozitife dönüyor: USDCHF +0.043R, GBPUSD +0.067R, GBPJPY -0.096R (n=21), "
+                    "EURJPY -0.212R (n=12). Bu yüzden 2026-11-10'da geçici eklenen 5 parite "
+                    "GERİ ALINDI. CANLI KANALLARIN ÖLÇÜMÜ (10-29→, t istatistiği): "
+                    "USTEC×RADAR +0.198R (t=5.28, isabet %95.7), US30×RADAR +0.117R (t=2.74), "
+                    "XAUUSD×RADAR +0.223R (t=2.72) = KANITLI KENAR; buna karşılık "
+                    "FRS/fırsat taraması -0.183R (t=-2.51) ve XRPUSD -0.116R (isabet %22.9) = "
+                    "canlı sızıntı. Doğru kaldıraç sembolü yasaklamak değil: (a) kanal kalitesi "
+                    "(FRS), (b) kanıtlı sembollerin kapsamı. Boş liste korumayı kapatır.",
     )
     abstain_gate_mode: Literal["off", "shadow", "enforce"] = Field(
         "off",
