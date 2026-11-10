@@ -169,3 +169,31 @@ Ulaşma olasılıkları: FRS P(MFE≥0.5R)=%31.2, P(MFE≥1.5R)=%5.4 — **başa
 
 ### 7.4 Uygulanan tek değişiklik
 **Kanıt kapısı (abstain gate) varsayılanı `off` → `shadow`** (davranış DEĞİŞMEZ; yalnız "engellerdi" logu). Gerekçe: 7.2/7.3 ölçümü kapının ne söyleyeceğini artık değerli kılıyor. `enforce` hâlâ iş kararı.
+
+---
+
+## 8) SEÇİCİLİK MODELİ (MFE etiketi) — zayıf sinyal, ama KARARI netleştirdi
+
+`scripts/fx_selectivity_probe.py` — 4.297 canlı işlem, etiket **MFE ≥ 0.5R**, özellikler yalnız giriş anında bilinenler (saat/gün, yön, skor, stop, maliyet/stop, son 30/60 dk momentum + volatilite, 60 dk içindeki konum), **kronolojik** %70/%30 ayrım, permütasyon kontrolü.
+
+| ölçüm | değer |
+|---|---|
+| Taban oran P(MFE≥0.5R) | %33.5 |
+| **OOS AUC (kronolojik)** | **0.592** |
+| Permütasyon AUC (kontrol) | 0.508 |
+| Eşik p≥0.3 | kapsam %75, P(hit) %38.2 → gereken TP 1.62R → **yetmiyor** |
+| Eşik p≥0.5 | kapsam %7, P(hit) %50.6 → gereken TP 0.98R → **sınırda/breakeven** |
+
+**Ulaşma eğrisi (test kümesi, exit-politikasından bağımsız):**
+
+| kesit | n | P(≥0.3R) | P(≥0.5R) | P(≥1R) | P(≥1.5R) |
+|---|---|---|---|---|---|
+| TÜMÜ | 1290 | 52.9% | 34.3% | 10.9% | 4.8% |
+| RADAR | 1082 | 53.1% | 34.8% | 11.2% | 5.0% |
+| **RADAR×(USTEC/US30/XAU)** | 310 | 41.0% | 22.9% | 8.1% | 1.6% |
+| RADAR×(XAU/BTC) | 329 | 56.8% | 37.4% | 7.9% | 1.8% |
+
+**Kritik okuma:** "kanıtlı üçlü"nün MFE eğrisi ortalamanın **altında** — çünkü o kolların kenarı **çok küçük kazançlarda yüksek isabet** (US30 %91.7 isabet / ortalama kazanç 0.29R; USTEC %95.7 / 0.20R). MFE-eşiği çerçevesi bu kolları **yanlış ölçer**; onların gerçek R-beklentisi pozitif (t=2.74/5.28/2.72) ve mevcut trailing/BE politikası o küçük kazançları zaten topluyor.
+Öte yandan R-beklentisi negatif olan kümeler (FX majörleri, FRS, LBRK, Scalper/FVG mirası) için **hiçbir hedef eşiği** başabaşı geçmiyor.
+
+**Sonuç — üç kapı da kapandı:** (1) çıkış/hedef ayarı, (2) basit özelliklerle seçicilik (AUC 0.58), (3) zengin özelliklerle seçicilik (AUC 0.59, en iyi kesitte dahi breakeven). Geriye **kapsam kararı** kalıyor: kanıtlı alt kümede (RADAR × USTEC/US30/XAUUSD + Tokyo pencereleri) yoğunlaşmak; R-beklentisi negatif kümelerde işlem açmamak.
