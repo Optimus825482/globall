@@ -45,14 +45,18 @@ class TestItemSchema(unittest.TestCase):
 
 
 class TestBuild(unittest.TestCase):
-    def test_all_five_mechanisms_listed(self):
+    def test_all_six_mechanisms_tracked(self):
         import asyncio
         rep = asyncio.run(shadow_report.build())
         keys = {i["key"] for i in rep["items"]}
+        # Görünür: mode != off. Kullanıcı kararı: pasif (KAPALI) mekanizmalar
+        # rapordan GİZLENİR; kanıt kapısı varsayılan off olduğu için gizli.
         for expected in ("llm_shadow", "ml_calibration", "geometry_shadow",
-                         "risk_gate", "abstain_gate"):
+                         "forex_ml_shadow", "risk_gate"):
             self.assertIn(expected, keys, f"{expected} raporda yok")
-        self.assertEqual(rep["count"], len(rep["items"]))
+        self.assertNotIn("abstain_gate", keys, "kapalı mekanizma gizlenmeli")
+        self.assertEqual(rep["count"], len(rep["items"]) + rep["hidden_off"])
+        self.assertGreaterEqual(rep["hidden_off"], 1)
 
     def test_rows_survive_failures(self):
         """Kaynak okunamasa bile satır listede ve notu açıklayıcı olmalı."""
@@ -64,13 +68,12 @@ class TestBuild(unittest.TestCase):
             self.assertIsInstance(it["measures"], str)
 
     def test_defaults_reflect_settings(self):
+        """Kanıt kapısı varsayılan OFF ve RAPORDAN GİZLİ; risk kapısı GÖLGE ve görünür."""
         import asyncio
         rep = asyncio.run(shadow_report.build())
         by = {i["key"]: i for i in rep["items"]}
-        # kanıt kapısı varsayılan KAPALI (iş kararı bekliyor)
-        if by["abstain_gate"]["mode"] not in ("unknown",):
-            self.assertEqual(by["abstain_gate"]["mode"], "off")
-        # risk kapısı varsayılan gölge
+        self.assertNotIn("abstain_gate", by, "varsayılan off → rapordan gizlenmeli")
+        self.assertGreaterEqual(rep.get("hidden_off", 0), 1)
         if by["risk_gate"]["mode"] not in ("unknown",):
             self.assertEqual(by["risk_gate"]["mode"], "shadow")
 

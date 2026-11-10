@@ -6570,6 +6570,9 @@ def _ensure_llm_review_schema(conn) -> None:
         conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS exploration INTEGER DEFAULT 0")
         conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS control_veto INTEGER DEFAULT 0")
         conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS features TEXT")
+        # Forex ML gölge skoru (2026-11-10): artifact'tan hesaplanan isabet olasılığı;
+        # eğitim tarihinden SONRAKİ kararlar skorlanır → prequential değerlendirme.
+        conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS forex_ml_prob DOUBLE PRECISION")
         conn.execute("ALTER TABLE llm_trade_reviews ADD COLUMN IF NOT EXISTS path TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_created ON llm_trade_reviews(created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_reviews_shadow ON llm_trade_reviews(shadow_status)")
@@ -7298,9 +7301,30 @@ async def get_forex_ml_runs(limit: int = 10) -> List[Dict[str, Any]]:
     return await _run_db(op)
 
 
+async def set_llm_review_ml_prob(review_id: int, prob: float) -> None:
+    """Forex ML gölge skorunu karara yazar (prequential değerlendirme için)."""
+    def op(conn):
+        conn.execute("UPDATE llm_trade_reviews SET forex_ml_prob = ? WHERE id = ?",
+                     (float(prob), int(review_id)))
+        conn.commit()
+    return await _run_db(op)
+
+
+async def count_llm_ml_prob_rows() -> int:
+    """Skorlanmış karar sayısı (Forex ML gölge satırının n'i)."""
+    def op(conn):
+        _ensure_llm_review_schema(conn)          # forex_ml_prob kolonu burada eklenir
+        row = conn.execute(
+            "SELECT count(*) FROM llm_trade_reviews WHERE forex_ml_prob IS NOT NULL"
+        ).fetchone()
+        return int((row[0] if isinstance(row, (list, tuple)) else list(row.values())[0]) or 0)
+    return await _run_db(op)
+
+
 async def count_llm_review_shadow_rows() -> int:
     """Gölge sonucu çözülmüş LLM kararı sayısı (Gölge Modlar raporu)."""
     def op(conn):
+        _ensure_llm_review_schema(conn)          # kolon garantisi (idempotent, flag'li)
         row = conn.execute(
             "SELECT count(*) FROM llm_trade_reviews WHERE shadow_pips IS NOT NULL"
         ).fetchone()

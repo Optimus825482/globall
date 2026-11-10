@@ -97,6 +97,26 @@ async def build() -> dict[str, Any]:
         items.append(_item("geometry_shadow", "Geometri gölgesi", mode="off", active=False,
                            measures="SL/hedef oranı gölgesi", note=f"okunamadı: {type(exc).__name__}"))
 
+    # 3b) FOREX ML SKOR GÖLGESİ (2026-11-10): artifact'tan hesaplanan isabet
+    # olasılığı her yeni karara yazılır; sonucu mevcut LLM gölge hattı izler
+    # → prequential IC/join için yeni altyapı gerekmez.
+    try:
+        from app import database, forex_ml
+        art = forex_ml.load_scoring_model()
+        n = await database.count_llm_ml_prob_rows()
+        items.append(_item(
+            "forex_ml_shadow", "Forex ML isabet olasılığı (skor gölgesi)", mode="shadow",
+            active=art is not None,
+            measures="Modelin karar anındaki isabet olasılığı vs gerçekleşen sonuç (prequential)",
+            n=n, needed=300,
+            metric=(f"model: lojistik, {len(art.get('feature_names') or [])} özellik" if art else None),
+            note=("artifact yok: önce Forex ML sekmesinden eğit" if not art else
+                  "yalnız eğitim tarihinden SONRAKİ kararlar skorlanır (in-sample sızıntı yok)")))
+    except Exception as exc:  # noqa: BLE001
+        items.append(_item("forex_ml_shadow", "Forex ML skor gölgesi", mode="unknown",
+                           active=False, measures="Forex ML skor gölgesi",
+                           note=f"okunamadı: {type(exc).__name__}"))
+
     # 4) Portföy risk kapısı — varsayılan `shadow` (yalnız loglar).
     try:
         from app import portfolio_risk
@@ -130,12 +150,16 @@ async def build() -> dict[str, Any]:
         items.append(_item("abstain_gate", "Kanıt kapısı", mode="unknown", active=False,
                            measures="Kanıt kapısı gölgesi", note=f"okunamadı: {type(exc).__name__}"))
 
+    visible = [i for i in items if i["mode"] != "off"]
     return {
         "generated_at": time.time(),
         "count": len(items),
-        "active_shadow": sum(1 for i in items if i["active"] and i["mode"] in ("shadow", "on")),
-        "ready_for_decision": sum(1 for i in items if i["ready"]),
-        "items": items,
+        "active_shadow": sum(1 for i in visible if i["active"] and i["mode"] in ("shadow", "on")),
+        "ready_for_decision": sum(1 for i in visible if i["ready"]),
+        # Kullanıcı kararı: pasif (off) mekanizmalar raporda GİZLENİR; sayı
+        # `hidden_off`'ta dürüstlük için durur.
+        "hidden_off": sum(1 for i in items if i["mode"] == "off"),
+        "items": visible,
         "note": ("Gölge = kararı DEĞİŞTİRMEZ, yalnız ölçer. `enforce` yazan bir kapı kararı "
                  "değiştirir; `n/needed` karar için gereken örnek ilerlemesidir."),
     }

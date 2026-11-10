@@ -219,6 +219,35 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
         ic_p = round(ic / math.sqrt(max(1, len(yte))), 4)   # yaklaşık z-skoru
     iv = mp.hit_rate_interval_wilson(yte, alpha=0.10)
 
+    # KARŞILAŞTIRMA MODELLERİ (2026-11-10, PDF tavsiyesi: tabular için gradient
+    # boosting — Databricks Big Book 3e s58 "LightGBM … captures seasonality and
+    # complex patterns"). sklearn'in LightGBM-esinli karşılığı:
+    # HistGradientBoostingClassifier. Yeni bağımlılık YOK. Artifact'a YAZILMAZ
+    # (skorlayıcı yalnız lojistik JSON'ı okur); yalnız OOS kıyas amaçlı.
+    try:
+        from sklearn.ensemble import HistGradientBoostingClassifier
+        hgb = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.08,
+                                             max_depth=3, random_state=0)
+        hgb.fit(Xtr_a, ytr)
+        hgb_p = hgb.predict_proba(Xte_a)[:, 1].tolist()
+        hgb_brier = mp.brier_score(hgb_p, yte)
+        hgb_skill = round(1 - hgb_brier / denom_te, 4) if denom_te else None
+        hgb_ic = _spearman(hgb_p, [float(v) for v in yte])
+        out["models"] = {
+            "logistic": {"brier_test": round(brier_te, 4), "brier_skill_oos": skill,
+                         "ece_test": round(ece_te, 4),
+                         "ic_test": round(ic, 4) if ic is not None else None},
+            "hist_gradient_boosting": {"brier_test": round(hgb_brier, 4),
+                                       "brier_skill_oos": hgb_skill,
+                                       "ic_test": round(hgb_ic, 4) if hgb_ic is not None else None},
+        }
+        best_name = max(("logistic", "hist_gradient_boosting"),
+                        key=lambda k: (out["models"][k]["brier_skill_oos"] is not None,
+                                       out["models"][k]["brier_skill_oos"] or -9))
+        out["best_model"] = best_name
+    except Exception as exc:  # noqa: BLE001 - kıyas modeli raporu düşürmesin
+        out["models_note"] = f"hist-GB kıyası atlandı: {type(exc).__name__}"
+
     # OOS hüküm: skill > 0 VE yön tutarlı → model bilgi taşıyor.
     verdict = ("OOS skill > 0: model test yarısında bilgi taşıyor (kapı için YİNE replay A/B şart)"
                if (skill is not None and skill > 0) else
@@ -252,6 +281,46 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
     except Exception as exc:  # noqa: BLE001
         out["calibration_note"] = f"kalibrasyon atlandı: {type(exc).__name__}"
     return out
+
+
+def load_scoring_model(path: str | Path | None = None) -> Optional[dict[str, Any]]:
+    """Artifact'ı oku; eğitilmemiş/bozuksa ``None`` (fail-closed)."""
+    target = Path(path) if path else DEFAULT_ARTIFACT
+    try:
+        import json
+        art = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    if not art.get("coefficients") or not art.get("feature_names"):
+        return None
+    return art
+
+
+def score_features(features_dict: dict[str, Any], artifact: dict[str, Any]) -> Optional[float]:
+    """Deterministik özelliklerden isabet olasılığı — sklearn'SİZ (sigmoid + JSON).
+
+    Eksik sayısal alanlar artifact'taki eğitim medyanıyla doldurulur; bilinmeyen
+    kategoriler tüm-bit-0. Modelin "kesik" bilgisini (`_eksik` göstergeleri)
+    görmesi için `features` ham sözlük olarak geçilir.
+    """
+    if not artifact:
+        return None
+    f = featurize({"features": features_dict, "direction": features_dict.get("_direction", "BUY"),
+                   "confidence": features_dict.get("_confidence"), "score": features_dict.get("_motor_score")},
+                  medians=artifact.get("medians") or {},
+                  sessions=tuple(s[8:] for s in artifact["feature_names"] if s.startswith("session_")),
+                  biases=tuple(b[5:] for b in artifact["feature_names"] if b.startswith("bias_")))
+    try:
+        import numpy as np
+        x = np.asarray([f[k] for k in artifact["feature_names"]], dtype=float)
+        mean = np.asarray(artifact["means"], dtype=float)
+        scale = np.asarray(artifact["scales"], dtype=float)
+        coef = np.asarray([artifact["coefficients"][k] for k in artifact["feature_names"]], dtype=float)
+        z = float(((x - mean) / scale) @ coef + float(artifact["intercept"]))
+        return round(1.0 / (1.0 + math.exp(-z)), 4)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("forex_ml skor hatası: %s", exc)
+        return None
 
 
 def save_artifact(report: dict[str, Any], path: str | Path | None = None) -> str:

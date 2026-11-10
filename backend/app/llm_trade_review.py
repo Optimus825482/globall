@@ -556,6 +556,19 @@ async def review_entry(ctx: Dict[str, Any]) -> Dict[str, Any]:
                 await database.set_llm_review_features(review_id, dossier["ozellikler"])
             except Exception as exc:  # noqa: BLE001
                 logger.info("LLM karar özellikleri yazılamadı: %s", exc)
+            # FOREX ML GÖLGESİ (2026-11-10): artifact varsa karar anında isabet
+            # olasılığı hesaplanıp kayda yazılır. Eğitim artifact'ın tarihinden
+            # SONRAKİ kararlar skorlanır → prequential (in-sample sızıntı yok).
+            # Outcome zaten mevcut gölge hattı (shadow_pips) ile izleniyor →
+            # IC/join için yeni altyapı gerekmez. Hata gölgeyi sessizce atlar.
+            try:
+                from app import forex_ml
+                art = forex_ml.load_scoring_model()
+                prob = forex_ml.score_features(dict(dossier["ozellikler"]), art) if art else None
+                if prob is not None and review_id:
+                    await database.set_llm_review_ml_prob(review_id, prob)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("forex ML gölge skoru atlandı: %s", exc)
         if review_id and (explore or control_veto):
             try:
                 await database.set_llm_review_flags(review_id, int(explore), int(control_veto))

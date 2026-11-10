@@ -21,7 +21,7 @@ interface ShadowItem {
 }
 interface ShadowReport {
   generated_at: number; count: number; active_shadow: number;
-  ready_for_decision: number; items: ShadowItem[]; note: string; error?: string;
+  ready_for_decision: number; hidden_off?: number; items: ShadowItem[]; note: string; error?: string;
 }
 
 const MODE_TR: Record<string, { t: string; c: string }> = {
@@ -112,6 +112,11 @@ export default function ShadowModesReport() {
         })}
       </div>
 
+      {report && (report.hidden_off ?? 0) > 0 && (
+        <p className="text-2xs text-bunker-muted/80">
+          {report.hidden_off} pasif (KAPALI) mekanizma gizlidir — Ayarlar&apos;dan aktifleştirilebilir.
+        </p>
+      )}
       {report?.note && <p className="text-2xs text-bunker-muted/80">{report.note}</p>}
       {report?.error && <p role="alert" className="text-2xs text-rose-300">{report.error}</p>}
     </section>
