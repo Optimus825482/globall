@@ -5965,6 +5965,22 @@ class ForexAutoPaperSettings(BaseModel):
         1.5, ge=0.3, le=6.0, description="SL = bu kat × giriş ATR'si. Ölçülen getiri 1 saatlik "
                                          "pencerede ~0.7-1.5 pip net olduğu için stop geniş "
                                          "tutulur (maliyet/stop oranı düşsün).")
+    proof_scope_enabled: bool = Field(
+        True,
+        description="KANIT KAPSAMI (2026-11-10): yalnız ÖLÇÜMLE POZİTİF kenarı kanıtlanmış "
+                    "sembollerde yeni işlem açılır. Gerekçe (canlı defter, 10-29 sonrası, "
+                    "kanal ayrımı yapılmış): USTEC×RADAR +0.198R (t=5.28), XAUUSD×RADAR "
+                    "+0.223R (t=2.72), US30×RADAR +0.117R (t=2.74); BTCUSD -0.024R (t=-0.53) "
+                    "nötr olduğu için gözlemde tutuldu. Diğer tüm semboller (FX majörleri, "
+                    "çaprazlar) ölçülen NEGATİF beklentiyle işlem görüyordu ve çıkış/hedef "
+                    "ayarı (TP 0.3-1.5R), basit seçicilik (AUC 0.58) ve zengin seçicilik "
+                    "(AUC 0.59) hiçbiri bu kümeleri pozitife çevirmedi. Kapatmak için False.")
+    proof_scope_symbols: List[str] = Field(
+        default_factory=lambda: ["NAS100", "USTEC", "US30", "XAUUSD", "BTCUSD"],
+        description="Kanıt kapsamındaki semboller. Tokyo sabahı drifti kolu bu kapıdan MUAFTIR "
+                    "(kendi ölçülmüş pencereleri var: `soft_bypass`), ayrıca `blocked_symbols` "
+                    "her zaman kazanır.",
+    )
     abstain_gate_mode: Literal["off", "shadow", "enforce"] = Field(
         "shadow",
         description="KANIT KAPISI (P2). **2026-11-10: varsayılan `shadow` YAPILDI** (davranış "
@@ -9714,6 +9730,23 @@ async def _forex_auto_paper_loop():
                             metadata={"blocked_symbols": sorted(_blocked_syms)},
                         )
                     continue
+
+                # 8b1c. KANIT KAPSAMI (2026-11-10): yalnız ölçümle POZİTİF kanıtlanmış semboller.
+                # Kanıt: USTEC +0.198R (t=5.28) · XAUUSD +0.223R (t=2.72) · US30 +0.117R (t=2.74)
+                # · BTCUSD -0.024R (nötr, gözlemde). Zaman tabanlı kol (`soft_bypass`) muaftır.
+                if _AUTO_SETTINGS.proof_scope_enabled and not _soft_bypass:
+                    _scope = {str(x).strip().upper() for x in (_AUTO_SETTINGS.proof_scope_symbols or [])}
+                    if _scope and sym not in _scope:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_scope", 0) > 300.0:
+                            _LAST_CANDIDATE_LOG_TIME[f"{sym}_scope"] = now_ts
+                            _log_auto_decision(
+                                "GATE",
+                                f"[{cand.get('display', sym)}] ⛔ Kanıt kapsamı: bu sembolde pozitif "
+                                f"kenar kanıtlanmadı (ölçüm: FX majörleri/çaprazlar negatif beklenti). "
+                                f"Kapsam: {sorted(_scope)} — Ayarlar > proof_scope_symbols.",
+                                symbol=sym, strategy=_c_strat, strategy_label=_c_strat_lbl,
+                            )
+                        continue
 
                 # 8b1b. KANIT KAPISI (P2, 2026-11-09): "bu sembolde kenar KANITLANDI mı?"
                 # İsabet oranının %90 Wilson alt sınırı break-even'ın altındaysa giriş yok.
