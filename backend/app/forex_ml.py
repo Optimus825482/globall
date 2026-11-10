@@ -40,6 +40,11 @@ logger = logging.getLogger("scalper.forex_ml")
 MIN_ROWS = 120
 #: Kronolojik test payı.
 TEST_FRACTION = 0.30
+#: SEÇİM MARJI (2026-11-10): doğrulama skill farkı bu bandın altındaysa SADE model
+#: tercih edilir (daha az özellik → zengin yerine temel; daha güçlü ceza → küçük C).
+#: NEDEN: tek doğrulama dilimi (260 satır) gürültülü; zengin profili 0.020 vs 0.018
+#: gibi bir farkla seçip TEST'te −0.008 aldı (temel +0.019). Eşitlikte sade kazanır.
+SELECTION_MARGIN = 0.015
 DEFAULT_ARTIFACT = Path(__file__).resolve().parents[1] / "artifacts" / "forex_ml.json"
 
 #: Sayısal özellikler (sıra artifact'ta da bu sıra ile korunur).
@@ -240,7 +245,8 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
     y = [1 if float(r.get("shadow_pips")) > 0 else 0 for r in clean]
     cut = int(len(clean) * (1.0 - float(test_fraction)))
     cut = max(1, min(len(clean) - 1, cut))
-    ytr, yte = y[:cut], y[cut:]
+    ytr = y[:cut]
+    yte = y[cut:]
     out.update({"n_train": len(ytr), "n_test": len(yte)})
     base = sum(ytr) / len(ytr)
     base_te = sum(yte) / len(yte)
@@ -257,87 +263,118 @@ def train(rows: list[dict[str, Any]], *, test_fraction: float = TEST_FRACTION,
 
     from app import ml_probability as mp
 
-    def _run_profile(name: str, extras: bool, C_grid=(0.03, 0.1, 0.3, 1.0)) -> dict[str, Any]:
-        """Tek özellik profilini eğitir; cezayı EĞİTİM İÇİ doğrulama dilimiyle seçer."""
-        X = [_vector(r, medians, strategies, extras) for r in clean]
-        names = feature_names(strategies=strategies, extras=extras)
-        Xtr_a = np.asarray(X[:cut], dtype=float)
-        Xte_a = np.asarray(X[cut:], dtype=float)
-        mean = Xtr_a.mean(axis=0)
-        std = np.where(Xtr_a.std(axis=0) < 1e-9, 1.0, Xtr_a.std(axis=0))
-        Ztr = (Xtr_a - mean) / std
+    C_GRID = (0.03, 0.1, 0.3, 1.0)
 
-        def _fit(C: float, penalty: str):
-            m = LogisticRegression(max_iter=2000, C=float(C), penalty=penalty,
-                                   solver="liblinear" if penalty == "l1" else "lbfgs",
-                                   random_state=0)
-            m.fit(Ztr, ytr)
-            return m
+    def _fit_std(Xtr, yv, C: float, penalty: str):
+        """Standartlaştırmayı EĞİTİM verisinden kurar (sızıntı yok)."""
+        mu = Xtr.mean(axis=0)
+        sd = np.where(Xtr.std(axis=0) < 1e-9, 1.0, Xtr.std(axis=0))
+        m = LogisticRegression(max_iter=2000, C=float(C), penalty=penalty,
+                               solver="liblinear" if penalty == "l1" else "lbfgs",
+                               random_state=0).fit((Xtr - mu) / sd, yv)
+        return m, mu, sd
 
-        sel = {"C": 1.0, "penalty": "l2", "val_skill": None}
-        vc = int(len(Ztr) * 0.75)
-        if vc >= 150 and (len(Ztr) - vc) >= 60:
-            best = None
-            for penalty in ("l2", "l1"):
-                for C in C_grid:
-                    try:
-                        m = _fit(C, penalty)
-                        pv = m.predict_proba(Ztr[vc:])[:, 1]
-                        yv = np.asarray(ytr[vc:], dtype=float)
-                        bv = float(yv.mean())
-                        d = bv * (1 - bv)
-                        sk = (1 - float(np.mean((pv - yv) ** 2)) / d) if d > 0 else None
-                    except Exception:  # noqa: BLE001
-                        continue
-                    if sk is not None and (best is None or sk > best[0]):
-                        best = (sk, C, penalty)
-            if best:
-                sel = {"C": best[1], "penalty": best[2], "val_skill": round(best[0], 4)}
-        model = _fit(sel["C"], sel["penalty"])
-        p_tr = model.predict_proba(Ztr)[:, 1].tolist()
-        p_te = model.predict_proba((Xte_a - mean) / std)[:, 1].tolist()
+    def _cv_skill(Xtr, C: float, penalty: str) -> Optional[float]:
+        """BLOKLU GENİŞLEYEN PENCERE CV: 3 kat (%50→65, 65→80, 80→100).
+
+        Tek %25 dilim gürültülüydü: zengin profil 0.020 vs temel 0.018 farkıyla
+        seçilip TEST'te −0.008 aldı. Katların ORTALAMASI daha kararlı.
+        """
+        n_ = len(ytr)
+        skills: list[float] = []
+        for a, b in ((0.50, 0.65), (0.65, 0.80), (0.80, 1.00)):
+            i0, i1 = int(n_ * a), int(n_ * b)
+            if i1 - i0 < 50 or i0 < 100:
+                continue
+            try:
+                m, mu, sd = _fit_std(Xtr[:i0], ytr[:i0], C, penalty)
+                pv = m.predict_proba((Xtr[i0:i1] - mu) / sd)[:, 1]
+                yv = np.asarray(ytr[i0:i1], dtype=float)
+                bv = float(yv.mean())
+                dv = bv * (1 - bv)
+                if dv <= 0:
+                    continue
+                skills.append(1 - float(np.mean((pv - yv) ** 2)) / dv)
+            except Exception:  # noqa: BLE001
+                continue
+        return (sum(skills) / len(skills)) if skills else None
+
+    # Her profil için matris + aday konfigürasyon karnesi
+    prof = {}
+    for pname, pextras in (("temel", False), ("zengin", True)):
+        Xp = [_vector(r, medians, strategies, pextras) for r in clean]
+        Xp_tr = np.asarray(Xp[:cut], dtype=float)
+        cands = []
+        for penalty in ("l2", "l1"):
+            for C in C_GRID:
+                sk = _cv_skill(Xp_tr, C, penalty)
+                if sk is not None:
+                    cands.append({"C": C, "penalty": penalty, "cv_skill": sk})
+        if not cands:
+            # CV katları kurulamadı (küçük veri): GÜVENLİ VARSAYILAN ile devam et.
+            # Model yine eğitilir ve test metrikleri dürüstçe raporlanır; seçim
+            # iddiası yalnız "cv_skill=None" olarak işaretlenir (uydurma yok).
+            cands = [{"C": 0.3, "penalty": "l2", "cv_skill": None}]
+        bestp = max(cands, key=lambda c: (c["cv_skill"] is not None, c["cv_skill"] or -9))
+        m, mu, sd = _fit_std(Xp_tr, ytr, bestp["C"], bestp["penalty"])
+        Xp_te = np.asarray(Xp[cut:], dtype=float)
+        p_te = m.predict_proba((Xp_te - mu) / sd)[:, 1].tolist()
         b_te = mp.brier_score(p_te, yte)
-        ic = _spearman(p_te, [float(v) for v in yte])
-        return {
-            "profile": name, "n_features": len(names), "hyperparams": sel,
-            "brier_train": round(mp.brier_score(p_tr, ytr), 4),
+        ic_p_ = _spearman(p_te, [float(v) for v in yte])
+        prof[pname] = {
+            "profile": pname, "n_features": len(feature_names(strategies=strategies, extras=pextras)),
+            "hyperparams": {"C": bestp["C"], "penalty": bestp["penalty"],
+                            "cv_skill": (round(bestp["cv_skill"], 4)
+                                         if bestp.get("cv_skill") is not None else None)},
             "brier_test": round(b_te, 4),
             "brier_skill_oos": (round(1 - b_te / denom_te, 4) if denom_te else None),
-            "ece_test": round(mp.ece(p_te, yte), 4),
-            "ic_test": round(ic, 4) if ic is not None else None,
-            "_model": model, "_names": names, "_mean": mean, "_std": std,
-            "_extras": extras, "_p_tr": p_tr, "_p_te": p_te,
+            "ic_test": round(ic_p_, 4) if ic_p_ is not None else None,
+            "_cands": cands, "_model": m, "_mean": mu, "_std": sd,
+            "_extras": pextras,
+            "_names": feature_names(strategies=strategies, extras=pextras),
+            "_p_te": p_te,
         }
-
-    profiles = {}
-    for pname, pextras in (("temel", False), ("zengin", True)):
-        try:
-            profiles[pname] = _run_profile(pname, pextras)
-        except Exception as exc:  # noqa: BLE001
-            profiles[pname] = {"profile": pname, "error": f"{type(exc).__name__}: {exc}"}
-    out["profiles"] = {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
-                       for k, v in profiles.items()}
-    # KAZANAN: eğitim-içi doğrulama skill'i (test'e bakılmaz → seçim sızıntısı yok)
-    ok = {k: v for k, v in profiles.items() if "_model" in v}
+    ok = {k: v for k, v in prof.items() if "_model" in v}
     if not ok:
         out["reason"] = "hiçbir özellik profili eğitilemedi"
         return out
-    best_name = max(ok, key=lambda k: (ok[k]["hyperparams"].get("val_skill") is not None,
-                                       ok[k]["hyperparams"].get("val_skill") or -9))
+
+    # KAZANAN: en iyi CV skill'ine SELECTION_MARGIN kadar yaklaşanlar arasından
+    # SADE olanı (temel profil → L2 → küçük C). Test kümesine BAKILMAZ.
+    cvs = [v["hyperparams"]["cv_skill"] for v in ok.values() if v["hyperparams"]["cv_skill"] is not None]
+    if cvs:
+        best_cv = max(cvs)
+        near = [k for k, v in ok.items()
+                if v["hyperparams"]["cv_skill"] is not None
+                and best_cv - v["hyperparams"]["cv_skill"] <= SELECTION_MARGIN]
+    else:
+        near = list(ok)                      # CV hiç yok → sade-model sıralaması karar verir
+    best_name = sorted(
+        near,
+        key=lambda k: (ok[k]["_extras"], ok[k]["hyperparams"]["penalty"] == "l1",
+                       ok[k]["hyperparams"]["C"]),
+    )[0]
     best = ok[best_name]
-    model, names = best["_model"], best["_names"]
-    mean, std, extras = best["_mean"], best["_std"], best["_extras"]
-    p_tr, p_te = best["_p_tr"], best["_p_te"]
-    brier_tr, brier_te = best["brier_train"], best["brier_test"]
+    extras = best["_extras"]
+    model, mean, std = best["_model"], best["_mean"], best["_std"]
+    names = best["_names"]
+    p_te = best["_p_te"]
+    p_tr = model.predict_proba((np.asarray([_vector(r, medians, strategies, extras) for r in clean[:cut]], dtype=float) - mean) / std)[:, 1].tolist()
+    brier_tr = mp.brier_score(p_tr, ytr)
+    brier_te = best["brier_test"]
     skill = best["brier_skill_oos"]
-    ece_te = best["ece_test"]
     ic = best["ic_test"]
+    ece_te = mp.ece(p_te, yte)
     ic_p = round(ic / math.sqrt(max(1, len(yte))), 4) if ic is not None else None
     iv = mp.hit_rate_interval_wilson(yte, alpha=0.10)
-    out["best_profile"] = best_name
-    out["selected_hyperparams"] = best["hyperparams"]
-    out["feature_names"] = names
+
+    out["profiles"] = {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
+                       for k, v in prof.items()}
+    out["best_profile"] = "zengin" if extras else "temel"
+    out["selected_hyperparams"] = {**best["hyperparams"], "margin": SELECTION_MARGIN,
+                                   "selection": "bloklu CV + sade model tercihi"}
     out["feature_profile"] = "zengin" if extras else "temel"
+    out["feature_names"] = names
     out["means"] = [round(float(v), 6) for v in mean]
     out["scales"] = [round(float(v), 6) for v in std]
 

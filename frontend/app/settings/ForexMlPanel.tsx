@@ -33,7 +33,7 @@ interface TrainReport {
   models?: Record<string, { brier_test?: number; brier_skill_oos?: number | null; ic_test?: number | null }>;
   best_model?: string; best_profile?: string;
   profiles?: Record<string, { n_features?: number; brier_skill_oos?: number | null; ic_test?: number | null; brier_test?: number }>;
-  selected_hyperparams?: { C?: number; penalty?: string; val_skill?: number | null };
+  selected_hyperparams?: { C?: number; penalty?: string; val_skill?: number | null; cv_skill?: number | null; margin?: number; selection?: string };
   feature_profile?: string;
   wilson?: { n: number; hit_rate: number; lo: number; hi: number } | null;
   error?: string;
@@ -198,8 +198,8 @@ export default function ForexMlPanel() {
                   </table>
                   {report.selected_hyperparams && (
                     <p className="mt-2 text-2xs text-bunker-muted">
-                      seçilen ceza: C={report.selected_hyperparams.C} · {report.selected_hyperparams.penalty?.toUpperCase()}
-                      {report.selected_hyperparams.val_skill != null ? ` · doğrulama skill ${Number(report.selected_hyperparams.val_skill).toFixed(3)}` : ""}
+                      seçilen: C={report.selected_hyperparams.C} · {report.selected_hyperparams.penalty?.toUpperCase()}
+                      {(report.selected_hyperparams.cv_skill ?? report.selected_hyperparams.val_skill) != null ? ` · CV skill ${Number(report.selected_hyperparams.cv_skill ?? report.selected_hyperparams.val_skill).toFixed(3)}` : ""}
                     </p>
                   )}
                 </div>
