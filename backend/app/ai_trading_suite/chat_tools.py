@@ -509,37 +509,101 @@ def _detect_asset_type(symbol: str, explicit: Optional[str] = None) -> str:
     return "SPOT"
 
 
-async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
-    raw_sym = str(args.get("symbol") or "BTCUSDT").replace("_", "").upper()
-    asset_type = _detect_asset_type(raw_sym, args.get("asset_type"))
-    proposed_action = str(args.get("proposed_action") or "BUY").upper()
+def _real_inputs_from_analysis(a: dict) -> Optional[dict]:
+    """`forex_research.analyze_symbol` çıktısını 21-AI motorunun girdilerine çevirir.
 
-    price = 68000.0 if "BTC" in raw_sym else (2750.0 if "XAU" in raw_sym else (1.0850 if "EUR" in raw_sym else 100.0))
-    atr = price * 0.008
+    NEDEN (2026-11-12): bu araç motora SABİT girdiler veriyordu — 4 gösterge hep
+    +0.75/+0.70/+0.85/+0.60 (boğa), `rsi_value=56`, `price_change_pct=1.4`,
+    `volume_ratio=1.9`, `quant_z_score=-0.2`, uydurma emir defteri ve
+    `proposed_action` varsayılanı **BUY**. Sonuç: "21 AI Konsensüsü" her sembolde
+    aynı sayıları (Qlib 65,7 · R:R 1,57 · Kelly 863,06) veriyordu; sembole
+    bakmıyordu. Artık gerçek analizden türetiliyor; veri yoksa konsensüs ÜRETİLMEZ.
+    """
+    frames = (a or {}).get("frames") or {}
+    f1 = frames.get("1h") or frames.get("4h")
+    if not f1:
+        return None
+    price = float(a.get("price") or f1.get("price") or 0.0)
+    atr = float(f1.get("atr") or 0.0) or max(price * 0.002, 1e-9)
+    ind1 = ((a.get("indicators") or {}).get("1h")) or {}
 
+    def _clamp(v: float, lo: float = -1.0, hi: float = 1.0) -> float:
+        return max(lo, min(hi, v))
+
+    inds: List[IndicatorEvaluation] = []
+    st = (ind1.get("supertrend") or {}).get("yon")
+    if st:
+        inds.append(IndicatorEvaluation(indicator_name="Supertrend",
+                                        signal=1.0 if st in ("yukari", "up") else -1.0, weight=1.2))
+    sr = ind1.get("stoch_rsi") or {}
+    if sr.get("k") is not None:
+        # aşırı alım → aşağı baskı (-), aşırı satım → yukarı (+)
+        inds.append(IndicatorEvaluation(indicator_name="StochRSI",
+                                        signal=_clamp((50.0 - float(sr["k"])) / 50.0), weight=0.8))
+    if ind1.get("cci20") is not None:
+        inds.append(IndicatorEvaluation(indicator_name="CCI20",
+                                        signal=_clamp(float(ind1["cci20"]) / 200.0), weight=0.7))
+    if f1.get("bb_pos") is not None:
+        inds.append(IndicatorEvaluation(indicator_name="Bollinger",
+                                        signal=_clamp((0.5 - float(f1["bb_pos"])) * 2.0), weight=0.7))
+    mh = f1.get("macd_hist")
+    if mh is not None:
+        inds.append(IndicatorEvaluation(indicator_name="MACD_hist",
+                                        signal=1.0 if float(mh) > 0 else -1.0, weight=1.0))
+    e20, e50 = f1.get("ema20"), f1.get("ema50")
+    if e20 and e50:
+        inds.append(IndicatorEvaluation(indicator_name="EMA20_50",
+                                        signal=1.0 if float(e20) > float(e50) else -1.0, weight=1.1))
+
+    # Fiyat değişimi: 1h mumlarından son 20 bar
+    pct = 0.0
+    candles = ((a.get("candles") or {}).get("1h")) or []
     try:
-        from app import analyzer
-        if asset_type == "SPOT":
-            c = analyzer.candles.get(raw_sym, [])
-            if c:
-                price = float(c[-1].get("close") or price)
-        elif asset_type == "FOREX":
+        if len(candles) >= 20 and float(candles[-20]["close"]) > 0:
+            pct = (float(candles[-1]["close"]) / float(candles[-20]["close"]) - 1.0) * 100.0
+    except Exception:  # noqa: BLE001
+        pct = 0.0
+
+    bias = str(a.get("bias") or "BEKLE").upper()
+    return {
+        "price": price,
+        "atr": atr,
+        "indicators": inds,
+        "rsi_value": float(f1.get("rsi") or 50.0),
+        "trend_slope": ((float(e20) - float(e50)) / float(e50)) if (e20 and e50) else 0.0,
+        "quant_z_score": _clamp((price - float(e20)) / atr, -3.0, 3.0) if e20 else 0.0,
+        "price_change_pct": round(pct, 3),
+        # Hacim/sosyal veri FOREX'te yok: uydurmak yerine nötr + not.
+        "volume_ratio": 1.0,
+        "social_buzz": 0.5,
+        "proposed_action": bias if bias in ("BUY", "SELL") else "WAIT",
+        "notes": ["hacim oranı verisi yok (nötr 1,0)", "sosyal buzz verisi yok (nötr 0,5)"],
+        "indicators_count": len(inds),
+    }
+
+
+async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
+    raw_sym = str(args.get("symbol") or "").replace("_", "").upper()
+    if not raw_sym:
+        return {"ok": False, "reason": "sembol verilmedi"}
+    asset_type = _detect_asset_type(raw_sym, args.get("asset_type"))
+
+    real = None
+    if asset_type == "FOREX":
+        try:
             from app import forex_research
             a = await forex_research.run_blocking(forex_research.analyze_symbol, raw_sym)
-            if a.get("ok"):
-                price = float(a.get("price") or price)
-                atr = float(a.get("stop_distance") or atr)
-    except Exception:
-        pass
+            if a and a.get("ok"):
+                real = _real_inputs_from_analysis(a)
+        except Exception:  # noqa: BLE001
+            real = None
+    if not real or not real.get("indicators"):
+        # FAIL-CLOSED: sabit girdilerle "konsensüs" üretmek sahtekârlıktır.
+        return {"ok": False,
+                "reason": (f"{raw_sym} için gerçek gösterge verisi alınamadı — "
+                           "21-AI konsensüsü ÜRETİLMEDİ (sabit girdiyle onay verilmez)")}
 
-    indicators = [
-        IndicatorEvaluation(indicator_name="ZL_MACD", signal=0.75, weight=1.5),
-        IndicatorEvaluation(indicator_name="WaveTrend", signal=0.70, weight=1.2),
-        IndicatorEvaluation(indicator_name="Supertrend", signal=0.85, weight=1.0),
-        IndicatorEvaluation(indicator_name="StochRSI", signal=0.60, weight=0.8),
-    ]
-
-    macro_events = []
+    macro_events: List[MacroEvent] = []
     try:
         from app.forex_news import get_economic_calendar
         events = await get_economic_calendar(limit=5)
@@ -548,62 +612,94 @@ async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
                 event_name=ev.get("event") or "Economic Event",
                 currency=ev.get("currency") or "USD",
                 impact=ev.get("impact") or "MEDIUM",
-                sentiment_score=0.1,
-                minutes_until_event=ev.get("minutes_until")
-            ))
-    except Exception:
+                sentiment_score=0.0,
+                minutes_until_event=ev.get("minutes_until")))
+    except Exception:  # noqa: BLE001
         pass
-
-    if not macro_events:
-        macro_events.append(MacroEvent(
-            event_name="FOMC Outlook Monitor",
-            currency="USD",
-            impact="LOW",
-            sentiment_score=0.05,
-            minutes_until_event=180
-        ))
 
     req = UnifiedEvaluationRequest(
         symbol=raw_sym,
         asset_type=asset_type,
-        current_price=price,
-        atr=atr,
-        indicators=indicators,
+        current_price=float(real["price"]),
+        atr=float(real["atr"]),
+        indicators=real["indicators"],
         macro_events=macro_events,
-        orderbook_bids=[(price * 0.9998, 15.0), (price * 0.9995, 25.0)],
-        orderbook_asks=[(price * 1.0002, 10.0), (price * 1.0005, 12.0)],
-        price_change_pct=1.4,
-        volume_ratio=1.9,
-        social_buzz=0.55,
-        quant_z_score=-0.2,
-        rsi_value=56.0,
-        trend_slope=0.012,
-        proposed_action=proposed_action,
-        daily_drawdown_pct=0.4,
-        account_margin_used_pct=3.5,
-        spread_pips_or_pct=0.0003 if asset_type == "SPOT" else 1.2
+        # L2 derinlik YOK: uydurma emir defteri göndermek yerine boş bırakılır.
+        orderbook_bids=[],
+        orderbook_asks=[],
+        price_change_pct=float(real["price_change_pct"]),
+        volume_ratio=float(real["volume_ratio"]),
+        social_buzz=float(real["social_buzz"]),
+        quant_z_score=float(real["quant_z_score"]),
+        rsi_value=float(real["rsi_value"]),
+        trend_slope=float(real["trend_slope"]),
+        proposed_action=str(real["proposed_action"]),
+        daily_drawdown_pct=float(args.get("daily_drawdown_pct") or 0.0),
+        account_margin_used_pct=float(args.get("account_margin_used_pct") or 0.0),
+        spread_pips_or_pct=float(args.get("spread") or 1.2),
     )
 
     resp = orchestrator.evaluate(req)
     data = asdict(resp)
     data["ok"] = True
+    data["inputs_provenance"] = {
+        "indicators": real["indicators_count"],
+        "rsi": round(real["rsi_value"], 1),
+        "proposed_action": real["proposed_action"],
+        "notes": real["notes"],
+    }
     return data
 
 
 async def execute_hedge_fund_council(args: dict) -> dict:
-    raw_sym = str(args.get("symbol") or "BTCUSDT").replace("_", "").upper()
+    """Hedge Fund Konseyi — girdiler GERÇEK analizden (2026-11-12).
+
+    Önceki hâli sabitti: macro_score=0.45, quant_z=-0.3, rsi=55, slope=0.01 →
+    her sembolde aynı oylar (Soros NEUTRAL · Simons BULLISH · Dalio NEUTRAL).
+    Veri yoksa konsey çağrılmaz (fail-closed).
+    """
+    raw_sym = str(args.get("symbol") or "").replace("_", "").upper()
+    if not raw_sym:
+        return {"ok": False, "reason": "sembol verilmedi"}
     asset_type = _detect_asset_type(raw_sym, args.get("asset_type"))
+
+    real = None
+    if asset_type == "FOREX":
+        try:
+            from app import forex_research
+            a = await forex_research.run_blocking(forex_research.analyze_symbol, raw_sym)
+            if a and a.get("ok"):
+                real = _real_inputs_from_analysis(a)
+                real["_score"] = float((a.get("score") or 0.0))
+                # Oynaklık rejimi: GÜÇLÜ TREND ≠ PANİK. ADX trend gücüdür; rejim için
+                # fiyat değişimi ve ATR/price kullanılır (ADX 47 olan sakin trend
+                # "EXTREME" sayılıp Dalio'yu çekimser bırakıyordu).
+                atr_pct = (float(real["atr"]) / float(real["price"]) * 100.0) if real["price"] else 0.0
+                real["vol_regime"] = ("EXTREME"
+                                      if abs(float(real["price_change_pct"])) > 5.0 or atr_pct > 1.5
+                                      else "NORMAL")
+        except Exception:  # noqa: BLE001
+            real = None
+    if not real or not real.get("indicators"):
+        return {"ok": False,
+                "reason": (f"{raw_sym} için gerçek veri alınamadı — konsey çağrılmadı "
+                           "(sabit girdiyle oy üretilmez)")}
+
     res = council.deliberate(
         symbol=raw_sym,
         asset_type=asset_type,
-        macro_score=0.45,
-        quant_z_score=-0.3,
-        volatility_regime="NORMAL",
-        rsi_value=55.0,
-        trend_slope=0.01
+        macro_score=max(-1.0, min(1.0, float(real["_score"]) / 6.0)),  # teknik skor -6..+6 → -1..+1
+        quant_z_score=float(real["quant_z_score"]),
+        volatility_regime=str(real.get("vol_regime") or "NORMAL"),
+        rsi_value=float(real["rsi_value"]),
+        trend_slope=float(real["trend_slope"]),
     )
     data = asdict(res)
     data["ok"] = True
+    data["inputs_provenance"] = {"rsi": round(real["rsi_value"], 1),
+                                 "quant_z": round(float(real["quant_z_score"]), 2),
+                                 "macro_score": round(max(-1.0, min(1.0, real["_score"] / 6.0)), 2),
+                                 "vol_regime": real.get("vol_regime")}
     return data
 
 
