@@ -98,3 +98,66 @@ async def retail_sentiment_snapshot() -> Dict[str, Any]:
         "calls_today": st.get("calls_today"),
         "crowded": crowded[:8],
     }
+
+
+#: Bileşik sentiment endeksinin loglanacağı semboller (canlı evrenin çekirdeği).
+SENTIMENT_LOG_SYMBOLS = [
+    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
+    "EURJPY", "GBPJPY", "EURGBP", "XAUUSD", "US30", "NAS100", "JP225", "UK100", "DE40",
+]
+
+
+@routine("sentiment_index_log",
+         "Bileşik sentiment skorunu loglar (−100…+100) — ileri getiri ölçümü için",
+         interval_sec=1800,
+         output_note="sentiment_index_history satır sayısı + en uç skorlar",
+         tags=["sentiment", "context", "measurement"])
+async def sentiment_index_log() -> Dict[str, Any]:
+    """Skoru **geçmişe yazar** — 4-6 hafta sonra IC ölçülebilsin.
+
+    Neden rutin: takvim `actual` değerleri, COT raporu ve perakende turu o anki
+    hâlleridir; geriye dönük skor üretilemez. Panel açık olmasa da birikmeli.
+    Ağırlıklar yargıdır; ölçüm `scripts/sentiment_index_edge.py` ile yapılır.
+    """
+    import asyncio
+    import time
+
+    from app import database, sentiment_index as si
+
+    def _compute() -> list:
+        # Takvimi ısıt: 24s yaş-ağırlıklı ölçüm için güncel actual'lar şart.
+        try:
+            from app import forex_news_bias as nb
+            from app.forex_news import get_forex_news
+            events = asyncio.run(get_forex_news())
+            if events:
+                nb.refresh_biases(events, time.time(), window_sec=1800.0)
+                si.refresh_calendar(events, time.time())
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("sentiment rutin takvim ısıtma atlandı: %s", exc)
+        try:
+            from app import retail_sentiment as rs
+            rs.warm_sync()
+        except Exception:  # noqa: BLE001
+            pass
+        out = []
+        for sym in SENTIMENT_LOG_SYMBOLS:
+            try:
+                r = si.summarize(sym)
+                out.append({"symbol": r["symbol"], "score": r["score"],
+                            "coverage": r["coverage"], "label": r["label"],
+                            "components": {k: v.get("score")
+                                           for k, v in r["components"].items() if v["available"]}})
+            except Exception:  # noqa: BLE001 — tek sembol turu düşürmesin
+                continue
+        return out
+
+    rows = await asyncio.to_thread(_compute)
+    n = await database.save_sentiment_index(rows, time.time()) if rows else 0
+    ranked = sorted(rows, key=lambda r: -abs(r["score"]))
+    return {
+        "ok": bool(rows),
+        "logged": n,
+        "symbols": len(rows),
+        "extremes": [{"symbol": r["symbol"], "score": r["score"]} for r in ranked[:5]],
+    }

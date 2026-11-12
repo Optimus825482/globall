@@ -7657,3 +7657,79 @@ async def get_last_close_prices(symbols: List[str], timeframe: str = "5m") -> Di
         return {str(dict(r)["symbol"]): float(dict(r)["close"] or 0.0)
                 for r in rows if float(dict(r)["close"] or 0.0) > 0}
     return await _run_db(op)
+
+
+# ---------------------------------------------------------------- SENTIMENT INDEX HISTORY
+# Bileşik sentiment skorunun zaman serisi (2026-11-12). NEDEN: skorun "işe yarıyor
+# mu" sorusu ancak ileri getiriyle korelasyonu ölçülerek cevaplanır; geçmiş geriye
+# dönük üretilemez (takvim actual'ları, COT raporu, perakende turu o anki hâlidir).
+_SENT_IDX_SCHEMA_READY = False
+
+
+def _ensure_sentiment_index_schema(conn) -> None:
+    global _SENT_IDX_SCHEMA_READY
+    if _SENT_IDX_SCHEMA_READY:
+        return
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sentiment_index_history ("
+        " symbol TEXT NOT NULL, fetched_at DOUBLE PRECISION NOT NULL,"
+        " score DOUBLE PRECISION NOT NULL, coverage DOUBLE PRECISION NOT NULL,"
+        " label TEXT, components_json TEXT,"
+        " PRIMARY KEY (symbol, fetched_at))")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS sentiment_index_symbol_idx "
+        "ON sentiment_index_history(symbol, fetched_at DESC)")
+    conn.commit()
+    _SENT_IDX_SCHEMA_READY = True
+
+
+async def save_sentiment_index(rows: List[Dict[str, Any]], fetched_at: float) -> int:
+    """Bir turun skorlarını yazar (idempotent: aynı damga atlanır)."""
+    import json as _json
+
+    def op(conn):
+        _ensure_sentiment_index_schema(conn)
+        n = 0
+        for r in rows or []:
+            try:
+                conn.execute(
+                    "INSERT INTO sentiment_index_history"
+                    " (symbol, fetched_at, score, coverage, label, components_json)"
+                    " VALUES (?,?,?,?,?,?) ON CONFLICT (symbol, fetched_at) DO NOTHING",
+                    (str(r["symbol"]), float(fetched_at), float(r["score"]),
+                     float(r.get("coverage") or 0.0), str(r.get("label") or ""),
+                     _json.dumps(r.get("components") or {}, ensure_ascii=False, default=str)[:4000]))
+                n += 1
+            except Exception:  # noqa: BLE001 — tek bozuk satır turu düşürmesin
+                continue
+        conn.commit()
+        return n
+    return await _run_db(op)
+
+
+async def get_sentiment_index_history(symbol: str, days: int = 60,
+                                      limit: int = 20000) -> List[Dict[str, Any]]:
+    """Tek sembolün skor geçmişi (yeni → eski). Ölçüm betikleri bunu okur."""
+    def op(conn):
+        _ensure_sentiment_index_schema(conn)
+        cutoff = time.time() - max(1, int(days)) * 86400.0
+        rows = conn.execute(
+            "SELECT symbol, fetched_at, score, coverage, label, components_json"
+            " FROM sentiment_index_history WHERE symbol = ? AND fetched_at >= ?"
+            " ORDER BY fetched_at DESC LIMIT ?",
+            (str(symbol).upper(), cutoff, max(1, min(int(limit), 100000)))).fetchall()
+        return [dict(r) for r in rows]
+    return await _run_db(op)
+
+
+async def get_sentiment_index_stats() -> Dict[str, Any]:
+    """Panel/sağlık: kaç sembol, kaç tur, hangi aralık."""
+    def op(conn):
+        _ensure_sentiment_index_schema(conn)
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COUNT(DISTINCT symbol) AS syms, MIN(fetched_at) AS first_ts,"
+            " MAX(fetched_at) AS last_ts FROM sentiment_index_history").fetchone()
+        d = dict(row) if row else {}
+        return {"rows": int(d.get("n") or 0), "symbols": int(d.get("syms") or 0),
+                "first_ts": d.get("first_ts"), "last_ts": d.get("last_ts")}
+    return await _run_db(op)
