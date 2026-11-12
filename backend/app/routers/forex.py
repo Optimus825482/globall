@@ -6097,8 +6097,20 @@ class ForexAutoPaperSettings(BaseModel):
     donchian_adx_min: float = Field(18.0, ge=0.0, le=60.0, description="Donchian+ADX modu ADX(14) eşiği (2026-10-10 denetim P2-9: kodda sabitti, diğer akışlar ayardan okuyordu — kalibre değer 18.0 korunur)")
     donchian_max_per_day: int = Field(2, ge=0, le=20, description="Donchian+ADX modu: yön başına günde azami giriş (2026-10-10 denetim P2-9: kodda sabitti — kalibre değer 2 korunur; 0 = sınırsız)")
     ema_adx_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "NAS100"],
-        description="EMA+ADX geri-çekilme skalpi (M5) akışının AKTİF olduğu semboller (2026-10-08: XAUUSD 5m; 60g +$184.56 + Tem15 +$153.90 iki bağımsız pencerede pozitif). Klasik ve donchian akışları bu sembollerde KORUNUR (üç akış birlikte). 2026-10-13: NAS100 (= MT5 'USTEC') eklendi — izole 2-pencere pozitif (W1 +$3.25 n33, W2 +$71.00 n37 WR %89.2).",
+        default_factory=lambda: ["XAUUSD", "NAS100", "USDJPY", "US30"],
+        description=(
+            "EMA+ADX geri-çekilme skalpi (M5) akışının AKTİF olduğu semboller. "
+            "2026-11-12 ÖLÇÜMLE GENİŞLETİLDİ (düzeltilmiş maliyet + gerçek UTC saat, "
+            "iki pencere de aynı yönde — docs/GIRIS_MODU_YENIDEN_TARAMA): "
+            "POZİTİF → XAUUSD (+20.546/+15.475), USDJPY (+2.521/+3.003) EKLENDİ, "
+            "NAS100 (+1.875/+1.217), US30 (+862/+508) EKLENDİ. "
+            "Ölçülen NEGATİF (listeye ALINMADI) → GBPUSD (−2.530/−2.291), "
+            "BTCUSD (−1.459/−1.248), USDCHF (−761/−1.485), AUDCAD, AUDUSD, EURJPY. "
+            "Klasik ve donchian akışları bu sembollerde KORUNUR (akışlar birlikte çalışır). "
+            "DİKKAT: yalnız VARSAYILAN — panelde kayıtlı ema_adx_symbols varsa onu "
+            "değiştirin, kod varsayılanı kayıtlı ayarı EZMEZ. "
+            "Geri alma: ['XAUUSD','NAS100']."
+        ),
     )
     ema_adx_enabled: bool = Field(True, description="EMA+ADX geri-çekilme (M5) akışı: EMA8/21/50 dizilimi + ADX + EMA21 geri çekilmesi + trend yönünde onay barı")
     ema_adx_adx_min: float = Field(25.0, ge=0.0, le=60.0, description="EMA+ADX: ADX(14) trend gücü eşiği (spec: 25)")

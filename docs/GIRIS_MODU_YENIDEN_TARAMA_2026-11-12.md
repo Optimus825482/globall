@@ -135,7 +135,38 @@ olup listede olmayan ya da ölçülen negatif bir sembol geri eklenirse kırıl�
 (`lb_symbols`) kod varsayılanı onu **EZMEZ** → panelden aynı listeyi girmek gerekir.
 Geri alma: eski liste yukarıda.
 
-## 9) Üretilen dosyalar
+## 9) `ema_adx_pullback` — o da ZATEN CANLI; listesi EKSİK
+
+`ema_adx_enabled = True` (2026-10-08'den beri). Canlı liste: `["XAUUSD","NAS100"]`.
+
+Düzeltilmiş ayar, iki pencerede sembol bazlı net ($):
+
+| Sembol | IS (son 30g) | OOS (önceki 30g) | Canlıda | Karar |
+|---|---|---|---|---|
+| XAUUSD | +20.546 | +15.475 | ✅ | kalsın |
+| **USDJPY** | **+2.521** | **+3.003** | ❌ | **EKLENDİ** |
+| NAS100 | +1.875 | +1.217 | ✅ | kalsın |
+| **US30** | **+862** | **+508** | ❌ | **EKLENDİ** |
+| GBPJPY | +86 | +9 | ❌ | eklenmedi (marjinal) |
+| EURJPY | −70 | −140 | ❌ | zaten yok |
+| AUDUSD | −500 | −710 | ❌ | zaten yok |
+| AUDCAD | −704 | −670 | ❌ | zaten yok |
+| USDCHF | −761 | −1.485 | ❌ | zaten yok |
+| BTCUSD | −1.459 | −1.248 | ❌ | zaten yok |
+| GBPUSD | −2.530 | −2.291 | ❌ | zaten yok |
+
+**Uygulandı (varsayılan):** `["XAUUSD","NAS100","USDJPY","US30"]`
+Eski liste: `["XAUUSD","NAS100"]` — ikisi de doğruydu, sadece **eksikti**.
+
+Mevcut liste ölçümle çelişmiyordu (XAUUSD/NAS100 iki pencerede de pozitif); eklenenler
+**kanıtlı iki pencere pozitifi**. Risk profili: XAUUSD hâlâ baskın (%85+), USDJPY/US30
+küçük ama tutarlı katkı.
+
+**Test kilidi:** `backend/tests/test_live_arm_symbol_lists.py` (lb + ema_adx birlikte).
+⚠️ **PANEL UYARISI:** yalnız varsayılan değişti; kayıtlı `ema_adx_symbols` panelden
+güncellenmeli. Geri alma: `["XAUUSD","NAS100"]`.
+
+## 10) Üretilen dosyalar
 
 - `outputs/mx_<mod>_{old,new}.json` — ana matris (6 mod × 2 ayar)
 - `outputs/dx_<mod>_{cost,tz}.json` — ayrıştırma (3 mod × 2 ayar)
