@@ -161,3 +161,55 @@ async def sentiment_index_log() -> Dict[str, Any]:
         "symbols": len(rows),
         "extremes": [{"symbol": r["symbol"], "score": r["score"]} for r in ranked[:5]],
     }
+
+
+@routine("arm_live_monitor",
+         "Canlı kol izleme: kol×sembol PF + 'ayar panelden uygulandı mı' kontrolü "
+         "(kill kriteri n≥20 & PF<1,0). Önemliyse push gönderir.",
+         interval_sec=3 * 86400,
+         output_note="kol×sembol n/PF + çıkarılan sembollerde yeni işlem sayısı",
+         tags=["monitor", "arms", "measurement"])
+async def arm_live_monitor() -> Dict[str, Any]:
+    """3 günde bir: 2026-11-12 sembol-listesi değişikliğinin etkisini raporlar.
+
+    Pencere: `ARM_MONITOR_SINCE` (varsayılan 2026-11-12 = ölçüm/ayar tarihi) →
+    tarih sabit, pencere kendiliğinden büyür. Bu sayede "çıkarılan sembolde yeni
+    işlem var mı" kontrolü **değişiklik sonrası** dönemi görür; kayan pencere
+    kullanılsaydı değişiklik öncesi işlemler yanlış alarm üretirdi.
+
+    Önemli sonuç (çıkarılması gereken sembol veya ayar uygulanmamış) varsa push gider.
+    Sonuç her hâlükârda `routine_runs`'a yazılır → Raporlar > Rutinler.
+    """
+    import asyncio
+    import os
+
+    from app import arm_live_monitor as alm
+
+    since = (os.getenv("ARM_MONITOR_SINCE") or "2026-11-12").strip()
+    try:
+        report = await asyncio.to_thread(alm.build_report, days=14, since=since)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "since": since}
+
+    msg = alm.push_message(report)
+    pushed, push_err = False, None
+    if msg:
+        try:
+            from app.alerting import deliver_web_push
+            res = await deliver_web_push(msg, title="Kol izleme raporu",
+                                         url="/forex/reports", tag="arm-live-monitor")
+            pushed = bool((res or {}).get("ok"))
+        except Exception as exc:  # noqa: BLE001
+            push_err = f"{type(exc).__name__}: {exc}"
+
+    return {
+        "ok": True,
+        "since": since,
+        "pushed": pushed,
+        **({"push_error": push_err} if push_err else {}),
+        "karar_gereken": report.get("karar_gereken") or [],
+        "uyarilar": report.get("uyarilar") or [],
+        "semboller": {k: {"n": v["n"], "pf": v["pf"], "verdict": v["verdict"]}
+                      for k, v in (report.get("semboller") or {}).items()},
+        "ayar_kontrolu": report.get("ayar_kontrolu") or {},
+    }
