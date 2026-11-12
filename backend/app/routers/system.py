@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.config import config
 from app import ml_shadow, session_windows, cot_positions, forex_news, geometry_shadow, market_pulse  # gölge kalibrasyon sayaçları + cross-asset nabız
+from app import retail_sentiment  # perakende konumlanma (Myfxbook, bağlam)
 from app import database
 from app.state import market, analyzer
 from app.api_common import _start_background, _background_tasks, rate_limit
@@ -97,7 +98,7 @@ async def system_health():
     # `artifact_loaded=False` görünür ve ham olasılıkla çalıştığı anlaşılır.
     # Yalnız bellek sayaçları — DB/disk okuması YOK.
     ml_calibration_shadow = ml_shadow.counters()
-    return {"status": "degraded" if overall_degraded else "ok", "generated_at": time.time(), "market": {"symbols": len(market.symbols), "tickers": len(market.tickers), "fresh_symbols": fresh_count, "max_ticker_age_sec": max(ages) if ages else None, "timeframes": market.timeframes, "rest_last_event_at": market.rest_last_event_at, "rest_error": market.rest_last_error, "ws_last_event_at": market.ws_last_event_at, "ws_error": market.ws_last_error, "ws_generation": market.connection_generation, "session": session_windows.describe()}, "portfolio": {"open_positions": len(analyzer.positions), "max_open_positions": max_open_json, "pending_paper_orders": len(analyzer.pending_orders)}, "database": {"backend": "postgres", "status": db_status, "postgres_configured": bool(os.getenv("DATABASE_URL", "").strip()), "vector_extension": vector_status}, "embedding": embedding_worker.snapshot(), "websocket_clients": len(ws_manager.active_connections), "llm": {"configured": bool(os.getenv("LLM_ENCRYPTION_KEY", "").strip()), "active": llm_active, "error": llm_error}, "safety": {"paper_only": not real_sell_enabled, "paper_trading_core": True, "real_sell_enabled": real_sell_enabled, "memory_content_untrusted": True, "tool_audit_enabled": True}, "ml_calibration": ml_calibration_shadow, "cross_asset_pulse": market_pulse.cached_summary(), "cot": cot_positions.summary(), "economic_calendar_source": forex_news.investing_block_state(), "geometry_shadow": geometry_shadow.params()}
+    return {"status": "degraded" if overall_degraded else "ok", "generated_at": time.time(), "market": {"symbols": len(market.symbols), "tickers": len(market.tickers), "fresh_symbols": fresh_count, "max_ticker_age_sec": max(ages) if ages else None, "timeframes": market.timeframes, "rest_last_event_at": market.rest_last_event_at, "rest_error": market.rest_last_error, "ws_last_event_at": market.ws_last_event_at, "ws_error": market.ws_last_error, "ws_generation": market.connection_generation, "session": session_windows.describe()}, "portfolio": {"open_positions": len(analyzer.positions), "max_open_positions": max_open_json, "pending_paper_orders": len(analyzer.pending_orders)}, "database": {"backend": "postgres", "status": db_status, "postgres_configured": bool(os.getenv("DATABASE_URL", "").strip()), "vector_extension": vector_status}, "embedding": embedding_worker.snapshot(), "websocket_clients": len(ws_manager.active_connections), "llm": {"configured": bool(os.getenv("LLM_ENCRYPTION_KEY", "").strip()), "active": llm_active, "error": llm_error}, "safety": {"paper_only": not real_sell_enabled, "paper_trading_core": True, "real_sell_enabled": real_sell_enabled, "memory_content_untrusted": True, "tool_audit_enabled": True}, "ml_calibration": ml_calibration_shadow, "cross_asset_pulse": market_pulse.cached_summary(), "retail_sentiment": retail_sentiment.summary(), "cot": cot_positions.summary(), "economic_calendar_source": forex_news.investing_block_state(), "geometry_shadow": geometry_shadow.params()}
 
 @router.get("/api/memory/status")
 async def memory_status():
@@ -293,6 +294,41 @@ async def cot_status():
         "age_days": cot_fetch.artifact_age_days(),
         "stale": cot_fetch.is_stale(),
         "stale_after_days": cot_fetch.STALE_AFTER_DAYS,
+    }
+
+
+@router.get("/api/system/retail-sentiment")
+async def retail_sentiment_status(symbol: str | None = None, limit: int = 12, refresh: bool = False):
+    """Perakende konumlanma (Myfxbook topluluk outlook) — ana sayfa kartı + LLM bağlamı.
+
+    BAĞLAMDIR, KAPI DEĞİL: karar akışını değiştirmez (COT/seans ile aynı sınıf).
+    Tur aralığı 30 dk (ücretsiz kota 100 istek/24s). İstek yolu ağa çıkmaz;
+    tazeleme arka planda yapılır. `refresh=true` yalnız ölçüm/panel için.
+    """
+    from app import retail_sentiment as rs
+
+    if refresh:
+        await asyncio.to_thread(rs.refresh_blocking, True)
+    else:
+        await rs.hydrate_if_empty()   # ilk yüklemede "veri yok" demesin (DB'den)
+        rs.ensure_fresh_async()
+    s = rs.summary(symbol)
+    rows = sorted((rs._state.get("rows") or {}).values(),  # noqa: SLF001
+                  key=lambda r: -int(r.get("total_positions") or 0))[: max(1, min(int(limit), 50))]
+    return {
+        "summary": s,
+        "items": [
+            {
+                "symbol": r["symbol"],
+                "long_pct": r["long_pct"],
+                "short_pct": r["short_pct"],
+                "positions": int(r.get("total_positions") or 0),
+                "crowded": ("LONG" if float(r["long_pct"]) >= rs.RET_SENT_CROWD_PCT
+                            else ("SHORT" if float(r["short_pct"]) >= rs.RET_SENT_CROWD_PCT
+                                  else None)),
+            }
+            for r in rows
+        ],
     }
 
 

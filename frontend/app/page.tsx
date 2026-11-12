@@ -21,6 +21,7 @@ import {
 } from "./lib/calendarOutcome";
 import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 import { Button, Card, DirectionBadge } from "./components/ui";
+import RetailSentimentCard from "./components/RetailSentimentCard";
 
 interface OpenPosition {
   id: string;
@@ -721,6 +722,9 @@ export default function HomePage() {
             )}
           </section>
         </Card>
+
+        {/* PERAKENDE KONUMLANMA — kalabalık hangi tarafta (Myfxbook, BAĞLAM) */}
+        <RetailSentimentCard />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

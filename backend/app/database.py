@@ -7518,3 +7518,113 @@ async def shadow_summary(frozen_id: int):
             "gate_skipped": stats(passed),
         }
     return await _run_db(op)
+
+
+# ---------------------------------------------------------------- RETAIL SENTIMENT
+# Myfxbook topluluk outlook'u (2026-11-12). Ücretsiz API: session ile
+# `get-community-outlook` (100 istek/24s). Session IP'ye bağlı ve ~1 ay geçerli →
+# DB'de tek satırda tutulur, "Invalid session" gelince yenilenir.
+# GEÇMİŞ ŞART: veri geriye dönük alınamıyor; ölçüm (aşırı konumlanma → getiri)
+# ancak bu tablo biriktikten sonra yapılabilir.
+_RETAIL_SCHEMA_READY = False
+
+
+def _ensure_retail_sentiment_schema(conn) -> None:
+    global _RETAIL_SCHEMA_READY
+    if _RETAIL_SCHEMA_READY:
+        return
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS retail_sentiment_history ("
+        " symbol TEXT NOT NULL, fetched_at DOUBLE PRECISION NOT NULL,"
+        " long_pct DOUBLE PRECISION NOT NULL, short_pct DOUBLE PRECISION NOT NULL,"
+        " long_positions INTEGER, short_positions INTEGER, total_positions INTEGER,"
+        " avg_long_price DOUBLE PRECISION, avg_short_price DOUBLE PRECISION,"
+        " source TEXT NOT NULL DEFAULT 'myfxbook',"
+        " PRIMARY KEY (symbol, fetched_at))")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS retail_sentiment_symbol_idx "
+        "ON retail_sentiment_history(symbol, fetched_at DESC)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS retail_sentiment_session ("
+        " id INTEGER PRIMARY KEY, session TEXT NOT NULL,"
+        " created_at DOUBLE PRECISION NOT NULL, source TEXT NOT NULL DEFAULT 'myfxbook')")
+    conn.commit()
+    _RETAIL_SCHEMA_READY = True
+
+
+async def save_retail_sentiment(rows: List[Dict[str, Any]], fetched_at: float) -> int:
+    """Bir çekim turunun sembol satırlarını yazar (idempotent: aynı damga atlanır)."""
+    def op(conn):
+        _ensure_retail_sentiment_schema(conn)
+        n = 0
+        for r in rows or []:
+            try:
+                conn.execute(
+                    "INSERT INTO retail_sentiment_history (symbol, fetched_at, long_pct, short_pct,"
+                    " long_positions, short_positions, total_positions, avg_long_price,"
+                    " avg_short_price, source) VALUES (?,?,?,?,?,?,?,?,?,?)"
+                    " ON CONFLICT (symbol, fetched_at) DO NOTHING",
+                    (str(r["symbol"]), float(fetched_at), float(r["long_pct"]),
+                     float(r["short_pct"]), int(r.get("long_positions") or 0),
+                     int(r.get("short_positions") or 0), int(r.get("total_positions") or 0),
+                     float(r.get("avg_long_price") or 0.0), float(r.get("avg_short_price") or 0.0),
+                     str(r.get("source") or "myfxbook")))
+                n += 1
+            except Exception:  # noqa: BLE001 — tek bozuk satır turu düşürmesin
+                continue
+        conn.commit()
+        return n
+    return await _run_db(op)
+
+
+async def get_retail_sentiment_latest() -> Dict[str, Any]:
+    """Son turun satırları + damgası (yeni → eski, en fazla 200 sembol)."""
+    def op(conn):
+        _ensure_retail_sentiment_schema(conn)
+        row = conn.execute(
+            "SELECT MAX(fetched_at) AS ts FROM retail_sentiment_history").fetchone()
+        ts = dict(row)["ts"] if row else None
+        if ts is None:
+            return {"fetched_at": None, "rows": []}
+        rows = conn.execute(
+            "SELECT symbol, long_pct, short_pct, long_positions, short_positions,"
+            " total_positions, avg_long_price, avg_short_price FROM retail_sentiment_history"
+            " WHERE fetched_at = ? ORDER BY total_positions DESC LIMIT 200", (ts,)).fetchall()
+        return {"fetched_at": float(ts), "rows": [dict(r) for r in rows]}
+    return await _run_db(op)
+
+
+async def get_retail_sentiment_history(symbol: str, days: int = 30, limit: int = 500) -> List[Dict[str, Any]]:
+    """Tek sembolün geçmişi (ölçüm betikleri için; yeni → eski)."""
+    def op(conn):
+        _ensure_retail_sentiment_schema(conn)
+        cutoff = time.time() - max(1, int(days)) * 86400.0
+        rows = conn.execute(
+            "SELECT symbol, fetched_at, long_pct, short_pct, total_positions"
+            " FROM retail_sentiment_history WHERE symbol = ? AND fetched_at >= ?"
+            " ORDER BY fetched_at DESC LIMIT ?",
+            (str(symbol).upper(), cutoff, max(1, min(int(limit), 20000)))).fetchall()
+        return [dict(r) for r in rows]
+    return await _run_db(op)
+
+
+async def save_retail_sentiment_session(session: str) -> None:
+    def op(conn):
+        _ensure_retail_sentiment_schema(conn)
+        conn.execute("DELETE FROM retail_sentiment_session")
+        conn.execute(
+            "INSERT INTO retail_sentiment_session (id, session, created_at, source)"
+            " VALUES (1, ?, ?, 'myfxbook')", (session, time.time()))
+        conn.commit()
+        return 1
+    return await _run_db(op)
+
+
+async def get_retail_sentiment_session() -> Dict[str, Any]:
+    """Kayıtlı session (yoksa boş). `created_at` ile yaş hesaplanır."""
+    def op(conn):
+        _ensure_retail_sentiment_schema(conn)
+        row = conn.execute(
+            "SELECT session, created_at FROM retail_sentiment_session WHERE id = 1").fetchone()
+        return dict(row) if row else {}
+    return await _run_db(op)

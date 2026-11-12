@@ -177,7 +177,8 @@ class TestContextWiring(unittest.TestCase):
         self.assertEqual(
             set(ctx),
             {"seans_ve_likidite", "cot_pozisyonlanma",
-             "istatistiksel_dogrulama", "kuresel_varlik_nabzi"})
+             "istatistiksel_dogrulama", "kuresel_varlik_nabzi",
+             "perakende_konumlanma"})
         self.assertFalse(ctx["kuresel_varlik_nabzi"]["available"])
         self.assertIn("uydurulmaz", ctx["kuresel_varlik_nabzi"]["note"])
 

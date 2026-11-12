@@ -63,3 +63,36 @@ async def llm_calibration_snapshot() -> Dict[str, Any]:
     if summary is None:
         return {"ok": True, "note": "özet fonksiyonu yok — modül API'si değişmiş olabilir"}
     return {"ok": True, "summary": summary}
+
+
+@routine("retail_sentiment",
+         "Perakende konumlanma (Myfxbook topluluk outlook) — 30 dk tur, geçmişi loglar",
+         interval_sec=1800,
+         output_note="retail_sentiment_history satır sayısı + kalabalık pariteler",
+         tags=["sentiment", "context"])
+async def retail_sentiment_snapshot() -> Dict[str, Any]:
+    """Kalabalığın tarafını çeker ve **geçmişe yazar**.
+
+    Panel açık olmasa da log birikmeli: veri geriye dönük alınamıyor, ölçüm
+    ("aşırı konumlanma → ileri getiri") ancak bu tablo biriktikçe yapılabilir.
+    Ücretsiz kota 100 istek/24s → tur aralığı 30 dk (48 istek), modül içinde
+    günlük sert tavan da var. Ağ çağrısı iş parçacığına alınır (olay döngüsü bloklanmaz).
+    """
+    import asyncio
+
+    from app import retail_sentiment as rs
+
+    st = await asyncio.to_thread(rs.refresh_blocking, False)
+    rows = rs._state.get("rows") or {}  # noqa: SLF001 — modül API'si
+    crowded = sorted(
+        ({"symbol": r["symbol"], "long_pct": r["long_pct"]}
+         for r in rows.values() if float(r["long_pct"]) >= rs.RET_SENT_CROWD_PCT
+         or float(r["short_pct"]) >= rs.RET_SENT_CROWD_PCT),
+        key=lambda x: -abs(x["long_pct"] - 50.0))
+    return {
+        "ok": bool(st.get("ok")),
+        "symbols": st.get("symbols"),
+        "error": st.get("error"),
+        "calls_today": st.get("calls_today"),
+        "crowded": crowded[:8],
+    }

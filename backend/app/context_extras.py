@@ -166,13 +166,32 @@ def cross_asset_block() -> dict[str, Any]:
     return {**s, "note": " | ".join(s.get("notes") or []) or "Cross-asset belirgin çapraz sinyal yok."}
 
 
+def retail_block(symbol: str | None = None) -> dict[str, Any]:
+    """Perakende konumlanma (Myfxbook topluluk outlook) — fail-closed.
+
+    2026-11-12: FX'te kalabalık yönü hiçbir yüzeyde yoktu (kriptoda Binance türev
+    verisi var). Bu blok KAPI DEĞİL: karar akışını değiştirmez, yalnız LLM'e
+    "herkes hangi tarafta" bilgisini sayıyla verir.
+    """
+    from app import retail_sentiment as rs
+
+    s = rs.summary(symbol)
+    rs.ensure_fresh_async()  # tur aralığı içindeyse no-op
+    if not s.get("available"):
+        return {**s, "note": f"Perakende konumlanma YOK ({s.get('reason')}) — uydurulmaz."}
+    if s.get("symbol") is None:
+        return {**s, "note": "Sembol Myfxbook kapsamında değil (endeksler yok)."}
+    return {**s, "note": " | ".join(rs.compact_lines(symbol))}
+
+
 def macro_context(symbol: str | None = None, *, now: float | None = None) -> dict[str, Any]:
-    """Dört bloğu tek sözlükte toplar (LLM bağlamına doğrudan gömülebilir)."""
+    """Beş bloğu tek sözlükte toplar (LLM bağlamına doğrudan gömülebilir)."""
     return {
         "seans_ve_likidite": sessions_block(now),
         "cot_pozisyonlanma": cot_block(symbol),
         "istatistiksel_dogrulama": edge_block(),
         "kuresel_varlik_nabzi": cross_asset_block(),
+        "perakende_konumlanma": retail_block(symbol),
     }
 
 
@@ -224,7 +243,22 @@ def compact_lines(symbol: str | None = None) -> list[str]:
         lines.append(f"COT: {cot.get('reason')}")
     lines.extend(ctx["istatistiksel_dogrulama"].get("lines") or [])
     lines.extend(cross_asset_lines())
+    # Perakende konumlanma: özet satırı tek satırdır, kalabalık/örneklem uyarıları
+    # aynı satıra büyüklükle yazılır (LLM "yüksek/düşük"ü kendisi tartmasın).
+    ret = ctx.get("perakende_konumlanma") or {}
+    if ret.get("available") and ret.get("symbol"):
+        lines.append(compact_retail_line(ret))
+    elif ret.get("note"):
+        lines.append(f"Perakende konumlanma: {ret.get('note')}")
     return lines
+
+
+def compact_retail_line(ret: dict[str, Any]) -> str:
+    """Perakende konumlanma satırı (tek kaynak: retail_sentiment.compact_lines)."""
+    from app import retail_sentiment as rs
+
+    got = rs.compact_lines(ret.get("symbol"))
+    return got[0] if got else "Perakende konumlanma: okunamadı."
 
 
 def cross_asset_lines() -> list[str]:
