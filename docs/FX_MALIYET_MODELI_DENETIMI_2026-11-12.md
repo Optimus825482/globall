@@ -128,8 +128,28 @@ Aynı yön, aynı büyüklük sırası → bulgu tek pencereye bağlı değil.
 3. **JP225/UK100/DE40 maliyet düzeltmesi** (P2): bu üç endeksin gerçek maliyeti varsayımın 1,3-2× üstünde → canlı performansı replay'den kötü çıkacak.
 4. **Dukascopy ile eski dönem doğrulaması** (P2): `scripts/fx_dukascopy_import.py` hazır (ücretsiz, anahtarsız, doğrulandı: EURUSD 2026-11-11 10:00 → HTTP 200). MT5 tick'i ~120 günle sınırlı; 2023-2025 spread rejimi doğrulanmadı. CDN bu ağdan yavaş (9-21 sn/istek, ara 503) → sembol başına birkaç haftalık örnek yeterli.
 
-## 7) Üretilen dosyalar
+## 7) Replay hızlandırması (aynı gün, sonuç DEĞİŞMEDEN)
 
+Şikâyet haklıydı: bir A/B ~10 dakika sürüyordu. cProfile ile ölçüldü — sürenin **%94'ü `_compute_technical_indicators`** içindeydi (95.865 çağrı, `_calc_ema` tek başına 226 s): her bar×sembol için EMA/RSI/ATR/ADX özyinelemeleri **saf Python döngüsüyle** baştan hesaplanıyordu.
+
+**Yapılan:** birinci derece özyinelemeler `scipy.signal.lfilter` tabanlı `_smooth`/`_smooth_last` ile değiştirildi (`forex.py`). Matematik birebir aynı — kanıt: `backend/tests/test_forex_smoothing_parity.py` eski döngü formüllerinin kopyasını referans alıp **max fark 0** bekliyor (bu test yazılırken gerçek bir hata yakaladı: DX hesabında iç 100 çarpanı düşmüştü, ADX 11,4 yerine 0,001 dönüyordu).
+
+| Ölçüm | Önce | Sonra |
+|---|---|---|
+| 5 günlük pencere (`--start/--end`) | 59 s | **17 s** |
+| Tam koşu (60 gün, 6.787 işlem) | ~10 dk | **218 s (3,6 dk)** |
+| Sonuç | — | **birebir aynı** (işlem/isabet/net/PF/DD/equity) |
+
+**Yan bulgular (araştırma disiplini için):**
+- `--days 5` koşuyu **kısaltmıyor**: 60 günlük seride koşuyor (aynı 17.179 bar). Kısa pencere `--start/--end` ile verilir; o da işlem sayısını düşürür ama bar döngüsünü değiştirmez.
+- `--skip-old` zaten vardı: OLD defteri kapatıp gösterge yükünü yarıya indirir (maliyet/parametre A/B'lerinde önerilir).
+- Kalan sürenin %79'u hâlâ gösterge hesabı; sıradaki gerçek kazanç **artımlı gösterge durumu** (bar başına O(1)); ondan önce `_resample_5m_to_15m` (%17, saf Python sözlük/sıralama) vektörel hale getirilebilir.
+- vectorbt bu iş için uygun değil: motorun BE/chandelier/kısmi TP/EV guard çıkışları **durum bağımlı**; vbt'de aynı kuralı yeniden yazmak motoru değil başka bir stratejiyi ölçer. vbt'nin yeri kural taraması (5 yıl × 40 sembol, saniyeler).
+
+## 8) Üretilen dosyalar
+
+- `backend/app/routers/forex.py` — `_smooth`/`_smooth_last` (lfilter) + EMA/RSI/ATR/ADX döngüleri vektörel
+- `backend/tests/test_forex_smoothing_parity.py` — eski döngü formüllerine karşı parite kilidi (8 test)
 - `scripts/fx_spread_profile.py` — MT5 tick → saat/gün spread profili + `fx_spread_history` tablosu + replay profili
 - `scripts/fx_dukascopy_import.py` — Dukascopy tick → M1 bar (fill-only) + gerçek spread; yıllara uzanan doğrulama
 - `outputs/fx_spread_profile_30d.json` (tam profil), `outputs/fx_spread_replay_profile.json` (replay şeması), `outputs/replay_cost{off,on}_30d.json` (A/B) — `outputs/` gitignore'da, betiklerle 3 dakikada yeniden üretilir

@@ -3557,6 +3557,42 @@ def _compute_cci(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period
     return float((float(tp[-1]) - sma) / (0.015 * mean_dev))
 
 
+try:  # scipy üretim imajında var (sklearn bağımlılığı); yoksa saf döngüye düşülür
+    from scipy.signal import lfilter as _lfilter
+except Exception:  # pragma: no cover - yalın kurulum
+    _lfilter = None
+
+
+def _smooth(x: np.ndarray, keep: float, w: float, seed: float) -> np.ndarray:
+    """Birinci derece özyinelemeli yumuşatma SERİSİ: v_i = keep·v_{i-1} + w·x_i, v_{-1}=seed.
+
+    2026-11-12 (hız): replay'de `_compute_technical_indicators` her bar×sembol için
+    baştan koşuyor; içindeki bu özyinelemeler saf Python döngüsüydü ve toplam
+    sürenin %46'sını (`_calc_ema` tek başına 226 sn) yiyordu. `lfilter` özyinelemeyi
+    AYNI sonuçla üretir (kilit: `tests/test_forex_smoothing_parity.py`, max fark 0).
+    """
+    x = np.asarray(x, dtype=float)
+    if x.size == 0:
+        return x
+    if _lfilter is None:  # pragma: no cover
+        out = [w * float(x[0]) + keep * seed]
+        for v in x[1:]:
+            out.append(w * float(v) + keep * out[-1])
+        return np.array(out, dtype=float)
+    y, _ = _lfilter([w], [1.0, -keep], x, zi=[keep * seed])
+    return y
+
+
+def _smooth_last(x: np.ndarray, keep: float, w: float, seed: float) -> float:
+    """`_smooth` serisinin yalnız son değeri (RSI/ATR/Wilder için yeterli)."""
+    x = np.asarray(x, dtype=float)
+    if x.size == 0:
+        return float(seed)
+    if _lfilter is None:  # pragma: no cover
+        return float(_smooth(x, keep, w, seed)[-1])
+    return float(_lfilter([w], [1.0, -keep], x, zi=[keep * seed])[0][-1])
+
+
 def _compute_adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
     """Ortalama Yönsel Endeks (ADX, Wilder): trend VAR mı sorusuna odaklanır (0-100).
 
@@ -3596,28 +3632,24 @@ def _compute_adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period
         return 0.0
     dx = 100.0 * abs(plus_di - minus_di) / denom
     # ADX = DX serisinin Wilder düzleştirmesi
-    dx_series = []
-    plus_w = float(np.sum(plus_dm[:period]))
-    minus_w = float(np.sum(minus_dm[:period]))
-    tr_w = float(np.sum(tr[:period]))
-    for i in range(period, len(tr)):
-        # Tohum [:period] son elemanı (i-1) ikinci kez eklenmez; güncel gözlem i'dir.
-        plus_w = plus_w - plus_w / period + float(plus_dm[i])
-        minus_w = minus_w - minus_w / period + float(minus_dm[i])
-        tr_w = tr_w - tr_w / period + float(tr[i])
-        if tr_w > 0:
-            pdi = 100.0 * plus_w / tr_w
-            mdi = 100.0 * minus_w / tr_w
-            d = pdi + mdi
-            dx_series.append(100.0 * abs(pdi - mdi) / d if d > 0 else 0.0)
-        else:
-            dx_series.append(0.0)
-    if not dx_series:
+    # 2026-11-12: döngü yerine vektörel özyineleme (aynı sonuç, aynı tohum).
+    keep_w, one = 1.0 - 1.0 / period, 1.0
+    plus_ser = _smooth(plus_dm[period:], keep_w, one, float(np.sum(plus_dm[:period])))
+    minus_ser = _smooth(minus_dm[period:], keep_w, one, float(np.sum(minus_dm[:period])))
+    tr_ser = _smooth(tr[period:], keep_w, one, float(np.sum(tr[:period])))
+    ok = tr_ser > 0
+    tr_safe = np.where(ok, tr_ser, 1.0)
+    pdi = 100.0 * plus_ser / tr_safe
+    mdi = 100.0 * minus_ser / tr_safe
+    dsum = pdi + mdi
+    dx_series = np.where(ok & (dsum > 0),
+                         100.0 * np.abs(pdi - mdi) / np.where(dsum > 0, dsum, 1.0),
+                         0.0)
+    if dx_series.size == 0:
         return dx
     # Wilder düzleştirme: ilk değer ilk `period` DX ortalaması, sonra özyinelemeli
-    adx_val = float(np.mean(dx_series[:period]))
-    for x in dx_series[period:]:
-        adx_val = (adx_val * (period - 1) + float(x)) / period
+    adx_val = _smooth_last(dx_series[period:], keep_w, 1.0 / period,
+                           float(np.mean(dx_series[:period])))
     return max(0.0, min(100.0, adx_val))
 
 
@@ -3746,11 +3778,9 @@ def _compute_technical_indicators(
     l = np.asarray(lows, dtype=float)
 
     def _calc_ema(series: np.ndarray, period: int) -> np.ndarray:
+        # 2026-11-12: saf döngü → vektörel özyineleme (birebir aynı sonuç, ~8× hızlı).
         alpha = 2.0 / (period + 1)
-        res = [float(series[0])]
-        for val in series[1:]:
-            res.append(alpha * float(val) + (1.0 - alpha) * res[-1])
-        return np.array(res, dtype=float)
+        return _smooth(series, 1.0 - alpha, alpha, float(series[0]))
 
     # 1. 5M LTF EMAs
     ema8_series = _calc_ema(c, 8)
@@ -3786,11 +3816,11 @@ def _compute_technical_indicators(
     losses = np.where(deltas < 0, -deltas, 0.0)
     period = 14
     if len(deltas) >= period:
-        avg_gain = float(np.mean(gains[:period]))
-        avg_loss = float(np.mean(losses[:period]))
-        for i in range(period, len(deltas)):
-            avg_gain = (avg_gain * 13.0 + float(gains[i])) / 14.0
-            avg_loss = (avg_loss * 13.0 + float(losses[i])) / 14.0
+        # 2026-11-12: döngü → vektörel özyineleme (aynı tohum: ilk `period` ortalaması).
+        avg_gain = _smooth_last(gains[period:], 13.0 / 14.0, 1.0 / 14.0,
+                                float(np.mean(gains[:period])))
+        avg_loss = _smooth_last(losses[period:], 13.0 / 14.0, 1.0 / 14.0,
+                                float(np.mean(losses[:period])))
         rs = avg_gain / avg_loss if avg_loss != 0 else 100.0
         rsi = float(100.0 - (100.0 / (1.0 + rs)))
     else:
@@ -3815,10 +3845,7 @@ def _compute_technical_indicators(
     if len(h) >= 15:
         tr = np.maximum(h[1:] - l[1:], np.maximum(abs(h[1:] - c[:-1]), abs(l[1:] - c[:-1])))
         if ATR_USE_WILDER and len(tr) >= 14:
-            atr_w = float(np.mean(tr[:14]))
-            for i in range(14, len(tr)):
-                atr_w = (atr_w * 13.0 + float(tr[i])) / 14.0
-            atr = atr_w
+            atr = _smooth_last(tr[14:], 13.0 / 14.0, 1.0 / 14.0, float(np.mean(tr[:14])))
         else:
             atr = float(np.mean(tr[-14:]))
     else:
