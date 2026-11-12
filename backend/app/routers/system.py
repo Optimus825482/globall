@@ -546,6 +546,10 @@ async def system_latency_reset(request: Request):
 # MT5 isteyen ölçüm probları sunucuda KOŞMAZ (terminal yok) → köprü makinesinde koşulur;
 # burada "yerel gerekli" olarak raporlanır.
 
+# 2026-11-12: sayfa `/api/system/routines` çağırıyordu ama yol `/system/routines`
+# idi → "API 404". Diğer tüm uçlar `/api/...` altında; iki yol birlikte açılır
+# (eski yol korunur, kimse kırılmaz).
+@router.get("/api/system/routines")
 @router.get("/system/routines")
 async def list_routines(request: Request):
     """Rutin listesi + son çalıştırma durumu (panel görünümü)."""
@@ -570,6 +574,7 @@ async def list_routines(request: Request):
     return {"count": len(out), "routines": out}
 
 
+@router.post("/api/system/routines/{name}/run")
 @router.post("/system/routines/{name}/run")
 async def run_routine(name: str, request: Request):
     """Bir rutini elle koştur (vade beklemeden)."""
