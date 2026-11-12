@@ -181,10 +181,17 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
             size_mult *= room
             size_notes.append(f"{kind} yakın ({gap / pip_size:.0f} pip): lot ×{room:.2f}")
     size_mult = max(MIN_SIZE_MULT, round(size_mult, 3))
+    # PERAKENDE KONUMLANMA (2026-11-12): plan yüküne bilgi olarak girer.
+    # KAPI DEĞİL — lot/karar DEĞİŞMEZ; yalnız kullanıcı ve LLM görsün.
+    try:
+        from app import retail_sentiment as _rs
+        retail = _rs.brief(sym)
+    except Exception:  # noqa: BLE001
+        retail = {}
     return {"ok": True, "reason": "tüm kapılar geçti", "plan": {
         "symbol": sym, "direction": bias, "entry_price": price, "sl_pips": round(sl_dist / pip_size, 1),
         "tp_pips": round(tp_dist / pip_size, 1), "atr_pips": round(float(atr) / pip_size, 1), "score": analysis.get("score"),
-        "news": effect, "size_mult": size_mult,
+        "news": effect, "size_mult": size_mult, "retail": retail,
         "note": (f"Kullanıcı komutuyla; teknik {bias} ({float(analysis.get('score', 0)):+.1f})" if explicit else
                  f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
                  f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}")

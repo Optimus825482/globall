@@ -323,7 +323,13 @@ def main() -> int:
     if args.emit_replay_profile:
         prof = {"meta": {"kaynak": "mt5_tick", "gun": args.days,
                          "olcum": out["olcum_zamani"],
-                         "not": "avg_pips = dakika-medyanı p50, rollover/reopen hariç"},
+                         # Profil saatleri UTC'dir; replay bar damgası broker saatinde
+                         # olduğu için bu kaydırma şart (yoksa rollover yanlış saate düşer).
+                         "server_offset_hours": next(
+                             (r["sunucu_ofset_saat"] for r in out["semboller"]
+                              if r.get("sunucu_ofset_saat") is not None), 0),
+                         "not": "avg_pips = dakika-medyanı p50, rollover/reopen hariç; "
+                                "hour_pips = UTC saat → p50 pip (rollover dahil)"},
                 "symbols": {}}
         for r in out["semboller"]:
             hours = {int(h): v for h, v in r["saat_profili_p50_pip"].items() if v}

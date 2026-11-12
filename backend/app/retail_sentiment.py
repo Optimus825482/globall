@@ -383,6 +383,30 @@ def summary_status() -> Dict[str, Any]:
     }
 
 
+def brief(symbol: Optional[str]) -> Dict[str, Any]:
+    """Radar/fırsat yükü için TÜKETİME HAZIR kısa alan (yok ise boş sözlük).
+
+    TEK KAYNAK: radar, fırsat taraması ve snapshot aynı biçimi kullanır.
+    Boş sözlük = "bu sembolde kapsam/veri yok" — 0/nötr ile karıştırılmaz.
+    """
+    try:
+        s = summary(symbol)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not s.get("available") or s.get("symbol") is None:
+        return {}
+    return {
+        "long_pct": s["long_pct"],
+        "short_pct": s["short_pct"],
+        "positions": s.get("positions"),
+        "crowded": s.get("crowded"),
+        "contrarian": s.get("contrarian"),
+        "thin_sample": bool(s.get("thin_sample")),
+        "age_min": s.get("age_min"),
+        "source": "myfxbook",
+    }
+
+
 def compact_lines(symbol: Optional[str] = None) -> List[str]:
     """LLM'e giden kısa satır(lar). BÜYÜKLÜK yazılır, "yüksek/düşük" yorumu LLM'e bırakılmaz."""
     s = summary(symbol)

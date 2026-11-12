@@ -146,6 +146,30 @@ Aynı yön, aynı büyüklük sırası → bulgu tek pencereye bağlı değil.
 - Kalan sürenin %79'u hâlâ gösterge hesabı; sıradaki gerçek kazanç **artımlı gösterge durumu** (bar başına O(1)); ondan önce `_resample_5m_to_15m` (%17, saf Python sözlük/sıralama) vektörel hale getirilebilir.
 - vectorbt bu iş için uygun değil: motorun BE/chandelier/kısmi TP/EV guard çıkışları **durum bağımlı**; vbt'de aynı kuralı yeniden yazmak motoru değil başka bir stratejiyi ölçer. vbt'nin yeri kural taraması (5 yıl × 40 sembol, saniyeler).
 
+### 7b) Saat-duyarlı maliyet (uygulandı)
+
+Düz ortalama tek sayıya sığmıyordu: EURUSD'de **22:00 UTC = 3,5 pip**, diğer tüm saatler 0,05-0,1 pip. `--spread-profile` artık `hour_pips` tablosunu da okuyor ve giriş saatine göre maliyeti seçiyor (`meta.server_offset_hours` ile UTC'ye çevirir).
+
+A/B (düz ölçülen → saat-duyarlı ölçülen, aynı 30 gün):
+
+| Metrik | Düz | Saatlik | Fark |
+|---|---|---|---|
+| İşlem | 7.001 | 6.938 | −63 |
+| Net | +87.845 $ | **+89.798 $** | +1.953 |
+| PF | 1,23 | **1,24** | +0,01 |
+
+**Dürüst yorum: etki küçük (%2).** Sebebi yapısal: majörlerde 21-06 UTC zaten `majorHours` ile kapalı, endekslerde (XAU/US30/NAS100) rollover sıçraması yok (1×). Yani düzeltme **doğru ama küçük**; 63 işlem 22:00'de pahalı spread yüzünden düştü.
+
+### 7c) ⚠️ BULUNAN AYRI KUSUR — bar etiketleri UTC değil, broker saati
+
+`historical_candles`'taki `open_time` MT5'ten geldiği için **broker saatiyle (UTC+2)** damgalı. Replay bunu `fromtimestamp(ts, utc)` ile **UTC sanıyor** → saat bazlı TÜM kararlar 2 saat kayık.
+
+**Kanıt (veri, tahmin değil):** haftanın ilk 5m barı **"Pazartesi 00:00"** etiketli. FX Pazartesi 00:00 UTC'de açılmaz; açılış Pazar 22:00 UTC'dir → etiket +2 saat kaymış. Ayrıca `tick.time` ile ölçülen offset **+2,0 saat**.
+
+**Sonuç:** replay'de `tokyo_drift 01:00` penceresi aslında 23:00 UTC'yi, `majorHours 7-20` aslında 05:00-18:00 UTC'yi, `reopen_fade 00:00` aslında **rollover 22:00 UTC**'yi tetikliyor. (Saat-duyarlı maliyet bu düzeltmeyi zaten yapıyor — spread doğru saate düşüyor; kayık olan *kapılar*.)
+
+**Neden şimdi değiştirmedim:** düzeltmek saat kapılı stratejilerin tüm geçmiş replay sonuçlarını değiştirir → kendi A/B'sini ve karar gerektirir. Öneri: `--bar-tz-offset 2` bayrağı ekle, iki yönü ölç, sonra varsayılan yap.
+
 ## 8) Üretilen dosyalar
 
 - `backend/app/routers/forex.py` — `_smooth`/`_smooth_last` (lfilter) + EMA/RSI/ATR/ADX döngüleri vektörel

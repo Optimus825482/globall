@@ -82,6 +82,19 @@ def _epoch_seconds(value: Any, default: float | None = None) -> float | None:
     return out
 
 
+def retail_sentiment_brief(symbol: str) -> dict:
+    """Perakende konumlanma alanı (TEK KAYNAK: `app.retail_sentiment.brief`).
+
+    Fail-closed: modül/veri yoksa boş sözlük döner — 0/nötr ile karıştırılmaz.
+    KAPI DEĞİL: radar skoruna/sıralamaya girmez.
+    """
+    try:
+        from app import retail_sentiment as rs
+        return rs.brief(symbol)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def normalize_velocity_candidate(raw: dict) -> dict | None:
     """Velocity adayını (journal satırı VEYA canlı zarf) ortak şekle indirger."""
     if not isinstance(raw, dict):
@@ -295,7 +308,10 @@ def _merge_cluster(events: list[dict]) -> dict:
         "tag": tag,
         "title": title,
         "message": " · ".join(parts),
-        "url": f"/charts?symbol={symbol}",
+        # PERAKENDE KONUMLANMA (2026-11-12): "kalabalık hangi tarafta" bilgisi
+        # radar kartında. KAPI DEĞİL — skoru/sıralamayı etkilemez (COT/seans ile
+        # aynı sınıf). Kapsam dışı sembolde (endeksler) boş sözlük döner.
+        "retail": retail_sentiment_brief(symbol),        "url": f"/charts?symbol={symbol}",
         "paper_only": True,
         "evidence": {
             "velocity": None if vel is None else {

@@ -72,6 +72,11 @@ BLOCKED_HOURS: List[int] = []
 CATEGORY_SPREAD_PIPS = {"major": 1.2, "commodity": 2.5, "crypto": 12.0, "index": 3.0, "cross": 2.0}
 # Gerçek spread profili (--spread-profile ile yüklenir): {SYMBOL: avg_pips}; boşsa kategori spread'i kullanılır
 SPREAD_PROFILE: Dict[str, float] = {}
+#: Saat-duyarlı spread (2026-11-12): {SYMBOL: {UTC saat: pips}}. Varsa saat bazlı
+#: değer düz ortalama tabloyu EZER — rollover (21-23 UTC) maliyeti tek sayıya sığmıyor.
+SPREAD_PROFILE_HOURLY: Dict[str, Dict[int, float]] = {}
+#: Profil saatlerinin hangi saat diliminde olduğu (bar damgası sunucu saatiyse kaydırma).
+SPREAD_PROFILE_TZ_HOURS = 0
 # Replay-local sembol tanımları: canlı FOREX_SYMBOLS'ta olmayan test adayları (JPY kross'ları)
 REPLAY_SYMBOL_DEFS = {
     "GBPJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
@@ -3663,6 +3668,15 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
             spread_pips = CATEGORY_SPREAD_PIPS.get(item["category"] if item else "index", 3.0)
             if sym in SPREAD_PROFILE:
                 spread_pips = float(SPREAD_PROFILE[sym])  # gerçek spread profili (max_spread kapısı da buna tabi — bilinçli)
+            # SAAT-DUYARLI MALİYET (2026-11-12): rollover (21-23 UTC) FX'te 7-62×
+            # pahalı; tek ortalama ile o saatte açılan işlem bedava sayılıyordu.
+            # `hour` bar damgasından gelir; profil saatleri UTC olduğu için broker
+            # ofseti (MT5 sunucu saati) çıkarılır.
+            _ph = SPREAD_PROFILE_HOURLY.get(sym)
+            if _ph:
+                _h_utc = int((hour - SPREAD_PROFILE_TZ_HOURS) % 24)
+                if _h_utc in _ph:
+                    spread_pips = float(_ph[_h_utc])
             is_commodity = ("XAU" in sym or "GOLD" in sym or "OIL" in sym)
             is_fx_major = sym in FX_MAJORS
             if sym == "BTCUSD" and TUN_BTC_MIN_SCORE > 0:
@@ -4551,8 +4565,8 @@ def main():
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
 
-    # Spread profili (--spread-profile): {"symbols": {"EURUSD": {"avg_pips": 1.2, ...}, ...}} → {SYM: avg_pips}
-    global SPREAD_PROFILE
+    # Spread profili (--spread-profile): {"symbols": {"EURUSD": {"avg_pips": 1.2, "hour_pips": {...}}}} → {SYM: avg_pips}
+    global SPREAD_PROFILE, SPREAD_PROFILE_HOURLY, SPREAD_PROFILE_TZ_HOURS
     if args.spread_profile:
         _sp_path = args.spread_profile if os.path.isabs(args.spread_profile) else os.path.join(ROOT, args.spread_profile)
         if os.path.exists(_sp_path):
@@ -4561,9 +4575,27 @@ def main():
                     _sp_raw = json.load(_sp_f)
                 _sp_syms = _sp_raw.get("symbols", {}) if isinstance(_sp_raw, dict) else {}
                 for _sp_sym, _sp_def in _sp_syms.items():
-                    if isinstance(_sp_def, dict) and _sp_def.get("avg_pips") is not None:
+                    if not isinstance(_sp_def, dict):
+                        continue
+                    if _sp_def.get("avg_pips") is not None:
                         SPREAD_PROFILE[str(_sp_sym).upper()] = float(_sp_def["avg_pips"])
-                print(f"[KONFIG] Spread profili yüklendi: {args.spread_profile} ({len(SPREAD_PROFILE)} sembol)")
+                    # Saat-duyarlı tablo: rollover saati tek ortalamaya sığmıyor.
+                    _hours = _sp_def.get("hour_pips")
+                    if isinstance(_hours, dict) and _hours:
+                        _clean = {}
+                        for _h, _v in _hours.items():
+                            try:
+                                _clean[int(_h)] = float(_v)
+                            except (TypeError, ValueError):
+                                continue
+                        if _clean:
+                            SPREAD_PROFILE_HOURLY[str(_sp_sym).upper()] = _clean
+                _meta = _sp_raw.get("meta") if isinstance(_sp_raw, dict) else None
+                if isinstance(_meta, dict) and _meta.get("server_offset_hours") is not None:
+                    SPREAD_PROFILE_TZ_HOURS = int(round(float(_meta["server_offset_hours"])))
+                print(f"[KONFIG] Spread profili yüklendi: {args.spread_profile} "
+                      f"({len(SPREAD_PROFILE)} sembol, {len(SPREAD_PROFILE_HOURLY)} saat-duyarlı, "
+                      f"tz kaydırma {SPREAD_PROFILE_TZ_HOURS:+d}s)")
             except (ValueError, TypeError, OSError) as _sp_err:
                 print(f"[UYARI] Spread profili yüklenemedi ({args.spread_profile}): {_sp_err} — kategori spread'leri kullanılacak")
         else:

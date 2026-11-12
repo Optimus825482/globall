@@ -390,7 +390,11 @@ def test_weekend_universe_is_crypto_only_and_deeper():
     wk, wd = utc(2026, 10, 31, 12), utc(2026, 11, 2, 10)
     weekend = ot.universe_now(wk)
     weekday = ot.universe_now(wd)
-    assert weekend == ["BTCUSD", "ETHUSD", "XRPUSD"]
+    assert weekend == ["BTCUSD", "ETHUSD"]
+    # ALLOWLIST ≠ TRADEABLE (2026-11-10 f9dca4ed): XRPUSD ürün kuralı gereği
+    # TARANABİLİR (allowlist'te kalır) ama canlı defterde kara listede → evren eler.
+    assert "XRPUSD" not in weekend
+    assert cfg.is_crypto_symbol_allowed("XRPUSD")
     assert all(cfg.is_crypto_symbol_allowed(s) for s in weekend)
     assert "XAUUSD" in weekday and weekday, "hafta içi evren boş kalmamalı"
     assert ot.deep_top_now(wk) > ot.deep_top_now(wd)
