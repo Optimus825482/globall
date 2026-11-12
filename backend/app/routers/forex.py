@@ -6392,6 +6392,33 @@ except Exception as _exc:  # pragma: no cover - savunmacı
 # sunucudaki forex_auto_settings.json eski chandelier/ls_symbols değerlerini tutsa bile
 # canlı bunları kullansın (dosya kod sabitini maskeliyordu).
 _apply_canli_sabitler(_AUTO_SETTINGS)
+
+# 2026-11-12: ölçümle değişen kol sembol listeleri. Kayıtlı ayar dosyası eski listeyi
+# taşıyorsa SESSİZCE ezmiyoruz (kullanıcı kendi seçimini görsün) ama hangi sembolün
+# ölçümle ÇELİŞTİĞİNİ yüksek sesle yazıyoruz — panel güncellenmezse eski liste yürür.
+_MEASURED_LB_POSITIVE = {"GBPUSD", "AUDUSD", "XAUUSD", "US30", "NAS100", "BTCUSD"}
+_MEASURED_LB_NEGATIVE = {"USDCHF", "USDJPY"}   # iki pencerede de negatif ölçüldü
+_MEASURED_EAP_POSITIVE = {"XAUUSD", "USDJPY", "NAS100", "US30"}
+try:
+    _lb_now = {str(x).upper() for x in (_AUTO_SETTINGS.lb_symbols or [])}
+    _bad = sorted(_lb_now & _MEASURED_LB_NEGATIVE)
+    _miss = sorted(_MEASURED_LB_POSITIVE - _lb_now)
+    if _bad or _miss:
+        logger.warning(
+            "[FX AYAR] lb_symbols ölçümle uyuşmuyor. ÖLÇÜM (2026-11-12, iki pencere de aynı "
+            "yönde): %s NEGATİF → çıkarılmalı; eksik pozitifler: %s. Panelden düzeltin "
+            "(kod varsayılanı kayıtlı ayarı EZMEZ). Yeni önerilen: XAUUSD,GBPUSD,US30,BTCUSD,"
+            "AUDUSD,NAS100", _bad or "yok", _miss or "yok")
+    _eap_now = {str(x).upper() for x in (_AUTO_SETTINGS.ema_adx_symbols or [])}
+    _eap_miss = sorted(_MEASURED_EAP_POSITIVE - _eap_now)
+    if _eap_miss:
+        logger.warning(
+            "[FX AYAR] ema_adx_symbols eksik: %s. ÖLÇÜM: bu semboller iki pencerede de "
+            "pozitif (USDJPY +2.521/+3.003 · US30 +862/+508). Panelden ekleyin. Önerilen: "
+            "XAUUSD,NAS100,USDJPY,US30", _eap_miss)
+except Exception:  # noqa: BLE001 — uyarı asla açılışı düşürmesin
+    pass
+
 logger.info(
     "[FX SABİT] chandelier_atr_mult=%.2f, ls_symbols=%s, klasik=%s, s3=%s, ls=%s "
     "(kod sabiti — ayar dosyası/panel ezemez)",
