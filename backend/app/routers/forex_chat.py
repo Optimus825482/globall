@@ -363,9 +363,18 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
         # 2026-11-12: ufuk YAZILMALI. Bu araç 15 dk trend/RSI'ye bakar; küresel nabız
         # notu ise GÜNLÜK değişime. Aynı cümlede "nötr" ile "güçlü" yan yana gelince
         # çelişki gibi okunuyordu (aslında iki farklı ufuk).
-        return (f"Dolar rejimi (15 dk teknik trend/RSI): {label}"
-                f"{'' if d.get('trend') is None else f' · trend {d.get("trend")} · skor {float(d.get("score") or 0):.0f}'}"
-                f". Günlük yön için 'küresel varlık nabzı' notuna bak."),                {"rejim": d.get("regime"), "yorum": label, "ufuk": "15m",
+        # DİKKAT (2026-11-12 deploy hatası): burada İÇ İÇE f-string vardı
+        # (`f"...{f'...{d.get("trend")}...'}"`). Bu sözdizimi **PEP 701 / Python 3.12+**
+        # özelliğidir; üretim imajı python:3.11 → modül import edilemedi, backend
+        # açılışta öldü ve Coolify "backend unhealthy" ile deploy'u düşürdü.
+        # Kural: 3.11 uyumluluğu için f-string içinde f-string KULLANMA.
+        _trend_txt = ""
+        if d.get("trend") is not None:
+            _trend_txt = " · trend {t} · skor {s:.0f}".format(
+                t=d.get("trend"), s=float(d.get("score") or 0))
+        return ("Dolar rejimi (15 dk teknik trend/RSI): {lab}{trend}"
+                ". Günlük yön için 'küresel varlık nabzı' notuna bak.".format(
+                    lab=label, trend=_trend_txt)),                {"rejim": d.get("regime"), "yorum": label, "ufuk": "15m",
                 "trend": d.get("trend"), "score": d.get("score")}
     steps.append(("dxy", "Dolar rejimi", _dxy()))
     return steps
