@@ -369,6 +369,85 @@ async def retail_sentiment_status(symbol: str | None = None, limit: int = 12, re
     return {"summary": s, "items": items}
 
 
+@router.get("/api/system/sentiment-index")
+async def sentiment_index_status(symbols: str = "", limit: int = 12):
+    """BİLEŞİK SENTIMENT ENDEKSİ — parite başına −100 (SHORT) … +100 (LONG), merkez 0.
+
+    Dört kanal birleşir: açıklanmış ekonomik veri (takvim), CFTC pozisyonlanması (COT),
+    küresel nabız (DXY/10Y/VIX/S&P), perakende kalabalığı (Myfxbook, TERS yön).
+    Ağırlıklar `sentiment_index.WEIGHTS`, kapsam şeffaf (`coverage`, `missing`).
+
+    BAĞLAMDIR, KAPI DEĞİL: karar akışını değiştirmez.
+    """
+    from app import sentiment_index as si
+
+    await asyncio.to_thread(_warm_sentiment_inputs)
+    syms = ([s.strip().upper() for s in symbols.split(",") if s.strip()]
+            if symbols.strip() else
+            ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
+             "XAUUSD", "US30", "NAS100", "JP225", "UK100", "DE40"])
+    items = []
+    for s in syms[: max(1, min(int(limit), 40))]:
+        try:
+            r = si.summarize(s)
+        except Exception as exc:  # noqa: BLE001 — tek sembol tüm listeyi düşürmesin
+            items.append({"symbol": s, "score": 0.0, "label": "hesaplanamadı",
+                          "coverage": 0.0, "missing": [], "components": {},
+                          "error": f"{type(exc).__name__}: {exc}"})
+            continue
+        items.append({
+            "symbol": r["symbol"],
+            "score": r["score"],
+            "label": r["label"],
+            "coverage": r["coverage"],
+            "missing": r["missing"],
+            "note": r["note"],
+            "components": {
+                k: {"score": v["score"], "detail": v.get("detail"), "available": v["available"],
+                    **({"events": v.get("events")} if v.get("events") is not None else {}),
+                    **({"long_pct": v.get("long_pct")} if v.get("long_pct") is not None else {})}
+                for k, v in r["components"].items()
+            },
+        })
+    return {"items": items, "weights": si.WEIGHTS,
+            "neutral_band": si.NEUTRAL_BAND, "strong_band": si.STRONG_BAND}
+
+
+def _warm_sentiment_inputs() -> None:
+    """Takvim yön kanıtı + perakende belleğini senkron bağlamda ısıtır.
+
+    Takvim: `get_forex_news()` asenkron ve önbellekli olduğu için burada kendi
+    döngümüzle bir kez çağrılır (5 dk önbellek → ek yük yok). Hata olsa bile
+    endeks çalışır: `takvim` bileşeni "veri yok" diye işaretlenir, nötr SAYILMAZ.
+    """
+    try:
+        from app import forex_news_bias as nb
+        from app import sentiment_index as si
+        from app.forex_news import get_forex_news
+        if not _has_running_loop():
+            events = asyncio.run(get_forex_news())
+            if events:
+                # 30 dk ticaret filtresi önbelleği (radar kapısı kullanır)
+                nb.refresh_biases(events, time.time(), window_sec=1800.0)
+                # 24s yaş-ağırlıklı sentiment bileşeni
+                si.refresh_calendar(events, time.time())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("sentiment takvim ısıtma atlandı: %s", exc)
+    try:
+        from app import retail_sentiment as rs
+        rs.warm_sync()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _has_running_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
 @router.get("/api/system/forex-ml")
 async def forex_ml_status():
     """Forex ML veri seti + son eğitim koşuları (Ayarlar > Forex ML sekmesi)."""

@@ -233,7 +233,7 @@ class TestWiring(unittest.TestCase):
             ctx = cx.macro_context("EURUSD")
         self.assertEqual(set(ctx), {"seans_ve_likidite", "cot_pozisyonlanma",
                                     "istatistiksel_dogrulama", "kuresel_varlik_nabzi",
-                                    "perakende_konumlanma"})
+                                    "perakende_konumlanma", "bilesik_sentiment"})
 
 
 if __name__ == "__main__":

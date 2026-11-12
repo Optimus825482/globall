@@ -22,6 +22,7 @@ import {
 import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 import { Button, Card, DirectionBadge } from "./components/ui";
 import RetailSentimentCard from "./components/RetailSentimentCard";
+import SentimentGaugeCard from "./components/SentimentGaugeCard";
 
 interface OpenPosition {
   id: string;
@@ -723,6 +724,10 @@ export default function HomePage() {
           </section>
         </Card>
       </div>
+
+      {/* MARKET SENTIMENT — bileşik endeks (merkez 0: sol SHORT / sağ LONG).
+          Bağlamdır, kapı değil; karar akışını değiştirmez. */}
+      <SentimentGaugeCard />
 
       {/* PERAKENDE KONUMLANMA — kalabalık hangi tarafta (Myfxbook tablosu, BAĞLAM).
           Tam satır: tablo geniş, 1/3 kolona sığmıyor. */}

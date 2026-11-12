@@ -326,6 +326,29 @@ def _row_for(symbol: Optional[str]) -> Optional[dict]:
     return rows.get(alias.get(s, ""))
 
 
+def warm_sync() -> bool:
+    """Senkron bağlamdan bellek ısıtma (DB'deki son turu yükle, ağa ÇIKMAZ).
+
+    `summary()` senkrondur; soğuk süreçte (yeni worker/restart) bellek boş olur ve
+    "veri yok" der. Bu yardımcı bir kez DB'den hydrate eder. Olay döngüsü içinde
+    çağrılırsa sessizce atlar (bloklayıcı çağrı yapmaz).
+    """
+    if _state.get("rows"):
+        return False
+    try:
+        import asyncio
+        asyncio.get_running_loop()
+        return False  # döngü içindeyiz → bloklamayız
+    except RuntimeError:
+        pass
+    try:
+        import asyncio
+        return bool(asyncio.run(hydrate_if_empty()))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[RetailSentiment] warm_sync hatası: %s", exc)
+        return False
+
+
 def summary(symbol: Optional[str] = None) -> Dict[str, Any]:
     """Panel/araç yüzeyi. `available=False` ise sebep yazılır, nötr SAYILMAZ."""
     ts = _state.get("fetched_at")

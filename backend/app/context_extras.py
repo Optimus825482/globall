@@ -184,14 +184,42 @@ def retail_block(symbol: str | None = None) -> dict[str, Any]:
     return {**s, "note": " | ".join(rs.compact_lines(symbol))}
 
 
+def sentiment_block(symbol: str | None = None) -> dict[str, Any]:
+    """BİLEŞİK sentiment endeksi (−100 SHORT … +100 LONG) — fail-closed.
+
+    2026-11-12: dört kanal (açıklanmış ekonomik veri, COT, küresel nabız,
+    perakende kalabalığı) tek skora indirgenir. BAĞLAMDIR, KAPI DEĞİL;
+    ağırlıklar yargıdır, ölçülmüş kenar değildir.
+    """
+    from app import sentiment_index as si
+
+    if not symbol:
+        return {"available": False, "reason": "sembol verilmedi"}
+    try:
+        r = si.summarize(symbol)
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+    return {
+        "available": True,
+        "symbol": r["symbol"],
+        "score": r["score"],
+        "label": r["label"],
+        "coverage": r["coverage"],
+        "missing": r["missing"],
+        "components": {k: v.get("score") for k, v in r["components"].items() if v["available"]},
+        "note": r["note"],
+    }
+
+
 def macro_context(symbol: str | None = None, *, now: float | None = None) -> dict[str, Any]:
-    """Beş bloğu tek sözlükte toplar (LLM bağlamına doğrudan gömülebilir)."""
+    """Altı bloğu tek sözlükte toplar (LLM bağlamına doğrudan gömülebilir)."""
     return {
         "seans_ve_likidite": sessions_block(now),
         "cot_pozisyonlanma": cot_block(symbol),
         "istatistiksel_dogrulama": edge_block(),
         "kuresel_varlik_nabzi": cross_asset_block(),
         "perakende_konumlanma": retail_block(symbol),
+        "bilesik_sentiment": sentiment_block(symbol),
     }
 
 
@@ -250,6 +278,18 @@ def compact_lines(symbol: str | None = None) -> list[str]:
         lines.append(compact_retail_line(ret))
     elif ret.get("note"):
         lines.append(f"Perakende konumlanma: {ret.get('note')}")
+    sent = ctx.get("bilesik_sentiment") or {}
+    if sent.get("available"):
+        comps = sent.get("components") or {}
+        if comps:
+            lines.append(
+                f"Bileşik sentiment: {sent['score']:+.0f}/100 ({sent['label']}) · "
+                + " · ".join(f"{k} {v:+.0f}" for k, v in comps.items())
+                + f" · kapsam %{sent['coverage'] * 100:.0f}"
+                + (f" · eksik: {', '.join(sent['missing'])}" if sent.get("missing") else "")
+            )
+    elif sent.get("reason"):
+        lines.append(f"Bileşik sentiment: YOK ({sent['reason']})")
     return lines
 
 

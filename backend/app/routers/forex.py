@@ -5283,6 +5283,14 @@ async def get_forex_radar(use_cache: bool = True):
         from app import forex_news_bias as _bias_engine
         _cal_events = await get_forex_news()
         _bias_engine.refresh_biases(_cal_events, now_ts, window_sec=1800.0)
+        # BİLEŞİK SENTIMENT (2026-11-12): aynı olay listesinden 24s yaş-ağırlıklı
+        # skor beslemesi. Ek ağ isteği YOK (olaylar zaten elde); 120 sn önbellekli,
+        # bağlam katmanı içindir (karar akışına girmez).
+        try:
+            from app import sentiment_index as _sent_idx
+            _sent_idx.refresh_calendar(_cal_events, now_ts)
+        except Exception:
+            pass
         _nb_mod = _bias_engine
     except Exception:
         _nb_mod = None
