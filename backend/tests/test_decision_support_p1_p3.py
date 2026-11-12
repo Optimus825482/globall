@@ -215,7 +215,10 @@ class TestEvidenceGateP2(unittest.TestCase):
     def test_settings_default_off(self):
         from app.routers.forex import ForexAutoPaperSettings
         cfg = ForexAutoPaperSettings()
-        self.assertEqual(cfg.abstain_gate_mode, "off", "kanıt kapısı varsayılan KAPALI olmalı")
+        # 2026-11-10: varsayilan `shadow` YAPILDI (davranis degismez, yalniz "engellerdi"
+        # diye loglar). Karar gerekcesi Field description'inda yazili.
+        self.assertEqual(cfg.abstain_gate_mode, "shadow",
+                         "kanıt kapısı varsayılan shadow olmalı (bloklamaz, loglar)")
         self.assertEqual(cfg.abstain_gate_min_trades, 30)
         self.assertGreaterEqual(cfg.abstain_gate_window_days, 1.0)
 

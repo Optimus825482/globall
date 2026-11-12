@@ -55,10 +55,22 @@ def _loop_definitions() -> dict[str, pathlib.Path]:
     return found
 
 
+_ALIAS_RE = re.compile(r"^[ 	]*from\s+[\w.]+\s+import\s+([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)", re.M)
+
+
 def _started_names_in(text: str) -> set[str]:
-    """Bir kaynak metinde GERÇEKTEN başlatılan döngü adları."""
+    """Bir kaynak metinde GERÇEKTEN başlatılan döngü adları.
+
+    2026-11-12: takma ad çözümü eklendi. `main.py` bazı döngüleri çakışmayı
+    önlemek için `from app.routines.base import routine_loop as _routine_loop`
+    ile içe alıp `_start_background(_routine_loop, ...)` diye başlatıyor; eski
+    dedektör yalnız `_routine_loop` görüp `routine_loop` tanımını "başlatılmamış"
+    sanıyordu (yanlış kırmızı). Alias haritası gerçek adı da ekler.
+    """
     started = set(_START_BG_RE.findall(text))
     started.update(_CREATE_TASK_RE.findall(text))
+    aliases = {alias: real for real, alias in _ALIAS_RE.findall(text)}
+    started.update(aliases[n] for n in list(started) if n in aliases)
     return started
 
 

@@ -137,9 +137,16 @@ class NewsBiasWiringTests(unittest.TestCase):
         self.assertIn("news_bias_block_opposing", src)
         self.assertIn("news_bias_bypass_filters", src)
         # Yumuşak filtre kapıları baypas bayrağına bağlı olmalı
-        self.assertIn('if gate_reason and not _news_bypass:', src)
-        self.assertIn('if cand["score"] < req_score and not _news_bypass:', src)
-        self.assertIn('adx_val < _AUTO_SETTINGS.adx_min and not _news_bypass:', src)
+        # 2026-11-11: `_soft_bypass` eklendi (yalniz sinyal-kalitesi kapilari; risk kapilari
+        # asla). Dali birebir dogrula.
+        self.assertIn('if gate_reason and not _news_bypass and not _soft_bypass:', src)
+        self.assertIn('if cand["score"] < req_score and not _news_bypass and not _soft_bypass:', src)
+        # 2026-11-11: ADX kapısı çok satıra yayıldı ve `_soft_bypass` eklendi;
+        # birebir dize yerine BLOK kontrolü (kapı hâlâ haberle atlanabiliyor mu?)
+        _i_adx = src.index("7b. ADX Trend Gücü Kalkanı")
+        _adx_block = src[_i_adx:_i_adx + 700]
+        self.assertIn("adx_val < _AUTO_SETTINGS.adx_min", _adx_block)
+        self.assertIn("not _news_bypass", _adx_block)
         # Maliyet/risk kapıları baypastan ETKİLENMEMELİ
         self.assertIn('if cand["spread_pips"] > effective_max_spread:', src)
         self.assertNotIn('effective_max_spread and not _news_bypass', src)

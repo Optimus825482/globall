@@ -697,7 +697,8 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.ev_loss_risk_mult, 3.0)
         # allowed_symbols: 10 sembol (2026-10-12: 13 hayalet kros çıkarıldı; 2026-10-13: NAS100
         # (= MT5 USTEC) EKLENDİ — kullanıcı kararı 'tüm kollarda aç', tam-defter A/B +$207/+)
-        self.assertEqual(len(cfg.allowed_symbols), 11)
+        # 2026-11-10: JP225/US2000/UK100 canliya alindi → 11 -> 14 (endeks commit'i).
+        self.assertEqual(len(cfg.allowed_symbols), 14)
         self.assertIn("AUDCAD", cfg.allowed_symbols)
         self.assertIn("XAUUSD", cfg.allowed_symbols)
         self.assertIn("BTCUSD", cfg.allowed_symbols)

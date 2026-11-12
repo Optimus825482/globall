@@ -249,7 +249,9 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         # High volatility Gold (ATR 45 pips / $4.50) -> Dynamic buffer expands to 67.5 pips / $6.75 SL
         spec_high = forex.get_symbol_trading_specs("XAUUSD", atr_pips=45.0)
         self.assertEqual(spec_high["sl_pips"], 67.5)
-        self.assertEqual(spec_high["tp_pips"], 123.5)
+        # 2026-11: TP artık R tabanlı — sl × rr_floor(1,5) = 101,2; eskiden
+        # base_tp × mult (123,5) idi. Geometri değişikliği bilinçli (bkz. rr_floor).
+        self.assertEqual(spec_high["tp_pips"], 101.2)
         self.assertGreaterEqual(spec_high["be_pips"], 47.0)
 
     def test_mtf_conflicting_signals_are_neutral(self):
@@ -321,7 +323,8 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(specs["pip_size"], 1.0)
         self.assertEqual(specs["mult"], 5.0)
         self.assertEqual(specs["sl_pips"], 60.0)
-        self.assertEqual(specs["tp_pips"], 130.0)
+        # 2026-11: TP = sl × rr_floor(1,5) = 90 (eskiden base_tp 26 × 5 = 130).
+        self.assertEqual(specs["tp_pips"], 90.0)
 
     async def test_btcusd_lot_capping(self):
         """Verify BTCUSD lot size is queued correctly without artificial 0.02 cap."""
@@ -376,7 +379,8 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         expected = ["XAUUSD", "BTCUSD", "GBPJPY", "EURJPY", "US30", "NAS100",
                     "GBPUSD", "AUDUSD", "USDJPY", "USDCHF", "AUDCAD"]
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(len(cfg.allowed_symbols), 11)
+        # 2026-11-10: JP225/US2000/UK100 canliya alindi → 11 + 3 endeks = 14
+        self.assertEqual(len(cfg.allowed_symbols), 14)
         for s in expected:
             self.assertIn(s, cfg.allowed_symbols)
         # Panel-dürüstlüğü DEĞİŞMEZİ: her izinli sembol gerçekten işlenebilir olmalı
