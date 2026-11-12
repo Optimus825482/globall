@@ -304,6 +304,7 @@ TUN_ARM_SYMBOLS: Dict[str, set] = {}
 # edilir ve son ateşleyen sembolün adayını yerinden eder. Canlıda LB → LS gelir (LS
 # harness'ta yok, bilinen ve belgelenmiş boşluk).
 ARM_KEYS = ("donchian_adx", "s3_5m", "s3_15m", "fvg_pullback", "ema_adx_pullback", "london_breakout", "squeeze_kc")
+TUN_DA_MAX_PER_DAY = 2        # donchian_adx: yön başına günde azami giriş (canlı ayarla aynı)
 TUN_LB_BOX_END_H = 7            # Asya kutusu: 00:00 → 07:00 UTC
 TUN_LB_ENTRY_END_H = 11         # tetik penceresi: 07:00 → 11:00 UTC
 TUN_LB_SL_BOX_FRAC = 0.5        # SL = kutu yüksekliği × bu oran
@@ -791,7 +792,8 @@ def _entry_mode_candidate(sym: str, ts: float, bars: List[Tuple], ci: int,
             return None
         day = int(ts // 86400)
         key = (sym, day, action)
-        if MODE_DAY_STATE.get(key, 0) >= 2:
+        # 2026-11-12: sabit 2 -> ayarlanabilir (canlı `donchian_max_per_day` ile aynı varsayılan)
+        if TUN_DA_MAX_PER_DAY > 0 and MODE_DAY_STATE.get(key, 0) >= TUN_DA_MAX_PER_DAY:
             return None
         MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
         sl_pips = TUN_DA_SL_ATR * atr_price / pip_size
@@ -1639,7 +1641,7 @@ def _arm_donchian_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dict[
             if action == "SELL" and aroon_osc > -20.0:
                 return None
     key = (sym, int(ts // 86400), action)
-    if MODE_DAY_STATE.get(key, 0) >= 2:
+    if TUN_DA_MAX_PER_DAY > 0 and MODE_DAY_STATE.get(key, 0) >= TUN_DA_MAX_PER_DAY:
         return None
     MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
     return {"action": action, "entry_source": "donchian", "arm": "donchian_adx",
@@ -1680,7 +1682,7 @@ def _arm_squeeze_kc_candidate(sym, ts, bars, ci, tech, pip_size) -> Optional[Dic
     else:
         return None
     key = (sym, int(ts // 86400), action)
-    if MODE_DAY_STATE.get(key, 0) >= 2:
+    if TUN_DA_MAX_PER_DAY > 0 and MODE_DAY_STATE.get(key, 0) >= TUN_DA_MAX_PER_DAY:
         return None
     MODE_DAY_STATE[key] = MODE_DAY_STATE.get(key, 0) + 1
     sl_pips = round(abs(c - ser["kc_mid"][j]) / pip_size, 1) if pip_size > 0 else 0.0
@@ -4364,6 +4366,9 @@ def main():
                         help="Bar damgası düzeltmesi (saat). MT5 barları broker saatinde "
                              "(ICMarkets +2) → 2 verilince saat kapıları GERÇEK UTC'de "
                              "değerlendirilir. 0 = eski davranış (A/B karşılaştırması)")
+    parser.add_argument("--donchian-max-per-day", type=int, default=2,
+                        help="donchian_adx: yön başına günde azami giriş (canlı varsayılan 2; 0 = sınırsız). "
+                             "Frekans-kâr A/B'si için.")
     parser.add_argument("--jpy-spec-atr", action="store_true",
                         help="JPY çiftlerinde spec SL/TP'sini ATR ile genişlet (JPY dışı FX dallarıyla aynı kural). "
                              "Verilmezse eski davranış (8/20 sabit) — R:R çökmesi sürer.")
@@ -4624,6 +4629,8 @@ def main():
     if args.jpy_spec_atr:
         forex.JPY_SPEC_ATR_WIDENING = True
         print("[KONFIG] JPY spec ATR genişletmesi AÇIK")
+    global TUN_DA_MAX_PER_DAY
+    TUN_DA_MAX_PER_DAY = int(args.donchian_max_per_day)
 
     # Zaman-dilimi merdiveni (Aşama 3): --interval 15m ile 15m bar üzerinde replay
     global FETCH_INTERVAL

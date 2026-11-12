@@ -100,3 +100,11 @@ def test_canli_rr_floor_ayari_25():
     a = S()
     assert a.atr_exit_enabled is True
     assert a.atr_exit_rr_floor == 2.5
+
+
+def test_donchian_max_per_day_4():
+    """2026-11-12 A/B: 2 -> 4 (iki pencerede net ~%85 arttı, PF arttı, DD düştü;
+    2× maliyette de geçti). Sınırsız (0) DD'yi %76 fırlattığı için 4 seçildi."""
+    from app.routers.forex import ForexAutoPaperSettings as S
+    a = S()
+    assert a.donchian_max_per_day == 4

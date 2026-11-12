@@ -6120,7 +6120,14 @@ class ForexAutoPaperSettings(BaseModel):
         description="YALNIZ donchian_adx moduyla işlem açılan semboller (klasik skor sinyali bu çiftlerde replay'de kanıtlanmış negatif beklentiye sahip — kapalı kalır)",
     )
     donchian_adx_min: float = Field(18.0, ge=0.0, le=60.0, description="Donchian+ADX modu ADX(14) eşiği (2026-10-10 denetim P2-9: kodda sabitti, diğer akışlar ayardan okuyordu — kalibre değer 18.0 korunur)")
-    donchian_max_per_day: int = Field(2, ge=0, le=20, description="Donchian+ADX modu: yön başına günde azami giriş (2026-10-10 denetim P2-9: kodda sabitti — kalibre değer 2 korunur; 0 = sınırsız)")
+    donchian_max_per_day: int = Field(
+        4, ge=0, le=20,
+        description="Donchian+ADX modu: yön başına günde azami giriş (0 = sınırsız). "
+                    "**2026-11-12 A/B ile 2 → 4:** iki pencerede de NET ~%85 arttı, PF de arttı, "
+                    "DD düştü — cur 13.737$→25.414$ (PF 1,25→1,30, DD 5.081→4.522), "
+                    "prior 15.103$→23.524$ (PF 1,33→1,32). 2× maliyette de geçiyor "
+                    "(PF 1,23/1,28, net ~20 bin $). Sınırsız (0) net'i biraz daha artırıyor "
+                    "ama PF düşüp DD %76 fırlıyor → 4 seçildi. Geri alma: 2.")
     ema_adx_symbols: List[str] = Field(
         default_factory=lambda: ["XAUUSD", "NAS100", "USDJPY", "US30"],
         description=(
