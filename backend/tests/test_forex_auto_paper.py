@@ -1480,7 +1480,8 @@ class TestForexAutoPaper(unittest.IsolatedAsyncioTestCase):
         """P2-9: donchian ADX/gün-limiti ayardan okunmalı (kodda sabit kalmamalı)."""
         s = forex.ForexAutoPaperSettings()
         self.assertEqual(s.donchian_adx_min, 18.0)
-        self.assertEqual(s.donchian_max_per_day, 2)
+        # 2026-11-12 A/B: 2 -> 4 (net ~%85 arttı, PF arttı, DD düştü; 2× maliyette geçti)
+        self.assertEqual(s.donchian_max_per_day, 4)
         src = pathlib.Path(forex.__file__).read_text(encoding="utf-8")
         self.assertNotIn("adx_min=18.0", src, "donchian ADX eşiği yine kodda sabit")
         self.assertNotIn("max_per_day=2,", src, "donchian gün limiti yine kodda sabit")
