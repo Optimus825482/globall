@@ -17,6 +17,8 @@ import logging
 import time
 from typing import Any, Optional
 
+from app.config import config  # FOREX_ONLY: spot hattı kapalıysa sayaç dolmaz
+
 logger = logging.getLogger("scalper.shadow_report")
 
 #: Karar için gereken en az örnek (mekanizmaya göre).
@@ -30,11 +32,14 @@ NEEDED = {
 def _item(key: str, label: str, *, mode: str, active: bool, measures: str,
           n: Optional[int] = None, needed: Optional[int] = None,
           metric: Optional[str] = None, note: str = "",
-          detail: Optional[str] = None) -> dict[str, Any]:
+          detail: Optional[str] = None, stalled: bool = False) -> dict[str, Any]:
     ready = bool(n is not None and needed and n >= needed)
     return {
         "key": key, "label": label, "mode": mode, "active": bool(active),
         "measures": measures, "n": n, "needed": needed, "ready": ready,
+        # 2026-11-12: `stalled` = "bu kurulumda örnek ÜRETİLMEZ" (0/200 gibi satırlar
+        # "hat çalışmıyor" sanılmasın). UI bunu rozetle gösterir.
+        "stalled": bool(stalled),
         "progress_pct": (round(100.0 * min(n, needed) / needed, 1)
                          if (n is not None and needed) else None),
         "metric": metric, "note": note, "detail_endpoint": detail,
@@ -74,7 +79,9 @@ async def build() -> dict[str, Any]:
             needed=NEEDED["ml_calibration"],
             metric=(f"gözlem {obs}, çekimser %{c.get('abstain_rate_pct')}" if obs else None),
             note=("Artefakt yüklü" if c.get("artifact_loaded") else "Kalibrasyon eğrisi (artefakt) yok"),
-            detail="/api/reports/ml-calibration"))
+            detail="/api/reports/ml-calibration",
+            # Spot/velocity hattı kapalıysa bu sayaç HİÇ dolmaz — 0/200 yanıltmasın.
+            stalled=(not obs and bool(getattr(config, "FOREX_ONLY", False)))))
     except Exception as exc:  # noqa: BLE001
         items.append(_item("ml_calibration", "ML isabet olasılığı kalibrasyonu", mode="off",
                            active=False, measures="ML kalibrasyon gölgesi",
@@ -91,8 +98,10 @@ async def build() -> dict[str, Any]:
             measures="Farklı SL/hedef oranı aynı sinyallerde daha iyi EV verir mi",
             n=n, needed=NEEDED["geometry_shadow"],
             metric=f"{n} aday",
-            note="Kök neden geometri hipotezi: break-even için isabet %67 gerekiyor, gerçek %56.",
-            detail="/api/reports/ml-calibration"))
+            note=("Kök neden geometri hipotezi: break-even için isabet %67 gerekiyor, gerçek %56."
+                  if n else "Henüz aday yazılmadı — gölge açıkken ilk işlemlerden sonra dolar."),
+            detail="/api/reports/ml-calibration",
+            stalled=(not on)))
     except Exception as exc:  # noqa: BLE001
         items.append(_item("geometry_shadow", "Geometri gölgesi", mode="off", active=False,
                            measures="SL/hedef oranı gölgesi", note=f"okunamadı: {type(exc).__name__}"))

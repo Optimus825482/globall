@@ -1,0 +1,28 @@
+# GİRİŞ MODU TARAMASI — TUR 2 (2026-11-12)
+
+**Ayar:** ölçülen saat-duyarlı spread + `--bar-tz-offset 2` (doğru UTC), `--skip-old`,
+30 gün IS + önceki 30 gün OOS. Ölçüt: **IS PF ≥ 1,05 ve OOS PF ≥ 1,05 ve OOS n ≥ 40**.
+
+## Sonuç: 4 aday tarandı — **hepsi elendi**
+
+| Mod | IS PF | IS net | IS n | OOS PF | OOS net | OOS n | Karar |
+|---|---|---|---|---|---|---|---|
+| `nr7` | 1,03 | +1.677 $ | 1.119 | **0,91** | −5.314 $ | 978 | ❌ elendi |
+| `orb_ny` | **0,49** | −9.370 $ | 192 | **0,37** | −10.238 $ | 165 | ❌ elendi |
+| `tokyo_fix` | 0,71 | −808 $ | 35 | 0,59 | −974 $ | 29 | ❌ elendi (n çok küçük) |
+| `squeeze_kc` | 0,71 | −1.290 $ | 78 | 0,71 | −1.155 $ | 71 | ❌ elendi |
+
+**Yorum:** `nr7` en yakınıydı (IS 1,03) ama OOS'ta 0,91 → daralma kırılımı bu evrende
+kenar üretmiyor. `orb_ny` (NY açılış aralığı) belirgin şekilde zarar: açılış
+momentesi maliyeti karşılamıyor. `tokyo_fix` örneklem olarak da yetersiz (n=35).
+
+## Şimdiye kadar taranan modlar (doğru maliyet+saat ile)
+
+| Tur | Modlar | Sonuç |
+|---|---|---|
+| 1 | london_breakout · ema_adx_pullback · pullback · supertrend_rsi | **4 geçti** (lb ve eap zaten canlı) |
+| 1 | reopen_fade · squeeze | elendi |
+| 2 | nr7 · orb_ny · tokyo_fix · squeeze_kc | **4 elendi** |
+
+## Dosyalar
+`outputs/ns_<mod>_{IS,OOS}.json` (gitignore'da; koşular tekrar üretilebilir)

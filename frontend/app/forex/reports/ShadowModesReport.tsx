@@ -18,6 +18,8 @@ interface ShadowItem {
   n: number | null; needed: number | null; ready: boolean;
   progress_pct: number | null; metric: string | null; note: string;
   detail_endpoint: string | null;
+  /** 2026-11-12: "bu kurulumda örnek ÜRETİLMEZ" (ör. FOREX_ONLY açıkken spot ML sayacı). */
+  stalled?: boolean;
 }
 interface ShadowReport {
   generated_at: number; count: number; active_shadow: number;
@@ -92,8 +94,16 @@ export default function ShadowModesReport() {
                     KARAR EŞİĞİ DOLDU
                   </span>
                 )}
+                {it.stalled && (
+                  <span className="rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-mono text-2xs font-bold text-amber-300"
+                        title="Bu ölçüm hattı bu kurulumda beslenmiyor; sayı hiç dolmaz.">
+                    BU KURULUMDA ÖLÇÜLMÜYOR
+                  </span>
+                )}
                 <span className="ml-auto font-mono text-2xs text-bunker-muted">
-                  {it.needed != null ? `${it.n ?? 0} / ${it.needed} örnek` : it.metric || "—"}
+                  {it.stalled
+                    ? (it.metric || "—")
+                    : it.needed != null ? `${it.n ?? 0} / ${it.needed} örnek` : it.metric || "—"}
                 </span>
               </div>
               <p className="mt-1.5 text-2xs text-bunker-muted">{it.measures}</p>
