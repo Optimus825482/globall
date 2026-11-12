@@ -455,7 +455,12 @@ _TV = {
     "XRPUSD": ("crypto", "BINANCE:XRPUSDT"), "SOLUSD": ("crypto", "BINANCE:SOLUSDT"), "BNBUSD": ("crypto", "BINANCE:BNBUSDT"),
     "ADAUSD": ("crypto", "BINANCE:ADAUSDT"), "LNKUSD": ("crypto", "BINANCE:LINKUSDT"), "UNIUSD": ("crypto", "BINANCE:UNIUSDT"),
     "AVXUSD": ("crypto", "BINANCE:AVAXUSDT"), "XTZUSD": ("crypto", "BINANCE:XTZUSDT"),
-    "USTEC": ("cfd", "OANDA:NAS100USD"), "NAS100": ("cfd", "OANDA:NAS100USD"), "US30": ("cfd", "OANDA:US30USD"),
+    # 2026-11-12 CANLI TEST: `OANDA:NAS100USD` CFD tarayıcısında HİÇ veri döndürmüyor
+    # (sessizce taramadan düşüyordu) → Nasdaq "america" pazarında `NASDAQ:NDX` ile.
+    # Endeksler için TVC serisi: günlük reyting None ama 15m/1h/4h dolu (tarama 3+ ister).
+    "USTEC": ("america", "NASDAQ:NDX"), "NAS100": ("america", "NASDAQ:NDX"),
+    "US30": ("cfd", "OANDA:US30USD"),
+    "JP225": ("cfd", "TVC:NI225"), "UK100": ("cfd", "TVC:UKX"), "US2000": ("cfd", "TVC:RUT"),
 }
 
 # Investing.com RSS: sembol sınıfına göre kategori akışları (+ genel piyasa özeti).
@@ -720,8 +725,26 @@ def describe_tradingview(symbol: str, tv: Optional[Dict[str, Any]]) -> str:
 
 # --------------------------------------------------------------------------- fırsat taraması (TradingView toplu)
 
-SCAN_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY",
-                 "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD", "USTEC", "US30"]
+#: YEDEK evren — sistem ayarları okunamazsa kullanılır.
+SCAN_FALLBACK = ["XAUUSD", "BTCUSD", "EURUSD", "GBPUSD", "USDJPY", "US30", "NAS100"]
+
+
+def scan_universe() -> List[str]:
+    """Fırsat taramasının evreni = **sistemin gerçek işlem evreni**.
+
+    2026-11-12: sabit 18 sembollük liste kullanılıyordu; içinde motorun ASLA
+    işlem açmadığı pariteler vardı (NZDUSD, USDCAD, AUDJPY, EURGBP, AUDNZD,
+    XAGUSD, ETHUSD) ve sistemin endeksleri (JP225/US2000/UK100) YOKTU.
+    Kullanıcı "Nasdaq, Dow" sorunca tarama onları hiç görmüyordu.
+    """
+    try:
+        from app.routers import forex as _fx
+        syms = [str(x).upper() for x in (_fx._AUTO_SETTINGS.allowed_symbols or [])]  # noqa: SLF001
+        if syms:
+            return syms
+    except Exception:  # noqa: BLE001 — ayar okunamazsa yedeğe düş
+        pass
+    return list(SCAN_FALLBACK)
 _SCAN_WEIGHTS = {"15m": 1.0, "1h": 2.0, "4h": 2.0, "1d": 3.0}
 
 
@@ -731,7 +754,7 @@ def scan_opportunities(symbols: Optional[List[str]] = None, top: int = 5) -> Opt
     Sıra puanı: 15dk/1sa/4sa/günlük reytinglerin ağırlıklı ortalamasının mutlağı × zaman dilimi uyumu.
     Sonuç yalnız ADAY listesidir; asıl derin analiz üst adaylara ayrıca yapılır.
     """
-    syms = [x.upper() for x in (symbols or SCAN_UNIVERSE)]
+    syms = [x.upper() for x in (symbols or scan_universe())]
     by_market: Dict[str, List[Tuple[str, str]]] = {}
     for sym in syms:
         spec = _TV.get(sym) or (("forex", f"OANDA:{sym}") if re.fullmatch(r"[A-Z]{6}", sym) else None)
@@ -768,13 +791,19 @@ def scan_opportunities(symbols: Optional[List[str]] = None, top: int = 5) -> Opt
     if not ranked:
         return None
     ranked.sort(key=lambda r: r["score"], reverse=True)
-    return {"top": ranked[:top], "all": ranked, "scanned": len(ranked)}
+    # SESSİZ DÜŞÜŞ YOK: istenip de veri gelmeyen semboller rapora yazılır
+    # (2026-11-12: Nasdaq bir eşleme hatası yüzünden hiç taranmadan "yok" sanılıyordu).
+    got = {r["symbol"] for r in ranked}
+    missing = [s for s in syms if s not in got]
+    return {"top": ranked[:top], "all": ranked, "scanned": len(ranked), "missing": missing}
 
 
 def describe_scan(scan: Optional[Dict[str, Any]]) -> str:
     if not scan:
         return "Fırsat taraması yapılamadı (TradingView verisi alınamadı)."
     lines = [f"{scan['scanned']} enstrüman tarandı; en net yönlü olanlar (TradingView teknik reytingi, çoklu zaman dilimi uyumuna göre):"]
+    if scan.get("missing"):
+        lines.append("Veri gelmeyen semboller (yön belirtilmedi): " + ", ".join(scan["missing"]))
     for r in scan["top"][:5]:
         name = SYMBOL_NAME.get(r["symbol"], r["symbol"])
         name = name if name == r["symbol"] else f"{name} ({r['symbol']})"

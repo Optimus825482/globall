@@ -25,7 +25,10 @@ Unifies all 21 open-source AI & Quantitative trading architectures into a single
 """
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 
 from .octobot_matrix import OctoBotMatrixEvaluator, IndicatorEvaluation, MatrixConsensusResult
 from .finrobot_macro import FinRobotMacroAnalyzer, MacroEvent, MacroAnalysisResult
@@ -406,7 +409,24 @@ class AITradingSuiteOrchestrator:
                 current_atr=req.atr
             )
 
-        if veto_res.approved and veto_res.final_action == TradeAction.BUY:
+        # 2026-11-12 (CANLI KUSUR): "Konsey=STAND_ASIDE" iken "Karar=APPROVED_BUY,
+        # Güven=%100" dönüyordu — konsey çekimserken onay vermek yanıltıcı. Konsey
+        # burada VETO değil ÇEKİMSERLİK verir: karar WAIT'e indirilir ve güven
+        # yarıya kelepçelenir. (Bu blok yalnız analiz/sohbet katmanıdır; FX motorunun
+        # gerçek giriş kararını değiştirmez.)
+        council_abstained = (getattr(council_res, "consensus_decision", "") == "STAND_ASIDE")
+        council_wait = (council_abstained and veto_res.approved
+                        and veto_res.final_action in (TradeAction.BUY, TradeAction.SELL))
+        if council_wait:
+            logger.info("[21AI] %s: konsey çekimser → karar WAIT", req.symbol)
+
+        if council_wait:
+            # Çekimserlik VETO değil: karar verilmez (WAIT). "Onaylandı + %100 güven"
+            # ile "Konsey çekimser" yan yana gelemez (2026-11-12 canlı kusuru).
+            final_verdict = "WAIT"
+            directive = ("Hedge Fund Konseyi çekimser (STAND_ASIDE) → onay verilmedi. "
+                         "Yön kanıtı tek başına yeterli değil; ek teyit gerekir.")
+        elif veto_res.approved and veto_res.final_action == TradeAction.BUY:
             final_verdict = "APPROVED_BUY"
             directive = (
                 f"21-Yapay Zeka ve Kantitatif Motor Onayladı: {req.current_price:.4f} seviyesinde alım. "
@@ -430,7 +450,9 @@ class AITradingSuiteOrchestrator:
             timestamp=now,
             final_verdict=final_verdict,
             risk_chief_approved=veto_res.approved,
-            confidence_score=reflection_res.final_confidence,
+            confidence_score=(
+                min(reflection_res.final_confidence, 0.5) if council_abstained
+                else reflection_res.final_confidence),
             proposed_contract=proposal.model_dump(),
             veto_verdict=veto_res.model_dump(),
             matrix_consensus=asdict(matrix_res),
