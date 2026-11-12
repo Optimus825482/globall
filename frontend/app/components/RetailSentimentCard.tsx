@@ -110,14 +110,14 @@ export default function RetailSentimentCard() {
 
       {items.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-xs">
+          <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-bunker-800 text-left text-2xs uppercase tracking-wide text-bunker-muted">
                 <th className="px-4 py-2.5 font-medium sm:px-5">Sembol</th>
                 <th className="px-3 py-2.5 font-medium">Topluluk trendi (short ↔ long)</th>
                 <th className="hidden px-3 py-2.5 font-medium md:table-cell">Popülerlik</th>
-                <th className="px-3 py-2.5 font-medium text-right">Ort. short / fiyata uzaklık</th>
-                <th className="px-3 py-2.5 font-medium text-right">Ort. long / fiyata uzaklık</th>
+                <th className="hidden px-3 py-2.5 font-medium text-right sm:table-cell">Ort. short / uzaklık</th>
+                <th className="hidden px-3 py-2.5 font-medium text-right sm:table-cell">Ort. long / uzaklık</th>
                 <th className="px-4 py-2.5 font-medium text-right sm:px-5">Fiyat</th>
               </tr>
             </thead>
@@ -157,12 +157,12 @@ export default function RetailSentimentCard() {
                       </p>
                     </td>
 
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="hidden px-3 py-2.5 text-right sm:table-cell">
                       <div className="tabular-nums">{fmtPrice(it.avg_short_price)}</div>
                       <Pips value={it.dist_short_pips} />
                     </td>
 
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="hidden px-3 py-2.5 text-right sm:table-cell">
                       <div className="tabular-nums">{fmtPrice(it.avg_long_price)}</div>
                       <Pips value={it.dist_long_pips} />
                     </td>

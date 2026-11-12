@@ -47,13 +47,14 @@ const COMP_LABEL: Record<string, string> = {
 function Gauge({ score, label }: { score: number; label: string }) {
   const pct = Math.max(0, Math.min(100, Math.abs(score)));
   const positive = score >= 0;
+  // AÇIK temada da okunur: metin koyu, kapsül beyazımsı (doygun dolgu üstünde).
   const tone =
-    score >= 45 ? "text-emerald-300" : score <= -45 ? "text-rose-300" : "text-bunker-100";
+    score >= 45 ? "text-emerald-700" : score <= -45 ? "text-rose-700" : "text-bunker-800";
   return (
-    <div className="relative h-8 w-full overflow-hidden rounded-sm bg-bunker-800">
+    <div className="relative h-8 w-full overflow-hidden rounded-sm border border-bunker-700/40 bg-bunker-800/40">
       {/* dolgu: merkezden skora doğru */}
       <div
-        className={`absolute inset-y-0 ${positive ? "left-1/2 bg-emerald-500/85" : "right-1/2 bg-rose-500/85"}`}
+        className={`absolute inset-y-0 ${positive ? "left-1/2 bg-emerald-500" : "right-1/2 bg-rose-500"}`}
         style={{ width: `${pct / 2}%` }}
       />
       {/* merkez işareti (0) */}
@@ -61,8 +62,9 @@ function Gauge({ score, label }: { score: number; label: string }) {
       {/* skor + etiket — çubuğun ORTASINDA, belirgin */}
       <div className="absolute inset-0 flex items-center justify-center">
         <span
-          className={`max-w-[92%] truncate whitespace-nowrap rounded bg-bunker-900/75 px-2.5 py-1
-                      text-[11px] font-bold tabular-nums tracking-wide shadow-sm sm:text-xs ${tone}`}
+          className={`max-w-[92%] truncate whitespace-nowrap rounded border border-bunker-700/30
+                      bg-white/92 px-2.5 py-[3px] text-[11px] font-bold tabular-nums tracking-wide
+                      shadow-sm sm:text-xs dark:bg-bunker-900/85 dark:text-white ${tone}`}
           title={`${score > 0 ? "+" : ""}${score.toFixed(0)} · ${label}`}
         >
           {score > 0 ? "+" : ""}
@@ -134,7 +136,7 @@ export default function SentimentGaugeCard() {
 
               <div className="mt-2">
                 <Gauge score={it.score} label={it.label} />
-                <div className="mt-1 flex justify-between text-2xs text-bunker-muted">
+                <div className="mt-1 flex justify-between text-[10px] text-bunker-muted sm:text-2xs">
                   <span>−100 SHORT</span>
                   <span>0</span>
                   <span>LONG +100</span>
