@@ -45,8 +45,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BROKER_ALIAS = {"NAS100": "USTEC", "US100": "USTEC"}
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 
-TFS = {"15m": mt5.TIMEFRAME_M15, "30m": mt5.TIMEFRAME_M30, "1h": mt5.TIMEFRAME_H1,
+TFS = {"1m": mt5.TIMEFRAME_M1, "5m": mt5.TIMEFRAME_M5,
+       "15m": mt5.TIMEFRAME_M15, "30m": mt5.TIMEFRAME_M30, "1h": mt5.TIMEFRAME_H1,
        "4h": mt5.TIMEFRAME_H4, "1d": mt5.TIMEFRAME_D1}
+# 2026-11-12: 1m/5m eklendi — `london_breakout` gibi seans kolları 5m'de tanımlı
+# ve 15m'e çevirmek kuralı başka bir strateji yapar (kutu kırılımı incelir).
 
 
 # --------------------------------------------------------------------------- saf çekirdek
@@ -213,7 +216,7 @@ def load_bars(sym: str, years: float, tf: str) -> list[tuple]:
     end = dt.datetime.now()
     days = int(years * 365.25)
     i = 0
-    step = 30 if tf in ("15m", "30m") else 180
+    step = 7 if tf in ("1m", "5m") else (30 if tf in ("15m", "30m") else 180)
     while i < days:
         b_end = end - dt.timedelta(days=i)
         b_start = max(b_end - dt.timedelta(days=step), end - dt.timedelta(days=days))
@@ -308,7 +311,12 @@ def main() -> int:
         if len(bars) < 500:
             print(f"{sym:<8} veri yetersiz ({len(bars)})")
             continue
-        i = mt5.symbol_info(sym)
+        # TUZAK (2026-11-12): uygulama adı ≠ terminal adı (NAS100→USTEC). `symbol_info`
+        # uygulama adıyla None dönünce pip hesabı AttributeError ile TÜM koşuyu düşürüyordu.
+        i = mt5.symbol_info(BROKER_ALIAS.get(str(sym).upper(), str(sym).upper())) or mt5.symbol_info(sym)
+        if i is None:
+            print(f"{sym:<8} terminalde yok — atlandı")
+            continue
         pip = float(i.point) * (10.0 if i.digits in (3, 5) else 1.0)
         ctx = _external_ctx(arm.external_inputs, sym, args.years) if arm.external_inputs else None
         sig = call_handler(arm, bars, sym, ctx)

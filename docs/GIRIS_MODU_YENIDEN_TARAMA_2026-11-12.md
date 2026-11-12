@@ -53,13 +53,53 @@ Aynı düzeltilmiş ayar, **farklı pencere**:
 
 `squeeze` beklendiği gibi gürültüydü (IS PF 1,05) ve OOS'ta 0,82 → **elendi**.
 
-## 5) Sıradaki adım
+## 5) 2× maliyet stresi (kill kriteri: PF ≥ 1,1 — İKİ pencerede de)
 
-1. Geçen 3 moda **2× maliyet stresi** (`--slip-pips 2`) + DD kontrolü — repo kill kriteri: iki pencerede biri negatif / DD > 200 $ / 2× maliyette PF < 1,1 → kapanır.
-2. Geçenler `app/arms/` dosyası olarak yazılıp `fx_arm_backtest` + gölge yolundan geçirilir; doğrudan canlıya alınmaz.
-3. `reopen_fade` örneklem küçük (92 işlem) — kotayı büyütmek için pencere uzatılmalı.
+Profilin tüm spread değerleri ikiye katlandı (`outputs/fx_spread_replay_profile_2x.json`):
 
-## 6) Üretilen dosyalar
+| Mod | 2× PF (son 30g) | 2× PF (önceki 30g) | Karar |
+|---|---|---|---|
+| london_breakout | 1,69 | 1,54 | ✅ geçti |
+| ema_adx_pullback | 1,15 | 1,10 | ✅ geçti (sınırda) |
+| reopen_fade | **1,09** | 1,12 | ❌ **kaldı** (bir pencerede <1,1) |
+
+`reopen_fade` ayrıca örneklem olarak da zayıf (sembol başına 1-21 işlem) → **elendi**.
+
+## 6) ⚠️ KOL ÖLÇÜMÜ REPLAY'İ ÇÜRÜTTÜ (kendi kararımı geri alıyorum)
+
+`london_breakout` için `app/arms/london_breakout.py` yazıldı ve **bağımsız** ölçüldü
+(`fx_arm_backtest`, 2 yıl 5m, harness çıkışları):
+
+| Sembol | n | isabet | beklenti R | t | PF |
+|---|---|---|---|---|---|
+| GBPUSD | 376 | %45,2 | −0,006 | −0,11 | 0,95 |
+| AUDUSD | 265 | %38,5 | **−0,136** | **−2,20** | 0,74 |
+| XAUUSD | 225 | %41,3 | −0,006 | −0,09 | 0,95 |
+| US30 | 330 | %48,2 | +0,078 | 1,29 | 1,13 |
+| NAS100 | 303 | %44,9 | +0,088 | 1,42 | 1,26 |
+| **TOPLAM** | **1.499** | %44,0 | **+0,008** | **0,31** | **1,16** |
+
+**Beklenti +0,008R, t=0,31 → kenar sıfırdan ayırt edilemiyor.** Yani replay'deki
+PF 1,73 **sinyalin** değil, **motorun çıkış yığınının** (BE `cost+1`, chandelier,
+EV kalkanı, seans kapıları, risk normalizasyonu) eseri.
+
+**Karar değişikliği:** `london_breakout` kol olarak **TERFİ EDİLMEDİ**; dosya ölçüm
+artefaktı olarak duruyor. Aynı şüphe `ema_adx_pullback` için de geçerli (kolu henüz
+yazılmadı; tam gösterge yığını gerektiriyor).
+
+**Doğru yol:** bu sinyaller **motor içinde gölge** olarak ölçülmeli — kârı üreten çıkış
+katmanı orada var. Kol dosyası olarak terfi, çıkış yığınını sinyalin hanesine yazmak olur.
+
+## 7) Sıradaki adım
+
+1. `ema_adx_pullback` + `london_breakout` için **motor içi gölge** (mode='shadow') — mevcut
+   gölge mekanizmasıyla, karar değişmeden ölçüm.
+2. `reopen_fade` kapandı; yeniden açılması için daha uzun pencere (≥90 gün) şart.
+3. Yan bulgu düzeltildi: `fx_arm_backtest` 1m/5m desteklemiyordu ve uygulama adı ≠
+   terminal adı olduğunda (NAS100→USTEC) `symbol_info` None dönüp **tüm koşuyu**
+   AttributeError ile düşürüyordu.
+
+## 8) Üretilen dosyalar
 
 - `outputs/mx_<mod>_{old,new}.json` — ana matris (6 mod × 2 ayar)
 - `outputs/dx_<mod>_{cost,tz}.json` — ayrıştırma (3 mod × 2 ayar)
