@@ -3289,6 +3289,10 @@ def get_atr_exit_levels(
     min_tp = round(eff_sl * rr_floor, 1)
     atr_tp = round(atr_pips * tp_atr_mult, 1)
     # 1.5R tabanı korunur; spec TP'nin üstüne çıkılmaz (taban spec'i ezerse spec kazanır).
+    # DİKKAT: `tp_pips` buraya MOTORUN ATR ile GENİŞLETİLMİŞ spec'inden gelir
+    # (`get_symbol_trading_specs(sym, atr_pips=...)`). ATR'siz spec ile çağırırsan
+    # spec TP'si tabanda (FX 20 / XAU-BTC 60 pip) kalır ve R:R çöker — 2026-11-12'de
+    # 21-AI'de tam bu hata vardı (XAU 195/60 = 0,31 · BTC 840/60 = 0,07).
     eff_tp = min(float(tp_pips), max(min_tp, atr_tp))
     first_target = min(eff_tp, max(round(eff_sl * 0.9, 1), round(atr_pips * 1.0, 1)))
     first_target = max(1.0, first_target)

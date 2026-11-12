@@ -636,9 +636,12 @@ async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
     real_sl = real_tp = None
     try:
         from app.routers import forex as _fx
-        _spec = _fx.get_symbol_trading_specs(raw_sym)
-        _pip = float(_spec.get("pip_size") or 0.0001)
+        _pip = float((_fx.get_symbol_trading_specs(raw_sym) or {}).get("pip_size") or 0.0001)
         _atr_pips = float(real["atr"]) / _pip if _pip else 0.0
+        # 2026-11-12 DÜZELTME: spec ATR İLE üretilmeli (canlı motor da öyle yapıyor:
+        # `get_symbol_trading_specs(sym, atr_pips=...)`). ATR'siz çağrıda TP tabanda
+        # (FX 20 / XAU-BTC 60 pip) kalıyor ve R:R çöküyordu (BTC 0,07!).
+        _spec = _fx.get_symbol_trading_specs(raw_sym, atr_pips=_atr_pips)
         _lvl = _fx.get_atr_exit_levels(
             _atr_pips, _spec["sl_pips"], _spec["tp_pips"],
             sl_atr_mult=1.5, tp_atr_mult=1.4, rr_floor=1.5)

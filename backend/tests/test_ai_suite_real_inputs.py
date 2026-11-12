@@ -62,15 +62,15 @@ def test_veri_yoksa_konsensus_uretilmez(monkeypatch):
 
     monkeypatch.setattr("app.forex_research.run_blocking",
                         lambda fn, *a, **k: {"ok": False})
-    r = asyncio.get_event_loop().run_until_complete(
-        ct.execute_ai_trading_suite_evaluation({"symbol": "EURUSD", "asset_type": "FOREX"}))
+    r = asyncio.run(ct.execute_ai_trading_suite_evaluation(
+        {"symbol": "EURUSD", "asset_type": "FOREX"}))
     assert r.get("ok") is False and "ÜRETİLMEDİ" in str(r.get("reason"))
 
 
 def test_sembol_yoksa_hata():
     import asyncio
-    r = asyncio.get_event_loop().run_until_complete(
-        ct.execute_ai_trading_suite_evaluation({"symbol": "", "asset_type": "FOREX"}))
+    r = asyncio.run(ct.execute_ai_trading_suite_evaluation(
+        {"symbol": "", "asset_type": "FOREX"}))
     assert r.get("ok") is False
 
 
