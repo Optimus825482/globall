@@ -56,9 +56,13 @@ def evaluate_openbb_macro(
         calendar_risk = 15.0
 
     # Macro regime
-    if dxy_bias == "BULLISH" and calendar_risk >= 50.0:
+    # 2026-11-12 DÜZELTME: güçlü dolar tek başına da risk-off'tur (likidite daralması /
+    # sıkılaşma). Eski kural `dxy_bias == BULLISH **ve** calendar_risk >= 50` istiyordu →
+    # DXY +%1,4 olduğu günde bile takvimde yakın veri yoksa rejim "NEUTRAL" çıkıyordu
+    # (her sembolde aynı "OpenBB Rejim=NEUTRAL" satırının nedeni buydu).
+    if dxy_bias == "BULLISH":
         macro_regime = "RISK_OFF"
-        macro_risk_score = min(95.0, calendar_risk + 20.0)
+        macro_risk_score = min(95.0, 45.0 + calendar_risk * 0.5)
     elif dxy_bias == "BEARISH" and calendar_risk < 50.0:
         macro_regime = "RISK_ON"
         macro_risk_score = 25.0

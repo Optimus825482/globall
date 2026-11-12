@@ -617,9 +617,22 @@ async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
     except Exception:  # noqa: BLE001
         pass
 
+    # OpenBB makro rejimi DXY günlük değişimine bakıyor; geçilmezse 0.0 kalıp
+    # HER sembolde "NEUTRAL" üretiyordu (2026-11-12). Küresel nabızdan alınır.
+    dxy_chg = 0.0
+    try:
+        from app import market_pulse
+        _mp = market_pulse.summary() or {}
+        _dxy = ((_mp.get("assets") or {}).get("dxy") or {})
+        if _dxy.get("available") and _dxy.get("chg_pct") is not None:
+            dxy_chg = float(_dxy["chg_pct"])
+    except Exception:  # noqa: BLE001
+        dxy_chg = 0.0
+
     req = UnifiedEvaluationRequest(
         symbol=raw_sym,
         asset_type=asset_type,
+        dxy_change_pct=dxy_chg,
         current_price=float(real["price"]),
         atr=float(real["atr"]),
         indicators=real["indicators"],
