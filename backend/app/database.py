@@ -7539,8 +7539,13 @@ def _ensure_retail_sentiment_schema(conn) -> None:
         " long_pct DOUBLE PRECISION NOT NULL, short_pct DOUBLE PRECISION NOT NULL,"
         " long_positions INTEGER, short_positions INTEGER, total_positions INTEGER,"
         " avg_long_price DOUBLE PRECISION, avg_short_price DOUBLE PRECISION,"
+        " long_volume DOUBLE PRECISION, short_volume DOUBLE PRECISION,"
         " source TEXT NOT NULL DEFAULT 'myfxbook',"
         " PRIMARY KEY (symbol, fetched_at))")
+    # Mevcut kurulum: hacim kolonları sonradan eklendi (2026-11-12) → ALTER.
+    for _col in ("long_volume", "short_volume"):
+        conn.execute(
+            f"ALTER TABLE retail_sentiment_history ADD COLUMN IF NOT EXISTS {_col} DOUBLE PRECISION")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS retail_sentiment_symbol_idx "
         "ON retail_sentiment_history(symbol, fetched_at DESC)")
@@ -7562,12 +7567,14 @@ async def save_retail_sentiment(rows: List[Dict[str, Any]], fetched_at: float) -
                 conn.execute(
                     "INSERT INTO retail_sentiment_history (symbol, fetched_at, long_pct, short_pct,"
                     " long_positions, short_positions, total_positions, avg_long_price,"
-                    " avg_short_price, source) VALUES (?,?,?,?,?,?,?,?,?,?)"
+                    " avg_short_price, long_volume, short_volume, source)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
                     " ON CONFLICT (symbol, fetched_at) DO NOTHING",
                     (str(r["symbol"]), float(fetched_at), float(r["long_pct"]),
                      float(r["short_pct"]), int(r.get("long_positions") or 0),
                      int(r.get("short_positions") or 0), int(r.get("total_positions") or 0),
                      float(r.get("avg_long_price") or 0.0), float(r.get("avg_short_price") or 0.0),
+                     float(r.get("long_volume") or 0.0), float(r.get("short_volume") or 0.0),
                      str(r.get("source") or "myfxbook")))
                 n += 1
             except Exception:  # noqa: BLE001 — tek bozuk satır turu düşürmesin
@@ -7588,7 +7595,8 @@ async def get_retail_sentiment_latest() -> Dict[str, Any]:
             return {"fetched_at": None, "rows": []}
         rows = conn.execute(
             "SELECT symbol, long_pct, short_pct, long_positions, short_positions,"
-            " total_positions, avg_long_price, avg_short_price FROM retail_sentiment_history"
+            " total_positions, avg_long_price, avg_short_price, long_volume, short_volume"
+            " FROM retail_sentiment_history"
             " WHERE fetched_at = ? ORDER BY total_positions DESC LIMIT 200", (ts,)).fetchall()
         return {"fetched_at": float(ts), "rows": [dict(r) for r in rows]}
     return await _run_db(op)
@@ -7627,4 +7635,25 @@ async def get_retail_sentiment_session() -> Dict[str, Any]:
         row = conn.execute(
             "SELECT session, created_at FROM retail_sentiment_session WHERE id = 1").fetchone()
         return dict(row) if row else {}
+    return await _run_db(op)
+
+
+async def get_last_close_prices(symbols: List[str], timeframe: str = "5m") -> Dict[str, float]:
+    """Sembol → en son kapanış (historical_candles). Canlı fiyat yoksa yedek.
+
+    Perakende konumlanma tablosunda "fiyata uzaklık" sütunu canlı tick
+    önbelleğinden beslenir; önbellek soğuksa (köprü sessiz) tablo boş kalmasın
+    diye son kapanış kullanılır — bu bir yedek, canlı fiyat değil.
+    """
+    def op(conn):
+        wanted = [str(s).upper() for s in (symbols or []) if str(s).strip()]
+        if not wanted:
+            return {}
+        rows = conn.execute(
+            "SELECT symbol, close FROM ("
+            "  SELECT symbol, close, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY open_time DESC) rn"
+            "  FROM historical_candles WHERE timeframe = ? AND symbol = ANY(?)"
+            ") t WHERE rn = 1", (timeframe, wanted)).fetchall()
+        return {str(dict(r)["symbol"]): float(dict(r)["close"] or 0.0)
+                for r in rows if float(dict(r)["close"] or 0.0) > 0}
     return await _run_db(op)

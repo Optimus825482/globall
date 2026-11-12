@@ -299,11 +299,15 @@ async def cot_status():
 
 @router.get("/api/system/retail-sentiment")
 async def retail_sentiment_status(symbol: str | None = None, limit: int = 12, refresh: bool = False):
-    """Perakende konumlanma (Myfxbook topluluk outlook) — ana sayfa kartı + LLM bağlamı.
+    """Perakende konumlanma (Myfxbook topluluk outlook) — ana sayfa tablosu + LLM bağlamı.
 
     BAĞLAMDIR, KAPI DEĞİL: karar akışını değiştirmez (COT/seans ile aynı sınıf).
-    Tur aralığı 30 dk (ücretsiz kota 100 istek/24s). İstek yolu ağa çıkmaz;
+    Tur aralığı **15 dk** (ücretsiz kota 100 istek/24s → 96). İstek yolu ağa çıkmaz;
     tazeleme arka planda yapılır. `refresh=true` yalnız ölçüm/panel için.
+
+    Dönen satır, Myfxbook tablosunun aynısını besler: topluluk trendi (short/long),
+    popülerlik (açık pozisyon payı), ortalama short/long giriş fiyatı ve **fiyata
+    uzaklık (pip, işaretli)**, güncel fiyat.
     """
     from app import retail_sentiment as rs
 
@@ -313,23 +317,56 @@ async def retail_sentiment_status(symbol: str | None = None, limit: int = 12, re
         await rs.hydrate_if_empty()   # ilk yüklemede "veri yok" demesin (DB'den)
         rs.ensure_fresh_async()
     s = rs.summary(symbol)
-    rows = sorted((rs._state.get("rows") or {}).values(),  # noqa: SLF001
+    all_rows = (rs._state.get("rows") or {})  # noqa: SLF001
+    rows = sorted(all_rows.values(),
                   key=lambda r: -int(r.get("total_positions") or 0))[: max(1, min(int(limit), 50))]
-    return {
-        "summary": s,
-        "items": [
-            {
-                "symbol": r["symbol"],
-                "long_pct": r["long_pct"],
-                "short_pct": r["short_pct"],
-                "positions": int(r.get("total_positions") or 0),
-                "crowded": ("LONG" if float(r["long_pct"]) >= rs.RET_SENT_CROWD_PCT
-                            else ("SHORT" if float(r["short_pct"]) >= rs.RET_SENT_CROWD_PCT
-                                  else None)),
-            }
-            for r in rows
-        ],
-    }
+    max_pos = max((int(r.get("total_positions") or 0) for r in all_rows.values()), default=0) or 1
+
+    # Güncel fiyat: canlı tick önbelleği (WS/köprü). Yoksa uzaklık hesaplanmaz —
+    # 0 yazıp "başabaş" gibi göstermek yanıltıcı olurdu.
+    from app.routers import forex as fx
+
+    # Fiyat: canlı tick önbelleği → yoksa son kapanış (köprü sessizken tablo boş kalmasın).
+    _syms = [str(r["symbol"]) for r in rows]
+    _last: dict = {}
+    try:
+        _last = await database.get_last_close_prices(_syms)
+    except Exception:  # noqa: BLE001
+        _last = {}
+
+    items = []
+    for r in rows:
+        sym = str(r["symbol"])
+        price = float(fx._LIVE_PRICES_CACHE.get(sym) or _last.get(sym) or 0.0)  # noqa: SLF001
+        price_is_live = bool(fx._LIVE_PRICES_CACHE.get(sym))  # noqa: SLF001
+        try:
+            pip = float(fx.get_symbol_trading_specs(sym)["pip_size"])
+        except Exception:  # noqa: BLE001
+            pip = 0.0001
+        alp = float(r.get("avg_long_price") or 0.0)
+        asp = float(r.get("avg_short_price") or 0.0)
+        items.append({
+            "symbol": sym,
+            "long_pct": float(r["long_pct"]),
+            "short_pct": float(r["short_pct"]),
+            "positions": int(r.get("total_positions") or 0),
+            # Popülerlik çubuğu: en kalabalık pariteye göre pay (0-1)
+            "popularity": round(int(r.get("total_positions") or 0) / max_pos, 4),
+            "crowded": ("LONG" if float(r["long_pct"]) >= rs.RET_SENT_CROWD_PCT
+                        else ("SHORT" if float(r["short_pct"]) >= rs.RET_SENT_CROWD_PCT
+                              else None)),
+            "price": price or None,
+            "price_is_live": price_is_live,
+            "avg_long_price": alp or None,
+            "avg_short_price": asp or None,
+            # İşaret kuralı Myfxbook ile aynı: KÂR yönü pozitif.
+            # long kârda = fiyat ortalamanın ÜSTÜNDE; short kârda = fiyat ALTINDA.
+            "dist_long_pips": (round((price - alp) / pip, 1) if (price and alp) else None),
+            "dist_short_pips": (round((asp - price) / pip, 1) if (price and asp) else None),
+            "long_volume": float(r.get("long_volume") or 0.0),
+            "short_volume": float(r.get("short_volume") or 0.0),
+        })
+    return {"summary": s, "items": items}
 
 
 @router.get("/api/system/forex-ml")

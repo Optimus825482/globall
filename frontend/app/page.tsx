@@ -722,10 +722,11 @@ export default function HomePage() {
             )}
           </section>
         </Card>
-
-        {/* PERAKENDE KONUMLANMA — kalabalık hangi tarafta (Myfxbook, BAĞLAM) */}
-        <RetailSentimentCard />
       </div>
+
+      {/* PERAKENDE KONUMLANMA — kalabalık hangi tarafta (Myfxbook tablosu, BAĞLAM).
+          Tam satır: tablo geniş, 1/3 kolona sığmıyor. */}
+      <RetailSentimentCard />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         {/* BUGÜN KAPANAN İŞLEMLER */}

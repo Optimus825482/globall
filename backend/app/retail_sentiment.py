@@ -43,10 +43,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-#: Tur aralığı (sn). Ücretsiz kota 100/24s → 30 dk = 48 istek.
-RET_SENT_MIN_INTERVAL = float(os.getenv("MYFXBOOK_MIN_INTERVAL", "1800"))
-#: Günlük sert istek tavanı (kotanın altında güvenlik payı).
-RET_SENT_DAILY_CAP = int(os.getenv("MYFXBOOK_DAILY_CAP", "90"))
+#: Tur aralığı (sn). Ücretsiz kota 100/24s → 15 dk = 96 istek (tavan 95, pay bırakır).
+#: 2026-11-12 (Erkan): 30 dk → 15 dk. 30 dk = 48 istek.
+RET_SENT_MIN_INTERVAL = float(os.getenv("MYFXBOOK_MIN_INTERVAL", "900"))
+#: Günlük sert istek tavanı (100/24s ücretsiz kotanın hemen altı).
+RET_SENT_DAILY_CAP = int(os.getenv("MYFXBOOK_DAILY_CAP", "95"))
 #: Session yaşı (sn) — 30 gün; IP değişimi ayrıca hata ile yakalanır.
 RET_SENT_SESSION_TTL = 30 * 86400.0
 #: Kullanıcıya gösterilecek en az pozisyon (altında okuma gürültü).
@@ -172,6 +173,8 @@ def _normalize(items: List[dict]) -> Dict[str, dict]:
             "total_positions": tot,
             "avg_long_price": float(it.get("avgLongPrice") or 0.0),
             "avg_short_price": float(it.get("avgShortPrice") or 0.0),
+            "long_volume": float(it.get("longVolume") or 0.0),
+            "short_volume": float(it.get("shortVolume") or 0.0),
             "source": "myfxbook",
         }
     return out
@@ -223,6 +226,8 @@ async def hydrate_if_empty() -> bool:
             "total_positions": int(r.get("total_positions") or 0),
             "avg_long_price": float(r.get("avg_long_price") or 0.0),
             "avg_short_price": float(r.get("avg_short_price") or 0.0),
+            "long_volume": float(r.get("long_volume") or 0.0),
+            "short_volume": float(r.get("short_volume") or 0.0),
             "source": "myfxbook",
         }
     if rows:
@@ -367,6 +372,8 @@ def summary(symbol: Optional[str] = None) -> Dict[str, Any]:
         "contrarian": ("SHORT" if crowded_long else ("LONG" if crowded_short else None)),
         "avg_long_price": row.get("avg_long_price"),
         "avg_short_price": row.get("avg_short_price"),
+        "long_volume": row.get("long_volume"),
+        "short_volume": row.get("short_volume"),
     })
     return base
 
@@ -399,6 +406,10 @@ def brief(symbol: Optional[str]) -> Dict[str, Any]:
         "long_pct": s["long_pct"],
         "short_pct": s["short_pct"],
         "positions": s.get("positions"),
+        "avg_long_price": s.get("avg_long_price"),
+        "avg_short_price": s.get("avg_short_price"),
+        "long_volume": s.get("long_volume"),
+        "short_volume": s.get("short_volume"),
         "crowded": s.get("crowded"),
         "contrarian": s.get("contrarian"),
         "thin_sample": bool(s.get("thin_sample")),

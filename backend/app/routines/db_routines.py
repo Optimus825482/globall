@@ -66,8 +66,8 @@ async def llm_calibration_snapshot() -> Dict[str, Any]:
 
 
 @routine("retail_sentiment",
-         "Perakende konumlanma (Myfxbook topluluk outlook) — 30 dk tur, geçmişi loglar",
-         interval_sec=1800,
+         "Perakende konumlanma (Myfxbook topluluk outlook) — 15 dk tur, TÜM alanları loglar",
+         interval_sec=900,
          output_note="retail_sentiment_history satır sayısı + kalabalık pariteler",
          tags=["sentiment", "context"])
 async def retail_sentiment_snapshot() -> Dict[str, Any]:
@@ -75,8 +75,10 @@ async def retail_sentiment_snapshot() -> Dict[str, Any]:
 
     Panel açık olmasa da log birikmeli: veri geriye dönük alınamıyor, ölçüm
     ("aşırı konumlanma → ileri getiri") ancak bu tablo biriktikçe yapılabilir.
-    Ücretsiz kota 100 istek/24s → tur aralığı 30 dk (48 istek), modül içinde
-    günlük sert tavan da var. Ağ çağrısı iş parçacığına alınır (olay döngüsü bloklanmaz).
+    2026-11-12: tur aralığı 30 dk → **15 dk** (96 istek/24s; ücretsiz kota 100).
+    Modül içinde günlük sert tavan (95) var; aşılırsa ağa çıkılmaz.
+    TÜM alanlar yazılır (yüzde, pozisyon, ortalama giriş fiyatı, hacim) — geçmiş
+    geriye dönük alınamadığı için ileride farklı analizlerde kullanılabilsin. Ağ çağrısı iş parçacığına alınır (olay döngüsü bloklanmaz).
     """
     import asyncio
 

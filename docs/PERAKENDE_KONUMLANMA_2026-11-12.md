@@ -18,7 +18,7 @@ Kriptoda türev verisi vardı (`derivatives_service` → Binance long/short, tak
 | DailyFX sentiment | 403 |
 
 **Ücret:** API ücretsiz (Myfxbook: *"we strive to keep our service free of any charge"*). Anahtar yok — **ücretsiz hesap** yeterli.
-**Kota:** `get-community-outlook` ücretsiz **100 istek/24s** (paralı 2.880). Session **IP'ye bağlı**, ~1 ay.
+**Kota:** `get-community-outlook` ücretsiz **100 istek/24s** (paralı 2.880) → tur aralığı **15 dk** (96 istek), günlük sert tavan **95**. Session **IP'ye bağlı**, ~1 ay.
 **Kapsam sınırı:** FX + altın var; **endeksler (US30/NAS100/JP225/UK100) yok** → o sembollerde satır "kapsamda yok" der, sayı uydurulmaz.
 
 ## 3) Kurulan yapı
@@ -27,15 +27,40 @@ Kriptoda türev verisi vardı (`derivatives_service` → Binance long/short, tak
 |---|---|
 | `backend/app/retail_sentiment.py` | login → session (DB'de, 1 ay TTL, IP hatasında bir kez yeniden login) → outlook → normalize → özet/satır |
 | `backend/app/database.py` | `retail_sentiment_history` (geçmiş log) + `retail_sentiment_session` |
-| `backend/app/routines/db_routines.py` | `retail_sentiment` rutini, **30 dk** → panel kapalıyken de log birikir |
+| `backend/app/routines/db_routines.py` | `retail_sentiment` rutini, **15 dk** → panel kapalıyken de log birikir |
 | `backend/app/context_extras.py` | 5. bağlam bloğu `perakende_konumlanma` → LLM dosyası / fırsat taraması / sohbet |
 | `backend/app/routers/system.py` | `GET /api/system/retail-sentiment` + health içinde `retail_sentiment` |
-| `frontend/app/components/RetailSentimentCard.tsx` | **Ana sayfa kartı** (kalabalık taraflar, çubuk + pozisyon sayısı) |
+| `frontend/app/components/RetailSentimentCard.tsx` | **Ana sayfa tablosu** (Myfxbook tablosunun karşılığı: trend, popülerlik, ort. giriş + fiyata uzaklık, fiyat) |
 | `scripts/retail_sentiment_edge.py` | Ölçüm: aşırı konumlanma → ileri getiri (Spearman IC + kovalar + t) |
 | `backend/tests/test_retail_sentiment.py` | 11 kilit test (ağa çıkmaz) |
 
-**Kota koruması:** tur aralığı 30 dk (48 istek/gün) + günlük sert tavan 90 + aşımda **ağa çıkmaz**.
+**Kota koruması:** tur aralığı **15 dk** (96 istek/gün; ücretsiz kota 100) + günlük sert tavan **95** + aşımda **ağa çıkmaz**.
 **İlk yükleme:** süreç yeniyse bellek boş olur → DB'deki son tur hydrate edilir ("veri yok" yanlış mesajı çıkmaz). Session da DB'den okunur, her restart'ta login (kota) harcanmaz.
+
+## 3b) Veritabanı: TÜM alanlar saklanır
+
+Geçmiş geriye dönük alınamadığı için ham yanıttaki her alan yazılır — ileride farklı
+analizlerde (hacim ağırlıklı konumlanma, ortalama girişe dönüş, kalabalık yaşlanması)
+kullanılabilsin:
+
+`symbol, fetched_at, long_pct, short_pct, long_positions, short_positions, total_positions,
+avg_long_price, avg_short_price, long_volume, short_volume, source`
+
+`long_volume`/`short_volume` sonradan eklendi → mevcut kurulumlarda
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` ile ilerler (idempotent).
+
+## 3c) Ana sayfa tablosu (Myfxbook eşleniği)
+
+| Sütun | Kaynak | Not |
+|---|---|---|
+| Sembol | Myfxbook `name` | kalabalıksa rozet (%70 eşiği) |
+| Topluluk trendi (short ↔ long) | `shortPercentage` / `longPercentage` | sol kırmızı = short, sağ yeşil = long |
+| Popülerlik | `totalPositions` / en kalabalık parite | oransal çubuk |
+| Ort. short / fiyata uzaklık | `avgShortPrice`, `(avg_short − fiyat)/pip` | **pozitif = o taraf kârda** |
+| Ort. long / fiyata uzaklık | `avgLongPrice`, `(fiyat − avg_long)/pip` | aynı işaret kuralı |
+| Fiyat | canlı tick önbelleği → yoksa son kapanış | etiket "canlı" / "son kapanış" |
+
+İşaret kuralı Myfxbook ile birebir: long kârda = fiyat ortalamanın **üstünde**; short kârda = fiyat **altında**.
 
 ## 4) Bugünkü okuma (örnek)
 
