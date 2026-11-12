@@ -80,6 +80,12 @@ class UnifiedEvaluationRequest:
     account_margin_used_pct: float = 5.0
     spread_pips_or_pct: float = 0.0005
     dxy_change_pct: float = 0.0
+    #: 2026-11-12: MOTORUN gerçek SL/TP seviyeleri (fiyat cinsinden). Verilirse
+    #: sözleşme ve R:R bunlardan kurulur; Jesse/FinRL birleştirmesi atlanır.
+    #: Amaç: "sentetik 1,57" yerine işlemin gerçek geometrisi (altında 0,42 gibi
+    #: düşük R:R gerçekten olabiliyor → Risk Şefi vetosu anlamlı hale gelir).
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
     account_balance: float = 10000.0
 
 
@@ -327,7 +333,16 @@ class AITradingSuiteOrchestrator:
         )
 
         # Harmonize with Jesse dynamic parameters
-        if req.proposed_action == "BUY":
+        if req.stop_loss and req.take_profit and req.stop_loss > 0 and req.take_profit > 0:
+            # GERÇEK GEOMETRİ (motorun uygulayacağı seviyeler)
+            entry_target = req.current_price
+            stop_loss = float(req.stop_loss)
+            tp1 = float(req.take_profit)
+            tp2 = tp1
+            risk_dist = abs(entry_target - stop_loss)
+            reward_dist = abs(tp1 - entry_target)
+            target_risk_reward = round(reward_dist / max(risk_dist, 0.0001), 2)
+        elif req.proposed_action == "BUY":
             entry_target = req.current_price
             stop_loss = min(exit_plan.recommended_stop_loss, jesse_res.optimized_sl)
             tp1 = max(exit_plan.take_profit_target_1, jesse_res.optimized_tp1)

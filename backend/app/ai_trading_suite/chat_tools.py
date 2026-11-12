@@ -629,10 +629,35 @@ async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
     except Exception:  # noqa: BLE001
         dxy_chg = 0.0
 
+    # GERÇEK GEOMETRİ (2026-11-12): motorun kullanacağı SL/TP'yi hesapla ve motora ver.
+    # Önceden 21-AI kendi sentetik seviyelerini kuruyordu (R:R hep 1,57) → Risk Şefi'nin
+    # R:R vetosu bilgi taşımıyordu. Şimdi `forex.get_atr_exit_levels` (motorun AYNI
+    # fonksiyonu) kullanılıyor: yüksek ATR'de R:R gerçekten 0,4'e düşebilir → veto anlamlı.
+    real_sl = real_tp = None
+    try:
+        from app.routers import forex as _fx
+        _spec = _fx.get_symbol_trading_specs(raw_sym)
+        _pip = float(_spec.get("pip_size") or 0.0001)
+        _atr_pips = float(real["atr"]) / _pip if _pip else 0.0
+        _lvl = _fx.get_atr_exit_levels(
+            _atr_pips, _spec["sl_pips"], _spec["tp_pips"],
+            sl_atr_mult=1.5, tp_atr_mult=1.4, rr_floor=1.5)
+        _px = float(real["price"])
+        if real["proposed_action"] == "SELL":
+            real_sl = _px + _lvl["sl_pips"] * _pip
+            real_tp = _px - _lvl["tp_pips"] * _pip
+        else:
+            real_sl = _px - _lvl["sl_pips"] * _pip
+            real_tp = _px + _lvl["tp_pips"] * _pip
+    except Exception:  # noqa: BLE001
+        real_sl = real_tp = None
+
     req = UnifiedEvaluationRequest(
         symbol=raw_sym,
         asset_type=asset_type,
         dxy_change_pct=dxy_chg,
+        stop_loss=real_sl,
+        take_profit=real_tp,
         current_price=float(real["price"]),
         atr=float(real["atr"]),
         indicators=real["indicators"],
