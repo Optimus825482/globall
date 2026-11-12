@@ -33,15 +33,17 @@ momentesi maliyeti karşılamıyor. `tokyo_fix` örneklem olarak da yetersiz (n=
 | Mod | IS PF | IS net | IS n | OOS PF | OOS net | OOS n | Karar |
 |---|---|---|---|---|---|---|---|
 | **`donchian_adx`** | **1,25** | +13.737 $ | 1.057 | **1,33** | +15.103 $ | 929 | ✅ **ZATEN CANLI** (doğrulandı) |
-| **`squeeze_exp`** | **1,28** | +4.185 $ | 318 | **1,24** | +3.323 $ | 280 | ✅ aday — 2× stres **1,16 / 1,12** (sınırda) |
+| `squeeze_exp` | **1,28** | +4.185 $ | 318 | **1,24** | +3.323 $ | 280 | ❌ **ELENDİ** — kol ölçümü −0,039R (t=−2,35) |
 | `donchian_pure` | 1,12 | +6.598 $ | 999 | 0,94 | −3.147 $ | 878 | ❌ elendi |
 | `bb_bandwalk` | 0,67 | −1.258 $ | 90 | 0,70 | −1.007 $ | 81 | ❌ elendi |
 
-**`squeeze_exp` 2× maliyet stresi:** PF **1,16** (cur) / **1,12** (prior), net +2.523/+1.727 $,
-DD 3.412 $, n=316/278 → kill kriterini (≥1,10) **iki pencerede de kıtı kıtına** geçti.
-Üç kapıyı da geçen tek *yeni* aday; ama marj ince (prior 1,12) ve örneklem küçük →
-canlıya almadan önce **kol dosyası + sinyal-seviyesi ölçüm** (london_breakout dersi:
-replay kârı motorun çıkış yığınından gelebilir) ve gölge şart.
+### `squeeze_exp` — motor kapılarını geçti, **kol ölçümü çürüttü**
+- Motor: IS 1,28 · OOS 1,24 · 2× maliyet 1,16/1,12 (kill kriteri kıl payı geçti).
+- **Bağımsız kol (2 yıl 5m):** n=**4.413**, beklenti **−0,039R**, **t=−2,35**, PF 0,97 →
+  **anlamlı NEGATİF**. Sembol kırılımı: yalnız USDCHF +0,121R (t=1,91); UK100 −0,194 (t=−3,19),
+  US2000 −0,191 (t=−2,98), EURJPY −0,138 (t=−2,43).
+- **Karar: ELENDİ.** Replay kârı motorun çıkış yığınından geliyordu (london_breakout
+  dersinin keskin hâli). Kol dosyası `app/arms/squeeze_exp.py` ölçüm artefaktı olarak duruyor.
 
 **`donchian_adx` 2× maliyet stresi:** PF **1,20** (cur) / **1,28** (prior), net +11.149/+12.939 $,
 DD 5.711 $ → üç kapıyı da geçti. Canlı blokta `donchian_adx_entry` + `donchian_adx_min`/
