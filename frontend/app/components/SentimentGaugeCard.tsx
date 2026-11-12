@@ -39,32 +39,38 @@ const COMP_LABEL: Record<string, string> = {
   perakende: "Kalabalık",
 };
 
-/** Merkez 0 gauge: negatifte sola kırmızı, pozitifte sağa yeşil dolar. */
-function Gauge({ score }: { score: number }) {
+/** Merkez 0 gauge: negatifte sola kırmızı, pozitifte sağa yeşil dolar.
+ *  Skor + etiket **çubuğun ortasında** okunur (2026-11-12: sağ üstteki küçük
+ *  yazı yerine çubuğun içine, belirgin biçimde). Metin, dolgu renginden bağımsız
+ *  okunabilsin diye yarı saydam koyu bir kapsül üstünde durur.
+ */
+function Gauge({ score, label }: { score: number; label: string }) {
   const pct = Math.max(0, Math.min(100, Math.abs(score)));
   const positive = score >= 0;
+  const tone =
+    score >= 45 ? "text-emerald-300" : score <= -45 ? "text-rose-300" : "text-bunker-100";
   return (
-    <div className="relative h-2 w-full rounded-sm bg-bunker-800">
-      {/* merkez işareti */}
-      <div className="absolute left-1/2 top-[-3px] h-[14px] w-px -translate-x-1/2 bg-bunker-600" />
-      {/* sol yarı referans (short) */}
-      <div className="absolute inset-y-0 left-0 w-1/2" />
+    <div className="relative h-8 w-full overflow-hidden rounded-sm bg-bunker-800">
+      {/* dolgu: merkezden skora doğru */}
       <div
-        className={`absolute top-0 h-2 ${positive ? "left-1/2 bg-emerald-500" : "right-1/2 bg-rose-500"}`}
+        className={`absolute inset-y-0 ${positive ? "left-1/2 bg-emerald-500/85" : "right-1/2 bg-rose-500/85"}`}
         style={{ width: `${pct / 2}%` }}
       />
+      {/* merkez işareti (0) */}
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-bunker-100/40" />
+      {/* skor + etiket — çubuğun ORTASINDA, belirgin */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span
+          className={`max-w-[92%] truncate whitespace-nowrap rounded bg-bunker-900/75 px-2.5 py-1
+                      text-[11px] font-bold tabular-nums tracking-wide shadow-sm sm:text-xs ${tone}`}
+          title={`${score > 0 ? "+" : ""}${score.toFixed(0)} · ${label}`}
+        >
+          {score > 0 ? "+" : ""}
+          {score.toFixed(0)}
+          <span className="ml-1.5 font-semibold">{label}</span>
+        </span>
+      </div>
     </div>
-  );
-}
-
-function ScoreText({ score }: { score: number }) {
-  const tone =
-    score >= 45 ? "text-emerald-300" : score <= -45 ? "text-rose-300" : "text-bunker-muted";
-  return (
-    <span className={`tabular-nums font-semibold ${tone}`}>
-      {score > 0 ? "+" : ""}
-      {score.toFixed(0)}
-    </span>
   );
 }
 
@@ -111,8 +117,6 @@ export default function SentimentGaugeCard() {
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs font-semibold tabular-nums">{it.symbol}</span>
                 <span className="flex items-center gap-2 text-2xs text-bunker-muted">
-                  <ScoreText score={it.score} />
-                  <span className="hidden sm:inline">{it.label}</span>
                   <span
                     className={`rounded px-1 py-0.5 tabular-nums ${
                       it.coverage >= 0.75
@@ -129,7 +133,7 @@ export default function SentimentGaugeCard() {
               </div>
 
               <div className="mt-2">
-                <Gauge score={it.score} />
+                <Gauge score={it.score} label={it.label} />
                 <div className="mt-1 flex justify-between text-2xs text-bunker-muted">
                   <span>−100 SHORT</span>
                   <span>0</span>
