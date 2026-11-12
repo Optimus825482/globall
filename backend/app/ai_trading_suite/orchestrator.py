@@ -337,9 +337,17 @@ class AITradingSuiteOrchestrator:
             target_risk_reward = round(reward_dist / risk_dist, 2)
         elif req.proposed_action == "SELL":
             entry_target = req.current_price
-            stop_loss = max(exit_plan.recommended_stop_loss, req.current_price + (req.current_price - jesse_res.optimized_sl))
-            tp1 = exit_plan.take_profit_target_1
-            tp2 = exit_plan.take_profit_target_2
+            # 2026-11-12 DÜZELTME (yön simetrisi): Jesse'nin seviyeleri BUY yönlüdür
+            # (stop altta, hedef üstte). SELL'de stop aynalanıyordu ama HEDEF aynalanmıyordu:
+            # stop Jesse'nin taban ATR'sinden (px*0.005 tabanı, ŞİŞİK), hedef ise FinRL'in
+            # gerçek ATR'sinden (KÜÇÜK) geliyordu → R:R 0,32-0,57 → Risk Şefi (eşik 1,40)
+            # HER SELL'i veto ediyordu. BUY'da `max` ile hedef genişletildiği için R:R 1,57.
+            # Artık SELL'de de Jesse hedefi aynalanıp `min` ile (daha uzak hedef) seçilir.
+            _jesse_tp_dist = abs(req.current_price - jesse_res.optimized_tp1)
+            stop_loss = max(exit_plan.recommended_stop_loss,
+                            req.current_price + (req.current_price - jesse_res.optimized_sl))
+            tp1 = min(exit_plan.take_profit_target_1, req.current_price - _jesse_tp_dist)
+            tp2 = min(exit_plan.take_profit_target_2, req.current_price - _jesse_tp_dist * 1.5)
             risk_dist = max(0.0001, stop_loss - entry_target)
             reward_dist = max(0.0001, entry_target - tp1)
             target_risk_reward = round(reward_dist / risk_dist, 2)
