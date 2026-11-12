@@ -26,3 +26,20 @@ momentesi maliyeti karşılamıyor. `tokyo_fix` örneklem olarak da yetersiz (n=
 
 ## Dosyalar
 `outputs/ns_<mod>_{IS,OOS}.json` (gitignore'da; koşular tekrar üretilebilir)
+
+
+## Tur-2b: 4 mod daha (aynı ayar, aynı ölçüt)
+
+| Mod | IS PF | IS net | IS n | OOS PF | OOS net | OOS n | Karar |
+|---|---|---|---|---|---|---|---|
+| **`donchian_adx`** | **1,25** | +13.737 $ | 1.057 | **1,33** | +15.103 $ | 929 | ✅ **ZATEN CANLI** (doğrulandı) |
+| **`squeeze_exp`** | **1,28** | +4.185 $ | 318 | **1,24** | +3.323 $ | 280 | ⏳ aday (stres koşuluyor) |
+| `donchian_pure` | 1,12 | +6.598 $ | 999 | 0,94 | −3.147 $ | 878 | ❌ elendi |
+| `bb_bandwalk` | 0,67 | −1.258 $ | 90 | 0,70 | −1.007 $ | 81 | ❌ elendi |
+
+**`donchian_adx` 2× maliyet stresi:** PF **1,20** (cur) / **1,28** (prior), net +11.149/+12.939 $,
+DD 5.711 $ → üç kapıyı da geçti. Canlı blokta `donchian_adx_entry` + `donchian_adx_min`/
+`donchian_max_per_day` ayarları mevcut → **canlı defterdeki en güçlü mod**; sembol listesi ve
+`max_per_day=2` sınırı bu kanıtla gözden geçirilmeli (frekansı sınırlıyor olabilir).
+
+## Özet: 18 mod tarandı, 3 geçti (hepsi zaten canlı), 11 elendi

@@ -5896,6 +5896,12 @@ class ForexAutoPaperSettings(BaseModel):
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
+    atr_exit_rr_floor: float = Field(
+        2.5, ge=1.0, le=5.0,
+        description="ATR çıkış motorunda TP/SL oranı tabanı (rr_floor). "
+                    "**2026-11-12 A/B ile 1,5 → 2,5:** iki pencerede de PF ve net arttı, "
+                    "DD düştü; 2× maliyet stresinde de üstün (PF 1,19/1,16 vs 1,16/1,13). "
+                    "4,0'ın ek etkisi yok (spec TP tavanı bağlıyor). Geri alma: 1.5.")
     partial_tp_enabled: bool = Field(True, description="Kısmi kâr alma: ilk hedefte %50 pozisyon kapatılır, SL başabaş kârına çekilir")
     adx_filter_enabled: bool = Field(True, description="ADX trend gücü / testere kalkanı: ADX < 20.0 olduğunda testere/yatay rejimde işlem açılmaz. Canlı varsayılan AÇIK (2026-10-17: 588 testere işlemini ve -$394 zararı engeller).")
     adx_min: float = Field(20.0, ge=0.0, le=50.0, description="ADX minimum trend gücü eşiği (Varsayılan 20.0: Testere/Choppy filtresi)")
@@ -9649,9 +9655,12 @@ async def _forex_auto_paper_loop():
                         # Kripto özel stop genişliği: 1.1×ATR kriptoda dar kalıyor (2026-10-06 replay kazananı)
                         atr_levels = get_atr_exit_levels(
                             atr_pips, spec["sl_pips"], spec["tp_pips"],
-                            sl_atr_mult=_AUTO_SETTINGS.crypto_sl_atr_mult)
+                            sl_atr_mult=_AUTO_SETTINGS.crypto_sl_atr_mult,
+                            rr_floor=_AUTO_SETTINGS.atr_exit_rr_floor)
                     else:
-                        atr_levels = get_atr_exit_levels(atr_pips, spec["sl_pips"], spec["tp_pips"], sl_atr_mult=1.5)
+                        atr_levels = get_atr_exit_levels(
+                            atr_pips, spec["sl_pips"], spec["tp_pips"], sl_atr_mult=1.5,
+                            rr_floor=_AUTO_SETTINGS.atr_exit_rr_floor)
                     sl_pips = atr_levels["sl_pips"]
                     tp_pips = atr_levels["tp_pips"]
                     if _AUTO_SETTINGS.partial_tp_enabled:

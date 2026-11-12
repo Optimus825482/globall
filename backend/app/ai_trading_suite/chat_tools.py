@@ -655,9 +655,10 @@ async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
         # `get_symbol_trading_specs(sym, atr_pips=...)`). ATR'siz çağrıda TP tabanda
         # (FX 20 / XAU-BTC 60 pip) kalıyor ve R:R çöküyordu (BTC 0,07!).
         _spec = _fx.get_symbol_trading_specs(raw_sym, atr_pips=_atr_pips)
+        _rr_floor = float(getattr(_fx._AUTO_SETTINGS, "atr_exit_rr_floor", 1.5) or 1.5)  # noqa: SLF001
         _lvl = _fx.get_atr_exit_levels(
             _atr_pips, _spec["sl_pips"], _spec["tp_pips"],
-            sl_atr_mult=1.5, tp_atr_mult=1.4, rr_floor=1.5)
+            sl_atr_mult=1.5, tp_atr_mult=1.4, rr_floor=_rr_floor)
         _px = float(real["price"])
         if real["proposed_action"] == "SELL":
             real_sl = _px + _lvl["sl_pips"] * _pip

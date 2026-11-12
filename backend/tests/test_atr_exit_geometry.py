@@ -52,17 +52,51 @@ def test_atrsiz_spec_yuksek_atrde_rr_COKERTIR():
     assert rr < 0.5, "beklenen kusur profili: 195/60 ≈ 0,31"
 
 
-def test_FX_dalinda_ATR_genislemesi_YOK():
-    """BELGE TESTİ (açık konu): XAU/BTC dalları spec SL/TP'sini ATR ile genişletiyor,
-    GENEL FX dalı genişletmiyor → yüksek ATR'de FX'te SL büyür ama TP 20 pip'te kalır
-    (USDJPY ATR 27 → motor yolu R:R ≈ 0,49). A/B ile ölçülmeden DEĞİŞTİRİLMEMELİ."""
-    duz = forex.get_symbol_trading_specs("USDJPY")
-    genis = forex.get_symbol_trading_specs("USDJPY", atr_pips=27.0)
-    assert (duz["sl_pips"], duz["tp_pips"]) == (genis["sl_pips"], genis["tp_pips"])
-    lv = forex.get_atr_exit_levels(27.0, genis["sl_pips"], genis["tp_pips"], sl_atr_mult=1.5)
-    assert lv["tp_pips"] / lv["sl_pips"] < 1.0
+def test_FX_dali_ATR_ile_genisler():
+    """JPY dışı FX dalları (EURUSD/USDCHF/GBPUSD…) ATR ile genişler — motor yolu."""
+    duz = forex.get_symbol_trading_specs("EURUSD")
+    genis = forex.get_symbol_trading_specs("EURUSD", atr_pips=20.0)
+    assert genis["sl_pips"] > duz["sl_pips"]
+    assert genis["tp_pips"] > duz["tp_pips"]
+
+
+def test_JPY_dali_anahtar_KAPALIYKEN_genislemez():
+    """BELGE: JPY dalı 2026-11-12'ye kadar ATR genişletmesi YAPMIYORDU (tek istisna).
+    Bu yüzden yüksek ATR'de SL büyürken TP 20 pip'te kalıp R:R çöküyordu."""
+    eski = forex.JPY_SPEC_ATR_WIDENING
+    try:
+        forex.JPY_SPEC_ATR_WIDENING = False
+        duz = forex.get_symbol_trading_specs("USDJPY")
+        genis = forex.get_symbol_trading_specs("USDJPY", atr_pips=27.0)
+        assert (duz["sl_pips"], duz["tp_pips"]) == (genis["sl_pips"], genis["tp_pips"]) == (8.0, 20.0)
+        lv = forex.get_atr_exit_levels(27.0, genis["sl_pips"], genis["tp_pips"], sl_atr_mult=1.5)
+        assert lv["tp_pips"] / lv["sl_pips"] < 1.0, "kusur profili: R:R < 1"
+    finally:
+        forex.JPY_SPEC_ATR_WIDENING = eski
+
+
+def test_JPY_dali_anahtar_ACIKKEN_genisler_ve_rr_korunur():
+    eski = forex.JPY_SPEC_ATR_WIDENING
+    try:
+        forex.JPY_SPEC_ATR_WIDENING = True
+        spec = forex.get_symbol_trading_specs("USDJPY", atr_pips=27.0)
+        assert spec["sl_pips"] == pytest.approx(40.5)
+        assert spec["tp_pips"] == pytest.approx(74.1)
+        lv = forex.get_atr_exit_levels(27.0, spec["sl_pips"], spec["tp_pips"], sl_atr_mult=1.5)
+        assert lv["tp_pips"] / lv["sl_pips"] >= 1.35
+    finally:
+        forex.JPY_SPEC_ATR_WIDENING = eski
 
 
 def test_atr_yoksa_passthrough():
     lv = forex.get_atr_exit_levels(None, 8.0, 20.0)
     assert lv["sl_pips"] == 8.0 and lv["tp_pips"] == 20.0
+
+
+def test_canli_rr_floor_ayari_25():
+    """2026-11-12 A/B: rr_floor 1,5 -> 2,5 (iki pencerede PF/net arttı, DD düştü,
+    2× maliyette de üstün). Varsayılan 2,5; geri alma 1.5."""
+    from app.routers.forex import ForexAutoPaperSettings as S
+    a = S()
+    assert a.atr_exit_enabled is True
+    assert a.atr_exit_rr_floor == 2.5

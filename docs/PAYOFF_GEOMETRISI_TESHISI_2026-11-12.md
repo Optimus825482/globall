@@ -50,3 +50,19 @@ oranı yükselir, isabet düşer; net etki ölçülecek. Sonuç olumluysa **geom
 ## 5) Dosyalar
 `outputs/ab_{cur,prior}_cap.json` (kanonik baseline) · `outputs/blk_*.json` (hariç tutma) ·
 `outputs/rr{25,40}_*.json` (rr_floor A/B)
+
+
+## 6) rr_floor A/B SONUCU → canlı ayara alındı (2,5)
+
+| Pencere | rr 1,5 (PF / net / DD) | rr 2,5 (PF / net / DD) |
+|---|---|---|
+| cur | 1,20 / 80.153 $ / 11.635 $ | **1,26 / 92.947 $ / 12.099 $** |
+| prior | 1,18 / 62.016 $ / 11.635 $ | **1,24 / 75.458 $ / 12.099 $** |
+| cur @2× maliyet | 1,16 / 64.395 $ / 15.467 $ | **1,19 / 70.172 $ / 13.393 $** |
+| prior @2× maliyet | 1,13 / 44.975 $ / 15.467 $ | **1,16 / 53.845 $ / 13.393 $** |
+
+**rr 4,0 = rr 2,5** (spec TP tavanı bağlıyor) → 2,5 seçildi. Dört ölçümün dördünde de daha iyi;
+2× maliyette DD de düşüyor (15.467 → 13.393).
+
+**Uygulama:** `ForexAutoPaperSettings.atr_exit_rr_floor = 2.5` (panelden değiştirilebilir,
+geri alma 1.5). Canlı ATR çıkış motoru ve 21-AI aynı ayardan okuyor.
