@@ -1,0 +1,137 @@
+{
+  "aciklama": "Backtest altin-master (quick=~2-3 dk, full=~6-8 dk). expect boşsa o hücre karşılaştırılmaz (ilk --update ile doldurulur).",
+  "quick": {
+    "replay": {
+      "cur": {
+        "args": [
+          "--start",
+          "2026-10-25",
+          "--end",
+          "2026-11-05"
+        ],
+        "expect": {
+          "trades": 1432,
+          "profit_factor": 1.36,
+          "net_pnl_usd": 27307.26
+        }
+      },
+      "prior": {
+        "args": [
+          "--start",
+          "2026-09-20",
+          "--end",
+          "2026-09-30"
+        ],
+        "expect": {
+          "trades": 1132,
+          "profit_factor": 1.14,
+          "net_pnl_usd": 10122.23
+        }
+      }
+    },
+    "arms": {
+      "london_breakout": {
+        "args": [
+          "--arm",
+          "london_breakout",
+          "--years",
+          "1",
+          "--tf",
+          "5m",
+          "--hold-bars",
+          "6",
+          "--tp-r",
+          "1.5"
+        ],
+        "expect": {
+          "n": 1058,
+          "expectancy_r": -0.0066,
+          "profit_factor": 1.151
+        }
+      },
+      "tokyo_window": {
+        "args": [
+          "--arm",
+          "tokyo_window",
+          "--years",
+          "2",
+          "--tf",
+          "1h",
+          "--hold-bars",
+          "1"
+        ],
+        "expect": {
+          "n": 3100,
+          "expectancy_r": 0.0064,
+          "profit_factor": 1.221
+        }
+      }
+    }
+  },
+  "full": {
+    "replay": {
+      "cur": {
+        "args": [
+          "--days",
+          "30"
+        ],
+        "expect": {
+          "trades": 6936,
+          "profit_factor": 1.2,
+          "net_pnl_usd": 80152.79
+        }
+      },
+      "prior": {
+        "args": [
+          "--days",
+          "60",
+          "--window",
+          "prior"
+        ],
+        "expect": {
+          "trades": 6052,
+          "profit_factor": 1.18,
+          "net_pnl_usd": 62016.46
+        }
+      }
+    },
+    "arms": {
+      "london_breakout": {
+        "args": [
+          "--arm",
+          "london_breakout",
+          "--years",
+          "2",
+          "--tf",
+          "5m",
+          "--hold-bars",
+          "6",
+          "--tp-r",
+          "1.5"
+        ],
+        "expect": {
+          "n": 1499,
+          "expectancy_r": 0.0084,
+          "profit_factor": 1.162
+        }
+      },
+      "tokyo_window": {
+        "args": [
+          "--arm",
+          "tokyo_window",
+          "--years",
+          "5",
+          "--tf",
+          "1h",
+          "--hold-bars",
+          "1"
+        ],
+        "expect": {
+          "n": 7767,
+          "expectancy_r": 0.0032,
+          "profit_factor": 1.149
+        }
+      }
+    }
+  }
+}
