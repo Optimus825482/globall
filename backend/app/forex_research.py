@@ -349,7 +349,14 @@ def analyze_symbol(symbol: str) -> Dict[str, Any]:
         "bias": bias, "score": round(avg, 2), "frames": frames, "sources": sources, "candles": candles,
         "support": sup, "resistance": res, "levels": levels, "patterns": patterns, "structure": structure,
         "chart": chart, "squeeze": squeeze, "indicators": indicators, "ranges": fp.key_ranges(candles),
-        "atr": atr, "stop_distance": round(atr * 1.5, 6) if atr else None,
+        "atr": atr,
+        # 2026-11-12: iki stop tanımı AYRIŞTIRILDI. `stop_distance` 4 SAATLİK ATR'ye
+        # dayalı REFERANS; emirde kullanılan ise 1 saatlik ATR × 1,5 (opportunity_trades).
+        # Aynı cevapta "stop ≈ 44,5 USD" (4h) ile "stop 202 pip" (=20,2 USD, 1h) yan
+        # yana gelince kullanıcı hangisine göre lot hesaplayacağını bilemiyordu.
+        "stop_distance": round(atr * 1.5, 6) if atr else None,
+        "atr_1h": atr_1h,
+        "stop_distance_1h": round(atr_1h * 1.5, 6) if atr_1h else None,
     }
 
 
@@ -422,8 +429,13 @@ def describe_analysis(a: Dict[str, Any]) -> str:
     if st.get("4h") or st.get("1d"):
         lines.append("Yapı: " + ", ".join(f"{TF_LABEL[tf]} {st[tf]['yapi']}" for tf in ("1h", "4h", "1d")
                                           if st.get(tf) and st[tf].get("yapi") not in (None, "belirsiz", "yetersiz veri")) + ".")
+    # İki stop tanımı etiketli yazılır: emirde kullanılan 1h ATR, referans 4h ATR.
+    if a.get("stop_distance_1h"):
+        lines.append(f"Emirde kullanılacak stop mesafesi (1 saatlik ATR × 1,5) ≈ "
+                     f"{_fmt(a['stop_distance_1h'], price)}.")
     if a.get("stop_distance"):
-        lines.append(f"Normal oynaklığa göre stop mesafesi yaklaşık {_fmt(a['stop_distance'], price)}.")
+        lines.append(f"Referans: 4 saatlik ATR × 1,5 ≈ {_fmt(a['stop_distance'], price)} "
+                     f"(daha geniş; swing bağlamı).")
     lines.append(describe_sources(a))
     return " ".join(lines)
 
