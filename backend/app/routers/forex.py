@@ -6123,8 +6123,18 @@ class ForexAutoPaperSettings(BaseModel):
     fvg_max_per_day: int = Field(0, ge=0, le=20, description="FVG Pullback: sembol başına günde azami giriş (0 = sınırsız)")
     lb_enabled: bool = Field(True, description="London Breakout akışı: Asya kutusu (00:00→box_end UTC) high/low kırılımı, Londra penceresinde tetik. L30 replay pozitif 19 sembolde açık (2026-10-08)")
     lb_symbols: List[str] = Field(
-        default_factory=lambda: ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "USDCHF", "US30"],
-        description="London Breakout sembolleri (2026-10-08 L30 replay pozitifleri; GBPJPY −$11 hariç tutuldu — çift donchian-exclusive). Panelden doğrulanmış kârlı kroslar (AUDCAD, EURCAD, GBPAUD, GBPCAD, EURAUD, AUDJPY, NZDUSD, EURNZD, AUDNZD, GBPNZD) eklenebilir.",
+        default_factory=lambda: ["XAUUSD", "GBPUSD", "US30", "BTCUSD", "AUDUSD", "NAS100"],
+        description=(
+            "London Breakout sembolleri. 2026-11-12 ÖLÇÜMLE GÜNCELLENDİ (iki pencere de "
+            "aynı yönde, 'FX_MALIYET_MODELI_DENETIMI' + 'GIRIS_MODU_YENIDEN_TARAMA'): "
+            "POZİTİF → GBPUSD (+3.017/+2.782), AUDUSD (+1.831/+708), XAUUSD (+670/+650), "
+            "US30 (+657/+409), NAS100 (+298/+287), BTCUSD (+52/+52). "
+            "ÇIKARILDI → USDCHF (−327/−727) ve USDJPY (−340/−148): eski liste 2026-10-08'de "
+            "YANLIŞ maliyet tablosuyla (major 1,2 pip) seçilmişti. "
+            "DİKKAT: bu yalnız VARSAYILAN'dır — panelde kayıtlı ayar varsa onu değiştirin, "
+            "kod varsayılanı kayıtlı ayarı EZMEZ. Geri alma: eski liste "
+            "['XAUUSD','GBPUSD','USDJPY','BTCUSD','USDCHF','US30']."
+        ),
     )
     lb_box_end_utc: int = Field(7, ge=0, le=12, description="London Breakout: Asya kutusu bitiş saati (UTC); 00:00'dan bu saate kadar high/low")
     lb_entry_end_utc: int = Field(11, ge=1, le=18, description="London Breakout: tetik penceresi bitiş saati (UTC); box_end'den bu saate kadar kutu dışına kapanış arar")

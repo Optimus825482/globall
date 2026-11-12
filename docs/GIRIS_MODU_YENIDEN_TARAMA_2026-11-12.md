@@ -99,7 +99,43 @@ katmanı orada var. Kol dosyası olarak terfi, çıkış yığınını sinyalin 
    terminal adı olduğunda (NAS100→USTEC) `symbol_info` None dönüp **tüm koşuyu**
    AttributeError ile düşürüyordu.
 
-## 8) Üretilen dosyalar
+## 8) ✅ ASIL KAZANÇ: `london_breakout` ZATEN CANLIYDI — sembol listesi yanlıştı
+
+`lb_enabled = True` (2026-10-08'den beri canlı). Yani "terfi" sorusu yanlıştı;
+gerçek soru **canlı sembol listesinin ölçümle uyumu**. Liste 2026-10-08'de
+**yanlış maliyet tablosuyla** (major 1,2 pip) seçilmişti.
+
+Düzeltilmiş ayarda iki pencerede sembol bazlı net ($):
+
+| Sembol | IS (son 30g) | OOS (önceki 30g) | Canlıda | Karar |
+|---|---|---|---|---|
+| GBPUSD | +3.017 | +2.782 | ✅ | kalsın |
+| **AUDUSD** | **+1.831** | **+708** | ❌ | **EKLENDİ** |
+| XAUUSD | +670 | +650 | ✅ | kalsın |
+| US30 | +657 | +409 | ✅ | kalsın |
+| **NAS100** | +298 | +287 | ❌ | **EKLENDİ** |
+| BTCUSD | +52 | +52 | ✅ | kalsın (marjinal) |
+| EURJPY | +52 | +13 | ❌ | eklenmedi (marjinal) |
+| GBPJPY | +19 | +9 | ❌ | eklenmedi |
+| AUDCAD | −94 | −76 | ❌ | zaten yok |
+| **USDCHF** | **−327** | **−727** | ✅ | **ÇIKARILDI** |
+| **USDJPY** | **−340** | **−148** | ✅ | **ÇIKARILDI** |
+
+**Uygulandı (varsayılan):** `["XAUUSD","GBPUSD","US30","BTCUSD","AUDUSD","NAS100"]`
+Eski liste: `["XAUUSD","GBPUSD","USDJPY","BTCUSD","USDCHF","US30"]`
+
+**İki pencere de aynı yönde** → tek pencerenin şansı değil. Toplam ölçülen fark
+(60 gün, replay $): çıkarılanlar +1.542 $, eklenenler +3.124 $ — **yön aktarılır,
+dolar aktarılmaz** (replay mutlak $ canlıya taşınmaz).
+
+**Test kilidi:** `backend/tests/test_london_breakout_live_symbols.py` — ölçümle pozitif
+olup listede olmayan ya da ölçülen negatif bir sembol geri eklenirse kırılır.
+
+⚠️ **PANEL UYARISI:** Bu yalnız **varsayılandır**. Sunucuda kayıtlı ayar varsa
+(`lb_symbols`) kod varsayılanı onu **EZMEZ** → panelden aynı listeyi girmek gerekir.
+Geri alma: eski liste yukarıda.
+
+## 9) Üretilen dosyalar
 
 - `outputs/mx_<mod>_{old,new}.json` — ana matris (6 mod × 2 ayar)
 - `outputs/dx_<mod>_{cost,tz}.json` — ayrıştırma (3 mod × 2 ayar)
