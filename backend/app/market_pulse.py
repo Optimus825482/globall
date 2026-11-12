@@ -137,7 +137,12 @@ def _interpret(rows: dict[str, dict[str, Any]]) -> list[str]:
     if vix:
         notes.append(f"VIX {vix['last']:.2f}: {_vix_note(vix['last'], vix['chg_pct'])}")
     if dxy:
-        notes.append(f"DXY {dxy['last']:.2f}: {_dxy_note(dxy['chg_pct'])}")
+        # 2026-11-12: seviye ile GÜÇ karıştırılıyordu (model "DXY 103 → dolar güçlü"
+        # yazıyordu, oysa günlük değişim yataydı). Güç yalnız DEĞİŞİMDEN okunur.
+        notes.append(
+            f"DXY seviye {dxy['last']:.2f} · günlük değişim {_pct(dxy['chg_pct'])} → "
+            f"{_dxy_note(dxy['chg_pct'])}. NOT: seviye tek başına güç DEĞİLDİR; "
+            f"'dolar güçlü' demek için günlük değişim ±%0,5 üstünde olmalı.")
     if y:
         notes.append(f"ABD 10Y %{y['last']:.2f}: {_rate_note(y['chg_pct'], y['chg_abs'])}")
     if gold:

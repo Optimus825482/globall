@@ -360,7 +360,13 @@ def plan_steps(user_text: str, symbols: Optional[List[str]] = None) -> List[Step
         if not d:
             raise RuntimeError("DXY verisi yok")
         label = _DXY_TR.get(d.get("regime"), "dolar nötr/kararsız")
-        return f"Dolar endeksi: {label}.", {"rejim": d.get("regime"), "yorum": label}
+        # 2026-11-12: ufuk YAZILMALI. Bu araç 15 dk trend/RSI'ye bakar; küresel nabız
+        # notu ise GÜNLÜK değişime. Aynı cümlede "nötr" ile "güçlü" yan yana gelince
+        # çelişki gibi okunuyordu (aslında iki farklı ufuk).
+        return (f"Dolar rejimi (15 dk teknik trend/RSI): {label}"
+                f"{'' if d.get('trend') is None else f' · trend {d.get("trend")} · skor {float(d.get("score") or 0):.0f}'}"
+                f". Günlük yön için 'küresel varlık nabzı' notuna bak."),                {"rejim": d.get("regime"), "yorum": label, "ufuk": "15m",
+                "trend": d.get("trend"), "score": d.get("score")}
     steps.append(("dxy", "Dolar rejimi", _dxy()))
     return steps
 
@@ -511,7 +517,11 @@ async def forex_chat(payload: dict, request: Request):
                 scan_label = ("Fırsat taraması (hafta sonu: Bitcoin, Ethereum, altcoinler)" if weekend
                               else "Fırsat taraması (Forex, Bitcoin, Altın, Endeks)")
                 yield _sse("step", {"id": "scan", "label": scan_label, "status": "running"})
-                scan = await forex_research.run_blocking(forex_research.scan_opportunities, opportunity_trades.universe_now(), 8)
+                # 2026-11-12: `universe_now()` 14'lük FX karması veriyordu (NZDUSD/USDCAD/
+                # AUDJPY/EURGBP motorun işlem açmadığı pariteler; JP225/US2000/UK100 YOK).
+                # Sohbet taraması da işlem de SİSTEM EVRENİNDE kalmalı.
+                _scan_syms = forex_research.scan_universe()
+                scan = await forex_research.run_blocking(forex_research.scan_opportunities, _scan_syms, 8)
                 if scan:
                     findings["scan"] = scan
                     ranked = [r["symbol"] for r in scan["all"] if r["agreement"] >= opportunity_trades.MIN_AGREEMENT]
@@ -540,16 +550,31 @@ async def forex_chat(payload: dict, request: Request):
                 try:
                     analyses = {k.split(":", 1)[1]: v["_analysis"] for k, v in findings.items()
                                 if k.startswith("ta:") and isinstance(v, dict) and "_analysis" in v}
-                    if explicit:
-                        a = analyses.get(explicit["symbol"])
-                        if not a:
-                            result = {"opened": [], "skipped": [{"symbol": explicit["symbol"], "reason": "teknik analiz verisi alınamadı"}]}
+                    # 2026-11-12: sistem evreni dışındaki sembole emir GİTMEZ
+                    # (canlıda NZDUSD/AUDJPY açılmıştı; motor o sembolleri işlemiyor).
+                    # Kullanıcı AÇIKÇA o sembolü istediyse otomatik BAŞKA sembole kayma:
+                    # "açılmadı + sebep" dön, emir bloğunu atla.
+                    _allowed = {str(x).upper() for x in forex_research.scan_universe()}
+                    _explicit_blocked = bool(explicit) and str(explicit["symbol"]).upper() not in _allowed
+                    if _explicit_blocked:
+                        # Açıkça istenen sembol evren dışı: emir yok, OTOMATİK BAŞKA SEMBOLE KAYMA yok.
+                        result = {"opened": [], "skipped": [{
+                            "symbol": str(explicit["symbol"]),
+                            "reason": ("sembol sistem evreninde değil (motor bu sembolde işlem açmıyor); "
+                                       "evren: " + ", ".join(sorted(_allowed)))}]}
+                    else:
+                        analyses = {k: v for k, v in analyses.items() if str(k).upper() in _allowed}
+                        if explicit:
+                            a = analyses.get(explicit["symbol"])
+                            if not a:
+                                result = {"opened": [], "skipped": [{"symbol": explicit["symbol"],
+                                                                     "reason": "teknik analiz verisi alınamadı"}]}
+                            else:
+                                result = await asyncio.wait_for(
+                                    opportunity_trades.open_requested(a, explicit["direction"], findings.get("calendar")), timeout=15)
                         else:
                             result = await asyncio.wait_for(
-                                opportunity_trades.open_requested(a, explicit["direction"], findings.get("calendar")), timeout=15)
-                    else:
-                        result = await asyncio.wait_for(
-                            opportunity_trades.open_from_scan(analyses, findings["scan"], findings.get("calendar")), timeout=15)
+                                opportunity_trades.open_from_scan(analyses, findings["scan"], findings.get("calendar")), timeout=15)
                     findings["demo"] = {"acilan": result["opened"], "acilmayan": result["skipped"],
                                         "not": ("Yalnızca 'acilan' listesindeki işlemler kayıtlı DEMO MT5 hesabına iletildi; izleme: Raporlar > İşlem Raporu, 'Fırsat Taraması (Sohbet)'."
                                                 if result["opened"] else
