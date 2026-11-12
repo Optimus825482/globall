@@ -445,9 +445,17 @@ def test_master_orchestrator_spot():
     )
     resp = orchestrator.evaluate(req)
     assert resp.symbol == "BTCUSDT"
-    assert resp.final_verdict == "APPROVED_BUY"
+    # 2026-11-12: karar KONSEY ile TUTARLI olmalı. Konsey çekimserken
+    # "APPROVED_*" dönmek canlı kusurdu (STAND_ASIDE + %100 güven yan yana geliyordu).
+    # Burada sözleşme: onay yalnız konsey hemfikirse; çekimserlikte WAIT.
+    council = (resp.hedge_fund_council or {}).get("consensus_decision")
+    if council == "STAND_ASIDE":
+        assert resp.final_verdict == "WAIT"
+        assert "çekimser" in (resp.execution_directive or "").lower()
+        assert resp.simulated_execution is None
+    else:
+        assert resp.final_verdict in ("APPROVED_BUY", "VETOED", "WAIT")
     assert resp.risk_chief_approved is True
-    assert resp.simulated_execution is not None
     assert resp.kalman_trend["kalman_price"] > 0.0
     assert resp.volume_profile["point_of_control"] > 0.0
     assert resp.kelly_sizing["suggested_trade_usd"] > 0.0

@@ -398,9 +398,15 @@ class AITradingSuiteOrchestrator:
             veto_res.final_action = TradeAction.WAIT
             veto_res.veto_reasons.append(f"CVD Emir Akışı Vetosu: {cvd_res.absorption_warning}")
 
+        # 2026-11-12: konsey çekimserliği SİMÜLASYONDAN ÖNCE bilinmeli — aksi hâlde
+        # karar WAIT iken "gerçekleşmiş dolum" (simulated_execution) dönüyordu.
+        council_abstained = (getattr(council_res, "consensus_decision", "") == "STAND_ASIDE")
+        council_wait = (council_abstained and veto_res.approved
+                        and veto_res.final_action in (TradeAction.BUY, TradeAction.SELL))
+
         # 21. NautilusTrader Realistic Latency & Slippage Fill Simulation
         simulated_fill = None
-        if veto_res.approved and veto_res.final_action in (TradeAction.BUY, TradeAction.SELL):
+        if veto_res.approved and not council_wait and veto_res.final_action in (TradeAction.BUY, TradeAction.SELL):
             simulated_fill = self.nautilus.simulate_fill(
                 symbol=req.symbol,
                 side=veto_res.final_action.value,
@@ -414,9 +420,6 @@ class AITradingSuiteOrchestrator:
         # burada VETO değil ÇEKİMSERLİK verir: karar WAIT'e indirilir ve güven
         # yarıya kelepçelenir. (Bu blok yalnız analiz/sohbet katmanıdır; FX motorunun
         # gerçek giriş kararını değiştirmez.)
-        council_abstained = (getattr(council_res, "consensus_decision", "") == "STAND_ASIDE")
-        council_wait = (council_abstained and veto_res.approved
-                        and veto_res.final_action in (TradeAction.BUY, TradeAction.SELL))
         if council_wait:
             logger.info("[21AI] %s: konsey çekimser → karar WAIT", req.symbol)
 

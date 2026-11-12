@@ -111,3 +111,24 @@ def test_tv_endeks_eslemeleri_olu_ticker_kullanmaz():
         assert spec, f"{sym} için TradingView eşlemesi yok"
         market, ticker = spec
         assert ticker != "OANDA:NAS100USD", "bu ticker CFD tarayıcısında veri döndürmüyor"
+
+
+def test_konsey_onaylayinca_approve_yolu_calisir(monkeypatch):
+    """Konsey hemfikir olduğunda onay yolu KIRILMAMIŞ olmalı (çekimserlik kapısı
+    her şeyi bloke eden bir yasak değil)."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class _C:
+        consensus_decision: str = "LONG"
+
+    class _Council:
+        def deliberate(self, **kwargs):
+            return _C()
+
+    o = AITradingSuiteOrchestrator()
+    monkeypatch.setattr(o, "council", _Council())
+    _force_reflection_confidence(o, monkeypatch, 0.9)
+    r = o.evaluate(_req("BUY"))
+    assert r.final_verdict != "WAIT", "konsey onaylarken WAIT'e düşmemeli"
+    assert r.confidence_score > 0.5, "çekimserlik kelepçesi burada uygulanmamalı"
