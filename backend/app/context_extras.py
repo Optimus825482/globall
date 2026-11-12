@@ -305,3 +305,53 @@ def cross_asset_lines() -> list[str]:
     """Varlık nabzı satırları — `market_pulse.compact_lines` tek kaynaktır."""
     from app import market_pulse as mp
     return mp.compact_lines()
+
+def sentiment_table(symbols: Iterable[str] | None, *, max_n: int = 8) -> list[dict[str, Any]]:
+    """Sembol listesi için sentiment satırları (bileşik skor + perakende kalabalık).
+
+    NEDEN: sohbet/fırsat taraması çok sembollü sorularda `focus=None` geçiyordu ve
+    sentiment blokları "sembol verilmedi" diyordu. Bu tablo, İLGİLİ her sembolün
+    skorunu LLM'e taşır (2026-11-12).
+    """
+    from app import retail_sentiment as rs
+    from app import sentiment_index as si
+
+    out: list[dict[str, Any]] = []
+    for raw in list(symbols or [])[:max_n]:
+        sym = str(raw or "").replace("_", "").upper().strip()
+        if not sym or ":" in sym:
+            continue
+        try:
+            r = si.summarize(sym)
+            ret = rs.summary(sym)
+        except Exception:  # noqa: BLE001 — tek sembol tabloyu düşürmesin
+            continue
+        out.append({
+            "symbol": sym,
+            "score": r.get("score"),
+            "label": r.get("label"),
+            "coverage": r.get("coverage"),
+            "retail_long_pct": (ret.get("long_pct") if ret.get("available")
+                                and ret.get("symbol") else None),
+            "retail_crowded": ret.get("crowded") if ret.get("available") else None,
+        })
+    return out
+
+
+def sentiment_lines_for(symbols: Iterable[str] | None, *, max_n: int = 8) -> list[str]:
+    """`sentiment_table`in düz metin hâli (LLM dosyasına/araç çıktısına gömülür)."""
+    lines: list[str] = []
+    for row in sentiment_table(symbols, max_n=max_n):
+        try:
+            sc = f"{float(row['score']):+.0f}"
+        except (TypeError, ValueError):
+            sc = "?"
+        line = f"{row['symbol']}: bileşik sentiment {sc}/100 ({row.get('label')})"
+        if row.get("retail_long_pct") is not None:
+            line += f" · perakende %{float(row['retail_long_pct']):.0f} long"
+            if row.get("retail_crowded"):
+                line += f" (KALABALIK {row['retail_crowded']})"
+        elif row.get("retail_long_pct") is None:
+            line += " · perakende veri yok"
+        lines.append(line)
+    return lines

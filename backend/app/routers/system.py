@@ -297,8 +297,30 @@ async def cot_status():
     }
 
 
+def _system_universe() -> list[str]:
+    """Sistemin GERÇEK işlem evreni (Ayarlar > Auto Paper allowed_symbols).
+
+    Kartlar/LLM yüzeyleri yalnız bu sembolleri gösterir: kullanıcı "sistemde
+    olmayan pariteyi neden gösteriyorsun" demesin. Evren okunamazsa güvenli
+    çekirdek (XAUUSD + BTCUSD + majörler) döner.
+    """
+    try:
+        from app.routers import forex as fx
+        syms = [str(s).upper() for s in (fx._AUTO_SETTINGS.allowed_symbols or [])]  # noqa: SLF001
+        if syms:
+            # Altın ve BTC her hâlükârda listede olsun (Erkan: "altın ve btc")
+            for must in ("XAUUSD", "BTCUSD"):
+                if must not in syms:
+                    syms.append(must)
+            return syms
+    except Exception:  # noqa: BLE001
+        pass
+    return ["XAUUSD", "BTCUSD", "EURUSD", "GBPUSD", "USDJPY", "US30", "NAS100"]
+
+
 @router.get("/api/system/retail-sentiment")
-async def retail_sentiment_status(symbol: str | None = None, limit: int = 12, refresh: bool = False):
+async def retail_sentiment_status(symbol: str | None = None, symbols: str = "",
+                                   limit: int = 12, refresh: bool = False):
     """Perakende konumlanma (Myfxbook topluluk outlook) — ana sayfa tablosu + LLM bağlamı.
 
     BAĞLAMDIR, KAPI DEĞİL: karar akışını değiştirmez (COT/seans ile aynı sınıf).
@@ -317,10 +339,18 @@ async def retail_sentiment_status(symbol: str | None = None, limit: int = 12, re
         await rs.hydrate_if_empty()   # ilk yüklemede "veri yok" demesin (DB'den)
         rs.ensure_fresh_async()
     s = rs.summary(symbol)
+    # Hangi semboller gösterilecek: sistem evreni (XAUUSD + BTCUSD dahil) ya da açık liste
+    syms = ([x.strip().upper() for x in symbols.split(",") if x.strip()]
+            if symbols.strip() else _system_universe())
     all_rows = (rs._state.get("rows") or {})  # noqa: SLF001
-    rows = sorted(all_rows.values(),
+    # YALNIZ SİSTEM EVRENİ (Erkan 2026-11-12): kullanıcı "sistemde olmayan pariteyi
+    # neden gösteriyorsun" demesin. Myfxbook'ta 88 sembol var; kartta 14'ü görünür.
+    # Evrende olup Myfxbook'ta olmayan sembol (endeksler) satır olarak EKLENMEZ —
+    # zaten kapsam dışı; uydurma yok.
+    rows = sorted((all_rows[s] for s in syms if s in all_rows),
                   key=lambda r: -int(r.get("total_positions") or 0))[: max(1, min(int(limit), 50))]
-    max_pos = max((int(r.get("total_positions") or 0) for r in all_rows.values()), default=0) or 1
+    # Popülerlik çubuğu evren İÇİNDE anlamlı olsun (88 sembolün en kalabalığına göre değil)
+    max_pos = max((int(r.get("total_positions") or 0) for r in rows), default=0) or 1
 
     # Güncel fiyat: canlı tick önbelleği (WS/köprü). Yoksa uzaklık hesaplanmaz —
     # 0 yazıp "başabaş" gibi göstermek yanıltıcı olurdu.
@@ -383,9 +413,7 @@ async def sentiment_index_status(symbols: str = "", limit: int = 12):
 
     await asyncio.to_thread(_warm_sentiment_inputs)
     syms = ([s.strip().upper() for s in symbols.split(",") if s.strip()]
-            if symbols.strip() else
-            ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
-             "XAUUSD", "US30", "NAS100", "JP225", "UK100", "DE40"])
+            if symbols.strip() else _system_universe())
     items = []
     for s in syms[: max(1, min(int(limit), 40))]:
         try:

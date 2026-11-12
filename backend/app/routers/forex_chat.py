@@ -424,6 +424,10 @@ def build_context(findings: Dict[str, Any]) -> Dict[str, Any]:
         focus = syms[0] if len(syms) == 1 else None
         ctx["makro_baglam"] = context_extras.macro_context(focus)
         ctx["makro_ozet"] = context_extras.compact_lines(focus)
+        # Çok sembollü soru: sembol bazlı sentiment (bileşik + perakende) — 2026-11-12
+        if len(syms) > 1:
+            ctx["sembol_sentiment"] = context_extras.sentiment_table(syms)
+            ctx["sembol_sentiment_satirlari"] = context_extras.sentiment_lines_for(syms)
     except Exception as exc:  # noqa: BLE001 - bağlam eki yanıtı düşürmesin
         logger.info("makro bağlam eklenemedi: %s", exc)
     # "Araştırma adımlarının hiçbiri tamamlanamadı" uyarısı: makro bağlam HER

@@ -3561,9 +3561,24 @@ async def strategies_llm_chat(payload: dict = None, request: Request = None):
         _focus_sym = (requested_symbols[0].replace("_", "") if requested_symbols else None)
         context["macro_context"] = context_extras.macro_context(_focus_sym)
         context["macro_context_lines"] = context_extras.compact_lines(_focus_sym)
+        # ÇOK SEMBOLLÜ soru: her sembolün bileşik sentiment + perakende konumlanması
+        # (2026-11-12). Tek sembolde yukarıdaki blok zaten o sembolü kapsıyor.
+        _syms_ctx = [str(x).replace("_", "").upper() for x in (requested_symbols or [])]
+        if len(_syms_ctx) > 1:
+            context["sentiment_by_symbol"] = context_extras.sentiment_table(_syms_ctx)
+            context["sentiment_by_symbol_lines"] = context_extras.sentiment_lines_for(_syms_ctx)
     except Exception as exc:  # noqa: BLE001 - bağlam eki sohbeti düşürmesin
         logger.info("macro_context eklenemedi: %s", exc)
     if market_opportunity_intent and not requested_symbols:
+        # Fırsat taraması: evrendeki her sembolün sentiment'i (kalabalık/çelişki
+        # karşı-kanıtı) — 2026-11-12. Sembol listesi sistemin gerçek evreni.
+        try:
+            from app import context_extras as _cx
+            from app.routers.system import _system_universe as _universe
+            context["sentiment_universe"] = _cx.sentiment_table(_universe(), max_n=14)
+            context["sentiment_universe_lines"] = _cx.sentiment_lines_for(_universe(), max_n=14)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("sentiment_universe eklenemedi: %s", exc)
         try:
             market_scan = await scan_market_snapshots({
                 "symbols": config.SYMBOLS,

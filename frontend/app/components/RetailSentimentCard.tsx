@@ -71,7 +71,7 @@ export default function RetailSentimentCard() {
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/system/retail-sentiment?limit=12");
+      const res = await apiFetch("/api/system/retail-sentiment?limit=20");
       setItems(Array.isArray(res?.items) ? res.items : []);
       setSummary(res?.summary ?? null);
       setError("");

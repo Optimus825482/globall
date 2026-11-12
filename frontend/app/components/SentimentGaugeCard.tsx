@@ -83,7 +83,7 @@ export default function SentimentGaugeCard() {
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/system/sentiment-index?limit=12");
+      const res = await apiFetch("/api/system/sentiment-index?limit=20");
       setItems(Array.isArray(res?.items) ? res.items : []);
       setWeights(res?.weights ?? {});
       setError("");
