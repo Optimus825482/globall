@@ -579,6 +579,7 @@ def _real_inputs_from_analysis(a: dict) -> Optional[dict]:
         "proposed_action": bias if bias in ("BUY", "SELL") else "WAIT",
         "notes": ["hacim oranı verisi yok (nötr 1,0)", "sosyal buzz verisi yok (nötr 0,5)"],
         "indicators_count": len(inds),
+        "_analysis": a,
     }
 
 
@@ -637,7 +638,19 @@ async def execute_ai_trading_suite_evaluation(args: dict) -> dict:
     try:
         from app.routers import forex as _fx
         _pip = float((_fx.get_symbol_trading_specs(raw_sym) or {}).get("pip_size") or 0.0001)
-        _atr_pips = float(real["atr"]) / _pip if _pip else 0.0
+        # 2026-11-12 DÜZELTME: motor 5m ATR kullanıyor (`_TECHNICAL_CACHE` 5m).
+        # 1h ATR ile hesaplayınca atr_pips 5 kat şişip SL'i şişiriyor, R:R yapay
+        # düşüyordu (USDJPY 0,85 · BTC 1,2 gibi). Motorla aynı zaman dilimi şart.
+        _atr_src = float(real["atr"])
+        try:
+            from app import forex_research as _fr
+            _a = real.get("_analysis") or {}
+            _f5 = ((_a.get("frames") or {}).get("5m") or {})
+            if _f5.get("atr"):
+                _atr_src = float(_f5["atr"])
+        except Exception:  # noqa: BLE001
+            pass
+        _atr_pips = _atr_src / _pip if _pip else 0.0
         # 2026-11-12 DÜZELTME: spec ATR İLE üretilmeli (canlı motor da öyle yapıyor:
         # `get_symbol_trading_specs(sym, atr_pips=...)`). ATR'siz çağrıda TP tabanda
         # (FX 20 / XAU-BTC 60 pip) kalıyor ve R:R çöküyordu (BTC 0,07!).

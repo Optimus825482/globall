@@ -2975,6 +2975,13 @@ def is_entry_hour_blocked(current_utc_hour: int, blocked_hours: List[int]) -> bo
     return int(current_utc_hour) in {int(h) for h in blocked_hours}
 
 
+#: 2026-11-12: JPY dalı ATR genişletmesini HİÇ yapmıyordu (SL 8 / TP 20 sabit) —
+#: JPY dışı tüm FX dalları yapıyor. Yüksek ATR'de bu, `get_atr_exit_levels` içinde
+#: R:R'yi çökertiyordu (USDJPY ATR 27 → SL 40,5 / TP 20 = 0,49; başabaş için %67 isabet).
+#: False = eski davranış; A/B kanıtıyla True yapılır (`--jpy-spec-atr`).
+JPY_SPEC_ATR_WIDENING = False
+
+
 def get_symbol_trading_specs(
     symbol: str,
     base_sl: float = 8.0,
@@ -3041,10 +3048,18 @@ def get_symbol_trading_specs(
         mult = 1.0
         digits = 3
         pip_val = 6.60
-        eff_sl_pips = round(base_sl * mult, 1)
-        eff_tp_pips = round(base_tp * mult, 1)
-        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
-        eff_trail_pips = round(base_trail * mult, 1)
+        base_sl_calc = round(base_sl * mult, 1)
+        if JPY_SPEC_ATR_WIDENING and atr_pips and atr_pips > 0:
+            # JPY dışı FX dallarıyla AYNI kural (2026-11-12 A/B adayı)
+            eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1))
+            eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
+            eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 0.75, 1))
+            eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
+        else:
+            eff_sl_pips = base_sl_calc
+            eff_tp_pips = round(base_tp * mult, 1)
+            eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(base_be_floored * mult, 1))
+            eff_trail_pips = round(base_trail * mult, 1)
 
     elif "BTC" in clean_sym:
         pip_size = 1.0           # 1 pip = $1.00

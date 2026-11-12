@@ -4364,6 +4364,9 @@ def main():
                         help="Bar damgası düzeltmesi (saat). MT5 barları broker saatinde "
                              "(ICMarkets +2) → 2 verilince saat kapıları GERÇEK UTC'de "
                              "değerlendirilir. 0 = eski davranış (A/B karşılaştırması)")
+    parser.add_argument("--jpy-spec-atr", action="store_true",
+                        help="JPY çiftlerinde spec SL/TP'sini ATR ile genişlet (JPY dışı FX dallarıyla aynı kural). "
+                             "Verilmezse eski davranış (8/20 sabit) — R:R çökmesi sürer.")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
     parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk", "london_sign", "squeeze_kc"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
@@ -4612,6 +4615,15 @@ def main():
                 print(f"[UYARI] Spread profili yüklenemedi ({args.spread_profile}): {_sp_err} — kategori spread'leri kullanılacak")
         else:
             print(f"[UYARI] Spread profili bulunamadı: {args.spread_profile} — kategori spread'leri kullanılacak")
+
+    # 2026-11-12 A/B anahtarı: JPY spec ATR genişletmesi.
+    # TUZAK: burada `from app.routers import forex` YAPMA — bu betik `forex`i
+    # `backend.app.routers.forex` adıyla yüklüyor; ikinci bir import AYRI bir modül
+    # nesnesi yaratır ve anahtar hiç etki etmez (2026-11-12'de iki A/B bu yüzden
+    # "birebir aynı" çıktı). Modül düzeyindeki `forex` nesnesini kullan.
+    if args.jpy_spec_atr:
+        forex.JPY_SPEC_ATR_WIDENING = True
+        print("[KONFIG] JPY spec ATR genişletmesi AÇIK")
 
     # Zaman-dilimi merdiveni (Aşama 3): --interval 15m ile 15m bar üzerinde replay
     global FETCH_INTERVAL
