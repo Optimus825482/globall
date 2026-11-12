@@ -77,6 +77,10 @@ SPREAD_PROFILE: Dict[str, float] = {}
 SPREAD_PROFILE_HOURLY: Dict[str, Dict[int, float]] = {}
 #: Profil saatlerinin hangi saat diliminde olduğu (bar damgası sunucu saatiyse kaydırma).
 SPREAD_PROFILE_TZ_HOURS = 0
+#: Bar damgası düzeltmesi (saat). MT5 barları BROKER saatinde (ICMarkets UTC+2);
+#: replay bunları UTC sanıyordu → saat kapıları 2 saat kayık (2026-11-12 bulgusu).
+#: 0 = eski davranış (karşılaştırma için); 2 = gerçek UTC.
+BAR_TZ_OFFSET_H = 0
 # Replay-local sembol tanımları: canlı FOREX_SYMBOLS'ta olmayan test adayları (JPY kross'ları)
 REPLAY_SYMBOL_DEFS = {
     "GBPJPY": {"pip_size": 0.01, "digits": 3, "category": "cross"},
@@ -3286,6 +3290,10 @@ def run_replay(data: Dict[str, List[Tuple]], days: int, entry_start_ts: Optional
     btc_vwap_by_ts: Dict[float, float] = {}
     if TUN_BTC_VWAP and "BTCUSD" in data:
         vols = _load_btc_volume_map()
+        if BAR_TZ_OFFSET_H:
+            # Harita DB/API damgalarıyla (broker saati) anahtarlı; bar çizgisi kaydıysa
+            # anahtarlar da kaymalı — yoksa VWAP kapısı sessizce 0 hacim görür.
+            vols = {float(_t) - BAR_TZ_OFFSET_H * 3600.0: _v for _t, _v in vols.items()}
         cum_qv = cum_v = 0.0
         cur_day: Optional[int] = None
         for b in data["BTCUSD"]:
@@ -4352,6 +4360,10 @@ def main():
     parser.add_argument("--add-symbols", default="", help="Virgüllü ek aday semboller (örn: XAGUSD,USOIL,GBPJPY) — izin listesine EKLENİR (test-only)")
     parser.add_argument("--exclude-symbols", default="", help="Virgüllü hariç tutulacak semboller (örn: XAUUSD,BTCUSD) — izole FX defteri için")
     parser.add_argument("--spread-profile", default="", help="JSON spread profili: sembol başına gerçek spread (pip); örn outputs/fx_spread_reality.json")
+    parser.add_argument("--bar-tz-offset", type=float, default=0.0,
+                        help="Bar damgası düzeltmesi (saat). MT5 barları broker saatinde "
+                             "(ICMarkets +2) → 2 verilince saat kapıları GERÇEK UTC'de "
+                             "değerlendirilir. 0 = eski davranış (A/B karşılaştırması)")
     parser.add_argument("--interval", default="5m", help="Bar zaman dilimi (5m / 15m — Aşama 3 merdiven testi; 15m'de HTF ≈ 45m olur)")
     parser.add_argument("--entry-mode", default="classic", choices=["classic", "london_breakout", "pullback", "donchian_adx", "donchian_pure", "squeeze", "nr7", "orb_ny", "eurusd_tod", "orb_filtered", "squeeze_exp", "reopen_fade", "tokyo_fix", "ema_adx_pullback", "supertrend_rsi", "bb_bandwalk", "london_sign", "squeeze_kc"], help="Giriş algoritması: classic = mevcut skor sistemi; diğerleri giriş-kalibrasyonu araştırma adayları")
     parser.add_argument("--lb-box-end", type=int, default=7, help="London breakout kutu bitiş saati (UTC)")
@@ -4959,6 +4971,34 @@ def main():
             if _used:
                 print(f"[VERI] Karma kaynak: DB + {_used} sembol önbellek/Yahoo "
                       f"(toplam {len(data)} sembol)")
+
+    # BAR SAAT DİLİMİ DÜZELTMESİ (2026-11-12): MT5/`historical_candles` damgaları
+    # broker saatinde (ICMarkets UTC+2). Kanıt: haftanın ilk 5m barı "Pazartesi 00:00"
+    # etiketli — FX Pazar 22:00 UTC'de açılır. Düzeltilmezse `hour` 2 saat kayık olur ve
+    # saat kapılı stratejiler (tokyo_drift 01:00, majorHours, reopen_fade) yanlış saatte
+    # ölçülür. Kaydırma TEK NOKTADA yapılır: kapılar, kollar, gün sınırı aynı çizgiyi görsün.
+    global BAR_TZ_OFFSET_H  # SPREAD_PROFILE_TZ_HOURS yukarıda (profil yükleyicide) global ilan edildi
+    BAR_TZ_OFFSET_H = float(args.bar_tz_offset or 0.0)
+    if BAR_TZ_OFFSET_H:
+        _shift = BAR_TZ_OFFSET_H * 3600.0
+        _shifted = 0
+        for _s in list(data.keys()):
+            _bars = data[_s]
+            if not _bars:
+                continue
+            data[_s] = [(float(b[0]) - _shift,) + tuple(b[1:]) for b in _bars]
+            _shifted += 1
+        # Bar damgası artık GERÇEK UTC → spread profilinde ek kaydırma YAPILMAZ
+        # (yoksa rollover iki kez kayar ve maliyet yanlış saate düşer).
+        SPREAD_PROFILE_TZ_HOURS = 0
+        print(f"[KONFIG] Bar damgası {BAR_TZ_OFFSET_H:+g} saat kaydırıldı → gerçek UTC "
+              f"({_shifted} sembol); saat kapıları artık UTC'de")
+    else:
+        print("[UYARI] Bar damgası UTC varsayıldı. MT5/`historical_candles` verisi BROKER "
+              "saatiyle (ICMarkets +2) damgalı → saat kapıları (majorHours, tokyo 01:00, "
+              "reopen_fade 00:00) 2 saat kayık değerlendirilir. Ölçüm: 2026-11-12 tarihli "
+              "A/B'de +2 kaydırma net sonucu %10 DEĞİŞTİRDİ (PF 1,24 → 1,20). "
+              "Gerçek UTC için `--bar-tz-offset 2`.")
 
     # Krosçar pip_val override'ı: pencere ortalaması quote-kurlarıyla spec sarılır
     global REPLAY_PIP_VAL_OVERRIDE

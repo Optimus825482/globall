@@ -168,7 +168,21 @@ A/B (düz ölçülen → saat-duyarlı ölçülen, aynı 30 gün):
 
 **Sonuç:** replay'de `tokyo_drift 01:00` penceresi aslında 23:00 UTC'yi, `majorHours 7-20` aslında 05:00-18:00 UTC'yi, `reopen_fade 00:00` aslında **rollover 22:00 UTC**'yi tetikliyor. (Saat-duyarlı maliyet bu düzeltmeyi zaten yapıyor — spread doğru saate düşüyor; kayık olan *kapılar*.)
 
-**Neden şimdi değiştirmedim:** düzeltmek saat kapılı stratejilerin tüm geçmiş replay sonuçlarını değiştirir → kendi A/B'sini ve karar gerektirir. Öneri: `--bar-tz-offset 2` bayrağı ekle, iki yönü ölç, sonra varsayılan yap.
+**Neden şimdi değiştirmedim (varsayılan):** düzeltmek saat kapılı stratejilerin tüm geçmiş replay sonuçlarını değiştirir → bayrak eklendi, iki yön ölçüldü, varsayılan **eski davranışta bırakıldı** ama artık **gürültülü uyarı** basıyor.
+
+**Ölçüm (aynı 30 gün, aynı profil):**
+
+| Metrik | Kayık (tz 0) | Gerçek UTC (tz +2) | Fark |
+|---|---|---|---|
+| İşlem | 6.938 | 6.936 | −2 |
+| Net | +89.798 $ | **+80.153 $** | **−9.645** |
+| İşbet | %74,5 | %74,1 | −0,4 |
+| PF | 1,24 | **1,20** | −0,04 |
+| SL çıkışı | 1.769 | 1.797 | +28 |
+
+**Yani 2 saatlik kayma kitabı ~%10 ŞİŞİRİYORDU.** Doğru okuma: PF 1,20 / net +80.153 $. Fark tek sembole yığılmıyor (hiçbir sembolde >300 $ sapma yok) → sistematik saat etkisi, tek işlem şansı değil.
+
+**Doğru kullanım:** bu veri seti için `--bar-tz-offset 2`. Ofset 60 günlük pencerede **sabit +2** (her haftanın açılışı "Pazartesi 00:00" etiketli; yaz saati kayması yok). 2023-2025 gibi uzun geçmiş için DST-farkında ofset gerekir — sabit +2 o dönemde 1 saat hata verir.
 
 ## 8) Üretilen dosyalar
 
