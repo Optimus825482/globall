@@ -64,7 +64,7 @@ function Pips({ value }: { value: number | null }) {
   );
 }
 
-export default function RetailSentimentCard() {
+export default function RetailSentimentCard({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<SentimentItem[]>([]);
   const [summary, setSummary] = useState<SentimentSummary | null>(null);
   const [error, setError] = useState("");
@@ -85,12 +85,12 @@ export default function RetailSentimentCard() {
   const crowdPct = summary?.crowd_pct ?? 70;
   const crowded = items.filter((i) => i.crowded);
 
-  return (
-    <Card className="!p-0 overflow-hidden">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-bunker-800 px-4 py-3 sm:px-5">
+  const content = (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-bunker-800 px-4 py-2.5 sm:px-5">
         <div>
-          <p className="eyebrow">Market sentiment · perakende konumlanma</p>
-          <h2 className="text-sm font-semibold">Kalabalık hangi tarafta?</h2>
+          {!embedded && <p className="eyebrow">Market sentiment · perakende konumlanma</p>}
+          <h2 className="text-xs sm:text-sm font-semibold">Kalabalık hangi tarafta?</h2>
         </div>
         <p className="text-2xs text-bunker-muted tabular-nums">
           {summary?.available
@@ -187,6 +187,9 @@ export default function RetailSentimentCard() {
         {" "}Pozitif pip = o taraf kârda. Endeksler Myfxbook kapsamında yok.
         {crowded.length > 0 ? ` Bugün ${crowded.length} paritede kalabalık tek taraflı.` : ""}
       </p>
-    </Card>
+    </>
   );
+
+  if (embedded) return <div>{content}</div>;
+  return <Card className="!p-0 overflow-hidden">{content}</Card>;
 }

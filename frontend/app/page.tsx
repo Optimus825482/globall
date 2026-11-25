@@ -21,8 +21,7 @@ import {
 } from "./lib/calendarOutcome";
 import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 import { Button, Card, DirectionBadge } from "./components/ui";
-import RetailSentimentCard from "./components/RetailSentimentCard";
-import SentimentGaugeCard from "./components/SentimentGaugeCard";
+import UnifiedSentimentCard from "./components/UnifiedSentimentCard";
 
 interface OpenPosition {
   id: string;
@@ -725,13 +724,9 @@ export default function HomePage() {
         </Card>
       </div>
 
-      {/* MARKET SENTIMENT — bileşik endeks (merkez 0: sol SHORT / sağ LONG).
-          Bağlamdır, kapı değil; karar akışını değiştirmez. */}
-      <SentimentGaugeCard />
-
-      {/* PERAKENDE KONUMLANMA — kalabalık hangi tarafta (Myfxbook tablosu, BAĞLAM).
-          Tam satır: tablo geniş, 1/3 kolona sığmıyor. */}
-      <RetailSentimentCard />
+      {/* MARKET SENTIMENT — bileşik endeks & perakende konumlanma (tek kompakt kart, BAĞLAM).
+          Kapı değil; karar akışını değiştirmez. */}
+      <UnifiedSentimentCard />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         {/* BUGÜN KAPANAN İŞLEMLER */}

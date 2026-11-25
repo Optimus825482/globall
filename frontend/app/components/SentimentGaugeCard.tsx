@@ -76,7 +76,7 @@ function Gauge({ score, label }: { score: number; label: string }) {
   );
 }
 
-export default function SentimentGaugeCard() {
+export default function SentimentGaugeCard({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<IndexItem[]>([]);
   const [error, setError] = useState("");
   const [weights, setWeights] = useState<Record<string, number>>({});
@@ -94,12 +94,12 @@ export default function SentimentGaugeCard() {
 
   usePolling(load, 120000);
 
-  return (
-    <Card className="!p-0 overflow-hidden">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-bunker-800 px-4 py-3 sm:px-5">
+  const content = (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-bunker-800 px-4 py-2.5 sm:px-5">
         <div>
-          <p className="eyebrow">Market sentiment · bileşik endeks</p>
-          <h2 className="text-sm font-semibold">Sol SHORT · merkez 0 · sağ LONG</h2>
+          {!embedded && <p className="eyebrow">Market sentiment · bileşik endeks</p>}
+          <h2 className="text-xs sm:text-sm font-semibold">Sol SHORT · merkez 0 · sağ LONG</h2>
         </div>
         <p className="text-2xs text-bunker-muted">
           Haber/veri + COT + küresel nabız + kalabalık
@@ -174,6 +174,9 @@ export default function SentimentGaugeCard() {
         . Kapsam %100&apos;ün altındaysa eksik bileşen skora katılmaz — nötr sayılmaz.
         Bu bir <strong>filtre değil</strong>; ağırlıklar yargıdır, ölçülmüş kenar değildir.
       </p>
-    </Card>
+    </>
   );
+
+  if (embedded) return <div>{content}</div>;
+  return <Card className="!p-0 overflow-hidden">{content}</Card>;
 }

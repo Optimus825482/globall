@@ -2286,6 +2286,90 @@ class TestBridgeCandleCaseAndUtcOffsetRegression(unittest.IsolatedAsyncioTestCas
         gate_lon = forex._evaluate_signal_gate("AUDCAD", cand_audcad, current_utc_hour=10, dxy_regime=None, is_weekend=False)
         self.assertNotIn("major_session", gate_lon["blocked_by"])
 
+    def test_upcoming_3star_news_shield_and_retail_crowd_scaling(self):
+        """Verify 3★ upcoming news shield (30 min window) and retail extreme crowd (>=80%) soft lot scaling."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        now_ts = datetime(2026, 11, 25, 13, 15, 0, tzinfo=timezone.utc).timestamp()
+        ev_15m_3star = [{
+            "title": "US CPI YoY",
+            "currency": "USD",
+            "stars": 3,
+            "date_iso": datetime.fromtimestamp(now_ts + 15 * 60, tz=timezone.utc).isoformat(),
+        }]
+        ev_45m_3star = [{
+            "title": "US CPI YoY",
+            "currency": "USD",
+            "stars": 3,
+            "date_iso": datetime.fromtimestamp(now_ts + 45 * 60, tz=timezone.utc).isoformat(),
+        }]
+        ev_15m_2star = [{
+            "title": "US Housing Starts",
+            "currency": "USD",
+            "stars": 2,
+            "date_iso": datetime.fromtimestamp(now_ts + 15 * 60, tz=timezone.utc).isoformat(),
+        }]
+
+        # 1) Pure helper checks
+        hit = forex.upcoming_high_impact_event("EURUSD", ev_15m_3star, now_ts, 30.0)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["currency"], "USD")
+        self.assertAlmostEqual(hit["minutes"], 15.0, delta=0.5)
+        self.assertIsNone(forex.upcoming_high_impact_event("EURUSD", ev_45m_3star, now_ts, 30.0))
+        self.assertIsNone(forex.upcoming_high_impact_event("EURUSD", ev_15m_2star, now_ts, 30.0))
+
+        # 2) _evaluate_signal_gate integration
+        cand_eur = {
+            "symbol": "EURUSD", "display": "EUR/USD", "action": "BUY", "score": 92.0,
+            "spread_pips": 1.0, "atr_pips": 15.0, "adx": 30.0, "supertrend_dir": 1,
+            "category": "major", "body_ratio": 0.6, "dist_ema21_pct": 0.05,
+        }
+        gate_block = forex._evaluate_signal_gate(
+            "EURUSD", cand_eur, current_utc_hour=13, dxy_regime=None,
+            is_weekend=False, calendar_items=ev_15m_3star, now_ts=now_ts,
+        )
+        self.assertIn("upcoming_news_3star", gate_block["blocked_by"])
+        self.assertIn("upcoming_news_3star", gate_block["market_blockers"])
+        self.assertFalse(gate_block["signal_ready"])
+        self.assertIn("upcoming_news_3star", forex._GATE_LABELS)
+
+        gate_far = forex._evaluate_signal_gate(
+            "EURUSD", cand_eur, current_utc_hour=13, dxy_regime=None,
+            is_weekend=False, calendar_items=ev_45m_3star, now_ts=now_ts,
+        )
+        self.assertNotIn("upcoming_news_3star", gate_far["blocked_by"])
+
+        gate_2star = forex._evaluate_signal_gate(
+            "EURUSD", cand_eur, current_utc_hour=13, dxy_regime=None,
+            is_weekend=False, calendar_items=ev_15m_2star, now_ts=now_ts,
+        )
+        self.assertNotIn("upcoming_news_3star", gate_2star["blocked_by"])
+
+        # 3) Retail sentiment extreme crowd soft scaling (>=80% same side -> 0.5, opposite -> 1.0)
+        with patch("app.retail_sentiment.brief", return_value={"long_pct": 84.0, "short_pct": 16.0}):
+            mult_same, note_same = forex.retail_crowd_risk_mult("EURUSD", "BUY")
+            self.assertEqual(mult_same, 0.5)
+            self.assertIsNotNone(note_same)
+            self.assertIn("LONG", note_same)
+
+            mult_opp, note_opp = forex.retail_crowd_risk_mult("EURUSD", "SELL")
+            self.assertEqual(mult_opp, 1.0)
+            self.assertIsNone(note_opp)
+
+        with patch("app.retail_sentiment.brief", return_value={"long_pct": 18.0, "short_pct": 82.0}):
+            mult_same_s, note_same_s = forex.retail_crowd_risk_mult("EURUSD", "SELL")
+            self.assertEqual(mult_same_s, 0.5)
+            self.assertIsNotNone(note_same_s)
+            self.assertIn("SHORT", note_same_s)
+
+            mult_opp_s, note_opp_s = forex.retail_crowd_risk_mult("EURUSD", "BUY")
+            self.assertEqual(mult_opp_s, 1.0)
+            self.assertIsNone(note_opp_s)
+
+        with patch("app.retail_sentiment.brief", return_value={}):
+            self.assertEqual(forex.retail_crowd_risk_mult("EURUSD", "BUY"), (1.0, None))
+
 
 if __name__ == "__main__":
     unittest.main()

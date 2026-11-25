@@ -5025,6 +5025,44 @@ async def get_forex_klines(
     }
 
 
+def upcoming_high_impact_event(
+    symbol: str,
+    calendar_items: Any,
+    now_ts: float,
+    window_min: float = 30.0,
+) -> Optional[Dict[str, Any]]:
+    """Sembolü etkileyen `window_min` dk içindeki en yakın 3★ yüksek etkili takvim olayı."""
+    if not calendar_items:
+        return None
+    try:
+        from app import position_supervisor
+        return position_supervisor.next_event(calendar_items, symbol, float(now_ts), float(window_min))
+    except Exception:
+        return None
+
+
+def retail_crowd_risk_mult(symbol: str, direction: str) -> Tuple[float, Optional[str]]:
+    """Perakende aşırı kalabalık (>=%80 aynı yön) için yumuşak lot ölçekleyici (VETO YOK)."""
+    try:
+        from app import retail_sentiment
+        info = retail_sentiment.brief(symbol)
+    except Exception:
+        return (1.0, None)
+    if not info:
+        return (1.0, None)
+    dir_u = str(direction or "").upper()
+    try:
+        long_pct = float(info.get("long_pct") or 0.0)
+        short_pct = float(info.get("short_pct") or 0.0)
+    except Exception:
+        return (1.0, None)
+    if dir_u == "BUY" and long_pct >= 80.0:
+        return (0.5, f"perakende aşırı LONG (%{long_pct:.0f}) → risk ×0.5")
+    if dir_u == "SELL" and short_pct >= 80.0:
+        return (0.5, f"perakende aşırı SHORT (%{short_pct:.0f}) → risk ×0.5")
+    return (1.0, None)
+
+
 def _evaluate_signal_gate(
     sym: str,
     cand: Dict[str, Any],
@@ -5033,6 +5071,8 @@ def _evaluate_signal_gate(
     has_open_position: bool = False,
     news_bias: Optional[Dict[str, Any]] = None,
     is_weekend: bool = False,
+    calendar_items: Optional[List[Dict[str, Any]]] = None,
+    now_ts: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Bir radar adayının otonom giriş kapılarından geçip geçmediğini değerlendirir.
 
@@ -5173,6 +5213,11 @@ def _evaluate_signal_gate(
             if dir_sign != 0 and dir_sign == -nb_dir:
                 reasons.append("news_opposing")
 
+    if calendar_items and upcoming_high_impact_event(
+        sym, calendar_items, now_ts if now_ts is not None else time.time(), 30.0
+    ):
+        reasons.append("upcoming_news_3star")
+
     if _AUTO_SETTINGS.correlation_guard:
         bias = get_usd_bias(sym, direction)
         if bias != "USD_NEUTRAL":
@@ -5236,6 +5281,7 @@ _GATE_LABELS: Dict[str, str] = {
     "spread_cost_too_high": "Spread hedef kârın %20'sinden yüksek (aşırı maliyet)",
     "crypto_quality": "Varlık kalite kalkanı (gövde/aşırı uzama/ADX yetersiz)",
     "weekend_closed": "Hafta sonu tatili: Forex & Emtia piyasası kapalı (7/24 Kripto aktif)",
+    "upcoming_news_3star": "Yüksek etkili 3★ veri 30 dk içinde — giriş durduruldu",
 }
 # Piyasa kalitesi engelleri. `open_position` BURADA DEĞİL: o piyasanın değil,
 # mevcut durumun sonucu. Ayrım kritik — kullanıcı "sinyal yok"u "piyasa kötü"
@@ -5244,7 +5290,7 @@ _GATE_LABELS: Dict[str, str] = {
 _MARKET_BLOCKERS = frozenset({
     "direction", "score", "spread", "spread_cost_too_high", "adx", "supertrend",
     "dxy", "major_session", "major_min_atr", "correlation",
-    "veri", "bayat", "bar_gap", "news_opposing", "crypto_quality", "weekend_closed",
+    "veri", "bayat", "bar_gap", "news_opposing", "upcoming_news_3star", "crypto_quality", "weekend_closed",
 })
 
 # PERFORMANS (2026-10-08): /radar yanıtı için kısa TTL'li önbellek. Birden çok
@@ -5311,6 +5357,7 @@ async def get_forex_radar(use_cache: bool = True):
 
     # Ekonomik takvim 30 dk yön kanıtı (haber besleyicisi)
     _nb_mod = None
+    _cal_events: Optional[List[Dict[str, Any]]] = None
     try:
         from app.forex_news import get_forex_news
         from app import forex_news_bias as _bias_engine
@@ -5466,6 +5513,8 @@ async def get_forex_radar(use_cache: bool = True):
             has_open_position=sym_u in active_syms,
             news_bias=news_bias_slot,
             is_weekend=weekend_now,
+            calendar_items=_cal_events,
+            now_ts=now_ts,
         )
         base.update(gate)
         base["has_open_position"] = bool(sym_u in active_syms)
@@ -8954,8 +9003,9 @@ async def _forex_auto_paper_loop():
 
             # 2026-10-14: EKONOMİK TAKVİM YÖN KANITI (kullanıcı talebi).
             # Aday döngüsünden ÖNCE bir kez hesaplanır (her aday için takvim
-            # ayrıştırmak israf). `news_bias_enabled` kapalıyken hiç çalışmaz →
-            # davranış birebir eski hâli.
+            # ayrıştırmak israf). `news_bias_enabled` kapalıyken de yaklaşan 3★
+            # olay kalkanı için takvim önbellekten okunur.
+            _cal_events: List[Dict[str, Any]] = []
             if _AUTO_SETTINGS.news_bias_enabled:
                 try:
                     from app.forex_news import get_forex_news
@@ -8965,6 +9015,12 @@ async def _forex_auto_paper_loop():
                                            float(_AUTO_SETTINGS.news_bias_window_sec))
                 except Exception as _nb_exc:
                     _log_auto_decision("SYSTEM", f"⚠️ Takvim yön kanıtı alınamadı: {_nb_exc}")
+            else:
+                try:
+                    from app.forex_news import get_forex_news
+                    _cal_events = await get_forex_news(force_refresh=False)
+                except Exception:
+                    _cal_events = []
 
             for cand in candidates:
                 sym = cand["symbol"].upper()
@@ -9445,6 +9501,22 @@ async def _forex_auto_paper_loop():
                 if direction not in ("BUY", "SELL"):
                     continue
 
+                # Yaklaşan 3★ Yüksek Etkili Veri Kalkanı (30 dk pencere)
+                _upcoming_3s = upcoming_high_impact_event(sym, _cal_events, now_ts, 30.0)
+                if _upcoming_3s:
+                    if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_upcoming_news_3star", 0) > 30.0:
+                        _LAST_CANDIDATE_LOG_TIME[f"{sym}_upcoming_news_3star"] = now_ts
+                        _log_auto_decision(
+                            "GATE",
+                            f"[{cand['display']}][{_c_strat_lbl}] 3★ Haber Kalkanı: "
+                            f"{_upcoming_3s.get('currency', '')} {_upcoming_3s.get('title', 'Ekonomik Veri')} "
+                            f"{float(_upcoming_3s.get('minutes', 0.0)):.0f} dk içinde — {direction} girişi durduruldu.",
+                            symbol=sym,
+                            strategy=_c_strat,
+                            strategy_label=_c_strat_lbl,
+                        )
+                    continue
+
                 weak_symbol_score_bump = 0.0
                 if _AUTO_SETTINGS.dxy_filter_enabled:
                     veto_reason = dxy_entry_veto(sym, direction, dxy_regime)
@@ -9812,6 +9884,11 @@ async def _forex_auto_paper_loop():
                         risk_usd *= 0.60
                 elif 16 <= curr_utc_hour < 20:
                     risk_usd *= 0.50
+
+                # Perakende Aşırı Kalabalık Yumuşak Lot Ölçekleme (>=%80 aynı yön → risk ×0.5, VETO YOK)
+                c_mult, c_note = retail_crowd_risk_mult(sym, direction)
+                if c_mult < 1.0:
+                    risk_usd *= c_mult
 
                 # Komisyon ($7/lot) ve spread tamponlu efektif risk paydası
                 comm_per_lot = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
