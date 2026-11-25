@@ -59,6 +59,7 @@ export const MENU_GROUPS: MenuGroup[] = [
     label: "ANALİZ",
     items: [
       { href: "/forex/calendar", label: "Ekonomik Takvim", icon: "calendar", desc: "Faiz, enflasyon, istihdam ve merkez bankası olayları; parite etkisi" },
+      { href: "/forex/pozisyon-doktoru", label: "AI Pozisyon Doktoru", icon: "radar", desc: "Açık pozisyonların yapay zeka destekli risk denetimi, stop sıkılaştırma ve aksiyon yönetimi" },
       { href: "/forex/reports", label: "Raporlar", icon: "report", desc: "Detaylı işlem geçmişi ve analiz raporları" },
       { href: "/chat", label: "Forex Chat", icon: "chat", desc: "Makroekonomi ve FX uzman AI asistanı" },
     ],

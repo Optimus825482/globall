@@ -288,3 +288,153 @@ def test_review_positions_apply_and_panic_close_guard(monkeypatch):
     res2 = asyncio.run(ps.review_positions(S(), timeout=10.0, tickets=[42], extra_findings_by_ticket={42: []}, apply=True))
     assert res2["applied_count"] == 1
     assert pending[0]["action"] == "MODIFY_SLTP" and pending[0]["sl"] == 3997.0
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+
+
+def test_apply_proposals_and_duplicate_rejection(monkeypatch):
+    import asyncio
+    from app import database
+    from app.routers import forex as fx
+
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+    p1 = position(ticket=101, symbol="XAUUSD", direction="BUY", lots=0.10, entry_price=4000.0, current_price=4006.0, sl_price=3990.0, tp_price=4020.0)
+    p2 = position(ticket=102, symbol="EURUSD", direction="BUY", lots=0.10, entry_price=1.1000, current_price=1.1050, sl_price=1.0950, tp_price=1.1150)
+    monkeypatch.setitem(fx._MT5_STATE, "open_positions", [p1, p2])
+    pending = []
+    monkeypatch.setitem(fx._MT5_STATE, "pending_commands", pending)
+
+    logged = []
+
+    async def fake_log(ev):
+        logged.append(ev)
+
+    monkeypatch.setattr(database, "log_supervisor_event", fake_log)
+    monkeypatch.setattr(fx, "_log_auto_decision", lambda *a, **kw: None)
+
+    class S:
+        position_supervisor_mode = "act"
+        position_supervisor_llm_enabled = True
+        position_supervisor_llm_cooldown_min = 15
+
+    res = asyncio.run(
+        ps.apply_proposals(
+            [
+                {"ticket": 101, "action": "move_sl_to_breakeven", "reason": "kârı koru"},
+                {"ticket": 102, "action": "partial_close", "pct": 50, "reason": "yarı kâr al"},
+                {"ticket": 102, "action": "hold", "reason": "bekle"},
+                {"ticket": 999, "action": "close", "reason": "yok"},
+            ],
+            S(),
+        )
+    )
+    assert res["ok"] is True
+    assert res["applied_count"] == 2
+    assert res["skipped_count"] == 2
+    assert len(pending) == 2
+    assert pending[0]["action"] == "MODIFY_SLTP" and pending[0]["ticket"] == 101 and pending[0]["sl"] == 4000.0
+    assert pending[1]["action"] == "CLOSE_PARTIAL" and pending[1]["ticket"] == 102 and pending[1]["volume"] == 0.05
+    assert len(logged) == 2 and all(ev["kind"] == "llm_applied" and ev["mode"] == "act" for ev in logged)
+
+    # Clear pending queue (simulating EA consumed commands) and attempt duplicate re-apply
+    pending.clear()
+    dup = asyncio.run(
+        ps.apply_proposals(
+            [
+                {"ticket": 101, "action": "move_sl_to_breakeven", "reason": "tekrar"},
+                {"ticket": 102, "action": "partial_close", "pct": 50, "reason": "tekrar"},
+            ],
+            S(),
+        )
+    )
+    assert dup["applied_count"] == 0
+    assert dup["skipped_count"] == 2
+    assert all("daha önce uygulandı" in s["reason"] for s in dup["skipped"])
+    assert len(pending) == 0
+
+    # Status exposes applied_by_ticket + open_positions + open_positions_count
+    st = ps.get_supervisor_status(S())
+    assert "101" in st["applied_by_ticket"] and "102" in st["applied_by_ticket"]
+    assert st["open_positions_count"] == 2 and len(st["open_positions"]) == 2
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+
+
+def test_review_positions_dedups_already_applied_action(monkeypatch):
+    import asyncio
+    from app import database, forex_news, llm_analysis
+    from app.routers import forex as fx
+
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+    p = position(ticket=201, symbol="XAUUSD", direction="BUY", lots=0.10, entry_price=4000.0, current_price=4006.0, sl_price=3990.0, tp_price=4020.0)
+    monkeypatch.setitem(fx._MT5_STATE, "open_positions", [p])
+    pending = []
+    monkeypatch.setitem(fx._MT5_STATE, "pending_commands", pending)
+
+    async def fake_news(force_refresh=False):
+        return []
+
+    async def fake_exc(since_ts=0):
+        return []
+
+    async def fake_log(ev):
+        return None
+
+    captured_ctx = []
+
+    async def fake_stream(ctx, msgs, **kw):
+        captured_ctx.append(ctx)
+        yield {"event": "delta", "data": {"text": '{"ticket": 201, "action": "move_sl_to_breakeven", "pct": null, "reason": "başabaşa çek"}'}}
+
+    monkeypatch.setattr(forex_news, "get_forex_news", fake_news)
+    monkeypatch.setattr(database, "list_position_excursions", fake_exc)
+    monkeypatch.setattr(database, "log_supervisor_event", fake_log)
+    monkeypatch.setattr(llm_analysis, "stream_chat", fake_stream)
+    monkeypatch.setattr(fx, "_log_auto_decision", lambda *a, **kw: None)
+
+    class S:
+        position_supervisor_mode = "act"
+        position_supervisor_llm_enabled = True
+        position_supervisor_llm_cooldown_min = 15
+
+    # 1st review with apply=True applies move_sl_to_breakeven and records it
+    r1 = asyncio.run(ps.review_positions(S(), timeout=10.0, apply=True))
+    assert r1["applied_count"] == 1
+    assert len(pending) == 1
+    assert captured_ctx[0]["pozisyonlar"][0]["daha_once_uygulananlar"] == []
+
+    # 2nd review after queue drains: LLM sees daha_once_uygulananlar and even if it repeats, backend downgrades to hold
+    pending.clear()
+    r2 = asyncio.run(ps.review_positions(S(), timeout=10.0, apply=True))
+    assert captured_ctx[1]["pozisyonlar"][0]["daha_once_uygulananlar"] == ["move_sl_to_breakeven"]
+    assert r2["applied_count"] == 0
+    assert len(pending) == 0
+    assert len(r2["proposals"]) == 1
+    prop2 = r2["proposals"][0]
+    assert prop2["action"] == "hold"
+    assert prop2["already_applied"] is True
+    assert prop2["applied"] is True
+    assert prop2["original_action"] == "move_sl_to_breakeven"
+    assert "daha önce uygulandı" in prop2["reason"]
+
+    # tighten_sl respects 1800s cooldown; hold/no_op are never blocked
+    ps._record_applied_action(201, "tighten_sl", sl=3997.0, pct=50, cmd_action="MODIFY_SLTP", ts=1000.0)
+    assert ps.is_action_already_applied(201, "tighten_sl", now=2000.0) is True
+    assert ps.is_action_already_applied(201, "tighten_sl", now=2801.0) is False
+    assert ps.is_action_already_applied(201, "hold", now=2000.0) is False
+    ps._prune_applied_actions(set())
+    assert ps._APPLIED_ACTIONS_BY_TICKET == {}
+
+
+def test_summarize_supervisor_log():
+    from app.routers.portfolio_risk import summarize_supervisor_log
+
+    rows = [
+        {"symbol": "XAUUSD", "kind": "llm_proposal", "action": "hold", "mode": "proposal_only"},
+        {"symbol": "XAUUSD", "kind": "llm_applied", "action": "komut:MODIFY_SLTP", "mode": "act"},
+        {"symbol": "EURUSD", "kind": "llm_proposal", "action": "komut:CLOSE_PARTIAL", "mode": "act"},
+    ]
+    s = summarize_supervisor_log(rows)
+    assert s["total"] == 3
+    assert s["applied_count"] == 2
+    assert s["proposal_count"] == 2
+    assert s["by_symbol"] == {"XAUUSD": 2, "EURUSD": 1}
+    assert s["by_action"]["komut:MODIFY_SLTP"] == 1

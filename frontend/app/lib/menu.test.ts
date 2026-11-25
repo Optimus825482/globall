@@ -79,6 +79,7 @@ describe("menu — rol görünürlüğü", () => {
       "/forex/portfolio",
       "/forex/islemler",
       "/forex/calendar",
+      "/forex/pozisyon-doktoru",
       "/forex/reports",
       "/chat",
       "/settings",

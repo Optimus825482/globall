@@ -12,7 +12,6 @@ import GateSnapshotCard, { type GateSnapshot } from "./components/GateSnapshotCa
 import OpportunityScanSection, {
   type OpportunityScanSummary,
 } from "./components/OpportunityScanSection";
-import PositionSupervisorCard from "./components/PositionSupervisorCard";
 
 // PERFORMANS: Ağır modallar yalnızca kullanıcı açtığında yüklenir.
 const ForexChartModal = dynamic(() => import("./components/ForexChartModal"), { ssr: false });
@@ -1606,12 +1605,20 @@ export default function ForexRadarPage() {
                   {mt5.connected ? "IC Markets MT5" : "Paper Simülasyon"}
                 </span>
               </div>
-              <Link
-                href="/forex/portfolio"
-                className="font-mono text-2xs font-bold text-cyan-300 hover:underline"
-              >
-                Tam Portföy Konsolu →
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/forex/pozisyon-doktoru"
+                  className="font-mono text-2xs font-bold px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+                >
+                  AI Pozisyon Doktoru →
+                </Link>
+                <Link
+                  href="/forex/portfolio"
+                  className="font-mono text-2xs font-bold text-cyan-300 hover:underline"
+                >
+                  Tam Portföy Konsolu →
+                </Link>
+              </div>
             </div>
 
             {mt5.connected ? (
@@ -1753,9 +1760,6 @@ export default function ForexRadarPage() {
               </div>
             )}
           </section>
-
-          {/* AI POZİSYON DOKTORU */}
-          <PositionSupervisorCard />
 
           {/* DARALTILABİLİR İKİNCİL DETAYLAR */}
           <div className="space-y-3">

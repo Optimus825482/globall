@@ -130,10 +130,42 @@ async def positions_excursions(days: int = Query(30, ge=1, le=365)):
     return {"days": days, "stats": position_supervisor.excursion_stats(rows), "rows": rows[:100]}
 
 
+def summarize_supervisor_log(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Saf fonksiyon: pozisyon gözetim günlüğü için KPI özeti."""
+    applied_count = 0
+    proposal_count = 0
+    by_action: Dict[str, int] = {}
+    by_symbol: Dict[str, int] = {}
+    for r in rows or []:
+        action = str(r.get("action") or "unknown")
+        symbol = str(r.get("symbol") or "?")
+        kind = str(r.get("kind") or "")
+        mode = str(r.get("mode") or "")
+        by_action[action] = by_action.get(action, 0) + 1
+        by_symbol[symbol] = by_symbol.get(symbol, 0) + 1
+        if kind == "llm_applied" or mode == "act" or action.startswith("komut:"):
+            applied_count += 1
+        if kind == "llm_proposal" or mode == "proposal_only":
+            proposal_count += 1
+    return {
+        "total": len(rows or []),
+        "applied_count": applied_count,
+        "proposal_count": proposal_count,
+        "by_action": dict(sorted(by_action.items(), key=lambda kv: -kv[1])),
+        "by_symbol": dict(sorted(by_symbol.items(), key=lambda kv: -kv[1])),
+    }
+
+
 @router.get("/positions/supervisor-log")
 async def positions_supervisor_log(days: int = Query(7, ge=1, le=90), limit: int = Query(200, ge=1, le=1000)):
     rows = await database.list_supervisor_events(since_ts=time.time() - days * 86400, limit=limit)
-    return {"days": days, "count": len(rows), "events": rows}
+    return {
+        "days": days,
+        "count": len(rows),
+        "events": rows,
+        "rows": rows,
+        "summary": summarize_supervisor_log(rows),
+    }
 
 
 class SupervisorToggleRequest(BaseModel):
@@ -144,6 +176,10 @@ class SupervisorToggleRequest(BaseModel):
 
 class PositionReviewRequest(BaseModel):
     apply: Optional[bool] = None
+
+
+class ApplyProposalsRequest(BaseModel):
+    proposals: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 @router.get("/positions/supervisor-status")
@@ -180,3 +216,10 @@ async def positions_llm_review(
         return await position_supervisor.review_positions(fx._AUTO_SETTINGS, apply=should_apply)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM önerisi alınamadı: {type(exc).__name__}")
+
+
+@router.post("/positions/apply-proposals")
+async def positions_apply_proposals(payload: ApplyProposalsRequest):
+    """Seçilen/toplu AI Pozisyon Doktoru önerilerini MT5 komut kuyruğuna ekler."""
+    from app.routers import forex as fx
+    return await position_supervisor.apply_proposals(payload.proposals, fx._AUTO_SETTINGS)
