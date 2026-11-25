@@ -567,7 +567,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
     def test_default_risk_and_position_limits(self):
         """Varsayılan risk bütçesi (FX %5, XAU %3, Endeks %7, Kripto %2), tek pozisyon/sembol ve 0.40R BE."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(cfg.max_positions_per_symbol, 1)
+        self.assertEqual(cfg.max_positions_per_symbol, 2)
         self.assertEqual(cfg.risk_per_trade_pct, 5.0)
         self.assertEqual(cfg.risk_gold_pct, 5.0)
         self.assertEqual(cfg.risk_index_pct, 7.0)

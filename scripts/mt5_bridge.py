@@ -704,8 +704,13 @@ def execute_market_order(cmd: dict) -> dict:
 
     if same_dir_positions:
         total_dir_profit = sum(getattr(pos, "profit", 0.0) for pos in same_dir_positions)
-        if total_dir_profit < 0.20:
-            err = f"{symbol} {direction} yönünde açık {same_dir_count} pozisyon henüz kârda değil (${total_dir_profit:+.2f}). Zarara ekleme engellendi!"
+        sl_protected = any(
+            (direction == "BUY" and float(getattr(pos, "sl", 0.0) or 0.0) > float(getattr(pos, "price_open", 0.0) or 0.0) > 0)
+            or (direction == "SELL" and 0 < float(getattr(pos, "sl", 0.0) or 0.0) < float(getattr(pos, "price_open", 0.0) or 0.0))
+            for pos in same_dir_positions
+        )
+        if not sl_protected and total_dir_profit < 2.0:
+            err = f"{symbol} {direction} yönünde açık {same_dir_count} pozisyon henüz yeterli kârda/risksiz değil (${total_dir_profit:+.2f} < +$2.00). Zarara ekleme engellendi!"
             print(f"  🛑 [PİRAMİTLEME ENGELİ]: {err}")
             return {"success": False, "error": err}
 

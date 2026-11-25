@@ -979,8 +979,22 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
     if len(opens) >= int(_AUTO_SETTINGS.max_open_positions):
         return {"ok": False, "reason": f"açık pozisyon sınırı ({_AUTO_SETTINGS.max_open_positions}) dolu"}
     key = canonical_symbol(sym)
-    if any(canonical_symbol(str(p.get("symbol", ""))) == key for p in opens):
-        return {"ok": False, "reason": "bu sembolde zaten açık pozisyon var"}
+    same_sym = [p for p in opens if canonical_symbol(str(p.get("symbol", ""))) == key]
+    if same_sym:
+        max_pyr = int(_AUTO_SETTINGS.max_positions_per_symbol)
+        same_dir = [p for p in same_sym if str(p.get("direction", "")).upper() == direction]
+        if len(same_dir) != len(same_sym):
+            return {"ok": False, "reason": "bu sembolde ters yönde zaten açık pozisyon var"}
+        if len(same_dir) >= max_pyr:
+            return {"ok": False, "reason": f"bu sembolde aynı yönde maksimum {max_pyr} pozisyon zaten açık"}
+        same_pnl = sum(float(p.get("pnl_usd", p.get("profit", 0.0)) or 0.0) for p in same_dir)
+        sl_protected = any(
+            (direction == "BUY" and float(p.get("sl_price", p.get("sl", 0.0)) or 0.0) > float(p.get("entry_price", p.get("price_open", 0.0)) or 0.0) > 0)
+            or (direction == "SELL" and 0 < float(p.get("sl_price", p.get("sl", 0.0)) or 0.0) < float(p.get("entry_price", p.get("price_open", 0.0)) or 0.0))
+            for p in same_dir
+        )
+        if not sl_protected and same_pnl < 2.0:
+            return {"ok": False, "reason": f"mevcut pozisyon henüz yeterli kârda değil (${same_pnl:+.2f} < +$2.00)"}
     if sl_pips <= 0:
         return {"ok": False, "reason": "stop mesafesi geçersiz"}
 
@@ -5875,7 +5889,7 @@ class ForexAutoPaperSettings(BaseModel):
     risk_crypto_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, kripto risk bütçesi (% bakiye). Varsayılan %2")
     risk_crypto_index_pct: float = Field(5.0, ge=0.1, le=20.0, description="Geriye dönük uyumluluk alanı")
     max_open_positions: int = Field(20, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
-    max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli pozisyon)")
+    max_positions_per_symbol: int = Field(2, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 2: Yalnızca kârdaki/risksiz pozisyona güvenli piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     flip_ignore_min_score: bool = Field(False, description="Zıt sinyal flip'inde skor eşiğini yoksay (Varsayılan False: Zıt yönde flip için de minimum skor eşiği aranır). Spread/maliyet kapısı, korelasyon kalkanı, seri-SL soğuması, risk normalizasyonu ve lot bütçesi korunur — bunlar risk kapısıdır, atlanmaz.")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
@@ -9156,12 +9170,19 @@ async def _forex_auto_paper_loop():
                                 )
                             continue
 
-                        # KRİTİK KÂRLILIK KURALI: Yalnızca KÂRDAKİ Pozisyona Ekleme Yap (Winning Pyramiding)
-                        # Mevcut açık pozisyonların toplam kârı >= +2.00$ olmalı!
+                        # KRİTİK KÂRLILIK KURALI: Yalnızca KÂRDAKİ / RİSKSİZ Pozisyona Ekleme Yap (Winning Pyramiding)
+                        # Mevcut pozisyonun SL'i kâra kilitlenmiş (risksiz/trailing) VEYA toplam kâr >= +2.00$ olmalı!
                         # Zarardaki pozisyona maliyet düşürme (averaging down) KESİNLİKLE ENGELLENİR!
-                        existing_pnl_usd = sum(p.get("pnl_usd", 0.0) for p in matching_auto if p.get("direction", "").upper() == new_action) + \
-                                           sum(float(getattr(p, "profit", p.get("pnl_usd", 0.0))) for p in matching_mt5 if p.get("direction", "").upper() == new_action)
-                        if existing_pnl_usd < 2.0:
+                        same_auto = [p for p in matching_auto if p.get("direction", "").upper() == new_action]
+                        same_mt5 = [p for p in matching_mt5 if p.get("direction", "").upper() == new_action]
+                        existing_pnl_usd = sum(p.get("pnl_usd", 0.0) for p in same_auto) + \
+                                           sum(float(getattr(p, "profit", p.get("pnl_usd", 0.0))) for p in same_mt5)
+                        sl_protected = any(
+                            (new_action == "BUY" and float(p.get("sl_price", p.get("sl", 0.0)) or 0.0) > float(p.get("entry_price", p.get("price_open", 0.0)) or 0.0) > 0)
+                            or (new_action == "SELL" and 0 < float(p.get("sl_price", p.get("sl", 0.0)) or 0.0) < float(p.get("entry_price", p.get("price_open", 0.0)) or 0.0))
+                            for p in (same_auto + same_mt5)
+                        )
+                        if not sl_protected and existing_pnl_usd < 2.0:
                             if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_pyr_loss", 0) > 30.0:
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_pyr_loss"] = now_ts
                                 _log_auto_decision(
