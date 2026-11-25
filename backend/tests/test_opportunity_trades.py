@@ -447,3 +447,25 @@ def test_open_failure_backoff_grows_and_resets(monkeypatch):
     w2 = fx.register_open_failure("ADAUSD", "Invalid stops", 1300.0)
     assert (w1, w2) == (300.0, 600.0) and fx.open_fail_left("ADAUSD", 1400.0) == 500.0
     assert fx.open_fail_left("EURUSD", 1400.0) == 0.0
+
+
+def test_gold_uses_15m_or_30m_atr_for_tighter_stop():
+    sr = lambda s: {"symbol": s, "direction": "SELL", "agreement": 1.0, "average": -0.5, "summary": "SELL"}
+    # XAUUSD: 15m ATR (8.0 = 80 pip) 1h ATR (20.0 = 200 pip) yerine tercih edilir -> SL = 120 pip
+    a = analysis(symbol="XAUUSD", bias="SELL", score=-3.5,
+                 frames={"15m": {"atr": 8.0, "score": -3.5}, "1h": {"atr": 20.0, "score": -3.5}},
+                 levels={"resistances": [], "supports": []})
+    v = ot.plan_trade(a, sr("XAUUSD"), None, 0.1)
+    assert v["ok"] and v["plan"]["sl_pips"] == 120.0 and v["plan"]["tp_pips"] == 180.0
+    # 15m/30m yoksa 1h'e düşer
+    a_fb = analysis(symbol="XAUUSD", bias="SELL", score=-3.5,
+                    frames={"1h": {"atr": 20.0, "score": -3.5}},
+                    levels={"resistances": [], "supports": []})
+    v_fb = ot.plan_trade(a_fb, sr("XAUUSD"), None, 0.1)
+    assert v_fb["ok"] and v_fb["plan"]["sl_pips"] == 300.0
+    # BTCUSD gibi diğer sembollerde 1h ATR kullanılmaya devam eder
+    a_btc = analysis(symbol="BTCUSD", bias="SELL", score=-3.5,
+                     frames={"15m": {"atr": 200.0, "score": -3.5}, "1h": {"atr": 500.0, "score": -3.5}},
+                     levels={"resistances": [], "supports": []})
+    v_btc = ot.plan_trade(a_btc, sr("BTCUSD"), None, 1.0)
+    assert v_btc["ok"] and v_btc["plan"]["sl_pips"] == 750.0

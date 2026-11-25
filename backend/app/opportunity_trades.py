@@ -175,7 +175,19 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}
-    atr = (analysis.get("frames", {}).get("1h") or {}).get("atr") or analysis.get("atr")
+    frames = analysis.get("frames") or {}
+    sym_u = str(sym or "").upper()
+    if "XAU" in sym_u or "GOLD" in sym_u:
+        # Altında 1H ATR×1.5 ~290 pip ($29/0.01 lot) ediyor; 15m/30m ATR (~100-140 pip)
+        # ile makul riskle 1.5R hedef kurulur (yoksa 1h'e düşer).
+        atr = (
+            (frames.get("15m") or {}).get("atr")
+            or (frames.get("30m") or {}).get("atr")
+            or (frames.get("1h") or {}).get("atr")
+            or analysis.get("atr")
+        )
+    else:
+        atr = (frames.get("1h") or {}).get("atr") or analysis.get("atr")
     price = float(analysis.get("price") or 0)
     if not atr or price <= 0 or pip_size <= 0:
         return {"ok": False, "reason": "ATR/fiyat verisi eksik"}
