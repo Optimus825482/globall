@@ -351,7 +351,7 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
                 "reason": f"spread/ATR oranı yüksek ({spread_pips:.1f}/{atr_pips:.1f} = {spread_pips / atr_pips:.2f} > {max_ratio:.2f})",
             })
             return
-        max_sl_cost = 0.25 if is_crypto else 0.18
+        max_sl_cost = 0.25
         if spread_pips > 0 and sl_pips_val > 0 and (spread_pips / sl_pips_val) > max_sl_cost:
             skipped.append({
                 "symbol": sym,
@@ -437,8 +437,7 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
                     skipped.append({"symbol": sym, "reason": "HMM şok volatilite rejimi: işlem pas geçildi"})
                     return
                 if rcand.get("hurst_regime") == "RANDOM_WALK":
-                    skipped.append({"symbol": sym, "reason": "Hurst testere / rastgele gürültü bölgesi"})
-                    return
+                    lots_mult *= 0.5
                 if rcand.get("macro_alignment") == "OPPOSING":
                     m_delta = float(rcand.get("macro_delta") or 0.0)
                     if m_delta <= -5.0:
@@ -481,7 +480,8 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
             if gate["blocked"]:
                 skipped.append({"symbol": sym, "reason": "portföy risk kapısı: " + "; ".join(r["text"] for r in gate["reasons"][:2])})
                 return
-            lots_mult = gate["mult"] if gate["enforced"] else 1.0
+            if gate["enforced"]:
+                lots_mult *= float(gate["mult"])
     except Exception as exc:  # noqa: BLE001 - kapı hatası fırsat taramasını durdurmaz ama günlüğe düşer
         logger.warning("Fırsat risk kapısı hatası (%s): %s", sym, exc)
     lots_mult = max(MIN_SIZE_MULT, lots_mult * float(plan.get("size_mult") or 1.0)) if plan.get("size_mult", 1.0) < 1.0 else lots_mult
