@@ -609,3 +609,28 @@ def test_auto_scan_state_and_run_periodic_opportunity_scan(monkeypatch):
     assert st_err["status"] == "error"
     assert st_err["error"] == "Tarama verisi alınamadı"
     assert st_err["running"] is False
+
+
+def test_retail_sentiment_soft_sizing_and_sentiment_bonus(monkeypatch):
+    from app import retail_sentiment, sentiment_index
+
+    # 1) Perakende %85 LONG iken BUY -> veto etmez, lot x0.5 küçültür
+    monkeypatch.setattr(retail_sentiment, "brief", lambda sym: {"long_pct": 85.0, "short_pct": 15.0})
+    monkeypatch.setattr(sentiment_index, "summarize", lambda sym: {"score": 40.0, "coverage": 1.0, "label": "LONG"})
+    a = analysis(symbol="XAUUSD", bias="BUY", score=3.5, levels={"resistances": [], "supports": []})
+    v_same = ot.plan_trade(a, SCAN, None, 0.1)
+    assert v_same["ok"] and v_same["plan"]["size_mult"] == 0.5
+    assert "perakende aşırı LONG" in v_same["plan"]["note"]
+
+    # 2) Perakende %85 LONG iken SELL -> ters yön likidite desteği, tam lot (1.0)
+    a_sell = analysis(symbol="XAUUSD", bias="SELL", score=-3.5, levels={"resistances": [], "supports": []})
+    sr_sell = {**SCAN, "direction": "SELL", "summary": "SELL", "average": -0.5}
+    v_opp = ot.plan_trade(a_sell, sr_sell, None, 0.1)
+    assert v_opp["ok"] and v_opp["plan"]["size_mult"] == 1.0
+    assert "likidite desteği" in v_opp["plan"]["note"]
+
+    # 3) Bileşik sentiment sıralama bonusu: uyumlu +0.15, güçlü zıt -0.10
+    assert ot._sentiment_rank_bonus("XAUUSD", "BUY") == 0.15
+    monkeypatch.setattr(sentiment_index, "summarize", lambda sym: {"score": -65.0, "coverage": 1.0, "label": "SHORT"})
+    assert ot._sentiment_rank_bonus("XAUUSD", "BUY") == -0.10
+    assert ot._sentiment_rank_bonus("XAUUSD", "SELL") == 0.15

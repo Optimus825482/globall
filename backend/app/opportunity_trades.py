@@ -217,22 +217,46 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
             room = gap / (LEVEL_CLEARANCE * sl_dist)
             size_mult *= room
             size_notes.append(f"{kind} yakın ({gap / pip_size:.0f} pip): lot ×{room:.2f}")
-    size_mult = max(MIN_SIZE_MULT, round(size_mult, 3))
-    # PERAKENDE KONUMLANMA (2026-11-12): plan yüküne bilgi olarak girer.
-    # KAPI DEĞİL — lot/karar DEĞİŞMEZ; yalnız kullanıcı ve LLM görsün.
+    # PERAKENDE KONUMLANMA (Myfxbook) + BİLEŞİK SENTIMENT: VETO ETMEZ, destek amaçlıdır.
+    # Kalabalık (%80+) teknik sinyalle AYNI yönde aşırı yığılmışsa (tuzak/stop-avı riski)
+    # lot ×0.5 küçültülür; ters yöndeyse tam lot + likidite desteği notu eklenir.
     try:
         from app import retail_sentiment as _rs
         retail = _rs.brief(sym)
     except Exception:  # noqa: BLE001
         retail = {}
+    sentiment_info: Dict[str, Any] = {}
+    try:
+        from app import sentiment_index as _si
+        _s = _si.summarize(sym)
+        if isinstance(_s, dict) and _s.get("coverage", 0) > 0:
+            sentiment_info = {"score": round(float(_s.get("score") or 0.0), 1), "label": _s.get("label")}
+    except Exception:  # noqa: BLE001
+        sentiment_info = {}
+
+    retail_support_note = ""
+    if isinstance(retail, dict) and retail:
+        _lp = float(retail.get("long_pct") or 0.0)
+        _sp = float(retail.get("short_pct") or 0.0)
+        if bias == "BUY" and _lp >= 80.0:
+            size_mult *= 0.5
+            size_notes.append(f"perakende aşırı LONG (%{_lp:.0f}): lot ×0.5")
+        elif bias == "SELL" and _sp >= 80.0:
+            size_mult *= 0.5
+            size_notes.append(f"perakende aşırı SHORT (%{_sp:.0f}): lot ×0.5")
+        elif (bias == "SELL" and _lp >= 80.0) or (bias == "BUY" and _sp >= 80.0):
+            retail_support_note = f"; perakende kalabalığına ters yön (likidite desteği)"
+
+    size_mult = max(MIN_SIZE_MULT, round(size_mult, 3))
     return {"ok": True, "reason": "tüm kapılar geçti", "plan": {
         "symbol": sym, "direction": bias, "entry_price": price, "sl_pips": round(sl_dist / pip_size, 1),
         "tp_pips": round(tp_dist / pip_size, 1), "atr_pips": round(float(atr) / pip_size, 1), "score": analysis.get("score"),
-        "news": effect, "size_mult": size_mult, "retail": retail,
+        "news": effect, "size_mult": size_mult, "retail": retail, "sentiment": sentiment_info,
         "note": (f"Kullanıcı komutuyla; teknik {bias} ({float(analysis.get('score', 0)):+.1f})" if explicit else
                  f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
                  f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}")
                 + (f"; haber DESTEKLİYOR: {effect['lines'][0]}" if effect["verdict"] == "supports" else "")
+                + retail_support_note
                 + (f"; KÜÇÜLTÜLMÜŞ LOT (×{size_mult:g}): " + " | ".join(size_notes) if size_notes else "")}}
 
 
@@ -450,6 +474,24 @@ def get_auto_scan_state() -> Dict[str, Any]:
     return st
 
 
+def _sentiment_rank_bonus(symbol: str, direction: str) -> float:
+    """Bileşik sentiment skoruyla (-100..+100) yumuşak sıralama bonusu (veto etmez)."""
+    try:
+        from app import sentiment_index as _si
+        s = _si.summarize(symbol)
+        if not isinstance(s, dict) or not s.get("coverage"):
+            return 0.0
+        sc = float(s.get("score") or 0.0)
+    except Exception:  # noqa: BLE001
+        return 0.0
+    d = str(direction or "").upper()
+    if (d == "BUY" and sc >= 25.0) or (d == "SELL" and sc <= -25.0):
+        return 0.15
+    if (d == "BUY" and sc <= -50.0) or (d == "SELL" and sc >= 50.0):
+        return -0.10
+    return 0.0
+
+
 async def run_periodic_opportunity_scan(trigger: str = "auto") -> Dict[str, Any]:
     """Evreni tarar, en net adayları derin analiz + ekonomik takvimle sınar ve geçenleri DEMO hesaba açar."""
     async with _AUTO_SCAN_LOCK:
@@ -472,7 +514,15 @@ async def run_periodic_opportunity_scan(trigger: str = "auto") -> Dict[str, Any]
                 _AUTO_SCAN_STATE["running"] = False
                 return get_auto_scan_state()
 
-            ranked = [r["symbol"] for r in (scan.get("all") or []) if float(r.get("agreement") or 0) >= MIN_AGREEMENT]
+            eligible = [r for r in (scan.get("all") or []) if float(r.get("agreement") or 0) >= MIN_AGREEMENT]
+            eligible.sort(
+                key=lambda r: (
+                    float(r.get("agreement") or 0.0) + _sentiment_rank_bonus(str(r.get("symbol") or ""), str(r.get("direction") or "")),
+                    abs(float(r.get("average") or 0.0)),
+                ),
+                reverse=True,
+            )
+            ranked = [r["symbol"] for r in eligible]
             picked = (ranked or [r["symbol"] for r in (scan.get("top") or [])])[:deep_top_now()]
 
             async def _analyze_one(sym: str):
