@@ -441,6 +441,11 @@ def _compact_technical(radar_cand: Optional[Dict[str, Any]]) -> Optional[Dict[st
         "smc_structure": radar_cand.get("smc_structure"),
         "smc_sweep": radar_cand.get("smc_sweep"),
         "asian_sweep": radar_cand.get("asian_sweep"),
+        "hmm_regime": radar_cand.get("hmm_regime"),
+        "hmm_confidence": radar_cand.get("hmm_confidence"),
+        "macro_alignment": radar_cand.get("macro_alignment"),
+        "vix_regime": radar_cand.get("vix_regime"),
+        "us10y_dir": radar_cand.get("us10y_dir"),
     }
 
 

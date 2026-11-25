@@ -82,6 +82,13 @@ interface ForexCandidate {
   asian_sweep?: string;
   quant_score_delta?: number;
   quant_badges?: string[];
+  hmm_regime?: "TREND_EXPANSION" | "LOW_VOL_RANGE" | "SHOCK_VOLATILITY" | "UNKNOWN" | string;
+  hmm_confidence?: number | null;
+  macro_alignment?: "SUPPORTIVE" | "OPPOSING" | "NEUTRAL" | string;
+  macro_delta?: number;
+  macro_note?: string;
+  vix_regime?: string;
+  us10y_dir?: string;
   news_info?: {
     has_active_news?: boolean;
     alignment?: "SUPPORTIVE" | "OPPOSING" | "NEUTRAL" | string;
@@ -90,6 +97,22 @@ interface ForexCandidate {
     event_title?: string;
     events_count?: number;
   };
+}
+
+interface MacroContext {
+  dxy_regime?: string;
+  us10y?: { last?: number | null; change_pct_1h?: number | null; dir?: string };
+  vix?: { last?: number | null; change_pct_1h?: number | null; regime?: string };
+  updated_at?: number;
+}
+
+interface RadarResponse {
+  candidates?: ForexCandidate[];
+  sessions?: SessionInfo[];
+  scan_note?: string;
+  thresholds?: RadarThresholds | null;
+  csm?: any;
+  macro_context?: MacroContext | null;
 }
 
 interface RadarThresholds {
@@ -429,6 +452,45 @@ function QuantBadgeStrip({ c, className = "" }: { c: ForexCandidate; className?:
     });
   }
 
+  if (c.hmm_regime && c.hmm_regime !== "UNKNOWN") {
+    const confPct = Math.round((optNum(c.hmm_confidence) ?? 0) * 100);
+    if (c.hmm_regime === "TREND_EXPANSION") {
+      pills.push({
+        key: "hmm-regime",
+        label: `Rejim: TREND %${confPct}`,
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+        title: `HMM Rejim: Trend Genişlemesi (%${confPct} güven)`,
+      });
+    } else if (c.hmm_regime === "LOW_VOL_RANGE") {
+      pills.push({
+        key: "hmm-regime",
+        label: `Rejim: YATAY %${confPct}`,
+        tone: "bg-sky-500/15 text-sky-300 border-sky-500/40",
+        title: `HMM Rejim: Düşük Volatilite / Yatay (%${confPct} güven)`,
+      });
+    } else if (c.hmm_regime === "SHOCK_VOLATILITY") {
+      pills.push({
+        key: "hmm-regime",
+        label: `Rejim: ŞOK %${confPct}`,
+        tone: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+        title: `HMM Rejim: Şok Volatilite (%${confPct} güven)`,
+      });
+    }
+  }
+
+  if (c.macro_alignment === "SUPPORTIVE" || c.macro_alignment === "OPPOSING") {
+    const absDelta = Math.abs(optNum(c.macro_delta) ?? 0).toFixed(0);
+    const isSupportive = c.macro_alignment === "SUPPORTIVE";
+    pills.push({
+      key: "macro-align",
+      label: `🌐 Makro ${isSupportive ? "+" : "-"}${absDelta}`,
+      tone: isSupportive
+        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+        : "bg-rose-500/15 text-rose-300 border-rose-500/40",
+      title: c.macro_note || (isSupportive ? "Makro uyum destekleyici" : "Makro uyum karşıt"),
+    });
+  }
+
   const qDelta = optNum(c.quant_score_delta);
   if (qDelta != null && qDelta !== 0) {
     pills.push({
@@ -456,6 +518,113 @@ function QuantBadgeStrip({ c, className = "" }: { c: ForexCandidate; className?:
         </span>
       ))}
     </div>
+  );
+}
+
+function MacroLeadLagBar({ macro }: { macro: MacroContext }) {
+  const us10yLast = optNum(macro.us10y?.last);
+  const us10yChg = optNum(macro.us10y?.change_pct_1h);
+  const us10yDirRaw = (macro.us10y?.dir || "").toUpperCase();
+  const us10yBadge =
+    us10yDirRaw === "UP" || us10yDirRaw === "RISING" || us10yDirRaw === "BULLISH"
+      ? { label: "↑ Yükseliyor", tone: "bg-rose-500/15 text-rose-300 border-rose-500/40" }
+      : us10yDirRaw === "DOWN" || us10yDirRaw === "FALLING" || us10yDirRaw === "BEARISH"
+        ? { label: "↓ Düşüyor", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" }
+        : { label: "→ Yatay", tone: "bg-slate-500/15 text-slate-300 border-slate-500/40" };
+
+  const vixLast = optNum(macro.vix?.last);
+  const vixChg = optNum(macro.vix?.change_pct_1h);
+  const vixRegimeRaw = (macro.vix?.regime || "").toUpperCase();
+  const vixBadge =
+    vixRegimeRaw === "PANIC" || vixRegimeRaw === "EXTREME" || vixRegimeRaw === "PANİK" || vixRegimeRaw === "PANIK" || vixRegimeRaw === "CRISIS"
+      ? { label: "PANİK", tone: "bg-rose-500/15 text-rose-300 border-rose-500/40" }
+      : vixRegimeRaw === "ELEVATED" || vixRegimeRaw === "HIGH" || vixRegimeRaw === "YÜKSEK" || vixRegimeRaw === "YUKSEK"
+        ? { label: "YÜKSEK", tone: "bg-amber-500/15 text-amber-300 border-amber-500/40" }
+        : vixRegimeRaw === "CALM" || vixRegimeRaw === "LOW" || vixRegimeRaw === "NORMAL" || vixRegimeRaw === "SAKIN" || vixRegimeRaw === "SAKİN"
+          ? { label: "SAKIN", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" }
+          : vixLast != null && vixLast >= 30
+            ? { label: "PANİK", tone: "bg-rose-500/15 text-rose-300 border-rose-500/40" }
+            : vixLast != null && vixLast >= 20
+              ? { label: "YÜKSEK", tone: "bg-amber-500/15 text-amber-300 border-amber-500/40" }
+              : { label: "SAKIN", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" };
+
+  const dxyRaw = (macro.dxy_regime || "").toUpperCase();
+  const dxyBadge =
+    dxyRaw.includes("STRONG") || dxyRaw.includes("BULL") || dxyRaw.includes("GÜÇLÜ") || dxyRaw.includes("GUCLU")
+      ? { label: "USD GÜÇLÜ", tone: "bg-amber-500/15 text-amber-300 border-amber-500/40" }
+      : dxyRaw.includes("WEAK") || dxyRaw.includes("BEAR") || dxyRaw.includes("ZAYIF")
+        ? { label: "USD ZAYIF", tone: "bg-sky-500/15 text-sky-300 border-sky-500/40" }
+        : { label: "NÖTR", tone: "bg-slate-500/15 text-slate-300 border-slate-500/40" };
+
+  return (
+    <section
+      aria-label="Makro Lead-Lag Göstergeleri"
+      className="px-3 py-2 rounded-xl border border-bunker-800 bg-bunker-900/75 font-mono tabular-nums min-w-0"
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+        <span className="text-2xs font-bold uppercase tracking-wider text-bunker-muted shrink-0">
+          🌐 Makro Lead-Lag
+        </span>
+
+        {/* US10Y */}
+        <div
+          className="inline-flex flex-wrap items-center gap-1.5 min-w-0"
+          title={
+            us10yChg != null
+              ? `ABD 10Y Tahvil Faizi (1s değişim: ${us10yChg >= 0 ? "+" : ""}${us10yChg.toFixed(2)}%)`
+              : "ABD 10Y Tahvil Faizi"
+          }
+        >
+          <span className="text-2xs text-bunker-muted">US10Y</span>
+          <span className="text-xs font-bold text-white">
+            {us10yLast != null ? `${us10yLast.toFixed(2)}%` : "—"}
+          </span>
+          <span
+            className={`inline-flex items-center px-1.5 py-0.5 rounded border text-2xs leading-tight font-bold whitespace-nowrap ${us10yBadge.tone}`}
+          >
+            {us10yBadge.label}
+          </span>
+        </div>
+
+        <span className="text-bunker-700 hidden sm:inline" aria-hidden="true">
+          |
+        </span>
+
+        {/* VIX */}
+        <div
+          className="inline-flex flex-wrap items-center gap-1.5 min-w-0"
+          title={
+            vixChg != null
+              ? `VIX Volatilite Endeksi (1s değişim: ${vixChg >= 0 ? "+" : ""}${vixChg.toFixed(2)}%)`
+              : "VIX Volatilite Endeksi"
+          }
+        >
+          <span className="text-2xs text-bunker-muted">VIX</span>
+          <span className="text-xs font-bold text-white">
+            {vixLast != null ? vixLast.toFixed(1) : "—"}
+          </span>
+          <span
+            className={`inline-flex items-center px-1.5 py-0.5 rounded border text-2xs leading-tight font-bold whitespace-nowrap ${vixBadge.tone}`}
+          >
+            {vixBadge.label}
+          </span>
+        </div>
+
+        <span className="text-bunker-700 hidden sm:inline" aria-hidden="true">
+          |
+        </span>
+
+        {/* DXY */}
+        <div className="inline-flex flex-wrap items-center gap-1.5 min-w-0" title="ABD Dolar Endeksi Rejimi">
+          <span className="text-2xs text-bunker-muted">DXY</span>
+          <span
+            className={`inline-flex items-center px-1.5 py-0.5 rounded border text-2xs leading-tight font-bold whitespace-nowrap ${dxyBadge.tone}`}
+          >
+            {dxyBadge.label}
+          </span>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -503,6 +672,7 @@ export default function ForexRadarPage() {
   const [scanNote, setScanNote] = useState<string>("");
   const [thresholds, setThresholds] = useState<RadarThresholds | null>(null);
   const [csm, setCsm] = useState<any>(null);
+  const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [radarError, setRadarError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -613,13 +783,14 @@ export default function ForexRadarPage() {
 
   const fetchRadar = useCallback(async () => {
     try {
-      const data = await apiFetch("/api/forex/radar");
+      const data = (await apiFetch("/api/forex/radar")) as RadarResponse | null;
       if (data && Array.isArray(data.candidates)) {
         setCandidates(data.candidates);
         setSessions(data.sessions || []);
         setScanNote(data.scan_note || "");
         setThresholds(data.thresholds || null);
         setCsm(data.csm || null);
+        setMacroContext(data.macro_context || null);
         setLastUpdated(new Date());
         setRadarError("");
       }
@@ -1135,6 +1306,9 @@ export default function ForexRadarPage() {
           </div>
         </button>
       </section>
+
+      {/* 2b. MAKRO LEAD-LAG BARI (FAZ 2) */}
+      {macroContext && <MacroLeadLagBar macro={macroContext} />}
 
       {/* 3. TEMİZ 3-SEKMELİ SEGMENTED NAVİGASYON */}
       <div

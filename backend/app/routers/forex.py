@@ -36,11 +36,13 @@ try:
     from app import combo3_m5 as _c3
     from app import kombo_m5 as _km
     from app import radar_quant
+    from app import macro_lead_lag
 except ImportError:  # paket dışı bağlam (test/script)
     from ..forex_correlation import FXCorrelationMonitor
     from .. import combo3_m5 as _c3
     from .. import kombo_m5 as _km
     from .. import radar_quant
+    from .. import macro_lead_lag
 
 from app import trade_reasons  # kanonik kapanış nedeni (2026-11-09)
 # Kripto ürün kuralı (BTC/ETH/XRP) TEK kaynaktan okunur — `config` bir
@@ -4209,6 +4211,9 @@ def _compute_technical_indicators(
         "smc_structure": rq.get("smc_structure", "NONE"),
         "smc_sweep": rq.get("smc_sweep", "NONE"),
         "asian_sweep": rq.get("asian_sweep", "NONE"),
+        "hmm_regime": rq.get("hmm_regime", "UNKNOWN"),
+        "hmm_confidence": float(rq.get("hmm_confidence", 0.0) or 0.0),
+        "hmm_probs": dict(rq.get("hmm_probs") or {"trend": 0.0, "range": 0.0, "shock": 0.0}),
         "quant_score_delta": float(rq.get("quant_score_delta", 0.0) or 0.0),
         "quant_badges": list(rq.get("quant_badges") or []),
         "signal_bar_time": int(bar_times[-1]) if bar_times and len(bar_times) == len(closes) else None,
@@ -4437,6 +4442,9 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "smc_structure": tech.get("smc_structure", "NONE") if tech else "NONE",
             "smc_sweep": tech.get("smc_sweep", "NONE") if tech else "NONE",
             "asian_sweep": tech.get("asian_sweep", "NONE") if tech else "NONE",
+            "hmm_regime": tech.get("hmm_regime", "UNKNOWN") if tech else "UNKNOWN",
+            "hmm_confidence": float(tech.get("hmm_confidence", 0.0) or 0.0) if tech else 0.0,
+            "hmm_probs": dict(tech.get("hmm_probs") or {"trend": 0.0, "range": 0.0, "shock": 0.0}) if tech else {"trend": 0.0, "range": 0.0, "shock": 0.0},
             "quant_score_delta": float(tech.get("quant_score_delta", 0.0) or 0.0) if tech else 0.0,
             "quant_badges": list(tech.get("quant_badges") or []) if tech else [],
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
@@ -5374,6 +5382,10 @@ async def get_forex_radar(use_cache: bool = True):
 
     ticks = await _generate_realistic_ticks()
     dxy_regime = get_dxy_regime()
+    try:
+        macro_snap = await macro_lead_lag.get_macro_snapshot(dxy_regime=dxy_regime)
+    except Exception:  # noqa: BLE001
+        macro_snap = {"us10y": {"last": None, "change_pct_1h": None, "dir": "FLAT"}, "vix": {"last": None, "change_pct_1h": None, "regime": "CALM"}, "dxy_regime": "USD_NEUTRAL", "updated_at": now_ts}
     current_utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
     weekend_now = is_forex_weekend()
 
@@ -5491,6 +5503,11 @@ async def get_forex_radar(use_cache: bool = True):
         if action in ("BUY", "SELL") and quant_delta != 0.0:
             score = max(0.0, min(99.0, round(score + quant_delta, 1)))
 
+        m_eval = macro_lead_lag.evaluate_macro_alignment(sym_u, action, macro_snap)
+        macro_delta = float(m_eval.get("macro_delta", 0.0) or 0.0)
+        if action in ("BUY", "SELL") and macro_delta != 0.0:
+            score = max(0.0, min(99.0, round(score + macro_delta, 1)))
+
         base = {
             "symbol": sym,
             "display": t["display"],
@@ -5550,6 +5567,14 @@ async def get_forex_radar(use_cache: bool = True):
             "smc_structure": t.get("smc_structure", "NONE"),
             "smc_sweep": t.get("smc_sweep", "NONE"),
             "asian_sweep": t.get("asian_sweep", "NONE"),
+            "hmm_regime": t.get("hmm_regime", "UNKNOWN"),
+            "hmm_confidence": float(t.get("hmm_confidence", 0.0) or 0.0),
+            "hmm_probs": dict(t.get("hmm_probs") or {"trend": 0.0, "range": 0.0, "shock": 0.0}),
+            "macro_alignment": m_eval.get("macro_alignment", "NEUTRAL"),
+            "macro_delta": macro_delta,
+            "macro_note": m_eval.get("macro_note", ""),
+            "vix_regime": m_eval.get("vix_regime", "CALM"),
+            "us10y_dir": m_eval.get("us10y_dir", "FLAT"),
             "quant_score_delta": quant_delta,
             "quant_badges": list(t.get("quant_badges") or []),
         }
@@ -5616,6 +5641,7 @@ async def get_forex_radar(use_cache: bool = True):
         "scan_note": _radar_scan_note(candidates, current_utc_hour, is_weekend=weekend_now),
         "sessions": _get_market_sessions(),
         "dxy": dxy_regime,
+        "macro_context": macro_snap,
         "csm": csm_data,
         "thresholds": {
             "min_score": _AUTO_SETTINGS.min_score,

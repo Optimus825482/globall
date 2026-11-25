@@ -309,6 +309,141 @@ def detect_smc_structure(
     }
 
 
+def compute_hmm_regime(
+    highs: Sequence[float],
+    lows: Sequence[float],
+    closes: Sequence[float],
+) -> Dict[str, Any]:
+    """3-Durumlu Gaussian-Markov (HMM) İleri Filtre Rejim Sınıflandırıcısı.
+
+    Saf Python + math, nedensel ve ölçek-bağımsız:
+      - State 0: LOW_VOL_RANGE    (düşük volatilite / yatay)
+      - State 1: TREND_EXPANSION  (yüksek verimlilik / yönlü trend)
+      - State 2: SHOCK_VOLATILITY (aşırı Parkinson aralığı / şok)
+    """
+    raw_n = min(len(highs), len(lows), len(closes))
+    if raw_n < 25:
+        return {
+            "hmm_regime": "UNKNOWN",
+            "hmm_confidence": 0.0,
+            "hmm_probs": {"trend": 0.0, "range": 0.0, "shock": 0.0},
+        }
+
+    # Son en fazla 100 geçerli barı hizalı biçimde ayıkla
+    tail = min(raw_n, 100)
+    hs: List[float] = []
+    ls: List[float] = []
+    cs: List[float] = []
+    for h_raw, l_raw, c_raw in zip(highs[-tail:], lows[-tail:], closes[-tail:]):
+        try:
+            hf = float(h_raw)
+            lf = float(l_raw)
+            cf = float(c_raw)
+        except (TypeError, ValueError):
+            continue
+        if (
+            math.isfinite(hf)
+            and math.isfinite(lf)
+            and math.isfinite(cf)
+            and hf > 0.0
+            and lf > 0.0
+            and cf > 0.0
+        ):
+            if hf < lf:
+                hf, lf = lf, hf
+            hs.append(hf)
+            ls.append(lf)
+            cs.append(cf)
+
+    n = len(cs)
+    if n < 25:
+        return {
+            "hmm_regime": "UNKNOWN",
+            "hmm_confidence": 0.0,
+            "hmm_probs": {"trend": 0.0, "range": 0.0, "shock": 0.0},
+        }
+
+    # Nedensel bar özellikleri: log getiri + 5-bar yön verimliliği + Parkinson aralığı
+    rets: List[float] = [0.0]
+    for i in range(1, n):
+        rets.append(math.log(cs[i] / cs[i - 1]))
+
+    pk_ranges: List[float] = []
+    for i in range(n):
+        rng = math.log(hs[i] / ls[i]) if hs[i] > ls[i] else abs(rets[i])
+        pk_ranges.append(max(rng, 1e-9))
+
+    sorted_pk = sorted(pk_ranges)
+    mid = n // 2
+    med_pk = (
+        sorted_pk[mid]
+        if n % 2 == 1
+        else 0.5 * (sorted_pk[mid - 1] + sorted_pk[mid])
+    )
+    med_pk = max(med_pk, 1e-9)
+
+    # Emisyon parametreleri: (mu_vol, sig_vol, mu_eff, sig_eff)
+    # 0: LOW_VOL_RANGE, 1: TREND_EXPANSION, 2: SHOCK_VOLATILITY
+    emissions = (
+        (0.75, 0.40, 0.20, 0.18),
+        (1.15, 0.45, 0.70, 0.20),
+        (2.20, 0.55, 0.35, 0.25),
+    )
+    # Yapışkan geçiş matrisi: 0.84 kendi durumu, 0.08 diğer durumlar
+    trans = (
+        (0.84, 0.08, 0.08),
+        (0.08, 0.84, 0.08),
+        (0.08, 0.08, 0.84),
+    )
+
+    alpha = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]
+    eps = 1e-12
+
+    for t in range(1, n):
+        w_start = max(1, t - 4)
+        win_rets = rets[w_start : t + 1]
+        net_move = abs(sum(win_rets))
+        tot_move = sum(abs(r) for r in win_rets)
+        eff = net_move / (tot_move + eps) if tot_move > eps else 0.0
+        eff = max(0.0, min(1.0, eff))
+
+        vol_ratio = max(0.1, min(6.0, pk_ranges[t] / med_pk))
+
+        # İleri adım: tahmin + Gaussian log-olabilirlik
+        log_post: List[float] = []
+        for j in range(3):
+            pred = (
+                alpha[0] * trans[0][j]
+                + alpha[1] * trans[1][j]
+                + alpha[2] * trans[2][j]
+            )
+            mu_v, sig_v, mu_e, sig_e = emissions[j]
+            zv = (vol_ratio - mu_v) / sig_v
+            ze = (eff - mu_e) / sig_e
+            ll = -0.5 * (zv * zv + ze * ze) - math.log(sig_v * sig_e)
+            log_post.append(math.log(max(pred, 1e-30)) + ll)
+
+        max_lp = max(log_post)
+        unnorm = [math.exp(lp - max_lp) for lp in log_post]
+        norm_s = sum(unnorm)
+        if norm_s > 0.0 and math.isfinite(norm_s):
+            alpha = [u / norm_s for u in unnorm]
+        else:
+            alpha = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]
+
+    states = ("LOW_VOL_RANGE", "TREND_EXPANSION", "SHOCK_VOLATILITY")
+    best_idx = max(range(3), key=lambda k: alpha[k])
+    return {
+        "hmm_regime": states[best_idx],
+        "hmm_confidence": round(alpha[best_idx], 2),
+        "hmm_probs": {
+            "trend": round(alpha[1], 3),
+            "range": round(alpha[0], 3),
+            "shock": round(alpha[2], 3),
+        },
+    }
+
+
 def evaluate_ohlc(
     opens: Sequence[float],
     highs: Sequence[float],
@@ -317,10 +452,11 @@ def evaluate_ohlc(
     bar_times: Optional[Sequence[Any]] = None,
     action: str = "HOLD",
 ) -> Dict[str, Any]:
-    """Hurst + Kalman + SMC sonuçlarını tek kompakt sözlükte ve skor deltasıyla birleştirir."""
+    """Hurst + Kalman + SMC + HMM sonuçlarını tek kompakt sözlükte ve skor deltasıyla birleştirir."""
     hurst_res = compute_hurst_exponent(closes)
     kalman_res = compute_kalman_filter(closes)
     smc_res = detect_smc_structure(opens, highs, lows, closes, bar_times=bar_times)
+    hmm_res = compute_hmm_regime(highs, lows, closes)
 
     h_val = hurst_res["hurst"]
     h_regime = hurst_res["regime"]
@@ -332,6 +468,9 @@ def evaluate_ohlc(
     smc_struct = smc_res["structure"]
     smc_sweep = smc_res["sweep"]
     asian_sweep = smc_res["asian_sweep"]
+    hmm_regime = hmm_res["hmm_regime"]
+    hmm_conf = hmm_res["hmm_confidence"]
+    hmm_probs = hmm_res["hmm_probs"]
 
     act = str(action or "HOLD").upper()
     delta = 0.0
@@ -371,6 +510,14 @@ def evaluate_ohlc(
         elif asian_sweep == "HIGH_SWEPT":
             delta += 3.0 if not is_buy else -3.0
 
+        # 6. 3-Durumlu HMM rejim düzeltmesi
+        if hmm_regime == "TREND_EXPANSION" and hmm_conf >= 0.55:
+            delta += 2.5
+        elif hmm_regime == "SHOCK_VOLATILITY" and hmm_conf >= 0.55:
+            delta -= 3.5
+        elif hmm_regime == "LOW_VOL_RANGE" and hmm_conf >= 0.65:
+            delta -= 2.0
+
         delta = round(max(-12.0, min(12.0, delta)), 1)
 
     badges: List[str] = []
@@ -381,6 +528,12 @@ def evaluate_ohlc(
             badges.append(f"H {h_val:.2f} · YATAY")
         elif h_regime == "RANDOM_WALK":
             badges.append(f"H {h_val:.2f} · GÜRÜLTÜ")
+    if hmm_regime == "TREND_EXPANSION":
+        badges.append(f"HMM Trend %{int(round(hmm_conf * 100))}")
+    elif hmm_regime == "SHOCK_VOLATILITY":
+        badges.append(f"⚡ HMM Şok %{int(round(hmm_conf * 100))}")
+    elif hmm_regime == "LOW_VOL_RANGE":
+        badges.append(f"HMM Yatay %{int(round(hmm_conf * 100))}")
     if smc_sweep != "NONE":
         badges.append("⚡ SWEEP")
     if smc_struct in ("BULLISH_BOS", "BEARISH_BOS"):
@@ -403,6 +556,9 @@ def evaluate_ohlc(
         "smc_structure": smc_struct,
         "smc_sweep": smc_sweep,
         "asian_sweep": asian_sweep,
+        "hmm_regime": hmm_regime,
+        "hmm_confidence": hmm_conf,
+        "hmm_probs": hmm_probs,
         "quant_score_delta": delta,
         "quant_badges": badges,
     }
