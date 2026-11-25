@@ -438,3 +438,74 @@ def test_summarize_supervisor_log():
     assert s["proposal_count"] == 2
     assert s["by_symbol"] == {"XAUUSD": 2, "EURUSD": 1}
     assert s["by_action"]["komut:MODIFY_SLTP"] == 1
+
+
+def test_v2_session_mfe_giveback_tp_progress_and_2star_event():
+    assert ps.active_forex_session(ts(2026, 10, 28, 3, 0)) == "ASYA"
+    assert ps.active_forex_session(ts(2026, 10, 28, 9, 0)) == "LONDRA"
+    assert ps.active_forex_session(ts(2026, 10, 28, 14, 0)) == "LONDRA_NY_KESISIM"
+    assert ps.active_forex_session(ts(2026, 10, 28, 18, 0)) == "NEW_YORK"
+    assert ps.active_forex_session(ts(2026, 10, 31, 12, 0)) == "KAPALI_HAFTASONU"
+
+    radar_cand = {
+        "symbol": "XAUUSD", "score": 82.0, "action": "BUY", "rsi_5m": 76.5, "rsi_15m": 68.0,
+        "adx": 31.2, "supertrend_dir": 1, "atr_pips": 18.0, "spread_pips": 0.4, "dss_tier": "A+",
+    }
+    ev_info = {"is_blocked": False, "win_rate": 62.5, "net_usd": 45.0, "n": 8}
+    v = ps.position_view(
+        position(entry_price=4000.0, current_price=4010.0, sl_price=3990.0, tp_price=4020.0, pnl_pips=40.0),
+        NOW,
+        [ev(title="ISM PMI", stars=2, minutes=12)],
+        CFG,
+        {"mfe_pips": 100.0, "mae_pips": -10.0},
+        radar_cand=radar_cand,
+        ev_info=ev_info,
+    )
+    assert v["tp_ilerleme_pct"] == 50.0
+    assert v["mfe_geri_verme_pct"] == 60.0
+    assert v["olay"] == "ISM PMI" and v["olay_yildiz"] == 2
+    assert v["teknik"]["radar_skor"] == 82.0 and v["teknik"]["supertrend"] == "BOĞA"
+    assert v["ev_kalkan"]["win_rate"] == 62.5 and v["ev_kalkan"]["bloke"] is False
+
+
+def test_v2_net_floor_breakeven_and_atr_breathing_room():
+    # Net-floor breakeven adds small positive cushion when spread_pips + pip_size present
+    p_be = position(entry_price=4000.0, current_price=4010.0, sl_price=3990.0, spread_pips=0.5, pip_size=0.1)
+    v_be = ps.validate_action(p_be, {"action": "move_sl_to_breakeven"})
+    assert v_be["ok"] and 4000.0 < v_be["sl"] < 4010.0
+
+    # ATR breathing room prevents tightening SL closer than 0.5 * atr_price to price
+    # price=4004, sl=3990, pct=70 -> raw_sl=3999.8 (dist=4.2), atr_price=10.0 -> min_breathe=5.0 -> clamped to 3999.0
+    p_atr = position(entry_price=4000.0, current_price=4004.0, sl_price=3990.0, atr_price=10.0)
+    v_atr = ps.validate_action(p_atr, {"action": "tighten_sl", "pct": 70})
+    assert v_atr["ok"] and v_atr["sl"] == 3999.0
+
+
+def test_v2_portfolio_summary_and_db_skills_prompt():
+    import asyncio
+
+    class FakeFx:
+        @staticmethod
+        def get_usd_bias(sym, direction):
+            if sym in ("EURUSD", "GBPUSD", "XAUUSD") and direction == "BUY":
+                return "USD_SHORT"
+            return "USD_NEUTRAL"
+
+    positions = [
+        position(ticket=1, symbol="EURUSD", direction="BUY", pnl_usd=12.0),
+        position(ticket=2, symbol="GBPUSD", direction="BUY", pnl_usd=-4.0),
+    ]
+    summary = ps.portfolio_summary(positions, {"account": {"balance": 10000, "equity": 10008}}, "USD_STRONG", NOW, fx_mod=FakeFx)
+    assert summary["toplam_acik_pozisyon"] == 2
+    assert summary["toplam_acik_pnl_usd"] == 8.0
+    assert summary["usd_maruziyet"]["yigilma_uyarisi"] is True
+    assert summary["usd_maruziyet"]["usd_short"] == ["EURUSD", "GBPUSD"]
+
+    class FakeDb:
+        @staticmethod
+        async def get_active_llm_config():
+            return {"skills": [{"name": "Altın Kural", "instructions": "Asya seansında kırılıma güvenme."}]}
+
+    prompt = asyncio.run(ps._build_system_prompt(FakeDb))
+    assert "AKTİF ÖĞRENİLMİŞ BECERİLER (DB):" in prompt
+    assert "Altın Kural" in prompt
