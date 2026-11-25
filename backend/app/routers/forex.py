@@ -6549,11 +6549,25 @@ _FVG_DAY_STATE: Dict[str, Dict[str, Any]] = {}
 # EV kalkanı kesim zamanı: reset anından ÖNCE kapanan işlemler EV penceresine girmez
 # (kural seti değişince eski sicil yeni kuralları suçlamasın — kullanıcı isteği 2026-10-07).
 # 0.0 = reset yok. Sadece endpoint'te atanır → orada `global` bildirimi zorunlu.
-_EV_RESET_AT_TS: float = 0.0
+# 2026-11-25 temiz-sayfa başlangıcı ($1,000 yeni dönem + yeni R:R/trailing/piramitleme):
+# Sunucu yeniden başlasa da rapor/KPI/CSV/EV ölçümleri bu tarihten sonrasını esas alır.
+# Kapatmak için FOREX_LEDGER_RESET_AT="" verilebilir; pytest ortamında 0.0 kalır.
+def _default_reset_cutoff_ts() -> float:
+    import sys as _sys
+    if "pytest" in _sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+        return 0.0
+    raw = os.environ.get("FOREX_LEDGER_RESET_AT", "2026-11-25 06:35:00").strip()
+    if not raw:
+        return 0.0
+    try:
+        return datetime.datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ_UTC3).timestamp()
+    except Exception:
+        return 0.0
+
+_EV_RESET_AT_TS: float = _default_reset_cutoff_ts()
 # Temiz-sayfa (arşiv + sıfırdan başla) kesim zamanı: resetten önce kapanan işlemler
-# rapor/KPI/CSV/panel listelerinde görünmez; eski veriler arşive alınır (kullanıcı
-# isteği 2026-10-07: "başarı hesaplamaları da sıfırdan olsun"). Bakiyeye DOKUNULMAZ.
-_LEDGER_RESET_AT_TS: float = 0.0
+# rapor/KPI/CSV/panel listelerinde görünmez; eski veriler arşive alınır. Bakiyeye DOKUNULMAZ.
+_LEDGER_RESET_AT_TS: float = _default_reset_cutoff_ts()
 
 
 def _ledger_archive_dir() -> str:

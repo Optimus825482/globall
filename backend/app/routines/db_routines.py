@@ -197,7 +197,7 @@ async def arm_live_monitor() -> Dict[str, Any]:
 
     from app import arm_live_monitor as alm
 
-    since = (os.getenv("ARM_MONITOR_SINCE") or "2026-11-12").strip()
+    since = (os.getenv("ARM_MONITOR_SINCE") or "2026-11-25").strip()
     mt5_deals: list = []
     try:
         from app.routers import forex as fx
