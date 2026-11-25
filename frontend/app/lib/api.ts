@@ -26,8 +26,22 @@ export const WS_URL = `${WS_BASE.replace(/\/$/, "")}/ws`;
 const inflightGets = new Map<string, Promise<Response>>();
 const INFLIGHT_LINGER_MS = 0;
 
+// Sık değişmeyen, salt-okunur uçlar için kısa ömürlü bellek önbelleği. Takvim
+// ve sağlık verisi birden çok bileşende (bant, uyarı, kenar çubuğu, sayfa)
+// ayrı yoklamalarla çekiliyordu. `refresh` parametreli çağrı önbelleği atlar.
+const TTL_RULES: Array<[RegExp, number]> = [
+  [/^\/api\/forex\/news(\?(?!.*refresh)|$)/, 20_000],
+  [/^\/api\/system\/health$/, 10_000],
+  [/^\/api\/forex\/radar(\?(?!.*refresh)|$)/, 2_000],
+  [/^\/api\/forex\/ev-shield(\?(?!.*refresh)|$)/, 8_000],
+];
+const ttlCache = new Map<string, { at: number; data: unknown }>();
+
 export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
   const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    ttlCache.clear();
+  }
   // Audit: başarısız login POST'u auth-expired yayınlamamalı (login ekranında
   // yanlış "Oturum süresi doldu" flaşı), o yüzden URL de ayrıştırılır.
   const url = input instanceof Request ? input.url : String(input);
@@ -62,15 +76,6 @@ export function apiRequest(input: RequestInfo | URL, init?: RequestInit) {
     return response;
   });
 }
-
-// Sık değişmeyen, salt-okunur uçlar için kısa ömürlü bellek önbelleği. Takvim
-// ve sağlık verisi birden çok bileşende (bant, uyarı, kenar çubuğu, sayfa)
-// ayrı yoklamalarla çekiliyordu. `refresh` parametreli çağrı önbelleği atlar.
-const TTL_RULES: Array<[RegExp, number]> = [
-  [/^\/api\/forex\/news(\?(?!.*refresh)|$)/, 15_000],
-  [/^\/api\/system\/health$/, 8_000],
-];
-const ttlCache = new Map<string, { at: number; data: unknown }>();
 
 export async function apiFetch(path: string, init?: RequestInit) {
   const method = String(init?.method || "GET").toUpperCase();

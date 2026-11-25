@@ -15,6 +15,11 @@ const BUILD_ID = getBuildId();
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  compress: true,
+  poweredByHeader: false,
+  images: {
+    formats: ["image/avif", "image/webp"],
+  },
   generateBuildId: () => BUILD_ID,
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
@@ -39,6 +44,18 @@ const nextConfig = {
       headers: [
         { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
         { key: "Pragma", value: "no-cache" },
+      ],
+    },
+    {
+      source: "/icons/:path*",
+      headers: [
+        { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+      ],
+    },
+    {
+      source: "/icon.svg",
+      headers: [
+        { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
       ],
     },
   ],

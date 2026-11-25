@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, apiRequest } from "../lib/api";
+import { usePolling } from "../lib/usePolling";
 import { streamChat } from "../lib/streamChat";
 import MarkdownMessage from "../components/MarkdownMessage";
 import { Button, Card } from "../components/ui";
@@ -439,7 +440,7 @@ function ScheduledJobs() {
     }
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const r = await apiRequest(`${API_BASE}/api/scheduled`);
       if (!r.ok) return;
@@ -449,13 +450,9 @@ function ScheduledJobs() {
     } catch {
       /* ağ hatası: kart sessizce eski halini korur */
     }
-  };
-
-  useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), 20000);
-    return () => clearInterval(t);
   }, []);
+
+  usePolling(load, 20_000);
 
   const cancel = async (id: number) => {
     await apiRequest(`${API_BASE}/api/scheduled/${id}/cancel`, { method: "POST" });

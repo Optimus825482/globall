@@ -182,7 +182,7 @@ function isStaticAssetRequest(request) {
 // yanıt döndürüyordu → grafik eski sembolü (BTCTRY) gösteriyor, sonra navigasyon
 // bozuluyor; yalnız tam yenileme düzeltiyordu. Bu yüzden SW yalnızca şunlara bakar:
 //   (1) document/navigation → network-first, çevrimdışı shell fallback
-//   (2) /_next/static/*    → stale-while-revalidate
+//   (2) /_next/static/*    → cache-first (content-hashed, immutable)
 // Geri kalan HER ŞEY (RSC, API, manifest, ikon dışı GET) ağa doğrudan gider.
 function isRscOrAppDataRequest(request) {
   return request.method === "GET" &&
@@ -221,9 +221,10 @@ self.addEventListener("fetch", function (event) {
   }
 
   if (isStaticAssetRequest(event.request)) {
-    // Static assets (_next hashed JS/CSS): stale-while-revalidate.
+    // Static assets (_next hashed JS/CSS): cache-first (content-hashed, immutable).
     event.respondWith(caches.match(event.request).then(function (cached) {
-      const network = fetch(event.request).then(function (response) {
+      if (cached) return cached;
+      return fetch(event.request).then(function (response) {
         if (response && response.ok) {
           const copy = response.clone();
           caches.open(CACHE).then(function (cache) { return cache.put(event.request, copy); });
@@ -231,9 +232,8 @@ self.addEventListener("fetch", function (event) {
         return response;
       }).catch(function () {
         // Ağ hatasında `cached` yoksa `undefined` döndürme → SW TypeError vermesin.
-        return cached || new Response("offline", { status: 503, statusText: "offline" });
+        return new Response("offline", { status: 503, statusText: "offline" });
       });
-      return cached || network;
     }));
     return;
   }

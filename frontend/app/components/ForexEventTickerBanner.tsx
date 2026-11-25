@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/usePolling";
 
 export interface TickerCalendarEvent {
   id: string;
@@ -27,15 +28,7 @@ export default function ForexEventTickerBanner() {
   const [events, setEvents] = useState<TickerCalendarEvent[]>([]);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  // 1 saniyede bir saati güncelle (geri sayım akıcı olsun)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 20 saniyede bir takvim verisini sessizce çek
+  // 60 saniyede bir takvim verisini sessizce çek (sekme arka plandayken durur)
   const fetchCalendar = useCallback(async () => {
     try {
       const res = await apiFetch("/api/forex/news").catch(() => null);
@@ -47,11 +40,12 @@ export default function ForexEventTickerBanner() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchCalendar();
-    const interval = setInterval(fetchCalendar, 20000);
-    return () => clearInterval(interval);
-  }, [fetchCalendar]);
+  usePolling(fetchCalendar, 60_000);
+  usePolling(
+    () => setNowMs(Date.now()),
+    events.length > 0 ? 15_000 : null,
+    { runOnVisible: true },
+  );
 
   // Aktif penceredeki olayları filtrele:
   // Kural: Açıklanmadan 5 dk önce başlar (-5m), açıklandıktan sonra 10 dk daha devam eder (+10m)
@@ -128,8 +122,8 @@ export default function ForexEventTickerBanner() {
         {/* Sabit Sol Etiket (Sabit İkaz Rozeti) */}
         <div className="shrink-0 flex items-center gap-1.5 px-3 py-1 bg-black/40 border-r border-red-400/40 text-2xs font-black uppercase tracking-wider z-10 shadow-md">
           <span className="animate-pulse">🚨</span>
-          <span className="hidden xs:inline">KRİTİK VERİ ALARMI</span>
-          <span className="xs:hidden">ALARM</span>
+          <span className="hidden sm:inline">KRİTİK VERİ ALARMI</span>
+          <span className="sm:hidden">ALARM</span>
         </div>
 
         {/* Sağdan Sola Kayan Bant (Marquee Track) */}

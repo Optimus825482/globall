@@ -9,6 +9,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch } from "../../lib/api";
+import { usePolling } from "../../lib/usePolling";
 import { useTheme } from "../../lib/theme";
 import NativeDialog from "../../components/NativeDialog";
 
@@ -77,16 +78,10 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      fetchStatus();
-      setFeedback(null);
-      // Açıkken her 10 saniyede bir güncelle
-      const timer = setInterval(() => {
-        if (!document.hidden) fetchStatus();
-      }, 10000);
-      return () => clearInterval(timer);
-    }
-  }, [isOpen, fetchStatus]);
+    if (isOpen) setFeedback(null);
+  }, [isOpen]);
+
+  usePolling(fetchStatus, isOpen ? 15_000 : null);
 
   // Eylem gerçekleştir (Muafiyet / Sıfırlama)
   const handleAction = async (symbol: string, action: "bypass_today" | "bypass_24h" | "restore" | "reset_history") => {

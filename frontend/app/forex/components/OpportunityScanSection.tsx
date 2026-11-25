@@ -196,11 +196,7 @@ export default function OpportunityScanSection({
   ]);
 
   // Countdown tick only when auto-scan is enabled
-  useEffect(() => {
-    if (!enabled) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [enabled]);
+  usePolling(() => setNowMs(Date.now()), enabled ? 1000 : null, { runOnVisible: true });
 
   const remainingSec = useMemo(() => {
     if (!enabled) return null;

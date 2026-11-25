@@ -1389,7 +1389,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   </div>
 
                   {/* İndikatör Grid */}
-                  <div className="grid grid-cols-4 gap-1.5 text-center text-2xs font-mono">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-2xs font-mono">
                     <div className="p-1.5 rounded bg-bunker-950 border border-bunker-800/80">
                       <span className="text-bunker-muted block">RSI 5M</span>
                       <span className={`font-bold ${rsi && (rsi >= 70 || rsi <= 30) ? "text-amber-300" : "text-white"}`}>

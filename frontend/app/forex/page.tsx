@@ -1147,7 +1147,7 @@ export default function ForexRadarPage() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-4 gap-2 p-2 rounded-lg bg-bunker-950/70 border border-bunker-800/80 text-2xs">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2 rounded-lg bg-bunker-950/70 border border-bunker-800/80 text-2xs">
                         <div>
                           <span className="text-bunker-muted block">SKOR</span>
                           <span className="text-sm font-black text-emerald-400">{c.score.toFixed(1)}</span>
@@ -1837,7 +1837,7 @@ export default function ForexRadarPage() {
 
                 {/* CSM Matrisi */}
                 {csm && Array.isArray(csm.ranking) && csm.ranking.length > 0 && (
-                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 tabular-nums">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 tabular-nums">
                     {csm.ranking.map(([curr, score]: [string, number], idx: number) => (
                       <div
                         key={curr}

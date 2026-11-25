@@ -4,12 +4,15 @@ export const dynamic = "force-dynamic";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { useTheme } from "../../lib/theme";
-import EVShieldModal, { EVShieldStatusResponse } from "../components/EVShieldModal";
-import ForexChartModal from "../components/ForexChartModal";
+import type { EVShieldStatusResponse } from "../components/EVShieldModal";
+
+const EVShieldModal = nextDynamic(() => import("../components/EVShieldModal"), { ssr: false });
+const ForexChartModal = nextDynamic(() => import("../components/ForexChartModal"), { ssr: false });
 
 interface OpenPosition {
   id: string;
@@ -1536,11 +1539,13 @@ export default function ForexIslemlerPage() {
       )}
 
       {/* EV KALKANI VE MUAFİYET MODALI */}
-      <EVShieldModal
-        isOpen={evShieldModalOpen}
-        onClose={() => setEvShieldModalOpen(false)}
-        onUpdated={() => fetchData(true)}
-      />
+      {evShieldModalOpen && (
+        <EVShieldModal
+          isOpen={evShieldModalOpen}
+          onClose={() => setEvShieldModalOpen(false)}
+          onUpdated={() => fetchData(true)}
+        />
+      )}
 
       {chartSymbol && (
         <ForexChartModal

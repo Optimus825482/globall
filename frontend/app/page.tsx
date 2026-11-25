@@ -9,6 +9,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { apiFetch } from "./lib/api";
 import { usePolling } from "./lib/usePolling";
 import { useLiveMessages, type LiveMessage } from "./lib/liveSocket";
@@ -19,9 +20,11 @@ import {
   selectTodaysPublished,
   type CalendarOutcome,
 } from "./lib/calendarOutcome";
-import EVShieldModal, { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
+import type { EVShieldStatusResponse } from "./forex/components/EVShieldModal";
 import { Button, Card, DirectionBadge } from "./components/ui";
 import UnifiedSentimentCard from "./components/UnifiedSentimentCard";
+
+const EVShieldModal = dynamic(() => import("./forex/components/EVShieldModal"), { ssr: false });
 
 interface OpenPosition {
   id: string;
@@ -210,17 +213,6 @@ function getToday0001Cutoff(): number {
 }
 
 
-// PERFORMANS (2026-10-08): geri sayım için tek paylaşımlı saniyelik sayaç.
-const useSharedNowSec = (active: boolean): number => {
-  const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [active]);
-  return nowSec;
-};
-
 /** Olayın saati (TR, UTC+3): "HH:MM". */
 function trClock(iso?: string): string {
   const ms = iso ? Date.parse(iso) : NaN;
@@ -236,6 +228,47 @@ function untilText(targetMs: number, nowMs: number): string {
   if (diff >= 3600) return `${String(Math.floor(diff / 3600)).padStart(2, "0")}:${String(Math.floor((diff % 3600) / 60)).padStart(2, "0")} sa`;
   return `${String(Math.floor(diff / 60)).padStart(2, "0")}:${String(diff % 60).padStart(2, "0")}`;
 }
+
+// PERFORMANS: Yalnızca kendi metnini güncelleyen izole geri sayım bileşeni.
+// Sekme gizliyken durur; kalan süre < 3600 sn ise 1 sn, aksi halde 30 sn'de bir günceller.
+const EventCountdown = React.memo(function EventCountdown({ targetMs }: { targetMs: number }) {
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      const remainingSec = Math.floor((targetMs - Date.now()) / 1000);
+      if (remainingSec <= 0) return;
+      const delay = remainingSec < 3600 ? 1000 : 30_000;
+      timer = setTimeout(() => {
+        setNowMs(Date.now());
+        schedule();
+      }, delay);
+    };
+
+    const onVisibility = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (typeof document !== "undefined" && !document.hidden) {
+        setNowMs(Date.now());
+        schedule();
+      }
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer) clearTimeout(timer);
+    };
+  }, [targetMs]);
+
+  return <>{untilText(targetMs, nowMs)}</>;
+});
 
 const money = (v: number) => `${v >= 0 ? "+" : "−"}$${Math.abs(v).toFixed(2)}`;
 const pips = (v: number) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}`;
@@ -405,9 +438,6 @@ export default function HomePage() {
     }
   }, [fetchData]));
 
-  const nowSec = useSharedNowSec(calendarEvents.length > 0);
-  const nowMs = nowSec * 1000;
-
   const winRate = kpi.total_trades > 0 ? (kpi.wins / kpi.total_trades) * 100 : 0;
   const noTrades = kpi.total_trades === 0;
   const lossShare = kpi.total_trades > 0 ? (kpi.losses / kpi.total_trades) * 100 : 0;
@@ -450,20 +480,22 @@ export default function HomePage() {
 
   // Sıradaki açıklanacak olaylar: saati gelmemiş, açıklanmamış.
   const upcomingEvents = useMemo(
-    () =>
-      calendarEvents
+    () => {
+      const now = Date.now();
+      return calendarEvents
         .filter((e) => {
           if (hasPublishedActual(e.actual) || e.status === "Açıklandı") return false;
           const t = e.date_iso ? Date.parse(e.date_iso) : NaN;
-          return Number.isFinite(t) && t > nowMs;
+          return Number.isFinite(t) && t > now;
         })
         .sort((a, b) => Date.parse(a.date_iso as string) - Date.parse(b.date_iso as string))
-        .slice(0, 5),
-    [calendarEvents, nowMs],
+        .slice(0, 5);
+    },
+    [calendarEvents],
   );
   const publishedToday = useMemo(
-    () => selectTodaysPublished(calendarEvents, nowMs).slice(0, 4),
-    [calendarEvents, nowMs],
+    () => selectTodaysPublished(calendarEvents, Date.now()).slice(0, 4),
+    [calendarEvents],
   );
 
   const shieldBlocked = evShieldStatus?.blocked_count ?? 0;
@@ -683,7 +715,7 @@ export default function HomePage() {
                       <span className="text-xs flex-1 min-w-0 truncate" title={e.title}>{e.title}</span>
                       <span className={`text-2xs shrink-0 ${stars(e) === "★★★" ? "text-amber-300" : "text-bunker-muted"}`} aria-label={stars(e) === "★★★" ? "Yüksek etki" : "Orta etki"}>{stars(e)}</span>
                       <span className="text-2xs font-bold tabular-nums shrink-0 text-cyan-300 w-14 text-right">
-                        {untilText(Date.parse(e.date_iso as string), nowMs)}
+                        <EventCountdown targetMs={Date.parse(e.date_iso as string)} />
                       </span>
                     </Link>
                   </li>
@@ -821,11 +853,13 @@ export default function HomePage() {
         </Card>
       </div>
 
-      <EVShieldModal
-        isOpen={evShieldModalOpen}
-        onClose={() => setEvShieldModalOpen(false)}
-        onUpdated={() => fetchData(true)}
-      />
+      {evShieldModalOpen && (
+        <EVShieldModal
+          isOpen={evShieldModalOpen}
+          onClose={() => setEvShieldModalOpen(false)}
+          onUpdated={() => fetchData(true)}
+        />
+      )}
     </div>
   );
 }
