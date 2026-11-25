@@ -75,7 +75,7 @@ def deep_top_now(now_ts: Optional[float] = None) -> int:
     return WEEKEND_DEEP_TOP if is_weekend(now_ts) else DEEP_ANALYSIS_TOP
 
 SYMBOL_COOLDOWN_SEC = 30 * 60      # aynı sembolde yeni giriş için bekleme (bellek içi)
-SL_ATR_MULT = 1.5                  # stop = 1 saatlik ATR × 1.5
+SL_ATR_MULT = 1.5                  # stop = 15 dk ATR × 1.5 (scalping nefes payı; yoksa 5m/30m/1h yedeği)
 RR = 1.5                           # hedef = stop × 1.5
 MIN_AGREEMENT = 0.75               # TradingView zaman dilimi uyumu
 MIN_TV_AVG = 0.25                  # TradingView ağırlıklı reytingin mutlak değeri
@@ -176,18 +176,15 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}
     frames = analysis.get("frames") or {}
-    sym_u = str(sym or "").upper()
-    if "XAU" in sym_u or "GOLD" in sym_u:
-        # Altında 1H ATR×1.5 ~290 pip ($29/0.01 lot) ediyor; 15m/30m ATR (~100-140 pip)
-        # ile makul riskle 1.5R hedef kurulur (yoksa 1h'e düşer).
-        atr = (
-            (frames.get("15m") or {}).get("atr")
-            or (frames.get("30m") or {}).get("atr")
-            or (frames.get("1h") or {}).get("atr")
-            or analysis.get("atr")
-        )
-    else:
-        atr = (frames.get("1h") or {}).get("atr") or analysis.get("atr")
+    # Scalping sistemi: tüm sembollerde 15 dk ATR esas alınır (5 dk spread/gürültüye
+    # karşı dar, 30 dk/1 saat ise scalping için fazla geniş). Yoksa 5m → 30m → 1h yedeği.
+    atr = (
+        (frames.get("15m") or {}).get("atr")
+        or (frames.get("5m") or {}).get("atr")
+        or (frames.get("30m") or {}).get("atr")
+        or (frames.get("1h") or {}).get("atr")
+        or analysis.get("atr")
+    )
     price = float(analysis.get("price") or 0)
     if not atr or price <= 0 or pip_size <= 0:
         return {"ok": False, "reason": "ATR/fiyat verisi eksik"}
