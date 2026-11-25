@@ -9788,9 +9788,8 @@ async def _forex_auto_paper_loop():
                         continue
                     risk_usd = min(risk_usd, round(free_buf * 0.45, 2))
                 elif not weekend_now and curr_utc_hour < 7:
-                    if cur_open_cnt >= 2:
-                        continue
-                    risk_usd *= 0.25
+                    # Asya seansı: 2-pozisyon sınırı kaldırıldı (portföy risk kapısı + max_open_positions geçerli)
+                    risk_usd *= 0.75
                 elif not weekend_now and 7 <= curr_utc_hour < 20 and day_realized_now < -35.0:
                     if cur_open_cnt >= 2:
                         continue
