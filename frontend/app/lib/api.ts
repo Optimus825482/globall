@@ -34,6 +34,7 @@ const TTL_RULES: Array<[RegExp, number]> = [
   [/^\/api\/system\/health$/, 10_000],
   [/^\/api\/forex\/radar(\?(?!.*refresh)|$)/, 2_000],
   [/^\/api\/forex\/ev-shield(\?(?!.*refresh)|$)/, 8_000],
+  [/^\/api\/forex\/auto-paper\/status(\?(?!.*refresh)|$)/, 2_000],
 ];
 const ttlCache = new Map<string, { at: number; data: unknown }>();
 

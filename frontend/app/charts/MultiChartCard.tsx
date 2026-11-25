@@ -9,6 +9,7 @@ import {
     LineSeries,
     HistogramSeries,
     IChartApi,
+    IPriceLine,
     ISeriesApi,
     UTCTimestamp,
     ColorType,
@@ -18,6 +19,7 @@ import { API_BASE, apiRequest } from "../lib/api";
 import { formatPrice, pricePrecision } from "../lib/format";
 import { useLiveMessages, type LiveMessage } from "../lib/liveSocket";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
+import { syncPositionPriceLines, useSymbolOpenPositions } from "../lib/useSymbolOpenPositions";
 
 export interface ChartIndicators {
     // Hareketli ortalamalar (2026-10-14 kullanıcı isteği): MA7/MA20/MA99
@@ -421,7 +423,9 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+    const positionLinesRef = useRef<IPriceLine[]>([]);
     const seriesMapRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
+    const openPositions = useSymbolOpenPositions(config.symbol);
     const [loading, setLoading] = useState(true);
     const [klineError, setKlineError] = useState<string | null>(null);
     const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
@@ -433,6 +437,11 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
     const [momentum, setMomentum] = useState<{ rsi14: number | null; adx14: number | null } | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isDark, setIsDark] = useState(true); // dark varsayılan
+
+    // Açık pozisyon çizgilerini (Giriş / SL / TP) canlı senkronla
+    useEffect(() => {
+        syncPositionPriceLines(candleSeriesRef.current, positionLinesRef, openPositions);
+    }, [openPositions, config.symbol, config.interval]);
     const klineReqIdRef = useRef(0);
     const lastBarsRef = useRef<Bar[]>([]);
     // Son tam gösterge yeniden kurulumunun zaman damgası (bkz. INDICATOR_REBUILD_MIN_MS).
@@ -590,6 +599,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                 candleSeriesRef.current.applyOptions({ priceFormat: { type: "price", precision, minMove: 1 / Math.pow(10, precision) } });
                 setPriceData(snap);
             }
+            syncPositionPriceLines(candleSeriesRef.current, positionLinesRef, openPositions);
             // Başlık göstergeleri: seçili TF'nin son mumlarından RSI-14 / ADX-14.
             // Bunlar ucuz (O(n) tek geçiş) ve her turda görünür oldukları için
             // yenilemeye devam ediyoruz; pahalı olan 14'lük grafik serisi.
@@ -1079,6 +1089,44 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                     </button>
                 </div>
             </div>
+
+            {/* ── Open Position Strip (if any) ───────────────────────────────── */}
+            {openPositions.length > 0 && (
+                <div className="px-2.5 py-1 bg-cyan-950/35 border-b border-cyan-500/30 flex flex-wrap items-center gap-2 text-2xs font-mono shrink-0">
+                    {openPositions.map((pos) => {
+                        const isBuy = pos.direction === "BUY";
+                        const pnlPos = (pos.pnlUsd ?? 0) >= 0;
+                        return (
+                            <div
+                                key={pos.id}
+                                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 rounded bg-bunker-950/70 border border-cyan-500/30"
+                            >
+                                <span className={`font-black ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
+                                    {isBuy ? "▲ BUY" : "▼ SELL"}{pos.lots != null ? ` ${pos.lots.toFixed(2)}` : ""}
+                                </span>
+                                <span className="text-slate-300">
+                                    Giriş: <strong className="text-cyan-300">{formatPrice(pos.entryPrice)}</strong>
+                                </span>
+                                {pos.slPrice != null && (
+                                    <span className="text-rose-300">
+                                        SL: <strong>{formatPrice(pos.slPrice)}</strong>
+                                    </span>
+                                )}
+                                {pos.tpPrice != null && (
+                                    <span className="text-emerald-300">
+                                        TP: <strong>{formatPrice(pos.tpPrice)}</strong>
+                                    </span>
+                                )}
+                                {pos.pnlUsd != null && (
+                                    <span className={`font-black ${pnlPos ? "text-emerald-400" : "text-rose-400"}`}>
+                                        {pnlPos ? "+" : "-"}${Math.abs(pos.pnlUsd).toFixed(2)}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
 
             {/* ── Chart Area ─────────────────────────────────────────────────── */}
             <div className="relative flex-1 w-full min-h-[200px] overflow-hidden">

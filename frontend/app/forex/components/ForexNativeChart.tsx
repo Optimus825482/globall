@@ -9,6 +9,7 @@ import {
   LineSeries,
   HistogramSeries,
   IChartApi,
+  IPriceLine,
   ISeriesApi,
   UTCTimestamp,
   LineStyle,
@@ -16,6 +17,7 @@ import {
 import dynamic from "next/dynamic";
 import { apiFetch } from "../../lib/api";
 import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
+import { syncPositionPriceLines, useSymbolOpenPositions } from "../../lib/useSymbolOpenPositions";
 import { findIndicatorEntry, filterIndicatorInstances } from "../../charts/IndicatorPicker";
 import {
   applySeries,
@@ -326,6 +328,8 @@ export default function ForexNativeChart({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const positionLinesRef = useRef<IPriceLine[]>([]);
+  const openPositions = useSymbolOpenPositions(symbol);
 
   // MT5 tarzı gösterge motoru: panel/seri yerleşimi burada tutulur. Yapı
   // (hangi indikatör, hangi panel) değişince yeniden kurulur; veri tazeleme
@@ -848,6 +852,11 @@ export default function ForexNativeChart({
     updatePaneLayout();
   }, [indicators, volumeVisible, updatePaneLayout]);
 
+  // Açık pozisyon çizgilerini (Giriş / SL / TP) mum serisi üzerinde canlı senkronla
+  useEffect(() => {
+    syncPositionPriceLines(candleSeriesRef.current, positionLinesRef, openPositions);
+  }, [openPositions, candles.length, symbol, timeframe]);
+
   // Mum Verilerini ve Göstergeleri Grafiğe Bas
   useEffect(() => {
     if (!candleSeriesRef.current || candles.length === 0) return;
@@ -1199,6 +1208,44 @@ export default function ForexNativeChart({
 
         <div ref={chartContainerRef} className="w-full h-full" />
       </div>
+
+      {/* AÇIK POZİSYON ŞERİDİ (varsa) */}
+      {openPositions.length > 0 && (
+        <div className="px-3 py-1.5 bg-cyan-950/35 border-t border-cyan-500/30 flex flex-wrap items-center gap-2 text-2xs font-mono shrink-0">
+          {openPositions.map((pos) => {
+            const isBuy = pos.direction === "BUY";
+            const pnlPos = (pos.pnlUsd ?? 0) >= 0;
+            return (
+              <div
+                key={pos.id}
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 px-2 py-0.5 rounded-md bg-bunker-950/75 border border-cyan-500/30"
+              >
+                <span className={`font-black ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
+                  {isBuy ? "▲ BUY" : "▼ SELL"} {pos.lots != null ? `${pos.lots.toFixed(2)} lot` : ""}
+                </span>
+                <span className="text-slate-300">
+                  Giriş: <strong className="text-cyan-300">{formatPriceBySymbol(pos.entryPrice, symbol)}</strong>
+                </span>
+                {pos.slPrice != null && (
+                  <span className="text-rose-300">
+                    SL: <strong>{formatPriceBySymbol(pos.slPrice, symbol)}</strong>
+                  </span>
+                )}
+                {pos.tpPrice != null && (
+                  <span className="text-emerald-300">
+                    TP: <strong>{formatPriceBySymbol(pos.tpPrice, symbol)}</strong>
+                  </span>
+                )}
+                {pos.pnlUsd != null && (
+                  <span className={`font-black ${pnlPos ? "text-emerald-400" : "text-rose-400"}`}>
+                    {pnlPos ? "+" : "-"}${Math.abs(pos.pnlUsd).toFixed(2)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ALT BİLGİ ŞERİDİ */}
       {(score != null || adx != null || atrPips != null || htfTrend) && (
