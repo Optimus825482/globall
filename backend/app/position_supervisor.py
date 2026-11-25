@@ -549,7 +549,7 @@ async def review_positions(
                     except Exception:  # noqa: BLE001
                         pass
 
-        if v["ok"]:
+        if v["ok"] and str(entry_rec.get("action") or "").lower() not in ("hold", "no_op"):
             _record_recent_action({
                 "ts": now,
                 "ticket": ticket,

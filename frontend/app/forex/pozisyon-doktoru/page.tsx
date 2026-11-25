@@ -358,9 +358,29 @@ export default function PositionSupervisorPage() {
   );
 
   const recentActions = useMemo<SupervisorActionItem[]>(
-    () => (Array.isArray(statusData?.recent_actions) ? statusData.recent_actions : []),
+    () =>
+      (Array.isArray(statusData?.recent_actions) ? statusData.recent_actions : []).filter((a) => {
+        const act = String(a?.action || "").trim().toLowerCase();
+        return act !== "hold" && act !== "no_op";
+      }),
     [statusData],
   );
+
+  const visibleProposals = useMemo(() => {
+    if (!proposals) return null;
+    return proposals.filter((p) => {
+      const act = String(p?.action || "").trim().toLowerCase();
+      return act !== "hold" && act !== "no_op";
+    });
+  }, [proposals]);
+
+  const holdProposals = useMemo(() => {
+    if (!proposals) return [];
+    return proposals.filter((p) => {
+      const act = String(p?.action || "").trim().toLowerCase();
+      return act === "hold" || act === "no_op";
+    });
+  }, [proposals]);
 
   const appliedByTicket = useMemo(() => {
     const raw = statusData?.applied_by_ticket;
@@ -844,13 +864,19 @@ export default function PositionSupervisorPage() {
                 olarak MT5&apos;e uygulayın.
               </p>
             </div>
-          ) : proposals.length === 0 ? (
-            <div className="py-8 px-4 rounded-xl border border-emerald-500/25 bg-emerald-950/10 text-center font-mono text-xs text-bunker-muted">
-              Açık pozisyonlar için yeni aksiyon önerisi bulunmadı — mevcut stop/hedefler uygun görünüyor.
+          ) : !visibleProposals || visibleProposals.length === 0 ? (
+            <div className="py-6 px-4 rounded-xl border border-emerald-500/25 bg-emerald-950/10 text-center font-mono text-xs text-emerald-200/90 space-y-1.5">
+              <p className="font-bold">✓ Tüm açık pozisyonlar sağlıklı — müdahale gerektiren öneri yok.</p>
+              {holdProposals.length > 0 && (
+                <p className="text-2xs text-bunker-muted">
+                  Müdahale gerekmeyen ({holdProposals.length}):{" "}
+                  {holdProposals.map((h) => `${h.symbol || `#${h.ticket ?? "?"}`}`).join(", ")}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-2.5">
-              {proposals.map((item, idx) => {
+              {visibleProposals.map((item, idx) => {
                 const key = getProposalKey(item, idx);
                 const actBadge = formatActionBadge(item.action, item.pct);
                 const applied = isActionApplied(item);
