@@ -12793,3 +12793,40 @@ async def toggle_opportunity_scan(payload: OpportunityScanToggleRequest = Body(d
     persist_settings(_AUTO_SETTINGS)
     return opportunity_trades.get_auto_scan_state()
 
+
+@router.get("/diagnostics/today-audit")
+async def get_forex_diagnostics_today_audit(
+    period: str = "today",
+    date: Optional[str] = None,
+    limit: int = 200,
+):
+    """Taramalar, karar günlüğü, DB kayıtları ve zararla kapanan işlemler için tek-çağrılık teşhis paketi."""
+    from app import forex_diagnostics
+    import sys
+    return forex_diagnostics.build_today_audit(sys.modules[__name__], period=period, date=date, limit=limit)
+
+
+@router.get("/diagnostics/scans")
+async def get_forex_diagnostics_scans(limit: int = 100):
+    """Fırsat taraması, radar önbelleği, EV Kalkanı ve risk kapısı kayıtları."""
+    from app import forex_diagnostics
+    import sys
+    return forex_diagnostics.build_scans_report(sys.modules[__name__], limit=limit)
+
+
+@router.get("/diagnostics/losses")
+async def get_forex_diagnostics_losses(
+    period: str = "today",
+    date: Optional[str] = None,
+    symbol: Optional[str] = None,
+    strategy: Optional[str] = None,
+    limit: int = 200,
+):
+    """Zararla kapanan işlemlerin strateji/sembol/sebep/saat kırılımı ve ilişkili karar/DB kayıtları."""
+    from app import forex_diagnostics
+    import sys
+    return forex_diagnostics.build_losses_report(
+        sys.modules[__name__], period=period, date=date, symbol=symbol, strategy=strategy, limit=limit
+    )
+
+
