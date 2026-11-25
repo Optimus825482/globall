@@ -917,7 +917,7 @@ export default function MultiChartCard({ config, availableSymbols, isMaximized, 
                                             }
                                         }
                                     }}
-                                    placeholder="Ara (örn. SAGA)..."
+                                    placeholder={forexMode ? "Ara (örn. XAUUSD)..." : "Ara (örn. SAGA)..."}
                                     className="w-full bg-bunker-950 border border-bunker-700 rounded-lg px-2.5 py-1.5 font-mono text-xs text-white placeholder-bunker-600 focus:border-neon-green/50 outline-none mb-2"
                                 />
                                 {searchFilter.trim() && (

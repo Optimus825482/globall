@@ -28,7 +28,7 @@ import ChartAiScoreHeader from "../components/ChartAiScoreHeader";
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { API_BASE, apiRequest } from "../lib/api";
 import type { MultiChartConfig, ChartIndicators } from "./MultiChartCard";
@@ -105,6 +105,8 @@ const isCount = (v: unknown): v is ChartCount =>
 
 export default function ChartsPage() {
     const pageRef = useRef<HTMLDivElement>(null);
+    const pathname = usePathname();
+    const forexMode = (pathname || "").startsWith("/forex");
     const searchParams = useSearchParams();
 
     const [count, setCount]         = useState<ChartCount>(4);
@@ -157,8 +159,8 @@ export default function ChartsPage() {
     }, []);
 
     // ── Sembol evreni ────────────────────────────────────────────────────────
-    // Üç kaynak birleşir: yerel yedek liste, forex motorunun sembolleri
-    // (`/api/forex/symbols` — FOREX_SYMBOLS) ve borsa sembolleri.
+    // Forex modunda yalnızca Forex/MT5 sembolleri (`/api/forex/symbols`) yüklenir;
+    // Spot modunda borsa sembolleri (`/api/market-symbols`) de birleştirilir.
     useEffect(() => {
         apiRequest(`${API_BASE}/api/forex/symbols`)
             .then((r) => (r.ok ? r.json() : null))
@@ -171,18 +173,20 @@ export default function ChartsPage() {
                 }
             })
             .catch(() => { });
-        apiRequest(`${API_BASE}/api/market-symbols`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-                const list = data?.symbols;
-                if (Array.isArray(list) && list.length) {
-                    setAvailableSymbols((curr) => [...new Set([...curr, ...list])].sort((a, b) => a.localeCompare(b)));
-                }
-            })
-            .catch(() => { });
-    }, []);
+        if (!forexMode) {
+            apiRequest(`${API_BASE}/api/market-symbols`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((data) => {
+                    const list = data?.symbols;
+                    if (Array.isArray(list) && list.length) {
+                        setAvailableSymbols((curr) => [...new Set([...curr, ...list])].sort((a, b) => a.localeCompare(b)));
+                    }
+                })
+                .catch(() => { });
+        }
+    }, [forexMode]);
 
-    // ── LocalStorage + `?symbol=` geri yükleme ───────────────────────────────
+    // ── LocalStorage geri yükleme (yalnız ilk açılış) ────────────────────────
     useEffect(() => {
         try {
             const savedCount = Number(localStorage.getItem(LS_COUNT));
@@ -215,14 +219,15 @@ export default function ChartsPage() {
             const savedTf = localStorage.getItem(LS_INTERVAL);
             if (savedTf && CHART_INTERVALS.some(i => i.v === savedTf)) setGlobalInterval(savedTf);
         } catch { }
+    }, []);
 
-        // `?symbol=` — radar/portföy/profil bağlantılarının girdiği yol.
-        // Sembolü TÜM grafiklere uygular; TF'ler MTF şablonu olarak dağıtılır ki
-        // tek grafikte bile anlamlı bir ufukla açılsın.
+    // ── `?symbol=` sorgu parametresi (ilk açılış + istemci içi geçişler) ─────
+    useEffect(() => {
         try {
             const querySymbol = searchParams.get("symbol");
             if (querySymbol) {
                 const clean = querySymbol.trim().toUpperCase();
+                if (!clean) return;
                 setSlots((prev) => {
                     const next = prev.map((s, idx) => ({
                         ...s,
@@ -235,10 +240,10 @@ export default function ChartsPage() {
                 setGlobalSymbol(clean);
                 setGlobalSymbolInput(clean);
                 setMaximizedId(null);
+                try { localStorage.setItem(LS_SYMBOL, clean); } catch { }
             }
         } catch { }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [searchParams]);
 
     // ── Slot güncelle ────────────────────────────────────────────────────────
     const persistSlots = (next: MultiChartConfig[]) => {
@@ -620,7 +625,7 @@ export default function ChartsPage() {
                     </div>
                 </div>
 
-                <ChartAiScoreHeader symbol={globalSymbol} assetType="SPOT" className="flex items-center shrink-0 mr-2" />
+                <ChartAiScoreHeader symbol={globalSymbol} assetType={forexMode ? "FOREX" : "SPOT"} className="flex items-center shrink-0 mr-2" />
                 {/* Sağ: yenile */}
                 <div className="flex items-center gap-2">
                     <button

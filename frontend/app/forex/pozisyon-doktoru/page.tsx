@@ -2,9 +2,12 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { formatPrice, formatUtc3 } from "../../lib/format";
+
+const ForexChartModal = dynamic(() => import("../components/ForexChartModal"), { ssr: false });
 
 type SupervisorMode = "off" | "log" | "act";
 
@@ -315,6 +318,7 @@ export default function PositionSupervisorPage() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [reviewNote, setReviewNote] = useState("");
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [chartSymbol, setChartSymbol] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -914,9 +918,18 @@ export default function PositionSupervisorPage() {
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-2 min-w-0">
-                            <span className="font-bold text-sm text-white">
-                              {item.symbol || "—"}
-                            </span>
+                            {item.symbol ? (
+                              <button
+                                type="button"
+                                onClick={() => setChartSymbol(item.symbol!)}
+                                title={`${item.symbol} canlı grafiğini aç`}
+                                className="font-bold text-sm text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                              >
+                                {item.symbol}
+                              </button>
+                            ) : (
+                              <span className="font-bold text-sm text-white">—</span>
+                            )}
                             {item.ticket != null && (
                               <span className="text-xs text-bunker-muted tabular-nums">
                                 #{item.ticket}
@@ -1029,9 +1042,14 @@ export default function PositionSupervisorPage() {
                       return (
                         <tr key={pos.ticket} className="hover:bg-bunker-800/30 transition-colors">
                           <td className="py-3 px-3 align-top">
-                            <div className="font-bold text-white">
+                            <button
+                              type="button"
+                              onClick={() => setChartSymbol(pos.symbol)}
+                              title={`${pos.display || pos.symbol} canlı grafiğini aç`}
+                              className="font-bold text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                            >
                               {pos.display || pos.symbol}
-                            </div>
+                            </button>
                             <div className="text-2xs text-bunker-muted tabular-nums">
                               #{pos.ticket}
                             </div>
@@ -1139,9 +1157,18 @@ export default function PositionSupervisorPage() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-bold text-xs text-white">
-                              {f.symbol || "—"}
-                            </span>
+                            {f.symbol ? (
+                              <button
+                                type="button"
+                                onClick={() => setChartSymbol(f.symbol!)}
+                                title={`${f.symbol} canlı grafiğini aç`}
+                                className="font-bold text-xs text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                              >
+                                {f.symbol}
+                              </button>
+                            ) : (
+                              <span className="font-bold text-xs text-white">—</span>
+                            )}
                             {f.ticket != null && (
                               <span className="text-2xs text-bunker-muted tabular-nums">
                                 #{f.ticket}
@@ -1194,9 +1221,18 @@ export default function PositionSupervisorPage() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                            <span className="font-bold text-xs text-white">
-                              {item.symbol || "—"}
-                            </span>
+                            {item.symbol ? (
+                              <button
+                                type="button"
+                                onClick={() => setChartSymbol(item.symbol!)}
+                                title={`${item.symbol} canlı grafiğini aç`}
+                                className="font-bold text-xs text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                              >
+                                {item.symbol}
+                              </button>
+                            ) : (
+                              <span className="font-bold text-xs text-white">—</span>
+                            )}
                             {item.ticket != null && (
                               <span className="text-2xs text-bunker-muted tabular-nums">
                                 #{item.ticket}
@@ -1237,6 +1273,13 @@ export default function PositionSupervisorPage() {
             </section>
           </div>
         </div>
+      )}
+
+      {chartSymbol && (
+        <ForexChartModal
+          symbol={chartSymbol}
+          onClose={() => setChartSymbol(null)}
+        />
       )}
     </div>
   );

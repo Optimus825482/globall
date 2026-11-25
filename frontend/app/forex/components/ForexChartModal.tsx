@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import ForexNativeChart from "./ForexNativeChart";
 
 export interface ForexCandidateMeta {
@@ -33,52 +33,93 @@ export interface ForexCandidateMeta {
   required_score?: number | null;
 }
 
-interface ForexChartModalProps {
-  candidate: ForexCandidateMeta;
+export interface ForexChartModalProps {
+  candidate?: ForexCandidateMeta | null;
+  symbol?: string | null;
+  display?: string;
+  action?: "BUY" | "SELL" | "HOLD";
   onClose: () => void;
   onOpenLotCalculator?: (symbol: string, slPips: number) => void;
 }
 
+function inferCategory(sym: string): string {
+  const s = sym.toUpperCase();
+  if (/BTC|ETH|XRP|SOL|BNB|LTC|DOGE/.test(s)) return "crypto";
+  if (/XAU|XAG|GOLD|SILVER|OIL|WTI|BRENT|NGAS/.test(s)) return "commodity";
+  if (/US30|NAS100|USTEC|SPX|US500|DAX|DE40|GER40|UK100|JP225/.test(s)) return "index";
+  return "forex";
+}
+
 export default function ForexChartModal({
   candidate,
+  symbol,
+  display,
+  action,
   onClose,
   onOpenLotCalculator,
 }: ForexChartModalProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  const resolvedSymbol = (candidate?.symbol || symbol || "").trim().toUpperCase();
+  const resolvedDisplay = candidate?.display || display || resolvedSymbol;
+  const resolvedCategory = candidate?.category || inferCategory(resolvedSymbol);
+  const resolvedAction: "BUY" | "SELL" | "HOLD" = candidate?.action || action || "HOLD";
+  const resolvedScore = candidate?.score ?? 0;
+  const resolvedTier = candidate?.tier ?? "ACTIVE";
+  const resolvedAdx = candidate?.adx ?? 0;
+  const resolvedAtrPips = candidate?.atr_pips ?? 0;
+  const resolvedHtfTrend = candidate?.htf_trend ?? "NEUTRAL";
+  const resolvedMacdVerdict = candidate?.macd_verdict ?? "—";
+  const resolvedRiskReward =
+    candidate?.risk_reward == null ? undefined : String(candidate.risk_reward);
+  const resolvedPipTarget = candidate?.pip_target ?? undefined;
+  const resolvedStopLossPips = candidate?.stop_loss_pips ?? undefined;
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const dialog = dialogRef.current;
+    if (!dialog || !resolvedSymbol) return;
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    return () => {
+      if (dialog.open) {
+        dialog.close();
+      }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [resolvedSymbol]);
+
+  if (!resolvedSymbol) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in"
+    <dialog
+      ref={dialogRef}
+      aria-label={`${resolvedDisplay} Canlı Grafik`}
+      onClose={onClose}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === dialogRef.current) onClose();
       }}
+      className="m-auto w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-6xl h-[92vh] max-h-[92vh] p-0 bg-transparent border-0 overflow-visible overscroll-contain backdrop:bg-black/80 backdrop:backdrop-blur-sm backdrop:overflow-hidden animate-in fade-in"
     >
-      <div className="relative w-full max-w-6xl h-[92vh] bg-bunker-950 rounded-2xl border border-bunker-700 shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-full h-full bg-bunker-950 rounded-2xl border border-bunker-700 shadow-2xl flex flex-col overflow-hidden">
         <ForexNativeChart
-          symbol={candidate.symbol}
-          displayName={candidate.display}
-          category={candidate.category}
-          action={candidate.action}
-          score={candidate.score}
-          tier={candidate.tier}
-          adx={candidate.adx}
-          atrPips={candidate.atr_pips}
-          htfTrend={candidate.htf_trend}
-          macdVerdict={candidate.macd_verdict}
-          riskReward={candidate.risk_reward == null ? undefined : String(candidate.risk_reward)}
-          pipTarget={candidate.pip_target ?? undefined}
-          stopLossPips={candidate.stop_loss_pips ?? undefined}
-          separatePageHref={`/forex/charts?symbol=${candidate.symbol}`}
+          symbol={resolvedSymbol}
+          displayName={resolvedDisplay}
+          category={resolvedCategory}
+          action={resolvedAction}
+          score={resolvedScore}
+          tier={resolvedTier}
+          adx={resolvedAdx}
+          atrPips={resolvedAtrPips}
+          htfTrend={resolvedHtfTrend}
+          macdVerdict={resolvedMacdVerdict}
+          riskReward={resolvedRiskReward}
+          pipTarget={resolvedPipTarget}
+          stopLossPips={resolvedStopLossPips}
+          separatePageHref={`/forex/charts?symbol=${encodeURIComponent(resolvedSymbol)}`}
           onOpenLotCalculator={onOpenLotCalculator}
           onClose={onClose}
         />
       </div>
-    </div>
+    </dialog>
   );
 }

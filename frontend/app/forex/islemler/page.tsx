@@ -9,6 +9,7 @@ import { usePolling } from "../../lib/usePolling";
 import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
 import { useTheme } from "../../lib/theme";
 import EVShieldModal, { EVShieldStatusResponse } from "../components/EVShieldModal";
+import ForexChartModal from "../components/ForexChartModal";
 
 interface OpenPosition {
   id: string;
@@ -226,6 +227,7 @@ export default function ForexIslemlerPage() {
   // Sembol EV Kalkanı Modalı & Durumu
   const [evShieldModalOpen, setEvShieldModalOpen] = useState<boolean>(false);
   const [evShieldStatus, setEvShieldStatus] = useState<EVShieldStatusResponse | null>(null);
+  const [chartSymbol, setChartSymbol] = useState<{ symbol: string; display?: string } | null>(null);
 
   // Veri Yükleme (Günün 00:01 Sonrası İşlemleri ve Canlı Pozisyonlar)
   const fetchData = useCallback(async (isSilent = false) => {
@@ -912,9 +914,17 @@ export default function ForexIslemlerPage() {
                       <tr key={p.id || p.ticket} className={theme.tableRow}>
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setChartSymbol({ symbol: p.symbol, display: p.display });
+                              }}
+                              title="Canlı grafiği aç"
+                              className="font-bold text-sm hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                            >
                               {p.display || p.symbol}
-                            </span>
+                            </button>
                             {p.category && (
                               <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-bunker-800 text-slate-500 dark:text-bunker-muted uppercase">
                                 {p.category}
@@ -1010,9 +1020,17 @@ export default function ForexIslemlerPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-base">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChartSymbol({ symbol: p.symbol, display: p.display });
+                          }}
+                          title="Canlı grafiği aç"
+                          className="font-bold text-base hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                        >
                           {p.display || p.symbol}
-                        </span>
+                        </button>
                         <span
                           className={`px-2 py-0.5 rounded text-2xs font-bold ${
                             isBuy
@@ -1111,9 +1129,17 @@ export default function ForexIslemlerPage() {
                       <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-2xs font-black flex items-center justify-center border border-blue-500/20 shrink-0">
                         #{idx + 1}
                       </span>
-                      <span className="font-bold text-sm tracking-wide">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setChartSymbol({ symbol: item.symbol, display: item.display });
+                        }}
+                        title="Canlı grafiği aç"
+                        className="font-bold text-sm tracking-wide hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                      >
                         {item.display || item.symbol}
-                      </span>
+                      </button>
                       {item.category && (
                         <span className="text-2xs px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-bunker-800 text-slate-600 dark:text-bunker-muted font-bold uppercase">
                           {item.category}
@@ -1295,7 +1321,17 @@ export default function ForexIslemlerPage() {
                     return (
                       <tr key={t.id || t.ticket || Math.random()} className={theme.tableRow}>
                         <td className="py-3.5 px-4 font-bold text-sm">
-                          {t.display || t.symbol}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setChartSymbol({ symbol: t.symbol, display: t.display });
+                            }}
+                            title="Canlı grafiği aç"
+                            className="font-bold text-sm hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                          >
+                            {t.display || t.symbol}
+                          </button>
                         </td>
 
                         <td className="py-3.5 px-3">
@@ -1384,7 +1420,17 @@ export default function ForexIslemlerPage() {
                   >
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-sm">{t.display || t.symbol}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChartSymbol({ symbol: t.symbol, display: t.display });
+                          }}
+                          title="Canlı grafiği aç"
+                          className="font-bold text-sm hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                        >
+                          {t.display || t.symbol}
+                        </button>
                         <span
                           className={`px-1.5 py-0.2 rounded text-2xs font-bold ${
                             isBuy ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
@@ -1495,6 +1541,14 @@ export default function ForexIslemlerPage() {
         onClose={() => setEvShieldModalOpen(false)}
         onUpdated={() => fetchData(true)}
       />
+
+      {chartSymbol && (
+        <ForexChartModal
+          symbol={chartSymbol.symbol}
+          display={chartSymbol.display}
+          onClose={() => setChartSymbol(null)}
+        />
+      )}
     </div>
   );
 }

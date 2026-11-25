@@ -412,6 +412,11 @@ export default function ForexRadarPage() {
 
   // Modallar & Kapı Anlık Görünümü
   const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidate | null>(null);
+  const [chartModalSymbol, setChartModalSymbol] = useState<{
+    symbol: string;
+    display?: string;
+    action?: "BUY" | "SELL" | "HOLD";
+  } | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showEVShieldModal, setShowEVShieldModal] = useState(false);
   const [gateModalSymbol, setGateModalSymbol] = useState<string | null>(null);
@@ -643,39 +648,16 @@ export default function ForexRadarPage() {
   };
 
   const openChartBySymbol = useCallback(
-    (symbol: string) => {
-      const upper = symbol.toUpperCase();
+    (symbol: string, action?: "BUY" | "SELL" | "HOLD", display?: string) => {
+      const upper = symbol.trim().toUpperCase();
+      if (!upper) return;
       const found = candidates.find((c) => c.symbol.toUpperCase() === upper);
       if (found) {
+        setChartModalSymbol(null);
         setChartModalCandidate(found);
       } else {
-        setChartModalCandidate({
-          symbol: upper,
-          display: upper,
-          name: upper,
-          category: "forex",
-          price: 0,
-          bid: 0,
-          ask: 0,
-          spread_pips: 0,
-          score: 0,
-          trend: "—",
-          action: "HOLD",
-          macd_verdict: "—",
-          cmo: 0,
-          cci: 0,
-          adx: 0,
-          supertrend_dir: 0,
-          htf_trend: "—",
-          atr_pips: 0,
-          tv_symbol: upper,
-          tier: "WAIT",
-          signal_ready: false,
-          gate_passed: false,
-          blocked_by: [],
-          primary_blocker: null,
-          blocker_text: "",
-        });
+        setChartModalCandidate(null);
+        setChartModalSymbol({ symbol: upper, display: display || upper, action });
       }
     },
     [candidates],
@@ -1119,7 +1101,17 @@ export default function ForexRadarPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-white text-base">{c.display}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChartModalSymbol(null);
+                                setChartModalCandidate(c);
+                              }}
+                              title={`${c.display} canlı grafiğini aç`}
+                              className="font-bold text-white text-base hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                            >
+                              {c.display}
+                            </button>
                             {c.dss_tier === "A+" && (
                               <span className="text-2xs px-1.5 py-0.5 rounded font-black bg-amber-500/25 border border-amber-400/60 text-amber-200">
                                 A+
@@ -1360,7 +1352,18 @@ export default function ForexRadarPage() {
                             {/* Sembol */}
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-white text-sm">{c.display}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setChartModalSymbol(null);
+                                    setChartModalCandidate(c);
+                                  }}
+                                  title={`${c.display} canlı grafiğini aç`}
+                                  className="font-bold text-white text-sm hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                                >
+                                  {c.display}
+                                </button>
                                 <span
                                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-bold border ${meta.badge}`}
                                   title={meta.hint}
@@ -1495,7 +1498,17 @@ export default function ForexRadarPage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-bold text-white text-sm">{c.display}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChartModalSymbol(null);
+                                setChartModalCandidate(c);
+                              }}
+                              title={`${c.display} canlı grafiğini aç`}
+                              className="font-bold text-white text-sm hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                            >
+                              {c.display}
+                            </button>
                             {isBuy || isSell ? (
                               <span
                                 className={`px-2 py-0.5 rounded text-2xs font-bold border ${
@@ -1646,7 +1659,14 @@ export default function ForexRadarPage() {
                         return (
                           <tr key={p.ticket} className="hover:bg-bunker-800/30">
                             <td className="py-3 px-4 font-bold text-white">
-                              {p.symbol}
+                              <button
+                                type="button"
+                                onClick={() => openChartBySymbol(p.symbol, p.direction)}
+                                title={`${p.symbol} canlı grafiğini aç`}
+                                className="font-bold text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                              >
+                                {p.symbol}
+                              </button>
                               <div className="text-2xs text-bunker-muted">#{p.ticket}</div>
                             </td>
                             <td className="py-3 px-3 whitespace-nowrap">
@@ -1719,7 +1739,16 @@ export default function ForexRadarPage() {
                       const isBuy = p.direction === "BUY";
                       return (
                         <tr key={p.id} className="hover:bg-bunker-800/30">
-                          <td className="py-3 px-4 font-bold text-white">{p.display || p.symbol}</td>
+                          <td className="py-3 px-4 font-bold text-white">
+                            <button
+                              type="button"
+                              onClick={() => openChartBySymbol(p.symbol, p.direction, p.display)}
+                              title={`${p.display || p.symbol} canlı grafiğini aç`}
+                              className="font-bold text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 text-left transition-colors cursor-pointer"
+                            >
+                              {p.display || p.symbol}
+                            </button>
+                          </td>
                           <td className="py-3 px-3 whitespace-nowrap">
                             <span
                               className={`px-2 py-0.5 rounded text-2xs font-bold border ${
@@ -2027,16 +2056,23 @@ export default function ForexRadarPage() {
       {/* ================================================================== */}
 
       {/* Profesyonel Grafik Modalı */}
-      {chartModalCandidate && (
+      {(chartModalCandidate || chartModalSymbol) && (
         <ForexChartModal
           candidate={chartModalCandidate}
-          onClose={() => setChartModalCandidate(null)}
+          symbol={chartModalSymbol?.symbol}
+          display={chartModalSymbol?.display}
+          action={chartModalSymbol?.action}
+          onClose={() => {
+            setChartModalCandidate(null);
+            setChartModalSymbol(null);
+          }}
           onOpenLotCalculator={(sym, sl) => {
             setCalcSymbol(sym);
             setCalcSlPips(sl);
             setLotCalcOpen(true);
             selectTab("positions");
             setChartModalCandidate(null);
+            setChartModalSymbol(null);
             window.setTimeout(() => {
               document.getElementById("lot-calculator")?.scrollIntoView({ behavior: "smooth" });
             }, 100);

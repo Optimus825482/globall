@@ -218,6 +218,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
   const [tickers, setTickers] = useState<Record<string, any>>({});
   const [gateSnapshotXAU, setGateSnapshotXAU] = useState<GateSnapshot | null>(null);
   const [chartModalCandidate, setChartModalCandidate] = useState<ForexCandidateMeta | null>(null);
+  const [chartSymbol, setChartSymbol] = useState<{ symbol: string; display?: string } | null>(null);
 
   // Forex Teknik sekmesi filtreleri
   const [forexCategoryFilter, setForexCategoryFilter] = useState<string>("ALL");
@@ -791,7 +792,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   return (
                     <div key={k.symbol} className="p-3.5 rounded-xl bg-bunker-900/80 border border-bunker-800 shadow-sm">
                       <div className="flex items-start justify-between gap-1.5">
-                        <span className="text-2xs font-bold text-white uppercase block truncate">{k.symbol}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChartSymbol({ symbol: k.symbol, display: k.display });
+                          }}
+                          title="Canlı grafiği aç"
+                          className="text-2xs font-bold text-white uppercase block truncate hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                        >
+                          {k.symbol}
+                        </button>
                         {hasOpen ? (
                           <span className="px-1.5 py-0.5 rounded text-2xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
                             ⚡ {k.open_count} AÇIK
@@ -881,7 +892,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                         <tr key={p.ticket} className="hover:bg-bunker-800/40 transition-colors">
                           <td className="py-3 px-4 text-cyan-300 font-black">#{p.ticket}</td>
                           <td className="py-3 px-3">
-                            <span className="font-black text-white text-sm">{p.symbol}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setChartSymbol({ symbol: p.symbol });
+                              }}
+                              title="Canlı grafiği aç"
+                              className="font-black text-white text-sm hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                            >
+                              {p.symbol}
+                            </button>
                             {(p.strategy_label || p.strategy) && (
                               <span className="ml-1.5 px-1.5 py-0.5 rounded text-2xs font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
                                 {p.strategy_label || p.strategy}
@@ -977,7 +998,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                     >
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-black text-white">{tr.symbol}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setChartSymbol({ symbol: tr.symbol, display: tr.display });
+                            }}
+                            title="Canlı grafiği aç"
+                            className="font-black text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                          >
+                            {tr.symbol}
+                          </button>
                           <span className={`px-1.5 py-0.2 rounded text-2xs font-black ${tr.direction === "BUY" ? "text-emerald-400" : "text-rose-400"}`}>
                             {tr.direction}
                           </span>
@@ -1213,9 +1244,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                             [{log.category}]
                           </span>
                           {log.symbol && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-mono font-bold bg-bunker-800 text-slate-200 border border-bunker-700">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setChartSymbol({ symbol: log.symbol! });
+                              }}
+                              title="Canlı grafiği aç"
+                              className="px-1.5 py-0.2 rounded text-2xs font-mono font-bold bg-bunker-800 text-slate-200 border border-bunker-700 hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                            >
                               {log.symbol}
-                            </span>
+                            </button>
                           )}
                           {log.strategy_label && (
                             <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-purple-900/40 text-purple-300 border border-purple-600/50">
@@ -1293,7 +1332,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-base font-black text-white">{c.display || c.symbol}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChartSymbol({ symbol: c.symbol, display: c.display });
+                          }}
+                          title="Canlı grafiği aç"
+                          className="text-base font-black text-white hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                        >
+                          {c.display || c.symbol}
+                        </button>
                         <span className="text-2xs px-1.5 py-0.5 rounded bg-bunker-800 text-bunker-muted uppercase">
                           {c.category}
                         </span>
@@ -1428,7 +1477,17 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                       <span className="text-2xl">{item.icon}</span>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-black text-white text-base">{item.sym}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setChartSymbol({ symbol: item.sym, display: c?.display || item.sym });
+                            }}
+                            title="Canlı grafiği aç"
+                            className="font-black text-white text-base hover:text-cyan-300 hover:underline decoration-cyan-400/60 underline-offset-2 cursor-pointer text-left"
+                          >
+                            {item.sym}
+                          </button>
                           <span className="text-2xs px-1.5 py-0.5 rounded bg-purple-900/30 text-purple-300 font-bold border border-purple-600/40">
                             7/24
                           </span>
@@ -1510,6 +1569,13 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
         <ForexChartModal
           candidate={chartModalCandidate}
           onClose={() => setChartModalCandidate(null)}
+        />
+      )}
+      {chartSymbol && (
+        <ForexChartModal
+          symbol={chartSymbol.symbol}
+          display={chartSymbol.display}
+          onClose={() => setChartSymbol(null)}
         />
       )}
     </div>
