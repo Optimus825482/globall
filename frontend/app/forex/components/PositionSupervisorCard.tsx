@@ -298,7 +298,11 @@ export default function PositionSupervisorCard() {
         method: "POST",
       })) as ReviewResponse;
 
-      const proposals = Array.isArray(res?.proposals) ? res.proposals : [];
+      const nowSec = Math.floor(Date.now() / 1000);
+      const proposals = (Array.isArray(res?.proposals) ? res.proposals : []).map((p) => ({
+        ...p,
+        ts: p.ts ?? p.time ?? nowSec,
+      }));
       setManualProposals(proposals);
       setManualAppliedFlag(Boolean(res?.applied ?? apply));
       setManualNote(res?.note || res?.message || res?.summary || "");
@@ -600,8 +604,11 @@ export default function PositionSupervisorCard() {
                       </p>
 
                       {tsVal != null && (
-                        <div className="text-2xs text-bunker-muted tabular-nums">
-                          {formatUtc3(tsVal)}
+                        <div className="flex items-center justify-between gap-2 text-2xs text-bunker-muted tabular-nums pt-0.5 border-t border-bunker-800/60">
+                          <span>
+                            {applied ? "Uygulama zamanı:" : "Öneri zamanı:"}{" "}
+                            <span className="text-slate-300 font-semibold">{formatUtc3(tsVal)}</span>
+                          </span>
                         </div>
                       )}
                     </div>
