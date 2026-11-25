@@ -178,3 +178,113 @@ def test_invalidation_findings_rules():
     assert not ps.invalidation_findings(P, {**clean, "usd_bias": "USD_NEUTRAL", "dxy_regime": "USD_WEAK"}, CFG)
     assert not ps.invalidation_findings(P, {**clean, "minutes_open": 90, "progress": 0.5}, CFG)            # ilerleme var
     assert ps.invalidation_findings(P, {**clean, "minutes_open": 90, "progress": -0.5}, CFG)[0]["kind"] == "invalidation:ilerleme_yok"
+
+
+# ----------------------------------------------------------------------------- AI Pozisyon Doktoru (tighten_sl, start_trailing, partial_close, apply)
+
+def test_validate_and_build_tighten_sl():
+    p = position(entry_price=4000.0, current_price=4004.0, sl_price=3990.0, tp_price=4020.0)
+    # 50% of (4004 - 3990) = 7 → 3997.0
+    v = ps.validate_action(p, {"action": "tighten_sl", "pct": 50})
+    assert v["ok"] and v["action"] == "tighten_sl" and v["sl"] == 3997.0 and v["pct"] == 50
+    # clamping: pct 99 → 70, pct 5 → 25, invalid → 50
+    assert ps.validate_action(p, {"action": "tighten_sl", "pct": 99})["pct"] == 70
+    assert ps.validate_action(p, {"action": "tighten_sl", "pct": 5})["pct"] == 25
+    assert ps.validate_action(p, {"action": "tighten_sl", "pct": "bad"})["pct"] == 50
+    # SELL
+    sell = position(direction="SELL", entry_price=4000.0, current_price=3996.0, sl_price=4010.0)
+    vs = ps.validate_action(sell, {"action": "tighten_sl", "pct": 50})
+    assert vs["ok"] and vs["sl"] == 4003.0
+    # missing SL rejected
+    assert not ps.validate_action(position(sl_price=0), {"action": "tighten_sl", "pct": 50})["ok"]
+    # command preserves TP
+    cmd = ps.build_command(p, "tighten_sl", {"pct": 50})
+    assert cmd["action"] == "MODIFY_SLTP" and cmd["sl"] == 3997.0 and cmd["tp"] == 4020.0 and "tp_action" not in cmd
+
+
+def test_validate_and_build_start_trailing():
+    p = position(entry_price=4000.0, current_price=4004.0, sl_price=3990.0, tp_price=4020.0)
+    v = ps.validate_action(p, {"action": "start_trailing"})
+    assert v["ok"] and v["action"] == "start_trailing" and v["cancel_tp"] is True
+    assert 4000.0 < v["sl"] < 4004.0
+    cmd = ps.build_command(p, "start_trailing")
+    assert cmd["action"] == "MODIFY_SLTP" and cmd["sl"] == v["sl"] and cmd["tp"] == 0.0 and cmd["tp_action"] == "cancel"
+    # losing position cannot start trailing
+    assert not ps.validate_action(position(current_price=3995.0), {"action": "start_trailing"})["ok"]
+    # SELL in profit
+    sell = position(direction="SELL", entry_price=4000.0, current_price=3995.0, sl_price=4010.0)
+    vs = ps.validate_action(sell, {"action": "start_trailing"})
+    assert vs["ok"] and 3995.0 < vs["sl"] < 4000.0
+
+
+def test_build_command_partial_close():
+    p = position(lots=0.10)
+    cmd = ps.build_command(p, "partial_close", {"pct": 50})
+    assert cmd["action"] == "CLOSE_PARTIAL" and cmd["ticket"] == 7 and cmd["volume"] == 0.05
+    # min lot guard: 0.01 lot * 50% = 0.005 → rounds to 0.01 == lots (not < lots) → None
+    assert ps.build_command(position(lots=0.01), "partial_close", {"pct": 50}) is None
+    # invalid pct → None
+    assert ps.build_command(p, "partial_close", {"pct": 70}) is None
+
+
+def test_get_supervisor_status():
+    class S:
+        position_supervisor_mode = "act"
+        position_supervisor_llm_enabled = True
+        position_supervisor_llm_cooldown_min = 20
+
+    st = ps.get_supervisor_status(S())
+    assert st["mode"] == "act" and st["llm_enabled"] is True and st["cooldown_min"] == 20
+    assert "last_run_ts" in st and "last_llm_ts" in st and "recent_actions" in st and "open_findings" in st
+
+
+def test_review_positions_apply_and_panic_close_guard(monkeypatch):
+    import asyncio
+    from app import database, llm_analysis
+    from app import forex_news
+    from app.routers import forex as fx
+
+    p = position(ticket=42, symbol="XAUUSD", direction="BUY", lots=0.10, entry_price=4000.0, current_price=4004.0, sl_price=3990.0, tp_price=4020.0)
+    monkeypatch.setitem(fx._MT5_STATE, "open_positions", [p])
+    pending = []
+    monkeypatch.setitem(fx._MT5_STATE, "pending_commands", pending)
+
+    async def fake_news(force_refresh=False):
+        return []
+
+    async def fake_exc(since_ts=0):
+        return []
+
+    logged = []
+
+    async def fake_log(ev):
+        logged.append(ev)
+
+    async def fake_stream(ctx, msgs, **kw):
+        yield {"event": "delta", "data": {"text": '{"ticket": 42, "action": "tighten_sl", "pct": 50, "reason": "yapı zayıfladı"}'}}
+
+    monkeypatch.setattr(forex_news, "get_forex_news", fake_news)
+    monkeypatch.setattr(database, "list_position_excursions", fake_exc)
+    monkeypatch.setattr(database, "log_supervisor_event", fake_log)
+    monkeypatch.setattr(llm_analysis, "stream_chat", fake_stream)
+    monkeypatch.setattr(fx, "_log_auto_decision", lambda *a, **kw: None)
+
+    class S:
+        position_supervisor_mode = "act"
+        position_supervisor_llm_enabled = True
+        position_supervisor_llm_cooldown_min = 15
+
+    res = asyncio.run(ps.review_positions(S(), timeout=10.0, tickets=[42], extra_findings_by_ticket={42: [{"kind": "invalidation:dxy_ters", "detail": "DXY ters"}]}, apply=True))
+    assert res["applied_count"] == 1
+    assert len(pending) == 1 and pending[0]["action"] == "MODIFY_SLTP" and pending[0]["sl"] == 3997.0
+
+    # Panic-close guard: close with 0 extra findings & 0 assess close findings → downgraded to tighten_sl (50%)
+    pending.clear()
+
+    async def fake_stream_close(ctx, msgs, **kw):
+        yield {"event": "delta", "data": {"text": '{"ticket": 42, "action": "close", "pct": null, "reason": "panik"}'}}
+
+    monkeypatch.setattr(llm_analysis, "stream_chat", fake_stream_close)
+    res2 = asyncio.run(ps.review_positions(S(), timeout=10.0, tickets=[42], extra_findings_by_ticket={42: []}, apply=True))
+    assert res2["applied_count"] == 1
+    assert pending[0]["action"] == "MODIFY_SLTP" and pending[0]["sl"] == 3997.0

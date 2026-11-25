@@ -12,6 +12,7 @@ import GateSnapshotCard, { type GateSnapshot } from "./components/GateSnapshotCa
 import OpportunityScanSection, {
   type OpportunityScanSummary,
 } from "./components/OpportunityScanSection";
+import PositionSupervisorCard from "./components/PositionSupervisorCard";
 
 // PERFORMANS: Ağır modallar yalnızca kullanıcı açtığında yüklenir.
 const ForexChartModal = dynamic(() => import("./components/ForexChartModal"), { ssr: false });
@@ -1752,6 +1753,9 @@ export default function ForexRadarPage() {
               </div>
             )}
           </section>
+
+          {/* AI POZİSYON DOKTORU */}
+          <PositionSupervisorCard />
 
           {/* DARALTILABİLİR İKİNCİL DETAYLAR */}
           <div className="space-y-3">

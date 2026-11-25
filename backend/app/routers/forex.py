@@ -5949,7 +5949,9 @@ class ForexAutoPaperSettings(BaseModel):
         0.5, ge=0.0, le=20.0, description="Yön aleyhine beklenen taşıma bu eşiği (pip) aşarsa "
                                           "giriş engellenir (0 = veto kapalı).")
     risk_block_losing_adds: bool = Field(True, description="Zarardaki aynı yönlü pozisyona ekleme (ortalama düşürme) yasak")
-    position_supervisor_mode: str = Field("log", pattern="^(off|log|act)$", description="Açık pozisyon gözetimi: off · log (varsayılan: öneriyi günlüğe yazar) · act (olay öncesi başabaş/risk azaltma ve hafta sonu öncesi kapama komutu verir)")
+    position_supervisor_mode: str = Field("act", pattern="^(off|log|act)$", description="Açık pozisyon gözetimi: off · log (öneriyi günlüğe yazar) · act (varsayılan: olay öncesi başabaş/risk azaltma, hafta sonu kapama ve AI Pozisyon Doktoru komutlarını uygular)")
+    position_supervisor_llm_enabled: bool = Field(True, description="Olay-tetikli AI Pozisyon Doktoru: tez kırılımı/rejim değişimi olunca açık pozisyonu LLM ile yeniden değerlendirir")
+    position_supervisor_llm_cooldown_min: int = Field(15, ge=5, le=120, description="Aynı bilet için AI Pozisyon Doktoru soğuma süresi (dakika)")
     position_event_window_min: int = Field(10, ge=1, le=60, description="Yüksek etkili veriye bu kadar dakika kala açık pozisyon için olay-riski kuralı devreye girer")
     position_flat_before_close_min: int = Field(30, ge=5, le=240, description="Haftalık piyasa kapanışından (Cuma 17:00 New York) bu kadar dakika önce FX/altın pozisyonları hafta sonu riski olarak işaretlenir")
     llm_review_explore_pct: float = Field(5.0, ge=0.0, le=50.0, description="LLM'in reddettiği işlemlerin bu yüzdesi KONTROLLÜ KEŞİF olarak yine açılır (yalnız veto modu): vetonun gerçek değerini ölçmek için")

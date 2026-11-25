@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app import database, portfolio_analytics, portfolio_risk, position_supervisor
 from app.api_common import rate_limit
@@ -135,13 +136,47 @@ async def positions_supervisor_log(days: int = Query(7, ge=1, le=90), limit: int
     return {"days": days, "count": len(rows), "events": rows}
 
 
+class SupervisorToggleRequest(BaseModel):
+    mode: Optional[str] = Field(None, pattern="^(off|log|act)$")
+    llm_enabled: Optional[bool] = None
+    cooldown_min: Optional[int] = Field(None, ge=5, le=120)
+
+
+class PositionReviewRequest(BaseModel):
+    apply: Optional[bool] = None
+
+
+@router.get("/positions/supervisor-status")
+async def positions_supervisor_status():
+    from app.routers import forex as fx
+    return position_supervisor.get_supervisor_status(fx._AUTO_SETTINGS)
+
+
+@router.post("/positions/supervisor-toggle")
+async def positions_supervisor_toggle(payload: SupervisorToggleRequest):
+    from app.routers import forex as fx
+    if payload.mode is not None:
+        fx._AUTO_SETTINGS.position_supervisor_mode = payload.mode
+    if payload.llm_enabled is not None:
+        fx._AUTO_SETTINGS.position_supervisor_llm_enabled = bool(payload.llm_enabled)
+    if payload.cooldown_min is not None:
+        fx._AUTO_SETTINGS.position_supervisor_llm_cooldown_min = int(payload.cooldown_min)
+    fx.persist_settings(fx._AUTO_SETTINGS)
+    return position_supervisor.get_supervisor_status(fx._AUTO_SETTINGS)
+
+
 @router.post("/positions/llm-review")
-async def positions_llm_review():
-    """LLM'e açık pozisyonlar için ÖNERİ yaptırır. Öneriler beyaz listeyle doğrulanır ve UYGULANMAZ."""
+@router.post("/positions/review")
+async def positions_llm_review(
+    apply: bool = Query(False),
+    body: Optional[PositionReviewRequest] = Body(default=None),
+):
+    """LLM'e açık pozisyonlar için değerlendirme yaptırır; apply=True ise doğrulanmış komutları MT5 kuyruğuna ekler."""
     if not rate_limit("positions_llm_review", rate_per_sec=0.05, burst=2):
         raise HTTPException(status_code=429, detail="Çok sık istendi, biraz bekleyin")
     from app.routers import forex as fx
+    should_apply = body.apply if (body is not None and body.apply is not None) else apply
     try:
-        return await position_supervisor.review_positions(fx._AUTO_SETTINGS)
+        return await position_supervisor.review_positions(fx._AUTO_SETTINGS, apply=should_apply)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM önerisi alınamadı: {type(exc).__name__}")
