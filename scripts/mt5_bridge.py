@@ -1325,6 +1325,40 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                             if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
                                 POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
 
+            # 1.5 HİBRİT KISMİ KÂR AL (TP1: 1.5R'de %65 Kârı Cebe Al, Kalan %35 Runner)
+            # 2026-11-25: Sadece trailing'de yüzen kârın %40-50'si geri veriliyordu.
+            # 1.5R'ye ulaşınca hacmin %65'ini anında realize et (sıfır geri verme),
+            # kalan %35'i risksiz başabaş+$1 ile trailing runner olarak koştur.
+            if (
+                ticket not in PARTIAL_TP_MAP
+                and _sl0_ref > 0
+                and pnl_pips >= (1.5 * _sl0_ref)
+                and float(getattr(p, "volume", 0.0) or 0.0) >= 0.02
+            ):
+                _cur_vol = float(p.volume)
+                _close_vol = round(_cur_vol * 0.65, 2)
+                _close_vol = max(0.01, min(_close_vol, round(_cur_vol - 0.01, 2)))
+                if 0.01 <= _close_vol < _cur_vol:
+                    _ptp_res = execute_close_partial({"ticket": ticket, "volume": _close_vol})
+                    if _ptp_res and _ptp_res.get("success"):
+                        PARTIAL_TP_MAP[ticket] = True
+                        print(
+                            f"  💰 [HİBRİT TP1 · %65 REALİZE]: {sym} #{ticket} "
+                            f"{_close_vol:.2f}/{_cur_vol:.2f} lot kapatıldı (+{pnl_pips:.1f}p ≥ 1.5R). "
+                            f"Kalan {_cur_vol - _close_vol:.2f} lot risksiz runner."
+                        )
+                        # Kalan %35 runner için SL'yi en az başabaş+$1 seviyesine çek
+                        if direction == "BUY":
+                            _r_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
+                            if _r_sl < cur_p and (cur_sl == 0.0 or _r_sl > cur_sl):
+                                target_sl = _r_sl if target_sl is None else max(target_sl, _r_sl)
+                                POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
+                        else:
+                            _r_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
+                            if _r_sl > cur_p and (cur_sl == 0.0 or _r_sl < cur_sl):
+                                target_sl = _r_sl if target_sl is None else min(target_sl, _r_sl)
+                                POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
+
             # 2. TRAILING STOP (İz Süren Stop + Kademeli Profit Ratchet)
             # BE kilitliyse (be_enabled ve >= 0.8R) VEYA pnl_pips >= max(eff_trail_pips, _sl0_ref) (en az 1.0R)
             chand_mult = float(CURRENT_SETTINGS.get("chandelier_atr_mult", 0.0) or 0.0)
@@ -1418,9 +1452,20 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                 or be_triggered                    # BE/koruma eşiği aşıldı (be_enabled=True iken)
             )
             pos_tp_cancel = (pos_exits or {}).get("tp_cancel_on_trail")
+            _hybrid_runner_ready = (
+                bool(PARTIAL_TP_MAP.get(ticket))
+                or (
+                    float(getattr(p, "volume", 0.0) or 0.0) < 0.02
+                    and _sl0_ref > 0
+                    and pnl_pips >= (2.0 * _sl0_ref)
+                )
+            )
             tp_cancel_allowed = (
-                bool(pos_tp_cancel) if pos_tp_cancel is not None
-                else bool(CURRENT_SETTINGS.get("tp_cancel_on_trail", False))
+                (
+                    bool(pos_tp_cancel) if pos_tp_cancel is not None
+                    else bool(CURRENT_SETTINGS.get("tp_cancel_on_trail", False))
+                )
+                and _hybrid_runner_ready
             )
             cancel_tp = (
                 protection_active
