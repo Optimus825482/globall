@@ -1359,23 +1359,37 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                                 target_sl = _r_sl if target_sl is None else min(target_sl, _r_sl)
                                 POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
 
-            # 2. TRAILING STOP (İz Süren Stop + Kademeli Profit Ratchet)
+            # 2. TRAILING STOP (İz Süren Stop + 5 Kademeli Progressive Profit Ratchet)
             # BE kilitliyse (be_enabled ve >= 0.8R) VEYA pnl_pips >= max(eff_trail_pips, _sl0_ref) (en az 1.0R)
             chand_mult = float(CURRENT_SETTINGS.get("chandelier_atr_mult", 0.0) or 0.0)
             entry_atr = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
             mfe = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
             use_chandelier = chand_mult > 0 and entry_atr > 0 and mfe > 0
-            # Profit Ratchet: +2.0R ve +3.0R kâr eşiklerinde trailing mesafesini kademeli daralt
-            # (kârın >%45'ini geri vermeyi engeller, 1.0R-2.0R arası nefes alanını korur)
-            eff_chand_mult = chand_mult
-            if use_chandelier and _sl0_ref > 0:
-                if mfe >= 3.0 * _sl0_ref:
-                    eff_chand_mult = chand_mult * 0.60
-                elif mfe >= 2.0 * _sl0_ref:
-                    eff_chand_mult = chand_mult * 0.72
+
+            # 5 Kademeli Progressive Profit Ratchet: kâr arttıkça takip mesafesi daralır.
+            # Alt güvenlik tabanı: max(spread_pips * 2.5, 0.35 * entry_atr) — 1m fitilde erken stop koruması.
+            _ratchet_mult = 1.0
+            _ratchet_mfe_cap = None
+            if _sl0_ref > 0:
+                _r_peak = max(mfe, pnl_pips) / _sl0_ref
+                if _r_peak >= 4.0:
+                    _ratchet_mult, _ratchet_mfe_cap = 0.30, 0.18
+                elif _r_peak >= 3.0:
+                    _ratchet_mult, _ratchet_mfe_cap = 0.45, 0.25
+                elif _r_peak >= 2.0:
+                    _ratchet_mult, _ratchet_mfe_cap = 0.60, 0.35
+                elif _r_peak >= 1.5:
+                    _ratchet_mult, _ratchet_mfe_cap = 0.80, 0.45
+
+            _cur_spread_pips = ((s_info.spread * s_info.point) / pip_size) if (s_info and pip_size > 0) else 0.0
+            _min_trail_floor_pips = max(_cur_spread_pips * 2.5, (0.35 * entry_atr) if entry_atr > 0 else 0.0, 2.0)
+
+            eff_chand_mult = chand_mult * _ratchet_mult
             chand_dist_pips = eff_chand_mult * entry_atr
-            if use_chandelier and _sl0_ref > 0 and mfe >= 2.0 * _sl0_ref:
-                chand_dist_pips = min(chand_dist_pips, mfe * 0.45)
+            if use_chandelier and _ratchet_mfe_cap is not None and mfe > 0:
+                chand_dist_pips = min(chand_dist_pips, mfe * _ratchet_mfe_cap)
+            if use_chandelier:
+                chand_dist_pips = max(chand_dist_pips, _min_trail_floor_pips)
             chand_cand_pips = (mfe - chand_dist_pips) if use_chandelier else 0.0
             _trail_arm_threshold = max(eff_trail_pips, _sl0_ref)
             _trail_active = (
@@ -1418,7 +1432,11 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                                 target_sl = cand_sl
                                 POSITION_PROTECTION_MAP[ticket] = "TRAILING"
                 else:
-                    trail_dist = eff_trail_pips * pip_size
+                    _fixed_trail_pips = eff_trail_pips * _ratchet_mult
+                    if _ratchet_mfe_cap is not None and mfe > 0:
+                        _fixed_trail_pips = min(_fixed_trail_pips, mfe * _ratchet_mfe_cap)
+                    _fixed_trail_pips = max(_fixed_trail_pips, _min_trail_floor_pips)
+                    trail_dist = _fixed_trail_pips * pip_size
                     if direction == "BUY":
                         cand_sl = round(cur_p - trail_dist, digits)
                         # Trailing SL asla 1$ Breakeven seviyesinin altına düşmez!
