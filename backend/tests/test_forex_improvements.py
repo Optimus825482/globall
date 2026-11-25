@@ -684,9 +684,8 @@ class TestWeakHourGuardAndSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cfg.adx_filter_enabled)
         self.assertEqual(cfg.adx_min, 20.0)
         self.assertTrue(cfg.supertrend_filter_enabled)
-        # TP-iptal canlı VARSAYILAN AÇIK (2026-10-09 kararı: IS/OOS/OOS2/F1 dört pencerede
-        # işaret-tutarlı tek kazanan, net + maxDD iyi). Geri alma: FOREX_TP_CANCEL_ON_TRAIL=false
-        self.assertTrue(cfg.tp_cancel_on_trail)
+        # TP-iptal canlı VARSAYILAN KAPALI (sabit TP hedefleri korunur). Açmak için: FOREX_TP_CANCEL_ON_TRAIL=true
+        self.assertFalse(cfg.tp_cancel_on_trail)
         # Zayıf saat kalkanı kullanıcı kararıyla kaldırıldı — varsayılan boş liste
         self.assertEqual(list(cfg.blocked_hours_utc), [])
         # EV kalkanı varsayılanları (WR 45: 2026-10-06 30g replay A/B kararı; 35 → 45)

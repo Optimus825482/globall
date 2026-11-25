@@ -81,6 +81,9 @@ MIN_AGREEMENT = 0.75               # TradingView zaman dilimi uyumu
 MIN_TV_AVG = 0.25                  # TradingView ağırlıklı reytingin mutlak değeri
 MIN_OWN_SCORE = 2.5                # kendi analiz puanımızın mutlak değeri
 MIN_EXPLICIT_SCORE = 1.5           # kullanıcı sohbette AÇIKÇA emir isterse (yön teknikle aynı olmalı) daha düşük puan yeter
+MAX_OWN_SCORE = 5.0                # forex_research.analyze_symbol skor tavanı (-5..+5 ölçeği)
+BULL_TRAP_SCORE = MAX_OWN_SCORE * 0.88  # aşırı yükseliş eşiği (tavanın %88'i = 4.4)
+BULL_TRAP_MIN_AGREE = 0.60         # bu uzlaşının altındaki aşırı BUY boğa tuzağı sayılır
 NEWS_BLOCK_MIN = 30                # AÇIKLANMAMIŞ yüksek etkili veriye bu kadar dakika kala giriş yok (sonucu bilinmiyor)
 NEWS_LOOKBACK_MIN = 180            # AÇIKLANMIŞ verinin sonucu bu süre boyunca yönü etkiler
 NEWS_DECISIVE = 1.0                # ağırlıklı net etki bu eşiği aşarsa destekler/bloklar (2★=1, 3★=2)
@@ -124,6 +127,30 @@ def news_effect(calendar: Optional[Dict[str, Any]], symbol: str, bias: str) -> D
     return {"net": net, "verdict": verdict, "lines": lines}
 
 
+def _effective_agreement(analysis: Dict[str, Any], scan_row: Dict[str, Any], bias: str) -> float:
+    """Zaman dilimi uzlaşı oranını [0..1] hesaplar (scan_row, analysis veya frames üzerinden)."""
+    candidates: List[float] = []
+    for src in (scan_row, analysis):
+        if src.get("agreement") is not None:
+            try:
+                candidates.append(float(src["agreement"]))
+            except (TypeError, ValueError):
+                pass
+    frames = analysis.get("frames") or {}
+    if isinstance(frames, dict):
+        scores: List[float] = []
+        for f in frames.values():
+            if isinstance(f, dict) and f.get("score") is not None:
+                try:
+                    scores.append(float(f["score"]))
+                except (TypeError, ValueError):
+                    pass
+        if scores:
+            sign = 1.0 if bias == "BUY" else -1.0
+            candidates.append(sum(1 for s in scores if s * sign > 0.0) / len(scores))
+    return min(candidates) if candidates else 1.0
+
+
 def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], calendar: Optional[Dict[str, Any]],
                pip_size: float, explicit: bool = False) -> Dict[str, Any]:
     """Saf karar fonksiyonu: {ok, reason, plan?}. Ağ/DB/MT5 yok (test edilebilir)."""
@@ -140,11 +167,11 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
             return {"ok": False, "reason": "zaman dilimleri yeterince hemfikir değil"}
     scan_row = scan_row or {}
     
-    # --- AI SUITE KAPISI: OctoBot & Vibe BoÄa TuzaÄÄ± Denetimi ---
+    # --- Boğa Tuzağı Denetimi (gerçek -5..+5 skor ölçeği) ---
     score_val = float(analysis.get("score") or 0.0)
-    # Hacim zayÄ±fken aÅÄ±rÄ± yÃ¼kseliÅ veya uyumsuzluk boÄa tuzaÄÄ±dÄ±r
-    if bias == "BUY" and score_val > 88.0 and float(analysis.get("agreement") or 0.8) < 0.60:
-        return {"ok": False, "reason": "AI Tuzak Tespiti: Ä°ndikatÃ¶r uzlaÅÄ±sÄ± dÃ¼ÅÃ¼k, BoÄa TuzaÄÄ± (Bull Trap) riski"}
+    agreement = _effective_agreement(analysis, scan_row, bias)
+    if bias == "BUY" and score_val >= BULL_TRAP_SCORE and agreement < BULL_TRAP_MIN_AGREE:
+        return {"ok": False, "reason": "AI Tuzak Tespiti: İndikatör uzlaşısı düşük, Boğa Tuzağı (Bull Trap) riski"}
     
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}

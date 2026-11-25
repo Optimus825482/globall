@@ -159,6 +159,7 @@ def _patch_open(monkeypatch, ok=True, reason="x"):
 
     monkeypatch.setattr(fx, "open_scan_position", fake_open)
     monkeypatch.setattr(fx, "get_symbol_trading_specs", lambda sym, **k: {"pip_size": 0.1, "pip_val": 10.0})
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "risk_gate_mode", "shadow")
     ot._last_open.clear()
     return calls
 
@@ -346,6 +347,34 @@ def test_explicit_plan_uses_lower_score_and_skips_tradingview_gate():
     v = ot.plan_trade(weak, None, None, 0.1, explicit=True)
     assert v["ok"] and v["plan"]["direction"] == "SELL" and "Kullanıcı komutuyla" in v["plan"]["note"]
     assert not ot.plan_trade(analysis(score=1.0, bias="SELL"), None, None, 0.1, explicit=True)["ok"]   # 1.0 < 1.5
+
+
+def test_bull_trap_guard_uses_real_score_scale_and_agreement():
+    """Boğa tuzağı kapısı forex_research'ün -5..+5 skor ölçeğini ve gerçek uzlaşı kaynaklarını kullanır."""
+    # 1) Aşırı BUY skoru (4.5/5.0) + düşük frames uzlaşısı (1/3 = 0.33 < 0.60) → engellenir (explicit & normal)
+    trap_frames = {"1h": {"atr": 4.0, "score": 4.8}, "5m": {"score": -0.5}, "15m": {"score": -0.5}}
+    v_explicit = ot.plan_trade(analysis(score=4.5, frames=trap_frames), None, None, 0.1, explicit=True)
+    assert not v_explicit["ok"] and "Boğa Tuzağı" in v_explicit["reason"]
+
+    v_scan = ot.plan_trade(analysis(score=4.5, frames=trap_frames), SCAN, None, 0.1, explicit=False)
+    assert not v_scan["ok"] and "Boğa Tuzağı" in v_scan["reason"]
+
+    # 2) scan_row.agreement düşükken (explicit modda) aşırı BUY yine engellenir
+    v_low_scan = ot.plan_trade(analysis(score=4.5), {**SCAN, "agreement": 0.45}, None, 0.1, explicit=True)
+    assert not v_low_scan["ok"] and "Boğa Tuzağı" in v_low_scan["reason"]
+
+    # 3) Aşırı BUY skoru ama zaman dilimleri hemfikirse (uzlaşı >= 0.60) → geçer
+    v_aligned = ot.plan_trade(analysis(score=4.5), SCAN, None, 0.1, explicit=False)
+    assert v_aligned["ok"]
+
+    # 4) Eşik altı skor (örn. 3.4) düşük frames uzlaşısıyla tuzak kapısına takılmaz
+    v_moderate = ot.plan_trade(analysis(score=3.4, frames=trap_frames), None, None, 0.1, explicit=True)
+    assert v_moderate["ok"]
+
+    # 5) SELL yönü Boğa Tuzağı kapısına takılmaz
+    sell_frames = {"1h": {"atr": 4.0, "score": -4.8}, "5m": {"score": 0.5}, "15m": {"score": 0.5}}
+    v_sell = ot.plan_trade(analysis(bias="SELL", score=-4.5, frames=sell_frames), None, None, 0.1, explicit=True)
+    assert v_sell["ok"]
 
 
 def test_open_requested_blocks_opposite_direction_and_opens_matching(monkeypatch):

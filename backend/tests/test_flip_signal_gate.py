@@ -22,7 +22,7 @@ def _gate_ok(settings: ForexAutoPaperSettings, score: float, spread_pips: float,
 class TestFlipScoreGate:
     def test_default_ignores_min_score(self):
         s = ForexAutoPaperSettings()
-        assert s.flip_ignore_min_score is True
+        assert s.flip_ignore_min_score is False
 
     def test_low_score_still_flips_when_ignoring(self):
         """Skor 0 olsa bile flip yapılır (kullanıcı kararı: koşulsuz flip)."""

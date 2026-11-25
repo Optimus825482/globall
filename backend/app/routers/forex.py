@@ -762,7 +762,7 @@ ATR_USE_WILDER = True
 # Bu yüzden canlı için VARSAYILAN AÇIK. Geri almak: FOREX_TP_CANCEL_ON_TRAIL=false.
 # Kanıt: outputs/exit_sweep/FINDINGS.md + PREREG_V18_F1.md.
 FOREX_TP_CANCEL_ON_TRAIL_DEFAULT = (
-    os.getenv("FOREX_TP_CANCEL_ON_TRAIL", "true").strip().lower() == "true"
+    os.getenv("FOREX_TP_CANCEL_ON_TRAIL", "false").strip().lower() == "true"
 )
 
 _LAST_GOLD_EXIT_TIME = 0.0
@@ -999,13 +999,13 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
     is_gold = "XAU" in sym
     now = time.time()
     cmd_id = f"CMD-{int(now * 1000) % 1000000}"
-    spec_exits = get_symbol_trading_specs(sym, base_sl=8.0, base_be=_AUTO_SETTINGS.breakeven_pips,
-                                          base_trail=_AUTO_SETTINGS.trailing_stop_pips)
     st["pending_commands"].append({
         "id": cmd_id, "action": "OPEN_ORDER", "symbol": sym, "direction": direction, "lots": lots,
         "sl_pips": round(sl_pips, 1), "tp_pips": round(tp_pips, 1),
         "max_positions_per_symbol": _AUTO_SETTINGS.max_positions_per_symbol,
-        "be_pips": spec_exits["be_pips"], "trail_pips": spec_exits["trail_pips"],
+        "be_pips": round(sl_pips * 1.0, 1), "trail_pips": round(sl_pips * 1.2, 1),
+        "disable_scalper_be": True,
+        "tp_cancel_on_trail": False,
         "entry_atr_pips": round(float(atr_pips), 1),
         "be_lock_ratio": _AUTO_SETTINGS.gold_be_lock_ratio if is_gold else 0.40,
         "partial_pips": 0.0, "comment": f"{FIRSAT_COMMENT_TAG} {score:.0f}", "strategy": FIRSAT_STRATEGY,
@@ -5101,7 +5101,7 @@ def _evaluate_signal_gate(
     pip_target = float(cand.get("pip_target", 0.0) or 0.0)
     cur_spread = float(cand.get("spread_pips", 0.0) or 0.0)
     _is_c_sym = sym in CANLI_WEEKEND_CRYPTO_SYMBOLS or cand.get("category") == "crypto" or any(k in sym for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA"))
-    _max_spread_ratio = 0.85 if _is_c_sym else 0.20
+    _max_spread_ratio = 0.35 if _is_c_sym else 0.20
     if pip_target > 0 and cur_spread > 0 and (cur_spread / pip_target) > _max_spread_ratio:
         reasons.append("spread_cost_too_high")
 
@@ -5812,7 +5812,7 @@ async def calculate_lot_size(req: LotCalculatorRequest):
 #   Analiz: docs/FX_2026-10-13_TRAILING_BE_ANALIZ.md (§2026-11-09 ek bölümü)
 # ls_symbols = XAUUSD + US30 + NAS100: LS kolunun işlem açabildiği evren. NAS100
 #   (= MT5 'USTEC') üç pencerede de pozitif ve XAU/US30 pnl'ini düşürmüyor.
-CANLI_CHANDELIER_ATR_MULT = 0.1
+CANLI_CHANDELIER_ATR_MULT = 1.0
 CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 # Keltner Squeeze (M15) canlı sembol sabiti — kanıt 5 kanonik sembolde toplandı
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
@@ -5870,14 +5870,14 @@ class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(5.0, ge=0.1, le=30.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %5")
-    risk_gold_pct: float = Field(10.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %10")
+    risk_gold_pct: float = Field(3.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %3")
     risk_index_pct: float = Field(7.0, ge=0.1, le=20.0, description="US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %7")
     risk_crypto_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, kripto risk bütçesi (% bakiye). Varsayılan %2")
     risk_crypto_index_pct: float = Field(5.0, ge=0.1, le=20.0, description="Geriye dönük uyumluluk alanı")
     max_open_positions: int = Field(20, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
-    max_positions_per_symbol: int = Field(2, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 2: Kârlı trend piramitleme)")
+    max_positions_per_symbol: int = Field(1, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 1: Tek güvenli pozisyon)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
-    flip_ignore_min_score: bool = Field(True, description="Zıt sinyal flip'inde skor eşiğini yoksay (2026-10-14 kullanıcı kararı: 'herhangi bir stratejiden zıt sinyal gelirse açık işlem kapanıp yeni sinyalle açılsın'). True = açık pozisyon varken zıt yönde sinyal GELDİĞİ anında flip (skor eşiği aranmaz). Spread/maliyet kapısı, korelasyon kalkanı, seri-SL soğuması, risk normalizasyonu ve lot bütçesi korunur — bunlar risk kapısıdır, atlanmaz.")
+    flip_ignore_min_score: bool = Field(False, description="Zıt sinyal flip'inde skor eşiğini yoksay (Varsayılan False: Zıt yönde flip için de minimum skor eşiği aranır). Spread/maliyet kapısı, korelasyon kalkanı, seri-SL soğuması, risk normalizasyonu ve lot bütçesi korunur — bunlar risk kapısıdır, atlanmaz.")
     tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
     sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
     breakeven_enabled: bool = Field(False, description="Breakeven (BE) mekanizmasi acik/kapali (kullanici talebiyle kaldirildi)")
@@ -5891,8 +5891,8 @@ class ForexAutoPaperSettings(BaseModel):
     max_forex_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_FOREX_LOT, description="Maksimum Forex lot tavanı")
     max_gold_lot: float = Field(10.0, ge=0.01, le=HARD_MAX_GOLD_LOT, description="Maksimum Altın (XAUUSD) lot tavanı")
     max_index_lot: float = Field(2.0, ge=0.10, le=HARD_MAX_INDEX_LOT, description="Maksimum Endeks (US30/NAS100) lot tavanı")
-    gold_cooldown_sec: float = Field(60.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (min 60 sn)")
-    btc_cooldown_sec: float = Field(60.0, ge=0.0, le=900.0, description="BTCUSD kapanış sonrası soğuma süresi (sn). 2026-10-10 denetim P1-6: flip'te bu sayaç sıfırlanır; panelden ayarlanabilir hale getirildi (0 = kapalı)")
+    gold_cooldown_sec: float = Field(900.0, ge=HARD_MIN_GOLD_COOLDOWN_SEC, le=900.0, description="Altın (XAUUSD) kapanış sonrası soğuma süresi (varsayılan 900 sn = 15 dk)")
+    btc_cooldown_sec: float = Field(900.0, ge=0.0, le=900.0, description="BTCUSD kapanış sonrası soğuma süresi (sn; varsayılan 900 sn = 15 dk). 2026-10-10 denetim P1-6: flip'te bu sayaç sıfırlanır; panelden ayarlanabilir hale getirildi (0 = kapalı)")
     dxy_filter_enabled: bool = Field(True, description="DXY (ABD Dolar Endeksi) rejim filtresi: pozisyon DXY rejimiyle çelişiyorsa giriş veto edilir")
     correlation_guard: bool = Field(True, description="Pariteler arası korelasyon kalkanı: |ρ|>=0.85 aynı yönlü çakışma ve yüksek korelasyonlu küme girişlerini sınırlar")
     atr_exit_enabled: bool = Field(True, description="ATR bazlı dinamik çıkış motoru: TP ≈ 1.4x ATR mesafesine çekilir (TP'ye ulaşamama sorunu)")
@@ -5913,7 +5913,7 @@ class ForexAutoPaperSettings(BaseModel):
     llm_review_fail_open: bool = Field(False, description="LLM yanıt vermez/yavaşsa/bozuksa: False (VARSAYILAN, 2026-11-09) = işlem AÇILMAZ · True = işlem yine açılır (eski davranış). Ölçüm (517 karar): hatalı kararların gölge sonucu -0.17 R, hatasız kararlarınki +0.07 R → hata durumunda işlem açmak kaybettiriyor. Hata oranı %16, medyan gecikme 26 sn.")
     llm_review_min_confidence: int = Field(55, ge=0, le=100, description="Onay için LLM'in minimum güven puanı (altındaki onaylar da engellenir)")
     llm_review_timeout_sec: float = Field(45.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-35 sn sürebilir (ölçülen p90 ≈ 27 sn). Yedek model varsa %60'ı ana modele gider. Aşılırsa fail-open/closed kuralı uygulanır")
-    risk_gate_mode: str = Field("shadow", pattern="^(off|shadow|enforce)$", description="Portföy risk kapısı: off · shadow (varsayılan: yalnız günlüğe 'engellerdi' yazar, motoru DEĞİŞTİRMEZ) · enforce (engeller + drawdown çarpanını uygular)")
+    risk_gate_mode: str = Field("enforce", pattern="^(off|shadow|enforce)$", description="Portföy risk kapısı: off · shadow (yalnız günlüğe 'engellerdi' yazar) · enforce (varsayılan: engeller + drawdown çarpanını uygular)")
     risk_kill_switch: bool = Field(False, description="KILL SWITCH: açıkken mod ne olursa olsun yeni giriş (motor ve fırsat taraması) engellenir. Açık pozisyonlara dokunmaz.")
     risk_heat_limit_pct: float = Field(6.0, ge=0.5, le=50.0, description="Toplam açık risk (stop'a kadar) / özsermaye sınırı (%). Araştırma başlangıç değeri 3-6; kaynaksız, önce gölgede kalibre edin.")
     risk_usd_net_limit_pct: float = Field(3.0, ge=0.5, le=50.0, description="Net USD yönlü risk sınırı (özsermaye %): aynı yönde USD maruziyeti yığılmasını sınırlar")
@@ -5969,9 +5969,6 @@ class ForexAutoPaperSettings(BaseModel):
     be_lock_from_mfe: bool = Field(True, description="BE kilidi ANLIK kâr yerine MFE (tepe) üzerinden hesaplanır — replay paritesi. Canlı `pnl_pips` (poll anı) kullanırken replay `pnl_extreme_pips` (bar tepesi) kullanıyordu; bu sapma canlıda sistematik olarak DAHA SIKI kilit üretiyordu. Açıkken tetik ve kilit aynı tepeden okunur (replay ile birebir).")
     be_trigger_atr_mult: float = Field(0.80, ge=0.0, le=5.0, description="BE tetiğine ATR tabanı ekler: tetik = max(min($1+headroom, eff_be), bu kat × giriş ATR'si). 0.80 ATR volatilite nefes alanı.")
     be_trigger_r_mult: float = Field(0.40, ge=0.0, le=5.0, description="BE tetiğine R tabanı ekler: 0.40R Dinamik BE kâr kilidi.")
-    chandelier_gate_independent: bool = Field(False, description="Chandelier, BE kilidini BEKLEMEDEN kurulur (MFE > mult×giriş ATR'si olur olmaz). Şu an kapı `BE aktif` şartına bağlı olduğu için XAU'da MFE > 0.75 ATR (diğerlerinde 0.50 ATR) altındaki tüm hareketlerde chandelier ölü kalıyor; ölçülen tepe medyanı 0.63 ATR. **Replay W1 OOS: net +3904→+4510 (+%15.5), PF 1.62→1.73, WR %74.0→%78.8.**")
-    be_trigger_atr_mult_gold: float = Field(0.75, ge=0.0, le=5.0, description="XAUUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). Kullanıcı talebi (2026-10-14): altında erken tetiklenmesin. XAU 0.05 lot'ta tetik 6 pip = 0.15 ATR'ye düşüyordu; 0.75 → ~30 pip = 0.75 ATR'de kilitlenir. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.75 AÇILDI.** Ölçüm uyarısı: W1 OOS'ta tetiği geciktiren genel kol (minratr) net +3904→+675'e düşürdü (PF 1.62→1.08, SL zararı −6278→−8755) — yani erken BE tam-SL olacak işlemleri küçük kâra çeviriyordu. Bu değer o riske rağmen açıldı; geri alma: 0.0.")
-    be_trigger_atr_mult_crypto: float = Field(0.50, ge=0.0, le=5.0, description="BTCUSD/ETHUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). BTC 0.05 lot'ta tetik 45 pip = 0.27 ATR'ye düşüyordu; 0.50 → ~83 pip = 0.50 ATR. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.50 AÇILDI.** Geri alma: 0.0.")
     chandelier_gate_independent: bool = Field(False, description="Chandelier, BE kilidini BEKLEMEDEN kurulur (MFE > mult×giriş ATR'si olur olmaz). Şu an kapı `BE aktif` şartına bağlı olduğu için XAU'da MFE > 0.75 ATR (diğerlerinde 0.50 ATR) altındaki tüm hareketlerde chandelier ölü kalıyor; ölçülen tepe medyanı 0.63 ATR. **Replay W1 OOS: net +3904→+4510 (+%15.5), PF 1.62→1.73, WR %74.0→%78.8.**")
     be_trigger_atr_mult_gold: float = Field(0.75, ge=0.0, le=5.0, description="XAUUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). Kullanıcı talebi (2026-10-14): altında erken tetiklenmesin. XAU 0.05 lot'ta tetik 6 pip = 0.15 ATR'ye düşüyordu; 0.75 → ~30 pip = 0.75 ATR'de kilitlenir. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.75 AÇILDI.** Ölçüm uyarısı: W1 OOS'ta tetiği geciktiren genel kol (minratr) net +3904→+675'e düşürdü (PF 1.62→1.08, SL zararı −6278→−8755) — yani erken BE tam-SL olacak işlemleri küçük kâra çeviriyordu. Bu değer o riske rağmen açıldı; geri alma: 0.0.")
     be_trigger_atr_mult_crypto: float = Field(0.50, ge=0.0, le=5.0, description="BTCUSD/ETHUSD'ye ÖZEL BE tetik tabanı (× giriş ATR'si). BTC 0.05 lot'ta tetik 45 pip = 0.27 ATR'ye düşüyordu; 0.50 → ~83 pip = 0.50 ATR. 0 = kapalı. **2026-10-14 KULLANICI KARARI: risk kabul edilerek 0.50 AÇILDI.** Geri alma: 0.0.")
@@ -9160,32 +9157,32 @@ async def _forex_auto_paper_loop():
                             continue
 
                         # KRİTİK KÂRLILIK KURALI: Yalnızca KÂRDAKİ Pozisyona Ekleme Yap (Winning Pyramiding)
-                        # Mevcut açık pozisyonların toplam kârı >= +0.20$ olmalı!
+                        # Mevcut açık pozisyonların toplam kârı >= +2.00$ olmalı!
                         # Zarardaki pozisyona maliyet düşürme (averaging down) KESİNLİKLE ENGELLENİR!
                         existing_pnl_usd = sum(p.get("pnl_usd", 0.0) for p in matching_auto if p.get("direction", "").upper() == new_action) + \
                                            sum(float(getattr(p, "profit", p.get("pnl_usd", 0.0))) for p in matching_mt5 if p.get("direction", "").upper() == new_action)
-                        if existing_pnl_usd < 0.20:
+                        if existing_pnl_usd < 2.0:
                             if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_pyr_loss", 0) > 30.0:
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_pyr_loss"] = now_ts
                                 _log_auto_decision(
                                     "GATE",
-                                    f"[{cand['display']}][{_c_strat_lbl}] Piramitleme Kalkanı: Mevcut açık {same_dir_count} pozisyon henüz kârda değil (${existing_pnl_usd:+.2f}). Zarara ekleme engellendi (Kazanana ekleme kuralı).",
+                                    f"[{cand['display']}][{_c_strat_lbl}] Piramitleme Kalkanı: Mevcut açık {same_dir_count} pozisyon henüz yeterli kârda değil (${existing_pnl_usd:+.2f} < +$2.00). Zarara/mikro-kâra ekleme engellendi.",
                                     symbol=sym,
                                     strategy=_c_strat,
                                     strategy_label=_c_strat_lbl,
                                 )
                             continue
 
-                        # 1 dakika (60 sn) aralık denetimi
+                        # 5 dakika (300 sn) aralık denetimi
                         last_entry_ts = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
                         time_since_entry = now_ts - last_entry_ts
-                        if time_since_entry < 60.0:
-                            rem_sec = int(60.0 - time_since_entry)
+                        if time_since_entry < 300.0:
+                            rem_sec = int(300.0 - time_since_entry)
                             if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{sym}_same_cd", 0) > 20.0:
                                 _LAST_CANDIDATE_LOG_TIME[f"{sym}_same_cd"] = now_ts
                                 _log_auto_decision(
                                     "SCAN",
-                                    f"[{cand['display']}][{_c_strat_lbl}] Tarandı: Skor {cand['score']:.1f} ({new_action}) - Aynı yönde ek pozisyon için 1 dk kuralı ({same_dir_count}/{max_pyr} açık, {rem_sec} sn kaldı).",
+                                    f"[{cand['display']}][{_c_strat_lbl}] Tarandı: Skor {cand['score']:.1f} ({new_action}) - Aynı yönde ek pozisyon için 5 dk kuralı ({same_dir_count}/{max_pyr} açık, {rem_sec} sn kaldı).",
                                     symbol=sym,
                                     strategy=_c_strat,
                                     strategy_label=_c_strat_lbl,
@@ -9257,7 +9254,7 @@ async def _forex_auto_paper_loop():
                     continue
 
                 # 3. Sembol Soğuma Süresi
-                sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else 60.0
+                sym_cd = _AUTO_SETTINGS.gold_cooldown_sec if is_gold else (_AUTO_SETTINGS.btc_cooldown_sec if is_btc else 300.0)
                 last_sym_time = _LAST_SYMBOL_ENTRY_TIME.get(sym, 0.0)
                 if last_sym_time > now_ts:
                     _LAST_SYMBOL_ENTRY_TIME[sym] = now_ts
@@ -12248,6 +12245,7 @@ async def sync_mt5_bridge(req: MT5SyncRequest, request: Request = None):
         # `candles` olarak gönder" talimatı (bayat çiftler TTL ile düşer).
         "candle_watch": _get_forex_watch(),
         "settings": {
+            "breakeven_enabled": bool(_AUTO_SETTINGS.breakeven_enabled),
             "breakeven_pips": _AUTO_SETTINGS.breakeven_pips,
             "trailing_stop_pips": _AUTO_SETTINGS.trailing_stop_pips,
             "sl_pips": _AUTO_SETTINGS.sl_pips,

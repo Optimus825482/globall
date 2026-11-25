@@ -822,7 +822,10 @@ def execute_market_order(cmd: dict) -> dict:
         # Yoksa dynamic exits mevcut ATR'siz spec fallback'ine düşer (eski davranış korunur).
         cmd_be = float(cmd.get("be_pips", 0.0) or 0.0)
         cmd_trail = float(cmd.get("trail_pips", 0.0) or 0.0)
-        if cmd_be > 0 or cmd_trail > 0:
+        cmd_disable_be = bool(cmd.get("disable_scalper_be", False))
+        cmd_tp_cancel = cmd.get("tp_cancel_on_trail", None)
+        cmd_sl_pips = float(cmd.get("sl_pips", 0.0) or 0.0)
+        if cmd_be > 0 or cmd_trail > 0 or cmd_disable_be or cmd_tp_cancel is not None or cmd_sl_pips > 0:
             time.sleep(0.1)
             for p in (mt5.positions_get(symbol=symbol) or []):
                 p_dir = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
@@ -831,10 +834,12 @@ def execute_market_order(cmd: dict) -> dict:
                         "be_pips": cmd_be,
                         "trail_pips": cmd_trail,
                         "be_lock_ratio": float(cmd.get("be_lock_ratio", 0.0) or 0.0),
-                        "sl_pips": float(cmd.get("sl_pips", 0.0) or 0.0),
+                        "sl_pips": cmd_sl_pips,
                         # 2026-10-13: Motor OPEN_ORDER cmd'si giriş ATR'sini (pips) taşıyorsa sakla;
                         # chandelier bunu köprü-içi yeniden hesaplamaya TERCİH eder (motor köprü tutarlılığı).
                         "entry_atr_pips": float(cmd.get("entry_atr_pips", 0.0) or 0.0),
+                        "disable_scalper_be": cmd_disable_be,
+                        "tp_cancel_on_trail": cmd_tp_cancel,
                     }
                     print(f"  🎯 [ÇIKIŞ PLANI]: Bilet #{p.ticket} BE {cmd_be:.1f}p / Trail {cmd_trail:.1f}p (motor cmd)")
                     break
@@ -1071,7 +1076,7 @@ PARTIAL_TP_MAP: Dict[int, Dict[str, Any]] = {}  # ticket -> {"target_pips": floa
 # ticket -> pozisyon bazlı çıkış parametreleri (server cmd'den; ATR'li motor değerleri).
 # Köprü artık BE/Trail'i kendi ATR'siz spec'inden DEĞİL, işlemi açan motorun değerlerinden yönetir —
 # spec çift kopyası (backend köprü ayrışması) kaynaklı erken-kar kesme/trailing sıkı-kilit düzeltmesi.
-POSITION_EXITS: Dict[int, Dict[str, float]] = {}
+POSITION_EXITS: Dict[int, Dict[str, Any]] = {}
 # ticket -> açılıştan bu yana görülen en yüksek lehte kâr (pips). Chandelier trailing'in
 # tepe-çapalı (peak-anchored) tabanı budur: replay kanıtı MFE - mult*ATR'nin tek iyileştiren
 # kaldıraç olduğunu, sabit-pip mesafesinin (12/20/30/40p) düz kaldığını gösterdi (2026-10-13).
@@ -1079,7 +1084,7 @@ POSITION_MFE_PIPS: Dict[int, float] = {}
 # ticket -> giriş ATR'si (pips). İlk görüldüğünde BİR KEZ hesaplanır ve dondurulur; böylece
 # chandelier mesafesi pozisyon yaşamı boyunca sabit kalır (yeniden hesaplama sürüklenmesi olmaz).
 POSITION_ENTRY_ATR_PIPS: Dict[int, float] = {}
-CURRENT_SETTINGS: Dict[str, float] = {
+CURRENT_SETTINGS: Dict[str, Any] = {
     "breakeven_pips": 14.0,
     "trailing_stop_pips": 20.0,
     "sl_pips": 8.0,
@@ -1090,6 +1095,8 @@ CURRENT_SETTINGS: Dict[str, float] = {
     # 2026-10-13: Chandelier trailing çarpanı. 0.0 (yok sayılır) → bugünkü sabit-pip davranışı
     # BİREBİR korunur; motor /mt5/sync ile >0 gönderirse tepe-çapalı trailing devreye girer.
     "chandelier_atr_mult": 0.0,
+    "breakeven_enabled": False,
+    "tp_cancel_on_trail": False,
 }
 
 
@@ -1170,9 +1177,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         cur_tp = p.tp
 
         if direction == "BUY":
-            pnl_pips = (cur_p - entry_p) / pip_size
+            pnl_pips = round((cur_p - entry_p) / pip_size, 4)
         else:
-            pnl_pips = (entry_p - cur_p) / pip_size
+            pnl_pips = round((entry_p - cur_p) / pip_size, 4)
 
         # 2026-10-13: Chandelier trailing durumu — TICKET BAZLI (döngü bazlı DEĞİL).
         # MFE: açılıştan beri görülen en yüksek lehte kâr (pips). Entry ATR: ilk görülüşte BİR KEZ
@@ -1218,181 +1225,177 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         dollar_per_pip = max(0.0001, vol * pip_val)
         pips_for_1usd = max(0.5, round(1.0 / dollar_per_pip, 1))
 
-        # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
-        # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
-        min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
+        be_enabled = bool(CURRENT_SETTINGS.get("breakeven_enabled", False))
+        pos_disable_be = bool((pos_exits or {}).get("disable_scalper_be", False))
+        _sl0_ref = float((pos_exits or {}).get("sl_pips", 0.0) or 0.0)
 
-        # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi)
-        is_gold_sym = ("XAU" in sym or "GOLD" in sym)
-        is_crypto_sym = any(k in sym.upper() for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ", "DATA"))
-        # 2026-10-14 (Kol A — canlı↔replay paritesi): replay `pnl_extreme_pips` (bar tepesi)
-        # kullanır, canlı `pnl_pips` (poll anı). Aynı formül canlıda sistematik olarak DAHA
-        # SIKI kilit üretiyordu → replay'in ölçülmüş pozitifi canlıya taşınmıyordu. Açıkken
-        # tetik ve kilit aynı tepeden (MFE) okunur. Kapalıyken davranış BİREBİR eski hâli.
-        _be_from_mfe = bool(CURRENT_SETTINGS.get("be_lock_from_mfe", False))
-        _mfe_now = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
-        ref_pips = max(pnl_pips, _mfe_now) if _be_from_mfe else pnl_pips
-        # 2026-10-12 DÜZELTME (forex.py `calculate_breakeven_target` ile aynı kök neden):
-        # tabanlar `max` ile birleştirilince BE kilidi 0.4×SL / 0.5×ATR'ye (altın 25-37 pip)
-        # erteleniyordu; bu mesafeye ulaşamayan kazançlar BE'ye kilitlenmeden tam stopla
-        # kapanıyordu. Replay A/B (4 bağımsız pencere, XAU+BTC, gerçek spread): birleşim
-        # formülü net/WR/maxDD üçünde de işaret-tutarlı üstün. Ayrıntılı kanıt ve pencereler
-        # backend/app/routers/forex.py `calculate_breakeven_target` içindeki nota bakınız.
-        min_trigger_pips = pips_for_1usd + min_headroom_pips
-        if eff_be_pips > 0:
-            min_trigger_pips = min(min_trigger_pips, eff_be_pips)
-
-        # 2026-10-14 (Kol B): ATR/R tabanı — tetiği GECİKTİRİR. 0 = kapalı (mevcut davranış).
-        # Gerekçe: tetik `$1 + headroom` olduğu için pip cinsinden `1/lot` ile ölçekleniyor;
-        # XAU 0.05 lot'ta 6 pip = 0.15 ATR'ye düşüyor (ATR ~39.8 pip). UYARI: yalnız tetiği
-        # geciktirmek 2026-10-12 replay'inde elendi — kilit tabanı birlikte büyümedikçe kâr etmiyor.
-        _be_trig_atr = float(CURRENT_SETTINGS.get("be_trigger_atr_mult", 0.0) or 0.0)
-        _be_trig_r = float(CURRENT_SETTINGS.get("be_trigger_r_mult", 0.0) or 0.0)
-        # 2026-10-14 (kullanıcı: "BTC ve XAU'da erken tetiklenmesin") — AİLE-ÖZEL ATR TABANI.
-        # Sorun tam olarak bu iki ailede: ATR büyük, `pips_for_1usd + headroom` küçük → `min()`
-        # tetiği tabana indiriyor (XAU 0.05 lot → 6 pip = 0.15 ATR; BTC → 45 pip = 0.27 ATR).
-        # FX/endekste aynı formül ~1 ATR'ye denk geldiği için o ailelere DOKUNULMAZ.
-        _be_trig_atr_fam = (
-            float(CURRENT_SETTINGS.get("be_trigger_atr_mult_gold", 0.0) or 0.0) if is_gold_sym
-            else (float(CURRENT_SETTINGS.get("be_trigger_atr_mult_crypto", 0.0) or 0.0)
-                  if is_crypto_sym else 0.0)
-        )
-        _atr_ref = float((POSITION_EXITS.get(ticket, {}) or {}).get("entry_atr_pips", 0.0) or 0.0)
-        if _atr_ref <= 0:
-            _atr_ref = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
-        _mult_atr = max(_be_trig_atr, _be_trig_atr_fam)
-        if _mult_atr > 0 and _atr_ref > 0:
-            min_trigger_pips = max(min_trigger_pips, _mult_atr * _atr_ref)
-        if _be_trig_r > 0:
-            _sl0_ref = float((POSITION_EXITS.get(ticket, {}) or {}).get("sl_pips", 0.0) or 0.0)
-            if _sl0_ref > 0:
-                min_trigger_pips = max(min_trigger_pips, _be_trig_r * _sl0_ref)
-
-        if ref_pips >= min_trigger_pips:
-            # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez!
-            be_lock_ratio = float(CURRENT_SETTINGS.get("gold_be_lock_ratio", 0.6)) if is_gold_sym else 0.40
-            # Pozisyonun motor cmd'siyle gelen kilit oranı (varsa) ayarı ezer — backend/köprü tutarlılığı
-            if pos_exits and 0 < float(pos_exits.get("be_lock_ratio", 0.0)) < 1:
-                be_lock_ratio = float(pos_exits["be_lock_ratio"])
-            locked_pips = max(pips_for_1usd, round(ref_pips * be_lock_ratio, 1))
-            if direction == "BUY":
-                be_sl = round(entry_p + (locked_pips * pip_size), digits)
-                if cur_sl < be_sl and be_sl < cur_p:
-                    target_sl = be_sl
-                    if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+        if pos_disable_be:
+            # 1H swing / Fırsat Taraması pozisyonları: scalper $1 BE, sıkı Chandelier trailing
+            # ve TP iptali uygulanmaz; yalnızca 1.0R'de nazik BE (+0.1R) koruması ve TP korunur.
+            if _sl0_ref > 0 and pnl_pips >= (_sl0_ref * 1.0):
+                gentle_lock_pips = 0.1 * _sl0_ref
+                if direction == "BUY":
+                    be_sl = round(entry_p + (gentle_lock_pips * pip_size), digits)
+                    if cur_sl < be_sl and be_sl < cur_p:
+                        target_sl = be_sl
                         POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
-            else:
-                be_sl = round(entry_p - (locked_pips * pip_size), digits)
-                if (cur_sl == 0.0 or cur_sl > be_sl) and be_sl > cur_p:
-                    target_sl = be_sl
-                    if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+                else:
+                    be_sl = round(entry_p - (gentle_lock_pips * pip_size), digits)
+                    if (cur_sl == 0.0 or cur_sl > be_sl) and be_sl > cur_p:
+                        target_sl = be_sl
                         POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
-
-        # 2. TRAILING STOP (İz Süren Stop)
-        # Sembole ve volatiliteye göre belirlenen mesafeden fiyatı takip et
-        # BE kilitlendikten sonra VEYA pnl_pips >= eff_trail_pips olduğunda
-        #
-        # 2026-10-13 CHANDELIER (tepe-çapalı) TRAILING: replay kanıtı, sabit-pip mesafesinin
-        # (12/20/30/40p ≈ düz 3796-3951$) aksine `MFE - mult*ATR` tepe-çapalı mesafenin tek
-        # iyileştiren kaldıraç olduğunu gösterdi. `chandelier_atr_mult` yokken/0 iken aşağıdaki
-        # `else` dalı bugünkü sabit-pip mantığını BİREBİR korur (varsayılan davranış değişmez).
-        chand_mult = float(CURRENT_SETTINGS.get("chandelier_atr_mult", 0.0) or 0.0)
-        entry_atr = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
-        mfe = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
-        use_chandelier = chand_mult > 0 and entry_atr > 0 and mfe > 0
-        chand_cand_pips = (mfe - chand_mult * entry_atr) if use_chandelier else 0.0
-        _trail_active = (POSITION_PROTECTION_MAP.get(ticket) == "BREAKEVEN" or pnl_pips >= eff_trail_pips)
-        # Kapı, replay ile BİREBİR aynı olmalı: replay trailing'i YALNIZ `pos.be_locked`
-        # iken çalıştırır (forex_replay_backtest.py:1826) — yani BE kilidi devreye girmeden
-        # tepe-çapalı trail başlamaz. Kapıyı `chand_cand_pips > 0` ile genişletmek, BE'den
-        # ÖNCE trailing'i başlatıp doğrulanan davranıştan sapardı (kanıt BE-sonrası rejimde
-        # ölçüldü). Bu yüzden kapı sabit-pip dalıyla aynı bırakılır; chandelier yalnız BE
-        # kilitliyken (veya pnl >= eff_trail) devreye girer.
-        # 2026-10-14 (Kol C): kapı `chandelier_gate_independent` ile BE'den bağımsızlaştırılabilir.
-        # Açıkken chandelier, MFE > mult×giriş ATR'si olur olmaz kurulur (BE beklemez) — aksi
-        # hâlde XAU'da MFE > 0.75 ATR altındaki tüm hareketlerde ölü kalıyor (tepe medyanı 0.63 ATR).
-        _chand_indep_armed = (
-            bool(CURRENT_SETTINGS.get("chandelier_gate_independent", False))
-            and use_chandelier and chand_cand_pips > 0
-        )
-        if use_chandelier:
-            _trail_gate = _trail_active or _chand_indep_armed
+            cancel_tp = False
         else:
-            _trail_gate = (eff_trail_pips > 0 and _trail_active)
-        if _trail_gate:
-            if use_chandelier:
-                if direction == "BUY":
-                    # Tepe-çapalı kilit: SL = entry + (MFE - mult*ATR) pips
-                    cand_sl = round(entry_p + (chand_cand_pips * pip_size), digits)
-                    # Kilit asla 1$ Breakeven'in (pips_for_1usd) altına düşmez!
-                    min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
-                    cand_sl = max(cand_sl, min_safe_sl)
-                    if cand_sl > entry_p and cand_sl < cur_p:
-                        if target_sl is None and cand_sl > cur_sl:
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-                        elif target_sl is not None and cand_sl > target_sl:
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-                else:
-                    cand_sl = round(entry_p - (chand_cand_pips * pip_size), digits)
-                    # Kilit asla 1$ Breakeven'in (pips_for_1usd) üstüne çıkmaz!
-                    min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
-                    cand_sl = min(cand_sl, min_safe_sl)
-                    if cand_sl < entry_p and cand_sl > cur_p:
-                        if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-                        elif target_sl is not None and cand_sl < target_sl:
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-            else:
-                trail_dist = eff_trail_pips * pip_size
-                if direction == "BUY":
-                    cand_sl = round(cur_p - trail_dist, digits)
-                    # Trailing SL asla 1$ Breakeven seviyesinin altına düşmez!
-                    min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
-                    cand_sl = max(cand_sl, min_safe_sl)
-                    if cand_sl > entry_p:
-                        if target_sl is None and cand_sl > cur_sl:
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-                        elif target_sl is not None and cand_sl > target_sl:
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-                else:
-                    cand_sl = round(cur_p + trail_dist, digits)
-                    # Trailing SL asla 1$ Breakeven seviyesinin üstüne çıkmaz!
-                    min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
-                    cand_sl = min(cand_sl, min_safe_sl)
-                    if cand_sl < entry_p:
-                        if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
-                        elif target_sl is not None and cand_sl < target_sl:
-                            target_sl = cand_sl
-                            POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+            # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
+            # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
+            min_headroom_pips = 4.0 if ("XAU" in sym or "GOLD" in sym) else (25.0 if "BTC" in sym else 3.5)
 
-        # TP İPTALİ (`tp_cancel_on_trail`, canlı VARSAYILAN AÇIK): kâr koruması (BE/trailing)
-        # devreye girdiyse ve pozisyonda hâlâ sabit TP varsa TP çekilir — kazanan trend
-        # TP'ye takılmadan trailing/BE kilidiyle koşar. Motor (`forex.py`) ile aynı mekanizma.
-        #
-        # ÖNEMLİ (2026-10-09 canlı bulgu — US30): koşul "bu turda SL hareket etti"ye bağlı
-        # OLMAMALI. Eski hâli yalnız `POSITION_PROTECTION_MAP == "TRAILING"` iken iptal
-        # ediyordu; (a) fiyat duraklayınca SL sabit kalır → map güncellenmez, (b) köprü
-        # yeniden başlayınca map sıfırlanır → kârda SL taşıyan pozisyonun TP'si asla
-        # iptal edilmezdi. Koruma durumu artık DOĞRUDAN pozisyondan türetilir (restart-safe).
-        sl_in_profit = (cur_sl > entry_p) if direction == "BUY" else (cur_sl > 0 and cur_sl < entry_p)
-        protection_active = (
-            POSITION_PROTECTION_MAP.get(ticket) in ("BREAKEVEN", "TRAILING")
-            or sl_in_profit                    # SL zaten başabaş üstü (trailing başlamış)
-            or pnl_pips >= min_trigger_pips    # BE/koruma eşiği aşıldı
-        )
-        cancel_tp = (
-            protection_active
-            and bool(CURRENT_SETTINGS.get("tp_cancel_on_trail", False))
-            and cur_tp > 0
-        )
+            # 1. BREAKEVEN (Başabaş / Net Kâr Kilidi) — yalnızca breakeven_enabled=True iken çalışır
+            be_triggered = False
+            if be_enabled:
+                is_gold_sym = ("XAU" in sym or "GOLD" in sym)
+                is_crypto_sym = any(k in sym.upper() for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "LINK", "UNI", "AVX", "AVAX", "ADA", "XTZ", "DATA"))
+                # 2026-10-14 (Kol A — canlı↔replay paritesi): replay `pnl_extreme_pips` (bar tepesi)
+                # kullanır, canlı `pnl_pips` (poll anı). Aynı formül canlıda sistematik olarak DAHA
+                # SIKI kilit üretiyordu → replay'in ölçülmüş pozitifi canlıya taşınmıyordu. Açıkken
+                # tetik ve kilit aynı tepeden (MFE) okunur. Kapalıyken davranış BİREBİR eski hâli.
+                _be_from_mfe = bool(CURRENT_SETTINGS.get("be_lock_from_mfe", False))
+                _mfe_now = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
+                ref_pips = max(pnl_pips, _mfe_now) if _be_from_mfe else pnl_pips
+                min_trigger_pips = pips_for_1usd + min_headroom_pips
+                if eff_be_pips > 0:
+                    min_trigger_pips = min(min_trigger_pips, eff_be_pips)
+
+                _be_trig_atr = float(CURRENT_SETTINGS.get("be_trigger_atr_mult", 0.0) or 0.0)
+                _be_trig_r = float(CURRENT_SETTINGS.get("be_trigger_r_mult", 0.0) or 0.0)
+                _be_trig_atr_fam = (
+                    float(CURRENT_SETTINGS.get("be_trigger_atr_mult_gold", 0.0) or 0.0) if is_gold_sym
+                    else (float(CURRENT_SETTINGS.get("be_trigger_atr_mult_crypto", 0.0) or 0.0)
+                          if is_crypto_sym else 0.0)
+                )
+                _atr_ref = float((POSITION_EXITS.get(ticket, {}) or {}).get("entry_atr_pips", 0.0) or 0.0)
+                if _atr_ref <= 0:
+                    _atr_ref = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
+                _mult_atr = max(_be_trig_atr, _be_trig_atr_fam)
+                if _mult_atr > 0 and _atr_ref > 0:
+                    min_trigger_pips = max(min_trigger_pips, _mult_atr * _atr_ref)
+                if _be_trig_r > 0 and _sl0_ref > 0:
+                    min_trigger_pips = max(min_trigger_pips, _be_trig_r * _sl0_ref)
+                # Nefes alma tabanı: _sl0_ref biliniyorsa 0.8R öncesinde asla boğma
+                if _sl0_ref > 0:
+                    min_trigger_pips = max(min_trigger_pips, 0.8 * _sl0_ref)
+
+                if ref_pips >= min_trigger_pips:
+                    be_triggered = True
+                    # Kilitlenecek kâr mesafesi: Asla 1$ (pips_for_1usd) altına inmez; fiyata nefes payı bırakır.
+                    if _sl0_ref > 0:
+                        locked_pips = max(pips_for_1usd, round(_sl0_ref * 0.15, 1))
+                    else:
+                        locked_pips = max(pips_for_1usd, round(ref_pips * 0.25, 1))
+                    if direction == "BUY":
+                        be_sl = round(entry_p + (locked_pips * pip_size), digits)
+                        if cur_sl < be_sl and be_sl < cur_p:
+                            target_sl = be_sl
+                            if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+                                POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
+                    else:
+                        be_sl = round(entry_p - (locked_pips * pip_size), digits)
+                        if (cur_sl == 0.0 or cur_sl > be_sl) and be_sl > cur_p:
+                            target_sl = be_sl
+                            if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
+                                POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
+
+            # 2. TRAILING STOP (İz Süren Stop)
+            # BE kilitliyse (be_enabled ve >= 0.8R) VEYA pnl_pips >= max(eff_trail_pips, _sl0_ref) (en az 1.0R)
+            chand_mult = float(CURRENT_SETTINGS.get("chandelier_atr_mult", 0.0) or 0.0)
+            entry_atr = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
+            mfe = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
+            use_chandelier = chand_mult > 0 and entry_atr > 0 and mfe > 0
+            chand_cand_pips = (mfe - chand_mult * entry_atr) if use_chandelier else 0.0
+            _trail_arm_threshold = max(eff_trail_pips, _sl0_ref)
+            _trail_active = (
+                POSITION_PROTECTION_MAP.get(ticket) == "BREAKEVEN"
+                or pnl_pips >= _trail_arm_threshold
+            )
+            _chand_indep_armed = (
+                bool(CURRENT_SETTINGS.get("chandelier_gate_independent", False))
+                and use_chandelier and chand_cand_pips > 0 and _trail_active
+            )
+            if use_chandelier:
+                _trail_gate = _trail_active or _chand_indep_armed
+            else:
+                _trail_gate = (eff_trail_pips > 0 and _trail_active)
+            if _trail_gate:
+                if use_chandelier:
+                    if direction == "BUY":
+                        # Tepe-çapalı kilit: SL = entry + (MFE - mult*ATR) pips
+                        cand_sl = round(entry_p + (chand_cand_pips * pip_size), digits)
+                        # Kilit asla 1$ Breakeven'in (pips_for_1usd) altına düşmez!
+                        min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
+                        cand_sl = max(cand_sl, min_safe_sl)
+                        if cand_sl > entry_p and cand_sl < cur_p:
+                            if target_sl is None and cand_sl > cur_sl:
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                            elif target_sl is not None and cand_sl > target_sl:
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                    else:
+                        cand_sl = round(entry_p - (chand_cand_pips * pip_size), digits)
+                        # Kilit asla 1$ Breakeven'in (pips_for_1usd) üstüne çıkmaz!
+                        min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
+                        cand_sl = min(cand_sl, min_safe_sl)
+                        if cand_sl < entry_p and cand_sl > cur_p:
+                            if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                            elif target_sl is not None and cand_sl < target_sl:
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                else:
+                    trail_dist = eff_trail_pips * pip_size
+                    if direction == "BUY":
+                        cand_sl = round(cur_p - trail_dist, digits)
+                        # Trailing SL asla 1$ Breakeven seviyesinin altına düşmez!
+                        min_safe_sl = round(entry_p + (pips_for_1usd * pip_size), digits)
+                        cand_sl = max(cand_sl, min_safe_sl)
+                        if cand_sl > entry_p:
+                            if target_sl is None and cand_sl > cur_sl:
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                            elif target_sl is not None and cand_sl > target_sl:
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                    else:
+                        cand_sl = round(cur_p + trail_dist, digits)
+                        # Trailing SL asla 1$ Breakeven seviyesinin üstüne çıkmaz!
+                        min_safe_sl = round(entry_p - (pips_for_1usd * pip_size), digits)
+                        cand_sl = min(cand_sl, min_safe_sl)
+                        if cand_sl < entry_p:
+                            if target_sl is None and (cur_sl == 0.0 or cand_sl < cur_sl):
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                            elif target_sl is not None and cand_sl < target_sl:
+                                target_sl = cand_sl
+                                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+
+            # TP İPTALİ (`tp_cancel_on_trail`): pozisyon bazlı geçersiz kılma (None -> CURRENT_SETTINGS).
+            sl_in_profit = (cur_sl > entry_p) if direction == "BUY" else (cur_sl > 0 and cur_sl < entry_p)
+            protection_active = (
+                POSITION_PROTECTION_MAP.get(ticket) in ("BREAKEVEN", "TRAILING")
+                or sl_in_profit                    # SL zaten başabaş üstü (trailing başlamış)
+                or be_triggered                    # BE/koruma eşiği aşıldı (be_enabled=True iken)
+            )
+            pos_tp_cancel = (pos_exits or {}).get("tp_cancel_on_trail")
+            tp_cancel_allowed = (
+                bool(pos_tp_cancel) if pos_tp_cancel is not None
+                else bool(CURRENT_SETTINGS.get("tp_cancel_on_trail", False))
+            )
+            cancel_tp = (
+                protection_active
+                and tp_cancel_allowed
+                and cur_tp > 0
+            )
 
         # Eğer yeni bir SL seviyesi belirlendiyse ve mevcut SL'den farklıysa emri MT5'e gönder
         if (target_sl is not None and abs(target_sl - cur_sl) >= (0.3 * pip_size)) or cancel_tp:
@@ -1409,7 +1412,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                     print(f"  🎯 [TP İPTAL EDİLDİ]: Bilet #{ticket} ({sym} {direction}) — trailing aktif "
                           f"(+{pnl_pips:.1f}p), sabit TP kaldırıldı, kazanç trailing kilidiyle taşınacak")
                 else:
-                    label = "İz Süren Stop" if (trail_pips > 0 and pnl_pips >= trail_pips) else "Başabaş (BE)"
+                    label = "İz Süren Stop" if POSITION_PROTECTION_MAP.get(ticket) == "TRAILING" else "Başabaş (BE)"
                     print(f"  🛡️ [{label.upper()} KİLİTLENDİ]: Bilet #{ticket} ({sym} {direction}) | Yeni SL: {target_sl} (Kâr: +{pnl_pips:.1f}p)")
 
 

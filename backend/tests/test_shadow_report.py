@@ -79,7 +79,7 @@ class TestBuild(unittest.TestCase):
         self.assertIn("abstain_gate", by, "varsayılan shadow → raporda görünür")
         self.assertEqual(by["abstain_gate"]["mode"], "shadow")
         if by["risk_gate"]["mode"] not in ("unknown",):
-            self.assertEqual(by["risk_gate"]["mode"], "shadow")
+            self.assertEqual(by["risk_gate"]["mode"], "enforce")
 
     def test_off_mode_still_hidden(self):
         """KAPALI bir mekanizma hâlâ rapordan gizlenir (sayı `hidden_off`'ta durur)."""

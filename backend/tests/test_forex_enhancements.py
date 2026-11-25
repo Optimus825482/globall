@@ -338,11 +338,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["command"]["lots"], 1.00)
 
     def test_gold_cooldown_reduced_to_60s(self):
-        """Verify gold cooldown minimum and default are updated to 60.0 seconds."""
+        """Verify gold cooldown minimum is 60s and default is hardened to 900.0 seconds (15 min)."""
         self.assertEqual(forex.HARD_MIN_GOLD_COOLDOWN_SEC, 60.0)
         self.assertEqual(mt5_bridge.HARD_MIN_GOLD_COOLDOWN_SEC, 60.0)
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(cfg.gold_cooldown_sec, 60.0)
+        self.assertEqual(cfg.gold_cooldown_sec, 900.0)
         self.assertEqual(mt5_bridge.CURRENT_SETTINGS["gold_cooldown_sec"], 60.0)
 
     def test_oil_symbol_resolution_and_specs(self):
@@ -565,11 +565,11 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(profit_btc, 1.00, places=2)
 
     def test_default_risk_and_position_limits(self):
-        """Varsayılan risk bütçesi (FX %5, XAU %10, Endeks %7, Kripto %2), 15dk soğuma ve 0.40R BE."""
+        """Varsayılan risk bütçesi (FX %5, XAU %3, Endeks %7, Kripto %2), tek pozisyon/sembol ve 0.40R BE."""
         cfg = forex.ForexAutoPaperSettings()
-        self.assertEqual(cfg.max_positions_per_symbol, 2)
+        self.assertEqual(cfg.max_positions_per_symbol, 1)
         self.assertEqual(cfg.risk_per_trade_pct, 5.0)
-        self.assertEqual(cfg.risk_gold_pct, 10.0)
+        self.assertEqual(cfg.risk_gold_pct, 3.0)
         self.assertEqual(cfg.risk_index_pct, 7.0)
         self.assertEqual(cfg.risk_crypto_pct, 2.0)
         self.assertEqual(cfg.loss_streak_limit, 2)
@@ -580,12 +580,12 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
     def test_get_symbol_risk_pct(self):
-        """Forex %5, XAUUSD %10, US30/USTEC/NAS100 %7, BTC/Kripto %2 dinamik risk bütçesi kontrolü."""
+        """Forex %5, XAUUSD %3, US30/USTEC/NAS100 %7, BTC/Kripto %2 dinamik risk bütçesi kontrolü."""
         self.assertEqual(forex.get_symbol_risk_pct("EURUSD"), 5.0)
         self.assertEqual(forex.get_symbol_risk_pct("GBPUSD"), 5.0)
         self.assertEqual(forex.get_symbol_risk_pct("AUDCAD"), 5.0)
-        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 10.0)
-        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 10.0)
+        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 3.0)
+        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 3.0)
         self.assertEqual(forex.get_symbol_risk_pct("BTCUSD"), 2.0)
         self.assertEqual(forex.get_symbol_risk_pct("US30"), 7.0)
         self.assertEqual(forex.get_symbol_risk_pct("USTEC"), 7.0)
@@ -1364,10 +1364,9 @@ class TestTpRatchetAlternative(unittest.IsolatedAsyncioTestCase):
         self.assertIn("trailing TP'nin üstüne çıktı", src)
 
     async def test_default_is_true_and_env_gated(self):
-        """Canlı varsayılan AÇIK (2026-10-09 kararı: 4 pencere A/B'de işaret-tutarlı tek
-        mekanizma V03). Geri alma yolu env ile: FOREX_TP_CANCEL_ON_TRAIL=false."""
-        self.assertTrue(forex.ForexAutoPaperSettings().tp_cancel_on_trail)
-        self.assertTrue(forex._AUTO_SETTINGS.tp_cancel_on_trail)
+        """Canlı varsayılan KAPALI (sabit TP hedefleri trailing aktifleşince korunur). Env ile açılabilir: FOREX_TP_CANCEL_ON_TRAIL=true."""
+        self.assertFalse(forex.ForexAutoPaperSettings().tp_cancel_on_trail)
+        self.assertFalse(forex._AUTO_SETTINGS.tp_cancel_on_trail)
         # Geri-alma sözleşmesi yerinde mi (env anahtarı modülde tanımlı)
         import inspect
         src = inspect.getsource(forex)
@@ -1557,7 +1556,7 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         #   (her iki sembolde de kazanç → altına özel artefakt değil)
         # 1.2'ye geri dönmek chandelier'i sabit-pipten KÖTÜ yapıyordu (3863 vs 3933);
         # gevşetmek yön-tutarsızdı. Bu test sessiz gerileme/kanıtsız değişikliği yakalar.
-        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 0.1)
+        self.assertEqual(forex.ForexAutoPaperSettings().chandelier_atr_mult, 1.0)
 
     def test_canli_sabitler_override_settings_file_and_panel(self):
         """İki canlı sabit (chandelier + ls_symbols) hem kalıcı dosyayı hem panel
@@ -1595,7 +1594,7 @@ class TestChandelierEntryAtrParity(unittest.IsolatedAsyncioTestCase):
         # (c) Sabitlerin kendisi kanıtlanmış değerler olmalı (sessiz kayma yakalanır)
         # 2026-11-09: 0.3 → 0.1. Aynı 14 gün XAU+BTC replay'inde net $62,020→$101,357,
         # PF 1.93→2.47, maxDD aynı (~3.5k $), BE→TRAIL kayması 299/395 → 25/706.
-        self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 0.1)
+        self.assertEqual(forex.CANLI_CHANDELIER_ATR_MULT, 1.0)
         self.assertEqual(list(forex.CANLI_LS_SYMBOLS), ["XAUUSD", "US30", "NAS100"])
         # Keltner Squeeze (M15) kapsamı da kanıtlanmış 5 semboldür; panel/ayar
         # dosyası ezemez (2026-10-14 kanonik DB hattı + --combined defter testi).
