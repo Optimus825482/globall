@@ -1230,21 +1230,36 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         _sl0_ref = float((pos_exits or {}).get("sl_pips", 0.0) or 0.0)
 
         if pos_disable_be:
-            # 1H swing / Fırsat Taraması pozisyonları: scalper $1 BE, sıkı Chandelier trailing
-            # ve TP iptali uygulanmaz; yalnızca 1.0R'de nazik BE (+0.1R) koruması ve TP korunur.
-            if _sl0_ref > 0 and pnl_pips >= (_sl0_ref * 1.0):
-                gentle_lock_pips = 0.1 * _sl0_ref
-                if direction == "BUY":
-                    be_sl = round(entry_p + (gentle_lock_pips * pip_size), digits)
-                    if cur_sl < be_sl and be_sl < cur_p:
-                        target_sl = be_sl
-                        POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
-                else:
-                    be_sl = round(entry_p - (gentle_lock_pips * pip_size), digits)
-                    if (cur_sl == 0.0 or cur_sl > be_sl) and be_sl > cur_p:
-                        target_sl = be_sl
-                        POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
+            # Fırsat Taraması (FRS) pozisyonları: 1.0R'ye ulaşana kadar scalper $1 BE ve
+            # dar trailing uygulanmaz. 1.0R geçildikten sonra nefes alan Chandelier trailing
+            # (MFE - max(chand_mult*ATR, 0.4R), taban +0.1R) devreye girer ve trendin
+            # alabileceği kadar kâr taşıyabilmesi için sabit TP kaldırılır.
+            _frs_mfe = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
+            _frs_peak = max(pnl_pips, _frs_mfe)
+            _frs_armed = (
+                (_sl0_ref > 0 and _frs_peak >= _sl0_ref)
+                or POSITION_PROTECTION_MAP.get(ticket) == "TRAILING"
+            )
             cancel_tp = False
+            if _frs_armed and _sl0_ref > 0:
+                _frs_atr = float((pos_exits or {}).get("entry_atr_pips", 0.0) or 0.0)
+                if _frs_atr <= 0:
+                    _frs_atr = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
+                _frs_mult = _chand_mult_now if _chand_mult_now > 0 else 1.0
+                _frs_gap = (_frs_mult * _frs_atr) if _frs_atr > 0 else (0.5 * _sl0_ref)
+                _frs_gap = max(_frs_gap, 0.4 * _sl0_ref)
+                lock_pips = max(0.1 * _sl0_ref, round(_frs_peak - _frs_gap, 2))
+                if direction == "BUY":
+                    tr_sl = round(entry_p + (lock_pips * pip_size), digits)
+                    if tr_sl > cur_sl and tr_sl < cur_p:
+                        target_sl = tr_sl
+                else:
+                    tr_sl = round(entry_p - (lock_pips * pip_size), digits)
+                    if (cur_sl == 0.0 or tr_sl < cur_sl) and tr_sl > cur_p:
+                        target_sl = tr_sl
+                POSITION_PROTECTION_MAP[ticket] = "TRAILING"
+                if cur_tp > 0:
+                    cancel_tp = True
         else:
             # Piyasa gürültüsü ve broker toleransı için dinamik nefes payı (headroom)
             # Erken boğulmayı engeller, fiyatın kâra doğru rahatça koşmasını sağlar
