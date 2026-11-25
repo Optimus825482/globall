@@ -60,29 +60,113 @@ def pf_of(pnls: List[float]) -> Optional[float]:
     return gw / gl
 
 
+def _norm_strategy(raw: Any) -> str:
+    s = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if "london" in s and "break" in s:
+        return "london_breakout"
+    if "ema" in s and "adx" in s:
+        return "ema_adx_pullback"
+    if "donchian" in s:
+        return "donchian_adx"
+    if "squeeze" in s or "keltner" in s:
+        return "keltner_squeeze"
+    if "kombo" in s:
+        return "kombo_m5"
+    if "firsat" in s or "fırsat" in s or s == "frs":
+        return "firsat_taramasi"
+    if "radar" in s or "m1_m5" in s:
+        return "m1_m5_radar"
+    return s or "unknown"
+
+
+def _deal_ts(d: Dict[str, Any]) -> float:
+    for k in ("close_time_ts", "time", "close_time", "closed_at_ts"):
+        v = d.get(k)
+        if isinstance(v, (int, float)) and v > 0:
+            return float(v)
+        if isinstance(v, str) and v.strip():
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    return dt.datetime.strptime(v.strip()[:19], fmt).replace(tzinfo=dt.timezone.utc).timestamp()
+                except ValueError:
+                    continue
+    return 0.0
+
+
+def _deal_pnl(d: Dict[str, Any]) -> float:
+    if d.get("pnl_usd") is not None:
+        return float(d.get("pnl_usd") or 0.0)
+    return float(d.get("profit") or 0.0) + float(d.get("commission") or 0.0) + float(d.get("swap") or 0.0)
+
+
 def build_report(*, days: int = 14, since: str = "",
                  strategies: Optional[List[str]] = None,
-                 url: Optional[str] = None) -> Dict[str, Any]:
-    """Raporu kurar. Dönen sözlük JSON'a yazılabilir (routine_runs sonucu)."""
+                 url: Optional[str] = None,
+                 mt5_deals: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Raporu kurar (DB `trades` + canlı MT5 `closed_deals`). Dönen sözlük JSON'a yazılabilir."""
     strat = list(strategies or DEFAULT_STRATEGIES)
+    strat_set = {_norm_strategy(s) for s in strat}
     if since:
         since_ts = dt.datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc).timestamp()
     else:
         since_ts = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).timestamp()
     out: Dict[str, Any] = {
         "baslangic": dt.datetime.fromtimestamp(since_ts, dt.timezone.utc).isoformat(timespec="seconds"),
+        "kaynak": "bos",
         "semboller": {}, "ayar_kontrolu": {}, "uyarilar": [], "karar_gereken": [],
     }
-    dsn = url or db_url()
-    if not dsn:
-        out["uyarilar"].append("DATABASE_URL yok")
-        return out
-    import psycopg
 
-    with psycopg.connect(dsn) as conn:
-        rows = conn.execute(
-            "SELECT strategy, symbol, pnl FROM trades WHERE exit_time >= %s AND strategy = ANY(%s)",
-            (since_ts, strat)).fetchall()
+    rows: List[tuple] = []
+    sources: List[str] = []
+
+    # 1) Canlı MT5 kapanan işlemler (köprü senkronu üzerinden)
+    mt5_count_by_pair: Dict[tuple, int] = {}
+    if mt5_deals:
+        mt5_added = 0
+        for d in mt5_deals:
+            if not isinstance(d, dict):
+                continue
+            ts = _deal_ts(d)
+            if ts > 0 and ts < since_ts:
+                continue
+            st_norm = _norm_strategy(d.get("strategy") or d.get("strategy_label") or d.get("comment"))
+            sym = str(d.get("symbol") or "").upper().split(".")[0]
+            if not sym:
+                continue
+            pnl = _deal_pnl(d)
+            # MT5 tarafında tüm aktif kollar (veya istenen stratejiler) izlenir
+            if strategies is None or st_norm in strat_set:
+                rows.append((st_norm, sym, pnl))
+                mt5_added += 1
+            mt5_count_by_pair[(st_norm, sym)] = mt5_count_by_pair.get((st_norm, sym), 0) + 1
+        if mt5_added > 0:
+            sources.append(f"mt5({mt5_added})")
+
+    # 2) DB trades tablosu (varsa)
+    dsn = url or db_url()
+    db_conn = None
+    if dsn:
+        try:
+            import psycopg
+            db_conn = psycopg.connect(dsn)
+        except Exception as exc:  # noqa: BLE001
+            out["uyarilar"].append(f"DB bağlantısı kurulamadı: {type(exc).__name__}")
+    elif not sources:
+        out["uyarilar"].append("DATABASE_URL yok ve MT5 kapanan işlem bulunamadı")
+        return out
+
+    try:
+        db_rows: List[tuple] = []
+        if db_conn is not None:
+            db_rows = db_conn.execute(
+                "SELECT strategy, symbol, pnl FROM trades WHERE exit_time >= %s AND strategy = ANY(%s)",
+                (since_ts, strat)).fetchall()
+            if db_rows:
+                sources.append(f"db({len(db_rows)})")
+                for st, sym, pnl in db_rows:
+                    rows.append((_norm_strategy(st), str(sym).upper(), float(pnl or 0.0)))
+
+        out["kaynak"] = "+".join(sources) if sources else "bos"
         book_active = len(rows) > 0
         if not book_active:
             out["uyarilar"].append("bu aralıkta kapanmış işlem yok → ölçüm yapılamaz")
@@ -108,12 +192,14 @@ def build_report(*, days: int = 14, since: str = "",
             if verdict.startswith("KAPAT"):
                 out["karar_gereken"].append(f"{st}:{sym} n={n} PF={pf:.2f} → çıkar")
 
-        # Ayar uygulandı mı
+        # Ayar uygulandı mı (DB + MT5 toplamı)
         for st in strat:
+            st_norm = _norm_strategy(st)
             for sym in REMOVED.get(st, []):
-                n = conn.execute(
+                n_db = (db_conn.execute(
                     "SELECT count(*) FROM trades WHERE strategy=%s AND symbol=%s AND entry_time >= %s",
-                    (st, sym, since_ts)).fetchone()[0]
+                    (st, sym, since_ts)).fetchone()[0] if db_conn is not None else 0)
+                n = n_db + mt5_count_by_pair.get((st_norm, sym.upper()), 0)
                 ok = (n == 0)
                 if not book_active:
                     state = "OLCULEMEDI (defter bos)"
@@ -126,14 +212,19 @@ def build_report(*, days: int = 14, since: str = "",
                     "beklenen": "0 islem", "gercek": n, "state": state,
                     "ok": (ok if book_active else None)}
             for sym in ADDED.get(st, []):
-                n = conn.execute(
+                n_db = (db_conn.execute(
                     "SELECT count(*) FROM trades WHERE strategy=%s AND symbol=%s AND entry_time >= %s",
-                    (st, sym, since_ts)).fetchone()[0]
-                scan = conn.execute(
+                    (st, sym, since_ts)).fetchone()[0] if db_conn is not None else 0)
+                n = n_db + mt5_count_by_pair.get((st_norm, sym.upper()), 0)
+                scan = (db_conn.execute(
                     "SELECT count(*) FROM decision_logs WHERE strategy ILIKE %s AND symbol=%s"
                     " AND timestamp >= %s", (f"%{st.split('_')[0]}%", sym, since_ts)).fetchone()[0]
+                    if db_conn is not None else 0)
                 out["ayar_kontrolu"][f"{st}:{sym}"] = {
                     "beklenen": ">0 (zamanla)", "islem": n, "tarama": scan}
+    finally:
+        if db_conn is not None:
+            db_conn.close()
     return out
 
 

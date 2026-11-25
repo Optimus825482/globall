@@ -71,3 +71,36 @@ def test_format_cli_satir_uretiyor():
     joined = "\n".join(lines)
     assert "london_breakout" in joined and "GBPUSD" in joined and "DEVAM" in joined
     assert "ayar isledi" in joined
+
+
+def test_mt5_deals_rapora_dahil_edilir(monkeypatch):
+    monkeypatch.setattr(m, "db_url", lambda: "")
+    deals = [
+        {"symbol": "NAS100", "strategy": "LONDON_BREAKOUT", "profit": 10.0, "commission": -0.5, "swap": 0.0, "time": 1795000000},
+        {"symbol": "NAS100", "strategy": "LONDON_BREAKOUT", "profit": -4.0, "commission": -0.5, "swap": 0.0, "time": 1795003600},
+        {"symbol": "BTCUSD", "strategy": "M1_M5_RADAR_SCALPER", "profit": 5.0, "time": 1795007200},
+    ]
+    rep = m.build_report(since="2026-11-12", mt5_deals=deals)
+    assert rep["kaynak"] == "mt5(3)"
+    assert rep["semboller"]["london_breakout:NAS100"]["n"] == 2
+    assert rep["semboller"]["london_breakout:NAS100"]["net"] == pytest.approx(5.0)
+    assert rep["semboller"]["m1_m5_radar:BTCUSD"]["n"] == 1
+    assert rep["ayar_kontrolu"]["london_breakout:NAS100"]["islem"] == 2
+    assert rep["ayar_kontrolu"]["london_breakout:USDCHF"]["state"] == "ayar isledi"
+
+
+def test_llm_calibration_snapshot_calls_run(monkeypatch):
+    import asyncio
+    from app import llm_calibration
+    from app.routines.db_routines import llm_calibration_snapshot
+
+    async def fake_run(days: int = 0, **kwargs):
+        return {
+            "n": 250, "fitted": True, "base_rate": 0.30, "brier_skill": 0.05,
+            "auc": 0.62, "recommended_threshold": 65, "verdict": "OK",
+            "walk_forward": {"available": True, "n_test": 80, "calibrated": {"skill": 0.04}},
+        }
+
+    monkeypatch.setattr(llm_calibration, "run", fake_run)
+    res = asyncio.run(llm_calibration_snapshot())
+    assert res["ok"] is True and res["n"] == 250 and res["auc"] == 0.62 and res["oos_skill"] == 0.04

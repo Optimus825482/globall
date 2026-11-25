@@ -57,12 +57,24 @@ async def llm_calibration_snapshot() -> Dict[str, Any]:
     """Kalibrasyon modülünün özetini kaydeder (veri yoksa 'birikiyor' der, sayı uydurmaz)."""
     from app import llm_calibration
     try:
-        summary = llm_calibration.summary() if hasattr(llm_calibration, "summary") else None
+        rep = await llm_calibration.run(days=30)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-    if summary is None:
-        return {"ok": True, "note": "özet fonksiyonu yok — modül API'si değişmiş olabilir"}
-    return {"ok": True, "summary": summary}
+    if not isinstance(rep, dict):
+        return {"ok": False, "error": "beklenmeyen kalibrasyon yanıtı"}
+    wf = rep.get("walk_forward") or {}
+    return {
+        "ok": True,
+        "n": rep.get("n", 0),
+        "fitted": bool(rep.get("fitted", False)),
+        "base_rate": rep.get("base_rate"),
+        "brier_skill": rep.get("brier_skill"),
+        "auc": rep.get("auc"),
+        "recommended_threshold": rep.get("recommended_threshold"),
+        "verdict": rep.get("verdict") or rep.get("reason"),
+        "oos_skill": (wf.get("calibrated") or {}).get("skill") if wf.get("available") else None,
+        "oos_n_test": wf.get("n_test") if wf.get("available") else None,
+    }
 
 
 @routine("retail_sentiment",
@@ -186,8 +198,14 @@ async def arm_live_monitor() -> Dict[str, Any]:
     from app import arm_live_monitor as alm
 
     since = (os.getenv("ARM_MONITOR_SINCE") or "2026-11-12").strip()
+    mt5_deals: list = []
     try:
-        report = await asyncio.to_thread(alm.build_report, days=14, since=since)
+        from app.routers import forex as fx
+        mt5_deals = list((fx._MT5_STATE or {}).get("closed_deals") or [])
+    except Exception:  # noqa: BLE001
+        mt5_deals = []
+    try:
+        report = await asyncio.to_thread(alm.build_report, days=14, since=since, mt5_deals=mt5_deals)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "since": since}
 
