@@ -333,6 +333,7 @@ def build_today_audit(
             "profit_factor": pf,
         },
         "scans": scans,
+        "meta_filter": __import__("app.meta_label_filter", fromlist=["get_meta_filter_stats"]).get_meta_filter_stats(),
         "decisions": decisions,
         "losing_trades_forensics": losses,
         "db_logs": db_logs,

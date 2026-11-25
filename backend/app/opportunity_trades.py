@@ -447,6 +447,36 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
     except Exception as exc:  # noqa: BLE001
         logger.warning("Fırsat quant/makro kapısı hatası (%s): %s", sym, exc)
 
+    # 5b) 1D EMA 12/50 Ana Yön (Daily Bias) + Meta-Labeling Olasılık Skoru
+    try:
+        from app.daily_bias_filter import get_daily_bias, daily_bias_alignment
+        from app.meta_label_filter import score_meta_signal
+
+        dbias = get_daily_bias(fx, sym)
+        d_align = daily_bias_alignment(dbias.get("bias", "NEUTRAL"), plan.get("direction", ""))
+        if d_align == "COUNTER":
+            lots_mult *= 0.5
+
+        rc_meta = getattr(fx, "_RADAR_CACHE", None)
+        rcand_m = {}
+        if isinstance(rc_meta, tuple) and len(rc_meta) >= 2 and isinstance(rc_meta[1], dict):
+            rcand_m = next((c for c in (rc_meta[1].get("candidates") or []) if str(c.get("symbol") or "").upper() == str(sym).upper()), {}) or {}
+        sp_val = float((getattr(fx, "_LIVE_SPREAD_PIPS", {}) or {}).get(sym) or 0.0)
+        sl_v = float(plan.get("sl_pips") or 0.0)
+        meta_res = score_meta_signal(
+            sym,
+            str(plan.get("direction") or ""),
+            daily_alignment=d_align,
+            hurst_regime=str(rcand_m.get("hurst_regime") or "UNKNOWN"),
+            hmm_regime=str(rcand_m.get("hmm_regime") or "UNKNOWN"),
+            kalman_zscore=float(rcand_m.get("kalman_zscore") or 0.0),
+            macro_alignment=str(rcand_m.get("macro_alignment") or "NEUTRAL"),
+            spread_sl_ratio=(sp_val / sl_v) if (sp_val > 0 and sl_v > 0) else 0.0,
+        )
+        lots_mult *= float(meta_res.get("size_mult") or 1.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat daily-bias/meta kapısı hatası (%s): %s", sym, exc)
+
     # 6) Seri-SL Soğuması (aynı sembolde son 2 kapanış zararlıysa 2 saat dinlenme)
     try:
         canon = fx.canonical_symbol if hasattr(fx, "canonical_symbol") else (lambda s: str(s).upper())
