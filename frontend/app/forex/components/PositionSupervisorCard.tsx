@@ -303,17 +303,23 @@ export default function PositionSupervisorCard() {
         ...p,
         ts: p.ts ?? p.time ?? nowSec,
       }));
+      const appliedArr = Array.isArray(res?.applied) ? res.applied : [];
+      const anyApplied = appliedArr.length > 0;
       setManualProposals(proposals);
-      setManualAppliedFlag(Boolean(res?.applied ?? apply));
+      setManualAppliedFlag(anyApplied);
       setManualNote(res?.note || res?.message || res?.summary || "");
 
       await fetchStatus();
 
+      const preview = proposals
+        .slice(0, 4)
+        .map((p) => `${p.symbol || `#${p.ticket ?? "?"}`}: ${formatActionBadge(p.action, p.pct).label}`)
+        .join(" · ");
       setNotice({
         ok: true,
         text: apply
-          ? `İnceleme tamamlandı (${proposals.length} karar değerlendirildi, uygun olanlar MT5'e uygulandı).`
-          : `Güvenli inceleme tamamlandı (${proposals.length} AI önerisi üretildi, MT5'e uygulanmadı).`,
+          ? `İnceleme tamamlandı (${proposals.length} karar, ${appliedArr.length} MT5'e uygulandı)${preview ? ` — ${preview}` : ""}.`
+          : `Güvenli inceleme tamamlandı (${proposals.length} AI önerisi)${preview ? ` — ${preview}` : ""}.`,
       });
       setError("");
     } catch (err) {

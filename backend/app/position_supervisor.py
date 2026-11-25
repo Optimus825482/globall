@@ -439,7 +439,7 @@ async def review_positions(
             rejected.append({**prop, "reason": "bilinmeyen bilet"})
             continue
         v = validate_action(pos, prop)
-        entry_rec = {**prop, **v, "symbol": pos.get("symbol")}
+        entry_rec = {**prop, **v, "symbol": pos.get("symbol"), "ts": now, "applied": False}
         if v["ok"]:
             proposals.append(entry_rec)
         else:
@@ -467,15 +467,9 @@ async def review_positions(
                     pending.append(cmd)
                     applied_cmds.append(cmd)
                     applied_cmd = cmd
-                    _record_recent_action({
-                        "ts": now,
-                        "ticket": ticket,
-                        "symbol": pos.get("symbol"),
-                        "action": eff_action,
-                        "cmd_action": cmd.get("action"),
-                        "reason": str(prop.get("reason") or ""),
-                        "source": "llm",
-                    })
+                    entry_rec["applied"] = True
+                    entry_rec["action"] = eff_action
+                    entry_rec["cmd_action"] = cmd.get("action")
                     try:
                         fx._log_auto_decision(
                             "SUPERVISOR",
@@ -485,6 +479,20 @@ async def review_positions(
                         )
                     except Exception:  # noqa: BLE001
                         pass
+
+        if v["ok"]:
+            _record_recent_action({
+                "ts": now,
+                "ticket": ticket,
+                "symbol": pos.get("symbol"),
+                "action": entry_rec.get("action"),
+                "pct": entry_rec.get("pct"),
+                "sl": entry_rec.get("sl"),
+                "cmd_action": applied_cmd.get("action") if applied_cmd else None,
+                "applied": bool(applied_cmd),
+                "reason": str(prop.get("reason") or ""),
+                "source": "llm",
+            })
 
         try:
             await database.log_supervisor_event({
