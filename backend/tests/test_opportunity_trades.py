@@ -34,7 +34,7 @@ def test_all_gates_pass_builds_atr_based_plan():
     assert v["ok"]
     p = v["plan"]
     assert p["direction"] == "BUY" and p["entry_price"] == 4000.0
-    assert p["sl_pips"] == pytest.approx(60.0) and p["tp_pips"] == pytest.approx(90.0)     # 1.5×ATR(4)=6 → 60 pip; 1.5R
+    assert p["sl_pips"] == pytest.approx(60.0) and p["tp_pips"] == pytest.approx(120.0)    # 1.5×ATR(4)=6 → 60 pip; 2.0R
     assert p["atr_pips"] == pytest.approx(40.0) and "TradingView AL" in p["note"]
 
 
@@ -451,18 +451,18 @@ def test_open_failure_backoff_grows_and_resets(monkeypatch):
 
 def test_scalping_uses_15m_atr_across_all_symbols():
     sr = lambda s: {"symbol": s, "direction": "SELL", "agreement": 1.0, "average": -0.5, "summary": "SELL"}
-    # XAUUSD: 15m ATR (8.0 = 80 pip) -> SL = 120 pip, TP = 180 pip
+    # XAUUSD: 15m ATR (8.0 = 80 pip) -> SL = 120 pip, TP = 240 pip (2.0R)
     a = analysis(symbol="XAUUSD", bias="SELL", score=-3.5,
                  frames={"15m": {"atr": 8.0, "score": -3.5}, "1h": {"atr": 20.0, "score": -3.5}},
                  levels={"resistances": [], "supports": []})
     v = ot.plan_trade(a, sr("XAUUSD"), None, 0.1)
-    assert v["ok"] and v["plan"]["sl_pips"] == 120.0 and v["plan"]["tp_pips"] == 180.0
-    # BTCUSD: 15m ATR (200.0) -> SL = 300 puan, TP = 450 puan (1H 750 yerine scalping mesafesi)
+    assert v["ok"] and v["plan"]["sl_pips"] == 120.0 and v["plan"]["tp_pips"] == 240.0
+    # BTCUSD: 15m ATR (200.0) -> SL = 300 puan, TP = 600 puan (2.0R)
     a_btc = analysis(symbol="BTCUSD", bias="SELL", score=-3.5,
                      frames={"15m": {"atr": 200.0, "score": -3.5}, "1h": {"atr": 500.0, "score": -3.5}},
                      levels={"resistances": [], "supports": []})
     v_btc = ot.plan_trade(a_btc, sr("BTCUSD"), None, 1.0)
-    assert v_btc["ok"] and v_btc["plan"]["sl_pips"] == 300.0 and v_btc["plan"]["tp_pips"] == 450.0
+    assert v_btc["ok"] and v_btc["plan"]["sl_pips"] == 300.0 and v_btc["plan"]["tp_pips"] == 600.0
     # 15m/5m/30m yoksa 1h'e düşer
     a_fb = analysis(symbol="XAUUSD", bias="SELL", score=-3.5,
                     frames={"1h": {"atr": 20.0, "score": -3.5}},

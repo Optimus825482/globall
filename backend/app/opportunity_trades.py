@@ -76,8 +76,9 @@ def deep_top_now(now_ts: Optional[float] = None) -> int:
     return WEEKEND_DEEP_TOP if is_weekend(now_ts) else DEEP_ANALYSIS_TOP
 
 SYMBOL_COOLDOWN_SEC = 30 * 60      # aynı sembolde yeni giriş için bekleme (bellek içi)
+CONSEC_LOSS_COOLDOWN_SEC = 120 * 60  # aynı sembolde 2 ardışık SL sonrası 2 saat dinlenme
 SL_ATR_MULT = 1.5                  # stop = 15 dk ATR × 1.5 (scalping nefes payı; yoksa 5m/30m/1h yedeği)
-RR = 1.5                           # hedef = stop × 1.5
+RR = 2.0                           # hedef = stop × 2.0 (1.5R %65 kısmi TP + %35 runner ile uyumlu)
 MIN_AGREEMENT = 0.75               # TradingView zaman dilimi uyumu
 MIN_TV_AVG = 0.25                  # TradingView ağırlıklı reytingin mutlak değeri
 MIN_OWN_SCORE = 2.5                # kendi analiz puanımızın mutlak değeri
@@ -337,16 +338,24 @@ async def open_requested(analysis: Dict[str, Any], direction: str, calendar: Opt
 async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str, Any],
                          opened: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) -> None:
     """Kapılardan geçmiş planı portföy risk kapısı + lot hesabıyla DEMO hesaba yazar (opened/skipped listelerine ekler)."""
-    # 1) Spread / ATR Oranı Kapısı
+    # 1) Spread / ATR ve Spread / SL Maliyet Kapısı
     try:
         spread_pips = float((getattr(fx, "_LIVE_SPREAD_PIPS", {}) or {}).get(sym) or 0.0)
         atr_pips = float(plan.get("atr_pips") or 0.0)
+        sl_pips_val = float(plan.get("sl_pips") or 0.0)
         is_crypto = bool(fx.is_crypto_symbol(sym)) if hasattr(fx, "is_crypto_symbol") else False
         max_ratio = 0.35 if is_crypto else 0.25
         if spread_pips > 0 and atr_pips > 0 and (spread_pips / atr_pips) > max_ratio:
             skipped.append({
                 "symbol": sym,
                 "reason": f"spread/ATR oranı yüksek ({spread_pips:.1f}/{atr_pips:.1f} = {spread_pips / atr_pips:.2f} > {max_ratio:.2f})",
+            })
+            return
+        max_sl_cost = 0.25 if is_crypto else 0.18
+        if spread_pips > 0 and sl_pips_val > 0 and (spread_pips / sl_pips_val) > max_sl_cost:
+            skipped.append({
+                "symbol": sym,
+                "reason": f"spread/SL maliyeti yüksek ({spread_pips:.1f}/{sl_pips_val:.1f} = %{spread_pips / sl_pips_val * 100:.0f} > %{max_sl_cost * 100:.0f})",
             })
             return
     except Exception as exc:  # noqa: BLE001
@@ -396,8 +405,72 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
     except Exception as exc:  # noqa: BLE001
         logger.warning("Fırsat korelasyon kapısı hatası (%s): %s", sym, exc)
 
-    # Portföy risk kapısı (shadow: yalnız günlük; enforce: engeller / lotu küçültür). Fırsat işlemi de aynı kapıdan geçer.
+    # 4) EV Kalkanı Kapısı (son 24s zarar üreten bloke sembole giriş yok)
+    try:
+        if hasattr(fx, "get_all_symbol_ev_status"):
+            ev_res = fx.get_all_symbol_ev_status(time.time())
+            sym_u = str(sym or "").upper()
+            for ev_item in (ev_res or {}).get("symbols") or []:
+                if str(ev_item.get("symbol") or "").upper() == sym_u and ev_item.get("is_blocked"):
+                    skipped.append({
+                        "symbol": sym,
+                        "reason": f"EV Kalkanı bloke ({ev_item.get('reason') or 'son 24s zarar limiti'})",
+                    })
+                    return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat EV kalkanı kapısı hatası (%s): %s", sym, exc)
+
+    # 5) Radar Faz 1 & Faz 2 Quant / Makro Kalkanı (Kalman aşırı uzama, Hurst testere, HMM şok, Makro karşıtlık)
     lots_mult = 1.0
+    try:
+        rc = getattr(fx, "_RADAR_CACHE", None)
+        if isinstance(rc, tuple) and len(rc) >= 2 and isinstance(rc[1], dict):
+            sym_u = str(sym or "").upper()
+            rcand = next((c for c in (rc[1].get("candidates") or []) if str(c.get("symbol") or "").upper() == sym_u), None)
+            if isinstance(rcand, dict):
+                p_dir = str(plan.get("direction") or "").upper()
+                kz = float(rcand.get("kalman_zscore") or 0.0)
+                if rcand.get("kalman_overextended") and ((p_dir == "BUY" and kz >= 2.2) or (p_dir == "SELL" and kz <= -2.2)):
+                    skipped.append({"symbol": sym, "reason": f"Kalman aşırı uzama (Z={kz:+.1f}): geç kovalama engellendi"})
+                    return
+                if rcand.get("hmm_regime") == "SHOCK_VOLATILITY" and float(rcand.get("hmm_confidence") or 0.0) >= 0.60:
+                    skipped.append({"symbol": sym, "reason": "HMM şok volatilite rejimi: işlem pas geçildi"})
+                    return
+                if rcand.get("hurst_regime") == "RANDOM_WALK":
+                    skipped.append({"symbol": sym, "reason": "Hurst testere / rastgele gürültü bölgesi"})
+                    return
+                if rcand.get("macro_alignment") == "OPPOSING":
+                    m_delta = float(rcand.get("macro_delta") or 0.0)
+                    if m_delta <= -5.0:
+                        skipped.append({"symbol": sym, "reason": f"Güçlü karşıt makro baskı ({rcand.get('macro_note') or m_delta})"})
+                        return
+                    lots_mult *= 0.5
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat quant/makro kapısı hatası (%s): %s", sym, exc)
+
+    # 6) Seri-SL Soğuması (aynı sembolde son 2 kapanış zararlıysa 2 saat dinlenme)
+    try:
+        canon = fx.canonical_symbol if hasattr(fx, "canonical_symbol") else (lambda s: str(s).upper())
+        self_key = canon(sym)
+        closed_pool = list((getattr(fx, "_MT5_STATE", None) or {}).get("closed_trades") or []) + \
+                      list((getattr(fx, "_AUTO_STATE", None) or {}).get("closed_trades") or [])
+        sym_closed = [
+            tr for tr in closed_pool
+            if isinstance(tr, dict) and canon(str(tr.get("symbol") or "")) == self_key
+        ]
+        if len(sym_closed) >= 2:
+            sym_closed.sort(key=lambda tr: float(tr.get("exit_ts") or tr.get("close_time") or 0.0), reverse=True)
+            last2 = sym_closed[:2]
+            if all(float(tr.get("pnl_usd", tr.get("profit", 0.0)) or 0.0) < 0.0 for tr in last2):
+                latest_exit = float(last2[0].get("exit_ts") or last2[0].get("close_time") or 0.0)
+                if latest_exit > 0 and (time.time() - latest_exit) < CONSEC_LOSS_COOLDOWN_SEC:
+                    rem_min = int((CONSEC_LOSS_COOLDOWN_SEC - (time.time() - latest_exit)) / 60.0)
+                    skipped.append({"symbol": sym, "reason": f"Seri-SL soğuması: son 2 işlem zararlı (~{rem_min} dk bekleme)"})
+                    return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat seri-SL soğuma kapısı hatası (%s): %s", sym, exc)
+
+    # Portföy risk kapısı (shadow: yalnız günlük; enforce: engeller / lotu küçültür). Fırsat işlemi de aynı kapıdan geçer.
     try:
         from app import portfolio_risk
         est = fx.scan_lot_estimate(sym, plan["sl_pips"])
