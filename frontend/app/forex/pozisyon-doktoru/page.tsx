@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { apiFetch } from "../../lib/api";
@@ -402,6 +402,9 @@ export default function PositionSupervisorPage() {
   const [error, setError] = useState("");
   const [toggling, setToggling] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [reviewProgress, setReviewProgress] = useState(0);
+  const [reviewStage, setReviewStage] = useState("");
+  const [lastManualReviewTs, setLastManualReviewTs] = useState<number | null>(null);
   const [applying, setApplying] = useState(false);
 
   const [proposals, setProposals] = useState<SupervisorActionItem[] | null>(null);
@@ -562,6 +565,31 @@ export default function PositionSupervisorPage() {
     }
   };
 
+  // İnceleme sırasında dinamik progressbar ilerlemesi
+  useEffect(() => {
+    if (!reviewing) {
+      setReviewProgress(0);
+      setReviewStage("");
+      return;
+    }
+    const stages: Array<{ pct: number; label: string }> = [
+      { pct: 18, label: "1/4 · Açık pozisyonlar ve canlı Radar teknikleri toplanıyor…" },
+      { pct: 42, label: "2/4 · Portföy ısısı, korelasyon ve giriş tezi denetleniyor…" },
+      { pct: 68, label: "3/4 · AI Pozisyon Doktoru (LLM) aksiyonları değerlendiriyor…" },
+      { pct: 86, label: "4/4 · Çelik risk guardrail doğrulaması yapılıyor…" },
+      { pct: 94, label: "4/4 · Sonuçlar hazırlanıyor…" },
+    ];
+    let idx = 0;
+    setReviewProgress(stages[0].pct);
+    setReviewStage(stages[0].label);
+    const id = window.setInterval(() => {
+      idx = Math.min(idx + 1, stages.length - 1);
+      setReviewProgress(stages[idx].pct);
+      setReviewStage(stages[idx].label);
+    }, 950);
+    return () => window.clearInterval(id);
+  }, [reviewing]);
+
   const handleReview = async () => {
     setReviewing(true);
     setNotice(null);
@@ -571,6 +599,7 @@ export default function PositionSupervisorPage() {
       })) as ReviewResponse;
 
       const nowSec = Math.floor(Date.now() / 1000);
+      setLastManualReviewTs(nowSec);
       const nextProposals = (Array.isArray(res?.proposals) ? res.proposals : []).map((p) => ({
         ...p,
         ts: p.ts ?? p.time ?? nowSec,
@@ -757,23 +786,6 @@ export default function PositionSupervisorPage() {
               />
               <span>LLM Otomatik Tetik</span>
             </label>
-
-            {/* Pozisyonları İncele (apply=false) */}
-            <button
-              type="button"
-              disabled={reviewing || applying || toggling}
-              onClick={() => void handleReview()}
-              className="min-h-10 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-mono text-xs font-bold shadow-lg shadow-cyan-950/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center gap-2"
-            >
-              {reviewing ? (
-                <>
-                  <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  <span>Pozisyonlar İnceleniyor…</span>
-                </>
-              ) : (
-                <span>Pozisyonları İncele</span>
-              )}
-            </button>
 
             <Link
               href="/forex/reports"
@@ -1043,42 +1055,100 @@ export default function PositionSupervisorPage() {
             <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-bold tabular-nums">
               {proposals ? `${proposals.length} karar · ${actionableEntries.length} uygulanabilir` : "Hazır"}
             </span>
+            <span
+              className="font-mono text-2xs px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-400/35 text-indigo-200 font-semibold tabular-nums"
+              title="En son AI inceleme zamanı (UTC+3)"
+            >
+              🕒 Son İnceleme:{" "}
+              {(() => {
+                const latestTs = Math.max(lastManualReviewTs ?? 0, statusData?.last_llm_ts ?? 0);
+                return latestTs > 0 ? formatUtc3(latestTs) : "Henüz yapılmadı";
+              })()}
+            </span>
           </div>
 
-          {/* Toplu / Seçimli Aksiyon Çubuğu */}
-          {proposals && proposals.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={actionableEntries.length === 0 || applying}
-                onClick={toggleSelectAll}
-                className="min-h-9 px-3 rounded-lg border border-bunker-700 bg-bunker-950 text-slate-300 hover:text-white hover:border-bunker-600 disabled:opacity-40 font-mono text-2xs font-bold transition-colors"
-              >
-                {allActionableSelected ? "Seçimi Temizle" : "Tümünü Seç"}
-              </button>
+          {/* Manuel İncele + Toplu / Seçimli Aksiyon Çubuğu */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={reviewing || applying || toggling}
+              onClick={() => void handleReview()}
+              className="min-h-10 px-4 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 text-white font-mono text-xs font-black tracking-wide shadow-[0_0_16px_rgba(6,182,212,0.35)] disabled:opacity-55 disabled:cursor-not-allowed transition-all inline-flex items-center gap-2"
+            >
+              {reviewing ? (
+                <>
+                  <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  <span>İnceleniyor… %{reviewProgress}</span>
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true">🩺</span>
+                  <span>Pozisyonları İncele</span>
+                </>
+              )}
+            </button>
 
-              <button
-                type="button"
-                disabled={selectedEntries.length === 0 || applying}
-                onClick={() => void handleApplyProposals("selected")}
-                className="min-h-9 px-3.5 rounded-lg border border-cyan-400/50 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs font-bold transition-colors inline-flex items-center gap-1.5 tabular-nums"
-              >
-                {applying ? "Uygulanıyor…" : `Seçilenleri Uygula (${selectedEntries.length})`}
-              </button>
+            {proposals && proposals.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  disabled={actionableEntries.length === 0 || applying}
+                  onClick={toggleSelectAll}
+                  className="min-h-9 px-3 rounded-lg border border-bunker-700 bg-bunker-950 text-slate-300 hover:text-white hover:border-bunker-600 disabled:opacity-40 font-mono text-2xs font-bold transition-colors"
+                >
+                  {allActionableSelected ? "Seçimi Temizle" : "Tümünü Seç"}
+                </button>
 
-              <button
-                type="button"
-                disabled={actionableEntries.length === 0 || applying}
-                onClick={() => void handleApplyProposals("all")}
-                className="min-h-9 px-3.5 rounded-lg border border-emerald-400/50 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs font-bold transition-colors inline-flex items-center gap-1.5 tabular-nums"
-              >
-                {applying ? "Uygulanıyor…" : `Tümünü Uygula (${actionableEntries.length})`}
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  disabled={selectedEntries.length === 0 || applying}
+                  onClick={() => void handleApplyProposals("selected")}
+                  className="min-h-9 px-3.5 rounded-lg border border-cyan-400/50 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs font-bold transition-colors inline-flex items-center gap-1.5 tabular-nums"
+                >
+                  {applying ? "Uygulanıyor…" : `Seçilenleri Uygula (${selectedEntries.length})`}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={actionableEntries.length === 0 || applying}
+                  onClick={() => void handleApplyProposals("all")}
+                  className="min-h-9 px-3.5 rounded-lg border border-emerald-400/50 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs font-bold transition-colors inline-flex items-center gap-1.5 tabular-nums"
+                >
+                  {applying ? "Uygulanıyor…" : `Tümünü Uygula (${actionableEntries.length})`}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="p-4 space-y-3">
+          {/* İnceleme Sırasında Dinamik Progress Bar */}
+          {reviewing && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="p-3.5 rounded-xl border border-cyan-500/40 bg-cyan-950/25 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2 font-mono text-xs">
+                <span className="font-bold text-cyan-300 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                  <span>{reviewStage || "AI Pozisyon Doktoru analiz yapıyor…"}</span>
+                </span>
+                <span className="font-black text-cyan-200 tabular-nums shrink-0">%{reviewProgress}</span>
+              </div>
+              <div className="w-full h-2.5 rounded-full bg-bunker-950/80 border border-cyan-500/30 overflow-hidden">
+                <div
+                  className="progress-fill h-full rounded-full transition-all duration-500 ease-out"
+                  style={
+                    {
+                      width: `${Math.max(8, reviewProgress)}%`,
+                      "--progress-color": "#06b6d4",
+                    } as React.CSSProperties
+                  }
+                />
+              </div>
+            </div>
+          )}
           {reviewNote && (
             <p className="px-3 py-2 rounded-xl bg-bunker-950/70 border border-bunker-800 font-mono text-2xs text-bunker-muted">
               {reviewNote}
