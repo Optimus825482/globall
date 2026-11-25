@@ -983,9 +983,17 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
     if len(opens) >= int(_AUTO_SETTINGS.max_open_positions):
         return {"ok": False, "reason": f"açık pozisyon sınırı ({_AUTO_SETTINGS.max_open_positions}) dolu"}
     key = canonical_symbol(sym)
+    pending_same = [
+        c for c in (st.get("pending_commands") or [])
+        if isinstance(c, dict)
+        and c.get("action") == "OPEN_ORDER"
+        and canonical_symbol(str(c.get("symbol", ""))) == key
+    ]
+    if pending_same:
+        return {"ok": False, "reason": "bu sembol için bekleyen açılış emri zaten kuyrukta"}
     same_sym = [p for p in opens if canonical_symbol(str(p.get("symbol", ""))) == key]
     if same_sym:
-        max_pyr = int(_AUTO_SETTINGS.max_positions_per_symbol)
+        max_pyr = min(2, int(_AUTO_SETTINGS.max_positions_per_symbol))
         same_dir = [p for p in same_sym if str(p.get("direction", "")).upper() == direction]
         if len(same_dir) != len(same_sym):
             return {"ok": False, "reason": "bu sembolde ters yönde zaten açık pozisyon var"}
@@ -1001,6 +1009,8 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
             return {"ok": False, "reason": f"mevcut pozisyon henüz yeterli kârda değil (${same_pnl:+.2f} < +$2.00)"}
     if sl_pips <= 0:
         return {"ok": False, "reason": "stop mesafesi geçersiz"}
+    if key in ("EURUSD", "GBPUSD", "NZDUSD", "AUDUSD", "USDCAD", "USDCHF"):
+        sl_pips = max(sl_pips, 12.0)
 
     spec = get_symbol_trading_specs(sym, base_sl=_AUTO_SETTINGS.sl_pips, base_tp=_AUTO_SETTINGS.tp_pips,
                                     base_be=_AUTO_SETTINGS.breakeven_pips, base_trail=_AUTO_SETTINGS.trailing_stop_pips)
@@ -2902,17 +2912,22 @@ def sign_window_entry(
 RISK_HARD_MULT = 2.0
 
 
+MAX_LIVE_RISK_PER_TRADE_PCT = 1.5
+
+
 def get_symbol_risk_pct(symbol: str, settings: Optional[Any] = None) -> float:
-    """FX %5, XAUUSD %10, US30/USTEC/NAS100 %7, BTC/Kripto %2 dinamik risk bütçesi yüzdesi."""
+    """Tüm varlık sınıflarında varsayılan %1.0, sert tavan %1.5 risk bütçesi (tek işlemde aşırı kayıp koruması)."""
     s = settings or _AUTO_SETTINGS
     sym_u = str(symbol or "").upper()
     if any(k in sym_u for k in ("US30", "NAS100", "USTEC", "SPX")):
-        return float(getattr(s, "risk_index_pct", getattr(s, "risk_crypto_index_pct", 7.0)))
+        raw = float(getattr(s, "risk_index_pct", getattr(s, "risk_crypto_index_pct", 1.0)))
     elif any(k in sym_u for k in ("BTC", "ETH", "SOL", "BNB", "XRP", "LNK", "UNI", "AVX", "ADA", "XTZ", "DATA")):
-        return float(getattr(s, "risk_crypto_pct", getattr(s, "risk_crypto_index_pct", 2.0)))
+        raw = float(getattr(s, "risk_crypto_pct", getattr(s, "risk_crypto_index_pct", 1.0)))
     elif any(k in sym_u for k in ("XAU", "GOLD")):
-        return float(getattr(s, "risk_gold_pct", 10.0))
-    return float(getattr(s, "risk_per_trade_pct", 5.0))
+        raw = float(getattr(s, "risk_gold_pct", 1.0))
+    else:
+        raw = float(getattr(s, "risk_per_trade_pct", 1.0))
+    return min(raw, MAX_LIVE_RISK_PER_TRADE_PCT)
 
 
 def effective_risk_pct(symbol: str, entry_source: Any, settings: Optional[Any] = None) -> float:
@@ -6004,17 +6019,17 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
 class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
-    risk_per_trade_pct: float = Field(5.0, ge=0.1, le=30.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %5")
-    risk_gold_pct: float = Field(5.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %5")
-    risk_index_pct: float = Field(7.0, ge=0.1, le=20.0, description="US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %7")
-    risk_crypto_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, kripto risk bütçesi (% bakiye). Varsayılan %2")
-    risk_crypto_index_pct: float = Field(5.0, ge=0.1, le=20.0, description="Geriye dönük uyumluluk alanı")
+    risk_per_trade_pct: float = Field(1.0, ge=0.1, le=5.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %1")
+    risk_gold_pct: float = Field(1.0, ge=0.1, le=5.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %1")
+    risk_index_pct: float = Field(1.0, ge=0.1, le=5.0, description="US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %1")
+    risk_crypto_pct: float = Field(1.0, ge=0.1, le=5.0, description="BTCUSD, kripto risk bütçesi (% bakiye). Varsayılan %1")
+    risk_crypto_index_pct: float = Field(1.0, ge=0.1, le=5.0, description="Geriye dönük uyumluluk alanı")
     max_open_positions: int = Field(20, ge=1, le=99, description="Aynı anda maksimum açık işlem (2026-10-07 kullanıcı kararı: 99 — slot rekabeti kaldırıldı; 60g replay'de XAU/BTC kâr potansiyeli 99 slotta ~3x)")
     max_positions_per_symbol: int = Field(2, ge=1, le=5, description="Aynı sembolde aynı yönde maksimum açık işlem (Varsayılan 2: Yalnızca kârdaki/risksiz pozisyona güvenli piramitleme)")
     min_score: float = Field(75.0, ge=50.0, le=98.0, description="Minimum sinyal radar skoru (7 günlük replay A/B ile 75.0'e ayarlandı)")
     flip_ignore_min_score: bool = Field(False, description="Zıt sinyal flip'inde skor eşiğini yoksay (Varsayılan False: Zıt yönde flip için de minimum skor eşiği aranır). Spread/maliyet kapısı, korelasyon kalkanı, seri-SL soğuması, risk normalizasyonu ve lot bütçesi korunur — bunlar risk kapısıdır, atlanmaz.")
-    tp_pips: float = Field(20.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - Favorable 1:2.5 R:R)")
-    sl_pips: float = Field(8.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Sıkı Scalper SL)")
+    tp_pips: float = Field(24.0, ge=5.0, le=120.0, description="Kâr al mesafesi (pip - 1:2 R:R)")
+    sl_pips: float = Field(12.0, ge=4.0, le=60.0, description="Zarar durdur mesafesi (pip - Majör parite gürültü korumalı SL)")
     breakeven_enabled: bool = Field(False, description="Breakeven (BE) mekanizmasi acik/kapali (kullanici talebiyle kaldirildi)")
     quality_gate_enabled: bool = Field(True, description="Varlik kalitesi kalkani (QUALITY) acik/kapali (ayar ve panelden yonetilebilir)")
     breakeven_pips: float = Field(14.0, ge=0.0, le=50.0, description="Başabaş kilit tetik mesafesi")
@@ -9261,6 +9276,12 @@ async def _forex_auto_paper_loop():
                             _flip_tickets: List[Any] = []
                             for mp in matching_mt5:
                                 if mp.get("direction", "").upper() in opposite_dirs:
+                                    # Zararda veya 15 dk'dan yeni pozisyonu REVERSAL_FLIP (Scalper Close) ile
+                                    # erken panik-kapatma yapma — kendi SL/TP ve Trailing'i çalışsın.
+                                    mp_pnl = float(mp.get("pnl_usd", mp.get("profit", 0.0)) or 0.0)
+                                    mp_open_ts = float(mp.get("open_ts", 0.0) or 0.0)
+                                    if mp_pnl < 0.0 or (mp_open_ts > 0 and (now_ts - mp_open_ts) < 900.0):
+                                        continue
                                     t_id = mp.get("ticket")
                                     if t_id:
                                         _flip_tickets.append(t_id)
