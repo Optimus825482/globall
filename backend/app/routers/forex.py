@@ -2936,9 +2936,9 @@ def effective_risk_pct(symbol: str, entry_source: Any, settings: Optional[Any] =
     s = settings or _AUTO_SETTINGS
     src = str(entry_source or "").strip().lower()
     if src == _c3.COMBO3_ENTRY_SOURCE:
-        return float(getattr(s, "combo3_risk_pct", 1.0))
+        return min(float(getattr(s, "combo3_risk_pct", 1.0)), MAX_LIVE_RISK_PER_TRADE_PCT)
     if src == _km.KOMBO_ENTRY_SOURCE:
-        return float(getattr(s, "kombo_risk_pct", 2.0))
+        return min(float(getattr(s, "kombo_risk_pct", 1.5)), MAX_LIVE_RISK_PER_TRADE_PCT)
     return get_symbol_risk_pct(symbol, s)
 
 
