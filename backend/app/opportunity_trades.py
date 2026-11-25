@@ -15,6 +15,7 @@ Güvenceler
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -312,6 +313,65 @@ async def open_requested(analysis: Dict[str, Any], direction: str, calendar: Opt
 async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str, Any],
                          opened: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) -> None:
     """Kapılardan geçmiş planı portföy risk kapısı + lot hesabıyla DEMO hesaba yazar (opened/skipped listelerine ekler)."""
+    # 1) Spread / ATR Oranı Kapısı
+    try:
+        spread_pips = float((getattr(fx, "_LIVE_SPREAD_PIPS", {}) or {}).get(sym) or 0.0)
+        atr_pips = float(plan.get("atr_pips") or 0.0)
+        is_crypto = bool(fx.is_crypto_symbol(sym)) if hasattr(fx, "is_crypto_symbol") else False
+        max_ratio = 0.35 if is_crypto else 0.25
+        if spread_pips > 0 and atr_pips > 0 and (spread_pips / atr_pips) > max_ratio:
+            skipped.append({
+                "symbol": sym,
+                "reason": f"spread/ATR oranı yüksek ({spread_pips:.1f}/{atr_pips:.1f} = {spread_pips / atr_pips:.2f} > {max_ratio:.2f})",
+            })
+            return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat spread/ATR kapısı hatası (%s): %s", sym, exc)
+
+    # 2) DXY Rejim Kapısı
+    try:
+        if getattr(getattr(fx, "_AUTO_SETTINGS", None), "dxy_filter_enabled", False):
+            dxy = fx.get_dxy_regime() if hasattr(fx, "get_dxy_regime") else None
+            if dxy is not None and hasattr(fx, "dxy_entry_veto"):
+                veto = fx.dxy_entry_veto(sym, plan["direction"], dxy)
+                if veto == "dxy_conflict":
+                    skipped.append({"symbol": sym, "reason": "DXY dolar rejimiyle çelişiyor"})
+                    return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat DXY kapısı hatası (%s): %s", sym, exc)
+
+    # 3) Korelasyon Kalkanı (aynı sembol hariç — kârlı piramitlemeyi kendiyle engellemez)
+    try:
+        if getattr(getattr(fx, "_AUTO_SETTINGS", None), "correlation_guard", False):
+            bias = fx.get_usd_bias(sym, plan["direction"]) if hasattr(fx, "get_usd_bias") else "USD_NEUTRAL"
+            if bias != "USD_NEUTRAL":
+                canon = fx.canonical_symbol if hasattr(fx, "canonical_symbol") else (lambda s: str(s).upper())
+                self_key = canon(sym)
+                mt5_st = getattr(fx, "_MT5_STATE", None) or {}
+                auto_st = getattr(fx, "_AUTO_STATE", None) or {}
+                corr_positions = []
+                for p in list(mt5_st.get("open_positions") or []) + list(auto_st.get("open_positions") or []):
+                    psym = str(p.get("symbol") or "").upper()
+                    if not psym or canon(psym) == self_key:
+                        continue
+                    corr_positions.append((psym, fx.get_usd_bias(psym, p.get("direction", "BUY"))))
+                for c in list(mt5_st.get("pending_commands") or []):
+                    if c.get("action") == "OPEN_ORDER":
+                        csym = str(c.get("symbol") or "").upper()
+                        if not csym or canon(csym) == self_key:
+                            continue
+                        corr_positions.append((csym, fx.get_usd_bias(csym, c.get("direction", "BUY"))))
+                if corr_positions and hasattr(fx, "_FX_CORR"):
+                    ok, why = fx._FX_CORR.cluster_check(sym, bias, corr_positions)
+                    if not ok:
+                        skipped.append({
+                            "symbol": sym,
+                            "reason": f"korelasyon kalkanı: {why or 'aynı USD yönünde yoğunlaşma'}",
+                        })
+                        return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fırsat korelasyon kapısı hatası (%s): %s", sym, exc)
+
     # Portföy risk kapısı (shadow: yalnız günlük; enforce: engeller / lotu küçültür). Fırsat işlemi de aynı kapıdan geçer.
     lots_mult = 1.0
     try:
@@ -351,3 +411,154 @@ def describe_opening(result: Dict[str, List[Dict[str, Any]]], names: Dict[str, s
     if not result["opened"]:
         lines.insert(0, "Şu an tüm kapılardan geçen yönlü fırsat yok; işlem açılmadı.")
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- periyodik otonom fırsat taraması
+
+_AUTO_SCAN_LOCK = asyncio.Lock()
+_AUTO_SCAN_STATE: Dict[str, Any] = {
+    "last_run_ts": None,
+    "next_run_ts": None,
+    "running": False,
+    "status": "idle",
+    "last_trigger": "",
+    "scanned_count": 0,
+    "top": [],
+    "opened": [],
+    "skipped": [],
+    "error": None,
+    "duration_sec": None,
+}
+
+
+def get_auto_scan_state() -> Dict[str, Any]:
+    """Periyodik fırsat taraması durumunun güvenli kopyasını ayarlarla zenginleştirerek döner."""
+    enabled = True
+    interval_min = 10
+    try:
+        from app.routers import forex as fx
+        enabled = bool(getattr(fx._AUTO_SETTINGS, "auto_opportunity_scan_enabled", True))
+        interval_min = int(getattr(fx._AUTO_SETTINGS, "auto_opportunity_scan_interval_min", 10))
+    except Exception:  # noqa: BLE001
+        pass
+    st = dict(_AUTO_SCAN_STATE)
+    st["top"] = list(_AUTO_SCAN_STATE.get("top") or [])
+    st["opened"] = list(_AUTO_SCAN_STATE.get("opened") or [])
+    st["skipped"] = list(_AUTO_SCAN_STATE.get("skipped") or [])
+    st["enabled"] = enabled
+    st["interval_min"] = interval_min
+    return st
+
+
+async def run_periodic_opportunity_scan(trigger: str = "auto") -> Dict[str, Any]:
+    """Evreni tarar, en net adayları derin analiz + ekonomik takvimle sınar ve geçenleri DEMO hesaba açar."""
+    async with _AUTO_SCAN_LOCK:
+        started = time.perf_counter()
+        _AUTO_SCAN_STATE["running"] = True
+        _AUTO_SCAN_STATE["status"] = "running"
+        _AUTO_SCAN_STATE["last_trigger"] = str(trigger or "auto")
+        _AUTO_SCAN_STATE["error"] = None
+        try:
+            from app import forex_news, forex_research
+            from app.routers import forex_chat
+
+            syms = forex_research.scan_universe()
+            scan = await forex_research.run_blocking(forex_research.scan_opportunities, syms, 8)
+            if not scan or not scan.get("all"):
+                _AUTO_SCAN_STATE["status"] = "error"
+                _AUTO_SCAN_STATE["error"] = "Tarama verisi alınamadı"
+                _AUTO_SCAN_STATE["last_run_ts"] = time.time()
+                _AUTO_SCAN_STATE["duration_sec"] = round(time.perf_counter() - started, 2)
+                _AUTO_SCAN_STATE["running"] = False
+                return get_auto_scan_state()
+
+            ranked = [r["symbol"] for r in (scan.get("all") or []) if float(r.get("agreement") or 0) >= MIN_AGREEMENT]
+            picked = (ranked or [r["symbol"] for r in (scan.get("top") or [])])[:deep_top_now()]
+
+            async def _analyze_one(sym: str):
+                async def _work():
+                    await forex_research.run_blocking(forex_research.mt5_request, sym)
+                    await forex_research.run_blocking(forex_research.mt5_wait, sym)
+                    return await forex_research.run_blocking(forex_research.analyze_symbol, sym)
+                try:
+                    return sym, await asyncio.wait_for(_work(), timeout=16.0)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Periyodik fırsat taraması analiz hatası (%s): %s", sym, exc)
+                    return sym, None
+
+            pairs = await asyncio.gather(*(_analyze_one(s) for s in picked))
+            analyses: Dict[str, Dict[str, Any]] = {sym: a for sym, a in pairs if isinstance(a, dict)}
+
+            cal = None
+            try:
+                cur: set = set()
+                for sym in picked:
+                    cur |= forex_research.currencies_for(sym)
+                items = await forex_news.get_forex_news(force_refresh=False)
+                cal = forex_chat.compact_calendar(items, time.time(), cur, picked)
+                await forex_chat.attach_surprise_z(cal)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Periyodik fırsat taraması takvim hatası: %s", exc)
+
+            outcome = await open_from_scan(analyses, scan, cal)
+            compact_top = [
+                {
+                    "symbol": r.get("symbol"),
+                    "direction": r.get("direction"),
+                    "summary": r.get("summary"),
+                    "agreement": r.get("agreement"),
+                    "average": r.get("average"),
+                }
+                for r in (scan.get("top") or [])
+            ]
+            _AUTO_SCAN_STATE["scanned_count"] = int(scan.get("scanned") or len(scan.get("all") or []))
+            _AUTO_SCAN_STATE["top"] = compact_top
+            _AUTO_SCAN_STATE["opened"] = list(outcome.get("opened") or [])
+            _AUTO_SCAN_STATE["skipped"] = list(outcome.get("skipped") or [])
+            _AUTO_SCAN_STATE["last_run_ts"] = time.time()
+            _AUTO_SCAN_STATE["duration_sec"] = round(time.perf_counter() - started, 2)
+            _AUTO_SCAN_STATE["status"] = "ok"
+            _AUTO_SCAN_STATE["error"] = None
+            logger.info(
+                "[PeriodicOpportunityScan] %s tamamlandı: %d tarandı, %d açıldı, %d elendi (%.2fs)",
+                trigger, _AUTO_SCAN_STATE["scanned_count"],
+                len(_AUTO_SCAN_STATE["opened"]), len(_AUTO_SCAN_STATE["skipped"]),
+                _AUTO_SCAN_STATE["duration_sec"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[PeriodicOpportunityScan] tarama hatası: %s", exc)
+            _AUTO_SCAN_STATE["status"] = "error"
+            _AUTO_SCAN_STATE["error"] = str(exc) or type(exc).__name__
+            _AUTO_SCAN_STATE["last_run_ts"] = time.time()
+            _AUTO_SCAN_STATE["duration_sec"] = round(time.perf_counter() - started, 2)
+        finally:
+            _AUTO_SCAN_STATE["running"] = False
+        return get_auto_scan_state()
+
+
+async def periodic_opportunity_scan_loop() -> None:
+    """Başlangıçta 45 sn bekler, ardından ayarlı aralıkla otonom fırsat taramasını yürütür."""
+    await asyncio.sleep(45)
+    while True:
+        try:
+            from app.routers import forex as fx
+            enabled = bool(getattr(fx._AUTO_SETTINGS, "auto_opportunity_scan_enabled", True))
+            interval_min = max(5, min(120, int(getattr(fx._AUTO_SETTINGS, "auto_opportunity_scan_interval_min", 10))))
+            interval_sec = interval_min * 60.0
+            if not enabled:
+                _AUTO_SCAN_STATE["next_run_ts"] = None
+                await asyncio.sleep(15)
+                continue
+            now = time.time()
+            last_run = _AUTO_SCAN_STATE.get("last_run_ts")
+            due_ts = now if last_run is None else (float(last_run) + interval_sec)
+            _AUTO_SCAN_STATE["next_run_ts"] = due_ts
+            if now >= due_ts:
+                await run_periodic_opportunity_scan(trigger="auto")
+                _AUTO_SCAN_STATE["next_run_ts"] = time.time() + interval_sec
+            await asyncio.sleep(15)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[PeriodicOpportunityScan] döngü hatası: %s", exc)
+            await asyncio.sleep(30)

@@ -1264,6 +1264,8 @@ async def startup_services():
     _start_background(supervisor_loop, "position-supervisor")
     from app.scheduled_actions import scheduler_loop
     _start_background(scheduler_loop, "scheduled-actions")
+    from app.opportunity_trades import periodic_opportunity_scan_loop
+    _start_background(periodic_opportunity_scan_loop, "periodic-opportunity-scan")
 
 async def forex_auto_paper_start_loop():
     """Forex Otonom Scalper motorunu arka planda başlat."""

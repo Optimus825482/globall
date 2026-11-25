@@ -469,3 +469,143 @@ def test_scalping_uses_15m_atr_across_all_symbols():
                     levels={"resistances": [], "supports": []})
     v_fb = ot.plan_trade(a_fb, sr("XAUUSD"), None, 0.1)
     assert v_fb["ok"] and v_fb["plan"]["sl_pips"] == 300.0
+
+
+# ----------------------------------------------------------------------------- eksik 3 risk kapısı + periyodik tarama
+
+def test_spread_atr_gate_blocks_excessive_spread(monkeypatch):
+    calls = _patch_open(monkeypatch)
+    monkeypatch.setattr(fx, "_LIVE_SPREAD_PIPS", {"EURUSD": 5.0, "BTCUSD": 30.0})
+    monkeypatch.setattr(fx, "get_symbol_trading_specs", lambda sym, **k: {
+        "pip_size": 0.0001 if sym == "EURUSD" else 1.0, "pip_val": 10.0,
+    })
+    # EURUSD: spread 5.0 / ATR 10.0 = 0.50 > 0.25 -> engellenir
+    eur_a = analysis(symbol="EURUSD", bias="BUY", score=3.5, price=1.1000,
+                     frames={"15m": {"atr": 0.0010, "score": 3.5}},
+                     levels={"resistances": [], "supports": []})
+    eur_scan = {"symbol": "EURUSD", "direction": "BUY", "average": 0.6, "agreement": 1.0, "summary": "AL"}
+    res_eur = asyncio.run(ot.open_from_scan({"EURUSD": eur_a}, {"all": [eur_scan]}, None))
+    assert not res_eur["opened"] and not calls
+    assert "spread/ATR" in res_eur["skipped"][0]["reason"]
+
+    # BTCUSD: spread 30.0 / ATR 100.0 = 0.30 <= 0.35 (kripto eşiği) -> geçer
+    btc_a = analysis(symbol="BTCUSD", bias="BUY", score=3.5, price=90000.0,
+                     frames={"15m": {"atr": 100.0, "score": 3.5}},
+                     levels={"resistances": [], "supports": []})
+    btc_scan = {"symbol": "BTCUSD", "direction": "BUY", "average": 0.6, "agreement": 1.0, "summary": "AL"}
+    res_btc = asyncio.run(ot.open_from_scan({"BTCUSD": btc_a}, {"all": [btc_scan]}, None))
+    assert len(res_btc["opened"]) == 1 and calls == [("BTCUSD", "BUY")]
+
+
+def test_dxy_gate_blocks_conflicting_direction(monkeypatch):
+    calls = _patch_open(monkeypatch)
+    monkeypatch.setattr(fx, "_LIVE_SPREAD_PIPS", {})
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "dxy_filter_enabled", True, raising=False)
+    monkeypatch.setattr(fx, "get_dxy_regime", lambda: {
+        "regime": "USD_STRONG", "trend": "BULLISH", "score": 78.0, "rsi": 62.0,
+    })
+    monkeypatch.setattr(fx, "get_symbol_trading_specs", lambda sym, **k: {"pip_size": 0.0001, "pip_val": 10.0})
+
+    # EURUSD BUY = USD_SHORT vs USD_STRONG -> çelişki -> engellenir
+    eur_buy = analysis(symbol="EURUSD", bias="BUY", score=3.5, price=1.1000,
+                       frames={"15m": {"atr": 0.0010, "score": 3.5}},
+                       levels={"resistances": [], "supports": []})
+    scan_buy = {"symbol": "EURUSD", "direction": "BUY", "average": 0.6, "agreement": 1.0, "summary": "AL"}
+    res_block = asyncio.run(ot.open_from_scan({"EURUSD": eur_buy}, {"all": [scan_buy]}, None))
+    assert not res_block["opened"] and not calls
+    assert "DXY" in res_block["skipped"][0]["reason"]
+
+    # EURUSD SELL = USD_LONG vs USD_STRONG -> uyumlu -> açılır
+    eur_sell = analysis(symbol="EURUSD", bias="SELL", score=-3.5, price=1.1000,
+                        frames={"15m": {"atr": 0.0010, "score": -3.5}},
+                        levels={"resistances": [], "supports": []})
+    scan_sell = {"symbol": "EURUSD", "direction": "SELL", "average": -0.6, "agreement": 1.0, "summary": "SAT"}
+    res_ok = asyncio.run(ot.open_from_scan({"EURUSD": eur_sell}, {"all": [scan_sell]}, None))
+    assert len(res_ok["opened"]) == 1 and calls == [("EURUSD", "SELL")]
+
+
+def test_correlation_guard_blocks_usd_cluster_and_ignores_same_symbol(monkeypatch):
+    calls = _patch_open(monkeypatch)
+    monkeypatch.setattr(fx, "_LIVE_SPREAD_PIPS", {})
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "dxy_filter_enabled", False, raising=False)
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "correlation_guard", True, raising=False)
+    monkeypatch.setattr(fx, "get_symbol_trading_specs", lambda sym, **k: {"pip_size": 0.0001, "pip_val": 10.0})
+
+    seen_positions = []
+
+    def fake_cluster_check(sym, bias, positions):
+        seen_positions.append(list(positions))
+        return (False, "USD_SHORT kümesi dolu") if positions else (True, "")
+
+    monkeypatch.setattr(fx._FX_CORR, "cluster_check", fake_cluster_check)
+    monkeypatch.setattr(fx, "_MT5_STATE", {
+        "open_positions": [{"symbol": "GBPUSD", "direction": "BUY"}],
+        "pending_commands": [],
+    })
+    monkeypatch.setattr(fx, "_AUTO_STATE", {"open_positions": []})
+
+    eur_a = analysis(symbol="EURUSD", bias="BUY", score=3.5, price=1.1000,
+                     frames={"15m": {"atr": 0.0010, "score": 3.5}},
+                     levels={"resistances": [], "supports": []})
+    eur_scan = {"symbol": "EURUSD", "direction": "BUY", "average": 0.6, "agreement": 1.0, "summary": "AL"}
+    res_blocked = asyncio.run(ot.open_from_scan({"EURUSD": eur_a}, {"all": [eur_scan]}, None))
+    assert not res_blocked["opened"] and not calls
+    assert "korelasyon kalkanı" in res_blocked["skipped"][0]["reason"]
+    assert seen_positions and seen_positions[0][0][0] == "GBPUSD"
+
+    # Yalnızca aynı sembolde açık pozisyon varsa (kârlı piramitleme) kendiyle korelasyon engeli oluşmaz
+    seen_positions.clear()
+    monkeypatch.setattr(fx, "_MT5_STATE", {
+        "open_positions": [{"symbol": "EURUSD", "direction": "BUY"}],
+        "pending_commands": [],
+    })
+    res_same = asyncio.run(ot.open_from_scan({"EURUSD": eur_a}, {"all": [eur_scan]}, None))
+    assert len(res_same["opened"]) == 1 and not seen_positions
+
+
+def test_auto_scan_state_and_run_periodic_opportunity_scan(monkeypatch):
+    from app import forex_news, forex_research
+
+    calls = _patch_open(monkeypatch)
+    monkeypatch.setattr(fx, "_LIVE_SPREAD_PIPS", {})
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "dxy_filter_enabled", False, raising=False)
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "correlation_guard", False, raising=False)
+
+    st0 = ot.get_auto_scan_state()
+    assert st0["interval_min"] == 10
+    assert isinstance(st0["enabled"], bool)
+    assert "status" in st0 and "top" in st0 and "opened" in st0 and "skipped" in st0
+
+    monkeypatch.setattr(forex_research, "scan_universe", lambda: ["XAUUSD"])
+    monkeypatch.setattr(forex_research, "scan_opportunities", lambda syms, n=8: {
+        "scanned": 1, "top": [SCAN], "all": [SCAN],
+    })
+    monkeypatch.setattr(forex_research, "mt5_request", lambda sym: None)
+    monkeypatch.setattr(forex_research, "mt5_wait", lambda sym: None)
+    monkeypatch.setattr(forex_research, "analyze_symbol", lambda sym: analysis(symbol=sym))
+
+    async def fake_news(force_refresh=False):
+        return []
+
+    async def fake_z(cal):
+        return None
+
+    monkeypatch.setattr(forex_news, "get_forex_news", fake_news)
+    monkeypatch.setattr(forex_chat, "attach_surprise_z", fake_z)
+
+    st = asyncio.run(ot.run_periodic_opportunity_scan(trigger="manual"))
+    assert st["status"] == "ok"
+    assert st["running"] is False
+    assert st["last_trigger"] == "manual"
+    assert st["scanned_count"] == 1
+    assert len(st["top"]) == 1 and st["top"][0]["symbol"] == "XAUUSD"
+    assert len(st["opened"]) == 1 and st["opened"][0]["symbol"] == "XAUUSD"
+    assert calls == [("XAUUSD", "BUY")]
+    assert st["last_run_ts"] is not None and st["duration_sec"] is not None
+
+    # Boş tarama durumunda hata durumu kaydedilir
+    monkeypatch.setattr(forex_research, "scan_opportunities", lambda syms, n=8: None)
+    st_err = asyncio.run(ot.run_periodic_opportunity_scan(trigger="auto"))
+    assert st_err["status"] == "error"
+    assert st_err["error"] == "Tarama verisi alınamadı"
+    assert st_err["running"] is False

@@ -6234,6 +6234,8 @@ class ForexAutoPaperSettings(BaseModel):
     kombo_risk_pct: float = Field(2.0, ge=0.1, le=25.0, description="Kombo işlemlerinde risk bütçesi (% bakiye; rapor §9: ölçüm dönemi %2). `risk_gold_pct`'yi EZER (yalnız bu kol). Geçme ölçütü (maliyet sonrası PF ≥ 1.3, BE dolum kaybı kötümser senaryonun yarısından az) sağlanmadan artırılmaz.")
     kombo_max_per_day: int = Field(0, ge=0, le=50, description="Kombo: kombo+yön başına günde azami giriş (0 = sınırsız, replay)")
     kombo_tanimlar: List[Dict[str, Any]] = Field(default_factory=lambda: [dict(k) for k in _km.DEFAULT_KOMBOLAR], description="Kombo tanımları [{ad, tag, tanim:{tip,a,b,n,filtre,sl_atr,tp_r}}]. Varsayılan: kombo_1 sonra(ut_bot,combo3,12)|seans_00_07|sl3.0_tp3.0; kombo_4 or(hma_ao,tsi_ema50)|seans_13_20|sl1.5_tp2.0; kombo_9 sonra(btc_keltner_geri_htf,combo3,3)|atr_yuksek|sl2.0_tp1.0.")
+    auto_opportunity_scan_enabled: bool = Field(True, description="Otonom periyodik fırsat taraması (15m scalping ATR + TV + 8 dilim + haber)")
+    auto_opportunity_scan_interval_min: int = Field(10, ge=5, le=120, description="Periyodik fırsat taraması aralığı (dakika)")
 
 
 class ClosePositionRequest(BaseModel):
@@ -12568,4 +12570,35 @@ async def get_macro_forex_news(
             "source": "Yedek Makro Senaryo Akışı",
             "news": fallback,
         }
+
+
+class OpportunityScanToggleRequest(BaseModel):
+    enabled: Optional[bool] = None
+    interval_min: Optional[int] = Field(None, ge=5, le=120)
+
+
+@router.get("/opportunity-scan/latest")
+async def get_opportunity_scan_latest():
+    """Periyodik otonom fırsat taramasının son durumunu ve sonuçlarını döner."""
+    from app import opportunity_trades
+    return opportunity_trades.get_auto_scan_state()
+
+
+@router.post("/opportunity-scan/run")
+async def run_opportunity_scan_now():
+    """Periyodik fırsat taramasını anında manuel tetikler."""
+    from app import opportunity_trades
+    return await opportunity_trades.run_periodic_opportunity_scan(trigger="manual")
+
+
+@router.post("/opportunity-scan/toggle")
+async def toggle_opportunity_scan(payload: OpportunityScanToggleRequest = Body(default_factory=OpportunityScanToggleRequest)):
+    """Otonom periyodik fırsat taramasını açar/kapatır veya aralığını (5..120 dk) günceller."""
+    from app import opportunity_trades
+    if payload.enabled is not None:
+        _AUTO_SETTINGS.auto_opportunity_scan_enabled = bool(payload.enabled)
+    if payload.interval_min is not None:
+        _AUTO_SETTINGS.auto_opportunity_scan_interval_min = max(5, min(120, int(payload.interval_min)))
+    persist_settings(_AUTO_SETTINGS)
+    return opportunity_trades.get_auto_scan_state()
 
