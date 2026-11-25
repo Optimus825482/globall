@@ -1325,13 +1325,24 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                             if POSITION_PROTECTION_MAP.get(ticket) != "TRAILING":
                                 POSITION_PROTECTION_MAP[ticket] = "BREAKEVEN"
 
-            # 2. TRAILING STOP (İz Süren Stop)
+            # 2. TRAILING STOP (İz Süren Stop + Kademeli Profit Ratchet)
             # BE kilitliyse (be_enabled ve >= 0.8R) VEYA pnl_pips >= max(eff_trail_pips, _sl0_ref) (en az 1.0R)
             chand_mult = float(CURRENT_SETTINGS.get("chandelier_atr_mult", 0.0) or 0.0)
             entry_atr = float(POSITION_ENTRY_ATR_PIPS.get(ticket, 0.0) or 0.0)
             mfe = float(POSITION_MFE_PIPS.get(ticket, 0.0) or 0.0)
             use_chandelier = chand_mult > 0 and entry_atr > 0 and mfe > 0
-            chand_cand_pips = (mfe - chand_mult * entry_atr) if use_chandelier else 0.0
+            # Profit Ratchet: +2.0R ve +3.0R kâr eşiklerinde trailing mesafesini kademeli daralt
+            # (kârın >%45'ini geri vermeyi engeller, 1.0R-2.0R arası nefes alanını korur)
+            eff_chand_mult = chand_mult
+            if use_chandelier and _sl0_ref > 0:
+                if mfe >= 3.0 * _sl0_ref:
+                    eff_chand_mult = chand_mult * 0.60
+                elif mfe >= 2.0 * _sl0_ref:
+                    eff_chand_mult = chand_mult * 0.72
+            chand_dist_pips = eff_chand_mult * entry_atr
+            if use_chandelier and _sl0_ref > 0 and mfe >= 2.0 * _sl0_ref:
+                chand_dist_pips = min(chand_dist_pips, mfe * 0.45)
+            chand_cand_pips = (mfe - chand_dist_pips) if use_chandelier else 0.0
             _trail_arm_threshold = max(eff_trail_pips, _sl0_ref)
             _trail_active = (
                 POSITION_PROTECTION_MAP.get(ticket) == "BREAKEVEN"

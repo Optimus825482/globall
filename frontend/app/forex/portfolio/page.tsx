@@ -5,7 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { usePolling } from "../../lib/usePolling";
 import { useLiveMessages, type LiveMessage } from "../../lib/liveSocket";
-import { formatUtc3 } from "../../lib/format";
+import { formatPrice, formatUtc3 } from "../../lib/format";
 import GateSnapshotCard, { type GateSnapshot } from "../components/GateSnapshotCard";
 import dynamic from "next/dynamic";
 import type { ForexCandidateMeta } from "../components/ForexChartModal";
@@ -936,11 +936,11 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                             )}
                           </td>
                           <td className="py-3 px-3 text-white font-bold">{p.lots} Lot</td>
-                          <td className="py-3 px-3 text-bunker-muted">{p.entry_price}</td>
-                          <td className="py-3 px-3 text-white font-bold">{p.current_price}</td>
+                          <td className="py-3 px-3 text-bunker-muted">{formatPrice(p.entry_price)}</td>
+                          <td className="py-3 px-3 text-white font-bold">{formatPrice(p.current_price)}</td>
                           <td className="py-3 px-3 text-xs">
-                            <div className="text-rose-400">SL: {p.sl_price || "—"}</div>
-                            <div className="text-emerald-400">TP: {p.tp_price || "—"}</div>
+                            <div className="text-rose-400">SL: {p.sl_price ? formatPrice(p.sl_price) : "—"}</div>
+                            <div className="text-emerald-400">TP: {p.tp_price ? formatPrice(p.tp_price) : "—"}</div>
                           </td>
                           <td className={`py-3 px-3 ${isProfit ? "text-emerald-400" : "text-rose-400"} font-black`}>
                             <div>{isProfit ? "+" : ""}${pnlVal.toFixed(2)}</div>
@@ -1016,7 +1016,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
                           <span className="text-bunker-muted text-2xs">({tr.exit_reason || "MT5 Kapanış"})</span>
                         </div>
                         <div className="text-2xs text-bunker-muted mt-0.5">
-                          {tr.entry_price} → {tr.exit_price} ({formatUtc3(tr.exit_time)})
+                          {formatPrice(tr.entry_price)} → {formatPrice(tr.exit_price)} ({formatUtc3(tr.exit_time)})
                         </div>
                       </div>
                       <div className={`font-black text-xs font-mono text-right ${isWin ? "text-emerald-400" : "text-rose-400"}`}>
