@@ -435,6 +435,12 @@ def _compact_technical(radar_cand: Optional[Dict[str, Any]]) -> Optional[Dict[st
         "spread_pip": radar_cand.get("spread_pips"),
         "dss_tier": radar_cand.get("dss_tier"),
         "fvg": radar_cand.get("fvg_type"),
+        "hurst_regime": radar_cand.get("hurst_regime"),
+        "kalman_zscore": radar_cand.get("kalman_zscore"),
+        "kalman_overextended": radar_cand.get("kalman_overextended"),
+        "smc_structure": radar_cand.get("smc_structure"),
+        "smc_sweep": radar_cand.get("smc_sweep"),
+        "asian_sweep": radar_cand.get("asian_sweep"),
     }
 
 

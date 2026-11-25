@@ -72,6 +72,16 @@ interface ForexCandidate {
   fvg_gap?: number;
   dss_score?: number;
   dss_tier?: string;
+  hurst?: number | null;
+  hurst_regime?: string;
+  kalman_zscore?: number | null;
+  kalman_dir?: string;
+  kalman_overextended?: boolean;
+  smc_structure?: string;
+  smc_sweep?: string;
+  asian_sweep?: string;
+  quant_score_delta?: number;
+  quant_badges?: string[];
   news_info?: {
     has_active_news?: boolean;
     alignment?: "SUPPORTIVE" | "OPPOSING" | "NEUTRAL" | string;
@@ -321,6 +331,132 @@ function matchesCategoryPill(c: ForexCandidate, pill: CategoryPill): boolean {
   if (pill === "gold_index") return isGoldIndex;
   if (pill === "forex") return !isCrypto && !isGoldIndex;
   return true;
+}
+
+function QuantBadgeStrip({ c, className = "" }: { c: ForexCandidate; className?: string }) {
+  const pills: { key: string; label: string; tone: string; title?: string }[] = [];
+
+  const hurstVal = optNum(c.hurst);
+  if (hurstVal != null && c.hurst_regime && c.hurst_regime !== "UNKNOWN") {
+    if (c.hurst_regime === "TREND") {
+      pills.push({
+        key: "hurst",
+        label: `H ${hurstVal.toFixed(2)} · TREND`,
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+        title: "Hurst Üssü: Trend rejimi",
+      });
+    } else if (c.hurst_regime === "RANDOM_WALK") {
+      pills.push({
+        key: "hurst",
+        label: `H ${hurstVal.toFixed(2)} · TESTERE`,
+        tone: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+        title: "Hurst Üssü: Rastgele yürüyüş / testere rejimi",
+      });
+    } else if (c.hurst_regime === "MEAN_REVERT") {
+      pills.push({
+        key: "hurst",
+        label: `H ${hurstVal.toFixed(2)} · DÖNÜŞ`,
+        tone: "bg-sky-500/15 text-sky-300 border-sky-500/40",
+        title: "Hurst Üssü: Ortalamaya dönüş rejimi",
+      });
+    }
+  }
+
+  if (c.smc_structure && c.smc_structure !== "NONE") {
+    if (c.smc_structure === "BULLISH_BOS") {
+      pills.push({
+        key: "smc-struct",
+        label: "BOS ▲",
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+        title: "SMC Yükseliş Yapı Kırılımı (Bullish BOS)",
+      });
+    } else if (c.smc_structure === "BEARISH_BOS") {
+      pills.push({
+        key: "smc-struct",
+        label: "BOS ▼",
+        tone: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+        title: "SMC Düşüş Yapı Kırılımı (Bearish BOS)",
+      });
+    } else if (c.smc_structure === "BULLISH_CHOCH") {
+      pills.push({
+        key: "smc-struct",
+        label: "CHoCH ▲",
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+        title: "SMC Yükseliş Karakter Değişimi (Bullish CHoCH)",
+      });
+    } else if (c.smc_structure === "BEARISH_CHOCH") {
+      pills.push({
+        key: "smc-struct",
+        label: "CHoCH ▼",
+        tone: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+        title: "SMC Düşüş Karakter Değişimi (Bearish CHoCH)",
+      });
+    }
+  }
+
+  if (c.asian_sweep === "LOW_SWEPT" || c.asian_sweep === "HIGH_SWEPT") {
+    pills.push({
+      key: "sweep",
+      label: "🎯 Asya Tuzağı",
+      tone: "bg-purple-500/15 text-purple-300 border-purple-500/40",
+      title:
+        c.asian_sweep === "LOW_SWEPT"
+          ? "Asya seansı dip likiditesi süpürüldü"
+          : "Asya seansı tepe likiditesi süpürüldü",
+    });
+  } else if (c.smc_sweep === "BULLISH_SWEEP" || c.smc_sweep === "BEARISH_SWEEP") {
+    pills.push({
+      key: "sweep",
+      label: "⚡ Likidite Sweep",
+      tone:
+        c.smc_sweep === "BULLISH_SWEEP"
+          ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/40"
+          : "bg-rose-500/15 text-rose-300 border-rose-500/40",
+      title:
+        c.smc_sweep === "BULLISH_SWEEP"
+          ? "Yükseliş yönlü likidite süpürmesi"
+          : "Düşüş yönlü likidite süpürmesi",
+    });
+  }
+
+  if (c.kalman_overextended) {
+    const kz = optNum(c.kalman_zscore);
+    pills.push({
+      key: "kalman",
+      label: `⚠️ Uzamış${kz != null ? ` Z=${kz.toFixed(1)}` : ""}`,
+      tone: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+      title: "Kalman filtresine göre fiyat aşırı uzamış",
+    });
+  }
+
+  const qDelta = optNum(c.quant_score_delta);
+  if (qDelta != null && qDelta !== 0) {
+    pills.push({
+      key: "quant-delta",
+      label: `Quant ${qDelta > 0 ? "+" : ""}${qDelta.toFixed(0)}`,
+      tone:
+        qDelta > 0
+          ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+          : "bg-rose-500/15 text-rose-300 border-rose-500/40",
+      title: "Faz 1 Quant skor katkısı",
+    });
+  }
+
+  if (pills.length === 0) return null;
+
+  return (
+    <div className={`flex flex-wrap items-center gap-1 min-w-0 ${className}`.trim()}>
+      {pills.map((p) => (
+        <span
+          key={p.key}
+          title={p.title}
+          className={`inline-flex items-center px-1.5 py-0.5 rounded border font-mono text-2xs leading-tight font-bold whitespace-nowrap ${p.tone}`}
+        >
+          {p.label}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 const DEFAULT_SETTINGS: AutoSettings = {
@@ -1132,6 +1268,8 @@ export default function ForexRadarPage() {
                         </span>
                       </div>
 
+                      <QuantBadgeStrip c={c} />
+
                       {c.news_info?.has_active_news && (
                         <div
                           className={`px-2 py-1 rounded-lg border text-2xs font-bold flex items-center justify-between gap-2 ${
@@ -1377,6 +1515,7 @@ export default function ForexRadarPage() {
                                 {c.name} · <span className={adxTone(c.adx)}>ADX {c.adx.toFixed(0)}</span> ·{" "}
                                 <span className={st.tone}>{st.text}</span> · RSI {fmtRsi(c)}
                               </div>
+                              <QuantBadgeStrip c={c} className="mt-1" />
                             </td>
 
                             {/* Fiyat */}
@@ -1530,6 +1669,8 @@ export default function ForexRadarPage() {
                             {meta.label}
                           </span>
                         </div>
+
+                        <QuantBadgeStrip c={c} />
 
                         <div className="grid grid-cols-3 gap-2 text-2xs p-2 rounded-lg bg-bunker-900/80 border border-bunker-800">
                           <div>

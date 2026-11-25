@@ -35,10 +35,12 @@ try:
     from app.forex_correlation import FXCorrelationMonitor
     from app import combo3_m5 as _c3
     from app import kombo_m5 as _km
+    from app import radar_quant
 except ImportError:  # paket dışı bağlam (test/script)
     from ..forex_correlation import FXCorrelationMonitor
     from .. import combo3_m5 as _c3
     from .. import kombo_m5 as _km
+    from .. import radar_quant
 
 from app import trade_reasons  # kanonik kapanış nedeni (2026-11-09)
 # Kripto ürün kuralı (BTC/ETH/XRP) TEK kaynaktan okunur — `config` bir
@@ -4142,6 +4144,12 @@ def _compute_technical_indicators(
         smc_sweep_bull = bool(l_last < lowest_15 and last_price > lowest_15)
         smc_sweep_bear = bool(h_last > highest_15 and last_price < highest_15)
 
+    # Radar Faz 1 Quant Modülü (Hurst + Kalman + Algorithmic SMC)
+    try:
+        rq = radar_quant.evaluate_ohlc(opens, highs, lows, closes, bar_times=bar_times, action=action)
+    except Exception:
+        rq = {}
+
     return {
         "price": last_price,
         "high": float(np.max(h)),
@@ -4191,6 +4199,18 @@ def _compute_technical_indicators(
         "zl_macd_bullish": zl_macd_bullish,
         "smc_sweep_bull": smc_sweep_bull,
         "smc_sweep_bear": smc_sweep_bear,
+        "hurst": rq.get("hurst"),
+        "hurst_regime": rq.get("hurst_regime", "UNKNOWN"),
+        "kalman_level": rq.get("kalman_level"),
+        "kalman_slope_bps": rq.get("kalman_slope_bps", 0.0),
+        "kalman_dir": rq.get("kalman_dir", "FLAT"),
+        "kalman_zscore": rq.get("kalman_zscore", 0.0),
+        "kalman_overextended": bool(rq.get("kalman_overextended", False)),
+        "smc_structure": rq.get("smc_structure", "NONE"),
+        "smc_sweep": rq.get("smc_sweep", "NONE"),
+        "asian_sweep": rq.get("asian_sweep", "NONE"),
+        "quant_score_delta": float(rq.get("quant_score_delta", 0.0) or 0.0),
+        "quant_badges": list(rq.get("quant_badges") or []),
         "signal_bar_time": int(bar_times[-1]) if bar_times and len(bar_times) == len(closes) else None,
         "signal_bar_confirmed": bool(bar_times and len(bar_times) == len(closes)),
         "updated_at": time.time(),
@@ -4407,6 +4427,18 @@ async def _generate_realistic_ticks() -> Dict[str, Dict[str, Any]]:
             "zl_macd_bullish": bool(tech.get("zl_macd_bullish", False)) if tech else False,
             "smc_sweep_bull": bool(tech.get("smc_sweep_bull", False)) if tech else False,
             "smc_sweep_bear": bool(tech.get("smc_sweep_bear", False)) if tech else False,
+            "hurst": tech.get("hurst") if tech else None,
+            "hurst_regime": tech.get("hurst_regime", "UNKNOWN") if tech else "UNKNOWN",
+            "kalman_level": tech.get("kalman_level") if tech else None,
+            "kalman_slope_bps": tech.get("kalman_slope_bps", 0.0) if tech else 0.0,
+            "kalman_dir": tech.get("kalman_dir", "FLAT") if tech else "FLAT",
+            "kalman_zscore": tech.get("kalman_zscore", 0.0) if tech else 0.0,
+            "kalman_overextended": bool(tech.get("kalman_overextended", False)) if tech else False,
+            "smc_structure": tech.get("smc_structure", "NONE") if tech else "NONE",
+            "smc_sweep": tech.get("smc_sweep", "NONE") if tech else "NONE",
+            "asian_sweep": tech.get("asian_sweep", "NONE") if tech else "NONE",
+            "quant_score_delta": float(tech.get("quant_score_delta", 0.0) or 0.0) if tech else 0.0,
+            "quant_badges": list(tech.get("quant_badges") or []) if tech else [],
             "volatility": "HIGH" if ("XAU" in sym or "GOLD" in sym) else "NORMAL",
             "source": "mt5_tick" if source == "mt5_tick" else source,
             "age_sec": None if age_sec is None else round(age_sec, 1),
@@ -5455,6 +5487,10 @@ async def get_forex_radar(use_cache: bool = True):
             hour_utc=current_utc_hour,
         )
 
+        quant_delta = float(t.get("quant_score_delta", 0.0) or 0.0)
+        if action in ("BUY", "SELL") and quant_delta != 0.0:
+            score = max(0.0, min(99.0, round(score + quant_delta, 1)))
+
         base = {
             "symbol": sym,
             "display": t["display"],
@@ -5506,6 +5542,16 @@ async def get_forex_radar(use_cache: bool = True):
             "risk_reward": f"1:{round(spec['tp_pips'] / spec['sl_pips'], 2)}" if spec["sl_pips"] > 0 else "1:1.83",
             "atr_pips": atr_pips,
             "tv_symbol": t["tv_symbol"],
+            "hurst": t.get("hurst"),
+            "hurst_regime": t.get("hurst_regime", "UNKNOWN"),
+            "kalman_zscore": t.get("kalman_zscore", 0.0),
+            "kalman_dir": t.get("kalman_dir", "FLAT"),
+            "kalman_overextended": bool(t.get("kalman_overextended", False)),
+            "smc_structure": t.get("smc_structure", "NONE"),
+            "smc_sweep": t.get("smc_sweep", "NONE"),
+            "asian_sweep": t.get("asian_sweep", "NONE"),
+            "quant_score_delta": quant_delta,
+            "quant_badges": list(t.get("quant_badges") or []),
         }
 
         gate = _evaluate_signal_gate(
