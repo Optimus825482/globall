@@ -23,6 +23,7 @@ const labels: Record<string, string> = {
   "/forex/charts": "Forex Grafik",
   "/forex/reports": "Forex Raporlar",
   "/forex/calendar": "Ekonomik Takvim",
+  "/forex/pozisyon-doktoru": "AI Pozisyon Doktoru",
   "/forex/ayarlar": "Forex Ayarları",
 };
 
@@ -53,7 +54,11 @@ export default function TopBar() {
       <div className="sticky top-0 z-30">
         <header
           className="topbar flex items-center justify-between gap-2.5 px-3 sm:px-6 py-2.5 bg-bunker-950/90 border-b border-bunker-800/90 backdrop-blur-xl"
-          style={{ paddingTop: "max(0.6rem, env(safe-area-inset-top, 0px))" }}
+          style={{
+            paddingTop: "max(0.6rem, env(safe-area-inset-top, 0px))",
+            paddingLeft: "max(0.75rem, env(safe-area-inset-left, 0px))",
+            paddingRight: "max(0.75rem, env(safe-area-inset-right, 0px))",
+          }}
         >
         {/* Sol Alan: Mobil Menü Butonu + Başlık */}
         <div className="flex items-center gap-2.5 min-w-0">
@@ -96,7 +101,8 @@ export default function TopBar() {
               className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-cyan-400/50 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900/80 hover:to-blue-900/80 text-cyan-300 font-mono text-2xs sm:text-xs font-bold tracking-wide shadow-[0_0_10px_rgba(0,240,255,0.2)] transition-all touch-target active:scale-95"
               title="Scalper Global uygulamasını cihazınıza yükleyin"
             >
-              <span className="hidden xs:inline sm:inline">YÜKLE</span>
+              <span aria-hidden="true">📲</span>
+              <span>Yükle</span>
             </button>
           )}
 

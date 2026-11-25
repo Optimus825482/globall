@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 
 interface PwaContextType {
   isInstalled: boolean;
@@ -10,7 +10,11 @@ interface PwaContextType {
   promptInstall: () => Promise<boolean>;
   showIosGuide: boolean;
   setShowIosGuide: (show: boolean) => void;
+  showInstallGuide: boolean;
+  setShowInstallGuide: (show: boolean) => void;
   openInstallDialog: () => void;
+  updateAvailable: boolean;
+  applyUpdate: () => void;
 }
 
 const PwaContext = createContext<PwaContextType>({
@@ -21,7 +25,11 @@ const PwaContext = createContext<PwaContextType>({
   promptInstall: async () => false,
   showIosGuide: false,
   setShowIosGuide: () => {},
+  showInstallGuide: false,
+  setShowInstallGuide: () => {},
   openInstallDialog: () => {},
+  updateAvailable: false,
+  applyUpdate: () => {},
 });
 
 export function PwaProvider({ children }: { children: React.ReactNode }) {
@@ -30,6 +38,10 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [isIos, setIsIos] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [showIosGuide, setShowIosGuide] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const waitingWorkerRef = useRef<ServiceWorker | null>(null);
+  const reloadingRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -48,6 +60,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
         (window.navigator as any)?.standalone === true ||
         document.referrer.includes("android-app://");
       setIsInstalled(Boolean(isStandaloneMode));
+      if (isStandaloneMode) {
+        navigator.storage?.persist?.().catch(() => undefined);
+      }
     };
     checkStandalone();
 
@@ -81,6 +96,22 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       navigator.serviceWorker
         .register(swUrl)
         .then((reg) => {
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            waitingWorkerRef.current = reg.waiting;
+            setUpdateAvailable(true);
+          }
+
+          reg.addEventListener("updatefound", () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener("statechange", () => {
+              if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                waitingWorkerRef.current = newWorker;
+                setUpdateAvailable(true);
+              }
+            });
+          });
+
           // Güncelleme kontrolü
           reg.update().catch(() => undefined);
         })
@@ -93,6 +124,28 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
+  }, []);
+
+  const applyUpdate = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const waiting = waitingWorkerRef.current;
+    if (!waiting) {
+      window.location.reload();
+      return;
+    }
+
+    const handleControllerChange = () => {
+      if (reloadingRef.current) return;
+      reloadingRef.current = true;
+      window.location.reload();
+    };
+
+    navigator.serviceWorker?.addEventListener("controllerchange", handleControllerChange, { once: true });
+    try {
+      waiting.postMessage({ type: "SKIP_WAITING" });
+    } catch {
+      window.location.reload();
+    }
   }, []);
 
   const promptInstall = useCallback(async (): Promise<boolean> => {
@@ -122,10 +175,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     } else if (isIos) {
       setShowIosGuide(true);
     } else {
-      // Masaüstü veya diğer tarayıcılar için bilgilendirme
-      alert(
-        "PWA Kurulumu: Tarayıcınızın adres çubuğundaki 'Yükle' simgesine veya menüdeki 'Ana Ekrana Ekle' seçeneğine dokunarak uygulamayı tam ekran yükleyebilirsiniz."
-      );
+      setShowInstallGuide(true);
     }
   }, [deferredPrompt, isIos, promptInstall]);
 
@@ -141,7 +191,11 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
         promptInstall,
         showIosGuide,
         setShowIosGuide,
+        showInstallGuide,
+        setShowInstallGuide,
         openInstallDialog,
+        updateAvailable,
+        applyUpdate,
       }}
     >
       {children}

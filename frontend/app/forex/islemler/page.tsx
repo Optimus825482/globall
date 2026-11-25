@@ -483,7 +483,7 @@ export default function ForexIslemlerPage() {
   const theme = useMemo(() => {
     if (isLightMode) {
       return {
-        wrapper: "bg-slate-100 text-slate-800 min-h-screen",
+        wrapper: "bg-slate-100 text-slate-800 min-h-dvh",
         cardBg: "bg-white border-slate-200/90 shadow-sm",
         headerBg: "border-transparent",
         kpiCard: "bg-white border-slate-200/90 shadow-sm text-slate-900",
@@ -500,7 +500,7 @@ export default function ForexIslemlerPage() {
       };
     }
     return {
-      wrapper: "bg-[#080c14] text-white min-h-screen",
+      wrapper: "bg-[#080c14] text-white min-h-dvh",
       cardBg: "bg-bunker-900/90 border-bunker-800 shadow-xl",
       headerBg: "border-transparent",
       kpiCard: "bg-bunker-900/80 border-bunker-800 shadow-lg text-white",
@@ -1208,7 +1208,7 @@ export default function ForexIslemlerPage() {
 
       {/* 5. KAPANAN FOREX İŞLEMLERİ TABLOSU (DATA TABLE & PAGINATION 20'ŞERLİ) */}
       {activeTab === "CLOSED" && (
-      <div className={`rounded-2xl border overflow-hidden ${theme.cardBg}`}>
+      <div className={`defer-section rounded-2xl border overflow-hidden ${theme.cardBg}`}>
         <div className="p-3.5 sm:p-4 border-b flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h2 className={`text-sm font-bold uppercase tracking-wide ${theme.textPrimary}`}>

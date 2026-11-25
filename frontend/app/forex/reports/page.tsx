@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { showToast } from "../../components/AppToast";
 import { usePolling } from "../../lib/usePolling";
 import { formatUtc3, localDateInput } from "../../lib/format";
 import LlmReviewReport from "./LlmReviewReport";
@@ -354,7 +355,7 @@ export default function ForexReportsPage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error("CSV indirme hatası:", e);
-      alert("CSV indirilirken bir hata oluştu.");
+      showToast("CSV indirilirken bir hata oluştu.", "error");
     } finally {
       setIsExporting(false);
     }

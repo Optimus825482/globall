@@ -7,7 +7,7 @@
 // shell'i sunmaya devam edemez.
 const BUILD = new URL(self.location.href).searchParams.get("v") || "dev";
 const CACHE = "scalper-global-agent-shell-" + BUILD;
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+const SHELL = ["/", "/offline.html", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", function (event) {
   event.waitUntil(caches.open(CACHE).then(function (cache) {
@@ -17,12 +17,32 @@ self.addEventListener("install", function (event) {
   }));
 });
 
+self.addEventListener("message", function (event) {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+// YENİ SÜRÜM AKTİF: eski önbellekleri temizle, istemcileri devral ve açık
+// pencere istemcilerine yeni SW_VERSION bilgisini bildir.
 self.addEventListener("activate", function (event) {
-  event.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (key) { return key !== CACHE; }).map(function (key) {
-      return caches.delete(key);
-    }));
-  }).then(function () { return self.clients.claim(); }));
+  event.waitUntil(
+    caches.keys().then(function (keys) {
+      return Promise.all(
+        keys.filter(function (key) { return key !== CACHE; }).map(function (key) {
+          return caches.delete(key);
+        })
+      );
+    }).then(function () {
+      return self.clients.claim();
+    }).then(function () {
+      return self.clients.matchAll({ type: "window" });
+    }).then(function (clients) {
+      clients.forEach(function (client) {
+        try { client.postMessage({ type: "SW_VERSION", build: BUILD }); } catch (_) { /* yok say */ }
+      });
+    })
+  );
 });
 
 self.addEventListener("push", function (event) {
@@ -185,11 +205,15 @@ self.addEventListener("fetch", function (event) {
       return response;
     }).catch(function () {
       return caches.match(event.request).then(function (cached) {
-        return cached || caches.match("/").then(function (shell) {
-          // Çevrimdışı + hiçbir önbellek yoksa bile GEÇERLİ bir Response dön;
-          // `respondWith(undefined)` "Failed to convert value to 'Response'"
-          // fırlatır ve istemci-içi gezinmeyi kırar.
-          return shell || new Response("offline", { status: 503, statusText: "offline" });
+        if (cached) return cached;
+        return caches.match("/").then(function (shell) {
+          if (shell) return shell;
+          return caches.match("/offline.html").then(function (offlinePage) {
+            // Çevrimdışı + hiçbir önbellek yoksa bile GEÇERLİ bir Response dön;
+            // `respondWith(undefined)` "Failed to convert value to 'Response'"
+            // fırlatır ve istemci-içi gezinmeyi kırar.
+            return offlinePage || new Response("offline", { status: 503, statusText: "offline" });
+          });
         });
       });
     }));
@@ -215,22 +239,4 @@ self.addEventListener("fetch", function (event) {
   }
 
   // Diğer her şey (RSC, manifest, ikon, API-dışı GET): SW karışmasın.
-});
-
-// YENİ SÜRÜM AKTİF (2026-09-16): tarayıcı yeni sw.js'i kurup skipWaiting ile
-// aktifleştirdiğinde, hâlâ eski JS/HTML bellekte olan açık sayfalar yeni asset'leri
-// alamaz. Bu yüzden activate'te tüm kontrollü pencere istemcilerine "YENILE"
-// mesajı göndeririz; istemci tarafı bunu dinler ve location.reload() yapar.
-// Böylece her deploy'dan sonra ?v=<BUILD_ID> değişir → yeni SW kurulur → sayfalar
-// otomatik yenilenir → yeni JS/HTML yüklenir. Kullanıcı hard refresh yapmaz.
-self.addEventListener("activate", function (event) {
-  event.waitUntil(
-    self.clients.claim().then(function () {
-      return self.clients.matchAll({ type: "window" });
-    }).then(function (clients) {
-      clients.forEach(function (client) {
-        try { client.postMessage({ type: "SW_VERSION", build: BUILD }); } catch (_) { /* yok say */ }
-      });
-    })
-  );
 });

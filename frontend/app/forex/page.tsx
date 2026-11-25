@@ -12,6 +12,7 @@ import GateSnapshotCard, { type GateSnapshot } from "./components/GateSnapshotCa
 import OpportunityScanSection, {
   type OpportunityScanSummary,
 } from "./components/OpportunityScanSection";
+import NativeDialog from "../components/NativeDialog";
 
 // PERFORMANS: Ağır modallar yalnızca kullanıcı açtığında yüklenir.
 const ForexChartModal = dynamic(() => import("./components/ForexChartModal"), { ssr: false });
@@ -2109,16 +2110,14 @@ export default function ForexRadarPage() {
 
       {/* Kapı Anlık Görünümü (GateSnapshotCard) Modalı */}
       {gateModalSymbol && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${gateModalSymbol} Giriş Kapıları`}
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-sm"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setGateModalSymbol(null);
-          }}
+        <NativeDialog
+          open={Boolean(gateModalSymbol)}
+          onClose={() => setGateModalSymbol(null)}
+          closedby="any"
+          ariaLabel={`${gateModalSymbol} Giriş Kapıları`}
+          className="max-w-3xl"
         >
-          <div className="relative w-full max-w-3xl max-h-[88vh] overflow-y-auto rounded-2xl border border-bunker-700 bg-bunker-950 p-4 shadow-2xl space-y-3">
+          <div className="relative w-full max-w-3xl max-h-[88dvh] overflow-y-auto rounded-2xl border border-bunker-700 bg-bunker-950 p-4 shadow-2xl space-y-3">
             <div className="flex items-center justify-between border-b border-bunker-800 pb-2.5">
               <h3 className="font-mono text-sm font-bold text-white">
                 {gateModalSymbol} — Giriş Kapıları Anlık Görünümü
@@ -2142,7 +2141,7 @@ export default function ForexRadarPage() {
               <GateSnapshotCard snapshot={gateSnapshot} />
             )}
           </div>
-        </div>
+        </NativeDialog>
       )}
     </div>
   );

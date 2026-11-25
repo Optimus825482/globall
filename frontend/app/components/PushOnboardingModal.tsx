@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ensurePushSubscription, detectBrowser, isMobileDevice, isStandalonePwa, pushSupported } from "../lib/push";
+import NativeDialog from "./NativeDialog";
 
 type Step = "browser_warn" | "install" | "notify" | null;
 
@@ -153,7 +154,7 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
   const isIOS = iOS();
 
   return (
-    <div className="fixed inset-0 z-[115] grid place-items-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="push-onboard-title">
+    <NativeDialog open={Boolean(step)} onClose={dismissNow} closedby="any" ariaLabelledBy="push-onboard-title" className="max-w-sm">
       <section className="w-full max-w-sm overflow-hidden rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl">
         {step === "browser_warn" && (
           <>
@@ -260,6 +261,6 @@ export default function PushOnboardingModal({ active = false }: { active?: boole
           </>
         )}
       </section>
-    </div>
+    </NativeDialog>
   );
 }

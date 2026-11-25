@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ensurePushSubscription } from "../lib/push";
+import NativeDialog from "./NativeDialog";
 
 const STORAGE_KEY = "scalper:notification-permission-asked";
 const SNOOZE_KEY = "scalper:notification-permission-snooze-until";
@@ -71,8 +72,8 @@ export default function NotificationPermissionModal({ active = false }: { active
 
   if (!visible) return null;
   return (
-    <div className="fixed inset-0 z-[115] grid place-items-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="notif-permission-title">
-      <section className="w-full max-w-md rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <NativeDialog open={visible} onClose={dismissNow} closedby="any" ariaLabelledBy="notif-permission-title" className="max-w-md">
+      <section className="w-full max-w-md rounded-xl border border-bunker-700 bg-bunker-950 shadow-2xl">
         <div className="flex items-center gap-2 border-b border-bunker-800 px-5 py-4">
           <span className="text-xl">📡</span>
           <div>
@@ -101,6 +102,6 @@ export default function NotificationPermissionModal({ active = false }: { active
           </div>
         </div>
       </section>
-    </div>
+    </NativeDialog>
   );
 }

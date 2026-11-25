@@ -30,11 +30,8 @@ export default function Sidebar() {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === "Escape") setOpen(false);
         };
-        const prevOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
         window.addEventListener("keydown", handleKeyDown);
         return () => {
-            document.body.style.overflow = prevOverflow;
             window.removeEventListener("keydown", handleKeyDown);
         };
     }, [open]);
@@ -52,7 +49,7 @@ export default function Sidebar() {
     return (
         <>
             {open && <button className="mobile-menu-backdrop" onClick={() => setOpen(false)} aria-label="Menüyü kapat" />}
-        <aside className={`app-sidebar w-64 max-w-[85vw] md:w-56 shrink-0 border-r border-bunker-800 bg-bunker-900/95 flex flex-col h-screen sticky top-0 ${open ? "is-open" : ""}`}>
+        <aside className={`app-sidebar w-64 max-w-[85vw] md:w-56 shrink-0 border-r border-bunker-800 bg-bunker-900/95 flex flex-col h-dvh sticky top-0 ${open ? "is-open" : ""}`}>
             <div className="p-4 sm:p-5 border-b border-bunker-800">
                 <div className="flex items-center justify-between">
                     <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2.5">
@@ -79,7 +76,7 @@ export default function Sidebar() {
                 </div>
             </div>
 
-            <nav className="flex-1 overflow-y-auto p-3 space-y-4" aria-label="Ana gezinme">
+            <nav className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-4" aria-label="Ana gezinme">
                 {groups.map((group) => {
                     if (!group.items.length) return null;
                     // 2026-10-30: gruplar (İZLE / İŞLEM / ANALİZ / SİSTEM) her zaman
@@ -99,6 +96,7 @@ export default function Sidebar() {
                                     <Link
                                         key={m.href}
                                         href={m.href}
+                                        aria-current={active ? "page" : undefined}
                                         onClick={() => setOpen(false)}
                                         title={m.desc || label}
                                         className={`block px-3 py-2 rounded-lg border transition-colors touch-target ${active

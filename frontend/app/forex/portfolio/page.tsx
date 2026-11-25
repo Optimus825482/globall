@@ -967,7 +967,7 @@ export default function ForexPortfolioPage({ symbols, title }: { symbols?: strin
           </div>
 
           {/* Kapanan İşlemler Tablosu */}
-          <div className="rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl">
+          <div className="defer-section rounded-2xl border border-bunker-800 bg-bunker-900/70 p-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-bunker-800 pb-3 mb-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-xs font-black text-white uppercase tracking-wider">

@@ -6,6 +6,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { showToast } from "../../components/AppToast";
 
 export interface AutoSettings {
   enabled: boolean;
@@ -459,7 +460,7 @@ export default function AutoSettingsPanel({
       }
     } catch (err) {
       console.error("Ayarları kaydetme hatası:", err);
-      alert("Parametre kaydedilirken bir hata oluştu.");
+      showToast("Parametre kaydedilirken bir hata oluştu.", "error");
     } finally {
       setIsSaving(false);
     }

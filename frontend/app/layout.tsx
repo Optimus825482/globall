@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "SCALPER GLOBAL · Forex & Altın Terminali",
     template: "%s · SCALPER GLOBAL"
   },
-  description: "Binance Global & Forex gerçek zamanlı piyasa analizi, radar ve otonom scalping PWA terminali ($)",
+  description: "Forex, Altın ve Kripto için gerçek zamanlı piyasa analizi, radar ve otonom scalping PWA terminali ($)",
   applicationName: "SCALPER GLOBAL",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -81,7 +81,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body suppressHydrationWarning className="font-sans antialiased bg-bunker-950 text-white min-h-screen transition-colors duration-150">
+      <body suppressHydrationWarning className="font-sans antialiased bg-bunker-950 text-white min-h-dvh transition-colors duration-150">
         <ThemeProvider>
           <PwaProvider>
             <OfflineBanner />

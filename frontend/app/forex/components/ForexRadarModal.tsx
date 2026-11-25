@@ -16,6 +16,7 @@ import {
   getInAppNotificationSettings,
   InAppNotificationSettings,
 } from "../../lib/notificationSettings";
+import NativeDialog from "../../components/NativeDialog";
 
 interface NewsInfo {
   has_active_news?: boolean;
@@ -241,15 +242,6 @@ export default function ForexRadarModal() {
     notifSettings.enabled && !activeSignal ? 4000 : null
   );
 
-  useEffect(() => {
-    if (!activeSignal) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveSignal(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [activeSignal]);
-
   if (!activeSignal) return null;
 
   const isBuy = activeSignal.action === "BUY";
@@ -261,10 +253,12 @@ export default function ForexRadarModal() {
   const threshold = optNum(activeSignal.required_score);
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 font-mono"
-      role="dialog"
-      aria-modal="true"
+    <NativeDialog
+      open={Boolean(activeSignal)}
+      onClose={() => setActiveSignal(null)}
+      closedby="any"
+      ariaLabelledBy="radar-signal-title"
+      className="max-w-lg font-mono"
     >
       <div
         className={`w-full max-w-lg rounded-2xl border p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150 ${
@@ -292,7 +286,7 @@ export default function ForexRadarModal() {
                 </span>
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
               </div>
-              <h2 className="text-base font-black text-white tracking-tight mt-0.5">
+              <h2 id="radar-signal-title" className="text-base font-black text-white tracking-tight mt-0.5">
                 ALGORİTMANIN ONAYLADIĞI GÜÇLÜ İŞLEM SİNYALİ
               </h2>
             </div>
@@ -477,6 +471,6 @@ export default function ForexRadarModal() {
           </Link>
         </div>
       </div>
-    </div>
+    </NativeDialog>
   );
 }

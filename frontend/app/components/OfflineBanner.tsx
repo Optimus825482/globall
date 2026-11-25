@@ -1,14 +1,21 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { usePwa } from "../lib/pwa";
 
 export default function OfflineBanner() {
   const { isOnline } = usePwa();
   const [showReconnected, setShowReconnected] = useState(false);
+  const wasOfflineRef = useRef(false);
 
   useEffect(() => {
-    if (isOnline) {
+    if (!isOnline) {
+      wasOfflineRef.current = true;
+      setShowReconnected(false);
+      return;
+    }
+    if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
       // Çevrimiçi duruma dönünce 2.5 saniye boyunca "Yeniden bağlandı" rozeti göster
       setShowReconnected(true);
       const timer = setTimeout(() => setShowReconnected(false), 2500);
@@ -20,8 +27,12 @@ export default function OfflineBanner() {
     return (
       <div
         role="alert"
-        className="fixed top-0 left-0 right-0 z-50 py-1.5 px-3 bg-rose-950/95 border-b border-rose-500/50 backdrop-blur-md text-center text-xs font-mono font-bold text-rose-200 flex items-center justify-center gap-2 shadow-lg animate-in slide-in-from-top-2"
-        style={{ paddingTop: "max(0.35rem, env(safe-area-inset-top, 0px))" }}
+        className="fixed top-0 left-0 right-0 z-50 py-1.5 bg-rose-950/95 border-b border-rose-500/50 backdrop-blur-md text-center text-xs font-mono font-bold text-rose-200 flex items-center justify-center gap-2 shadow-lg animate-in slide-in-from-top-2"
+        style={{
+          paddingTop: "max(0.35rem, env(safe-area-inset-top, 0px))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left, 0px))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right, 0px))",
+        }}
       >
         <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
         <span>⚡ ÇEVRİMDIŞI MOD — İnternet bağlantısı kesildi. Yeniden bağlanılıyor...</span>
@@ -33,8 +44,12 @@ export default function OfflineBanner() {
     return (
       <div
         role="status"
-        className="fixed top-0 left-0 right-0 z-50 py-1 px-3 bg-emerald-950/95 border-b border-emerald-500/50 backdrop-blur-md text-center text-2xs font-mono font-bold text-emerald-200 flex items-center justify-center gap-2 shadow-lg animate-in fade-in"
-        style={{ paddingTop: "max(0.25rem, env(safe-area-inset-top, 0px))" }}
+        className="fixed top-0 left-0 right-0 z-50 py-1 bg-emerald-950/95 border-b border-emerald-500/50 backdrop-blur-md text-center text-2xs font-mono font-bold text-emerald-200 flex items-center justify-center gap-2 shadow-lg animate-in fade-in"
+        style={{
+          paddingTop: "max(0.25rem, env(safe-area-inset-top, 0px))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left, 0px))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right, 0px))",
+        }}
       >
         <span className="w-2 h-2 rounded-full bg-emerald-400" />
         <span>✓ BAĞLANTI KURULDU — Canlı veri akışı devam ediyor.</span>

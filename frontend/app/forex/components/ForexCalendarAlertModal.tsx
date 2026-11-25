@@ -17,6 +17,7 @@ import {
   InAppNotificationSettings,
 } from "../../lib/notificationSettings";
 import { selectPriorityAlertEvents } from "../../lib/calendarOutcome";
+import NativeDialog from "../../components/NativeDialog";
 
 export interface CalendarEventAlert {
   id: string;
@@ -244,11 +245,12 @@ export default function ForexCalendarAlertModal() {
   const is3Stars = (activeAlert.stars || (activeAlert.impact === "High" ? 3 : 2)) === 3;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={handleClose}
-      role="dialog"
-      aria-modal="true"
+    <NativeDialog
+      open={Boolean(activeAlert)}
+      onClose={handleClose}
+      closedby="any"
+      ariaLabelledBy="calendar-alert-title"
+      className="max-w-xl"
     >
       <div
         className={`w-full max-w-xl rounded-2xl border bg-bunker-950 p-5 sm:p-6 shadow-[0_0_50px_rgba(0,0,0,0.8)] space-y-4.5 animate-in zoom-in-95 duration-200 ${
@@ -256,7 +258,6 @@ export default function ForexCalendarAlertModal() {
             ? "border-rose-500/60 shadow-[0_0_35px_rgba(244,63,94,0.3)] ring-2 ring-rose-500/30"
             : "border-amber-500/60 shadow-[0_0_35px_rgba(245,158,11,0.3)] ring-2 ring-amber-500/30"
         }`}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Üst Acil Durum Başlığı */}
         <div className="flex items-start justify-between gap-3 border-b border-bunker-800 pb-3.5">
@@ -277,7 +278,7 @@ export default function ForexCalendarAlertModal() {
               </span>
             </div>
 
-            <h2 className="text-base sm:text-lg font-black text-white mt-1 leading-snug">
+            <h2 id="calendar-alert-title" className="text-base sm:text-lg font-black text-white mt-1 leading-snug">
               {activeAlert.flag ? `${activeAlert.flag} ` : ""}
               {activeAlert.title}
             </h2>
@@ -393,6 +394,6 @@ export default function ForexCalendarAlertModal() {
           </button>
         </div>
       </div>
-    </div>
+    </NativeDialog>
   );
 }

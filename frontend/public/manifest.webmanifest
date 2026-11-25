@@ -1,8 +1,8 @@
 {
   "name": "SCALPER GLOBAL · Profesyonel İşlem Terminali",
   "short_name": "SCALPER",
-  "description": "Binance Global & Forex gerçek zamanlı piyasa analizi, radar, grafikler ve otonom scalping PWA terminali",
-  "start_url": "/",
+  "description": "Forex, Altın ve Kripto için gerçek zamanlı piyasa analizi, radar, canlı grafikler ve otonom scalping PWA terminali",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "id": "scalper-global-terminal",
   "display": "standalone",
@@ -41,31 +41,31 @@
   ],
   "shortcuts": [
     {
-      "name": "Radar & Hız Avcısı",
+      "name": "Forex Radar",
       "short_name": "Radar",
-      "description": "Canlı fırsat ve hız avcısı radarı",
+      "description": "Canlı forex ve altın fırsat radarı",
       "url": "/forex",
       "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     },
     {
-      "name": "Sanal Portföy",
+      "name": "AI Pozisyon Doktoru",
+      "short_name": "Doktor",
+      "description": "Yapay zeka destekli pozisyon analizi",
+      "url": "/forex/pozisyon-doktoru",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Forex Portföy",
       "short_name": "Portföy",
       "description": "Açık pozisyonlar ve sanal bakiye",
       "url": "/forex/portfolio",
       "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     },
     {
-      "name": "Forex Terminali",
-      "short_name": "Forex",
-      "description": "Altın, BTC ve Majör pariteler",
-      "url": "/forex/btc-gold",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
-    },
-    {
       "name": "Canlı Grafik",
       "short_name": "Grafik",
       "description": "Teknik mum grafikleri",
-      "url": "/charts",
+      "url": "/forex/charts",
       "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     }
   ]

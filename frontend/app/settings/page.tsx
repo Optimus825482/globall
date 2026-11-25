@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE, apiRequest, apiFetch } from "../lib/api";
+import { showToast } from "../components/AppToast";
 import LlmManagement from "./LlmManagement";
 import ChatSettingsPanel from "./ChatSettingsPanel";
 import RequireAdmin from "../components/RequireAdmin";
@@ -258,7 +259,7 @@ function SettingsPageInner() {
       if (!response.ok || body.ok === false) throw new Error(body.detail || body.error || "İşlem başarısız");
       await reloadLlm();
       setLlmMessage(success);
-      window.alert(`${success}.`);
+      showToast(`${success}.`, "success");
     } catch (err) {
       setLlmMessage(err instanceof Error ? err.message : "LLM işlemi başarısız");
     }
@@ -521,7 +522,7 @@ function SettingsPageInner() {
                 MODEL EKLE
               </button>
               {llmForm.model_type === "embedding" && (
-                <button onClick={async () => { const r=await apiRequest(`${API_BASE}/api/llm/embedding/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"embedding bağlantı testi"})}); const b=await r.json(); const m=b.status === "ok" ? `Embedding başarılı · ${b.dimensions} dimension` : (b.error || "Embedding testi başarısız"); setLlmMessage(m); window.alert(m); }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">
+                <button onClick={async () => { const r=await apiRequest(`${API_BASE}/api/llm/embedding/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"embedding bağlantı testi"})}); const b=await r.json(); const ok=b.status === "ok"; const m=ok ? `Embedding başarılı · ${b.dimensions} dimension` : (b.error || "Embedding testi başarısız"); setLlmMessage(m); showToast(m, ok ? "success" : "error"); }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">
                   EMBEDDING TEST ET
                 </button>
               )}
@@ -552,7 +553,7 @@ function SettingsPageInner() {
             <button onClick={() => llmRequest(`${API_BASE}/api/llm/active`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,model_id:llm.active_model_id})}, "LLM aktif edildi")} className="px-3 py-2 border border-neon-green/40 text-neon-green rounded-lg font-mono text-xs">
               LLM AKTİF
             </button>
-            <button onClick={async () => { setLlmMessage("TEST EDİLİYOR..."); try { const r=await apiRequest(`${API_BASE}/api/llm/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const body=await r.json(); const message=body.status === "ok" ? "Bağlantı başarılı" : (body.error || body.status || "Test başarısız"); setLlmMessage(message); window.alert(message); } catch { setLlmMessage("LLM test bağlantısı kurulamadı"); window.alert("LLM test bağlantısı kurulamadı"); } }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">
+            <button onClick={async () => { setLlmMessage("TEST EDİLİYOR..."); try { const r=await apiRequest(`${API_BASE}/api/llm/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const body=await r.json(); const ok=body.status === "ok"; const message=ok ? "Bağlantı başarılı" : (body.error || body.status || "Test başarısız"); setLlmMessage(message); showToast(message, ok ? "success" : "error"); } catch { setLlmMessage("LLM test bağlantısı kurulamadı"); showToast("LLM test bağlantısı kurulamadı", "error"); } }} className="px-3 py-2 border border-yellow-400/40 text-yellow-300 rounded-lg font-mono text-xs">
               TEST ET
             </button>
           </div>

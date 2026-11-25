@@ -1422,3 +1422,83 @@ html.light ::-webkit-scrollbar-thumb:hover {
     min-width: 2.75rem;
   }
 }
+
+/* ============================================================================
+   14. MODERN WEB GUIDANCE & PWA POLISH
+   - prevent-page-scroll-under-modal-dialog
+   - form-factor-adaptation (WCAG 2.4.11 Focus Not Obscured, typography, pointer)
+   - defer-rendering-heavy-content
+   ============================================================================ */
+
+/* Modal scroll containment: prevent background page scroll chaining */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Prevent drawer & backdrop scroll chaining without mutating body overflow */
+.mobile-menu-backdrop {
+  overscroll-behavior: contain;
+}
+
+/* Keep transparent modal dialogs transparent in light theme */
+html.light dialog.bg-transparent {
+  background-color: transparent;
+}
+
+/* Focus Not Obscured (WCAG 2.4.11): keep focused elements clear of sticky chrome */
+html, main {
+  scroll-padding-top: calc(4.75rem + env(safe-area-inset-top, 0px));
+}
+@media (max-width: 767px) {
+  html, main {
+    scroll-padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Typographic legibility */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+p, li {
+  text-wrap: pretty;
+}
+
+/* Input-capability-aware touch targets */
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+  .touch-target {
+    min-block-size: var(--target-size);
+    min-inline-size: var(--target-size);
+  }
+}
+
+/* Safe-area horizontal insets on mobile (landscape notch / Dynamic Island) */
+@media (max-width: 768px) {
+  .content-shell {
+    padding-inline: max(0.85rem, env(safe-area-inset-left, 0px)) max(0.85rem, env(safe-area-inset-right, 0px));
+  }
+}
+
+/* Standalone PWA polish */
+@media (display-mode: standalone) {
+  html, body {
+    overscroll-behavior-y: none;
+  }
+}
+nav[aria-label="Mobil Hızlı Gezinme"],
+.topbar {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Deferred offscreen rendering for below-the-fold heavy sections */
+.defer-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 320px;
+}

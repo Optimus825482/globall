@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
+import NativeDialog from "./NativeDialog";
 
 const STORAGE_KEY = "scalper:disclaimer-accepted";
 
@@ -43,7 +44,7 @@ export default function DisclaimerModal() {
   if (!visible || dismissed) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
+    <NativeDialog open={visible && !dismissed} closedby="none" ariaLabelledBy="disclaimer-title" className="max-w-2xl">
       <section className="w-full max-w-2xl overflow-hidden rounded-xl border border-yellow-300/30 bg-bunker-950 shadow-2xl">
         <div className="flex items-center gap-2 border-b border-bunker-800 bg-yellow-300/5 px-5 py-4">
           <span className="text-xl">⚠️</span>
@@ -53,7 +54,7 @@ export default function DisclaimerModal() {
           </div>
         </div>
 
-        <div className="max-h-[55vh] space-y-3 overflow-y-auto p-5 text-sm leading-relaxed text-bunker-muted">
+        <div className="max-h-[55dvh] space-y-3 overflow-y-auto p-5 text-sm leading-relaxed text-bunker-muted">
           <p>
             Bu sistem <strong className="text-white">henüz geliştirme aşamasındadır</strong> ve arka planda
             yapay zeka ile gelişmiş tarama algoritmaları kullanmaktadır.
@@ -112,6 +113,6 @@ export default function DisclaimerModal() {
           </div>
         </div>
       </section>
-    </div>
+    </NativeDialog>
   );
 }

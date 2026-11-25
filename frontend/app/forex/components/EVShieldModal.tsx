@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme";
+import NativeDialog from "../../components/NativeDialog";
 
 export interface EVShieldSymbolItem {
   symbol: string;
@@ -178,19 +179,19 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+    <NativeDialog
+      open={isOpen}
+      onClose={onClose}
+      closedby="any"
+      ariaLabelledBy="ev-shield-title"
+      className="max-w-4xl"
     >
       <div
-        className={`w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden transition-colors ${
+        className={`w-full max-w-4xl max-h-[90dvh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden transition-colors ${
           isLight
             ? "bg-white text-slate-900 border-slate-300 shadow-[0_20px_50px_rgba(0,0,0,0.15)]"
             : "bg-slate-950 text-slate-100 border-slate-800 shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
         }`}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Üst Başlık Barı */}
         <div
@@ -201,7 +202,7 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
           <div className="flex items-center gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className={`text-lg font-black tracking-tight ${isLight ? "text-slate-900" : "text-white"}`}>
+                <h2 id="ev-shield-title" className={`text-lg font-black tracking-tight ${isLight ? "text-slate-900" : "text-white"}`}>
                   Sembol EV Kalkanı & Muafiyet Listesi
                 </h2>
                 <span
@@ -796,6 +797,6 @@ export default function EVShieldModal({ isOpen, onClose, onUpdated }: EVShieldMo
           </div>
         </div>
       </div>
-    </div>
+    </NativeDialog>
   );
 }

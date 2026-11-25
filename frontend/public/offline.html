@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Çevrimdışı · SCALPER GLOBAL</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #475569;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-fg: #ffffff;
+      --badge-bg: #e0f2fe;
+      --badge-text: #0369a1;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #050a14;
+        --surface: #0b1220;
+        --border: rgba(56, 189, 248, 0.25);
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --accent: #06b6d4;
+        --accent-hover: #22d3ee;
+        --accent-fg: #050a14;
+        --badge-bg: rgba(6, 182, 212, 0.15);
+        --badge-text: #67e8f9;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding:
+        max(1.5rem, env(safe-area-inset-top, 0px))
+        max(1.25rem, env(safe-area-inset-right, 0px))
+        max(1.5rem, env(safe-area-inset-bottom, 0px))
+        max(1.25rem, env(safe-area-inset-left, 0px));
+    }
+
+    main {
+      width: 100%;
+      max-width: 26rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      box-shadow: 0 20px 45px rgba(2, 6, 23, 0.12);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      margin-bottom: 1.25rem;
+    }
+
+    .icon {
+      font-size: 2.5rem;
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.65rem;
+    }
+
+    p {
+      font-size: 0.925rem;
+      line-height: 1.55;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    button {
+      width: 100%;
+      min-height: 48px;
+      padding: 0.75rem 1.25rem;
+      border: none;
+      border-radius: 0.85rem;
+      background: var(--accent);
+      color: var(--accent-fg);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: background-color 150ms ease, transform 100ms ease;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+  </style>
+</head>
+<body>
+  <main role="main">
+    <div class="brand">SCALPER GLOBAL · PWA</div>
+    <div class="icon" aria-hidden="true">📡</div>
+    <h1>İnternet Bağlantısı Yok</h1>
+    <p>
+      SCALPER GLOBAL terminali canlı piyasa verileri için ağ bağlantısı gerektirir.
+      Bağlantınız geri geldiğinde sayfa otomatik olarak yenilenecektir.
+    </p>
+    <button type="button" id="retry-btn">Yeniden Dene</button>
+  </main>
+
+  <script>
+    document.getElementById("retry-btn").addEventListener("click", function () {
+      window.location.reload();
+    });
+    window.addEventListener("online", function () {
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>

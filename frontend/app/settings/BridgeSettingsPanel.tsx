@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { API_BASE, apiRequest } from "../lib/api";
+import { showToast } from "../components/AppToast";
 import { useVisibleInterval } from "../lib/useVisibleInterval";
 
 interface BridgeStats {
@@ -130,7 +131,7 @@ export default function BridgeSettingsPanel() {
       await fetchStatus(false);
       setTimeout(() => setSavedMessage(null), 3500);
     } catch (err: any) {
-      alert("Hata: " + err.message);
+      showToast("Hata: " + err.message, "error");
     } finally {
       setSaving(false);
     }

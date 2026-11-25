@@ -18,8 +18,12 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden items-center justify-around border-t border-bunker-800/90 bg-bunker-950/95 backdrop-blur-xl px-1.5 py-1 text-2xs font-mono shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
-      style={{ paddingBottom: "max(0.45rem, env(safe-area-inset-bottom, 0px))" }}
+      className="bottom-nav fixed bottom-0 left-0 right-0 z-40 flex md:hidden items-center justify-around border-t border-bunker-800/90 bg-bunker-950/95 backdrop-blur-xl px-1.5 py-1 text-2xs font-mono shadow-[0_-4px_25px_rgba(0,0,0,0.6)]"
+      style={{
+        paddingBottom: "max(0.45rem, env(safe-area-inset-bottom, 0px))",
+        paddingLeft: "max(0.375rem, env(safe-area-inset-left, 0px))",
+        paddingRight: "max(0.375rem, env(safe-area-inset-right, 0px))",
+      }}
       aria-label="Mobil Hızlı Gezinme"
     >
       {navItems.map((item) => {
@@ -28,6 +32,14 @@ export default function BottomNav() {
           <Link
             key={item.href}
             href={item.href}
+            aria-current={isActive ? "page" : undefined}
+            onClick={(e) => {
+              if (isActive && typeof window !== "undefined") {
+                e.preventDefault();
+                document.getElementById("main-content")?.scrollTo({ top: 0, behavior: "smooth" });
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
             className={`flex flex-1 flex-col items-center justify-center py-1 px-1 rounded-xl transition-all touch-target active:scale-90 ${
               isActive
                 ? "text-cyan-300 font-bold bg-cyan-950/50 border border-cyan-500/30 shadow-[0_0_10px_rgba(0,240,255,0.15)]"

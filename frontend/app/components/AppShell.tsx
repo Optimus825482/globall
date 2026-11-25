@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import BottomNav from "./BottomNav";
+import AppToast from "./AppToast";
 import ForexRadarModal from "../forex/components/ForexRadarModal";
 import ForexCalendarAlertModal from "../forex/components/ForexCalendarAlertModal";
 import ForexEventTickerBanner from "./ForexEventTickerBanner";
@@ -50,13 +51,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (isMetaMobil) {
     return (
       <ExchangeContext.Provider value={exchange}>
-        <main className="min-h-screen w-full bg-bunker-950">
+        <main className="min-h-dvh w-full bg-bunker-950">
           <div className="sticky top-0 z-30">
             <ForexEventTickerBanner />
           </div>
           {children}
           <ForexRadarModal />
           <ForexCalendarAlertModal />
+          <AppToast />
         </main>
       </ExchangeContext.Provider>
     );
@@ -64,7 +66,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ExchangeContext.Provider value={exchange}>
-      <div className="flex min-h-screen">
+      <div className="flex min-h-dvh">
         {/* KLAVYE/SR KISAYOLU (2026-11-09 denetimi): Sidebar tek bir <nav>
             içinde ~19 bağlantı taşıyor. Atla bağlantısı olmadan klavye veya
             ekran okuyucu kullanıcısı HER sayfa geçişinde bu 19 bağlantıyı
@@ -81,13 +83,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             kendi `.table-scroll` / `overflow-x-auto` sarmalayıcılarında
             kaymaya devam eder (ata kırpması alt öğenin kaydırma kabı olmasını
             engellemez). */}
-        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 min-h-screen overflow-y-auto overflow-x-clip">
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 min-h-dvh overflow-y-auto overflow-x-clip">
           <div data-topbar><TopBar /></div>
           <div className="content-shell">{children}</div>
         </main>
         <BottomNav />
         <ForexRadarModal />
         <ForexCalendarAlertModal />
+        <AppToast />
       </div>
     </ExchangeContext.Provider>
   );
