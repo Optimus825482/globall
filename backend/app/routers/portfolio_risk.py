@@ -159,12 +159,35 @@ def summarize_supervisor_log(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 @router.get("/positions/supervisor-log")
 async def positions_supervisor_log(days: int = Query(7, ge=1, le=90), limit: int = Query(200, ge=1, le=1000)):
     rows = await database.list_supervisor_events(since_ts=time.time() - days * 86400, limit=limit)
+    try:
+        reflections = await database.list_position_reflections(since_ts=time.time() - days * 86400, limit=200)
+    except Exception:  # noqa: BLE001
+        reflections = []
     return {
         "days": days,
         "count": len(rows),
         "events": rows,
         "rows": rows,
         "summary": summarize_supervisor_log(rows),
+        "scorecard": position_supervisor.summarize_doctor_scorecard(reflections),
+    }
+
+
+@router.get("/positions/reflections")
+async def positions_reflections(
+    days: int = Query(30, ge=1, le=365),
+    symbol: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+):
+    reflections = await database.list_position_reflections(
+        symbol=symbol,
+        since_ts=time.time() - days * 86400,
+        limit=limit,
+    )
+    return {
+        "days": days,
+        "scorecard": position_supervisor.summarize_doctor_scorecard(reflections),
+        "reflections": reflections,
     }
 
 

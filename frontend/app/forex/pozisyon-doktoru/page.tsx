@@ -37,7 +37,34 @@ interface AppliedTicketAction {
   reason?: string;
   sl?: number | null;
   new_sl?: number | null;
+  tp?: number | null;
+  new_tp?: number | null;
+  tp_r?: number | null;
   pct?: number | null;
+}
+
+interface PortfolioHeatInfo {
+  bakiye_usd?: number | null;
+  equity_usd?: number | null;
+  toplam_acik_pozisyon?: number;
+  toplam_acik_pnl_usd?: number;
+  aktif_seans?: string;
+  dxy_rejim?: string | null;
+  portfoy_isisi_pct?: number | null;
+  isi_uyarisi?: boolean;
+  usd_maruziyet?: {
+    usd_long?: string[];
+    usd_short?: string[];
+    yigilma_uyarisi?: boolean;
+  };
+  korelasyon_kumeleri?: Record<string, string[]>;
+}
+
+interface TicketThesisInfo {
+  durum?: "GÜÇLÜ" | "ZAYIFLADI" | "KIRILDI" | string;
+  sapmalar?: string[];
+  giris_seans?: string;
+  giris_dxy?: string | null;
 }
 
 interface OpenFindingItem {
@@ -61,8 +88,12 @@ interface SupervisorActionItem {
   sl?: number | null;
   new_sl?: number | null;
   tp?: number | null;
+  new_tp?: number | null;
+  tp_r?: number | null;
   pct?: number | null;
   reason?: string;
+  bull_case?: string | null;
+  bear_case?: string | null;
   detail?: string;
   note?: string;
   message?: string;
@@ -86,6 +117,8 @@ interface SupervisorStatusResponse {
   applied_by_ticket?: Record<string, AppliedTicketAction[] | AppliedTicketAction>;
   open_findings?: OpenFindingItem[] | Record<string, OpenFindingItem[]>;
   recent_actions?: SupervisorActionItem[];
+  portfolio_heat?: PortfolioHeatInfo | null;
+  thesis_by_ticket?: Record<string, TicketThesisInfo> | null;
   last_review_at?: number | string | null;
   last_run_ts?: number | null;
   last_llm_ts?: number | null;
@@ -175,6 +208,17 @@ function formatActionBadge(
   pct?: number | null,
 ): { label: string; cls: string } {
   const a = String(rawAction || "").toLowerCase().trim();
+  if (
+    a === "adjust_tp" ||
+    a === "modify_tp" ||
+    a.includes("adjust_tp") ||
+    a.includes("tp_adjust")
+  ) {
+    return {
+      label: "TP Güncelle",
+      cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    };
+  }
   if (
     a === "be" ||
     a === "breakeven" ||
@@ -304,6 +348,52 @@ function fmtUsd(v?: number | null): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "—";
   const sign = v >= 0 ? "+" : "-";
   return `${sign}$${Math.abs(v).toFixed(2)}`;
+}
+
+function formatSessionLabel(raw?: string | null): string {
+  const s = String(raw || "").toUpperCase().trim();
+  if (!s) return "—";
+  if (s === "ASYA") return "Asya";
+  if (s === "LONDRA") return "Londra";
+  if (s === "LONDRA_NY_KESISIM") return "Londra–NY Kesişim";
+  if (s === "NEW_YORK") return "New York";
+  return s.replace(/_/g, " ");
+}
+
+function formatTpChip(tp?: number | null, tpR?: number | null): string | null {
+  const hasTp = typeof tp === "number" && Number.isFinite(tp) && tp > 0;
+  const hasR = typeof tpR === "number" && Number.isFinite(tpR) && tpR > 0;
+  if (hasTp && hasR) return `TP: ${formatPrice(tp)} (${tpR.toFixed(1)}R)`;
+  if (hasTp) return `TP: ${formatPrice(tp)}`;
+  if (hasR) return `TP: ${tpR.toFixed(1)}R`;
+  return null;
+}
+
+function getThesisBadge(durum?: string | null): { label: string; cls: string } | null {
+  const d = String(durum || "").toUpperCase().trim();
+  if (!d) return null;
+  if (d === "GÜÇLÜ" || d === "GUCLU") {
+    return {
+      label: "Tez: GÜÇLÜ",
+      cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    };
+  }
+  if (d === "ZAYIFLADI") {
+    return {
+      label: "Tez: ZAYIFLADI",
+      cls: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+    };
+  }
+  if (d === "KIRILDI") {
+    return {
+      label: "Tez: KIRILDI",
+      cls: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+    };
+  }
+  return {
+    label: `Tez: ${durum}`,
+    cls: "bg-slate-500/15 text-slate-300 border-slate-500/40",
+  };
 }
 
 export default function PositionSupervisorPage() {
@@ -802,6 +892,144 @@ export default function PositionSupervisorPage() {
         </div>
       </section>
 
+      {/* PORTFÖY ISI & KORELASYON KARTI */}
+      {statusData?.portfolio_heat && (() => {
+        const ph = statusData.portfolio_heat;
+        const heatPct =
+          typeof ph.portfoy_isisi_pct === "number" && Number.isFinite(ph.portfoy_isisi_pct)
+            ? ph.portfoy_isisi_pct
+            : null;
+        const heatWarning = Boolean(ph.isi_uyarisi) || (heatPct !== null && heatPct >= 3);
+        const yigilmaWarning = Boolean(ph.usd_maruziyet?.yigilma_uyarisi);
+        const clusterEntries = Object.entries(ph.korelasyon_kumeleri || {}).filter(
+          ([, syms]) => Array.isArray(syms) && syms.length > 0,
+        );
+        const fallbackUsdClusters: Array<[string, string[]]> =
+          clusterEntries.length === 0
+            ? ([
+                ["USD_LONG", ph.usd_maruziyet?.usd_long || []],
+                ["USD_SHORT", ph.usd_maruziyet?.usd_short || []],
+              ].filter(([, syms]) => syms.length > 0) as Array<[string, string[]]>)
+            : [];
+        const activeClusters = clusterEntries.length > 0 ? clusterEntries : fallbackUsdClusters;
+
+        return (
+          <section
+            aria-label="Portföy ısı ve korelasyon özeti"
+            className={`rounded-2xl border p-4 shadow-lg space-y-3 ${
+              heatWarning || yigilmaWarning
+                ? "border-rose-500/40 bg-bunker-900/85"
+                : "border-bunker-800 bg-bunker-900/80"
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <h2 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                  Portföy Isısı &amp; Korelasyon
+                </h2>
+                <span
+                  className={`font-mono text-2xs font-bold px-2 py-0.5 rounded-md border tabular-nums ${
+                    heatWarning
+                      ? "bg-rose-500/15 border-rose-500/40 text-rose-300"
+                      : "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                  }`}
+                >
+                  {heatWarning ? "⚠ Yüksek Isı" : "Normal Isı"}
+                </span>
+                {yigilmaWarning && (
+                  <span className="font-mono text-2xs font-bold px-2 py-0.5 rounded-md border bg-amber-500/15 border-amber-500/40 text-amber-300">
+                    ⚠ USD Yığılma Uyarısı
+                  </span>
+                )}
+              </div>
+              {(typeof ph.equity_usd === "number" || typeof ph.bakiye_usd === "number") && (
+                <div className="flex flex-wrap items-center gap-2 text-2xs font-mono text-bunker-muted tabular-nums">
+                  {typeof ph.bakiye_usd === "number" && Number.isFinite(ph.bakiye_usd) && (
+                    <span>
+                      Bakiye: <span className="text-slate-200 font-bold">${ph.bakiye_usd.toFixed(0)}</span>
+                    </span>
+                  )}
+                  {typeof ph.equity_usd === "number" && Number.isFinite(ph.equity_usd) && (
+                    <span>
+                      Varlık: <span className="text-cyan-300 font-bold">${ph.equity_usd.toFixed(0)}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 px-3 py-2.5">
+                <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+                  Portföy Isısı
+                </p>
+                <p
+                  className={`mt-0.5 text-lg font-black font-mono tabular-nums ${
+                    heatWarning ? "text-rose-400" : "text-emerald-400"
+                  }`}
+                >
+                  {heatPct !== null ? `%${heatPct.toFixed(2)}` : "—"}
+                </p>
+              </div>
+
+              <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 px-3 py-2.5">
+                <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+                  Aktif Seans
+                </p>
+                <p className="mt-0.5 text-sm sm:text-base font-bold font-mono text-cyan-300 truncate">
+                  {formatSessionLabel(ph.aktif_seans)}
+                </p>
+              </div>
+
+              <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 px-3 py-2.5">
+                <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+                  DXY Rejimi
+                </p>
+                <p className="mt-0.5 text-sm sm:text-base font-bold font-mono text-white truncate">
+                  {ph.dxy_rejim || "—"}
+                </p>
+              </div>
+
+              <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 px-3 py-2.5">
+                <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+                  Aktif Küme
+                </p>
+                <p className="mt-0.5 text-lg font-black font-mono tabular-nums text-white">
+                  {activeClusters.length}
+                </p>
+              </div>
+            </div>
+
+            {activeClusters.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-2xs font-mono text-bunker-muted uppercase tracking-wider mr-1">
+                  Kümeler:
+                </span>
+                {activeClusters.map(([clusterName, syms]) => {
+                  const isUsdCluster =
+                    clusterName.toUpperCase().includes("USD_") ||
+                    clusterName.toUpperCase().includes("USD");
+                  const highlightCluster = yigilmaWarning && isUsdCluster;
+                  return (
+                    <span
+                      key={clusterName}
+                      className={`inline-flex flex-wrap items-center gap-1 px-2 py-0.5 rounded-md border font-mono text-2xs font-bold break-words ${
+                        highlightCluster
+                          ? "bg-rose-500/15 border-rose-500/45 text-rose-300"
+                          : "bg-bunker-950 border-bunker-700 text-cyan-300"
+                      }`}
+                    >
+                      <span>{clusterName}:</span>
+                      <span className="font-normal text-slate-200">{syms.join(", ")}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })()}
+
       {/* İNTERAKTİF AI ÖNERİLERİ PANELİ (ANA ODAK) */}
       <section
         aria-label="İnteraktif AI Önerileri"
@@ -888,6 +1116,9 @@ export default function PositionSupervisorPage() {
                 const actionable = isProposalActionable(item);
                 const checked = actionable && selectedKeys.has(key);
                 const slVal = item.new_sl ?? item.sl;
+                const tpChip = formatTpChip(item.new_tp ?? item.tp, item.tp_r);
+                const bullCase = (item.bull_case || "").trim();
+                const bearCase = (item.bear_case || "").trim();
                 const reasonText =
                   item.reason || item.detail || item.note || item.message || "—";
                 const tsVal = applied ? (item.applied_ts ?? item.ts ?? item.time) : (item.ts ?? item.time);
@@ -945,6 +1176,11 @@ export default function PositionSupervisorPage() {
                                 Yeni SL: {formatPrice(slVal)}
                               </span>
                             )}
+                            {tpChip && (
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/35 text-2xs text-emerald-300 tabular-nums">
+                                {tpChip}
+                              </span>
+                            )}
                             {typeof item.pct === "number" && Number.isFinite(item.pct) && item.pct > 0 && (
                               <span className="px-2 py-0.5 rounded-md bg-bunker-900 border border-bunker-700 text-2xs text-amber-300 tabular-nums">
                                 Oran: %{item.pct}
@@ -972,6 +1208,23 @@ export default function PositionSupervisorPage() {
                         <p className="text-xs text-slate-200 leading-relaxed break-words">
                           {reasonText}
                         </p>
+
+                        {(bullCase || bearCase) && (
+                          <div className="rounded-lg border border-bunker-800/90 bg-bunker-900/70 px-2.5 py-2 space-y-1 text-2xs leading-snug break-words">
+                            {bullCase && (
+                              <p className="text-slate-200">
+                                <span className="font-bold text-emerald-300">🟢 Tut:</span>{" "}
+                                {bullCase}
+                              </p>
+                            )}
+                            {bearCase && (
+                              <p className="text-slate-200">
+                                <span className="font-bold text-rose-300">🔴 Risk:</span>{" "}
+                                {bearCase}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         {tsVal != null && (
                           <div className="text-2xs text-bunker-muted tabular-nums pt-1 border-t border-bunker-800/70">
@@ -1039,6 +1292,19 @@ export default function PositionSupervisorPage() {
                       const isBuy = String(pos.direction || "").toUpperCase() === "BUY";
                       const pnl = Number(pos.pnl_usd ?? 0);
                       const appliedList = appliedByTicket.get(String(pos.ticket)) || [];
+                      const thesis = statusData?.thesis_by_ticket?.[String(pos.ticket)];
+                      const thesisBadge = getThesisBadge(thesis?.durum);
+                      const thesisTooltip = thesis
+                        ? [
+                            Array.isArray(thesis.sapmalar) && thesis.sapmalar.length > 0
+                              ? `Sapmalar: ${thesis.sapmalar.join(" · ")}`
+                              : "Tezde sapma tespit edilmedi",
+                            thesis.giris_seans ? `Giriş Seansı: ${formatSessionLabel(thesis.giris_seans)}` : "",
+                            thesis.giris_dxy ? `Giriş DXY: ${thesis.giris_dxy}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" | ")
+                        : undefined;
                       return (
                         <tr key={pos.ticket} className="hover:bg-bunker-800/30 transition-colors">
                           <td className="py-3 px-3 align-top">
@@ -1050,8 +1316,18 @@ export default function PositionSupervisorPage() {
                             >
                               {pos.display || pos.symbol}
                             </button>
-                            <div className="text-2xs text-bunker-muted tabular-nums">
-                              #{pos.ticket}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                              <span className="text-2xs text-bunker-muted tabular-nums">
+                                #{pos.ticket}
+                              </span>
+                              {thesisBadge && (
+                                <span
+                                  title={thesisTooltip}
+                                  className={`px-1.5 py-0.5 rounded border text-2xs font-bold cursor-help ${thesisBadge.cls}`}
+                                >
+                                  {thesisBadge.label}
+                                </span>
+                              )}
                             </div>
                             {appliedList.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1.5">
@@ -1211,6 +1487,10 @@ export default function PositionSupervisorPage() {
                   recentActions.slice(0, 20).map((item, idx) => {
                     const actBadge = formatActionBadge(item.action || item.cmd_action, item.pct);
                     const applied = isActionApplied(item);
+                    const slVal = item.new_sl ?? item.sl;
+                    const tpChip = formatTpChip(item.new_tp ?? item.tp, item.tp_r);
+                    const bullCase = (item.bull_case || "").trim();
+                    const bearCase = (item.bear_case || "").trim();
                     const reasonText =
                       item.reason || item.detail || item.note || item.message || "—";
                     const tsVal = item.applied_ts ?? item.ts ?? item.time;
@@ -1243,6 +1523,16 @@ export default function PositionSupervisorPage() {
                             >
                               {actBadge.label}
                             </span>
+                            {typeof slVal === "number" && Number.isFinite(slVal) && slVal > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-bunker-900 border border-bunker-700 text-2xs text-sky-300 tabular-nums">
+                                SL: {formatPrice(slVal)}
+                              </span>
+                            )}
+                            {tpChip && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/35 text-2xs text-emerald-300 tabular-nums">
+                                {tpChip}
+                              </span>
+                            )}
                           </div>
                           <span
                             className={`px-1.5 py-0.5 rounded border text-2xs font-bold shrink-0 ${
@@ -1257,6 +1547,22 @@ export default function PositionSupervisorPage() {
                         <p className="text-2xs text-slate-300 leading-snug break-words">
                           {reasonText}
                         </p>
+                        {(bullCase || bearCase) && (
+                          <div className="rounded-lg border border-bunker-800/90 bg-bunker-900/70 px-2 py-1.5 space-y-1 text-2xs leading-snug break-words">
+                            {bullCase && (
+                              <p className="text-slate-200">
+                                <span className="font-bold text-emerald-300">🟢 Tut:</span>{" "}
+                                {bullCase}
+                              </p>
+                            )}
+                            {bearCase && (
+                              <p className="text-slate-200">
+                                <span className="font-bold text-rose-300">🔴 Risk:</span>{" "}
+                                {bearCase}
+                              </p>
+                            )}
+                          </div>
+                        )}
                         {tsVal != null && (
                           <div className="text-2xs text-bunker-muted tabular-nums pt-0.5 border-t border-bunker-800/60">
                             {applied ? "Uygulama zamanı:" : "Öneri zamanı:"}{" "}

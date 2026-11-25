@@ -509,3 +509,214 @@ def test_v2_portfolio_summary_and_db_skills_prompt():
     prompt = asyncio.run(ps._build_system_prompt(FakeDb))
     assert "AKTİF ÖĞRENİLMİŞ BECERİLER (DB):" in prompt
     assert "Altın Kural" in prompt
+
+
+# ----------------------------------------------------------------------------- AI Pozisyon Doktoru v3
+
+def test_v3_adjust_tp_validation_cooldown_and_command():
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+    # BUY: entry=4000, sl=3990 (risk=10), price=4004
+    p = position(ticket=301, entry_price=4000.0, current_price=4004.0, sl_price=3990.0, tp_price=4020.0)
+    # Explicit tp=4030 -> 3.0R
+    v = ps.validate_action(p, {"action": "adjust_tp", "tp": 4030.0})
+    assert v["ok"] and v["action"] == "adjust_tp" and v["tp"] == 4030.0 and v["tp_r"] == 3.0
+    # R-multiple tp_r=2.5 -> 4025.0
+    vr = ps.validate_action(p, {"action": "adjust_tp", "tp_r": 2.5})
+    assert vr["ok"] and vr["tp"] == 4025.0 and vr["tp_r"] == 2.5
+    # Out-of-bounds R (< 0.5 or > 6.0) rejected
+    assert not ps.validate_action(p, {"action": "adjust_tp", "tp_r": 0.3})["ok"]
+    assert not ps.validate_action(p, {"action": "adjust_tp", "tp_r": 7.0})["ok"]
+    # TP not on profitable side of current_price rejected
+    assert not ps.validate_action(p, {"action": "adjust_tp", "tp": 4003.0})["ok"]
+    # SELL valid + invalid
+    sell = position(ticket=302, direction="SELL", entry_price=4000.0, current_price=3995.0, sl_price=4010.0, tp_price=3980.0)
+    vs = ps.validate_action(sell, {"action": "adjust_tp", "tp_r": 3.0})
+    assert vs["ok"] and vs["tp"] == 3970.0 and vs["tp_r"] == 3.0
+    assert not ps.validate_action(sell, {"action": "adjust_tp", "tp": 3996.0})["ok"]
+    # Command preserves SL and sets new TP
+    cmd = ps.build_command(p, "adjust_tp", {"tp_r": 2.5})
+    assert cmd["action"] == "MODIFY_SLTP" and cmd["ticket"] == 301 and cmd["sl"] == 3990.0 and cmd["tp"] == 4025.0
+    # Cooldown matches tighten_sl (1800s)
+    ps._record_applied_action(301, "adjust_tp", sl=3990.0, cmd_action="MODIFY_SLTP", ts=1000.0)
+    assert ps.is_action_already_applied(301, "adjust_tp", now=2000.0) is True
+    assert ps.is_action_already_applied(301, "adjust_tp", now=2801.0) is False
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+
+
+def test_v3_entry_thesis_capture_and_coherence():
+    ps._ENTRY_THESIS_BY_TICKET.clear()
+    p = position(ticket=401, symbol="EURUSD", direction="BUY", strategy_tag="trend_breakout")
+    init_radar = {"score": 84.0, "action": "BUY", "supertrend_dir": 1, "adx": 32.0, "rsi_5m": 58.0, "atr_pips": 12.0}
+    t1 = ps.capture_entry_thesis(p, init_radar, "USD_WEAK", NOW)
+    assert t1["dxy_rejim"] == "USD_WEAK" and t1["supertrend"] == "BOĞA" and t1["adx"] == 32.0 and t1["strategy_tag"] == "trend_breakout"
+    # Second capture returns the original immutable thesis
+    t2 = ps.capture_entry_thesis(p, {"score": 30.0, "action": "SELL", "supertrend_dir": -1, "adx": 12.0}, "USD_STRONG", NOW + 600)
+    assert t2 is t1 and t2["dxy_rejim"] == "USD_WEAK"
+
+    # Strong coherence when unchanged
+    c_ok = ps.check_thesis_coherence(t1, init_radar, "USD_WEAK", "BUY")
+    assert c_ok["durum"] == "GÜÇLÜ" and c_ok["sapmalar"] == []
+    # Weakened when 1 factor flips (DXY flip)
+    c_weak = ps.check_thesis_coherence(t1, init_radar, "USD_STRONG", "BUY")
+    assert c_weak["durum"] == "ZAYIFLADI" and len(c_weak["sapmalar"]) == 1
+    # Broken when 2+ factors flip (DXY + Supertrend + Radar + ADX collapse)
+    bad_radar = {"score": 40.0, "action": "SELL", "supertrend_dir": -1, "adx": 13.0}
+    c_broken = ps.check_thesis_coherence(t1, bad_radar, "USD_STRONG", "BUY")
+    assert c_broken["durum"] == "KIRILDI" and len(c_broken["sapmalar"]) >= 3
+
+    # Pruned together with _prune_applied_actions
+    ps._prune_applied_actions(set())
+    assert 401 not in ps._ENTRY_THESIS_BY_TICKET
+
+
+def test_v3_post_trade_reflection_and_scorecard():
+    # Helpful: locked solid profit via tighten_sl
+    r_help = ps.evaluate_closed_position_reflection(
+        {"ticket": 501, "symbol": "XAUUSD", "direction": "BUY", "open_ts": NOW, "closed_at": NOW + 900,
+         "mfe_pips": 40.0, "mae_pips": -8.0, "last_pnl_pips": 28.0, "last_pnl_usd": 56.0},
+        [{"action": "tighten_sl"}],
+    )
+    assert r_help["verdict"] == "helpful" and r_help["saved_or_missed_usd"] > 0 and "XAUUSD" in r_help["lesson"]
+
+    # Helpful: limited loss well above worst MAE
+    r_save = ps.evaluate_closed_position_reflection(
+        {"ticket": 502, "symbol": "EURUSD", "direction": "BUY", "open_ts": NOW, "closed_at": NOW + 600,
+         "mfe_pips": 3.0, "mae_pips": -30.0, "last_pnl_pips": -10.0, "last_pnl_usd": -20.0},
+        [{"action": "close"}],
+    )
+    assert r_save["verdict"] == "helpful" and r_save["saved_or_missed_usd"] > 0
+
+    # Premature: closed early while MFE was strong and realized PnL < 35% of MFE
+    r_prem = ps.evaluate_closed_position_reflection(
+        {"ticket": 503, "symbol": "GBPUSD", "direction": "SELL", "open_ts": NOW, "closed_at": NOW + 1200,
+         "mfe_pips": 50.0, "mae_pips": -4.0, "last_pnl_pips": 8.0, "last_pnl_usd": 16.0},
+        [{"action": "tighten_sl"}],
+    )
+    assert r_prem["verdict"] == "premature" and r_prem["saved_or_missed_usd"] < 0
+
+    # Neutral: no doctor intervention (hold)
+    r_neut = ps.evaluate_closed_position_reflection(
+        {"ticket": 504, "symbol": "USDJPY", "direction": "BUY", "open_ts": NOW, "closed_at": NOW + 1500,
+         "mfe_pips": 20.0, "mae_pips": -5.0, "last_pnl_pips": 15.0, "last_pnl_usd": 30.0},
+        [],
+    )
+    assert r_neut["verdict"] == "neutral" and r_neut["action_taken"] == "hold" and r_neut["saved_or_missed_usd"] == 0.0
+
+    # Scorecard aggregation
+    sc = ps.summarize_doctor_scorecard([r_help, r_save, r_prem, r_neut])
+    assert sc["toplam_degerlendirilen"] == 4
+    assert sc["faydali_sayisi"] == 2 and sc["erken_cikis_sayisi"] == 1 and sc["notr_sayisi"] == 1
+    assert sc["isabet_orani_pct"] == pytest.approx(66.7)
+    assert sc["net_etki_usd"] == round(r_help["saved_or_missed_usd"] + r_save["saved_or_missed_usd"] + r_prem["saved_or_missed_usd"], 2)
+    assert len(sc["son_dersler"]) == 4
+
+    empty_sc = ps.summarize_doctor_scorecard([])
+    assert empty_sc["toplam_degerlendirilen"] == 0 and empty_sc["isabet_orani_pct"] is None
+
+
+def test_v3_portfolio_heat_and_correlation_clusters():
+    class FakeFx:
+        @staticmethod
+        def get_usd_bias(sym, direction):
+            if sym in ("EURUSD", "XAUUSD") and direction == "BUY":
+                return "USD_SHORT"
+            if sym == "USDJPY" and direction == "BUY":
+                return "USD_LONG"
+            return "USD_NEUTRAL"
+
+        @staticmethod
+        def get_symbol_trading_specs(sym):
+            if sym == "XAUUSD":
+                return {"pip_size": 0.1, "pip_val": 10.0}
+            if sym == "USDJPY":
+                return {"pip_size": 0.01, "pip_val": 6.5}
+            return {"pip_size": 0.0001, "pip_val": 10.0}
+
+    positions = [
+        # XAUUSD risk: (4000-3990)/0.1 * 10 * 0.2 = 200 USD
+        position(ticket=1, symbol="XAUUSD", direction="BUY", lots=0.2, entry_price=4000.0, sl_price=3990.0, pnl_usd=10.0),
+        # USDJPY risk: (150-149)/0.01 * 6.5 * 0.2 = 130 USD
+        position(ticket=2, symbol="USDJPY", direction="BUY", lots=0.2, entry_price=150.0, sl_price=149.0, pnl_usd=-5.0),
+        # EURUSD already locked at breakeven (sl > entry for BUY) -> 0 open SL risk
+        position(ticket=3, symbol="EURUSD", direction="BUY", lots=0.5, entry_price=1.1000, sl_price=1.1010, pnl_usd=25.0),
+    ]
+    summary = ps.portfolio_summary(positions, {"account": {"balance": 10000, "equity": 10000}}, "USD_WEAK", NOW, fx_mod=FakeFx)
+    # Total risk = 330 USD on 10000 equity = 3.3% -> isi_uyarisi True
+    assert summary["portfoy_isisi_pct"] == 3.3
+    assert summary["isi_uyarisi"] is True
+    clusters = summary["korelasyon_kumeleri"]
+    assert clusters["USD_SHORT"] == ["XAUUSD", "EURUSD"]
+    assert clusters["USD_LONG"] == ["USDJPY"]
+    assert clusters["RISK_ON_COMMODITY"] == ["XAUUSD"]
+    assert clusters["JPY_CARRY"] == ["USDJPY"]
+
+
+def test_v3_bull_bear_debate_and_reflections_in_review(monkeypatch):
+    import asyncio
+    from app import database, forex_news, llm_analysis
+    from app.routers import forex as fx
+
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+    ps._ENTRY_THESIS_BY_TICKET.clear()
+    ps._SUPERVISOR_STATE["recent_actions"] = []
+
+    p = position(ticket=601, symbol="XAUUSD", direction="BUY", lots=0.10, entry_price=4000.0, current_price=4008.0, sl_price=3990.0, tp_price=4020.0)
+    monkeypatch.setitem(fx._MT5_STATE, "open_positions", [p])
+    monkeypatch.setitem(fx._MT5_STATE, "pending_commands", [])
+
+    async def fake_news(force_refresh=False):
+        return []
+
+    async def fake_exc(since_ts=0):
+        return []
+
+    async def fake_refl(symbol=None, since_ts=0.0, limit=50):
+        return [{"verdict": "premature", "action_taken": "tighten_sl", "session": "LONDRA", "lesson": "Altında erken sıkılaştırma yapma."}]
+
+    async def fake_log(ev):
+        return None
+
+    captured_ctx = []
+
+    async def fake_stream(ctx, msgs, **kw):
+        captured_ctx.append(ctx)
+        yield {
+            "event": "delta",
+            "data": {
+                "text": (
+                    '{"ticket": 601, "action": "partial_close", "pct": 33, "reason": "kâr realizasyonu", '
+                    '"bull_case": "Trend hala yukarı", "bear_case": "MFE geri veriyor ve haber yakın"}'
+                )
+            },
+        }
+
+    monkeypatch.setattr(forex_news, "get_forex_news", fake_news)
+    monkeypatch.setattr(database, "list_position_excursions", fake_exc)
+    monkeypatch.setattr(database, "list_position_reflections", fake_refl)
+    monkeypatch.setattr(database, "log_supervisor_event", fake_log)
+    monkeypatch.setattr(llm_analysis, "stream_chat", fake_stream)
+    monkeypatch.setattr(fx, "_log_auto_decision", lambda *a, **kw: None)
+
+    class S:
+        position_supervisor_mode = "act"
+        position_supervisor_llm_enabled = True
+        position_supervisor_llm_cooldown_min = 15
+
+    res = asyncio.run(ps.review_positions(S(), timeout=10.0, tickets=[601], apply=False))
+    assert len(res["proposals"]) == 1
+    prop = res["proposals"][0]
+    assert prop["bull_case"] == "Trend hala yukarı"
+    assert prop["bear_case"] == "MFE geri veriyor ve haber yakın"
+    # Preserved in recent_actions
+    last_recent = ps._SUPERVISOR_STATE["recent_actions"][-1]
+    assert last_recent["bull_case"] == "Trend hala yukarı" and last_recent["bear_case"] == "MFE geri veriyor ve haber yakın"
+    # Reflections + thesis injected into LLM context
+    pos_ctx = captured_ctx[0]["pozisyonlar"][0]
+    assert len(pos_ctx["gecmis_dersler"]) == 1 and pos_ctx["gecmis_dersler"][0]["karar"] == "premature"
+    assert pos_ctx["tez_tutarliligi"]["durum"] == "GÜÇLÜ"
+    # Status exposes thesis_by_ticket and portfolio_heat
+    st = ps.get_supervisor_status(S())
+    assert "601" in st["thesis_by_ticket"]
+    assert "portfoy_isisi_pct" in st["portfolio_heat"]
+    ps._APPLIED_ACTIONS_BY_TICKET.clear()
+    ps._ENTRY_THESIS_BY_TICKET.clear()

@@ -6734,6 +6734,24 @@ def _ensure_risk_schema(conn) -> None:
                 ticket BIGINT, symbol TEXT, kind TEXT, detail TEXT, action TEXT, mode TEXT
             )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_sup_ts ON position_supervisor_log(ts DESC)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS position_reflections (
+                id BIGSERIAL PRIMARY KEY,
+                ticket BIGINT UNIQUE,
+                symbol TEXT,
+                direction TEXT,
+                session TEXT,
+                action_taken TEXT,
+                pnl_pips DOUBLE PRECISION,
+                pnl_usd DOUBLE PRECISION,
+                mfe_pips DOUBLE PRECISION,
+                mae_pips DOUBLE PRECISION,
+                saved_or_missed_usd DOUBLE PRECISION,
+                verdict TEXT,
+                lesson TEXT,
+                created_at DOUBLE PRECISION
+            )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_refl_sym_ts ON position_reflections(symbol, created_at DESC)")
         conn.commit()
         _RISK_SCHEMA_READY = True
     except Exception as exc:
@@ -6917,6 +6935,80 @@ async def supervisor_event_exists(ticket: int, kind: str, since_ts: float) -> bo
         row = conn.execute("SELECT COUNT(*) FROM position_supervisor_log WHERE ticket = ? AND kind = ? AND ts >= ?",
                            (int(ticket), kind, since_ts)).fetchone()
         return int(row[0] or 0) > 0
+
+    return await _run_db(op)
+
+
+async def upsert_position_reflection(row: Dict[str, Any]) -> None:
+    """Kapanan pozisyon için AI Pozisyon Doktoru post-trade yansımasını kaydeder/günceller."""
+    now = float(row.get("created_at") or time.time())
+
+    def op(conn):
+        _ensure_risk_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO position_reflections (
+                ticket, symbol, direction, session, action_taken,
+                pnl_pips, pnl_usd, mfe_pips, mae_pips,
+                saved_or_missed_usd, verdict, lesson, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticket) DO UPDATE SET
+                symbol = EXCLUDED.symbol,
+                direction = EXCLUDED.direction,
+                session = EXCLUDED.session,
+                action_taken = EXCLUDED.action_taken,
+                pnl_pips = EXCLUDED.pnl_pips,
+                pnl_usd = EXCLUDED.pnl_usd,
+                mfe_pips = EXCLUDED.mfe_pips,
+                mae_pips = EXCLUDED.mae_pips,
+                saved_or_missed_usd = EXCLUDED.saved_or_missed_usd,
+                verdict = EXCLUDED.verdict,
+                lesson = EXCLUDED.lesson,
+                created_at = EXCLUDED.created_at
+            """,
+            (
+                int(row["ticket"]),
+                row.get("symbol"),
+                row.get("direction"),
+                row.get("session"),
+                row.get("action_taken"),
+                row.get("pnl_pips"),
+                row.get("pnl_usd"),
+                row.get("mfe_pips"),
+                row.get("mae_pips"),
+                row.get("saved_or_missed_usd"),
+                row.get("verdict"),
+                str(row.get("lesson") or "")[:500],
+                now,
+            ),
+        )
+        conn.commit()
+
+    await _run_db(op)
+
+
+async def list_position_reflections(
+    symbol: Optional[str] = None, since_ts: float = 0.0, limit: int = 50
+) -> List[Dict[str, Any]]:
+    """Kapanmış pozisyon yansımalarını en yeniden eskiye listeler."""
+    keys = [
+        "id", "ticket", "symbol", "direction", "session", "action_taken",
+        "pnl_pips", "pnl_usd", "mfe_pips", "mae_pips",
+        "saved_or_missed_usd", "verdict", "lesson", "created_at",
+    ]
+
+    def op(conn):
+        _ensure_risk_schema(conn)
+        q = f"SELECT {', '.join(keys)} FROM position_reflections WHERE created_at >= ?"
+        args: List[Any] = [float(since_ts or 0.0)]
+        if symbol:
+            q += " AND UPPER(symbol) = ?"
+            args.append(str(symbol).upper())
+        q += " ORDER BY created_at DESC LIMIT ?"
+        args.append(max(1, min(int(limit), 500)))
+        cur = conn.execute(q, tuple(args))
+        return _rows(keys, cur)
 
     return await _run_db(op)
 

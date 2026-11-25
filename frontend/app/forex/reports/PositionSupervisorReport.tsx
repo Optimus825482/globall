@@ -32,9 +32,32 @@ interface ExcursionStats {
   hint?: string | null;
 }
 
+interface ScorecardLesson {
+  ticket?: number;
+  symbol?: string;
+  direction?: string;
+  session?: string;
+  action_taken?: string;
+  verdict?: "helpful" | "premature" | "neutral" | string;
+  saved_or_missed_usd?: number;
+  lesson?: string;
+  created_at?: number;
+}
+
+interface SupervisorScorecard {
+  toplam_degerlendirilen: number;
+  faydali_sayisi: number;
+  erken_cikis_sayisi: number;
+  notr_sayisi: number;
+  isabet_orani_pct: number | null;
+  net_etki_usd: number;
+  son_dersler: ScorecardLesson[];
+}
+
 type ActionCategory =
   | "ALL"
   | "tighten_sl"
+  | "adjust_tp"
   | "breakeven"
   | "trailing"
   | "partial_close"
@@ -49,6 +72,7 @@ const PERIOD_OPTIONS: Array<{ days: number; label: string }> = [
 
 const ACTION_PILLS: Array<{ key: ActionCategory; label: string; cls: string }> = [
   { key: "tighten_sl", label: "SL Sıkılaştır", cls: "bg-sky-500/15 text-sky-300 border-sky-500/40" },
+  { key: "adjust_tp", label: "TP Güncelle", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" },
   { key: "breakeven", label: "BE", cls: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40" },
   { key: "trailing", label: "Trailing", cls: "bg-purple-500/15 text-purple-300 border-purple-500/40" },
   { key: "partial_close", label: "Kısmi Kapat", cls: "bg-amber-500/15 text-amber-300 border-amber-500/40" },
@@ -71,6 +95,13 @@ function classifyAction(rawAction?: string | null, pct?: number | null): {
   cls: string;
 } {
   const a = String(rawAction || "").toLowerCase().trim();
+  if (a === "adjust_tp" || a.includes("adjust_tp") || a === "modify_tp") {
+    return {
+      category: "adjust_tp",
+      label: "TP Güncelle",
+      cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    };
+  }
   if (a.includes("breakeven") || a === "be" || a === "move_sl_to_breakeven") {
     return { category: "breakeven", label: "BE", cls: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40" };
   }
@@ -83,6 +114,13 @@ function classifyAction(rawAction?: string | null, pct?: number | null): {
       category: "partial_close",
       label: `Kısmi Kapat${suffix}`,
       cls: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+    };
+  }
+  if (a === "komut:modify_sltp" || a === "modify_sltp") {
+    return {
+      category: "tighten_sl",
+      label: "SL/TP Güncelle",
+      cls: "bg-sky-500/15 text-sky-300 border-sky-500/40",
     };
   }
   if (a.includes("tighten") || a.includes("modify_sl")) {
@@ -149,9 +187,46 @@ function fmtPip(v?: number | null): string {
   return `${v.toFixed(1)} pip`;
 }
 
+function fmtUsd(v?: number | null): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "—";
+  const sign = v >= 0 ? "+" : "-";
+  return `${sign}$${Math.abs(v).toFixed(2)}`;
+}
+
+function formatSessionLabel(raw?: string | null): string {
+  const s = String(raw || "").toUpperCase().trim();
+  if (!s) return "—";
+  if (s === "ASYA") return "Asya";
+  if (s === "LONDRA") return "Londra";
+  if (s === "LONDRA_NY_KESISIM") return "Londra–NY Kesişim";
+  if (s === "NEW_YORK") return "New York";
+  return s.replace(/_/g, " ");
+}
+
+function getVerdictBadge(verdict?: string | null): { label: string; cls: string } {
+  const v = String(verdict || "").toLowerCase().trim();
+  if (v === "helpful" || v === "faydali" || v === "faydalı") {
+    return {
+      label: "Faydalı",
+      cls: "bg-emerald-500/15 border-emerald-500/40 text-emerald-300",
+    };
+  }
+  if (v === "premature" || v === "erken_cikis" || v === "erken çıkış") {
+    return {
+      label: "Erken Çıkış",
+      cls: "bg-amber-500/15 border-amber-500/40 text-amber-300",
+    };
+  }
+  return {
+    label: "Nötr",
+    cls: "bg-slate-500/15 border-slate-500/40 text-slate-300",
+  };
+}
+
 export default function PositionSupervisorReport() {
   const [days, setDays] = useState<number>(7);
   const [events, setEvents] = useState<SupervisorLogEvent[]>([]);
+  const [scorecard, setScorecard] = useState<SupervisorScorecard | null>(null);
   const [stats, setStats] = useState<ExcursionStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
@@ -167,10 +242,13 @@ export default function PositionSupervisorReport() {
         apiFetch(`/api/positions/supervisor-log?days=${days}&limit=300`),
         apiFetch(`/api/positions/excursions?days=${days}`),
       ]);
-      const rawEvents = Array.isArray((logRes as { events?: SupervisorLogEvent[] })?.events)
-        ? (logRes as { events: SupervisorLogEvent[] }).events
-        : [];
+      const typedLogRes = logRes as {
+        events?: SupervisorLogEvent[];
+        scorecard?: SupervisorScorecard | null;
+      } | null;
+      const rawEvents = Array.isArray(typedLogRes?.events) ? typedLogRes.events : [];
       setEvents(rawEvents);
+      setScorecard(typedLogRes?.scorecard ?? null);
       setStats(((excRes as { stats?: ExcursionStats })?.stats) || null);
       setError("");
     } catch (e) {
@@ -197,6 +275,7 @@ export default function PositionSupervisorReport() {
   const breakdownCounts = useMemo(() => {
     const counts: Record<Exclude<ActionCategory, "ALL">, number> = {
       tighten_sl: 0,
+      adjust_tp: 0,
       breakeven: 0,
       trailing: 0,
       partial_close: 0,
@@ -325,6 +404,208 @@ export default function PositionSupervisorReport() {
           </p>
         </div>
       </div>
+
+      {/* DOKTOR KARNESİ (KALİBRASYON & EPİZODİK HAFIZA) */}
+      <section
+        aria-label="Doktor Karnesi"
+        className="rounded-2xl border border-bunker-800 bg-bunker-900/75 p-4 shadow-lg space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-mono text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+              🩺 Doktor Karnesi (Kalibrasyon &amp; Epizodik Hafıza)
+            </h3>
+            <p className="mt-0.5 text-2xs font-mono text-bunker-muted">
+              Kapanan pozisyonlar üzerinden yapay zeka müdahalelerinin gerçek piyasa etkisi ve öğrenilen dersler
+            </p>
+          </div>
+          {scorecard && scorecard.toplam_degerlendirilen > 0 && (
+            <span className="font-mono text-2xs px-2 py-0.5 rounded-md border bg-cyan-500/15 border-cyan-500/35 text-cyan-300 font-bold tabular-nums shrink-0">
+              {scorecard.toplam_degerlendirilen} yansıma
+            </span>
+          )}
+        </div>
+
+        {/* 4 Stat Kartı */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 p-3.5">
+            <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+              Değerlendirilen İşlem
+            </p>
+            <p className="mt-1 text-2xl font-black font-mono tabular-nums text-white">
+              {scorecard?.toplam_degerlendirilen ?? 0}
+            </p>
+            <p className="mt-0.5 text-2xs text-bunker-muted font-mono">
+              Kapanmış yansıma sayısı
+            </p>
+          </div>
+
+          <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 p-3.5">
+            <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+              İsabet Oranı
+            </p>
+            <p
+              className={`mt-1 text-2xl font-black font-mono tabular-nums ${
+                scorecard?.isabet_orani_pct == null
+                  ? "text-bunker-muted"
+                  : scorecard.isabet_orani_pct >= 60
+                    ? "text-emerald-400"
+                    : scorecard.isabet_orani_pct >= 40
+                      ? "text-amber-300"
+                      : "text-rose-400"
+              }`}
+            >
+              {scorecard?.isabet_orani_pct != null
+                ? `%${scorecard.isabet_orani_pct.toFixed(1)}`
+                : "—"}
+            </p>
+            <p className="mt-0.5 text-2xs text-bunker-muted font-mono">
+              Faydalı müdahale başarısı
+            </p>
+          </div>
+
+          <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 p-3.5">
+            <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+              Net Etki
+            </p>
+            <p
+              className={`mt-1 text-2xl font-black font-mono tabular-nums ${
+                scorecard == null || scorecard.toplam_degerlendirilen === 0
+                  ? "text-bunker-muted"
+                  : scorecard.net_etki_usd >= 0
+                    ? "text-emerald-400"
+                    : "text-rose-400"
+              }`}
+            >
+              {scorecard && scorecard.toplam_degerlendirilen > 0
+                ? fmtUsd(scorecard.net_etki_usd)
+                : "—"}
+            </p>
+            <p className="mt-0.5 text-2xs text-bunker-muted font-mono">
+              Korunan / kaçırılan toplam $
+            </p>
+          </div>
+
+          <div className="min-w-0 rounded-xl border border-bunker-800 bg-bunker-950/60 p-3.5">
+            <p className="text-2xs uppercase tracking-wider text-bunker-muted font-mono">
+              Faydalı / Erken Çıkış
+            </p>
+            <p className="mt-1 text-2xl font-black font-mono tabular-nums">
+              <span className="text-emerald-400">{scorecard?.faydali_sayisi ?? 0}</span>
+              <span className="text-bunker-muted mx-1">/</span>
+              <span className="text-amber-300">{scorecard?.erken_cikis_sayisi ?? 0}</span>
+            </p>
+            <p className="mt-0.5 text-2xs text-bunker-muted font-mono tabular-nums">
+              Nötr: {scorecard?.notr_sayisi ?? 0}
+            </p>
+          </div>
+        </div>
+
+        {/* Son Öğrenilen Dersler (Epizodik Hafıza) */}
+        <div className="space-y-2.5 pt-1 border-t border-bunker-800/80">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="font-mono text-2xs font-bold uppercase tracking-wider text-slate-300">
+              Son Öğrenilen Dersler (Epizodik Hafıza)
+            </h4>
+            {scorecard && Array.isArray(scorecard.son_dersler) && scorecard.son_dersler.length > 0 && (
+              <span className="font-mono text-2xs text-bunker-muted tabular-nums">
+                {scorecard.son_dersler.length} kayıt
+              </span>
+            )}
+          </div>
+
+          {!scorecard || !Array.isArray(scorecard.son_dersler) || scorecard.son_dersler.length === 0 ? (
+            <div className="py-5 px-3.5 rounded-xl border border-dashed border-bunker-700 bg-bunker-950/40 text-center font-mono text-xs text-bunker-muted">
+              Henüz kapanmış pozisyon yansıması oluşmadı; pozisyonlar kapandıkça otomatik dersler burada birikir.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {scorecard.son_dersler.map((item, idx) => {
+                const verdict = getVerdictBadge(item.verdict);
+                const impact =
+                  typeof item.saved_or_missed_usd === "number" &&
+                  Number.isFinite(item.saved_or_missed_usd)
+                    ? item.saved_or_missed_usd
+                    : null;
+                const actionBadge = item.action_taken ? classifyAction(item.action_taken) : null;
+                const dirUp = String(item.direction || "").toUpperCase();
+
+                return (
+                  <div
+                    key={`${item.ticket ?? item.symbol ?? "lesson"}-${item.created_at ?? idx}-${idx}`}
+                    className="p-3 rounded-xl border border-bunker-800 bg-bunker-950/60 font-mono space-y-1.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                        <span className="font-bold text-xs text-white">
+                          {item.symbol || "—"}
+                        </span>
+                        {item.ticket != null && (
+                          <span className="text-2xs text-bunker-muted tabular-nums">
+                            #{item.ticket}
+                          </span>
+                        )}
+                        {(dirUp === "BUY" || dirUp === "SELL") && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded border text-2xs font-bold ${
+                              dirUp === "BUY"
+                                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                                : "bg-rose-500/15 border-rose-500/40 text-rose-300"
+                            }`}
+                          >
+                            {dirUp}
+                          </span>
+                        )}
+                        {item.session && (
+                          <span className="px-1.5 py-0.5 rounded border border-bunker-700 bg-bunker-900 text-2xs text-cyan-300">
+                            {formatSessionLabel(item.session)}
+                          </span>
+                        )}
+                        {actionBadge && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded border text-2xs font-bold ${actionBadge.cls}`}
+                          >
+                            {actionBadge.label}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`px-2 py-0.5 rounded border text-2xs font-bold ${verdict.cls}`}
+                        >
+                          {verdict.label}
+                        </span>
+                        <span
+                          className={`text-xs font-bold tabular-nums ${
+                            impact == null
+                              ? "text-bunker-muted"
+                              : impact >= 0
+                                ? "text-emerald-400"
+                                : "text-rose-400"
+                          }`}
+                        >
+                          {fmtUsd(impact)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-2xs text-slate-200 leading-relaxed break-words">
+                      {item.lesson || "—"}
+                    </p>
+
+                    {item.created_at != null && (
+                      <div className="text-2xs text-bunker-muted tabular-nums pt-0.5 border-t border-bunker-800/60">
+                        {formatUtc3(item.created_at)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* EYLEM DAĞILIMI PİLLERİ + FİLTRE ÇUBUĞU */}
       <div className="p-4 rounded-2xl border border-bunker-800 bg-bunker-900/70 space-y-3">
