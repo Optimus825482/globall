@@ -12667,6 +12667,7 @@ async def get_macro_forex_news(
 class OpportunityScanToggleRequest(BaseModel):
     enabled: Optional[bool] = None
     interval_min: Optional[int] = Field(None, ge=5, le=120)
+    interval_minutes: Optional[int] = Field(None, ge=5, le=120)
 
 
 @router.get("/opportunity-scan/latest")
@@ -12689,8 +12690,13 @@ async def toggle_opportunity_scan(payload: OpportunityScanToggleRequest = Body(d
     from app import opportunity_trades
     if payload.enabled is not None:
         _AUTO_SETTINGS.auto_opportunity_scan_enabled = bool(payload.enabled)
-    if payload.interval_min is not None:
-        _AUTO_SETTINGS.auto_opportunity_scan_interval_min = max(5, min(120, int(payload.interval_min)))
+    req_interval = payload.interval_min if payload.interval_min is not None else payload.interval_minutes
+    if req_interval is not None:
+        clamped = max(5, min(120, int(req_interval)))
+        _AUTO_SETTINGS.auto_opportunity_scan_interval_min = clamped
+        # Geri sayımı hemen yeni aralığa güncelle
+        last_ts = float(opportunity_trades._AUTO_SCAN_STATE.get("last_run_ts") or time.time())
+        opportunity_trades._AUTO_SCAN_STATE["next_run_ts"] = max(time.time() + 5.0, last_ts + clamped * 60.0)
     persist_settings(_AUTO_SETTINGS)
     return opportunity_trades.get_auto_scan_state()
 

@@ -225,7 +225,7 @@ export default function OpportunityScanSection({
         method: "POST",
         body: JSON.stringify({
           enabled: nextEnabled,
-          interval_minutes: nextInterval,
+          interval_min: nextInterval,
         }),
       })) as OpportunityScanPayload;
       if (res && typeof res === "object") {
