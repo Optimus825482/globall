@@ -1089,6 +1089,7 @@ POSITION_MFE_PIPS: Dict[int, float] = {}
 # ticket -> giriş ATR'si (pips). İlk görüldüğünde BİR KEZ hesaplanır ve dondurulur; böylece
 # chandelier mesafesi pozisyon yaşamı boyunca sabit kalır (yeniden hesaplama sürüklenmesi olmaz).
 POSITION_ENTRY_ATR_PIPS: Dict[int, float] = {}
+POSITION_VELOCITY_HISTORY: Dict[int, list] = {}
 CURRENT_SETTINGS: Dict[str, Any] = {
     "breakeven_pips": 14.0,
     "trailing_stop_pips": 20.0,
@@ -1153,6 +1154,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
     for old_t in list(POSITION_ENTRY_ATR_PIPS.keys()):
         if old_t not in active_tickets:
             POSITION_ENTRY_ATR_PIPS.pop(old_t, None)
+    for old_t in list(POSITION_VELOCITY_HISTORY.keys()):
+        if old_t not in active_tickets:
+            POSITION_VELOCITY_HISTORY.pop(old_t, None)
 
     for p in positions:
         ticket = p.ticket
@@ -1384,7 +1388,24 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
             _cur_spread_pips = ((s_info.spread * s_info.point) / pip_size) if (s_info and pip_size > 0) else 0.0
             _min_trail_floor_pips = max(_cur_spread_pips * 2.5, (0.35 * entry_atr) if entry_atr > 0 else 0.0, 2.0)
 
-            eff_chand_mult = chand_mult * _ratchet_mult
+            # Hıza Duyarlı (Velocity-Adaptive) Trailing: son 60 sn lehimize ivmelenme
+            _now_vel = time.time()
+            _vh = POSITION_VELOCITY_HISTORY.setdefault(ticket, [])
+            _vh.append((_now_vel, pnl_pips))
+            _cutoff_60s = _now_vel - 60.0
+            while len(_vh) > 2 and _vh[0][0] < _cutoff_60s:
+                _vh.pop(0)
+            _vel_mult = 1.0
+            if len(_vh) >= 2 and pnl_pips > 0:
+                _vel_gain_60s = pnl_pips - _vh[0][1]
+                _vel_ref = entry_atr if entry_atr > 0 else (_sl0_ref if _sl0_ref > 0 else 10.0)
+                if _vel_ref > 0:
+                    if _vel_gain_60s >= 1.2 * _vel_ref:
+                        _vel_mult = 0.55  # Parabolik sıçrama: fitil tepesini hızla kilitle
+                    elif _vel_gain_60s >= 0.7 * _vel_ref:
+                        _vel_mult = 0.75  # Hızlı ivme: mesafeyi %25 daralt
+
+            eff_chand_mult = chand_mult * _ratchet_mult * _vel_mult
             chand_dist_pips = eff_chand_mult * entry_atr
             if use_chandelier and _ratchet_mfe_cap is not None and mfe > 0:
                 chand_dist_pips = min(chand_dist_pips, mfe * _ratchet_mfe_cap)
@@ -1432,7 +1453,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                                 target_sl = cand_sl
                                 POSITION_PROTECTION_MAP[ticket] = "TRAILING"
                 else:
-                    _fixed_trail_pips = eff_trail_pips * _ratchet_mult
+                    _fixed_trail_pips = eff_trail_pips * _ratchet_mult * _vel_mult
                     if _ratchet_mfe_cap is not None and mfe > 0:
                         _fixed_trail_pips = min(_fixed_trail_pips, mfe * _ratchet_mfe_cap)
                     _fixed_trail_pips = max(_fixed_trail_pips, _min_trail_floor_pips)
