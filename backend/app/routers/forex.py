@@ -2172,6 +2172,10 @@ S3_PULLBACK_LABEL = "S3 Supertrend+RSI"
 # Kapsam: kanıtlanan 5 sembol (aşağıdaki SQUEEZE_KC_SYMBOLS).
 SQUEEZE_KC_STRATEGY = "SQUEEZE_KC_M15"
 SQUEEZE_KC_LABEL = "Keltner Squeeze Kırılımı (M15)"
+# 2026-11-25 VectorBT 1Y H1 IS/OOS doğrulamalı Altın BB(30,2.5)+EMA200 kırılım kolu (OOS PF 2.98, DD -4.7%)
+XAU_BB_H1_STRATEGY = "XAU_BB_H1"
+XAU_BB_H1_LABEL = "Altın BB Kırılımı (H1)"
+_XAU_BB_H1_CACHE: Dict[str, Any] = {"ts": 0.0, "candles": [], "consumed_bar": 0}
 # 2026-10-28 Combo3 (M5, yalnız XAUUSD) paper-ölçüm kolu — bkz. app/combo3_m5.py
 COMBO3_STRATEGY = _c3.COMBO3_STRATEGY
 COMBO3_LABEL = _c3.COMBO3_LABEL
@@ -8978,6 +8982,51 @@ async def _forex_auto_paper_loop():
                                     strategy=SQUEEZE_KC_STRATEGY,
                                     strategy_label=SQUEEZE_KC_LABEL,
                                 )
+
+            # VectorBT Doğrulamalı Altın H1 BB(30,2.5)+EMA200 Kırılım Kolu (5 dk önbellekli, non-blocking)
+            try:
+                if not weekend_now and "XAUUSD" in ticks:
+                    from app.xau_bb_h1 import evaluate_xau_bb_h1, XAU_BB_H1_ENTRY_SOURCE
+                    if (now_ts - float(_XAU_BB_H1_CACHE.get("ts") or 0.0)) > 300.0:
+                        _h1_c = _fetch_forex_klines("XAUUSD", "1h", 260) or []
+                        if _h1_c:
+                            _XAU_BB_H1_CACHE["candles"] = _h1_c
+                            _XAU_BB_H1_CACHE["ts"] = now_ts
+                    _xau_pip = float(get_symbol_trading_specs("XAUUSD").get("pip_size") or 0.1)
+                    _xau_dec = evaluate_xau_bb_h1(
+                        _XAU_BB_H1_CACHE.get("candles") or [],
+                        pip_size=_xau_pip,
+                        last_consumed_bar=int(_XAU_BB_H1_CACHE.get("consumed_bar") or 0),
+                    )
+                    if _xau_dec:
+                        _XAU_BB_H1_CACHE["consumed_bar"] = int(_xau_dec.get("bar_time") or 0)
+                        _xau_t = ticks.get("XAUUSD") or {}
+                        arm_rows.append({
+                            "symbol": "XAUUSD",
+                            "display": "XAU/USD",
+                            "action": _xau_dec["action"],
+                            "score": float(_xau_dec["score"]),
+                            "spread_pips": float(_xau_t.get("spread_pips", 0.0) or 0.0),
+                            "atr_pips": float(_xau_dec["atr_pips"]),
+                            "entry_source": XAU_BB_H1_ENTRY_SOURCE,
+                            "strategy": XAU_BB_H1_STRATEGY,
+                            "strategy_label": XAU_BB_H1_LABEL,
+                            "sl_pips_override": _xau_dec["sl_pips"],
+                            "tp_pips_override": _xau_dec["tp_pips"],
+                            "signal_bar_time": _xau_dec["bar_time"],
+                            "signal_bar_confirmed": True,
+                        })
+                        _log_auto_decision(
+                            "SCAN",
+                            f"🏆 [XAU/USD] {XAU_BB_H1_LABEL}: {_xau_dec['action']} kırılımı "
+                            f"(kapanış {_xau_dec['close']}, EMA200 {_xau_dec['ema200']}, "
+                            f"SL {_xau_dec['sl_pips']}p, TP {_xau_dec['tp_pips']}p) — değerlendiriliyor.",
+                            symbol="XAUUSD",
+                            strategy=XAU_BB_H1_STRATEGY,
+                            strategy_label=XAU_BB_H1_LABEL,
+                        )
+            except Exception as _xau_exc:  # noqa: BLE001
+                logger.debug("XAU_BB_H1 tarama hatası: %s", _xau_exc)
 
             candidates = _order_entry_arms(candidates, arm_rows)
             # Zaman tabanlı kol (2026-11-10): 01:00 UTC Tokyo sabahı drifti
