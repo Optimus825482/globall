@@ -569,7 +569,7 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         cfg = forex.ForexAutoPaperSettings()
         self.assertEqual(cfg.max_positions_per_symbol, 1)
         self.assertEqual(cfg.risk_per_trade_pct, 5.0)
-        self.assertEqual(cfg.risk_gold_pct, 3.0)
+        self.assertEqual(cfg.risk_gold_pct, 5.0)
         self.assertEqual(cfg.risk_index_pct, 7.0)
         self.assertEqual(cfg.risk_crypto_pct, 2.0)
         self.assertEqual(cfg.loss_streak_limit, 2)
@@ -580,12 +580,12 @@ class TestForexAlgorithmicEnhancements(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forex.LotCalculatorRequest().risk_percentage, 10.0)
 
     def test_get_symbol_risk_pct(self):
-        """Forex %5, XAUUSD %3, US30/USTEC/NAS100 %7, BTC/Kripto %2 dinamik risk bütçesi kontrolü."""
+        """Forex %5, XAUUSD %5, US30/USTEC/NAS100 %7, BTC/Kripto %2 dinamik risk bütçesi kontrolü."""
         self.assertEqual(forex.get_symbol_risk_pct("EURUSD"), 5.0)
         self.assertEqual(forex.get_symbol_risk_pct("GBPUSD"), 5.0)
         self.assertEqual(forex.get_symbol_risk_pct("AUDCAD"), 5.0)
-        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 3.0)
-        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 3.0)
+        self.assertEqual(forex.get_symbol_risk_pct("XAUUSD"), 5.0)
+        self.assertEqual(forex.get_symbol_risk_pct("GOLD"), 5.0)
         self.assertEqual(forex.get_symbol_risk_pct("BTCUSD"), 2.0)
         self.assertEqual(forex.get_symbol_risk_pct("US30"), 7.0)
         self.assertEqual(forex.get_symbol_risk_pct("USTEC"), 7.0)

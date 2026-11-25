@@ -2179,7 +2179,7 @@ FIRSAT_ENTRY_SOURCE = "firsat_taramasi"
 FIRSAT_STRATEGY = "FIRSAT_TARAMASI"
 FIRSAT_LABEL = "Fırsat Taraması (Sohbet)"
 FIRSAT_COMMENT_TAG = "FRS"
-SCAN_RISK_PCT = 1.0          # işlem başı risk: bakiyenin %1'i (motorun sembol riskinden bağımsız, muhafazakâr)
+SCAN_RISK_PCT = 4.0          # işlem başı risk: bakiyenin %4'ü (1H ATR geniş stoplarda 0.01 taban lotun geçebilmesi için)
 
 
 #: Tokyo drifti: sembol → son giriş yapılan gün kimliği (günde bir giriş garantisi).
@@ -5870,7 +5870,7 @@ class ForexAutoPaperSettings(BaseModel):
     enabled: bool = False
     balance: float = Field(10000.0, ge=50.0, description="Demo bakiye (USD)")
     risk_per_trade_pct: float = Field(5.0, ge=0.1, le=30.0, description="Forex majör/çapraz parite risk bütçesi (% bakiye). Varsayılan %5")
-    risk_gold_pct: float = Field(3.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %3")
+    risk_gold_pct: float = Field(5.0, ge=0.1, le=25.0, description="Altın (XAUUSD) risk bütçesi (% bakiye). Varsayılan %5")
     risk_index_pct: float = Field(7.0, ge=0.1, le=20.0, description="US30, USTEC/NAS100 risk bütçesi (% bakiye). Varsayılan %7")
     risk_crypto_pct: float = Field(2.0, ge=0.1, le=20.0, description="BTCUSD, kripto risk bütçesi (% bakiye). Varsayılan %2")
     risk_crypto_index_pct: float = Field(5.0, ge=0.1, le=20.0, description="Geriye dönük uyumluluk alanı")
@@ -5915,9 +5915,9 @@ class ForexAutoPaperSettings(BaseModel):
     llm_review_timeout_sec: float = Field(45.0, ge=3.0, le=90.0, description="LLM incelemesi için en fazla bekleme (sn); düşünen modeller 10-35 sn sürebilir (ölçülen p90 ≈ 27 sn). Yedek model varsa %60'ı ana modele gider. Aşılırsa fail-open/closed kuralı uygulanır")
     risk_gate_mode: str = Field("enforce", pattern="^(off|shadow|enforce)$", description="Portföy risk kapısı: off · shadow (yalnız günlüğe 'engellerdi' yazar) · enforce (varsayılan: engeller + drawdown çarpanını uygular)")
     risk_kill_switch: bool = Field(False, description="KILL SWITCH: açıkken mod ne olursa olsun yeni giriş (motor ve fırsat taraması) engellenir. Açık pozisyonlara dokunmaz.")
-    risk_heat_limit_pct: float = Field(6.0, ge=0.5, le=50.0, description="Toplam açık risk (stop'a kadar) / özsermaye sınırı (%). Araştırma başlangıç değeri 3-6; kaynaksız, önce gölgede kalibre edin.")
-    risk_usd_net_limit_pct: float = Field(3.0, ge=0.5, le=50.0, description="Net USD yönlü risk sınırı (özsermaye %): aynı yönde USD maruziyeti yığılmasını sınırlar")
-    risk_daily_loss_pct: float = Field(3.0, ge=0.5, le=50.0, description="Günlük kayıp limiti (özsermaye %): aşılınca yeni giriş yok")
+    risk_heat_limit_pct: float = Field(12.0, ge=0.5, le=50.0, description="Toplam açık risk (stop'a kadar) / özsermaye sınırı (%). Araştırma başlangıç değeri 3-6; kaynaksız, önce gölgede kalibre edin.")
+    risk_usd_net_limit_pct: float = Field(6.0, ge=0.5, le=50.0, description="Net USD yönlü risk sınırı (özsermaye %): aynı yönde USD maruziyeti yığılmasını sınırlar")
+    risk_daily_loss_pct: float = Field(5.0, ge=0.5, le=50.0, description="Günlük kayıp limiti (özsermaye %): aşılınca yeni giriş yok")
     risk_weekly_loss_pct: float = Field(6.0, ge=1.0, le=80.0, description="Haftalık kayıp limiti (özsermaye %)")
     risk_kill_dd_pct: float = Field(12.0, ge=3.0, le=90.0, description="Tepeden düşüş bu eşikte otomatik durdurma (30 günlük kayan tepe). Kademeler: %3→×0.75, %5→×0.5, %8→×0.25")
     risk_cost_r_max: float = Field(0.25, ge=0.02, le=2.0, description="Maliyet-R tavanı: (spread + komisyon) / stop mesafesi")
