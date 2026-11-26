@@ -77,7 +77,11 @@ def _build_scans_snapshot(fx: Any) -> Dict[str, Any]:
     opp_state = opportunity_trades.get_auto_scan_state()
     skipped_by_reason: Dict[str, int] = defaultdict(int)
     for item in opp_state.get("skipped") or []:
-        reason = str(item.get("reason") or "bilinmeyen").split(":")[0].strip()
+        raw_reason = str(item.get("reason") or "bilinmeyen").strip()
+        if "(" in raw_reason and ":" in raw_reason and raw_reason.index("(") < raw_reason.index(":"):
+            reason = raw_reason
+        else:
+            reason = raw_reason.split(":")[0].strip()
         skipped_by_reason[reason] += 1
 
     radar_ts = None
@@ -90,10 +94,10 @@ def _build_scans_snapshot(fx: Any) -> Dict[str, Any]:
                 continue
             radar_candidates.append({
                 "symbol": c.get("symbol"),
-                "direction": c.get("direction"),
+                "direction": c.get("direction") or c.get("action"),
                 "score": c.get("score"),
                 "hurst_regime": c.get("hurst_regime"),
-                "hurst_h": c.get("hurst_h"),
+                "hurst_h": c.get("hurst_h") if c.get("hurst_h") is not None else c.get("hurst"),
                 "kalman_zscore": c.get("kalman_zscore"),
                 "kalman_overextended": c.get("kalman_overextended"),
                 "hmm_regime": c.get("hmm_regime"),
@@ -141,7 +145,7 @@ def _collect_decisions(fx: Any, start_ts: Optional[float], end_ts: Optional[floa
     filtered: List[Dict[str, Any]] = []
     by_category: Dict[str, int] = defaultdict(int)
     for item in logs:
-        ts = _safe_float(item.get("ts") or item.get("timestamp"), 0.0)
+        ts = _safe_float(item.get("ts") or item.get("timestamp") or item.get("created_at_ts"), 0.0)
         if start_ts is not None and ts > 0 and ts < start_ts:
             continue
         if end_ts is not None and ts > 0 and ts > end_ts:

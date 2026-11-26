@@ -25,13 +25,13 @@ logger = logging.getLogger("scalper.opportunity")
 
 OPPORTUNITY_UNIVERSE = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "EURJPY", "GBPJPY",
                         "EURGBP", "AUDJPY", "AUDNZD", "XAUUSD", "BTCUSD", "USTEC", "US30"]
-DEEP_ANALYSIS_TOP = 4              # taramada en net N sembol derin analiz edilir
+DEEP_ANALYSIS_TOP = 6              # taramada en net N sembol derin analiz edilir (ilk 4 BEKLE'ye düşerse sonrakiler kaçmasın)
 # Hafta sonu forex/altın/endeks kapalı: yalnızca kripto taranır (BTC, ETH ve sistemde tanımlı altcoinler) ve daha çok aday derin analiz edilir.
 #: Hafta sonu taraması (forex/emtia kapalı). 2026-11-09: yalnız izinli kriptolar
 #: (`config.CRYPTO_ALLOWED_BASES`). Eski liste 10 coin taşıyordu; 7'si ürün
 #: kuralıyla emekliye ayrılmıştı ve derin-analiz kotasını boşa harcıyordu.
 WEEKEND_UNIVERSE = ["BTCUSD", "ETHUSD", "XRPUSD"]
-WEEKEND_DEEP_TOP = 5
+WEEKEND_DEEP_TOP = 7
 
 
 def is_weekend(now_ts: Optional[float] = None) -> bool:
@@ -178,13 +178,15 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     if analysis.get("price_source") not in ("mt5_tick", "mt5_mum"):
         return {"ok": False, "reason": "MT5 anlık fiyatı yok (emir MT5'ten gideceği için gerekli)"}
     frames = analysis.get("frames") or {}
-    # Scalping sistemi: tüm sembollerde 15 dk ATR esas alınır (5 dk spread/gürültüye
-    # karşı dar, 30 dk/1 saat ise scalping için fazla geniş). Yoksa 5m → 30m → 1h yedeği.
+    # 8 zaman dilimli analize yalnız 15m gürültü stopu takmak dar SL → şişen lot → erken SL üretiyordu.
+    # 15m ATR × 1.5 ile 1h ATR × 1.0'ın büyüğünü esas al (yoksa 5m/30m/1h yedeği).
+    atr_15m = (frames.get("15m") or {}).get("atr")
+    atr_1h = (frames.get("1h") or {}).get("atr")
     atr = (
-        (frames.get("15m") or {}).get("atr")
+        atr_15m
         or (frames.get("5m") or {}).get("atr")
         or (frames.get("30m") or {}).get("atr")
-        or (frames.get("1h") or {}).get("atr")
+        or atr_1h
         or analysis.get("atr")
     )
     price = float(analysis.get("price") or 0)
@@ -206,6 +208,8 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
     if abs(float(analysis.get("score", 0))) < min_score:
         return {"ok": False, "reason": "teknik sinyal gücü düşük"}
     sl_dist = SL_ATR_MULT * float(atr)
+    if atr_1h and float(atr_1h) > 0:
+        sl_dist = max(sl_dist, float(atr_1h))
     tp_dist = RR * sl_dist
     lv = analysis.get("levels") or {}
     opposing = (lv.get("resistances") if bias == "BUY" else lv.get("supports")) or []

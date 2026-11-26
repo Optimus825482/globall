@@ -5526,6 +5526,9 @@ async def get_forex_radar(use_cache: bool = True):
         macro_delta = float(m_eval.get("macro_delta", 0.0) or 0.0)
         if action in ("BUY", "SELL") and macro_delta != 0.0:
             score = max(0.0, min(99.0, round(score + macro_delta, 1)))
+        elif action not in ("BUY", "SELL"):
+            # Yön teyidi (HOLD) yoksa skor 96-99 gibi yanıltıcı tepe değerler göstermesin.
+            score = min(score, 55.0)
 
         base = {
             "symbol": sym,
