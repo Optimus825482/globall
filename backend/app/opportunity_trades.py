@@ -575,6 +575,7 @@ _AUTO_SCAN_STATE: Dict[str, Any] = {
     "top": [],
     "opened": [],
     "skipped": [],
+    "h1_h4_scanners": [],
     "error": None,
     "duration_sec": None,
 }
@@ -594,6 +595,7 @@ def get_auto_scan_state() -> Dict[str, Any]:
     st["top"] = list(_AUTO_SCAN_STATE.get("top") or [])
     st["opened"] = list(_AUTO_SCAN_STATE.get("opened") or [])
     st["skipped"] = list(_AUTO_SCAN_STATE.get("skipped") or [])
+    st["h1_h4_scanners"] = list(_AUTO_SCAN_STATE.get("h1_h4_scanners") or [])
     st["enabled"] = enabled
     st["interval_min"] = interval_min
     return st
@@ -732,10 +734,27 @@ async def periodic_opportunity_scan_loop() -> None:
                 await run_periodic_opportunity_scan(trigger="auto")
                 try:
                     from app import bb_squeeze_h1, donchian_h1, h4_trend_scanners, macd_cross_h4
-                    await donchian_h1.run_donchian_h1_scan()
-                    await bb_squeeze_h1.run_bb_squeeze_h1_scan()
-                    await macd_cross_h4.run_macd_cross_h4_scan()
-                    await h4_trend_scanners.run_h4_trend_scans()
+                    h_rows = []
+                    h_rows.extend(await donchian_h1.run_donchian_h1_scan() or [])
+                    h_rows.extend(await bb_squeeze_h1.run_bb_squeeze_h1_scan() or [])
+                    h_rows.extend(await macd_cross_h4.run_macd_cross_h4_scan() or [])
+                    h_rows.extend(await h4_trend_scanners.run_h4_trend_scans() or [])
+                    scan_ts = round(time.time(), 2)
+                    _AUTO_SCAN_STATE["h1_h4_scanners"] = [
+                        {
+                            "ts": scan_ts,
+                            "symbol": r.get("symbol"),
+                            "strategy": r.get("strategy"),
+                            "strategy_label": r.get("strategy_label"),
+                            "signal": r.get("signal", "HOLD"),
+                            "price": r.get("price"),
+                            "sl_pips": r.get("sl_pips"),
+                            "tp_pips": r.get("tp_pips"),
+                            "reason": r.get("reason", ""),
+                        }
+                        for r in h_rows
+                        if isinstance(r, dict)
+                    ]
                 except Exception as _dh_exc:  # noqa: BLE001
                     logger.warning("[H1_H4_SCANNERS] periyodik tarama hatası: %s", _dh_exc)
                 _AUTO_SCAN_STATE["next_run_ts"] = time.time() + interval_sec

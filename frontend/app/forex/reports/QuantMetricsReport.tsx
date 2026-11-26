@@ -26,8 +26,25 @@ interface TearSheetData {
   by_symbol: Record<string, { count: number; wins: number; win_rate_pct: number; net_pnl_usd: number }>;
 }
 
+interface H1H4ScannerRow {
+  ts?: number;
+  symbol?: string;
+  strategy?: string;
+  strategy_label?: string;
+  signal?: string;
+  price?: number;
+  sl_pips?: number;
+  tp_pips?: number;
+  reason?: string;
+}
+
 interface AuditPayload {
   tearsheet?: TearSheetData;
+  scans?: {
+    opportunity_scan?: {
+      h1_h4_scanners?: H1H4ScannerRow[];
+    };
+  };
   meta_filter?: {
     total_evaluated: number;
     avg_meta_prob: number;
@@ -239,6 +256,49 @@ export default function QuantMetricsReport() {
                 </table>
               </div>
             ))}
+          </div>
+
+          {/* H1/H4 Strateji Monitörü */}
+          <div className="bg-bunker-900/80 border border-bunker-800 rounded-xl p-4 overflow-x-auto">
+            <h3 className="text-xs font-bold uppercase text-bunker-muted mb-3">
+              🛰️ H1 / H4 Strateji Monitörü (Canlı Tarama Durumu)
+            </h3>
+            {(data?.scans?.opportunity_scan?.h1_h4_scanners || []).length > 0 ? (
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="text-left text-bunker-muted border-b border-bunker-800">
+                    <th className="py-1.5">Sembol</th>
+                    <th className="py-1.5">Strateji</th>
+                    <th className="py-1.5">Durum</th>
+                    <th className="py-1.5">Fiyat</th>
+                    <th className="py-1.5">SL / TP (pip)</th>
+                    <th className="py-1.5">Açıklama</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.scans?.opportunity_scan?.h1_h4_scanners || []).map((r, i) => (
+                    <tr key={`${r.symbol}-${r.strategy}-${i}`} className="border-b border-bunker-800/50">
+                      <td className="py-1.5 font-bold">{r.symbol}</td>
+                      <td className="py-1.5 text-cyan-300">{r.strategy_label || r.strategy}</td>
+                      <td className="py-1.5">
+                        <span className={`px-2 py-0.5 rounded font-bold ${
+                          r.signal === "BUY" ? "bg-emerald-500/20 text-emerald-300" :
+                          r.signal === "SELL" ? "bg-rose-500/20 text-rose-300" :
+                          "bg-bunker-800 text-bunker-muted"
+                        }`}>
+                          {r.signal || "HOLD"}
+                        </span>
+                      </td>
+                      <td className="py-1.5">{r.price ?? "—"}</td>
+                      <td className="py-1.5">{r.sl_pips ?? "—"} / {r.tp_pips ?? "—"}</td>
+                      <td className="py-1.5 text-slate-300">{r.reason || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-xs text-bunker-muted">İlk 5 dakikalık otonom tarama turu tamamlandığında H1/H4 strateji durumları burada görünecektir.</div>
+            )}
           </div>
 
           {/* Episodik Dersler (Reflection Loop) */}

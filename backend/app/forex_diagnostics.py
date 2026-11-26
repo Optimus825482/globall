@@ -127,6 +127,7 @@ def _build_scans_snapshot(fx: Any) -> Dict[str, Any]:
             "top": opp_state.get("top") or [],
             "opened": opp_state.get("opened") or [],
             "skipped": opp_state.get("skipped") or [],
+            "h1_h4_scanners": opp_state.get("h1_h4_scanners") or [],
             "skipped_by_reason": dict(sorted(skipped_by_reason.items(), key=lambda kv: -kv[1])),
             "error": opp_state.get("error"),
         },
