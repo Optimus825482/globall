@@ -58,9 +58,9 @@ export default function QuantMetricsReport() {
   const loadData = async (p = period) => {
     setLoading(true);
     try {
-      const res = await apiFetch(`/api/forex/diagnostics/today-audit?period=${p}&limit=50`);
-      if (res.ok) {
-        setData(await res.json());
+      const body = await apiFetch(`/api/forex/diagnostics/today-audit?period=${p}&limit=50`);
+      if (body && typeof body === "object") {
+        setData(body as AuditPayload);
       }
     } catch {
       showToast("Quant ölçüm raporu alınamadı", "error");
@@ -76,8 +76,7 @@ export default function QuantMetricsReport() {
   const handleTrainMeta = async () => {
     setTraining(true);
     try {
-      const res = await apiFetch("/api/forex/diagnostics/meta-train", { method: "POST" });
-      const body = await res.json();
+      const body = await apiFetch("/api/forex/diagnostics/meta-train", { method: "POST" });
       if (body?.ok) {
         showToast(`ML Meta-Model eğitildi (${body.n_samples} işlem, doğruluk %${Math.round((body.accuracy || 0) * 100)})`, "success");
         loadData(period);
