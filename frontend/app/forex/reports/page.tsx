@@ -105,6 +105,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   S3_5M: "S3 SuperTrend+RSI (M5)",
   S3_15M: "S3 SuperTrend+RSI (M15)",
   DONCHIAN_ADX: "Donchian ADX Kırılımı",
+  DONCHIAN_H1: "Donchian H1(20) Kırılımı",
   LONDON_BREAKOUT: "London Breakout (M5)",
   LONDON_SIGN: "NY Sign Momentum",
   SQUEEZE_KC_M15: "Keltner Squeeze (M15)",
