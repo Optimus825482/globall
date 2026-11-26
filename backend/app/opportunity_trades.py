@@ -731,10 +731,11 @@ async def periodic_opportunity_scan_loop() -> None:
             if now >= due_ts:
                 await run_periodic_opportunity_scan(trigger="auto")
                 try:
-                    from app import donchian_h1
+                    from app import bb_squeeze_h1, donchian_h1
                     await donchian_h1.run_donchian_h1_scan()
+                    await bb_squeeze_h1.run_bb_squeeze_h1_scan()
                 except Exception as _dh_exc:  # noqa: BLE001
-                    logger.warning("[DONCHIAN_H1] periyodik tarama hatası: %s", _dh_exc)
+                    logger.warning("[H1_SCANNERS] periyodik tarama hatası: %s", _dh_exc)
                 _AUTO_SCAN_STATE["next_run_ts"] = time.time() + interval_sec
             await asyncio.sleep(15)
         except asyncio.CancelledError:
