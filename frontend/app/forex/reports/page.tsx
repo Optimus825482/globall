@@ -11,6 +11,7 @@ import PortfolioRiskReport from "./PortfolioRiskReport";
 import ShadowModesReport from "./ShadowModesReport";
 import RoutinesReport from "./RoutinesReport";
 import PositionSupervisorReport from "./PositionSupervisorReport";
+import QuantMetricsReport from "./QuantMetricsReport";
 
 interface ClosedTrade {
   id: string;
@@ -149,7 +150,7 @@ function exitBadge(t: ClosedTrade): { label: string; cls: string } {
 
 export default function ForexReportsPage() {
   // Rapor görünümü: işlem raporu, LLM Trader kararları, portföy/risk, gölge modlar, rutinler veya Pozisyon Doktoru.
-  const [view, setView] = useState<"trades" | "llm" | "risk" | "shadow" | "routines" | "supervisor">("trades");
+  const [view, setView] = useState<"trades" | "llm" | "risk" | "shadow" | "routines" | "supervisor" | "quant">("trades");
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<any[]>([]);
   const [kpi, setKpi] = useState<ReportKPI | null>(null);
@@ -425,7 +426,7 @@ export default function ForexReportsPage() {
       </div>
 
       <div role="tablist" aria-label="Rapor türü" className="flex flex-wrap gap-2">
-        {([["trades", "İşlem Raporu"], ["llm", "LLM Kararları"], ["supervisor", "Pozisyon Doktoru"], ["risk", "Portföy & Risk"], ["shadow", "Gölge Modlar"], ["routines", "Rutinler"]] as const).map(([key, label]) => (
+        {([["trades", "İşlem Raporu"], ["quant", "Quant & Ölçüm"], ["llm", "LLM Kararları"], ["supervisor", "Pozisyon Doktoru"], ["risk", "Portföy & Risk"], ["shadow", "Gölge Modlar"], ["routines", "Rutinler"]] as const).map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -441,7 +442,7 @@ export default function ForexReportsPage() {
         ))}
       </div>
 
-      {view === "llm" ? <LlmReviewReport /> : view === "supervisor" ? <PositionSupervisorReport /> : view === "risk" ? <PortfolioRiskReport /> : view === "shadow" ? <ShadowModesReport /> : view === "routines" ? <RoutinesReport /> : (<>
+      {view === "quant" ? <QuantMetricsReport /> : view === "llm" ? <LlmReviewReport /> : view === "supervisor" ? <PositionSupervisorReport /> : view === "risk" ? <PortfolioRiskReport /> : view === "shadow" ? <ShadowModesReport /> : view === "routines" ? <RoutinesReport /> : (<>
       {/* KPI PERFORMANS METRİKLERİ KARTLARI */}
       {kpi && (
         <>
