@@ -453,11 +453,17 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
                 p_dir = str(plan.get("direction") or "").upper()
                 kz = float(rcand.get("kalman_zscore") or 0.0)
                 if rcand.get("kalman_overextended") and ((p_dir == "BUY" and kz >= 2.2) or (p_dir == "SELL" and kz <= -2.2)):
-                    skipped.append({"symbol": sym, "reason": f"Kalman aşırı uzama (Z={kz:+.1f}): geç kovalama engellendi"})
-                    return
-                if rcand.get("hmm_regime") == "SHOCK_VOLATILITY" and float(rcand.get("hmm_confidence") or 0.0) >= 0.60:
-                    skipped.append({"symbol": sym, "reason": "HMM şok volatilite rejimi: işlem pas geçildi"})
-                    return
+                    if abs(kz) >= 2.8:
+                        skipped.append({"symbol": sym, "reason": f"Kalman aşırı uzama (Z={kz:+.1f}): geç kovalama engellendi"})
+                        return
+                    lots_mult *= 0.60
+                if rcand.get("hmm_regime") == "SHOCK_VOLATILITY":
+                    hmm_conf = float(rcand.get("hmm_confidence") or 0.0)
+                    if hmm_conf >= 0.85:
+                        skipped.append({"symbol": sym, "reason": "HMM şok volatilite rejimi: işlem pas geçildi"})
+                        return
+                    if hmm_conf >= 0.60:
+                        lots_mult *= 0.55
                 if rcand.get("hurst_regime") == "RANDOM_WALK":
                     lots_mult *= 0.5
                 if rcand.get("macro_alignment") == "OPPOSING":
@@ -470,6 +476,7 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
         logger.warning("Fırsat quant/makro kapısı hatası (%s): %s", sym, exc)
 
     # 5b) 1D EMA 12/50 Ana Yön (Daily Bias) + Meta-Labeling Olasılık Skoru
+    meta_context: Dict[str, Any] = {}
     try:
         from app.daily_bias_filter import get_daily_bias, daily_bias_alignment
         from app.meta_label_filter import score_meta_signal
@@ -485,15 +492,28 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
             rcand_m = next((c for c in (rc_meta[1].get("candidates") or []) if str(c.get("symbol") or "").upper() == str(sym).upper()), {}) or {}
         sp_val = float((getattr(fx, "_LIVE_SPREAD_PIPS", {}) or {}).get(sym) or 0.0)
         sl_v = float(plan.get("sl_pips") or 0.0)
+        hurst_reg = str(rcand_m.get("hurst_regime") or "UNKNOWN")
+        hmm_reg = str(rcand_m.get("hmm_regime") or "UNKNOWN")
+        kz_val = float(rcand_m.get("kalman_zscore") or 0.0)
+        macro_align = str(rcand_m.get("macro_alignment") or "NEUTRAL")
+        spread_ratio = (sp_val / sl_v) if (sp_val > 0 and sl_v > 0) else 0.0
+        meta_context = {
+            "daily_alignment": d_align,
+            "hurst_regime": hurst_reg,
+            "hmm_regime": hmm_reg,
+            "kalman_zscore": kz_val,
+            "macro_alignment": macro_align,
+            "spread_sl_ratio": spread_ratio,
+        }
         meta_res = score_meta_signal(
             sym,
             str(plan.get("direction") or ""),
             daily_alignment=d_align,
-            hurst_regime=str(rcand_m.get("hurst_regime") or "UNKNOWN"),
-            hmm_regime=str(rcand_m.get("hmm_regime") or "UNKNOWN"),
-            kalman_zscore=float(rcand_m.get("kalman_zscore") or 0.0),
-            macro_alignment=str(rcand_m.get("macro_alignment") or "NEUTRAL"),
-            spread_sl_ratio=(sp_val / sl_v) if (sp_val > 0 and sl_v > 0) else 0.0,
+            hurst_regime=hurst_reg,
+            hmm_regime=hmm_reg,
+            kalman_zscore=kz_val,
+            macro_alignment=macro_align,
+            spread_sl_ratio=spread_ratio,
         )
         lots_mult *= float(meta_res.get("size_mult") or 1.0)
     except Exception as exc:  # noqa: BLE001
@@ -537,8 +557,18 @@ async def _open_verified(fx: Any, sym: str, plan: Dict[str, Any], spec: Dict[str
     except Exception as exc:  # noqa: BLE001 - kapı hatası fırsat taramasını durdurmaz ama günlüğe düşer
         logger.warning("Fırsat risk kapısı hatası (%s): %s", sym, exc)
     lots_mult = max(MIN_SIZE_MULT, lots_mult * float(plan.get("size_mult") or 1.0)) if plan.get("size_mult", 1.0) < 1.0 else lots_mult
+    open_kwargs: Dict[str, Any] = {}
+    try:
+        import inspect
+        sig = inspect.signature(fx.open_scan_position)
+        if "meta_context" in sig.parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ):
+            open_kwargs["meta_context"] = meta_context
+    except Exception:  # noqa: BLE001
+        pass
     res = fx.open_scan_position(sym, plan["direction"], plan["sl_pips"], plan["tp_pips"], plan["atr_pips"],
-                                float(plan.get("score") or 0), plan["note"], lots_mult)
+                                float(plan.get("score") or 0), plan["note"], lots_mult, **open_kwargs)
     if not res.get("ok"):
         skipped.append({"symbol": sym, "reason": res.get("reason", "emir yazılamadı")})
         return
@@ -629,9 +659,14 @@ async def run_periodic_opportunity_scan(trigger: str = "auto") -> Dict[str, Any]
         _AUTO_SCAN_STATE["error"] = None
         try:
             from app import forex_news, forex_research
-            from app.routers import forex_chat
+            from app.routers import forex as fx, forex_chat
 
             syms = forex_research.scan_universe()
+            blocked_syms = {
+                str(s).upper() for s in (getattr(fx._AUTO_SETTINGS, "blocked_symbols", None) or [])
+            }
+            if blocked_syms:
+                syms = [s for s in syms if str(s).upper() not in blocked_syms]
             scan = await forex_research.run_blocking(forex_research.scan_opportunities, syms, 8)
             if not scan or not scan.get("all"):
                 _AUTO_SCAN_STATE["status"] = "error"

@@ -918,9 +918,11 @@ def _mt5_sync_authorized(request: Any) -> bool:
 
 def _scan_lot_size(sym: str, sl_pips: float, balance: float, pip_val: float) -> Tuple[Optional[float], str]:
     """Fırsat taraması lotu: bakiyenin %SCAN_RISK_PCT'i riske göre, motorun kategori tavanlarıyla sınırlı."""
-    risk_usd = balance * SCAN_RISK_PCT / 100.0
+    eff_risk_pct = min(SCAN_RISK_PCT, get_symbol_risk_pct(sym, _AUTO_SETTINGS), MAX_LIVE_RISK_PER_TRADE_PCT)
+    risk_usd = balance * eff_risk_pct / 100.0
     is_gold = "XAU" in sym
     is_crypto = is_crypto_symbol(sym)
+    is_index = any(k in sym.upper() for k in ("US30", "NAS100", "USTEC", "SPX", "JP225", "US2000", "UK100"))
     comm = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
     per_lot_risk = sl_pips * pip_val + comm
     raw_lots = round(risk_usd / max(0.0001, per_lot_risk), 2)
@@ -937,10 +939,17 @@ def _scan_lot_size(sym: str, sl_pips: float, balance: float, pip_val: float) -> 
             floor_lot = 1.0
         else:
             ceiling = 10.0
+    elif is_index:
+        bal_idx_cap = max(0.10, round(balance * 0.0003, 1))
+        ceiling = min(HARD_MAX_INDEX_LOT, _AUTO_SETTINGS.max_index_lot, bal_idx_cap)
+        floor_lot = 0.10
     else:
         is_cross = len(sym) == 6 and any(k in sym for k in ("CAD", "CHF", "NZD", "AUD"))
         ceiling = min(0.75 if is_cross else HARD_MAX_FOREX_LOT, _AUTO_SETTINGS.max_forex_lot, max(0.01, round(balance * 0.00025, 2)))
-    lots = round(max(floor_lot, min(raw_lots, ceiling)), 2)
+    if is_index:
+        lots = round(max(floor_lot, min(round(raw_lots * 10) / 10, ceiling)), 2)
+    else:
+        lots = round(max(floor_lot, min(raw_lots, ceiling)), 2)
     lots, risk_skip = apply_risk_normalization(sym, lots, sl_pips, pip_val, risk_usd)
     if risk_skip:
         if not floor_lot_respects_budget(floor_lot, sl_pips, pip_val, risk_usd):
@@ -960,7 +969,8 @@ def scan_lot_estimate(sym: str, sl_pips: float) -> Optional[float]:
 
 
 def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float, atr_pips: float,
-                       score: float, note: str, lots_mult: float = 1.0) -> Dict[str, Any]:
+                       score: float, note: str, lots_mult: float = 1.0,
+                       meta_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Sohbet "Fırsat taraması": motorun KOMUT KUYRUĞUYLA kayıtlı DEMO MT5 hesabına işlem açar.
 
     Radarın açtığı işlemlerle aynı yol (OPEN_ORDER → köprü): BE/trailing köprüde aynı kurallarla yönetilir,
@@ -983,6 +993,13 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
     if len(opens) >= int(_AUTO_SETTINGS.max_open_positions):
         return {"ok": False, "reason": f"açık pozisyon sınırı ({_AUTO_SETTINGS.max_open_positions}) dolu"}
     key = canonical_symbol(sym)
+    blocked_syms = {str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "blocked_symbols", []) or [])}
+    if key in blocked_syms or sym.upper() in blocked_syms:
+        return {"ok": False, "reason": "sembol kara listede (blocked_symbols)"}
+    if getattr(_AUTO_SETTINGS, "proof_scope_enabled", False):
+        scope = {str(x).strip().upper() for x in (getattr(_AUTO_SETTINGS, "proof_scope_symbols", []) or [])}
+        if scope and key not in scope and sym.upper() not in scope:
+            lots_mult = min(lots_mult, 0.65)
     pending_same = [
         c for c in (st.get("pending_commands") or [])
         if isinstance(c, dict)
@@ -1039,6 +1056,7 @@ def open_scan_position(sym: str, direction: str, sl_pips: float, tp_pips: float,
         "partial_pips": 0.0, "comment": f"{FIRSAT_COMMENT_TAG} {score:.0f}", "strategy": FIRSAT_STRATEGY,
         "strategy_label": FIRSAT_LABEL, "strategy_tag": FIRSAT_COMMENT_TAG, "entry_source": FIRSAT_ENTRY_SOURCE,
         "signal_price": None, "signal_bar_time": None, "spread_pips_signal": 0.0, "created_ts": now,
+        "meta_context": meta_context or {},
     })
     _LAST_SYMBOL_ENTRY_TIME[sym] = now
     _invalidate_status_cache()
@@ -2211,7 +2229,7 @@ FIRSAT_ENTRY_SOURCE = "firsat_taramasi"
 FIRSAT_STRATEGY = "FIRSAT_TARAMASI"
 FIRSAT_LABEL = "Fırsat Taraması (Sohbet)"
 FIRSAT_COMMENT_TAG = "FRS"
-SCAN_RISK_PCT = 4.0          # işlem başı risk: bakiyenin %4'ü (1H ATR geniş stoplarda 0.01 taban lotun geçebilmesi için)
+SCAN_RISK_PCT = 1.2          # işlem başı risk: bakiyenin %1.2'si (get_symbol_risk_pct & MAX_LIVE_RISK_PER_TRADE_PCT ile sınırlı)
 
 
 #: Tokyo drifti: sembol → son giriş yapılan gün kimliği (günde bir giriş garantisi).
@@ -5526,7 +5544,10 @@ async def get_forex_radar(use_cache: bool = True):
         macro_delta = float(m_eval.get("macro_delta", 0.0) or 0.0)
         if action in ("BUY", "SELL") and macro_delta != 0.0:
             score = max(0.0, min(99.0, round(score + macro_delta, 1)))
-        elif action not in ("BUY", "SELL"):
+        if action in ("BUY", "SELL"):
+            if t.get("hurst_regime") == "MEAN_REVERT" or t.get("hmm_regime") == "LOW_VOL_RANGE":
+                score = min(score, 84.0)
+        else:
             # Yön teyidi (HOLD) yoksa skor 96-99 gibi yanıltıcı tepe değerler göstermesin.
             score = min(score, 55.0)
 
@@ -6020,6 +6041,8 @@ def _apply_canli_sabitler(settings: "ForexAutoPaperSettings") -> "ForexAutoPaper
     _allowed = [str(s).upper() for s in (settings.allowed_symbols or [])]
     if "AUDCAD" not in _allowed:
         settings.allowed_symbols = list(settings.allowed_symbols or []) + ["AUDCAD"]
+    settings.risk_gate_mode = "enforce"
+    settings.correlation_guard = True
     return settings
 
 
@@ -8189,7 +8212,7 @@ async def _forex_auto_paper_loop():
                         # Görünürlük: mod ne beklediğini 25 sn'de bir insan-okur cümleyle söyler;
                         # kapsam dışıysa bunu da açıkça yazar (sessiz blok yok).
                         _m_not_allowed = _m_sym not in {s.upper() for s in (_AUTO_SETTINGS.allowed_symbols or [])}
-                        _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > 25.0
+                        _m_wait_throttled = now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_m_sym}_donch_wait", 0.0) > (3600.0 if _m_not_allowed else 25.0)
                         if _m_wait_throttled:
                             _LAST_CANDIDATE_LOG_TIME[f"{_m_sym}_donch_wait"] = now_ts
                             _m_disp = _m_t["display"] if _m_t else _m_sym
@@ -8301,7 +8324,7 @@ async def _forex_auto_paper_loop():
                         )
                     else:
                         # Görünürlük: akış ne beklediğini 25 sn'de bir insan-okur cümleyle söyler.
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_e_sym}_eap_wait", 0.0) > 25.0:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_e_sym}_eap_wait", 0.0) > (25.0 if _e_allowed else 3600.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{_e_sym}_eap_wait"] = now_ts
                             if not _e_allowed:
                                 _log_auto_decision(
@@ -8414,7 +8437,7 @@ async def _forex_auto_paper_loop():
                                 strategy_label=strategy_display_label(_s_src),
                             )
                         else:
-                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_s_key}_s3_wait", 0.0) > 25.0:
+                            if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_s_key}_s3_wait", 0.0) > (25.0 if _s_allowed else 3600.0):
                                 _LAST_CANDIDATE_LOG_TIME[f"{_s_key}_s3_wait"] = now_ts
                                 if not _s_allowed:
                                     _log_auto_decision(
@@ -8520,7 +8543,7 @@ async def _forex_auto_paper_loop():
                             strategy_label=FVG_PULLBACK_LABEL,
                         )
                     else:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_f_sym}_fvg_wait", 0.0) > 30.0:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_f_sym}_fvg_wait", 0.0) > (30.0 if _f_allowed else 3600.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{_f_sym}_fvg_wait"] = now_ts
                             if not _f_allowed:
                                 _log_auto_decision(
@@ -8623,7 +8646,7 @@ async def _forex_auto_paper_loop():
                             strategy_label=LONDON_BREAKOUT_LABEL,
                         )
                     else:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_lb_sym}_lb_wait", 0.0) > 25.0:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_lb_sym}_lb_wait", 0.0) > (25.0 if (_lb_sym in _lb_allowed) else 3600.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{_lb_sym}_lb_wait"] = now_ts
                             if _lb_sym not in _lb_allowed:
                                 _log_auto_decision(
@@ -8735,7 +8758,7 @@ async def _forex_auto_paper_loop():
                                     strategy_label=LONDON_SIGN_LABEL,
                                 )
                     else:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_ls_sym}_ls_wait", 0.0) > 25.0:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_ls_sym}_ls_wait", 0.0) > (25.0 if (_ls_sym in _ls_allowed) else 3600.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{_ls_sym}_ls_wait"] = now_ts
                             if _ls_sym not in _ls_allowed:
                                 _log_auto_decision(
@@ -8965,7 +8988,7 @@ async def _forex_auto_paper_loop():
                             strategy_label=SQUEEZE_KC_LABEL,
                         )
                     else:
-                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_skc_sym}_sqzkc_wait", 0.0) > 25.0:
+                        if now_ts - _LAST_CANDIDATE_LOG_TIME.get(f"{_skc_sym}_sqzkc_wait", 0.0) > (25.0 if (_skc_sym in _skc_allowed) else 3600.0):
                             _LAST_CANDIDATE_LOG_TIME[f"{_skc_sym}_sqzkc_wait"] = now_ts
                             if _skc_sym not in _skc_allowed:
                                 _log_auto_decision(
@@ -10001,6 +10024,10 @@ async def _forex_auto_paper_loop():
                         sl_pips = float(_c3_ov)
                         tp_pips = float(cand.get("tp_pips_override") or 0.0)
                         first_target_pips = 0.0
+                if str(cand.get("entry_source", "") or "") in ("", "radar") and tp_pips > 0 and (
+                    cand.get("hurst_regime") == "MEAN_REVERT" or cand.get("hmm_regime") == "LOW_VOL_RANGE"
+                ):
+                    tp_pips = round(min(tp_pips, max(sl_pips * 1.6, atr_pips * 2.2)), 1)
 
                 active_bal = float(_MT5_STATE.get("account", {}).get("balance", _AUTO_STATE["balance"])) if _MT5_STATE.get("connected") else float(_AUTO_STATE["balance"])
                 sym_risk_pct = effective_risk_pct(sym, cand.get("entry_source", ""), _AUTO_SETTINGS)
@@ -10034,6 +10061,28 @@ async def _forex_auto_paper_loop():
                 c_mult, c_note = retail_crowd_risk_mult(sym, direction)
                 if c_mult < 1.0:
                     risk_usd *= c_mult
+
+                # 1D Daily Bias + Meta-Labeling sürekli pozisyon boyutlandırma (veto yok)
+                try:
+                    import sys as _sys
+                    from app import daily_bias_filter, meta_label_filter
+                    _db_info = daily_bias_filter.get_daily_bias(_sys.modules[__name__], sym)
+                    _db_align = daily_bias_filter.daily_bias_alignment(_db_info.get("bias", "NEUTRAL"), direction)
+                    _spread_sl_ratio = (spread_val_pips / sl_pips) if sl_pips > 0 else 0.0
+                    _meta_res = meta_label_filter.score_meta_signal(
+                        sym,
+                        direction,
+                        daily_alignment=_db_align,
+                        hurst_regime=str(cand.get("hurst_regime") or "UNKNOWN"),
+                        hmm_regime=str(cand.get("hmm_regime") or "UNKNOWN"),
+                        kalman_zscore=float(cand.get("kalman_zscore") or 0.0),
+                        macro_alignment=str(cand.get("macro_alignment") or "NEUTRAL"),
+                        spread_sl_ratio=_spread_sl_ratio,
+                        hour_utc=curr_utc_hour,
+                    )
+                    risk_usd *= float(_meta_res.get("size_mult") or 1.0)
+                except Exception:
+                    pass
 
                 # Komisyon ($7/lot) ve spread tamponlu efektif risk paydası
                 comm_per_lot = 7.0 if (len(sym) == 6 and sym[:3].isalpha() and sym[3:].isalpha()) else 0.0
@@ -10324,6 +10373,8 @@ async def _forex_auto_paper_loop():
                         "signal_price": cand.get("signal_price"),
                         "signal_bar_time": cand.get("signal_bar_time"),
                         "spread_pips_signal": float(cand.get("spread_pips", 0.0) or 0.0),
+                        "hurst_regime": cand.get("hurst_regime", "UNKNOWN"),
+                        "hmm_regime": cand.get("hmm_regime", "UNKNOWN"),
                         "created_ts": now_ts,
                     })
                 else:
@@ -12912,7 +12963,7 @@ async def post_forex_diagnostics_meta_train():
     from app import forex_diagnostics, meta_label_filter
     import sys
     closed, _, _ = forex_diagnostics._get_windowed_closed_trades(sys.modules[__name__], period="all")
-    return meta_label_filter.train_meta_model_from_trades(closed)
+    return meta_label_filter.train_meta_model_from_trades(closed, require_feature_coverage=True)
 
 
 

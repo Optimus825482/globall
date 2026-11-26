@@ -44,22 +44,21 @@ def _fetch_db_forensics(start_ts: Optional[float], end_ts: Optional[float], limi
     """Fetch recent diagnostic rows from PostgreSQL tables for the requested window."""
     lim = max(1, min(500, int(limit)))
     since_ts = float(start_ts) if start_ts is not None else (time.time() - 86400.0)
-    since_dt = datetime.datetime.fromtimestamp(since_ts, datetime.timezone.utc)
 
     risk_gate_rows = _query_db_rows(
         "SELECT * FROM risk_gate_log WHERE ts >= ? ORDER BY ts DESC LIMIT ?",
         (since_ts, lim),
     )
     supervisor_rows = _query_db_rows(
-        "SELECT * FROM position_supervisor_log WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
-        (since_dt, lim),
+        "SELECT * FROM position_supervisor_log WHERE ts >= ? ORDER BY ts DESC LIMIT ?",
+        (since_ts, lim),
     )
     reflection_rows = _query_db_rows(
         "SELECT * FROM position_reflections WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
-        (since_dt, lim),
+        (since_ts, lim),
     )
     excursion_rows = _query_db_rows(
-        "SELECT * FROM position_excursions WHERE updated_at >= ? ORDER BY updated_at DESC LIMIT ?",
+        "SELECT * FROM position_excursions WHERE COALESCE(closed_at, last_seen, open_ts) >= ? ORDER BY last_seen DESC LIMIT ?",
         (since_ts, lim),
     )
     return {
@@ -323,7 +322,12 @@ def build_today_audit(
             "open_positions_count": len(mt5_st.get("open_positions") or []),
             "pending_commands_count": len(mt5_st.get("pending_commands") or []),
             "settings": {
-                "risk_pct": getattr(settings, "risk_pct", None),
+                "risk_pct": getattr(settings, "risk_per_trade_pct", None),
+                "risk_gold_pct": getattr(settings, "risk_gold_pct", None),
+                "risk_index_pct": getattr(settings, "risk_index_pct", None),
+                "risk_crypto_pct": getattr(settings, "risk_crypto_pct", None),
+                "risk_gate_mode": getattr(settings, "risk_gate_mode", None),
+                "proof_scope_enabled": getattr(settings, "proof_scope_enabled", None),
                 "max_open_positions": getattr(settings, "max_open_positions", None),
                 "dxy_filter_enabled": getattr(settings, "dxy_filter_enabled", None),
                 "correlation_guard": getattr(settings, "correlation_guard", None),

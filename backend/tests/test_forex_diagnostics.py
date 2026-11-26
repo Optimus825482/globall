@@ -47,6 +47,11 @@ def test_diagnostics_today_audit_and_losses_breakdown(monkeypatch):
 
     audit = asyncio.run(fx.get_forex_diagnostics_today_audit(period="today", limit=50))
     assert audit["account"]["connected"] is True
+    settings = audit["account"]["settings"]
+    assert settings["risk_pct"] is not None
+    assert settings["risk_pct"] == fx._AUTO_SETTINGS.risk_per_trade_pct
+    for key in ("risk_gold_pct", "risk_index_pct", "risk_crypto_pct", "risk_gate_mode", "proof_scope_enabled"):
+        assert key in settings
     assert audit["trades_summary"]["closed_count"] == 2
     assert audit["trades_summary"]["wins"] == 1
     assert audit["trades_summary"]["losses"] == 1
@@ -65,3 +70,39 @@ def test_diagnostics_today_audit_and_losses_breakdown(monkeypatch):
 
     losses = asyncio.run(fx.get_forex_diagnostics_losses(period="today", symbol="EURUSD"))
     assert losses["losing_trades_forensics"]["total_losses"] == 1
+
+
+def test_fetch_db_forensics_uses_valid_schema_columns(monkeypatch):
+    from app import forex_diagnostics
+
+    queries = []
+
+    def fake_query(sql, params=()):
+        queries.append((sql, params))
+        return []
+
+    monkeypatch.setattr(forex_diagnostics, "_query_db_rows", fake_query)
+    res = forex_diagnostics._fetch_db_forensics(1000.0, 2000.0, limit=25)
+    assert set(res.keys()) == {
+        "risk_gate_log",
+        "position_supervisor_log",
+        "position_reflections",
+        "position_excursions",
+    }
+    assert len(queries) == 4
+    sql_map = {q[0].split("FROM ")[1].split()[0]: q for q in queries}
+
+    assert "WHERE ts >= ? ORDER BY ts DESC LIMIT ?" in sql_map["risk_gate_log"][0]
+    assert sql_map["risk_gate_log"][1] == (1000.0, 25)
+
+    assert "WHERE ts >= ? ORDER BY ts DESC LIMIT ?" in sql_map["position_supervisor_log"][0]
+    assert "created_at" not in sql_map["position_supervisor_log"][0]
+    assert sql_map["position_supervisor_log"][1] == (1000.0, 25)
+
+    assert "WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?" in sql_map["position_reflections"][0]
+    assert isinstance(sql_map["position_reflections"][1][0], float)
+    assert sql_map["position_reflections"][1] == (1000.0, 25)
+
+    assert "COALESCE(closed_at, last_seen, open_ts) >= ? ORDER BY last_seen DESC LIMIT ?" in sql_map["position_excursions"][0]
+    assert "updated_at" not in sql_map["position_excursions"][0]
+    assert sql_map["position_excursions"][1] == (1000.0, 25)

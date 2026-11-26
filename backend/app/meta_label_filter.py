@@ -96,11 +96,13 @@ def train_meta_model_from_trades(
     *,
     min_samples: int = 20,
     save_to_disk: bool = True,
+    require_feature_coverage: bool = False,
 ) -> Dict[str, Any]:
     """Train a regularized LogisticRegression meta-model from MT5 closed trades."""
     global _ML_MODEL, _ML_META
     X_rows: List[List[float]] = []
     y_rows: List[int] = []
+    covered_count = 0
 
     for tr in closed_trades or []:
         if not isinstance(tr, dict):
@@ -111,12 +113,23 @@ def train_meta_model_from_trades(
             continue
         ts = float(tr.get("exit_ts") or tr.get("close_time") or time.time())
         hour_utc = int((ts // 3600) % 24)
+        d_align = str(tr.get("daily_alignment") or "NEUTRAL")
+        h_reg = str(tr.get("hurst_regime") or "UNKNOWN")
+        hmm_reg = str(tr.get("hmm_regime") or "UNKNOWN")
+        kz_val = float(tr.get("kalman_zscore") or 0.0)
+        if (
+            d_align.upper() != "NEUTRAL"
+            or h_reg.upper() != "UNKNOWN"
+            or hmm_reg.upper() != "UNKNOWN"
+            or kz_val != 0.0
+        ):
+            covered_count += 1
         feats = _feature_vector(
             direction=str(tr.get("direction") or "BUY"),
-            daily_alignment=str(tr.get("daily_alignment") or "NEUTRAL"),
-            hurst_regime=str(tr.get("hurst_regime") or "UNKNOWN"),
-            hmm_regime=str(tr.get("hmm_regime") or "UNKNOWN"),
-            kalman_zscore=float(tr.get("kalman_zscore") or 0.0),
+            daily_alignment=d_align,
+            hurst_regime=h_reg,
+            hmm_regime=hmm_reg,
+            kalman_zscore=kz_val,
             macro_alignment=str(tr.get("macro_alignment") or "NEUTRAL"),
             spread_sl_ratio=float(tr.get("spread_sl_ratio") or 0.0),
             hour_utc=hour_utc,
@@ -130,6 +143,14 @@ def train_meta_model_from_trades(
             "trained": False,
             "n_samples": len(X_rows),
             "reason": f"Yetersiz veya tek sınıflı veri ({len(X_rows)} < {min_samples})",
+        }
+
+    if require_feature_coverage and (covered_count / len(X_rows)) < 0.30:
+        return {
+            "ok": False,
+            "trained": False,
+            "n_samples": len(X_rows),
+            "reason": "Yetersiz rejim özelliği kapsamı",
         }
 
     from sklearn.linear_model import LogisticRegression
@@ -247,29 +268,34 @@ def score_meta_signal(
 
     model = _ensure_loaded_model()
     if model is not None:
-        try:
-            hr = int((time.time() // 3600) % 24) if hour_utc is None else int(hour_utc)
-            x = np.asarray([_feature_vector(
-                d, daily_alignment, hurst_regime, hmm_regime,
-                kalman_zscore, macro_alignment, spread_sl_ratio, hr,
-            )], dtype=float)
-            ml_prob = float(model.predict_proba(x)[0][1])
-            prob = 0.55 * ml_prob + 0.45 * rule_prob
-            model_source = "ml_blend"
-            reasons.append(f"ML_PROB({ml_prob:.2f})")
-        except Exception:  # noqa: BLE001
-            pass
+        ml_acc = _ML_META.get("accuracy")
+        ml_n = int(_ML_META.get("n_samples") or 0)
+        if (ml_acc is not None and float(ml_acc) < 0.52) or ml_n < 30:
+            reasons.append("ML_SKIP_LOW_ACC")
+        else:
+            try:
+                hr = int((time.time() // 3600) % 24) if hour_utc is None else int(hour_utc)
+                x = np.asarray([_feature_vector(
+                    d, daily_alignment, hurst_regime, hmm_regime,
+                    kalman_zscore, macro_alignment, spread_sl_ratio, hr,
+                )], dtype=float)
+                ml_prob = float(model.predict_proba(x)[0][1])
+                prob = 0.55 * ml_prob + 0.45 * rule_prob
+                model_source = "ml_blend"
+                reasons.append(f"ML_PROB({ml_prob:.2f})")
+            except Exception:  # noqa: BLE001
+                pass
 
     prob = round(max(0.05, min(0.95, prob)), 3)
     if prob < 0.45:
         verdict = "REDUCE"
-        size_mult = 0.6
+        size_mult = round(max(0.45, min(0.80, 0.45 + (prob - 0.15) * 1.15)), 2)
     elif prob >= 0.72:
         verdict = "BOOST"
-        size_mult = 1.15
+        size_mult = round(min(1.25, 1.10 + (prob - 0.72) * 0.65), 2)
     else:
         verdict = "PASS"
-        size_mult = 1.0
+        size_mult = round(0.85 + ((prob - 0.45) / 0.27) * 0.20, 2)
 
     rec = {
         "ts": round(time.time(), 2),

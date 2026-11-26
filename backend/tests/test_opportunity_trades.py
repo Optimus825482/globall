@@ -635,3 +635,97 @@ def test_retail_sentiment_soft_sizing_and_sentiment_bonus(monkeypatch):
     monkeypatch.setattr(sentiment_index, "summarize", lambda sym: {"score": -65.0, "coverage": 1.0, "label": "SHORT"})
     assert ot._sentiment_rank_bonus("XAUUSD", "BUY") == -0.10
     assert ot._sentiment_rank_bonus("XAUUSD", "SELL") == 0.15
+
+
+def test_kalman_and_hmm_soft_scaling_and_hard_veto(monkeypatch):
+    from app import daily_bias_filter, meta_label_filter
+
+    recorded_mults = []
+
+    def fake_open(sym, direction, sl, tp, atr, score, note, lots_mult=1.0):
+        recorded_mults.append((sym, lots_mult))
+        return {"ok": True, "cmd_id": "CMD-1", "lots": round(0.02 * lots_mult, 2), "risk_usd": 10.0}
+
+    monkeypatch.setattr(fx, "open_scan_position", fake_open)
+    monkeypatch.setattr(fx, "get_symbol_trading_specs", lambda sym, **k: {"pip_size": 0.1, "pip_val": 10.0})
+    monkeypatch.setattr(fx, "_LIVE_SPREAD_PIPS", {})
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "risk_gate_mode", "shadow")
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "dxy_filter_enabled", False, raising=False)
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "correlation_guard", False, raising=False)
+    monkeypatch.setattr(daily_bias_filter, "get_daily_bias", lambda *a, **k: {"bias": "NEUTRAL"})
+    monkeypatch.setattr(meta_label_filter, "score_meta_signal", lambda *a, **k: {"size_mult": 1.0, "verdict": "PASS"})
+
+    a = analysis(symbol="XAUUSD", bias="BUY", score=3.5, levels={"resistances": [], "supports": []})
+
+    # 1) Kalman 2.2 <= |z| < 2.8 -> soft scaling (0.60x)
+    ot._last_open.clear()
+    recorded_mults.clear()
+    monkeypatch.setattr(fx, "_RADAR_CACHE", (time.time(), {"candidates": [
+        {"symbol": "XAUUSD", "kalman_overextended": True, "kalman_zscore": 2.4}
+    ]}))
+    res_k_soft = asyncio.run(ot.open_from_scan({"XAUUSD": a}, {"all": [SCAN]}, None))
+    assert len(res_k_soft["opened"]) == 1
+    assert recorded_mults[0][1] == pytest.approx(0.60)
+
+    # 2) Kalman |z| >= 2.8 -> hard veto
+    ot._last_open.clear()
+    recorded_mults.clear()
+    monkeypatch.setattr(fx, "_RADAR_CACHE", (time.time(), {"candidates": [
+        {"symbol": "XAUUSD", "kalman_overextended": True, "kalman_zscore": 2.9}
+    ]}))
+    res_k_veto = asyncio.run(ot.open_from_scan({"XAUUSD": a}, {"all": [SCAN]}, None))
+    assert not res_k_veto["opened"] and "Kalman aşırı uzama" in res_k_veto["skipped"][0]["reason"]
+
+    # 3) HMM SHOCK_VOLATILITY 0.60 <= conf < 0.85 -> soft scaling (0.55x)
+    ot._last_open.clear()
+    recorded_mults.clear()
+    monkeypatch.setattr(fx, "_RADAR_CACHE", (time.time(), {"candidates": [
+        {"symbol": "XAUUSD", "hmm_regime": "SHOCK_VOLATILITY", "hmm_confidence": 0.70}
+    ]}))
+    res_h_soft = asyncio.run(ot.open_from_scan({"XAUUSD": a}, {"all": [SCAN]}, None))
+    assert len(res_h_soft["opened"]) == 1
+    assert recorded_mults[0][1] == pytest.approx(0.55)
+
+    # 4) HMM SHOCK_VOLATILITY conf >= 0.85 -> hard veto
+    ot._last_open.clear()
+    recorded_mults.clear()
+    monkeypatch.setattr(fx, "_RADAR_CACHE", (time.time(), {"candidates": [
+        {"symbol": "XAUUSD", "hmm_regime": "SHOCK_VOLATILITY", "hmm_confidence": 0.90}
+    ]}))
+    res_h_veto = asyncio.run(ot.open_from_scan({"XAUUSD": a}, {"all": [SCAN]}, None))
+    assert not res_h_veto["opened"] and "HMM şok volatilite" in res_h_veto["skipped"][0]["reason"]
+
+
+def test_run_periodic_opportunity_scan_filters_blocked_symbols(monkeypatch):
+    from app import forex_news, forex_research
+
+    _patch_open(monkeypatch)
+    monkeypatch.setattr(fx, "_LIVE_SPREAD_PIPS", {})
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "dxy_filter_enabled", False, raising=False)
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "correlation_guard", False, raising=False)
+    monkeypatch.setattr(fx._AUTO_SETTINGS, "blocked_symbols", ["EURUSD", "btcusd"], raising=False)
+
+    scanned_syms = []
+
+    def fake_scan(syms, n=8):
+        scanned_syms.append(list(syms))
+        return {"scanned": len(syms), "top": [SCAN], "all": [SCAN]}
+
+    monkeypatch.setattr(forex_research, "scan_universe", lambda: ["XAUUSD", "eurusd", "BTCUSD"])
+    monkeypatch.setattr(forex_research, "scan_opportunities", fake_scan)
+    monkeypatch.setattr(forex_research, "mt5_request", lambda sym: None)
+    monkeypatch.setattr(forex_research, "mt5_wait", lambda sym: None)
+    monkeypatch.setattr(forex_research, "analyze_symbol", lambda sym: analysis(symbol=sym))
+
+    async def fake_news(force_refresh=False):
+        return []
+
+    async def fake_z(cal):
+        return None
+
+    monkeypatch.setattr(forex_news, "get_forex_news", fake_news)
+    monkeypatch.setattr(forex_chat, "attach_surprise_z", fake_z)
+
+    st = asyncio.run(ot.run_periodic_opportunity_scan(trigger="manual"))
+    assert st["status"] == "ok"
+    assert scanned_syms == [["XAUUSD"]]

@@ -845,6 +845,8 @@ def execute_market_order(cmd: dict) -> dict:
                         "entry_atr_pips": float(cmd.get("entry_atr_pips", 0.0) or 0.0),
                         "disable_scalper_be": cmd_disable_be,
                         "tp_cancel_on_trail": cmd_tp_cancel,
+                        "hurst_regime": str(cmd.get("hurst_regime") or "UNKNOWN"),
+                        "hmm_regime": str(cmd.get("hmm_regime") or "UNKNOWN"),
                     }
                     print(f"  🎯 [ÇIKIŞ PLANI]: Bilet #{p.ticket} BE {cmd_be:.1f}p / Trail {cmd_trail:.1f}p (motor cmd)")
                     break
@@ -928,7 +930,9 @@ def execute_close_order(cmd: dict) -> dict:
 
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-        print(f"  🏁 [POZİSYON KAPATILDI]: Bilet #{ticket} | {symbol} Kapatıldı @ {price}")
+        _close_reason = str(cmd.get("reason") or "").strip()
+        _reason_suffix = f" | Sebep: {_close_reason}" if _close_reason else ""
+        print(f"  🏁 [POZİSYON KAPATILDI]: Bilet #{ticket} | {symbol} Kapatıldı @ {price}{_reason_suffix}")
         RECENTLY_CLOSED_TICKETS[ticket] = time.time()
         if "XAU" in symbol or "GOLD" in symbol:
             global LAST_GOLD_EXIT_TIME
@@ -1203,7 +1207,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
         # 0. KISMİ KÂR ALMA (Partial TP): İlk kâr hedefinde pozisyonun yarısı
         # kapatılır; kalan pozisyon için SL başabaş üstü net kâra çekilir.
         partial_cfg = PARTIAL_TP_MAP.get(ticket)
-        if partial_cfg and not partial_cfg.get("done") and bool(CURRENT_SETTINGS.get("partial_tp_enabled", True)):
+        if isinstance(partial_cfg, dict) and not partial_cfg.get("done") and bool(CURRENT_SETTINGS.get("partial_tp_enabled", True)):
             target_pips = float(partial_cfg.get("target_pips", 0.0) or 0.0)
             if target_pips > 0 and pnl_pips >= target_pips:
                 partial_cfg["done"] = True
@@ -1333,8 +1337,9 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
             # 2026-11-25: Sadece trailing'de yüzen kârın %40-50'si geri veriliyordu.
             # 1.5R'ye ulaşınca hacmin %65'ini anında realize et (sıfır geri verme),
             # kalan %35'i risksiz başabaş+$1 ile trailing runner olarak koştur.
+            _ptp_already_done = (isinstance(partial_cfg, dict) and bool(partial_cfg.get("done"))) or (partial_cfg is True)
             if (
-                ticket not in PARTIAL_TP_MAP
+                not _ptp_already_done
                 and _sl0_ref > 0
                 and pnl_pips >= (1.5 * _sl0_ref)
                 and float(getattr(p, "volume", 0.0) or 0.0) >= 0.02
@@ -1345,7 +1350,7 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                 if 0.01 <= _close_vol < _cur_vol:
                     _ptp_res = execute_close_partial({"ticket": ticket, "volume": _close_vol})
                     if _ptp_res and _ptp_res.get("success"):
-                        PARTIAL_TP_MAP[ticket] = True
+                        PARTIAL_TP_MAP[ticket] = {"target_pips": round(1.5 * _sl0_ref, 1), "done": True}
                         print(
                             f"  💰 [HİBRİT TP1 · %65 REALİZE]: {sym} #{ticket} "
                             f"{_close_vol:.2f}/{_cur_vol:.2f} lot kapatıldı (+{pnl_pips:.1f}p ≥ 1.5R). "
@@ -1405,7 +1410,10 @@ def check_and_apply_dynamic_exits(be_pips: float, trail_pips: float):
                     elif _vel_gain_60s >= 0.7 * _vel_ref:
                         _vel_mult = 0.75  # Hızlı ivme: mesafeyi %25 daralt
 
-            eff_chand_mult = chand_mult * _ratchet_mult * _vel_mult
+            _hurst_reg = str((pos_exits or {}).get("hurst_regime") or "UNKNOWN")
+            _hmm_reg = str((pos_exits or {}).get("hmm_regime") or "UNKNOWN")
+            _regime_trail_mult = 0.80 if (_hurst_reg == "MEAN_REVERT" or _hmm_reg == "LOW_VOL_RANGE") else 1.0
+            eff_chand_mult = chand_mult * _ratchet_mult * _vel_mult * _regime_trail_mult
             chand_dist_pips = eff_chand_mult * entry_atr
             if use_chandelier and _ratchet_mfe_cap is not None and mfe > 0:
                 chand_dist_pips = min(chand_dist_pips, mfe * _ratchet_mfe_cap)
