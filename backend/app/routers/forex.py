@@ -3057,8 +3057,8 @@ def get_symbol_trading_specs(
             eff_sl_pips = base_sl_pips
 
         eff_tp_pips = max(base_tp_pips, round(eff_sl_pips * 1.50, 1))  # Optimize: R:R=1.50 (TP %1.2 / SL %0.8)
-        eff_be_pips = max(25.0, round(eff_sl_pips * 0.7, 1))
-        eff_trail_pips = max(40.0, round(eff_sl_pips * 1.2, 1))
+        eff_be_pips = max(25.0, round(eff_sl_pips * 1.0, 1))  # 1.0R öncesi erken BE kârı kesmesin (Payoff Ratio)
+        eff_trail_pips = max(40.0, round(eff_sl_pips * 1.25, 1))
 
     elif "XAG" in clean_sym or "SILVER" in clean_sym:
         pip_size = 0.01          # 1 pip = 0.01 USD
@@ -3090,8 +3090,8 @@ def get_symbol_trading_specs(
             # JPY dışı FX dallarıyla AYNI kural (2026-11-12 A/B adayı)
             eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1))
             eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
-            eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 0.75, 1))
-            eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
+            eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 1.0, 1))
+            eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.30, 1))
         else:
             eff_sl_pips = base_sl_calc
             eff_tp_pips = round(base_tp * mult, 1)
@@ -3107,8 +3107,8 @@ def get_symbol_trading_specs(
         base_sl_calc = round(base_sl * mult, 1)
         eff_sl_pips = base_sl_calc if atr_pips is None else max(base_sl_calc, round(atr_pips * 1.2, 1))
         eff_tp_pips = round(eff_sl_pips * 1.50, 1)
-        eff_be_pips = max(40.0, round(eff_sl_pips * 0.6, 1))
-        eff_trail_pips = round(eff_sl_pips * 1.2, 1)
+        eff_be_pips = max(40.0, round(eff_sl_pips * 0.85, 1))
+        eff_trail_pips = round(eff_sl_pips * 1.25, 1)
 
     # ETHUSD emekliye ayrıldı ama spec dalı KALIR: arşivdeki ETH kayıtları
     # yeniden hesaplanırken pip_val/digits buradan okunur (bkz. _RETIRED_FOREX_SYMBOLS).
@@ -3258,8 +3258,8 @@ def get_symbol_trading_specs(
         base_sl_calc = round(base_sl * mult, 1)
         eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1)) if (atr_pips and atr_pips > 0) else base_sl_calc
         eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
-        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 0.75, 1))
-        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 1.0, 1))
+        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.30, 1))
 
     else:
         # Standart Forex (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF)
@@ -3270,8 +3270,8 @@ def get_symbol_trading_specs(
         base_sl_calc = round(base_sl * mult, 1)
         eff_sl_pips = max(base_sl_calc, round(atr_pips * 1.5, 1)) if (atr_pips and atr_pips > 0) else base_sl_calc
         eff_tp_pips = max(round(base_tp * mult, 1), round(eff_sl_pips * 1.83, 1))
-        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 0.75, 1))
-        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.25, 1))
+        eff_be_pips = max(HARD_MIN_BREAKEVEN_PIPS, round(eff_sl_pips * 1.0, 1))
+        eff_trail_pips = max(round(base_trail * mult, 1), round(eff_sl_pips * 1.30, 1))
 
     return {
         "pip_size": pip_size,
@@ -5974,7 +5974,7 @@ CANLI_LS_SYMBOLS = ("XAUUSD", "US30", "NAS100")
 # Keltner Squeeze (M15) canlı sembol sabiti — kanıt 5 kanonik sembolde toplandı
 CANLI_SQUEEZE_KC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "NAS100", "USDCHF")
 # Klasik radar emir evreni: XAU, BTC, US30, AUDUSD, AUDCAD
-CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "US30", "AUDUSD", "AUDCAD")
+CANLI_CLASSIC_SYMBOLS = ("XAUUSD", "BTCUSD", "AUDUSD", "AUDCAD")
 
 # ── TOKYO SABAHI DRİFTİ (2026-11-10) — ZAMAN TABANLI YENİ KOL ─────────────────
 # Araştırma: `docs/FX_YENI_SINYAL_AILESI_ARASTIRMASI_2026-11-10.md`.
