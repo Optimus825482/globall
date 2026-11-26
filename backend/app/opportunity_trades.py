@@ -731,10 +731,11 @@ async def periodic_opportunity_scan_loop() -> None:
             if now >= due_ts:
                 await run_periodic_opportunity_scan(trigger="auto")
                 try:
-                    from app import bb_squeeze_h1, donchian_h1, macd_cross_h4
+                    from app import bb_squeeze_h1, donchian_h1, h4_trend_scanners, macd_cross_h4
                     await donchian_h1.run_donchian_h1_scan()
                     await bb_squeeze_h1.run_bb_squeeze_h1_scan()
                     await macd_cross_h4.run_macd_cross_h4_scan()
+                    await h4_trend_scanners.run_h4_trend_scans()
                 except Exception as _dh_exc:  # noqa: BLE001
                     logger.warning("[H1_H4_SCANNERS] periyodik tarama hatası: %s", _dh_exc)
                 _AUTO_SCAN_STATE["next_run_ts"] = time.time() + interval_sec

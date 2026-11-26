@@ -108,6 +108,8 @@ const STRATEGY_LABELS: Record<string, string> = {
   DONCHIAN_H1: "Donchian H1(20) Kırılımı",
   BB_SQUEEZE_H1: "Bollinger Squeeze H1",
   MACD_CROSS_H4: "MACD Sıfır Geçişi (H4)",
+  ICHIMOKU_H4: "Ichimoku Bulut (H4)",
+  CHANDELIER_H4: "Chandelier Kırılımı (H4)",
   LONDON_BREAKOUT: "London Breakout (M5)",
   LONDON_SIGN: "NY Sign Momentum",
   SQUEEZE_KC_M15: "Keltner Squeeze (M15)",
