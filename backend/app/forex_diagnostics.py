@@ -296,9 +296,14 @@ def build_today_audit(
     net_pnl = round(gross_profit - gross_loss, 2)
     pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (None if gross_profit == 0 else 99.0)
 
+    from app import episodic_reflection, quantstats_analytics
+
+    episodic_reflection.sync_reflections_from_closed_trades(closed)
     mt5_st = getattr(fx, "_MT5_STATE", None) or {}
     acc = mt5_st.get("account") or {}
     settings = getattr(fx, "_AUTO_SETTINGS", None)
+    bal = _safe_float(acc.get("balance"), 1000.0)
+    tearsheet = quantstats_analytics.build_tearsheet(closed, initial_balance=max(100.0, bal - net_pnl))
 
     return {
         "window": {
@@ -336,12 +341,32 @@ def build_today_audit(
             "gross_loss_usd": gross_loss,
             "profit_factor": pf,
         },
+        "tearsheet": tearsheet,
         "scans": scans,
         "meta_filter": __import__("app.meta_label_filter", fromlist=["get_meta_filter_stats"]).get_meta_filter_stats(),
+        "episodic_reflections": episodic_reflection.get_reflection_summary(limit=15),
         "decisions": decisions,
         "losing_trades_forensics": losses,
         "db_logs": db_logs,
     }
+
+
+def build_tearsheet_report(
+    fx: Any,
+    period: str = "all",
+    date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build standalone QuantStats-style tear-sheet JSON for the requested window."""
+    from app import quantstats_analytics
+
+    closed, start_ts, end_ts = _get_windowed_closed_trades(fx, period=period, date=date)
+    mt5_st = getattr(fx, "_MT5_STATE", None) or {}
+    acc = mt5_st.get("account") or {}
+    net_pnl = sum(_safe_float(t.get("pnl_usd", t.get("profit")), 0.0) for t in closed)
+    bal = _safe_float(acc.get("balance"), 1000.0)
+    report = quantstats_analytics.build_tearsheet(closed, initial_balance=max(100.0, bal - net_pnl))
+    report["window"] = {"period": "custom" if date else period, "date": date, "start_ts": start_ts, "end_ts": end_ts}
+    return report
 
 
 def build_scans_report(fx: Any, limit: int = 100) -> Dict[str, Any]:

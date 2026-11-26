@@ -252,11 +252,29 @@ def plan_trade(analysis: Dict[str, Any], scan_row: Optional[Dict[str, Any]], cal
         elif (bias == "SELL" and _lp >= 80.0) or (bias == "BUY" and _sp >= 80.0):
             retail_support_note = f"; perakende kalabalığına ters yön (likidite desteği)"
 
+    # Standartlaştırılmış SMC (Order Block + BOS/CHoCH + Likidite) & Episodik Dersler
+    smc_info: Dict[str, Any] = {}
+    try:
+        from app import smc_engine as _smc
+        c15 = (analysis.get("candles") or {}).get("15m") or (analysis.get("candles") or {}).get("1h") or []
+        if c15:
+            smc_info = _smc.analyze_smc(c15, direction=bias)
+    except Exception:  # noqa: BLE001
+        smc_info = {}
+
+    reflection_info: Dict[str, Any] = {}
+    try:
+        from app import episodic_reflection as _er
+        reflection_info = _er.retrieve_relevant_lessons(str(sym or ""), bias, "FIRSAT_TARAMASI", limit=3)
+    except Exception:  # noqa: BLE001
+        reflection_info = {}
+
     size_mult = max(MIN_SIZE_MULT, round(size_mult, 3))
     return {"ok": True, "reason": "tüm kapılar geçti", "plan": {
         "symbol": sym, "direction": bias, "entry_price": price, "sl_pips": round(sl_dist / pip_size, 1),
         "tp_pips": round(tp_dist / pip_size, 1), "atr_pips": round(float(atr) / pip_size, 1), "score": analysis.get("score"),
         "news": effect, "size_mult": size_mult, "retail": retail, "sentiment": sentiment_info,
+        "smc": smc_info, "reflection": reflection_info,
         "note": (f"Kullanıcı komutuyla; teknik {bias} ({float(analysis.get('score', 0)):+.1f})" if explicit else
                  f"Teknik {bias} ({float(analysis.get('score', 0)):+.1f}), TradingView {scan_row.get('summary')}, "
                  f"uyum %{int(float(scan_row.get('agreement', 0)) * 100)}")

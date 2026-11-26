@@ -12882,3 +12882,36 @@ async def get_forex_diagnostics_losses(
     )
 
 
+@router.get("/diagnostics/tearsheet")
+async def get_forex_diagnostics_tearsheet(
+    period: str = "all",
+    date: Optional[str] = None,
+):
+    """QuantStats uyumlu JSON performans tear-sheet (Sharpe, Sortino, Calmar, Max DD, Win/Loss dağılımı)."""
+    from app import forex_diagnostics
+    import sys
+    return forex_diagnostics.build_tearsheet_report(sys.modules[__name__], period=period, date=date)
+
+
+@router.get("/diagnostics/tearsheet.html")
+async def get_forex_diagnostics_tearsheet_html(
+    period: str = "all",
+    date: Optional[str] = None,
+):
+    """Tarayıcıda doğrudan açılabilen HTML QuantStats tear-sheet raporu."""
+    from fastapi.responses import HTMLResponse
+    from app import forex_diagnostics, quantstats_analytics
+    import sys
+    report = forex_diagnostics.build_tearsheet_report(sys.modules[__name__], period=period, date=date)
+    return HTMLResponse(content=quantstats_analytics.render_tearsheet_html(report))
+
+
+@router.post("/diagnostics/meta-train")
+async def post_forex_diagnostics_meta_train():
+    """MT5 kapalı işlem geçmişinden Triple-Barrier/Meta-Labeling ML modelini yeniden eğitir."""
+    from app import meta_label_filter
+    closed = list((_MT5_STATE or {}).get("closed_trades") or []) + list((_AUTO_STATE or {}).get("closed_trades") or [])
+    return meta_label_filter.train_meta_model_from_trades(closed)
+
+
+

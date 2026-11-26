@@ -1,23 +1,182 @@
-"""Meta-Labeling False-Signal Filter (Calibrated Microstructure & Regime Probability Scorer).
+"""Meta-Labeling False-Signal Filter (Triple-Barrier ML + Calibrated Regime Prior).
 
 Decouples trade direction (primary strategy) from trade quality/sizing (meta-model).
-Evaluates context features (Daily Bias, Hurst, HMM, Kalman Z-score, Macro Alignment,
-Spread/SL cost) and returns a calibrated probability `meta_prob` in [0.05, 0.95] plus
-a soft lot multiplier (`0.6x` when weak, `1.0x` normal, `1.15x` high-conviction).
-Logs recent evaluations for live shadow/diagnostics tracking.
+Supports:
+  1. `triple_barrier_label(...)`: López de Prado triple-barrier labeling (TP / SL / vertical timeout).
+  2. `train_meta_model_from_trades(closed_trades)`: trains a regularized LogisticRegression
+     meta-classifier from MT5 closed trade history (persisted via joblib).
+  3. `score_meta_signal(...)`: blends live ML probability (when trained on >= 20 trades)
+     with the calibrated microstructure/regime prior.
 """
 from __future__ import annotations
 
 import math
 import time
 from collections import deque
-from typing import Any, Deque, Dict, List
+from pathlib import Path
+from typing import Any, Deque, Dict, List, Optional, Sequence
+
+import numpy as np
 
 _RECENT_EVALS: Deque[Dict[str, Any]] = deque(maxlen=120)
+_ML_MODEL: Any = None
+_ML_META: Dict[str, Any] = {"trained": False, "n_samples": 0, "trained_at": None, "accuracy": None}
+_MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "meta_label_model.joblib"
+
+_DAILY_MAP = {"ALIGNED": 1.0, "NEUTRAL": 0.0, "COUNTER": -1.0}
+_HURST_MAP = {"TREND": 1.0, "MEAN_REVERT": 0.0, "RANDOM_WALK": -1.0, "UNKNOWN": 0.0}
+_HMM_MAP = {"TREND_EXPANSION": 1.0, "LOW_VOL_RANGE": 0.0, "SHOCK_VOLATILITY": -1.0, "UNKNOWN": 0.0}
+_MACRO_MAP = {"SUPPORTIVE": 1.0, "NEUTRAL": 0.0, "OPPOSING": -1.0}
 
 
 def _sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-max(-10.0, min(10.0, x))))
+
+
+def triple_barrier_label(
+    entry_price: float,
+    future_highs: Sequence[float],
+    future_lows: Sequence[float],
+    direction: str,
+    tp_dist: float,
+    sl_dist: float,
+    max_bars: int = 24,
+) -> int:
+    """López de Prado Triple-Barrier label: 1 if TP hit first, 0 if SL or vertical expiry."""
+    if entry_price <= 0 or tp_dist <= 0 or sl_dist <= 0:
+        return 0
+    d = str(direction or "").upper()
+    tp = entry_price + tp_dist if d == "BUY" else entry_price - tp_dist
+    sl = entry_price - sl_dist if d == "BUY" else entry_price + sl_dist
+    horizon = min(len(future_highs), len(future_lows), max(1, int(max_bars)))
+    for i in range(horizon):
+        hi = float(future_highs[i])
+        lo = float(future_lows[i])
+        if d == "BUY":
+            if lo <= sl:
+                return 0
+            if hi >= tp:
+                return 1
+        else:
+            if hi >= sl:
+                return 0
+            if lo <= tp:
+                return 1
+    return 0
+
+
+def _feature_vector(
+    direction: str,
+    daily_alignment: str,
+    hurst_regime: str,
+    hmm_regime: str,
+    kalman_zscore: float,
+    macro_alignment: str,
+    spread_sl_ratio: float,
+    hour_utc: int = 12,
+) -> List[float]:
+    d_sign = 1.0 if str(direction or "").upper() == "BUY" else -1.0
+    aligned_z = float(kalman_zscore) * d_sign
+    rad = 2.0 * math.pi * (int(hour_utc) % 24) / 24.0
+    return [
+        d_sign,
+        _DAILY_MAP.get(str(daily_alignment).upper(), 0.0),
+        _HURST_MAP.get(str(hurst_regime).upper(), 0.0),
+        _HMM_MAP.get(str(hmm_regime).upper(), 0.0),
+        max(-4.0, min(4.0, aligned_z)),
+        _MACRO_MAP.get(str(macro_alignment).upper(), 0.0),
+        max(0.0, min(1.0, float(spread_sl_ratio))),
+        math.sin(rad),
+        math.cos(rad),
+    ]
+
+
+def train_meta_model_from_trades(
+    closed_trades: Sequence[Dict[str, Any]],
+    *,
+    min_samples: int = 20,
+    save_to_disk: bool = True,
+) -> Dict[str, Any]:
+    """Train a regularized LogisticRegression meta-model from MT5 closed trades."""
+    global _ML_MODEL, _ML_META
+    X_rows: List[List[float]] = []
+    y_rows: List[int] = []
+
+    for tr in closed_trades or []:
+        if not isinstance(tr, dict):
+            continue
+        try:
+            pnl = float(tr.get("pnl_usd", tr.get("profit", 0.0)) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        ts = float(tr.get("exit_ts") or tr.get("close_time") or time.time())
+        hour_utc = int((ts // 3600) % 24)
+        feats = _feature_vector(
+            direction=str(tr.get("direction") or "BUY"),
+            daily_alignment=str(tr.get("daily_alignment") or "NEUTRAL"),
+            hurst_regime=str(tr.get("hurst_regime") or "UNKNOWN"),
+            hmm_regime=str(tr.get("hmm_regime") or "UNKNOWN"),
+            kalman_zscore=float(tr.get("kalman_zscore") or 0.0),
+            macro_alignment=str(tr.get("macro_alignment") or "NEUTRAL"),
+            spread_sl_ratio=float(tr.get("spread_sl_ratio") or 0.0),
+            hour_utc=hour_utc,
+        )
+        X_rows.append(feats)
+        y_rows.append(1 if pnl > 0.0 else 0)
+
+    if len(X_rows) < min_samples or len(set(y_rows)) < 2:
+        return {
+            "ok": False,
+            "trained": False,
+            "n_samples": len(X_rows),
+            "reason": f"Yetersiz veya tek sınıflı veri ({len(X_rows)} < {min_samples})",
+        }
+
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    X = np.asarray(X_rows, dtype=float)
+    y = np.asarray(y_rows, dtype=int)
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", LogisticRegression(C=0.5, max_iter=300, class_weight="balanced")),
+    ])
+    model.fit(X, y)
+    acc = round(float(model.score(X, y)), 3)
+
+    _ML_MODEL = model
+    _ML_META = {
+        "trained": True,
+        "n_samples": len(X_rows),
+        "trained_at": round(time.time(), 2),
+        "accuracy": acc,
+    }
+    if save_to_disk:
+        try:
+            import joblib
+            _MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+            joblib.dump({"model": model, "meta": _ML_META}, _MODEL_PATH)
+        except Exception:  # noqa: BLE001
+            pass
+
+    return {"ok": True, **_ML_META}
+
+
+def _ensure_loaded_model() -> Any:
+    global _ML_MODEL, _ML_META
+    if _ML_MODEL is not None:
+        return _ML_MODEL
+    if _MODEL_PATH.exists():
+        try:
+            import joblib
+            blob = joblib.load(_MODEL_PATH)
+            if isinstance(blob, dict) and blob.get("model") is not None:
+                _ML_MODEL = blob["model"]
+                _ML_META = dict(blob.get("meta") or _ML_META)
+        except Exception:  # noqa: BLE001
+            pass
+    return _ML_MODEL
 
 
 def score_meta_signal(
@@ -30,8 +189,9 @@ def score_meta_signal(
     kalman_zscore: float = 0.0,
     macro_alignment: str = "NEUTRAL",
     spread_sl_ratio: float = 0.0,
+    hour_utc: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Compute calibrated meta-probability and soft sizing multiplier."""
+    """Compute calibrated meta-probability (ML-blended when trained) and soft sizing multiplier."""
     logit = 0.15  # mild positive prior for primary-verified signals
     reasons: List[str] = []
 
@@ -81,7 +241,26 @@ def score_meta_signal(
         logit -= 0.35
         reasons.append(f"SPREAD_COST({spread_sl_ratio:.2f})")
 
-    prob = round(_sigmoid(logit), 3)
+    rule_prob = _sigmoid(logit)
+    model_source = "rule_prior"
+    prob = rule_prob
+
+    model = _ensure_loaded_model()
+    if model is not None:
+        try:
+            hr = int((time.time() // 3600) % 24) if hour_utc is None else int(hour_utc)
+            x = np.asarray([_feature_vector(
+                d, daily_alignment, hurst_regime, hmm_regime,
+                kalman_zscore, macro_alignment, spread_sl_ratio, hr,
+            )], dtype=float)
+            ml_prob = float(model.predict_proba(x)[0][1])
+            prob = 0.55 * ml_prob + 0.45 * rule_prob
+            model_source = "ml_blend"
+            reasons.append(f"ML_PROB({ml_prob:.2f})")
+        except Exception:  # noqa: BLE001
+            pass
+
+    prob = round(max(0.05, min(0.95, prob)), 3)
     if prob < 0.45:
         verdict = "REDUCE"
         size_mult = 0.6
@@ -99,6 +278,7 @@ def score_meta_signal(
         "meta_prob": prob,
         "verdict": verdict,
         "size_mult": size_mult,
+        "model_source": model_source,
         "reasons": reasons,
     }
     _RECENT_EVALS.appendleft(rec)
@@ -117,6 +297,7 @@ def get_meta_filter_stats() -> Dict[str, Any]:
     return {
         "total_evaluated": len(items),
         "avg_meta_prob": avg_p,
+        "model_meta": dict(_ML_META),
         "by_verdict": counts,
         "recent": items[:25],
     }
