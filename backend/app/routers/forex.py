@@ -12909,8 +12909,9 @@ async def get_forex_diagnostics_tearsheet_html(
 @router.post("/diagnostics/meta-train")
 async def post_forex_diagnostics_meta_train():
     """MT5 kapalı işlem geçmişinden Triple-Barrier/Meta-Labeling ML modelini yeniden eğitir."""
-    from app import meta_label_filter
-    closed = list((_MT5_STATE or {}).get("closed_trades") or []) + list((_AUTO_STATE or {}).get("closed_trades") or [])
+    from app import forex_diagnostics, meta_label_filter
+    import sys
+    closed, _, _ = forex_diagnostics._get_windowed_closed_trades(sys.modules[__name__], period="all")
     return meta_label_filter.train_meta_model_from_trades(closed)
 
 
